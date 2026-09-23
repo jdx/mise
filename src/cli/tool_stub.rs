@@ -7,7 +7,6 @@ use crate::config::env_directive::EnvValue;
 use crate::dirs;
 use crate::file;
 use crate::hash;
-use crate::lockfile::PlatformInfo;
 use crate::toolset::{
     CoreToolOptions, InstallOptions, ToolRequest, ToolSource, ToolVersionOptions,
 };
@@ -26,22 +25,10 @@ pub(crate) struct ToolStubFile {
     pub install_env: indexmap::IndexMap<String, EnvValue>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
-    pub lock: Option<ToolStubLock>,
     #[serde(flatten, deserialize_with = "deserialize_tool_stub_options")]
     pub opts: indexmap::IndexMap<String, toml::Value>,
     #[serde(skip)]
     pub tool_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ToolStubLock {
-    pub platforms: BTreeMap<String, ToolStubLockPlatform>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ToolStubLockPlatform {
-    pub url: Option<String>,
-    pub checksum: Option<String>,
 }
 
 // Custom deserializer that keeps TOML values native, converting scalars to strings
@@ -523,25 +510,9 @@ async fn execute_with_tool_request(
     let mut toolset = crate::toolset::Toolset::new(source);
     toolset.add_version(tool_request);
 
-    // Resolve the toolset to populate current versions
+    // Resolve the toolset to populate current versions. Lock data comes
+    // from the stub's project mise.lock (see `lockfile_path_for_tool_stub`).
     toolset.resolve(config).await?;
-
-    // Inject lock data from stub into tool versions
-    // The toolset contains only the single tool from this stub, so apply to all versions
-    if let Some(lock) = &stub.lock {
-        for (_ba, tvl) in toolset.versions.iter_mut() {
-            for tv in &mut tvl.versions {
-                for (platform_key, lock_platform) in &lock.platforms {
-                    let pi = PlatformInfo {
-                        url: lock_platform.url.clone(),
-                        checksum: lock_platform.checksum.clone(),
-                        ..Default::default()
-                    };
-                    tv.lock_platforms.insert(platform_key.clone(), pi);
-                }
-            }
-        }
-    }
 
     // Ensure we have current versions after resolving
     ensure!(

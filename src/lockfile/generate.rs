@@ -374,6 +374,7 @@ pub(crate) async fn generate(
     let mut candidate = Lockfile {
         lockfile_version: previous.lockfile_version,
         generated_header_url: previous.generated_header_url.clone(),
+        tool_stubs: previous.tool_stubs.clone(),
         ..Default::default()
     };
     let selected: BTreeSet<_> = tools.iter().map(|(ba, _)| ba.short.as_str()).collect();

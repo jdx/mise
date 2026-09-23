@@ -872,26 +872,7 @@ impl Config {
     /// `[monorepo].config_roots` to match directories, because legacy lockfiles
     /// can exist in roots whose live config is idiomatic-only or was removed.
     pub(crate) fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
-        let config = find_monorepo_config(&self.config_files)?;
-        let setting = config.monorepo.lockfile;
-        if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
-            return None;
-        }
-        let monorepo_root = config.root;
-
-        // An explicit opt-in always routes descendant configs to the root
-        // lockfile, even when config_roots cannot be resolved. Avoid expanding
-        // config_roots here because this method is called for every tool during
-        // lockfile resolution, including on every shim invocation. Commands
-        // that migrate legacy lockfiles validate config_roots separately.
-        if setting == Some(true) {
-            return Some(monorepo_root);
-        }
-
-        match self.monorepo_config_root_dirs(None) {
-            Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
-            Ok(_) | Err(_) => None,
-        }
+        monorepo_lockfile_root_for(&self.config_files)
     }
 
     /// Returns true when lockfile creation is enabled by a TOML settings file.
@@ -926,26 +907,7 @@ impl Config {
         &self,
         filenames: Option<&[String]>,
     ) -> Result<Vec<PathBuf>> {
-        let monorepo_config = find_monorepo_config(&self.config_files)
-            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config.root;
-        let patterns = monorepo_config
-            .monorepo
-            .config_roots
-            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
-        if patterns.is_empty() {
-            bail!("[monorepo].config_roots is required for monorepo operations");
-        }
-        let roots = match filenames {
-            Some(filenames) => {
-                expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
-            }
-            None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
-        };
-        if roots.is_empty() {
-            bail!("[monorepo].config_roots did not match any config roots");
-        }
-        Ok(roots)
+        monorepo_config_root_dirs_for(&self.config_files, filenames)
     }
 
     pub(crate) async fn monorepo_union_tool_request_set(
@@ -1813,6 +1775,98 @@ struct ResolvedMonorepoConfig {
 /// environment overlay can override `monorepo_root` without becoming a separate root.
 /// This preserves nearest-root behavior for nested monorepos while resolving sibling
 /// overlays as one logical root configuration.
+fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
+    let config = find_monorepo_config(config_files)?;
+    let setting = config.monorepo.lockfile;
+    if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
+        return None;
+    }
+    let monorepo_root = config.root;
+
+    // An explicit opt-in always routes descendant configs to the root
+    // lockfile, even when config_roots cannot be resolved. Avoid expanding
+    // config_roots here because this method is called for every tool during
+    // lockfile resolution, including on every shim invocation. Commands
+    // that migrate legacy lockfiles validate config_roots separately.
+    if setting == Some(true) {
+        return Some(monorepo_root);
+    }
+
+    match monorepo_config_root_dirs_for(config_files, None) {
+        Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
+        Ok(_) | Err(_) => None,
+    }
+}
+
+fn monorepo_config_root_dirs_for(
+    config_files: &ConfigMap,
+    filenames: Option<&[String]>,
+) -> Result<Vec<PathBuf>> {
+    let monorepo_config = find_monorepo_config(config_files)
+        .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+    let monorepo_root = monorepo_config.root;
+    let patterns = monorepo_config
+        .monorepo
+        .config_roots
+        .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
+    if patterns.is_empty() {
+        bail!("[monorepo].config_roots is required for monorepo operations");
+    }
+    let roots = match filenames {
+        Some(filenames) => {
+            expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
+        }
+        None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
+    };
+    if roots.is_empty() {
+        bail!("[monorepo].config_roots did not match any config roots");
+    }
+    Ok(roots)
+}
+
+static MONOREPO_LOCKFILE_ROOT_FROM_DIR: Lazy<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+    Lazy::new(Default::default);
+
+/// The monorepo lockfile root that applies to `dir`, from the project configs
+/// in it and its ancestors rather than from the current directory's config.
+/// A tool stub uses this so its lockfile does not depend on where it is run.
+pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
+    if let Some(root) = MONOREPO_LOCKFILE_ROOT_FROM_DIR.lock().unwrap().get(dir) {
+        return root.clone();
+    }
+    let paranoid = Settings::try_get().is_ok_and(|settings| settings.paranoid);
+    let mut config_files = ConfigMap::new();
+    for ancestor in all_dirs_from(dir).unwrap_or_default() {
+        for path in config_paths_in_dir(&ancestor) {
+            // The same committed layers the stub's lockfile is chosen from.
+            if path.extension().is_none_or(|ext| ext != "toml")
+                || lockfile::is_local_config(&path)
+                || lockfile::extract_env_from_config_path(&path).is_some()
+                || is_global_config(&path)
+                || (paranoid && !config_file::is_path_trusted(&path))
+            {
+                continue;
+            }
+            // Only the static monorepo declarations are read, so the config
+            // is decoded without a trust check: nothing in it is evaluated,
+            // and a stub run must not prompt for or record trust. An
+            // unreadable config just cannot declare a root.
+            let Ok(body) = file::read_to_string(&path) else {
+                continue;
+            };
+            if let Ok(cf) = MiseToml::for_monorepo_inspection(&body, &path) {
+                config_files.insert(path, Arc::new(cf));
+            }
+        }
+    }
+    let root = monorepo_lockfile_root_for(&config_files);
+    MONOREPO_LOCKFILE_ROOT_FROM_DIR
+        .lock()
+        .unwrap()
+        .insert(dir.to_path_buf(), root.clone());
+    root
+}
+
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
     config_files
         .values()

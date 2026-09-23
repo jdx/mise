@@ -20,7 +20,16 @@ use serde::{Deserialize, Serialize};
 use super::journal::JournalEntry;
 use crate::file::{self, display_path};
 
-pub(crate) const SCHEMA_VERSION: u32 = 1;
+/// The version of what a checkpoint records about itself.
+///
+/// **Bumped whenever a reader that does not understand the addition
+/// would draw a wrong conclusion from its absence.** Version 2 added an
+/// entry's `include` list: an older mise ignores the field, reads the
+/// entry as covering its whole tree, and a rollback then deletes the
+/// files the list never selected. It refuses a newer schema instead —
+/// `replay::validate` rejects anything above its own — and that is the
+/// answer wanted here: refuse rather than misinterpret.
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The state directory the store lives under.
 pub(crate) fn state_dir() -> PathBuf {
@@ -353,32 +362,58 @@ pub(crate) struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// The snapshot-tree path a display path travels as, under whichever
+    /// coverage entry owns it, or `None` when no entry does.
+    ///
+    /// **The one conversion between how a path is shown and how it
+    /// travels.** A display path is for a person: it keeps the host's
+    /// separator, and only on unix is `$HOME` shown as `~`. A tree path is
+    /// portable, and a reader rebuilds a display path from it with
+    /// [`super::tracked::tree_path_to_display`] — which always writes `~/`
+    /// with `/`. The two display spellings of one path are therefore not
+    /// the same string on Windows, so anything matching a written record
+    /// against a walked one compares tree paths, or display paths both
+    /// derived from a tree path, and never one of each.
+    pub(crate) fn portable_path(&self, path: &String) -> Option<String> {
+        let path = super::tracked::normalize_target(Path::new(path));
+        let entry = self
+            .tree
+            .coverage
+            .entries
+            .iter()
+            .filter(|entry| {
+                path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
+            })
+            .max_by_key(|entry| Path::new(&entry.path).components().count())?;
+        super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
+    }
+
     /// Only tracked-file metadata may travel with the ordinary history.
     /// Recovery material and command invocation details remain local.
     pub(crate) fn for_commit(&self) -> CommitRecord {
-        let portable = |path: &String| {
-            let path = super::tracked::normalize_target(Path::new(path));
-            let entry = self
-                .tree
-                .coverage
-                .entries
-                .iter()
-                .filter(|entry| {
-                    path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
-                })
-                .max_by_key(|entry| entry.path.len())?;
-            super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
-        };
+        let portable = |path: &String| self.portable_path(path);
         CommitRecord {
             trigger: self.trigger,
             description_source: self.description_source,
             task: self.task.clone(),
             labels: self.labels.clone(),
+            // **A repository the capture skipped is recorded here, not
+            // only in `coverage.nested`.** The trailer is format-frozen
+            // for released clients, so `nested` cannot become a field of
+            // its own; without this, a machine that rebuilt its index
+            // from Git would know nothing about the skip, and if the
+            // directory has since lost its `.git` it would look like an
+            // ordinary part of the tracked tree whose files the
+            // checkpoint "did not hold" — which is how a rollback
+            // deletes them. As an omission it reads, on this mise and on
+            // an older one, as what it is: a path this commit did not
+            // capture.
             omitted: self
                 .tree
                 .coverage
                 .omitted
                 .iter()
+                .chain(self.tree.coverage.nested.iter())
                 .filter_map(|item| portable(&item.path))
                 .collect(),
             incomplete: self
@@ -545,18 +580,35 @@ pub(crate) struct RootRecord {
 /// The effective rules a capture ran under, persisted so a checkpoint can
 /// say for any path whether it was captured, known absent, uncovered, or
 /// omitted.
+///
+/// Unknown fields are refused rather than skipped: what this record does
+/// not say decides whether a live file is deleted, so a reader that
+/// cannot see all of it must not answer from the part it understands.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// Which matcher read `exclude` when this checkpoint was written.
+    ///
+    /// Added later, so its absence marks a checkpoint written by a mise
+    /// that read exclusion globs differently. A replay cannot know what
+    /// such a checkpoint covered, so it says so rather than treating an
+    /// unmatched path as one the snapshot held and deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<PathReason>,
+    /// Nested repositories saved as a commit pointer without their files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<PathReason>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CoverageEntry {
     /// `~`-relative when under `$HOME`, absolute otherwise.
     pub path: String,
@@ -571,6 +623,17 @@ pub(crate) struct CoverageEntry {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one, which clears what another machine published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, when it declared a list.
+    /// Recorded so a replay knows which paths the checkpoint never set
+    /// out to hold: without it an unselected file looks known-absent, and
+    /// a rollback deletes something the checkpoint never managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
