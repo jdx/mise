@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, bail};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
+pub(crate) use crate::config::edit::{declaration_file, read_document};
 use crate::config::{Config, Settings};
 use crate::file::{self, display_path};
 use crate::path::PathExt;
@@ -457,28 +458,6 @@ fn inside_capture() -> Result<bool> {
                 && parent == std::ffi::OsStr::new(&marker.uuid)
         }),
     )
-}
-
-/// `config.toml`, or `config.local.toml` next to it for machine-only
-/// declarations.
-pub(crate) fn declaration_file(local: bool) -> Result<PathBuf> {
-    let global = crate::config::global_shared_config_path();
-    if !local {
-        return Ok(global);
-    }
-    let dir = global.parent().unwrap_or(Path::new("."));
-    Ok(dir.join("config.local.toml"))
-}
-
-pub(crate) fn read_document(path: &Path) -> Result<DocumentMut> {
-    if path.exists() {
-        let text = file::read_to_string(path)?;
-        Ok(text
-            .parse::<DocumentMut>()
-            .map_err(|err| eyre::eyre!("parsing {}: {err}", display_path(path)))?)
-    } else {
-        Ok(DocumentMut::new())
-    }
 }
 
 /// The `[dotfiles]` key of a path: `~/…` with forward slashes on every

@@ -79,6 +79,14 @@ static INIT: Once = Once::new();
 /// tasks defined".
 const NODE_GYP_BOOTSTRAP_CMD: &str = "__node-gyp-bootstrap";
 
+/// The two private trampolines embedded aube routes through mise.
+enum EmbeddedCli {
+    /// Bootstrap aube's cached `node-gyp` and print its path.
+    NodeGypBootstrap,
+    /// Run the rest of the argv as an aube command line.
+    AubeCli,
+}
+
 /// Register mise as aube's host. Idempotent and cheap; call it before any
 /// aube work rather than relying on a single startup hook, so the library
 /// entry points (`npm:` installs and registry metadata queries) are each
@@ -98,14 +106,33 @@ pub(crate) fn init() {
 
 /// Handle aube's private trampoline argv before mise's own parser, tokio
 /// runtime, or naked-run rewrite touch the args. Returns `Some(exit_code)`.
+pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
+    match embedded_cli_command(args)? {
+        EmbeddedCli::NodeGypBootstrap => Some(run_node_gyp_bootstrap(args)),
+        EmbeddedCli::AubeCli => Some(run_aube_cli()),
+    }
+}
+
+/// Run an aube command line that reached mise as `npm_execpath`.
+///
+/// A package script that re-invokes its package manager — the
+/// `${npm_execpath} run verify-build` a prebuilt-binary check uses — lands
+/// here through the shim aube writes for an embedding host. Handing the argv
+/// to [`aube::cli_main`] gives that script aube's `run` (and `exec`, and
+/// `install`) rather than mise's task runner, which would read `verify-build`
+/// as a task name and report "no tasks defined". `cli_main` drops the private
+/// token itself, so the argv goes over unchanged.
+fn run_aube_cli() -> i32 {
+    init();
+    aube::cli_main(&MISE_HOST)
+}
+
+/// Bootstrap aube's cached `node-gyp` and print its path.
 ///
 /// Uses [`aube::embed::bootstrap_node_gyp`] (aube ≥ 2.2) rather than routing
 /// through [`aube::cli_main`], matching standalone aube's `__node-gyp-bootstrap`
-/// behavior: bootstrap into the cache and print the executable path.
-pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
-    if !is_embedded_cli_command(args) {
-        return None;
-    }
+/// behavior.
+fn run_node_gyp_bootstrap(args: &[String]) -> i32 {
     let project_dir = args
         .get(2)
         .map(PathBuf::from)
@@ -118,23 +145,27 @@ pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
         Ok(rt) => rt,
         Err(err) => {
             eprintln!("mise: failed to start runtime for node-gyp bootstrap: {err}");
-            return Some(1);
+            return 1;
         }
     };
     match runtime.block_on(aube::embed::bootstrap_node_gyp(&project_dir)) {
         Ok(path) => {
             println!("{}", path.display());
-            Some(0)
+            0
         }
         Err(err) => {
             eprintln!("{err:?}");
-            Some(1)
+            1
         }
     }
 }
 
-fn is_embedded_cli_command(args: &[String]) -> bool {
-    args.get(1).map(String::as_str) == Some(NODE_GYP_BOOTSTRAP_CMD)
+fn embedded_cli_command(args: &[String]) -> Option<EmbeddedCli> {
+    match args.get(1).map(String::as_str)? {
+        NODE_GYP_BOOTSTRAP_CMD => Some(EmbeddedCli::NodeGypBootstrap),
+        aube::embed::CLI_TRAMPOLINE_ARG => Some(EmbeddedCli::AubeCli),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -166,16 +197,40 @@ mod tests {
 
     #[test]
     fn detects_aube_node_gyp_bootstrap_trampoline() {
-        assert!(is_embedded_cli_command(&[
-            "mise".into(),
-            NODE_GYP_BOOTSTRAP_CMD.into(),
-            "/tmp/project".into(),
-        ]));
-        assert!(!is_embedded_cli_command(&[
-            "mise".into(),
-            "install".into(),
-            "node".into(),
-        ]));
-        assert!(!is_embedded_cli_command(&["mise".into()]));
+        assert!(matches!(
+            embedded_cli_command(&[
+                "mise".into(),
+                NODE_GYP_BOOTSTRAP_CMD.into(),
+                "/tmp/project".into(),
+            ]),
+            Some(EmbeddedCli::NodeGypBootstrap)
+        ));
+        assert!(embedded_cli_command(&["mise".into(), "install".into(), "node".into()]).is_none());
+        assert!(embedded_cli_command(&["mise".into()]).is_none());
+    }
+
+    /// The `npm_execpath` shim's argv: the token first, the package script's
+    /// own command line after it.
+    #[test]
+    fn detects_aube_cli_trampoline() {
+        assert!(matches!(
+            embedded_cli_command(&[
+                "mise".into(),
+                aube::embed::CLI_TRAMPOLINE_ARG.into(),
+                "run".into(),
+                "verify-build".into(),
+            ]),
+            Some(EmbeddedCli::AubeCli)
+        ));
+        // Only in first position — `mise run <that name>` stays a task run,
+        // which is what the naked-run rewrite would otherwise produce.
+        assert!(
+            embedded_cli_command(&[
+                "mise".into(),
+                "run".into(),
+                aube::embed::CLI_TRAMPOLINE_ARG.into(),
+            ])
+            .is_none()
+        );
     }
 }

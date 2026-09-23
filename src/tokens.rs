@@ -1,6 +1,8 @@
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::config::Settings;
 use crate::env;
+use eyre::{Result, eyre};
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use serde_yaml::Value;
 use std::collections::HashMap;
@@ -37,7 +39,16 @@ pub(crate) fn parse_tokens_toml(contents: &str) -> Option<HashMap<String, String
     Some(
         file.tokens?
             .into_iter()
-            .filter_map(|(host, entry)| entry.token.map(|token| (host, token)))
+            .filter_map(|(host, entry)| {
+                // Match the env-var path (`env::scoped_var`), which trims and
+                // drops empties: a token with a stray trailing newline is not
+                // an HTTP header value.
+                let token = entry.token?.trim().to_string();
+                if token.is_empty() {
+                    return None;
+                }
+                Some((host, token))
+            })
             .collect(),
     )
 }
@@ -248,6 +259,23 @@ pub(crate) fn get_git_credential_token(provider: &str, host: &str) -> Option<Str
     result
 }
 
+/// Build an `Authorization: Bearer <token>` header value.
+///
+/// Tokens reach mise from environment variables, credential helpers, config
+/// files and `gh`/`glab` config, so a value containing a character that is
+/// illegal in an HTTP header (a newline, say) is a user-configuration problem,
+/// not a bug. Returning an error keeps it from aborting the process, and the
+/// token never appears in the message.
+pub(crate) fn bearer_header(provider: &str, token: &str) -> Result<HeaderValue> {
+    let mut value = HeaderValue::from_str(format!("Bearer {token}").as_str()).map_err(|_| {
+        eyre!(
+            "invalid {provider} token: it contains characters that cannot be sent in an HTTP header (token redacted)"
+        )
+    })?;
+    value.set_sensitive(true);
+    Ok(value)
+}
+
 pub(crate) fn mask_token(token: &str) -> String {
     let len = token.chars().count();
     if len <= 4 {
@@ -354,6 +382,59 @@ pub(crate) fn first_existing_file(candidates: Vec<PathBuf>, fallback: PathBuf) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_bearer_header_marks_the_value_sensitive() {
+        let value = bearer_header("GitHub", "ghp_abc123").unwrap();
+        assert_eq!(value, "Bearer ghp_abc123");
+        assert!(
+            value.is_sensitive(),
+            "the Authorization value must be redacted from reqwest's debug output"
+        );
+    }
+
+    /// #13471: this used to be `HeaderValue::from_str(..).unwrap()`, which
+    /// aborted the process on a token containing a newline.
+    #[test]
+    fn test_bearer_header_rejects_invalid_characters_without_leaking_the_token() {
+        for token in [
+            "ghp_a\nsecret_value",
+            "ghp_a\rsecret_value",
+            "ghp_a\0secret_value",
+        ] {
+            let err = bearer_header("GitHub", token)
+                .expect_err("{token:?} is not a legal header value")
+                .to_string();
+            assert!(err.contains("invalid GitHub token"), "{err}");
+            assert!(
+                !err.contains("secret_value"),
+                "token leaked into error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_tokens_toml_trims_and_drops_blank_tokens() {
+        let tokens = parse_tokens_toml(
+            r#"
+[tokens."github.com"]
+token = "  ghp_abc123\n"
+
+[tokens."blank.example.com"]
+token = "   "
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            tokens.get("github.com").map(String::as_str),
+            Some("ghp_abc123")
+        );
+        assert!(
+            !tokens.contains_key("blank.example.com"),
+            "a whitespace-only token is no token at all"
+        );
+    }
 
     #[test]
     fn test_first_existing_file_prefers_the_earliest_that_exists() {
