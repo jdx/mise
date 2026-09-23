@@ -3990,7 +3990,14 @@ impl BootstrapStatus {
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
             };
             let (state_str, state_json, missing) = match &state {
-                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Applied => (
+                    match system::files::permissions_target_absent(&req) {
+                        Some(reason) => format!("applied ({reason})"),
+                        None => "applied".to_string(),
+                    },
+                    "applied",
+                    false,
+                ),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)
@@ -4003,17 +4010,19 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                if req.mode == system::files::FileMode::Content {
-                    "content inline".to_string()
-                } else {
-                    format!("{} {}", req.mode.name(), req.source.display_user())
+                match req.mode {
+                    system::files::FileMode::Content => "content inline".to_string(),
+                    system::files::FileMode::Permissions => {
+                        format!("permissions {:04o}", req.permissions.unwrap_or_default())
+                    }
+                    _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": (req.mode != system::files::FileMode::Content)
+                "source": req.mode.has_source()
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
