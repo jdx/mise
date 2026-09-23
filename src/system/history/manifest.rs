@@ -10,7 +10,7 @@ use super::shadow::{HistoryRepo, Overlay};
 
 pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
@@ -18,6 +18,19 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
+    /// The entry's own `exclude` globs, relative to its path. Written
+    /// only when the declaration states one, so a setup without them
+    /// stays readable by older clients — and a declared but empty list,
+    /// which clears what another machine published, is not mistaken for
+    /// no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` globs, relative to its path. Written
+    /// only when the entry declares a list, so a setup without one stays
+    /// readable by older clients — and a declared but empty list, which
+    /// selects nothing, is not mistaken for no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -165,10 +178,7 @@ impl Manifest {
         });
         for (display, bits) in modes {
             let path = crate::file::replace_path(display);
-            let owner = entries
-                .iter()
-                .filter(|entry| path.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count());
+            let owner = super::tracked::owning_entry(entries, &path);
             let contains_entries = entries
                 .iter()
                 .any(|entry| entry.path.starts_with(&path) && entry.path != path);
@@ -258,6 +268,18 @@ impl Manifest {
                         &theirs.variants,
                         &format!("{path}: variants"),
                     )?,
+                    exclude: choose(
+                        &before.exclude,
+                        &ours.exclude,
+                        &theirs.exclude,
+                        &format!("{path}: exclude"),
+                    )?,
+                    include: choose(
+                        &before.include,
+                        &ours.include,
+                        &theirs.include,
+                        &format!("{path}: include"),
+                    )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
             };
@@ -330,6 +352,8 @@ impl Manifest {
             policy.encrypt = enrollment.encrypt;
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
+            entry.exclude = enrollment.exclude.clone();
+            entry.include = enrollment.include.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -356,11 +380,14 @@ impl Manifest {
         paths
     }
 
+    /// The enrollment that owns a portable path: the most specific one,
+    /// by component count, as [`crate::system::history::tracked::owning_entry`]
+    /// decides for live paths. Byte length is not the same rule.
     fn owner(&self, path: &str) -> Option<&Enrollment> {
         self.enrollment
             .iter()
             .filter(|entry| path == entry.path || strictly_below(path, &entry.path))
-            .max_by_key(|entry| entry.path.len())
+            .max_by_key(|entry| portable_components(&entry.path))
     }
 
     /// Carry inactive streams and repository-owned files from the same parent
@@ -429,6 +456,21 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            // both lists are validated, and either may be absent: a
+            // declaration that states none is not a declaration that
+            // states an empty one
+            let exclude: &[String] = entry.exclude.as_deref().unwrap_or_default();
+            let include: &[String] = entry.include.as_deref().unwrap_or_default();
+            for (key, patterns) in [("exclude", exclude), ("include", include)] {
+                for pattern in patterns {
+                    if let Err(err) = glob::Pattern::new(pattern) {
+                        bail!(
+                            "invalid {key} pattern {pattern:?} for {}: {err}",
+                            entry.path
+                        );
+                    }
+                }
+            }
             for variant in &entry.variants {
                 let name = variant.name();
                 if name.contains('@')
@@ -509,6 +551,22 @@ impl Manifest {
     }
 }
 
+/// How many components a portable path has.
+///
+/// **The most-specific-owner rule is one rule, so it is one call.** Live
+/// ownership ranks with `Path::components`, which skips an empty segment
+/// and a `.`. Counting a portable path with `split('/')` did not: a
+/// trailing or a doubled slash inflated it, and a manifest written
+/// elsewhere or edited by hand could then rank `home/.config/` above
+/// `home/.config/mise` and name the wrong enrollment's stream — the
+/// defect that ranking by byte length was, arriving from the other side.
+/// Rather than a second implementation that agrees today, this is the
+/// same call: a portable path is `/`-separated, and `/` is a separator
+/// on every host mise runs on.
+fn portable_components(path: &str) -> usize {
+    std::path::Path::new(path).components().count()
+}
+
 /// Whether a portable path is inside the directory `prefix` (not `prefix`
 /// itself).
 fn strictly_below(path: &str, prefix: &str) -> bool {
@@ -530,6 +588,110 @@ fn plain(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A reader that cannot see an entry's lists must refuse the
+    /// manifest, not ignore them.** An older mise that skipped an
+    /// unknown `include` would read the entry as covering its whole
+    /// tree, and a rollback would then delete the files the list never
+    /// selected — the checkpoint "did not hold" them because they were
+    /// never selected, which is not the same as their being absent.
+    /// `deny_unknown_fields` is what makes that impossible, so it is
+    /// asserted here rather than assumed.
+    #[test]
+    fn a_reader_without_the_lists_refuses_the_manifest() {
+        /// `Enrollment` exactly as a released mise declares it.
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ReleasedEnrollment {
+            path: String,
+            autosave: bool,
+            encrypt: bool,
+            variants: Vec<crate::system::history::select::Variant>,
+        }
+
+        let plain = Enrollment {
+            path: "home/.codex".into(),
+            autosave: true,
+            encrypt: false,
+            variants: vec![],
+            exclude: None,
+            include: None,
+        };
+        let json = serde_json::to_string(&plain).unwrap();
+        let read: ReleasedEnrollment = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.path, "home/.codex");
+        assert!(read.autosave);
+        assert!(!read.encrypt);
+        assert!(read.variants.is_empty());
+
+        for entry in [
+            Enrollment {
+                include: Some(vec!["config.toml".into()]),
+                ..plain.clone()
+            },
+            Enrollment {
+                include: Some(vec![]),
+                ..plain.clone()
+            },
+            Enrollment {
+                exclude: Some(vec!["cache/**".into()]),
+                ..plain.clone()
+            },
+        ] {
+            let json = serde_json::to_string(&entry).unwrap();
+            let error = serde_json::from_str::<ReleasedEnrollment>(&json)
+                .expect_err("a released mise must refuse an entry it cannot fully read");
+            assert!(
+                error.to_string().contains("unknown field"),
+                "unexpected refusal: {error}"
+            );
+        }
+    }
+
+    /// A portable path is counted the way a live one is, so the
+    /// most-specific-owner rule cannot mean two things. A trailing or a
+    /// doubled slash is not a component; counting it as one would rank
+    /// `home/.config/` above `home/.config/mise`.
+    #[test]
+    fn a_portable_path_is_counted_the_way_a_live_path_is() {
+        for path in [
+            "home/.config/",
+            "home//.config",
+            "home/./.config",
+            "home/.config",
+            "home/.config/mise",
+            "config/settings.toml",
+            "home@linux/.zshrc",
+        ] {
+            assert_eq!(
+                portable_components(path),
+                std::path::Path::new(path).components().count(),
+                "{path} is counted differently from the live path it names"
+            );
+        }
+        assert_eq!(portable_components("home/.config/"), 2);
+        assert_eq!(portable_components("home//.config"), 2);
+        assert_eq!(portable_components("home/./.config"), 2);
+        assert_eq!(portable_components("home/.config/mise"), 3);
+
+        // and the deeper enrollment owns the path, whichever way the
+        // shallower one is spelled
+        let enroll = |path: &str| Enrollment {
+            path: path.to_string(),
+            autosave: true,
+            ..Default::default()
+        };
+        let manifest = Manifest {
+            enrollment: vec![enroll("home/.config"), enroll("home/.config/mise")],
+            ..Default::default()
+        };
+        assert_eq!(
+            manifest
+                .owner("home/.config/mise/config.toml")
+                .map(|entry| entry.path.as_str()),
+            Some("home/.config/mise")
+        );
+    }
 
     #[test]
     fn future_format_is_reported_before_unknown_fields() -> Result<()> {
@@ -876,6 +1038,8 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
+            include: None,
         }
     }
 
@@ -948,6 +1112,8 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -1001,6 +1167,8 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -1071,6 +1239,8 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
+            include: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -1089,5 +1259,24 @@ mod tests {
             manifest.enrollment[0].path = path.into();
             assert!(manifest.validate().is_err());
         }
+    }
+    #[test]
+    fn an_unparsable_enrollment_exclude_pattern_is_rejected() {
+        let mut manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: Some(vec!["sessions".into()]),
+                include: None,
+            }],
+            ..Default::default()
+        };
+        assert!(manifest.validate().is_ok());
+        manifest.enrollment[0].exclude = Some(vec!["[".into()]);
+        let error = manifest.validate().unwrap_err().to_string();
+        assert!(error.contains("invalid exclude pattern"), "{error}");
+        assert!(error.contains("home/.codex"), "{error}");
     }
 }

@@ -305,6 +305,7 @@ fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
 
 impl HistoryRepo {
     pub(crate) const HISTORY_REF: &'static str = "refs/heads/main";
+    const MATCHER_TRAILER: &'static str = "Mise-History-Matcher: ";
     const RECORD_TRAILER: &'static str = "Mise-History: ";
     pub(crate) fn path_in(state_dir: &Path) -> PathBuf {
         repo_dir_in(state_dir)
@@ -634,6 +635,7 @@ impl HistoryRepo {
     }
 
     /// Commit the tracked-file tree and minimal metadata to ordinary history.
+    #[cfg(test)]
     pub(crate) fn write_checkpoint(
         &self,
         snapshot_tree: Option<&str>,
@@ -659,16 +661,22 @@ impl HistoryRepo {
             },
         };
         let record = checkpoint.for_commit();
-        let message = format!(
+        let mut message = format!(
             "{}\n\n{}{}",
             checkpoint.description,
             Self::RECORD_TRAILER,
             serde_json::to_string(&record)?
         );
+        // A separate trailer preserves compatibility with older clients,
+        // whose Mise-History JSON record rejects unknown fields.
+        if let Some(matcher) = checkpoint.tree.coverage.matcher {
+            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+        }
         let parent = self.ref_oid(Self::HISTORY_REF)?;
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
     }
 
+    #[cfg(test)]
     fn advance_head(&self, commit: &str) -> Result<()> {
         // The commit's parent is the head observed when it was prepared.
         // A concurrent writer must never have its commit overwritten.
@@ -777,6 +785,13 @@ impl HistoryRepo {
             changes: Default::default(),
             operation: None,
         };
+        record.tree.coverage.matcher = message
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix(Self::MATCHER_TRAILER))
+            .map(str::parse)
+            .transpose()
+            .wrap_err_with(|| format!("reading history matcher version for {commit}"))?;
         record.created_at = commit_object
             .time()?
             .format(gix::date::time::format::ISO8601_STRICT)?;
@@ -867,6 +882,9 @@ impl HistoryRepo {
                 entries: tracked.entries.clone(),
                 ..Default::default()
             });
+            // The writer's matcher determines known absences; rebuilding
+            // metadata must not reinterpret an old snapshot as current.
+            coverage.matcher = record.tree.coverage.matcher;
             for entry in &mut coverage.entries {
                 entry.state = record
                     .tree
@@ -880,12 +898,25 @@ impl HistoryRepo {
             coverage
                 .incomplete
                 .append(&mut record.tree.coverage.incomplete);
+            // the nested list is the only record of a skipped repository —
+            // nothing is written to the tree for it — so it has to be
+            // carried forward like the other two
+            coverage.nested.append(&mut record.tree.coverage.nested);
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
             for file in Self::gix_tree_entries(&repo, &tree)? {
-                if layout.locate(&file.path).path().is_none() {
+                let located = layout.locate(&file.path);
+                let Some(path) = located.path() else {
                     continue;
+                };
+                // a gitlink is derivable from the tree, so the record needs
+                // no trailer field an older client would refuse to parse
+                if file.mode == "160000" {
+                    record.tree.coverage.nested.push(super::store::PathReason {
+                        path: crate::file::display_path(path),
+                        reason: super::tracked::NESTED_REPOSITORY_REASON.into(),
+                    });
                 }
                 let label = file.path.split('/').next().unwrap_or_default().to_string();
                 let root = roots.entry(label.clone()).or_insert_with(|| RootRecord {
@@ -1846,6 +1877,47 @@ mod tests {
     }
 
     #[test]
+    fn rebuilding_preserves_the_writers_matcher_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let manifest = super::super::manifest::Manifest {
+            enrollment: vec![super::super::manifest::Enrollment {
+                path: "home/.native".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: Some(vec!["sessions/**".into()]),
+                include: None,
+            }],
+            ..Default::default()
+        };
+        let tree = manifest
+            .write(&repo, &repo.empty_object("tree").unwrap())
+            .unwrap();
+        let current = super::super::tracked::MATCHER_VERSION;
+        for matcher in [None, Some(current), Some(current + 1)] {
+            let mut checkpoint =
+                crate::system::history::checkpoint::test_checkpoint("matcher", Some(&tree));
+            checkpoint.tree.coverage.matcher = matcher;
+            let commit = repo.write_checkpoint(Some(&tree), &checkpoint).unwrap();
+            let rebuilt = repo.read_meta(&commit).unwrap();
+            assert_eq!(rebuilt.tree.coverage.matcher, matcher);
+            let state = super::super::replay::classify_coverage(
+                &rebuilt.tree.coverage,
+                "~/.native/new.txt",
+            );
+            if matcher == Some(current) {
+                assert!(matches!(state, super::super::replay::PathState::Absent));
+            } else {
+                assert!(matches!(
+                    state,
+                    super::super::replay::PathState::Unevaluable(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn omitted_capture_paths_survive_rebuilding_from_git() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = repo(tmp.path());
@@ -1855,6 +1927,8 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -1884,9 +1958,37 @@ mod tests {
                 path: crate::file::display_path(crate::dirs::HOME.join(".native/unreadable")),
                 reason: "scan limit".into(),
             });
+        // a repository the capture skipped: the trailer is frozen for
+        // released clients, so it cannot have a field of its own, and it
+        // travels as the omission it is. A machine that rebuilds from Git
+        // has to know about the skip — otherwise, once that directory
+        // loses its `.git`, its files look like ones this checkpoint held
+        // and did not have, and a rollback deletes them.
+        checkpoint
+            .tree
+            .coverage
+            .nested
+            .push(super::super::store::PathReason {
+                path: crate::file::display_path(crate::dirs::HOME.join(".native/plugin")),
+                reason: super::super::tracked::NESTED_REPOSITORY_REASON.into(),
+            });
         let commit = repo.write_checkpoint(Some(&tree), &checkpoint).unwrap();
         let rebuilt = repo.read_meta(&commit).unwrap();
-        assert_eq!(rebuilt.tree.coverage.omitted[0].path, "~/.native/large");
+        let omitted: Vec<_> = rebuilt
+            .tree
+            .coverage
+            .omitted
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect();
+        assert!(
+            omitted.contains(&"~/.native/large"),
+            "omissions lost: {omitted:?}"
+        );
+        assert!(
+            omitted.contains(&"~/.native/plugin"),
+            "the skipped repository did not survive the round trip: {omitted:?}"
+        );
         assert_eq!(
             rebuilt.tree.coverage.incomplete[0].path,
             "~/.native/unreadable"
@@ -2039,6 +2141,8 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants,
+            exclude: None,
+            include: None,
         };
         let containing = outer.tree_path(&private)?;
         let permissions = std::collections::BTreeMap::from([(containing.clone(), 0o700)]);

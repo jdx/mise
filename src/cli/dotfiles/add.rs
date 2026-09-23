@@ -557,6 +557,7 @@ impl PlannedAdd {
             content: None,
             mode: self.mode,
             exclude: vec![],
+            include: None,
             manifest: None,
             base: config_path
                 .parent()

@@ -29,12 +29,14 @@ Linux box can share the same live path with different contents.
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
 - **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 - **`-y --yes`** — Accept without prompting
+- **`-n --dry-run`** — Show what each path expands to (files, size, what is left out) without tracking it
 - **`-h --help`** — Print help
 
 Examples:
 
 ```
 mise dot track ~/.zshrc ~/.config/hypr
+mise dot track --dry-run ~/.codex
 mise dot track ~/.zshrc --os macos
 mise dot track ~/.config/app/credentials --encrypt
 mise dot track ~/.config/app/state.json --no-autosave

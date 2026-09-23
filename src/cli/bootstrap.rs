@@ -1342,7 +1342,21 @@ impl Bootstrap {
         (self.dry_run, self.yes)
     }
 
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        // Dotfiles subcommands handle their own notices; in particular,
+        // a background watcher must leave them for a foreground command.
+        let deliver_notices = self.command.is_none();
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        let result = self.run_with_notices().await;
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        result
+    }
+
+    async fn run_with_notices(mut self) -> Result<()> {
         normalize_adopt_alias(&mut self.adopt, self.from_git.take());
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
@@ -3954,11 +3968,13 @@ impl BootstrapStatus {
         let files = system::files::files_from_config(config)?;
         system::files::validate_composed_file_footprints(&files)?;
         for req in files {
-            let state = match system::files::check(config, &req, secrets) {
-                Ok(state) => state,
-                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            // an absent entry that cannot be checked (a directory at the
+            // target, say) is an error, not a pending removal
+            let (state, removable) = match system::files::check(config, &req, secrets) {
+                Ok(state) => (state, true),
+                Err(err) => (system::files::FileState::Differs(format!("{err}")), false),
             };
-            let absent = req.mode == FileMode::Absent;
+            let absent = req.mode == FileMode::Absent && removable;
             let (state_str, state_json, missing) = match &state {
                 system::files::FileState::Applied if absent => {
                     ("absent".to_string(), "applied", false)
@@ -3987,13 +4003,21 @@ impl BootstrapStatus {
                 state_str,
                 missing,
             );
-            json_files.push(json!({
+            let mut entry = json!({
                 "target": req.target_raw,
                 "source": (!matches!(req.mode, FileMode::Content | FileMode::Absent))
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
-            }));
+            });
+            if let system::files::FileState::Differs(reason) = &state {
+                entry["reason"] = json!(if absent {
+                    format!("{reason}; will be removed")
+                } else {
+                    reason.clone()
+                });
+            }
+            json_files.push(entry);
         }
 
         let mut json_edits = vec![];

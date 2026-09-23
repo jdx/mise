@@ -427,13 +427,17 @@ assert "cat ~/.local/exclcopy/linked" "linked"
 assert_fail "test -e $HOME/.local/exclcopy/NOTES.md"
 assert_succeed "mise dotfiles status --missing"
 
-# an invalid pattern warns and is dropped instead of failing the entry
+# an invalid pattern warns and is dropped instead of failing the entry:
+# a deployment entry keeps working with the rest of its list, and the
+# rest of the list is still in force
 cat <<EOF >mise.toml
 [dotfiles]
-"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["[bad"] }
+"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["[bad", "NOTES.md"] }
 EOF
 assert_contains "mise dotfiles status 2>&1" "invalid exclude pattern"
 assert_succeed "mise dotfiles status"
+assert_succeed "mise dotfiles apply --yes"
+assert_fail "test -e $HOME/.local/excl/NOTES.md"
 
 # a config skipped for trust reasons says so instead of reporting the
 # [dotfiles] table as empty

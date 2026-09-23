@@ -32,6 +32,8 @@ assert_contains "mise dot status" "would remove (present)"
 assert_contains "mise dot status" "would remove (present (symlink))"
 assert_not_contains "mise dot status" ".other-os-rc"
 assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | [.mode, .state, (.source == null)] | join(\",\")'" "absent,differs,true"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | .reason'" "present; will be removed"
+assert_contains "mise bootstrap status --json 2>/dev/null" "present; will be removed"
 assert_fail "mise dot status --missing"
 
 # a dry run lists the removals and changes nothing
@@ -82,6 +84,7 @@ cat >mise.toml <<'TOML'
 "~/.olddir" = { mode = "absent" }
 TOML
 assert_contains "mise dot status" "is a directory"
+assert_not_contains "mise dot status ~/.olddir" "would remove"
 assert_fail "mise dot apply --yes" "~/.olddir is a directory"
 assert_fail "mise dot apply --yes --force" "~/.olddir is a directory"
 assert "cat ~/.olddir/keep" "keep"

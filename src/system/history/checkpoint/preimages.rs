@@ -60,7 +60,8 @@ impl Store {
         if index.entries.last().map(|entry| entry.commit.as_str()) != Some(head.as_str()) {
             index = self.rebuild_index_locked()?;
         }
-        self.commit_record_locked(checkpoint, index, None).map(Some)
+        self.commit_record_locked(checkpoint, index, None, &[], false)
+            .map(Some)
     }
 }
 
