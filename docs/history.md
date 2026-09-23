@@ -213,10 +213,12 @@ loads these commands from system and global configuration before starting
 the operation. See [recovery details](#recovery-details) for interrupted
 writes and concurrent edits.
 
-The same commands run after `mise dot apply` writes a matching target: a
-symlink or copy it creates, a template it renders, or an edit it applies.
-A dry run writes nothing and reloads nothing, and `mise dot sync` never
-writes live files, so it runs no reload commands either. A glob under a
+The same commands run after `mise dot apply` or the dotfiles phase of
+`mise bootstrap` writes a matching target: a symlink or copy it creates, a
+template it renders, or an edit it applies. A bootstrap run that skips the
+dotfiles phase reloads nothing. A dry run writes nothing and reloads
+nothing, and `mise dot sync` never writes live files, so it runs no reload
+commands either. A glob under a
 directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
 a `"~/.config/hypr" = "dotfiles/hypr"` entry.
 

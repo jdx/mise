@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# The dotfiles phase of `mise bootstrap` runs the `[history.reload]` commands
+# whose glob matches a target it wrote, like `mise dot apply`. Each case
+# appends to its own marker file, so a case never sees another's.
+# shellcheck disable=SC2016
+
+config="$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$MISE_CONFIG_DIR/dotfiles/app" ~/.zshrc.d
+echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+echo 'keep me' >~/.zshrc.d/local.zsh
+
+# the entries, with reload commands appending to the given marker
+write_config() {
+  cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/.zshrc.d/local.zsh/activate" = { block = 'eval "\$(mise activate zsh)"' }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/$1"
+"~/.zshrc.d/**" = "echo zsh >> $HOME/$1"
+"~/.config/other/**" = "echo other >> $HOME/$1"
+EOF
+}
+
+# a dry run writes nothing and reloads nothing
+write_config reloads-dry-run
+assert_succeed "mise bootstrap --only dotfiles --dry-run"
+assert_fail "test -e ~/reloads-dry-run"
+assert_fail "test -e ~/.config/app/settings.toml"
+
+# skipping the dotfiles phase writes nothing and reloads nothing
+write_config reloads-skip
+assert_succeed "mise bootstrap --only shell --yes"
+assert_fail "test -e ~/reloads-skip"
+assert_fail "test -e ~/.config/app/settings.toml"
+
+# every matching command runs once, after the writes; an unmatched one never
+write_config reloads-apply
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.config/app/settings.toml" "theme = dark"
+assert_contains "cat ~/.zshrc.d/local.zsh" "mise activate zsh"
+assert "cat ~/reloads-apply" $'app\nzsh'
+
+# nothing to write, nothing to reload
+write_config reloads-noop
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert_fail "test -e ~/reloads-noop"
+
+# only the commands matching what was actually written run
+write_config reloads-changed
+echo 'theme = light' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.config/app/settings.toml" "theme = light"
+assert "cat ~/reloads-changed" "app"
+
+# a later entry that fails still leaves the earlier one written, so its
+# command runs before the error is reported (root can write anywhere, so the
+# failure cannot be provoked there)
+if [ "$(id -u)" != 0 ]; then
+  mkdir -p ~/locked
+  chmod 555 ~/locked
+  cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/locked/sub/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads-partial"
+"~/locked/**" = "echo locked >> $HOME/reloads-partial"
+EOF
+  echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+  assert_fail "mise bootstrap --only dotfiles --yes"
+  assert "cat ~/.config/app/settings.toml" "theme = dark"
+  assert "cat ~/reloads-partial" "app"
+fi

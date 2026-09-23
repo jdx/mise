@@ -183,8 +183,8 @@ and configuration before changing the original file.
 
 `apply` also runs as part of [`mise bootstrap`](/bootstrap.html), with the
 configured `pre-dotfiles` and `post-dotfiles` hooks. `mise install` and
-`mise bootstrap packages` leave dotfiles alone. After `mise dot apply`
-writes a target, it runs the matching
+`mise bootstrap packages` leave dotfiles alone. After `mise dot apply` or
+the dotfiles phase of `mise bootstrap` writes a target, it runs the matching
 [`[history.reload]` commands](/history.html#reload-an-application-after-restoring-files),
 for example to reload the application that reads it.
 
