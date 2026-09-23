@@ -35,8 +35,9 @@
           ></a>
           <span v-else v-html="highlightMatches(entry.short)"></span>
           <a
+            v-if="entry.versionsUrl"
             class="mise-versions"
-            :href="`https://mise-versions.jdx.dev/tools/${encodeURIComponent(entry.short)}`"
+            :href="entry.versionsUrl"
             title="Versions and security info on mise-versions"
             >details ↗</a
           >

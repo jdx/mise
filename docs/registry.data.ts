@@ -31,7 +31,22 @@ type Tool = {
   backends: { name: string; url: string; verification: Verification[] }[];
   aliases: string[];
   os: string[];
+  /** Link to the tool's mise-versions page, or "" when it has none. */
+  versionsUrl: string;
 };
+
+// Registry tools that mise-versions has no page for; their links would redirect
+// to its home page. Remove an entry once https://mise-versions.jdx.dev/tools/<name>
+// resolves.
+const missingVersionsPages = new Set([
+  "aws-cli",
+  "chromedriver",
+  "daemon-presets",
+  "mole",
+  "sui",
+  "tiny",
+  "vim",
+]);
 
 type AquaEnabled = { enabled?: boolean };
 type AquaCosign = AquaEnabled & { key?: unknown; bundle?: unknown };
@@ -219,6 +234,9 @@ export default {
         backends,
         aliases: tool.aliases ?? [],
         os: tool.os ?? [],
+        versionsUrl: missingVersionsPages.has(key)
+          ? ""
+          : `https://mise-versions.jdx.dev/tools/${encodeURIComponent(key)}`,
       };
     }
 
