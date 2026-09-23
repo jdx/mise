@@ -56,6 +56,12 @@ cat >mise.local.toml <<'TOML'
 PITCHFORK_STATE_DIR = "/nonexistent/consumer-supervisor"
 TOML
 assert_contains 'mise daemons providers ls --json' '"status": "running"'
+# A project-controlled PATH cannot replace the recorded supervisor client.
+mkdir fake-bin
+printf '#!/bin/sh\nexit 42\n' >fake-bin/pitchfork
+chmod +x fake-bin/pitchfork
+PATH="$PWD/fake-bin:$PATH" mise daemons providers start pg
+PATH="$PWD/fake-bin:$PATH" assert_contains 'mise daemons providers ls --json' '"status": "running"'
 # Removing a declaration must leave its running server visible and stoppable.
 printf '' >"$MISE_CONFIG_DIR/config.toml"
 assert_contains 'mise daemons providers ls --json' '"name": "pg"'

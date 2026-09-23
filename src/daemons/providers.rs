@@ -191,14 +191,15 @@ impl Provider {
         let (_, ts) = runtime::toolset(&global, false).await?;
         let root = directory(&self.name);
         let previous = runtime::read_state(&root)?;
-        let saved = Some(previous.bin).filter(|bin| bin.is_file());
-        let fallback = saved.clone().or_else(|| which::which("pitchfork").ok());
-        let mut rt = runtime::Runtime::from_toolset(&global, &ts, fallback.as_deref()).await?;
-        // A provider with state keeps the pitchfork that started it, even when a
-        // different one comes first on PATH.
-        if let Some(bin) = saved {
-            rt.bin = bin;
-        }
+        let mut rt = if previous.bin.is_file() {
+            runtime::Runtime {
+                bin: previous.bin,
+                env: ts.env_with_path(&global).await?,
+            }
+        } else {
+            runtime::Runtime::from_toolset(&global, &ts, which::which("pitchfork").ok().as_deref())
+                .await?
+        };
         let path = root.join("supervisor.json");
         if path.is_file() {
             let identity: EnvMap = serde_json::from_slice(&std::fs::read(path)?)?;
@@ -221,6 +222,7 @@ impl Provider {
             );
         }
         runtime::write_if_changed(&connection, &serde_json::to_vec(&identity)?)?;
+        let rt = &owner;
         let path = root.join("definition.json");
         let desired = serde_json::to_vec(&self.declaration)?;
         if std::fs::read(&path).is_ok_and(|old| old != desired)
