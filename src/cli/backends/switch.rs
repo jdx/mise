@@ -79,20 +79,33 @@ impl BackendsSwitch {
             );
         }
 
-        if !switches.is_empty() {
-            self.switch(switches).await?;
-        }
+        let missing = if switches.is_empty() {
+            vec![]
+        } else {
+            self.switch(switches).await?
+        };
+        let mut problems = vec![];
         if !shadowed.is_empty() {
-            bail!(
-                "did not switch {}; `mise lock` cannot relock a tool another config shadows, so run this from a directory whose config does not set it",
+            problems.push(format!(
+                "did not switch {}: `mise lock` cannot relock a tool another config shadows, so run this from a directory whose config does not set it",
                 shadowed.join(", ")
-            );
+            ));
+        }
+        if !missing.is_empty() {
+            problems.push(format!(
+                "did not switch {}: the entry is not in that lockfile yet (a legacy monorepo lockfile, for example); run `mise lock` first",
+                missing.join(", ")
+            ));
+        }
+        if !problems.is_empty() {
+            bail!("{}", problems.join("\n"));
         }
         Ok(())
     }
 
-    /// Rewrite, relock, and reinstall the switches.
-    async fn switch(&self, switches: Vec<Switch>) -> Result<()> {
+    /// Rewrite, relock, and reinstall the switches. Returns the switches whose
+    /// entries were not found in their lockfile.
+    async fn switch(&self, switches: Vec<Switch>) -> Result<Vec<String>> {
         let mut by_lockfile: BTreeMap<&PathBuf, Vec<&Switch>> = BTreeMap::new();
         for switch in &switches {
             by_lockfile
@@ -101,6 +114,7 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
         let mut relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)> = vec![];
@@ -134,6 +148,19 @@ impl BackendsSwitch {
                             .filter(|backend| backend != &switch.from)
                     },
                 );
+                if moved.is_empty() {
+                    missing.push(format!(
+                        "{}@{} in {}",
+                        switch.short,
+                        switch
+                            .versions
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        display_path(path)
+                    ));
+                }
                 let prefix = if self.dry_run {
                     "would switch"
                 } else {
@@ -167,7 +194,7 @@ impl BackendsSwitch {
             }
         }
         if self.dry_run || switched.is_empty() {
-            return Ok(());
+            return Ok(missing);
         }
 
         // Snapshot each lockfile and its graph sidecar directory: a relock can
@@ -203,7 +230,8 @@ impl BackendsSwitch {
             )));
         }
 
-        self.reinstall(&switched).await
+        self.reinstall(&switched).await?;
+        Ok(missing)
     }
 
     /// Write the rewritten lockfiles and relock them under the new backend,
