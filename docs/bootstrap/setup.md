@@ -184,7 +184,7 @@ or fixing permissions, in `[tasks.bootstrap]` of the shared configuration:
 
 ```toml
 [tasks.bootstrap]
-run = "chmod 700 ~/.ssh"
+run = "install -d -m 700 ~/.ssh"
 ```
 
 Adoption runs the task once the files are restored, and every later
