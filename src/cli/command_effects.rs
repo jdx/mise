@@ -492,12 +492,12 @@ mod tests {
                 .find(|f| f.flag.name == name)
                 .unwrap_or_else(|| panic!("`mise completion` has no --{name}"))
         };
-        assert_eq!(flag("install").effect, Some(usage_rs::spec::Effect::Write));
+        assert_eq!(flag("install").extra.effect, Some(usage_rs::spec::Effect::Write));
         // `--force` only widens which file an install may replace, so it writes for that reason
         // rather than one of its own.
-        assert_eq!(flag("force").effect, Some(usage_rs::spec::Effect::Write));
+        assert_eq!(flag("force").extra.effect, Some(usage_rs::spec::Effect::Write));
         // And a flag that changes only what is printed stays unset.
-        assert_eq!(flag("include-bash-completion-lib").effect, None);
+        assert_eq!(flag("include-bash-completion-lib").extra.effect, None);
     }
 
     /// Adding a command without deciding what it does to the world is the
