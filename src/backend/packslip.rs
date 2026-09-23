@@ -754,12 +754,11 @@ impl PackslipBackend {
                 return Ok(None);
             }
         };
-        Ok(Some(
-            versions
-                .into_iter()
-                .filter_map(|v| version_info(Some(v.version), v.created_at, v.release_url))
-                .collect(),
-        ))
+        let versions: Vec<_> = versions
+            .into_iter()
+            .filter_map(|v| version_info(Some(v.version), v.created_at, v.release_url))
+            .collect();
+        Ok((!versions.is_empty()).then_some(versions))
     }
 
     /// The release tag mise-versions records for `version`, so its release
@@ -913,19 +912,26 @@ impl PackslipBackend {
         let asset_name = bundle_name(project);
         let repo = Self::repo(project)
             .ok_or_else(|| eyre!("packslip:{project} publishes no signed release list"))?;
-        let mirrored = match self.mirrored_tag(project, &tv.version).await? {
-            Some(tag) => Some(github::get_release_with_versions_host(&repo, &tag, true).await?),
-            None => None,
+        let find = |releases: &[github::GithubRelease]| {
+            releases.iter().find_map(|r| {
+                let asset = r.assets.iter().find(|a| a.name == asset_name)?;
+                (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
+                    .then(|| asset.clone())
+            })
         };
-        let releases = match mirrored {
-            Some(release) => vec![release],
-            None => github::list_releases_including_prereleases(&repo).await?,
-        };
-        let found = releases.iter().find_map(|r| {
-            let asset = r.assets.iter().find(|a| a.name == asset_name)?;
-            (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
-                .then_some(asset)
-        });
+        let mut found = None;
+        if let Some(tag) = self.mirrored_tag(project, &tv.version).await? {
+            let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
+            found = find(std::slice::from_ref(&release));
+            if found.is_none() {
+                // A mirrored release fetched before the packslip was uploaded
+                // must not stand in for the release as it is now.
+                debug!("packslip:{project}: the mirrored {tag} carries no {asset_name}");
+            }
+        }
+        if found.is_none() {
+            found = find(&github::list_releases_including_prereleases(&repo).await?);
+        }
         let Some(asset) = found else {
             bail!(
                 "github.com/{repo} has no release {} carrying {asset_name}; mise installs from a packslip and does not guess at release assets",
