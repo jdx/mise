@@ -240,7 +240,7 @@ URL checks skip backends that cannot record a download URL: `asdf`, `cargo`,
 URLs; npm and PyPI dependency graphs have their own locked-install checks.
 vfox tool plugins can record URLs and participate in URL locking.
 [Tool stubs](/dev-tools/tool-stubs#locked-tool-stub) follow the same rules,
-using their own `[lock]` or their project's `mise.lock`.
+using their project's `mise.lock`.
 
 ## Dependency graphs
 

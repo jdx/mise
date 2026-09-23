@@ -3476,10 +3476,9 @@ This reads an existing stub file and fills in any missing checksum/size fields b
             long_help #"""
 Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
 
-Inside a project, the data goes into the `mise.lock` of the nearest project
-config above the stub, and the stub keeps its version request. Outside a
-project, the stub is pinned to the exact version and the data goes into its
-`[lock]` section.
+The data goes into the `mise.lock` of the nearest project config above the
+stub, and the stub keeps its version request. It is an error when no project
+config is found.
 """#
             conflicts "--url" "--platform-url" "--bin" "--platform-bin" "--fetch" "--skip-download"
         }

@@ -57,8 +57,8 @@ The `-S` flag tells `env` to split the command line on spaces, so multiple argum
 
 A stub contains a tool declaration, not an entire `mise.toml`. Put fields at the
 top level; do not wrap them in `[tools]`. Backend-specific installation options
-are passed to the selected backend, while `tool`, `version`, `bin`, `os`,
-`install_env`, and embedded `lock` data control the stub itself.
+are passed to the selected backend, while `tool`, `version`, `bin`, `os`, and
+`install_env` control the stub itself.
 
 ### Optional Fields
 
@@ -196,7 +196,7 @@ Use explicit platform prefixes when a filename is ambiguous.
 - `--platform-bin PLATFORM:PATH` - Set a platform-specific binary path
 - `--checksum-algorithm ALGORITHM` - Generate `blake3` (default) or `sha256` checksums
 - `--skip-download` - Generate without checksums or binary detection; review the binary path and run `--fetch` before relying on integrity checks
-- `--lock` - Resolve and record lock data (exact version + platform URLs/checksums) for an existing stub, in its project's `mise.lock` or, outside a project, in the stub; see [Locked Tool Stub](#locked-tool-stub)
+- `--lock` - Resolve and record lock data (exact version + platform URLs/checksums) for an existing stub in its project's `mise.lock`; see [Locked Tool Stub](#locked-tool-stub)
 - `--fetch` - Fetch missing checksums and sizes for an existing stub file
 
 `--checksum-algorithm` cannot be combined with `--lock` or `--skip-download`, because those modes do not calculate checksums.
@@ -276,7 +276,8 @@ bin = "gh"
 ### Locked Tool Stub
 
 Lock a backend stub to record a concrete version and the platform download
-metadata its backend can provide. Installs then use the recorded URLs, verify
+metadata its backend can provide. Like a tool in `mise.toml`, a stub's lock data
+lives in its project's `mise.lock`. Installs then use the recorded URLs, verify
 the recorded checksums, and work in locked mode (`--locked` or
 `MISE_LOCKED=1`).
 
@@ -291,23 +292,14 @@ provide a URL cannot supply the same download shortcut.
 # Create a stub with a fuzzy version
 mise generate tool-stub ./bin/node --version 24
 
-# Resolve the version and record platform URLs/checksums
+# Resolve the version and record platform URLs/checksums in mise.lock
 mise generate tool-stub ./bin/node --lock
 ```
 
-Where the lock data goes depends on where the stub lives:
-
-- **Inside a project**, it goes into the `mise.lock` of the nearest project
-  config above the stub, the same lockfile that config's tools use. The stub
-  keeps its version request (`24`), just as `mise.toml` does, and `mise.lock`
-  records the resolved version. This uses the lockfile's existing platforms, or
-  the default platforms for a new lockfile.
-- **Outside a project**, it goes into a `[lock]` section in the stub and the
-  stub's `version` is pinned to the resolved version, so the stub carries its
-  lock wherever it is copied or downloaded. It fetches URLs
-  for all common platforms (linux-x64, linux-x64-musl, linux-arm64,
-  linux-arm64-musl, macos-x64, macos-arm64, and windows-x64), or
-  `lockfile_platforms` plus the current platform when that is configured.
+The stub keeps its version request (`24`), just as `mise.toml` does, and the
+`mise.lock` of the nearest project config above the stub records the resolved
+version, using the lockfile's existing platforms, or the default platforms for
+a new lockfile. `--lock` fails when no project config is found above the stub.
 
 ```toml
 # mise.lock
@@ -331,12 +323,11 @@ directory it is run from, and a symlinked stub is followed to its real
 location. `./bin/node` and `~/.local/bin/node` linked to it both use the
 project's `mise.lock` from any working directory. Local and environment configs
 (`mise.local.toml`, `mise.{env}.toml`) are not used, so a committed stub locks
-the same way on every machine.
+the same way on every machine. In locked mode, a stub without an entry for the
+current platform is rejected like any unlocked tool.
 
-An embedded `[lock]` takes precedence over `mise.lock`, but only when it covers
-the current platform. Running `--lock` on a stub inside a project moves an
-existing `[lock]` into `mise.lock`. In locked mode, a stub needs lock data for the current
-platform from one of the two, or it is rejected like any unlocked tool.
+Older mise versions wrote lock data into a `[lock]` section in the stub. That
+section is ignored, and `--lock` removes it.
 
 #### Bumping a Locked Version
 
@@ -348,8 +339,8 @@ request from scratch. Pass `--version` to change the request itself:
 mise generate tool-stub ./bin/node --lock --version 26
 ```
 
-For a stub recorded in `mise.lock`, `mise lock --bump` also re-resolves its
-version request.
+`mise lock --bump` also re-resolves the version requests of the stubs listed
+in the lockfile.
 
 ### HTTP Backend with Platform Support
 
@@ -457,4 +448,4 @@ chmod +x ./bin/python
 The command after `--` is essential: `mise x node@24` selects the runtime,
 and `node "$@"` names the executable and preserves the caller's arguments.
 These wrappers require Bash and mise and do not embed artifact metadata. Use
-the TOML stub format when you need platform mappings or embedded lock data.
+the TOML stub format when you need platform mappings or lock data.

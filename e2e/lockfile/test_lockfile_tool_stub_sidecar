@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Inside a project, a tool stub's lock data lives in the project's mise.lock,
-# found by walking up from where the stub lives.
+# A tool stub's lock data lives in its project's mise.lock, found by walking
+# up from where the stub lives.
 
 export MISE_LOCKFILE=1
 
@@ -18,6 +18,10 @@ tool = "aqua:jqlang/jq"
 version = "1.7"
 EOF
 chmod +x bin/jq
+
+# Without an entry, locked mode rejects the stub. This runs before anything
+# installs jq, since an installed version would satisfy the request.
+assert_fail_contains "MISE_LOCKED=1 mise tool-stub bin/jq --version 2>&1" "is not in the lockfile"
 
 assert_contains "mise generate tool-stub bin/jq --lock" "Updated lockfile:"
 # The stub keeps its request; the lockfile records the resolution and the stub.
@@ -54,15 +58,18 @@ assert_not_contains "cat mise.lock" "tool-stubs"
 assert_not_contains "cat mise.lock" "jqlang"
 mv jq.bak bin/jq
 
-# Outside a project, --lock embeds the lock in the stub. Moved into the
-# project and locked again, the lock moves into mise.lock.
+# Outside a project there is no mise.lock to record into.
 cp bin/jq ../elsewhere/jq
-assert_succeed "mise generate tool-stub ../elsewhere/jq --lock"
-assert_contains "cat ../elsewhere/jq" "[lock.platforms."
-cp ../elsewhere/jq bin/jq
+assert_fail_contains "mise generate tool-stub ../elsewhere/jq --lock 2>&1" "no project config found"
+
+# A `[lock]` section from an older mise is ignored, and --lock removes it.
+cat >>bin/jq <<'EOF'
+
+[lock.platforms.linux-x64]
+url = "https://example.com/jq"
+EOF
 assert_succeed "mise generate tool-stub bin/jq --lock"
 assert_not_contains "cat bin/jq" "[lock"
-assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
 
 # In a monorepo with a root lockfile, a subproject's stub uses the root
 # mise.lock even when run from outside the monorepo.

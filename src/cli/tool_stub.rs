@@ -7,7 +7,6 @@ use crate::config::env_directive::EnvValue;
 use crate::dirs;
 use crate::file;
 use crate::hash;
-use crate::lockfile::{LockfileTool, PlatformInfo};
 use crate::toolset::{
     CoreToolOptions, InstallOptions, ToolRequest, ToolSource, ToolVersionOptions,
 };
@@ -26,23 +25,10 @@ pub(crate) struct ToolStubFile {
     pub install_env: indexmap::IndexMap<String, EnvValue>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
-    pub lock: Option<ToolStubLock>,
     #[serde(flatten, deserialize_with = "deserialize_tool_stub_options")]
     pub opts: indexmap::IndexMap<String, toml::Value>,
     #[serde(skip)]
     pub tool_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ToolStubLock {
-    #[serde(default)]
-    pub platforms: BTreeMap<String, ToolStubLockPlatform>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct ToolStubLockPlatform {
-    pub url: Option<String>,
-    pub checksum: Option<String>,
 }
 
 // Custom deserializer that keeps TOML values native, converting scalars to strings
@@ -76,60 +62,6 @@ where
     }
 
     Ok(opts)
-}
-
-/// The pin recorded by `mise generate tool-stub --lock`, which takes the place
-/// of a mise.lock for the stub's tool. Resolution and installation both read
-/// it, so its URLs and checksums apply to every install and it satisfies
-/// locked mode on its own.
-///
-/// A lock that records platforms but not `platform_key` does not pin this
-/// host's artifact, so it is ignored and locked mode rejects the stub. A lock
-/// with no platforms comes from a backend without URL locking and pins only
-/// the version.
-pub(crate) fn locked_tool_from_stub(
-    stub_path: &Path,
-    version: &str,
-    platform_key: &str,
-    options: &BTreeMap<String, String>,
-) -> Result<Option<LockfileTool>> {
-    let stub = ToolStubFile::from_file(stub_path)?;
-    let Some(lock) = stub.lock else {
-        return Ok(None);
-    };
-    if stub.version != version {
-        return Ok(None);
-    }
-    if !lock.platforms.is_empty()
-        && lock
-            .platforms
-            .get(platform_key)
-            .is_none_or(|p| p.url.is_none())
-    {
-        return Ok(None);
-    }
-    let platforms = lock
-        .platforms
-        .into_iter()
-        .map(|(key, platform)| {
-            let info = PlatformInfo {
-                url: platform.url,
-                checksum: platform.checksum,
-                ..Default::default()
-            };
-            (key, info)
-        })
-        .collect();
-    Ok(Some(LockfileTool {
-        version: stub.version,
-        // Keep the request's backend, which carries the stub's options
-        backend: None,
-        specifiers: Default::default(),
-        options: options.clone(),
-        platforms,
-        aube: None,
-        uv: None,
-    }))
 }
 
 fn default_version() -> String {
@@ -578,8 +510,8 @@ async fn execute_with_tool_request(
     let mut toolset = crate::toolset::Toolset::new(source);
     toolset.add_version(tool_request);
 
-    // Resolve the toolset to populate current versions. A `[lock]` section in
-    // the stub is read as its lockfile (see `locked_tool_from_stub`).
+    // Resolve the toolset to populate current versions. Lock data comes
+    // from the stub's project mise.lock (see `lockfile_path_for_tool_stub`).
     toolset.resolve(config).await?;
 
     // Ensure we have current versions after resolving
