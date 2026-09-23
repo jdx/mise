@@ -124,7 +124,32 @@ impl HistoryShow {
                 ]);
             }
             table.print()?;
+            // Both lists, since either one decides what the checkpoint
+            // holds: a reader auditing what was covered cannot tell an
+            // entry saved under a selection from one saved whole if only
+            // the exclusions are shown. An empty include list is said
+            // too — it selects nothing, which is the most surprising
+            // state to have to infer from silence.
+            //
+            // **The empty list is said as prose, not as a word.** A
+            // bare marker would collide with a list holding that very
+            // word — `include = []` and `include = ["none"]` are
+            // different selections and must not read the same to
+            // someone auditing a checkpoint. Patterns print bare, here
+            // and in `mise dot paths`, so a parenthesised phrase is
+            // plainly a statement about the list rather than a member
+            // of it.
             for entry in &coverage.entries {
+                if let Some(include) = &entry.include {
+                    match include.is_empty() {
+                        true => miseprintln!("  include ({}): (selects nothing)", entry.path),
+                        false => {
+                            for glob in include {
+                                miseprintln!("  include ({}): {glob}", entry.path);
+                            }
+                        }
+                    }
+                }
                 for glob in entry.exclude.iter().flatten() {
                     miseprintln!("  exclude ({}): {glob}", entry.path);
                 }

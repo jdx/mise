@@ -635,6 +635,7 @@ mod preview_tests {
                 encrypt: true,
                 variants: vec![],
                 exclude: None,
+                include: None,
             }],
             ..Default::default()
         };

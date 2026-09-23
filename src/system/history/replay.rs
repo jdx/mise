@@ -1405,9 +1405,14 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     // differently — an older one matched more for some patterns, and a
     // newer one is simply unknown here. Either way, where it has
     // exclusions, what it covered cannot be reconstructed.
+    // Only the owning entry's lists can affect this path.
     let has_patterns = !coverage.exclude.is_empty()
         || owner
             .exclude
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty())
+        || owner
+            .include
             .as_ref()
             .is_some_and(|patterns| !patterns.is_empty());
     let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
@@ -1420,10 +1425,26 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     {
         return PathState::Uncovered;
     }
-    // the entry's own list, recorded with the checkpoint: a file it left
-    // out was never known to be absent
+    // the entry's own lists, recorded with the checkpoint: a file either
+    // of them left out was never known to be absent
     if super::tracked::excluded_by_entry(&root, owner.exclude.as_deref().unwrap_or(&[]), &local) {
         return PathState::Uncovered;
+    }
+    // **Unselected is not absent.** `Absent` is the one answer that
+    // permits removing a live file, and it means the record positively
+    // covered this path and did not hold it. A path an `include` list
+    // does not select was never covered — including the entry's own
+    // path, which no pattern can name — so a file that appears there
+    // later is not something this checkpoint is entitled to delete.
+    if let Some(include) = &owner.include {
+        if local == root {
+            return PathState::Omitted(
+                "an include list selects paths inside this entry, not the entry itself".into(),
+            );
+        }
+        if !super::tracked::included_by_entry(&root, include, &local) {
+            return PathState::Uncovered;
+        }
     }
     // everything readable says the checkpoint covered this path — but a
     // rule that could not be read, or one this checkpoint never recorded

@@ -227,7 +227,7 @@ List checkpoints, newest first
 Show one checkpoint: what triggered it, what changed, and its journal
 .TP
 \fBbootstrap dotfiles include\fR
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 .TP
 \fBbootstrap dotfiles origin\fR
 Connect or disconnect the setup repository
@@ -596,7 +596,7 @@ List checkpoints, newest first
 Show one checkpoint: what triggered it, what changed, and its journal
 .TP
 \fBdotfiles include\fR
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 .TP
 \fBdotfiles origin\fR
 Connect or disconnect the setup repository
@@ -1735,10 +1735,14 @@ mise dot edit \-\-apply ~/.config/starship.toml
 .SH "MISE BOOTSTRAP DOTFILES EXCLUDE"
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
-logs, caches, databases, and constantly rewritten application state; a
-file that genuinely holds configuration but changes constantly is
-better tracked with `\-\-no\-autosave` and saved explicitly.
+Adds a glob to `[history] exclude` in the global configuration. The
+rule applies to all tracked paths. Quote the glob to prevent your shell
+from expanding it.
+
+Use exclusions for logs, caches, databases, and session state. For
+configuration you want to save manually, use `\-\-no\-autosave` instead.
+To scope selection to one directory, edit that `[dotfiles]` entry's
+`exclude` or `include` list.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles exclude [OPTIONS] <GLOB>
 .PP
@@ -1899,9 +1903,17 @@ Print help
 \fB<REF>\fR
 Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
 .SH "MISE BOOTSTRAP DOTFILES INCLUDE"
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 
-Removes the glob from `[history] exclude` in the global config.
+Removes the specified glob from `[history] exclude` in the global
+configuration. Pass the same pattern used with `mise dot exclude`:
+
+    mise dot exclude '~/.codex/sessions/**'
+    mise dot include '~/.codex/sessions/**'
+
+Other matching exclusion rules still apply. This command does not edit
+a tracked directory's `include` list; change that field in `[dotfiles]`
+to select which files the directory saves.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles include [OPTIONS] <GLOB>
 .PP
@@ -1914,7 +1926,7 @@ Print help
 .PP
 .TP
 \fB<GLOB>\fR
-The glob as written by `exclude`
+The glob as written by `mise dot exclude`
 .SH "MISE BOOTSTRAP DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 
@@ -4298,10 +4310,14 @@ mise dot edit \-\-apply ~/.config/starship.toml
 .SH "MISE DOTFILES EXCLUDE"
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
-logs, caches, databases, and constantly rewritten application state; a
-file that genuinely holds configuration but changes constantly is
-better tracked with `\-\-no\-autosave` and saved explicitly.
+Adds a glob to `[history] exclude` in the global configuration. The
+rule applies to all tracked paths. Quote the glob to prevent your shell
+from expanding it.
+
+Use exclusions for logs, caches, databases, and session state. For
+configuration you want to save manually, use `\-\-no\-autosave` instead.
+To scope selection to one directory, edit that `[dotfiles]` entry's
+`exclude` or `include` list.
 .PP
 \fBUsage:\fR mise dotfiles exclude [OPTIONS] <GLOB>
 .PP
@@ -4462,9 +4478,17 @@ Print help
 \fB<REF>\fR
 Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`
 .SH "MISE DOTFILES INCLUDE"
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 
-Removes the glob from `[history] exclude` in the global config.
+Removes the specified glob from `[history] exclude` in the global
+configuration. Pass the same pattern used with `mise dot exclude`:
+
+    mise dot exclude '~/.codex/sessions/**'
+    mise dot include '~/.codex/sessions/**'
+
+Other matching exclusion rules still apply. This command does not edit
+a tracked directory's `include` list; change that field in `[dotfiles]`
+to select which files the directory saves.
 .PP
 \fBUsage:\fR mise dotfiles include [OPTIONS] <GLOB>
 .PP
@@ -4477,7 +4501,7 @@ Print help
 .PP
 .TP
 \fB<GLOB>\fR
-The glob as written by `exclude`
+The glob as written by `mise dot exclude`
 .SH "MISE DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 

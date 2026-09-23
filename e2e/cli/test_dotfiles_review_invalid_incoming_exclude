@@ -76,6 +76,62 @@ assert_succeed 'b dot save'
 repository="$second/.local/state/mise/history/repo.git"
 assert_fail "git --git-dir=$repository cat-file -e main:home/.codex/sessions/session.json"
 
+# an incoming `include` this mise cannot compile is refused the same
+# way. Dropping it would be worse than for an exclusion: an entry with
+# no usable include list selects its whole tree.
+cat >"$PWD/older-client/config/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["["] }
+"~/.config/mise/config.toml" = { mode = "track" }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+git -C "$PWD/older-client" add config/config.toml
+git -C "$PWD/older-client" -c user.name=test -c user.email=test@example.com commit -qm 'unusable include'
+git -C "$PWD/older-client" push -q origin main
+assert_succeed 'b dot sync --fetch-only'
+assert_fail 'b dot pull --yes' 'conflict'
+assert_not_contains "cat $second/.config/mise/config.toml" 'include = ["["]'
+
+# and an `include` on an entry that is not tracked is refused rather
+# than compiled and then dropped: composition would leave that entry
+# out, so a pull must not report success as though it applied.
+cat >"$PWD/older-client/config/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+"~/.config/mise/config.toml" = { mode = "track" }
+"~/.deployed" = { source = "files/deployed", include = ["config.toml"] }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+git -C "$PWD/older-client" add config/config.toml
+git -C "$PWD/older-client" -c user.name=test -c user.email=test@example.com commit -qm 'include on a deployment entry'
+git -C "$PWD/older-client" push -q origin main
+assert_succeed 'b dot sync --fetch-only'
+assert_fail 'b dot pull --yes' 'conflict'
+assert_not_contains "cat $second/.config/mise/config.toml" '~/.deployed'
+
+# Include lists apply to directories, including when config arrives remotely.
+echo 'local file' >"$second/.single-file"
+cat >"$PWD/older-client/config/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+"~/.config/mise/config.toml" = { mode = "track" }
+"~/.single-file" = { mode = "track", include = ["config.toml"] }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+git -C "$PWD/older-client" add config/config.toml
+git -C "$PWD/older-client" -c user.name=test -c user.email=test@example.com commit -qm 'include on an existing file'
+git -C "$PWD/older-client" push -q origin main
+assert_succeed 'b dot sync --fetch-only'
+assert_fail 'b dot pull --yes' 'conflict'
+assert_not_contains "cat $second/.config/mise/config.toml" '~/.single-file'
+assert "cat $second/.single-file" 'local file'
+
 # fixing it upstream lets the pull through again
 cat >"$PWD/older-client/config/config.toml" <<'TOML'
 [dotfiles]

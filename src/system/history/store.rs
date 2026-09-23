@@ -20,7 +20,16 @@ use serde::{Deserialize, Serialize};
 use super::journal::JournalEntry;
 use crate::file::{self, display_path};
 
-pub(crate) const SCHEMA_VERSION: u32 = 1;
+/// The version of what a checkpoint records about itself.
+///
+/// **Bumped whenever a reader that does not understand the addition
+/// would draw a wrong conclusion from its absence.** Version 2 added an
+/// entry's `include` list: an older mise ignores the field, reads the
+/// entry as covering its whole tree, and a rollback then deletes the
+/// files the list never selected. It refuses a newer schema instead —
+/// `replay::validate` rejects anything above its own — and that is the
+/// answer wanted here: refuse rather than misinterpret.
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The state directory the store lives under.
 pub(crate) fn state_dir() -> PathBuf {
@@ -571,7 +580,12 @@ pub(crate) struct RootRecord {
 /// The effective rules a capture ran under, persisted so a checkpoint can
 /// say for any path whether it was captured, known absent, uncovered, or
 /// omitted.
+///
+/// Unknown fields are refused rather than skipped: what this record does
+/// not say decides whether a live file is deleted, so a reader that
+/// cannot see all of it must not answer from the part it understands.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -594,6 +608,7 @@ pub(crate) struct Coverage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CoverageEntry {
     /// `~`-relative when under `$HOME`, absolute otherwise.
     pub path: String,
@@ -613,6 +628,12 @@ pub(crate) struct CoverageEntry {
     /// empty one, which clears what another machine published.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, when it declared a list.
+    /// Recorded so a replay knows which paths the checkpoint never set
+    /// out to hold: without it an unselected file looks known-absent, and
+    /// a rollback deletes something the checkpoint never managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
