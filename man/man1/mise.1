@@ -6170,6 +6170,12 @@ Truncate long terminal output to fit the available width
 \fIDefault: \fRtrue
 .RE
 .TP
+\fB\-b, \-\-backend\fR \fI<BACKEND>\fR
+Only show tools from this backend, e.g. aqua, cargo, core, go
+
+Registry shorthands count as the backend they resolve to, so `jq` is listed
+under aqua. Repeat the flag to show several backends.
+.TP
 \fB\-c, \-\-current\fR
 Only show tool versions currently specified in a mise.toml
 .TP
@@ -6178,6 +6184,9 @@ Only show tool versions currently specified in the global mise.toml
 .TP
 \fB\-i, \-\-installed\fR
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+.TP
+\fB\-\-grouped\fR
+List tools in a separate section for each backend
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
@@ -6260,6 +6269,18 @@ Include references from every tracked configuration file
 .PP
 .RS 4
 mise ls \-\-all\-sources
+.RE
+.PP
+Show only tools from the go or cargo backends
+.PP
+.RS 4
+mise ls \-\-backend go \-\-backend cargo
+.RE
+.PP
+List tools in a separate section for each backend
+.PP
+.RS 4
+mise ls \-\-grouped
 .RE
 .SH "MISE LS-REMOTE"
 List tool versions available to install
