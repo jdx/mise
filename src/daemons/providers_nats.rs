@@ -160,7 +160,7 @@ pub(super) async fn prepare(execution: &Execution) -> Result<()> {
     let result = command(
         execution,
         &[
-            "--test".into(),
+            "-t".into(),
             "--config".into(),
             candidate.to_string_lossy().into_owned(),
         ],

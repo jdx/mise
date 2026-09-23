@@ -10,7 +10,7 @@ export PITCHFORK_PROXY_ENABLE=false
 cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
-mkdir -p "$MISE_CONFIG_DIR" one two three four
+mkdir -p "$MISE_CONFIG_DIR" one two three four broken
 ports=$(
   python3 - <<'PYPORT'
 import random
@@ -39,7 +39,7 @@ version = "2"
 port = $nats_port
 ports.monitor_port = $monitor_port
 TOML
-for dir in one two three four; do
+for dir in one two three four broken; do
   cat >"$dir/mise.toml" <<'TOML'
 [tools]
 pitchfork = "system"
@@ -52,6 +52,7 @@ for dir in three four; do
 done
 python3 - <<'PYTEST'
 import json
+import os
 import socket
 import subprocess
 import urllib.parse
@@ -127,6 +128,27 @@ start("two")
 second_url = url("two")
 assert first_url != second_url
 b = Client(second_url)
+# Reject an invalid candidate before replacing or reloading the live config.
+broken_url = urllib.parse.urlparse(url("broken"))
+provider = Path(os.environ["MISE_STATE_DIR"]) / "daemon-providers/bus/nats-accounts"
+credentials = provider / "credentials" / (broken_url.username + ".json")
+original_credentials = credentials.read_bytes()
+invalid = json.loads(original_credentials)
+invalid["user"] = urllib.parse.urlparse(first_url).username
+credentials.write_text(json.dumps(invalid))
+live_config = (provider / "server.json").read_bytes()
+rejected = subprocess.run(
+    ["mise", "--cd", str(base / "broken"), "daemons", "__resource", str(provider.parent), broken_url.username],
+    capture_output=True, text=True, timeout=60,
+)
+assert rejected.returncode != 0, "invalid account configuration was accepted"
+assert "NATS configuration command failed" in rejected.stderr, "candidate was not rejected by validation"
+assert (provider / "server.json").read_bytes() == live_config, "invalid candidate replaced live config"
+a.ping()
+b.ping()
+credentials.write_bytes(original_credentials)
+start("broken")
+Client(url("broken")).close()
 b.publish("events", b"other account")
 b.ping()
 a.ping()
