@@ -35,6 +35,8 @@ mod hint;
 #[macro_use]
 mod timings;
 
+mod otel;
+
 #[macro_use]
 mod cmd;
 mod inline_command;

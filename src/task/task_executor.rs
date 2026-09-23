@@ -66,6 +66,8 @@ pub(crate) struct TaskRunContext<'a> {
     pub(crate) semaphore: Arc<Semaphore>,
     pub(crate) permit: &'a mut Option<OwnedSemaphorePermit>,
     pub(crate) allow_during_interruption: bool,
+    /// Context of this task's live OpenTelemetry span, when trace export is on.
+    pub(crate) otel_span_cx: Option<opentelemetry::trace::SpanContext>,
 }
 
 #[derive(Clone, Copy)]
@@ -517,6 +519,7 @@ impl TaskExecutor {
             semaphore,
             permit,
             allow_during_interruption,
+            otel_span_cx,
         } = ctx;
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -548,7 +551,9 @@ impl TaskExecutor {
             env_remove,
             task_env,
             extra_vars,
-        } = self.prepare_task_context(config, task).await?;
+        } = self
+            .prepare_task_context(config, task, otel_span_cx.as_ref())
+            .await?;
         let task_file = self
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
@@ -2117,6 +2122,7 @@ impl TaskExecutor {
         &self,
         config: &Arc<Config>,
         task: &Task,
+        otel_span_cx: Option<&opentelemetry::trace::SpanContext>,
     ) -> Result<PreparedTaskContext> {
         let mut tools = self.tool.clone();
         tools.extend(task.tool_args()?);
@@ -2181,6 +2187,24 @@ impl TaskExecutor {
                 "MISE_ENV",
                 crate::env::MISE_ENV.join(","),
             );
+        }
+        if let Some(span_cx) = otel_span_cx {
+            // Propagate trace context via the W3C env-carriers spec so
+            // nested `mise run` and any OTEL-instrumented tools the task
+            // invokes automatically join this distributed trace.
+            // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
+            let mut carrier = BTreeMap::new();
+            crate::otel::task_run_telemetry::inject_otel_context(&mut carrier, span_cx);
+            for (key, value) in carrier {
+                // Kept out of __MISE_DIFF so a nested `mise hook-env` doesn't
+                // treat them as mise-managed env and unset the trace context.
+                Self::insert_env_excluded_from_nested_mise_diff(
+                    &mut env,
+                    &mut nested_mise_diff_exclude_keys,
+                    &key,
+                    value,
+                );
+            }
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
