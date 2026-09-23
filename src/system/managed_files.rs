@@ -3534,6 +3534,8 @@ mod tests {
         fs::remove_file(&unreadable).unwrap();
 
         // A directory the user cannot modify sends writes and removals to root.
+        // The mode is left drifted so the permissions-only change is pending.
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o644)).unwrap();
         fs::set_permissions(outside.path(), fs::Permissions::from_mode(0o555)).unwrap();
         let removal = inspect(&existing, ManagedState::Absent, None, false);
         let write = inspect(&existing, ManagedState::Present, Some("new"), false);
@@ -3542,7 +3544,16 @@ mod tests {
         assert!(refused(removal));
         assert!(refused(write));
         // Only the file's owner matters for a permissions-only change.
-        assert!(!refused(mode_change));
+        assert!(
+            matches!(
+                mode_change,
+                PathInspection::Present {
+                    metadata_matches: false,
+                    ..
+                }
+            ),
+            "{mode_change:?}"
+        );
     }
 
     /// As root, writes, removals, and inspection resolve the parent without
