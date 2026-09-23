@@ -11,7 +11,7 @@ PLATFORM="$MISE_PLATFORM"
 mkdir -p fake-python/python/bin
 cat <<'EOF' >fake-python/python/bin/python
 #!/usr/bin/env bash
-echo "Python 3.13.5"
+echo "Python 3.13.5 (fake lockfile tarball)"
 EOF
 chmod +x fake-python/python/bin/python
 tar -czf python-3.13.5.tar.gz -C fake-python python
@@ -57,6 +57,9 @@ cat <<EOF >mise.lock
 [[tools.python]]
 version = "3.13.5"
 backend = "core:python"
+# patch_sysconfig = false is part of the lock identity; without it this entry
+# would not match and mise would install the real CPython from GitHub instead.
+options = { patch_sysconfig = "false" }
 "platforms.$PLATFORM" = { checksum = "sha256:$CHECKSUM", size = $SIZE, url = "http://127.0.0.1:$HTTP_PORT/python-3.13.5.tar.gz", provenance = "github-attestations" }
 EOF
 
@@ -65,4 +68,5 @@ EOF
 # checksum and only ensure the provenance setting is still enabled.
 MISE_GITHUB_TOKEN=invalid GITHUB_TOKEN=invalid mise install python -f
 
-assert "$MISE_DATA_DIR/installs/python/3.13.5/bin/python --version" "Python 3.13.5"
+# The fake interpreter proves mise installed the locked tarball, not upstream CPython.
+assert "$MISE_DATA_DIR/installs/python/3.13.5/bin/python --version" "Python 3.13.5 (fake lockfile tarball)"
