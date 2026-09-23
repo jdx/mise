@@ -115,27 +115,37 @@ export default {
   },
   watch: {
     filter(newFilter = "") {
-      const url = new URL(window.location);
-      url.hash = "tools";
-      if (newFilter.trim() === "") {
-        url.searchParams.delete("filter");
-      } else {
-        url.searchParams.set("filter", newFilter);
-      }
-      window.history.pushState({}, "", url);
+      this.pushQuery("filter", newFilter.trim() === "" ? null : newFilter);
     },
     verifiedOnly(verifiedOnly) {
-      const url = new URL(window.location);
-      url.hash = "tools";
-      if (verifiedOnly) {
-        url.searchParams.set("verified", "1");
-      } else {
-        url.searchParams.delete("verified");
-      }
-      window.history.pushState({}, "", url);
+      this.pushQuery("verified", verifiedOnly ? "1" : null);
     },
   },
+  mounted() {
+    window.addEventListener("popstate", this.readQuery);
+  },
+  beforeUnmount() {
+    window.removeEventListener("popstate", this.readQuery);
+  },
   methods: {
+    // Back/Forward restores the filters from the URL. The watchers then see a
+    // query that already matches and push nothing, keeping forward history.
+    readQuery() {
+      const params = new URLSearchParams(window.location.search);
+      this.filter = params.get("filter") || "";
+      this.verifiedOnly = params.get("verified") === "1";
+    },
+    pushQuery(key, value) {
+      const url = new URL(window.location);
+      if (value === null) {
+        url.searchParams.delete(key);
+      } else {
+        url.searchParams.set(key, value);
+      }
+      if (url.search === window.location.search) return;
+      url.hash = "tools";
+      window.history.pushState({}, "", url);
+    },
     highlightMatches(text) {
       if (this.filter.trim() === "") return text;
       const matchExists = text
