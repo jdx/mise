@@ -281,15 +281,19 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 opentelemetry = { version = "0.33", default-features = false, features = [
   "trace",
+  "logs",
 ] }
 opentelemetry_sdk = { version = "0.33", default-features = false, features = [
   "trace",
+  "logs",
   "rt-tokio",
+  "experimental_logs_batch_log_processor_with_async_runtime",
   "experimental_trace_batch_span_processor_with_async_runtime",
 ] }
 opentelemetry-otlp = { version = "0.33", default-features = false, features = [
   "http-proto",
   "trace",
+  "logs",
   "reqwest-client",
 ] }
 
