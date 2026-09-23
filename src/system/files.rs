@@ -4442,6 +4442,19 @@ source = "oldrc""#,
         let req = absent_req(&target);
         assert!(matches!(check_rendered(&req, None)?, FileState::Differs(_)));
 
+        // the journal captures the link itself (std reports a junction as a
+        // symlink), never walking into the directory it points to; undo
+        // restores it with `make_symlink`, which writes a junction again
+        let state = tempfile::tempdir()?;
+        for (path, capture) in touched_paths(&req)? {
+            let snapshot = journal::PathSnapshot::capture_with(state.path(), &path, capture);
+            assert!(
+                matches!(snapshot, journal::PathSnapshot::Symlink { .. }),
+                "{}",
+                snapshot.describe()
+            );
+        }
+
         let mut written = vec![];
         apply_one(&req, None, &mut written)?;
         assert!(!target.is_symlink());
