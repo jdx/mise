@@ -1663,6 +1663,10 @@ impl Lock {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
+        let locks_here = |source: &ToolSource| {
+            lockfile::lockfile_path_for_tool_source(config, source)
+                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path)
+        };
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
@@ -1727,11 +1731,14 @@ impl Lock {
                             ba.backend()?;
                         }
                         if ba.backend().is_ok() {
-                            // Check if the resolved toolset has a matching request.
+                            // Check if the resolved toolset has a matching request that was
+                            // resolved through this lockfile. An equal request from a config
+                            // that writes elsewhere was pinned by that other lockfile.
                             let mut matched_resolved = false;
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if request_matches(&tv.request, request)
+                                        && locks_here(tv.request.source())
                                         && tv.version != "latest"
                                         && !ba.backend().is_ok_and(|backend| {
                                             backend.is_rolling_channel(&tv.version)
@@ -1751,18 +1758,31 @@ impl Lock {
                                 || self.tool.iter().any(|tool| tool.ba.as_ref() == ba.as_ref());
                             let active_unresolved = requested_tool
                                 && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
-                                    tvl.requests
-                                        .iter()
-                                        .any(|active| request_matches(active, request))
+                                    tvl.requests.iter().any(|active| {
+                                        request_matches(active, request)
+                                            && locks_here(active.source())
+                                    })
                                 });
                             // Resolve overridden requests through the same path as active
                             // tools when the request cannot be copied from the resolved
-                            // toolset. Keep this broad only for idiomatic version files;
-                            // other sources preserve the previous latest-only behavior.
-                            let should_resolve_overridden = active_unresolved
+                            // toolset. These cases bypass this lockfile's pinned version.
+                            let unlock_overridden = active_unresolved
                                 || Settings::get().generate_lockfiles()
                                 || request.version() == "latest"
                                 || source.is_idiomatic_version_file();
+                            // A request shadowed by a config that writes a different lockfile
+                            // (e.g. a global `hk = "1"` under a project `hk = "1.58.1"`) still
+                            // belongs in this one. Resolve it through its own lock entry so
+                            // `mise lock --global` keeps the pinned version. When the winning
+                            // request also writes here, it alone describes this lockfile.
+                            let shadowed_elsewhere =
+                                !ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
+                                    tvl.requests
+                                        .iter()
+                                        .any(|active| locks_here(active.source()))
+                                });
+                            let should_resolve_overridden =
+                                unlock_overridden || requested_tool && shadowed_elsewhere;
                             if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(context.resolve_options)
@@ -1783,7 +1803,7 @@ impl Lock {
                                         }
                                     }
                                 };
-                                if !Settings::get().generate_lockfiles() {
+                                if unlock_overridden && !Settings::get().generate_lockfiles() {
                                     resolve_options.use_locked_version = false;
                                 }
                                 if resolve_options.before_date.is_some() {
