@@ -135,6 +135,7 @@ pub(crate) struct Daemon {
     /// available while configuration is still being parsed.
     pub task: Option<String>,
     pub tool: Option<(String, String)>,
+    pub provider: Option<providers::Binding>,
     pub exports: IndexMap<String, String>,
     /// True when this daemon was declared by another project and pulled in with
     /// `project =`. Its tools and exported environment belong to that project.
@@ -317,6 +318,7 @@ fn routed_claimant(imported: &[bool]) -> Option<usize> {
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
+    let providers = providers::load(files)?;
     let mut declarations = IndexMap::new();
     let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
     let mut group_declarations = IndexMap::new();
@@ -419,6 +421,13 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             imported_ids.insert((root.clone(), name.clone()), key.clone());
             set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
+            continue;
+        }
+        if let Declaration::Definition(table) = &declaration
+            && table.contains_key("provider")
+        {
+            let daemon = providers::binding(&providers, &name, table.clone(), source, root)?;
+            set.daemons.insert(name, daemon);
             continue;
         }
         let settings = settings_for(&settings, &root);
@@ -890,6 +899,7 @@ fn build(
         data_dir: None,
         task,
         tool: None,
+        provider: None,
         exports,
         imported,
         port: claim,

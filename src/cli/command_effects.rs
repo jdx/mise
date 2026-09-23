@@ -373,6 +373,7 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
         "daemons __provider-exec",
         "executes a generated provider command",
     ),
+    ("daemons __resource", "provisions a shared service resource"),
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap dotfiles capture",

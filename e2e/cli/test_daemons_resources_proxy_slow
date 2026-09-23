@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  echo "Skipping: set MISE_TEST_PITCHFORK to a build with dependency-aware proxy startup"
+  exit 0
+fi
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_INTERVAL=500ms
+export PITCHFORK_PROXY_ENABLE=true
+export PITCHFORK_PROXY_HTTPS=false
+export PITCHFORK_PROXY_DNS=false
+export PITCHFORK_PROXY_SYNC_HOSTS=false
+export PITCHFORK_PROXY_AUTO_TRUST=false
+export PITCHFORK_PROXY_TLD=localhost
+PITCHFORK_PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+export PITCHFORK_PROXY_PORT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+PITCHFORK_MISE_BIN="$(command -v mise)" pitchfork supervisor start
+
+mkdir -p "$MISE_CONFIG_DIR" project
+export MISE_EXPERIMENTAL=1
+pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[daemon_providers.pg]
+preset = "postgres"
+version = "18"
+port = $pg_port
+TOML
+cd project
+git init -q
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+postgres = "18"
+[daemons_settings]
+namespace = "provider-proxy"
+[daemons.db]
+provider = "pg"
+[daemons.api]
+run = 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT current_database()" >proof && exec python3 -m http.server "$API_PORT" --bind 127.0.0.1'
+port = { auto = true, base = 35000 }
+ready_cmd = "curl -fsS http://127.0.0.1:$PORT/proof"
+depends = ["db"]
+TOML
+git add mise.toml
+git -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+git worktree add -qb other ../other
+for checkout in "$PWD" "$PWD/../other"; do
+  (
+    cd "$checkout"
+    mise daemons register
+    assert "test ! -f proof"
+    url=$(mise env --json | jq -r .API_URL)
+    database=$(mise env --json | jq -r .PGDATABASE)
+    assert_contains "curl --noproxy '*' -fsS --max-time 60 --resolve '${url#http://}:127.0.0.1' '$url/proof'" "$database"
+  )
+done
+first=$(mise env --json | jq -r .PGDATABASE)
+second=$(cd ../other && mise env --json | jq -r .PGDATABASE)
+assert "test '$first' != '$second'"
+mise daemons stop
+cd ../other
+url=$(mise env --json | jq -r .API_URL)
+assert_contains "curl --noproxy '*' -fsS --max-time 30 --resolve '${url#http://}:127.0.0.1' '$url/proof'" "$second"

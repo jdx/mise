@@ -1124,3 +1124,56 @@ not remove provider data. Renaming a provider does not move its existing data.
 Provider processes and their readiness probes use the provider's tools and a
 minimal environment, without the invoking project's environment, tools or profile.
 Servers listen locally and use the presets' local-development authentication.
+
+### Choose what to share
+
+Keep an ordinary preset declaration for a server and data owned by this checkout.
+To share a server while keeping a separate database, select a global provider:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+```
+
+Mise derives a database name from the canonical checkout path and daemon name.
+Each worktree or unrelated project gets its own database on the same server.
+Symlinked paths to the same checkout keep the same database. Moving the checkout
+changes that identity; the previous database remains on the provider.
+
+To share the database too, choose the same resource name in each consumer:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+resource = "shared_app"
+```
+
+Resource names start with a lowercase letter and contain at most 63 lowercase
+letters, digits or underscores. This is development isolation between trusted
+local projects, not a security boundary: SQL clients use the preset's existing
+local superuser authentication.
+
+Use a local configuration or profile override to opt into sharing. Mise never
+selects a provider automatically, and a missing provider is an error. A provider
+reference accepts only `provider` and `resource`; server versions, options and
+storage belong in global configuration.
+
+PostgreSQL and CockroachDB resources export their usual preset connection
+variables, pointing at the selected database. Explicit `[env]` values still win.
+The provider's tool version does not become a tool requirement for the consumer.
+
+Starting `db`, running a task with `daemons = ["db"]`, or starting an application
+with `depends = ["db"]` waits for both the server and database provisioning.
+`mise daemons register` prepares this dependency chain without starting the server
+or creating databases, including for later hostname-triggered application starts.
+
+Each consumer has a small readiness process managed by Pitchfork. Stopping or
+pruning that consumer stops its readiness process, leaving the shared server and
+its data intact. Starting another consumer provisions additional databases even
+when the provider's data directory already exists. Concurrent provisioning is
+serialized and existing databases are preserved. Mise does not run application
+migrations or automatically delete databases.
+
+After changing a consumer's resource selection, restart its daemon. Use
+`mise daemons ls --json` to inspect `provider`, `resource` and `ownership`; use
+`mise daemons providers ls --json` for the server's port and storage location.

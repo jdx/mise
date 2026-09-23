@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.27.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+mkdir -p "$MISE_CONFIG_DIR" one two
+ports=$(python3 - <<'PYPORT'
+import random
+import socket
+sockets = []
+for port in random.sample(range(20000, 30000), 1000):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        s.close()
+        continue
+    sockets.append(s)
+    if len(sockets) == 2:
+        print(*(s.getsockname()[1] for s in sockets))
+        break
+else:
+    raise RuntimeError("no available test ports")
+PYPORT
+)
+read -r sql_port http_port <<<"$ports"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[daemon_providers.crdb]
+preset = "cockroachdb"
+version = "25.1.10"
+port = $sql_port
+ports.http_port = $http_port
+TOML
+for dir in one two; do
+  cat >"$dir/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+provider = "crdb"
+TOML
+done
+cd one
+mise daemons start db
+first=$(mise daemons ls --json | jq -r '.[0].resource')
+cd ../two
+mise daemons start db
+second=$(mise daemons ls --json | jq -r '.[0].resource')
+assert "test '$first' != '$second'"
+crdb_path=$(jq -r .env.PATH "$MISE_STATE_DIR/daemon-providers/crdb/execution.json")
+query() {
+  env PATH="$crdb_path" cockroach sql --insecure --host="127.0.0.1:$sql_port" --database="$1" --format=tsv -e "$2"
+}
+export -f query
+export crdb_path sql_port
+query "$first" 'CREATE TABLE proof (n int); INSERT INTO proof VALUES (41);'
+query "$second" 'CREATE TABLE proof (n int); INSERT INTO proof VALUES (42);'
+mise daemons stop
+assert_contains "query '$first' 'SELECT n FROM proof'" 41
+mise daemons providers restart crdb
+assert_contains "query '$first' 'SELECT n FROM proof'" 41
+assert_contains "query '$second' 'SELECT n FROM proof'" 42

@@ -220,6 +220,9 @@ pub(crate) async fn start(
             let ts = runtime::toolset_resolved(&scoped, false).await?;
             (scoped, ts)
         };
+        if install_tools {
+            super::providers::install_set(&set).await?;
+        }
         let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         let owned = !foreign.contains(&root);
         // Another project's root is registered whole but only checked for what
@@ -368,6 +371,7 @@ mod tests {
                             data_dir: None,
                             task: None,
                             tool: None,
+                            provider: None,
                             exports: Default::default(),
                             imported: false,
                             port: None,
