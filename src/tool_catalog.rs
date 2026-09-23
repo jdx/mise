@@ -22,6 +22,9 @@ const PACKAGE_REGISTRY_BACKENDS: &[BackendType] = &[
     BackendType::Npm,
 ];
 const SEARCH_LIMIT: usize = 20;
+/// Per-registry limit when one search fans out to every registry, so a single
+/// registry cannot fill the table.
+const ALL_SEARCH_LIMIT: usize = 10;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ToolCatalogSource {
@@ -137,13 +140,35 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
         .collect()
 }
 
-/// Searches a built-in backend's package registry for a `backend:query`
-/// search, e.g. `npm:prettier`. Unprefixed queries return nothing, so plain
+/// Searches built-in backends' package registries. A `backend:query` search,
+/// e.g. `npm:prettier`, searches that backend's registry. An unprefixed query
+/// searches every registry when `all` is set and none otherwise, so plain
 /// searches and shell completion stay offline.
-pub(crate) async fn search_package_registry(query: &str) -> Vec<ToolCatalogEntry> {
-    let Some((backend, query)) = query.split_once(':') else {
-        return vec![];
-    };
+pub(crate) async fn search_package_registry(query: &str, all: bool) -> Vec<ToolCatalogEntry> {
+    match query.split_once(':') {
+        Some((backend, query)) => search_backend_registry(backend, query, SEARCH_LIMIT).await,
+        None if all => {
+            let backends = PACKAGE_REGISTRY_BACKENDS
+                .iter()
+                .map(ToString::to_string)
+                .collect_vec();
+            future::join_all(
+                backends
+                    .iter()
+                    .map(|backend| search_backend_registry(backend, query, ALL_SEARCH_LIMIT)),
+            )
+            .await
+            .concat()
+        }
+        None => vec![],
+    }
+}
+
+async fn search_backend_registry(
+    backend: &str,
+    query: &str,
+    limit: usize,
+) -> Vec<ToolCatalogEntry> {
     let settings = Settings::get();
     let backend_type = BackendType::guess(backend);
     if query.is_empty()
@@ -180,7 +205,7 @@ pub(crate) async fn search_package_registry(query: &str) -> Vec<ToolCatalogEntry
         })
         .await;
     let tools = match result {
-        Ok(tools) => tools.clone(),
+        Ok(tools) => tools.iter().take(limit).cloned().collect(),
         Err(err) => {
             warn!("failed to search {backend} packages for {query}: {err:#}");
             return vec![];
@@ -366,8 +391,12 @@ mod tests {
         // None of these reach a package registry, so they must return
         // immediately with no results.
         for query in ["", "prettier", "npm:", "pipx:black", "github:jdx/mise"] {
-            assert!(search_package_registry(query).await.is_empty(), "{query}");
+            assert!(
+                search_package_registry(query, false).await.is_empty(),
+                "{query}"
+            );
         }
+        assert!(search_package_registry("npm:", true).await.is_empty());
     }
 
     #[test]

@@ -14,8 +14,9 @@ Search for available tools
 Searches the registry and installed backend catalogs for tools matching NAME.
 
 Prefix NAME with a backend to also search that backend's package registry:
-`npm:`, `cargo:`, `gem:`, or `dotnet:`. Unprefixed searches do not use the
-network.
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
+including all of those package registries. Otherwise, unprefixed searches do
+not use the network.
 
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
@@ -24,6 +25,7 @@ non-fuzzy matches, use the `--match-type` flag.
 - **`[NAME]`** — The tool to search for
 
 ## Flags
+- **`-a --all`** — Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries
 - **`-i --interactive`** — Show an interactive search menu
 - **`-m --match-type <MATCH_TYPE>`** — Match type: equal, contains, or fuzzy
 

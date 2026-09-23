@@ -77,3 +77,10 @@ assert_contains "mise search --match-type equal dotnet:GitVersion.Tool" "dotnet:
 # Shell completion and offline mode never query package registries
 assert_not_contains "mise search --complete-ids npm:typescript-language-server" "npm:typescript-language-server"
 assert_fail "MISE_OFFLINE=1 mise search --match-type equal npm:typescript-language-server" "not found in registry"
+
+# --all searches every backend, including every package registry, for an unprefixed query
+assert_contains "mise search --all --match-type equal typescript-language-server" "npm:typescript-language-server"
+assert_contains "mise search --all --match-type equal rubocop" "gem:rubocop"
+assert_contains "mise search --all --match-type equal jq" "aqua:jqlang/jq"
+assert_contains "mise search --all --match-type equal tokei" "cargo:tokei"
+assert_not_contains "mise search --match-type equal tokei" "cargo:tokei"
