@@ -101,6 +101,24 @@ impl Provider {
         // Render unwrapped commands: the frozen tool environment below belongs to
         // this provider, never to a consuming project or the supervisor's shell.
         table.insert("mise".into(), false.into());
+        // Shared stores can have several consumers' databases to checkpoint.
+        // Pitchfork's short default can kill PostgreSQL before that completes.
+        table.insert(
+            "stop_signal".into(),
+            toml::Value::Table(toml::Table::from_iter([
+                (
+                    "signal".into(),
+                    if preset == "postgres" {
+                        "SIGINT"
+                    } else {
+                        "SIGTERM"
+                    }
+                    .into(),
+                ),
+                ("timeout".into(), "60s".into()),
+            ])),
+        );
+
         table.insert("proxy_idle_timeout".into(), false.into());
         table.insert("auto".into(), toml::Value::Array(vec![]));
         presets::expand(
