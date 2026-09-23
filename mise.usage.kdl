@@ -6042,9 +6042,10 @@ cmd tool help="Show information about a tool" effect=read {
     flag --installed help="Only show installed versions"
     flag --requested help="Only show requested versions"
     flag --tool-options help="Only show tool options"
+    flag --url help="Only show the project URL from the registry"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL> help="Tool name to get information about"
-    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
+    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options" "--url"
     example #"""
 mise tool node
 Backend:            core

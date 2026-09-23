@@ -65,6 +65,10 @@ pub(super) struct ToolInfoFilter {
     /// Only show tool options
     #[usage(long, group = "tool-info-filter")]
     tool_options: bool,
+
+    /// Only show the project URL from the registry
+    #[usage(long, group = "tool-info-filter")]
+    url: bool,
 }
 
 impl Tool {
@@ -152,6 +156,8 @@ impl Tool {
             miseprintln!("{}", serde_json::to_string_pretty(&info.config_source)?);
         } else if self.filter.tool_options {
             miseprintln!("{}", serde_json::to_string_pretty(&info.tool_options)?);
+        } else if self.filter.url {
+            miseprintln!("{}", serde_json::to_string_pretty(&info.url)?);
         } else {
             miseprintln!("{}", serde_json::to_string_pretty(&info)?);
         }
@@ -210,6 +216,12 @@ impl Tool {
                 for (k, v) in info.tool_options.opts {
                     miseprintln!("{k}={v:?}");
                 }
+            }
+        } else if self.filter.url {
+            if let Some(url) = info.url {
+                miseprintln!("{}", url);
+            } else {
+                miseprintln!("[none]");
             }
         } else {
             let mut table = vec![];

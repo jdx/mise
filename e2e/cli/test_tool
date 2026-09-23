@@ -11,6 +11,9 @@ mise tool node --json | grep -q '"backend"' || fail "JSON backend field not foun
 assert "mise tool dart --json | jq -r '.url'" "https://dart.dev"
 assert_contains "mise tool dart" "https://dart.dev"
 assert "mise tool node --json | jq -r '.url'" "null"
+assert "mise tool dart --url" "https://dart.dev"
+assert "mise tool dart --url --json" '"https://dart.dev"'
+assert "mise tool node --url" "[none]"
 
 # Test specific field filters
 backend_output=$(mise tool node --backend)
