@@ -35,14 +35,15 @@ if [[ $warns -ne 1 ]]; then
 fi
 ok "fetch failure warned exactly once"
 
-# A version selector must not resolve to itself when the listing failed: that
-# locked `version = "4"` and installed a literal version 4.
+# Without the listing, `4` cannot be told apart from an exact version, so it is
+# still tried as one. The install error has to say the list was never checked,
+# and lock must not record `version = "4"` as though it were a known release.
 status=0
 out="$(mise install "aqua:suzuki-shunsuke/tfcmt@4" 2>&1)" || status=$?
 if [[ $status -eq 0 ]]; then
   fail "expected the prefix install to fail, but it exited 0"
 fi
-assert_contains_text "$out" "unable to fetch versions for aqua:suzuki-shunsuke/tfcmt"
+assert_contains_text "$out" "was not checked against its version list, which could not be fetched"
 
 cat <<'TOML' >mise.toml
 [tools]

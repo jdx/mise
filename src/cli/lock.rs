@@ -21,6 +21,34 @@ use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+
+/// Without its version list a request can only resolve to itself, and that
+/// string is not known to be a version: `4` would be locked as a release that
+/// may not exist. An installed version is known to exist, and a locked one
+/// resolved from the lockfile rather than to the request.
+fn reject_unverified_versions(tools: &[LockTool]) -> Result<()> {
+    for (ba, tv) in tools {
+        if tv.version != tv.request.version() {
+            continue;
+        }
+        let Some(cause) = crate::backend::version_listing_failure(ba) else {
+            continue;
+        };
+        if tv
+            .backend()
+            .is_ok_and(|backend| backend.list_installed_versions().contains(&tv.version))
+        {
+            continue;
+        }
+        bail!(
+            "cannot lock {}@{}: unable to fetch versions for {}: {cause}",
+            ba.short,
+            tv.version,
+            ba.full()
+        );
+    }
+    Ok(())
+}
 type ToolSelectors = (BTreeSet<String>, BTreeSet<String>);
 
 struct LockCollectionContext<'a> {
@@ -534,6 +562,7 @@ impl Lock {
                     continue;
                 }
             }
+            reject_unverified_versions(&tools)?;
             let configured_selectors = self.configured_tool_selectors_for_target(
                 &config,
                 &tools,

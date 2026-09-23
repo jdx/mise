@@ -931,23 +931,6 @@ impl ToolVersion {
                 return build(v);
             }
         }
-        // An exact version the list does not show may still install. A
-        // selector such as `4` never does: when the list is only empty because
-        // fetching it failed, keeping the selector would lock or install `4`
-        // literally, so report the failure instead.
-        if !(v.matches('.').count() >= 2 || backend.is_exact_version(&v))
-            && crate::backend::version_listing_failure(backend.ba()).is_some()
-        {
-            return Err(Self::no_versions_found(
-                config,
-                &backend,
-                &v,
-                opts.before_date,
-                request.options().minimum_release_age(),
-                true,
-            )
-            .await);
-        }
         build(v)
     }
 
