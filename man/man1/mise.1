@@ -157,6 +157,9 @@ List built\-in backends
 \fIAliases: \fRlist
 .RE
 .TP
+\fBbackends switch\fR
+Switch tools to the backend the registry now installs them from
+.TP
 \fBbin\-paths\fR
 List all the active runtime bin paths
 .TP
@@ -1317,6 +1320,46 @@ Installed plugin availability and built\-in backends are separate lists
 .RS 4
 mise backends ls
 mise plugins ls
+.RE
+.SH "MISE BACKENDS SWITCH"
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+.PP
+\fBUsage:\fR mise backends switch [OPTIONS] [<TOOL>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would switch without changing the lockfile or installs
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL>\fR
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced.
+\fBExamples:\fR
+.PP
+Move communique to the registry's current backend
+.PP
+.RS 4
+mise backends switch communique
+.RE
+.PP
+List every locked tool the registry now installs from another backend
+.PP
+.RS 4
+mise backends switch \-\-dry\-run
 .RE
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths

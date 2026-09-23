@@ -1153,6 +1153,33 @@ impl Lockfile {
         self.tools.get_mut(&key)
     }
 
+    /// Move `short`'s entries locked under `from` to the backend `to` returns
+    /// for their version, keeping the version and dropping the artifact data
+    /// recorded for the old backend so the next lock records the new one's.
+    /// Returns the versions moved.
+    pub(crate) fn switch_backend(
+        &mut self,
+        short: &str,
+        from: &str,
+        to: impl Fn(&str) -> Option<String>,
+    ) -> Vec<String> {
+        let Some(entries) = self.tools_for_mut(short) else {
+            return vec![];
+        };
+        let mut moved = vec![];
+        for entry in entries
+            .iter_mut()
+            .filter(|entry| entry.backend.as_deref() == Some(from))
+        {
+            if let Some(backend) = to(&entry.version) {
+                entry.backend = Some(backend);
+                entry.platforms.clear();
+                moved.push(entry.version.clone());
+            }
+        }
+        moved
+    }
+
     pub(crate) fn bind_request(
         &mut self,
         short: &str,
@@ -4827,26 +4854,37 @@ pub(crate) fn ensure_locked_url_matches_version(
 
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
-pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
+/// The backend a lock entry records for `short`, preferring the entry locked at
+/// `version` when one exists: a tool whose registry backends depend on the
+/// version can lock different versions under different backends.
+pub(crate) fn get_locked_backend_for_version(
+    config: &Config,
+    short: &str,
+    version: Option<&str>,
+) -> Option<String> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
         return None;
     }
 
     let lockfile = read_all_lockfiles(config);
-
-    lockfile
+    let entries = lockfile
         .tools_for(short)
         .into_iter()
         .flatten()
-        .filter_map(|tool| tool.backend.as_ref())
-        .find(|&full| {
-            // Discovery includes parent lockfiles and runs before registry fallback.
-            // A recorded backend must not revive a disabled backend for a shorthand.
-            let ba = BackendArg::new(full.clone(), Some(full.clone()));
-            !backend::is_disabled_backend_type(&ba.backend_type())
+        .filter(|tool| {
+            tool.backend.as_ref().is_some_and(|full| {
+                // Discovery includes parent lockfiles and runs before registry fallback.
+                // A recorded backend must not revive a disabled backend for a shorthand.
+                let ba = BackendArg::new(full.clone(), Some(full.clone()));
+                !backend::is_disabled_backend_type(&ba.backend_type())
+            })
         })
-        .cloned()
+        .collect::<Vec<_>>();
+    version
+        .and_then(|version| entries.iter().find(|tool| tool.version == version))
+        .or_else(|| entries.first())
+        .and_then(|tool| tool.backend.clone())
 }
 
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {

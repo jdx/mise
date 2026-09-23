@@ -18,6 +18,7 @@ Manage backends
 ## Subcommands
 
 - [`mise backends ls`](/cli/backends/ls.html)
+- [`mise backends switch [-n --dry-run] [TOOL]…`](/cli/backends/switch.html)
 
 Deprecation:
 
