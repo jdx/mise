@@ -367,8 +367,8 @@ a machine that never wrote the file treats an existing non-empty target as a
 conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
 [history](#tracking-files-in-place) tracks it.
 
-`remove_empty` is valid only with `mode = "template"`. `mise oci build` leaves
-a template that renders empty out of the image.
+`remove_empty` is valid only with `mode = "template"`. With it set, `mise oci
+build` omits the file from the image when the template renders empty.
 
 See [Windows](#windows) for differences in link behavior on that platform.
 
@@ -632,7 +632,7 @@ change. mise also records which paths the operation touched. Run
 ### JSON output
 
 `mise dot status --json` uses `source_missing` for the
-`source missing` state. A `differs` entry also carries a human-readable
+`source missing` state. A `differs` file entry also carries a human-readable
 `reason`, such as a template that renders empty and will be removed. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved

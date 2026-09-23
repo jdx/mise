@@ -1129,7 +1129,7 @@ fn merge_file_entry(
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, or manifest",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, or remove_empty",
             );
             return;
         }
