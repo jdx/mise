@@ -1767,12 +1767,21 @@ fn create_directory(
 /// actually opened instead of resolving the path again.
 #[cfg(unix)]
 fn open_or_create_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
-    open_or_create_directory_tree_inner(path, 0)
+    open_or_create_directory_tree_inner(path, true, 0)
+}
+
+/// Open an existing absolute directory path the same way, without creating
+/// anything: a symlink is only followed from a root-owned directory that no
+/// one else can write, where only root could have placed it.
+#[cfg(unix)]
+fn open_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
+    open_or_create_directory_tree_inner(path, false, 0)
 }
 
 #[cfg(unix)]
 fn open_or_create_directory_tree_inner(
     path: &Path,
+    create: bool,
     followed_symlinks: usize,
 ) -> Result<std::os::fd::OwnedFd> {
     use nix::fcntl::{AtFlags, OFlag, open, openat};
@@ -1828,9 +1837,13 @@ fn open_or_create_directory_tree_inner(
                             path.display()
                         );
                     }
-                    return open_or_create_directory_tree_inner(&resolved, followed_symlinks + 1);
+                    return open_or_create_directory_tree_inner(
+                        &resolved,
+                        create,
+                        followed_symlinks + 1,
+                    );
                 }
-                if open_error != nix::errno::Errno::ENOENT {
+                if open_error != nix::errno::Errno::ENOENT || !create {
                     return Err(open_error).wrap_err_with(|| {
                         format!(
                             "failed to open path component {} without following symlinks",
@@ -1894,13 +1907,15 @@ fn set_file_metadata(
     group: Option<&str>,
     mode: Option<u32>,
 ) -> Result<()> {
-    use nix::fcntl::{OFlag, open};
+    use nix::fcntl::{OFlag, openat};
     use nix::sys::stat::Mode;
 
+    let (parent, name) = open_parent_no_follow(path)?;
     // O_NONBLOCK keeps a FIFO swapped in after inspection from blocking the
     // open; it is refused below like any other non-regular file.
-    let file = match open(
-        path,
+    let file = match openat(
+        &parent,
+        name,
         OFlag::O_RDONLY
             | OFlag::O_NOFOLLOW
             | OFlag::O_NONBLOCK
@@ -1912,8 +1927,12 @@ fn set_file_metadata(
         // The owner of an unreadable file may still change its mode.
         #[cfg(target_os = "linux")]
         Err(nix::errno::Errno::EACCES) => {
-            return set_unreadable_file_metadata(path, owner, group, mode);
+            return set_unreadable_file_metadata(&parent, name, path, owner, group, mode);
         }
+        Err(nix::errno::Errno::ELOOP) => bail!(
+            "refusing to set permissions on symlink {}; it is never followed",
+            path.display()
+        ),
         Err(error) => {
             return Err(error).wrap_err_with(|| {
                 format!(
@@ -1926,6 +1945,24 @@ fn set_file_metadata(
     ensure_regular_file(&file, path)?;
     set_descriptor_metadata(&file, owner, group, mode)
         .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+/// Open a file's parent directory without following untrusted symlinks in
+/// any component. `O_NOFOLLOW` only guards the final component, and this runs
+/// as root, so a user who can write an ancestor could otherwise swap it for a
+/// symlink and redirect the change to a file such as `/etc/shadow`.
+#[cfg(unix)]
+fn open_parent_no_follow(path: &Path) -> Result<(std::os::fd::OwnedFd, &std::ffi::OsStr)> {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        bail!("managed file has no parent: {}", path.display());
+    };
+    let parent = open_directory_tree(parent).wrap_err_with(|| {
+        format!(
+            "failed to open the parent of {} without following symlinks",
+            path.display()
+        )
+    })?;
+    Ok((parent, name))
 }
 
 #[cfg(unix)]
@@ -1950,17 +1987,20 @@ fn ensure_regular_file(file: &std::os::fd::OwnedFd, path: &Path) -> Result<()> {
 /// the path again.
 #[cfg(target_os = "linux")]
 fn set_unreadable_file_metadata(
+    parent: &std::os::fd::OwnedFd,
+    name: &std::ffi::OsStr,
     path: &Path,
     owner: Option<&str>,
     group: Option<&str>,
     mode: Option<u32>,
 ) -> Result<()> {
-    use nix::fcntl::{OFlag, open};
+    use nix::fcntl::{OFlag, openat};
     use nix::sys::stat::Mode;
     use std::os::fd::AsRawFd;
 
-    let file = open(
-        path,
+    let file = openat(
+        parent,
+        name,
         OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )
@@ -2460,16 +2500,57 @@ mod tests {
 
         assert!(set_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
 
+        // A symlinked parent directory is not followed, so the change cannot
+        // be redirected to a file outside the declared path. Root-owned
+        // parents are trusted, so this only holds for an unprivileged run.
+        if !nix::unistd::geteuid().is_root() {
+            let outside = tempfile::tempdir().unwrap();
+            let victim = outside.path().join("victim");
+            fs::write(&victim, "content").unwrap();
+            fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+            let redirected = temp.path().join("redirected");
+            std::os::unix::fs::symlink(outside.path(), &redirected).unwrap();
+            let error =
+                set_file_metadata(&redirected.join("victim"), None, None, Some(0o600)).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("refusing to follow symlink"),
+                "unexpected error: {error:#}"
+            );
+            #[cfg(target_os = "linux")]
+            {
+                fs::set_permissions(&victim, fs::Permissions::from_mode(0o000)).unwrap();
+                let error = set_file_metadata(&redirected.join("victim"), None, None, Some(0o600))
+                    .unwrap_err();
+                assert!(
+                    format!("{error:#}").contains("refusing to follow symlink"),
+                    "unexpected error: {error:#}"
+                );
+                assert_eq!(
+                    fs::symlink_metadata(&victim).unwrap().permissions().mode() & 0o7777,
+                    0o000
+                );
+                fs::set_permissions(&victim, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+            assert_eq!(
+                fs::metadata(&victim).unwrap().permissions().mode() & 0o7777,
+                0o644
+            );
+        }
+
         // The unreadable-file path refuses symlinks and directories too.
         #[cfg(target_os = "linux")]
         {
-            assert!(set_unreadable_file_metadata(&link, None, None, Some(0o644)).is_err());
-            assert!(set_unreadable_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
+            let unreadable = |path: &Path, mode| {
+                let (parent, name) = open_parent_no_follow(path)?;
+                set_unreadable_file_metadata(&parent, name, path, None, None, Some(mode))
+            };
+            assert!(unreadable(&link, 0o644).is_err());
+            assert!(unreadable(temp.path(), 0o700).is_err());
             assert_eq!(
                 fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
                 0o600
             );
-            set_unreadable_file_metadata(&path, None, None, Some(0o640)).unwrap();
+            unreadable(&path, 0o640).unwrap();
             assert_eq!(
                 fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
                 0o640
