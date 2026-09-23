@@ -4932,9 +4932,20 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         // too: two spellings of one script are one definition, so the lower one
         // loses the slot rather than standing up a task beside it.
         if !by_name.contains_key(&t.name)
-            && let Some(owner) = claimed_scripts.get(&t.name)
+            && let Some(owner) = claimed_scripts.get(&t.name).cloned()
         {
-            t.name = owner.clone();
+            // A stem can name several scripts, and a command may have claimed
+            // only some of them. The rest are still scripts this block
+            // configures, so decorate them before the block is read as naming
+            // the claimant -- `[tasks.hello]` reaches `hello.js` as well as
+            // whatever took `hello.sh` over. A command that reaches here lost
+            // the slot, so it contributes nothing either way.
+            if owner != t.name && t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                for name in stripped_name_overlay_targets(&by_name, &t.name) {
+                    file_task_overlays.entry(name).or_insert_with(|| t.clone());
+                }
+            }
+            t.name = owner;
         }
         // `[tasks.hello]` and `[tasks."hello.sh"]` are two spellings of one
         // script, so a block naming a file task is an overlay on it whichever
@@ -7346,6 +7357,44 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].run, vec![RunEntry::Script("echo inline".into())]);
+    }
+
+    /// A stem names every script sharing it, and a command may have claimed
+    /// only some. A block written with that stem still configures the rest, as
+    /// well as the task the claimed one became.
+    #[test]
+    fn test_a_stem_block_still_reaches_the_siblings_a_command_left() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    description: "stem metadata".to_string(),
+                    config_precedence: 0,
+                    ..inline_overlay("hello")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello.sh", "echo inline")
+                },
+            ],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(tasks.keys().collect_vec(), vec!["hello.js", "hello.sh"]);
+        assert_eq!(
+            tasks["hello.sh"].description, "stem metadata",
+            "the claimant should have the stem block's metadata"
+        );
+        assert_eq!(
+            tasks["hello.js"].description, "stem metadata",
+            "the sibling the command left should have it too"
+        );
+        assert_eq!(
+            tasks["hello.js"].file,
+            Some(PathBuf::from("mise-tasks/hello.js"))
+        );
     }
 
     /// A command that loses the slot claims nothing. Letting it claim a script

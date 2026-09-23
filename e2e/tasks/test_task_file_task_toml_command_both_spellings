@@ -73,3 +73,23 @@ EOF
 # disappearing along with the block that would have claimed it.
 assert "mise run build.sh" "keeps-the-slot"
 assert "mise run build.bash" "bash-script-ran"
+
+cat <<'EOF' >mise.toml
+[tasks."build.sh"]
+run = "echo inline-ran"
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks.build]
+description = "written with the stem"
+EOF
+
+# The stem names both scripts, so a block written with it configures the task
+# that claimed one of them and the sibling that is still a script.
+assert "mise run build.sh" "inline-ran"
+assert "mise run build.bash" "bash-script-ran"
+assert_contains "mise tasks ls --no-header" "written with the stem"
+count="$(mise tasks ls --no-header | grep -c 'written with the stem')"
+if [[ $count != "2" ]]; then
+  fail "expected both the claimant and the sibling to carry the stem block's description, got $count"
+fi
