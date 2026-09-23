@@ -24,6 +24,10 @@ use crate::backend::VersionInfo;
 use crate::backend::npm::is_semver_prerelease;
 use crate::config::Settings;
 
+/// npm registry configuration from the environment and the user's
+/// `~/.npmrc`, read once per process.
+static CONFIG: Lazy<NpmConfig> = Lazy::new(|| NpmConfig::load(&meta_dir()));
+
 /// Process-wide npm registry client. Registry URLs, scoped registries, and
 /// auth are read once from the environment and the user's `~/.npmrc`; the
 /// neutral project dir keeps a cwd `.npmrc` out of mise-owned queries.
@@ -37,7 +41,7 @@ static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
     // Before the first registry request, so the memoized User-Agent is
     // mise's rather than standalone aube's.
     crate::backend::aube_host::init();
-    let config = NpmConfig::load(&meta_dir());
+    let config = CONFIG.clone();
     let settings = Settings::get();
     let mode = if settings.offline() {
         NetworkMode::Offline
@@ -130,6 +134,33 @@ pub(crate) async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
                     .is_none_or(|metadata| metadata.deprecated.is_none())
         })
         .cloned())
+}
+
+/// Search npm packages matching `query` through the `/-/v1/search` endpoint
+/// of the registry `.npmrc` routes the query to, with the same auth as
+/// metadata and tarball requests.
+pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
+    let timeout = Settings::get().fetch_remote_versions_timeout();
+    Ok(CLIENT
+        .search_packages(query, limit, timeout)
+        .await?
+        .into_iter()
+        .map(|p| vfox::BackendTool {
+            name: p.name,
+            description: p.description,
+        })
+        .collect())
+}
+
+/// The registry an npm search for `query` goes to, so cached search results
+/// are not reused after `.npmrc` points somewhere else.
+pub(crate) fn search_registry(query: &str) -> String {
+    let routing_name = if query.starts_with('@') && !query.contains('/') {
+        format!("{query}/")
+    } else {
+        query.to_string()
+    };
+    CONFIG.registry_for(&routing_name).to_string()
 }
 
 /// Download the exact npm registry tarball for a package version, honoring
