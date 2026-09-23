@@ -4921,10 +4921,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// files) with inline `[tasks.*]` blocks.
 ///
 /// `config_tasks` are collected in config-file precedence order (highest first).
-/// When a name appears in both an executable script task and an inline block,
-/// the script stays as the base and the TOML block is overlaid via
-/// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
-/// an included TOML file. When the same name appears in multiple inline blocks
+/// When a name appears in both an executable script task and an inline block
+/// with no command, the script stays as the base and the TOML block is overlaid
+/// via [`Task::merge_toml_overlay`]. An inline block replaces a same-named task
+/// from an included TOML file. When the same name appears in multiple inline blocks
 /// (e.g. `mise.toml` and `mise.local.toml`), the highest-precedence block wins.
 /// If that block has no command, it overlays the nearest lower-precedence
 /// command-bearing block; definitions below that selected base are skipped.
@@ -4939,19 +4939,35 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// `mise-tasks/hello.sh`) has no exact match. When such a block carries no
 /// command and no dependencies of its own, it overlays the file task it names
 /// rather than becoming a separate task — see `stripped_name_overlay_targets`.
+///
+/// A block naming a script exactly and declaring a command of its own replaces
+/// it, rather than overlaying metadata onto a script that would still be what
+/// runs. Like an included TOML task, a script only yields to a block from the
+/// config whose `task_config.includes` selected it or a higher-precedence one;
+/// a block below that still only overlays its metadata.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
-    // Names an inline block gives a `run`/`run_windows`/`file` command to. Such
-    // a name is a task in its own right, so blocks carrying it layer onto that
-    // task rather than onto a same-stem script.
-    let command_bearing_config_names: BTreeSet<String> = config_tasks
+    // Names an inline block gives a `run`/`run_windows`/`file` command to, each
+    // with the highest precedence that names it. Such a name is a task in its
+    // own right, so blocks carrying it layer onto that task rather than onto a
+    // same-stem script.
+    let mut inline_command_precedence: IndexMap<String, usize> = IndexMap::new();
+    for t in config_tasks
         .iter()
         .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
-        .map(|t| t.name.clone())
-        .collect();
+    {
+        let precedence = inline_command_precedence
+            .entry(t.name.clone())
+            .or_insert(t.config_precedence);
+        *precedence = (*precedence).min(t.config_precedence);
+    }
+    let ScriptClaims {
+        claimed: claimed_scripts,
+        refused: refused_stems,
+    } = claim_scripts_for_inline_commands(&mut by_name, &inline_command_precedence);
     // The block that overlays each file task, held until after the loop.
     //
     // A script takes only its highest-precedence definition: lower ones
@@ -4963,7 +4979,29 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     let mut file_task_overlays: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
-    for t in config_tasks {
+    for mut t in config_tasks {
+        // A block spelling a script an inline command has claimed names a task
+        // that no longer exists under that spelling, so read it as naming the
+        // block that claimed it -- `[tasks."hello.sh"]` still configures what
+        // `[tasks.hello] run = ...` now runs. That holds for a second command
+        // too: two spellings of one script are one definition, so the lower one
+        // loses the slot rather than standing up a task beside it.
+        if !by_name.contains_key(&t.name)
+            && let Some(owner) = claimed_scripts.get(&t.name).cloned()
+        {
+            // A stem can name several scripts, and a command may have claimed
+            // only some of them. The rest are still scripts this block
+            // configures, so decorate them before the block is read as naming
+            // the claimant -- `[tasks.hello]` reaches `hello.js` as well as
+            // whatever took `hello.sh` over. A command that reaches here lost
+            // the slot, so it contributes nothing either way.
+            if owner != t.name && t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                for name in stripped_name_overlay_targets(&by_name, &t.name) {
+                    file_task_overlays.entry(name).or_insert_with(|| t.clone());
+                }
+            }
+            t.name = owner;
+        }
         // `[tasks.hello]` and `[tasks."hello.sh"]` are two spellings of one
         // script, so a block naming a file task is an overlay on it whichever
         // spelling it used and whatever fields it carries. Resolving that here,
@@ -4973,8 +5011,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         // overlay, and only a name some inline block gives a command to is a
         // task of its own that such blocks layer onto instead.
         if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
-            let targets =
-                file_task_overlay_targets(&by_name, &t.name, &command_bearing_config_names);
+            let targets = file_task_overlay_targets(
+                &by_name,
+                &t.name,
+                &inline_command_precedence,
+                &refused_stems,
+            );
             if !targets.is_empty() {
                 for name in targets {
                     file_task_overlays.entry(name).or_insert_with(|| t.clone());
@@ -4993,7 +5035,7 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
             let is_base = has_command
                 || (task_has_executable_content(&t)
-                    && !command_bearing_config_names.contains(&t.name));
+                    && !inline_command_precedence.contains_key(&t.name));
             if pending_inline_overlays.contains_key(&t.name) && is_base {
                 let overlays = pending_inline_overlays
                     .shift_remove(&t.name)
@@ -5020,12 +5062,22 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 }
             }
         } else if let Some(existing) = by_name.get(&t.name) {
-            // Only a command-bearing block reaches here now, and
-            // `merge_toml_overlay` does not carry a command onto a script, so
-            // this drops it exactly as it always has. See the follow-up on
-            // making a command under a script's name take effect.
+            // Only a command-bearing block that did not claim this script
+            // reaches here, because the pre-pass took every script a block
+            // outranks. What is left is a block from below the config whose
+            // `task_config.includes` found the script, so it decorates rather
+            // than takes over -- what a `conf.d` fragment layering onto a
+            // script the config above it found relies on.
             if existing.file.is_some() {
                 file_task_overlays.entry(t.name.clone()).or_insert(t);
+            }
+        } else if refused_stems.contains(&t.name) {
+            // The command could not outrank the scripts its stem reaches, so it
+            // decorates them, exactly as one written with a script's full name
+            // does. Standing up a task here would shadow them under
+            // `mise run <stem>` and undo the refusal.
+            for name in stripped_name_overlay_targets(&by_name, &t.name) {
+                file_task_overlays.entry(name).or_insert_with(|| t.clone());
             }
         } else {
             // No file task claimed this name above, so it is an inline task.
@@ -5067,6 +5119,98 @@ fn task_has_executable_content(task: &Task) -> bool {
         || !task.depends_post.is_empty()
 }
 
+/// Take the scripts an inline command names out of the running.
+///
+/// A `[tasks.<name>]` block that declares a `run`, `run_windows` or `file` says
+/// what `<name>` runs, so the discovered scripts that name reaches stop being
+/// tasks of their own: `hello.sh` for `[tasks."hello.sh"]`, and every script
+/// whose extension-stripped name is `hello` for `[tasks.hello]`. Both spellings
+/// therefore do the same thing, which is the point — `mise tasks ls` shows the
+/// stem and `mise run` takes it, so which spelling a config happened to use
+/// should not change what runs.
+///
+/// A name reaches a script exactly as an overlay does: the script named exactly,
+/// or, when there is none, every script sharing the stem. See
+/// [`file_task_overlay_targets`].
+///
+/// A block only claims a script it outranks. The script is in the running
+/// because some config's `task_config.includes` found it, so taking it over
+/// needs that config's standing or better; below that the block decorates the
+/// script instead, as it always has. Where several blocks name one script the
+/// highest-precedence one claims it (#11103).
+///
+/// Returns the spellings that reached a claimed script mapped to the block that
+/// claimed it — the script's own name and its stem — so a block written either
+/// way still finds the task the script became, plus the names whose claim was
+/// refused, which are not task names at all: see [`ScriptClaims`].
+fn claim_scripts_for_inline_commands(
+    by_name: &mut IndexMap<String, Task>,
+    inline_command_precedence: &IndexMap<String, usize>,
+) -> ScriptClaims {
+    let is_script = |task: &Task| task.file.is_some() && !task.is_toml_include;
+    let mut claimed: IndexMap<String, String> = IndexMap::new();
+    // `config_tasks` arrives highest precedence first, so this map is in that
+    // order too and the first block to reach a script is the one that keeps it.
+    for (name, precedence) in inline_command_precedence {
+        // A spelling an earlier, higher-precedence command already answers for
+        // is not a task of its own -- it loses the single slot those two
+        // spellings share -- so it claims nothing. Letting it claim a sibling
+        // script would take that script away and leave nothing running it.
+        if claimed.get(name).is_some_and(|owner| owner != name) {
+            continue;
+        }
+        let outranks = |task: &Task| *precedence <= task.config_precedence;
+        let targets = match by_name.get(name) {
+            // An exact name claims that script and nothing else, the same way
+            // it overlays only that script.
+            Some(task) if is_script(task) && outranks(task) => vec![name.clone()],
+            Some(_) => vec![],
+            None => by_name
+                .iter()
+                .filter(|(key, task)| {
+                    is_script(task)
+                        && outranks(task)
+                        && crate::task::strip_task_name_extension(key) == name.as_str()
+                })
+                .map(|(key, _)| key.clone())
+                .collect(),
+        };
+        for target in targets {
+            by_name.shift_remove(&target);
+            // Both spellings that reached the script now reach its claimant.
+            // Keeping the first is the same "highest precedence wins" the rest
+            // of the merge uses, and matters when two scripts share a stem.
+            let stem = crate::task::strip_task_name_extension(&target).to_string();
+            claimed.insert(target, name.clone());
+            claimed.entry(stem).or_insert_with(|| name.clone());
+        }
+    }
+    // A stem whose scripts are all still here reached them and was refused, so
+    // it is not a name a task can take: leaving a command under it would shadow
+    // those scripts under `mise run <stem>` and undo the refusal. The full name
+    // needs no such marking -- the script still holds it, so the merge finds it
+    // by name and decorates.
+    let refused = inline_command_precedence
+        .keys()
+        .filter(|name| {
+            !by_name.contains_key(*name) && !stripped_name_overlay_targets(by_name, name).is_empty()
+        })
+        .cloned()
+        .collect();
+    ScriptClaims { claimed, refused }
+}
+
+/// What [`claim_scripts_for_inline_commands`] worked out about the scripts each
+/// inline command names.
+struct ScriptClaims {
+    /// Spellings that reached a claimed script, mapped to the block that
+    /// claimed it.
+    claimed: IndexMap<String, String>,
+    /// Stems whose scripts the command could not outrank. A block of that name
+    /// decorates those scripts rather than becoming a task beside them.
+    refused: BTreeSet<String>,
+}
+
 /// The file tasks a `[tasks.<name>]` block overlays, under either spelling.
 ///
 /// An exact name always wins: `[tasks."hello.sh"]` names that script and
@@ -5076,7 +5220,8 @@ fn task_has_executable_content(task: &Task) -> bool {
 fn file_task_overlay_targets(
     by_name: &IndexMap<String, Task>,
     name: &str,
-    command_bearing_config_names: &BTreeSet<String>,
+    inline_command_precedence: &IndexMap<String, usize>,
+    refused_stems: &BTreeSet<String>,
 ) -> Vec<String> {
     if let Some(existing) = by_name.get(name) {
         return if existing.file.is_some() && !existing.is_toml_include {
@@ -5085,7 +5230,10 @@ fn file_task_overlay_targets(
             vec![]
         };
     }
-    if command_bearing_config_names.contains(name) {
+    // A name some block gives a command to is a task of its own -- unless that
+    // command was refused the scripts the name reaches, in which case no task
+    // stands under it and the scripts are still what the name configures.
+    if inline_command_precedence.contains_key(name) && !refused_stems.contains(name) {
         return vec![];
     }
     stripped_name_overlay_targets(by_name, name)
@@ -5101,6 +5249,7 @@ fn file_task_overlay_targets(
 /// each file task's stripped name, never stripped itself. `[tasks."my.app"]`
 /// therefore leaves `my.sh` alone, and `[tasks."hello.sh"]` does not reach
 /// `hello.js`.
+///
 fn stripped_name_overlay_targets(by_name: &IndexMap<String, Task>, name: &str) -> Vec<String> {
     by_name
         .iter()
@@ -6065,9 +6214,10 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
-                if task.is_toml_include {
-                    task.config_precedence = include_config_precedence;
-                }
+                // Both task kinds are reachable only because some config's
+                // `task_config.includes` named this path, so both answer to that
+                // config's precedence when an inline block claims their name.
+                task.config_precedence = include_config_precedence;
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
@@ -6764,6 +6914,22 @@ mod tests {
         }
     }
 
+    /// A `[tasks.<name>]` block carrying no command of its own.
+    fn inline_overlay(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from("mise.toml"),
+            ..Default::default()
+        }
+    }
+
+    fn inline_task(name: &str, run: &str) -> Task {
+        Task {
+            run: vec![RunEntry::Script(run.to_string())],
+            ..inline_overlay(name)
+        }
+    }
+
     #[test]
     fn test_stripped_name_block_overlays_file_task() {
         let tasks = merge_file_and_config_tasks(
@@ -6802,7 +6968,8 @@ mod tests {
     fn test_stripped_name_block_defers_to_an_inline_command_with_the_same_name() {
         // `mise.local.toml` contributes metadata, `mise.toml` the command. The
         // metadata block must overlay that inline base, not the file task, or
-        // the base below it is dropped.
+        // the base below it is dropped. The command also claims `hello.sh`,
+        // since `[tasks.hello]` names that script.
         let tasks = merge_file_and_config_tasks(
             vec![file_task("hello.sh")],
             vec![
@@ -6825,7 +6992,10 @@ mod tests {
             inline.run,
             vec![RunEntry::Script("echo inline".to_string())]
         );
-        assert!(tasks.iter().any(|t| t.name == "hello.sh"));
+        assert!(
+            !tasks.iter().any(|t| t.name == "hello.sh"),
+            "the command claims the script its name reaches"
+        );
     }
 
     #[test]
@@ -7124,7 +7294,7 @@ mod tests {
     fn test_an_inline_command_elsewhere_keeps_the_name_for_itself() {
         // `[tasks.hello] run = ...` makes `hello` a task of its own, so a
         // metadata block of that name layers onto it rather than onto the
-        // script, which stays reachable as `hello.sh`.
+        // script -- and the script it names is claimed by that command.
         let tasks = merge_file_and_config_tasks(
             vec![file_task("hello.sh")],
             vec![
@@ -7147,7 +7317,10 @@ mod tests {
             inline.run,
             vec![RunEntry::Script("echo inline".to_string())]
         );
-        assert!(tasks.iter().any(|t| t.name == "hello.sh"));
+        assert!(
+            !tasks.iter().any(|t| t.name == "hello.sh"),
+            "the command claims the script its name reaches"
+        );
     }
 
     #[test]
@@ -7164,6 +7337,252 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "//projects/my.app:build.sh");
         assert_eq!(tasks[0].description, "overlaid");
+    }
+
+    #[test]
+    fn test_inline_command_replaces_a_matching_file_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello.sh", "echo inline")],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert_eq!(tasks[0].file, None);
+    }
+
+    #[test]
+    fn test_inline_file_key_replaces_a_matching_file_task() {
+        let redirected = Task {
+            file: Some(PathBuf::from("scripts/other.sh")),
+            ..inline_overlay("hello.sh")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![redirected]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("scripts/other.sh")));
+    }
+
+    /// A script is in the running because some config's `task_config.includes`
+    /// named its directory, so a block from a config below that one decorates
+    /// the script instead of taking it over.
+    #[test]
+    fn test_a_lower_precedence_command_still_only_overlays_a_file_task() {
+        let script = Task {
+            config_precedence: 0,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            description: "from a lower config".to_string(),
+            ..inline_task("hello.sh", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "from a lower config");
+    }
+
+    /// A command under the stem claims the scripts that stem names, so the two
+    /// spellings do the same thing. `mise tasks ls` shows the stem and
+    /// `mise run` takes it, so a script left beside the command would be
+    /// shadowed by exact-name matching anyway (#10393).
+    #[test]
+    fn test_a_command_under_the_stem_claims_the_scripts_it_names() {
+        use crate::task::GetMatchingExt;
+
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello", "echo inline")],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(tasks.keys().collect_vec(), vec!["hello"]);
+
+        let matches = tasks.get_matching("hello").unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].run, vec![RunEntry::Script("echo inline".into())]);
+    }
+
+    /// A stem names every script sharing it, and a command may have claimed
+    /// only some. A block written with that stem still configures the rest, as
+    /// well as the task the claimed one became.
+    #[test]
+    fn test_a_stem_block_still_reaches_the_siblings_a_command_left() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    description: "stem metadata".to_string(),
+                    config_precedence: 0,
+                    ..inline_overlay("hello")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello.sh", "echo inline")
+                },
+            ],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(tasks.keys().collect_vec(), vec!["hello.js", "hello.sh"]);
+        assert_eq!(
+            tasks["hello.sh"].description, "stem metadata",
+            "the claimant should have the stem block's metadata"
+        );
+        assert_eq!(
+            tasks["hello.js"].description, "stem metadata",
+            "the sibling the command left should have it too"
+        );
+        assert_eq!(
+            tasks["hello.js"].file,
+            Some(PathBuf::from("mise-tasks/hello.js"))
+        );
+    }
+
+    /// A command that loses the slot claims nothing. Letting it claim a script
+    /// the winner's name never reached would take that script away and leave
+    /// nothing running it, since the block itself is then dropped.
+    #[test]
+    fn test_a_command_that_loses_the_slot_leaves_sibling_scripts_alone() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    config_precedence: 0,
+                    ..inline_task("hello.sh", "echo exact")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello", "echo stem")
+                },
+            ],
+        );
+
+        assert_eq!(
+            tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec(),
+            vec!["hello.js", "hello.sh"],
+            "the sibling the winning name never reached must survive"
+        );
+        let claimed = tasks.iter().find(|t| t.name == "hello.sh").unwrap();
+        assert_eq!(
+            claimed.run,
+            vec![RunEntry::Script("echo exact".to_string())]
+        );
+        let sibling = tasks.iter().find(|t| t.name == "hello.js").unwrap();
+        assert_eq!(sibling.file, Some(PathBuf::from("mise-tasks/hello.js")));
+    }
+
+    /// A command that cannot outrank the scripts its stem reaches decorates
+    /// them, exactly as one written with a script's full name does. Left as a
+    /// task of its own it would shadow them under `mise run <stem>`, which is
+    /// the takeover the precedence rule just refused.
+    #[test]
+    fn test_a_refused_stem_command_decorates_instead_of_shadowing() {
+        let script = Task {
+            config_precedence: 0,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            description: "from a lower config".to_string(),
+            ..inline_task("hello", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1, "the command stood up a task of its own");
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "from a lower config");
+    }
+
+    /// Two spellings of one script are one definition, so a second command
+    /// under the other spelling loses the slot rather than standing up a task
+    /// beside the one that claimed the script (#11103).
+    #[test]
+    fn test_a_second_command_under_the_other_spelling_loses_the_slot() {
+        for (high, low) in [("hello", "hello.sh"), ("hello.sh", "hello")] {
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![
+                    Task {
+                        config_precedence: 0,
+                        ..inline_task(high, "echo high")
+                    },
+                    Task {
+                        config_precedence: 1,
+                        ..inline_task(low, "echo low")
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "[tasks.{low}] stood up a task of its own");
+            assert_eq!(
+                tasks[0].run,
+                vec![RunEntry::Script("echo high".to_string())],
+                "[tasks.{high}] should have kept the slot"
+            );
+        }
+    }
+
+    /// The stem can name more than one script, and the command speaks for all
+    /// of them. The full name stays the narrower claim.
+    #[test]
+    fn test_a_command_under_the_stem_claims_every_script_sharing_it() {
+        let scripts = || vec![file_task("hello.sh"), file_task("hello.js")];
+
+        let under_stem =
+            merge_file_and_config_tasks(scripts(), vec![inline_task("hello", "echo inline")]);
+        assert_eq!(
+            under_stem.iter().map(|t| t.name.as_str()).collect_vec(),
+            vec!["hello"],
+            "the stem claims both scripts"
+        );
+
+        let under_full_name =
+            merge_file_and_config_tasks(scripts(), vec![inline_task("hello.sh", "echo inline")]);
+        assert_eq!(
+            under_full_name
+                .iter()
+                .map(|t| t.name.as_str())
+                .sorted()
+                .collect_vec(),
+            vec!["hello.js", "hello.sh"],
+            "the full name claims only the script it spells"
+        );
+    }
+
+    /// On Windows a `.ps1` paired with a POSIX sibling is renamed to the bare
+    /// stem, so the block that replaces it is the one spelled with that stem.
+    #[test]
+    fn test_inline_command_replaces_a_renamed_windows_file_task() {
+        let file_tasks = prefer_windows_file_task_siblings_inner(vec![
+            file_task("hello.sh"),
+            file_task("hello.ps1"),
+        ]);
+
+        let tasks =
+            merge_file_and_config_tasks(file_tasks, vec![inline_task("hello", "echo inline")]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
     }
 
     #[test]
