@@ -891,7 +891,18 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         "dotfile {target} with mode = \"absent\" cannot declare source, content, manifest, exclude, permissions, or encrypt"
                     );
                 }
-                if mode == FileMode::Absent && is_glob_pattern(&resolve_target_arg(&target)) {
+                // composition checks whichever destination a variant selects,
+                // so every one of them must be a single path
+                if mode == FileMode::Absent
+                    && std::iter::once(target.as_str())
+                        .chain(
+                            variants
+                                .iter()
+                                .flatten()
+                                .filter_map(|variant| variant.target.as_deref()),
+                        )
+                        .any(|path| is_glob_pattern(&resolve_target_arg(path)))
+                {
                     bail!("dotfile {target}: an absent target cannot use wildcards");
                 }
                 if source.is_some() && content.is_some() {
@@ -4947,6 +4958,16 @@ variants = [
             )
             .is_err()
         );
+        // so is one a variant selects as its destination
+        let err = validate_incoming_body(
+            r#"
+[dotfiles."~/.oldrc"]
+mode = "absent"
+variants = [{ os = "windows", target = "~/.old[0-9]" }, { default = true }]
+"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("cannot use wildcards"), "{err}");
         let mut merged = IndexMap::new();
         let entry: FileTomlEntry = toml::from_str(r#"mode = "absent""#)?;
         merge_file_entry(

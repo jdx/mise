@@ -258,6 +258,11 @@ An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
 `permissions`, `encrypt`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
 and an edit entry cannot change the file it removes.
 
+An `absent` target names exactly one path, so it cannot contain `*`, `?`,
+or `[`. To remove a file whose name contains those characters, declare
+`state = "absent"` under
+[`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
+
 `mise dot status` shows the entry as `absent` once the target is gone, and
 as `would remove` while a file or symlink is still there.
 `mise dot apply --dry-run` prints `rm <target>`.
