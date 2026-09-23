@@ -1896,8 +1896,8 @@ impl Lock {
                         .as_ref()
                         .ok()
                         .and_then(|request| request.resolve_options(context.resolve_options).ok());
-                    // An installed exact pin resolves to itself, so failing to
-                    // look past it is no reason to fail the bump.
+                    // An installed exact pin resolves to itself, so `--bump` has
+                    // nothing to look up for it.
                     let installed_exact = backend.as_ref().is_some_and(|backend| {
                         backend
                             .list_installed_versions()
@@ -1907,6 +1907,7 @@ impl Lock {
                         .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
                         && (self.bump || resolve_options.before_date.is_some() || is_rolling)
+                        && !(self.bump && installed_exact)
                     {
                         resolve_options.use_locked_version = false;
                         resolve_options.latest_versions = true;
@@ -1919,7 +1920,7 @@ impl Lock {
                             }
                             // Keeping the locked version would report success for a
                             // bump that never looked at the remote versions.
-                            Err(err) if self.bump && !installed_exact => {
+                            Err(err) if self.bump => {
                                 return Err(err.wrap_err(format!(
                                     "failed to resolve {request} for `mise lock --bump`"
                                 )));
