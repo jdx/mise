@@ -25,6 +25,8 @@ pub(crate) struct ManagedFileTomlConfig {
     #[serde(default)]
     pub template: bool,
     #[serde(default)]
+    pub remove_empty: bool,
+    #[serde(default)]
     pub state: ManagedState,
     #[serde(default)]
     pub replace: bool,
@@ -87,6 +89,9 @@ pub(crate) struct ManagedFileRequest {
     pub replace: bool,
     pub notify: Vec<String>,
     pub origin: ResourceOrigin,
+    /// A `remove_empty` template rendered to whitespace only, so the declared
+    /// present file is removed instead.
+    rendered_empty: bool,
     inspection: Option<PathInspection>,
 }
 
@@ -523,14 +528,14 @@ fn validate_requests(
                 file.path.display()
             );
         }
-        validate_present_ancestors(&file.path, file.state, &directory_states)?;
+        validate_present_ancestors(&file.path, file.declared_state(), &directory_states)?;
     }
     for directory in directories {
         validate_present_ancestors(&directory.path, directory.state, &directory_states)?;
     }
     for (path, state, phase) in files
         .iter()
-        .map(|file| (&file.path, file.state, file.phase))
+        .map(|file| (&file.path, file.declared_state(), file.phase))
         .chain(
             directories
                 .iter()
@@ -597,18 +602,15 @@ impl ManagedFileRequest {
         origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
-        let owner = nonempty("owner", config.owner)?;
-        let group = nonempty("group", config.group)?;
         let metadata_only = config.state == ManagedState::Present
             && config.source.is_none()
             && config.content.is_none();
+        if metadata_only {
+            validate_metadata_only(&path, &config)?;
+        }
+        let owner = nonempty("owner", config.owner)?;
+        let group = nonempty("group", config.group)?;
         let mode = if metadata_only {
-            validate_metadata_only(
-                &path,
-                config.mode.is_some() || owner.is_some() || group.is_some(),
-                config.template,
-                config.replace,
-            )?;
             config
                 .mode
                 .as_deref()
@@ -617,6 +619,18 @@ impl ManagedFileRequest {
         } else {
             Some(parse_mode(config.mode.as_deref(), DEFAULT_FILE_MODE)?)
         };
+        if config.remove_empty && !config.template {
+            bail!(
+                "[bootstrap.files].\"{}\": remove_empty requires template = true",
+                path.display()
+            );
+        }
+        if config.remove_empty && config.state == ManagedState::Absent {
+            bail!(
+                "[bootstrap.files].\"{}\": remove_empty applies only to present files",
+                path.display()
+            );
+        }
         let mut content = match (config.source, config.content, config.state) {
             (Some(_), Some(_), _) => {
                 bail!(
@@ -654,6 +668,16 @@ impl ManagedFileRequest {
                 })?;
             content = rendered;
         }
+        let rendered_empty = config.remove_empty
+            && content
+                .as_deref()
+                .is_some_and(|content| content.trim().is_empty());
+        let state = if rendered_empty {
+            content = None;
+            ManagedState::Absent
+        } else {
+            config.state
+        };
         Ok(Self {
             path,
             content,
@@ -661,10 +685,11 @@ impl ManagedFileRequest {
             owner,
             group,
             mode,
-            state: config.state,
+            state,
             replace: config.replace,
             notify: config.notify,
             origin,
+            rendered_empty,
             inspection: None,
         })
     }
@@ -679,6 +704,22 @@ impl ManagedFileRequest {
     /// mise has no content to create it with.
     fn is_missing_metadata_only_target(&self) -> bool {
         self.is_metadata_only() && matches!(self.inspection, Some(PathInspection::Missing))
+    }
+
+    /// Whether this file is being removed because its template rendered empty.
+    pub(crate) fn rendered_empty(&self) -> bool {
+        self.rendered_empty
+    }
+
+    /// The state the configuration declares, before an empty render turns a
+    /// present file into a removal. Structural rules such as parent ordering
+    /// hold for the declaration, so they do not depend on what renders.
+    fn declared_state(&self) -> ManagedState {
+        if self.rendered_empty {
+            ManagedState::Present
+        } else {
+            self.state
+        }
     }
 
     pub(crate) fn plan(&self) -> Result<ResourcePlan> {
@@ -732,25 +773,26 @@ const DEFAULT_FILE_MODE: u32 = 0o644;
 /// A present entry without `source` or `content` manages only the metadata it
 /// declares, so it must declare some, and must not ask for anything that
 /// would write or replace the file.
-fn validate_metadata_only(
-    path: &Path,
-    declares_metadata: bool,
-    template: bool,
-    replace: bool,
-) -> Result<()> {
-    if !declares_metadata {
+fn validate_metadata_only(path: &Path, config: &ManagedFileTomlConfig) -> Result<()> {
+    if config.mode.is_none() && config.owner.is_none() && config.group.is_none() {
         bail!(
             "[bootstrap.files].\"{}\": present files require source, content, or at least one of mode, owner, or group",
             path.display()
         );
     }
-    if template {
-        bail!(
-            "[bootstrap.files].\"{}\": template requires source or content",
-            path.display()
-        );
+    // remove_empty also requires template, but say what is actually missing.
+    for (enabled, key) in [
+        (config.template, "template"),
+        (config.remove_empty, "remove_empty"),
+    ] {
+        if enabled {
+            bail!(
+                "[bootstrap.files].\"{}\": {key} requires source or content",
+                path.display()
+            );
+        }
     }
-    if replace {
+    if config.replace {
         bail!(
             "[bootstrap.files].\"{}\": replace requires source or content; a file whose content mise does not manage is never replaced",
             path.display()
@@ -1217,6 +1259,9 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
             request.owner.as_deref(),
             request.group.as_deref(),
         ),
+        ManagedState::Absent if request.rendered_empty => {
+            "absent (template rendered empty)".to_string()
+        }
         ManagedState::Absent => "absent".to_string(),
     };
     let id = ResourceId::new("file", request.path.to_string_lossy());
@@ -2128,6 +2173,7 @@ mod tests {
                 environment: vec![],
                 source: None,
             },
+            rendered_empty: false,
             inspection: None,
         }
     }
@@ -2448,10 +2494,24 @@ mod tests {
     #[test]
     fn metadata_only_files_require_metadata_and_reject_writes() {
         let path = Path::new("/opt/example");
-        assert!(validate_metadata_only(path, true, false, false).is_ok());
-        assert!(validate_metadata_only(path, false, false, false).is_err());
-        assert!(validate_metadata_only(path, true, true, false).is_err());
-        assert!(validate_metadata_only(path, true, false, true).is_err());
+        let validate = |toml: &str| {
+            let config = toml::from_str::<ManagedFileTomlConfig>(toml).unwrap();
+            validate_metadata_only(path, &config)
+        };
+        assert!(validate(r#"mode = "0600""#).is_ok());
+        assert!(validate(r#"owner = "root""#).is_ok());
+        assert!(validate(r#"group = "root""#).is_ok());
+        assert!(validate("").is_err());
+        for invalid in ["template = true", "remove_empty = true", "replace = true"] {
+            let error = validate(&format!("mode = \"0600\"\n{invalid}")).unwrap_err();
+            let key = invalid.split(' ').next().unwrap();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("{key} requires source or content")),
+                "unexpected error: {error}"
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -2683,6 +2743,131 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    fn remove_empty_request(toml: &str, config: &Config) -> Result<ManagedFileRequest> {
+        ManagedFileRequest::from_toml(
+            config,
+            PathBuf::from("/opt/example/config"),
+            toml::from_str(toml).unwrap(),
+            Path::new("/"),
+            file("/opt/example/config", ManagedState::Present).origin,
+            &super::super::secrets::SecretValues::default(),
+        )
+    }
+
+    #[tokio::test]
+    async fn remove_empty_turns_a_blank_render_into_a_removal() {
+        let config = Config::get().await.unwrap();
+        for content in ["", " \n\t\n"] {
+            let request = remove_empty_request(
+                &format!("template = true\nremove_empty = true\ncontent = {content:?}"),
+                &config,
+            )
+            .unwrap();
+            assert_eq!(request.state, ManagedState::Absent);
+            assert!(request.rendered_empty());
+            assert_eq!(request.content, None);
+        }
+
+        let request = remove_empty_request(
+            "template = true\nremove_empty = true\ncontent = \"{% if false %}x{% endif %}\"",
+            &config,
+        )
+        .unwrap();
+        assert_eq!(request.state, ManagedState::Absent);
+
+        let request = remove_empty_request(
+            "template = true\nremove_empty = true\ncontent = \" kept \"",
+            &config,
+        )
+        .unwrap();
+        assert_eq!(request.state, ManagedState::Present);
+        assert_eq!(request.content.as_deref(), Some(" kept "));
+
+        // Without remove_empty an empty render is ordinary empty content.
+        let request = remove_empty_request("template = true\ncontent = \"\"", &config).unwrap();
+        assert_eq!(request.state, ManagedState::Present);
+        assert_eq!(request.content.as_deref(), Some(""));
+    }
+
+    #[tokio::test]
+    async fn remove_empty_requires_a_present_template() {
+        let config = Config::get().await.unwrap();
+        let error = remove_empty_request("remove_empty = true\ncontent = \"\"", &config)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("remove_empty requires template = true"),
+            "{error}"
+        );
+        let error = remove_empty_request(
+            "template = true\nremove_empty = true\nstate = \"absent\"",
+            &config,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("remove_empty applies only to present files"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rendered_empty_files_plan_and_notify_as_removals() {
+        let mut removed = file("/opt/example/config", ManagedState::Absent);
+        removed.rendered_empty = true;
+        removed.notify.push("example".to_string());
+        removed.inspection = Some(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file".to_string(),
+            metadata_matches: true,
+            content_matches: None,
+        });
+        let plan = removed.plan().unwrap();
+        assert_eq!(plan.action, ResourceAction::Remove);
+        assert_eq!(plan.desired, "absent (template rendered empty)");
+        assert!(matches!(
+            removed.operation().unwrap(),
+            Some(PrivilegedAction::RemoveFile { .. })
+        ));
+        assert!(
+            pending_notifications(&[removed.clone()], &[])
+                .unwrap()
+                .contains("example")
+        );
+
+        removed.inspection = Some(PathInspection::Missing);
+        assert_eq!(removed.plan().unwrap().action, ResourceAction::Noop);
+
+        // A directory at the target is refused, as for any absent file.
+        removed.inspection = Some(PathInspection::Present {
+            kind: ManagedPathKind::Directory,
+            current: "directory".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+        });
+        assert_eq!(removed.plan().unwrap().action, ResourceAction::Unknown);
+        assert!(removed.operation().is_err());
+    }
+
+    #[test]
+    fn rendered_empty_files_keep_their_declared_structure_rules() {
+        let mut removed = file("/opt/example/nested/config", ManagedState::Absent);
+        removed.rendered_empty = true;
+        assert!(
+            validate_requests(
+                &[removed.clone()],
+                &[directory("/opt/example", ManagedState::Absent)],
+            )
+            .is_err()
+        );
+
+        let mut parent = directory("/opt/example", ManagedState::Present);
+        removed.phase = ManagedFilePhase::PrePackages;
+        assert!(validate_requests(&[removed.clone()], &[parent.clone()]).is_err());
+        parent.phase = ManagedFilePhase::PrePackages;
+        assert!(validate_requests(&[removed], &[parent]).is_ok());
     }
 
     #[test]

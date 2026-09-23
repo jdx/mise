@@ -23,13 +23,14 @@ Backend plugins extend the standard vfox plugin system with dedicated backend ho
 Backend plugins are generally a git repository but can also be a directory (via `mise plugin link`).
 
 Backend plugins are written in Lua (currently version 5.1). They use three required backend
-methods and can optionally expose their tool catalog. Each method is implemented in its own file:
+methods and can optionally expose their tool catalog or clean up on uninstall. Each method is implemented in its own file:
 
 - `hooks/backend_list_tools.lua` - Optionally lists discoverable tools
 - `hooks/backend_search_tools.lua` - Optionally searches a large tool catalog
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
 - `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
+- `hooks/backend_uninstall.lua` - Optionally cleans up before mise removes an installed version
 
 ## Backend Methods
 
@@ -138,6 +139,30 @@ function PLUGIN:BackendExecEnv(ctx)
 end
 ```
 
+### BackendUninstall
+
+Optionally runs cleanup that removing the install directory cannot do, such as running a vendor
+uninstaller or deleting registry entries created outside the install directory:
+
+```lua
+function PLUGIN:BackendUninstall(ctx)
+    local install_path = ctx.install_path
+
+    -- Your logic to undo changes made outside install_path
+    -- The install directory still exists, so files installed there can be read
+
+    return {}
+end
+```
+
+mise calls this hook whenever it removes an installed version: `mise uninstall`, `mise upgrade`,
+`mise prune`, and delayed removal of old versions. It does not run for `--dry-run`. If the hook
+raises an error, mise stops and keeps the install directory so the uninstall can be retried.
+
+`ctx.options` comes from the current configuration. When the tool is no longer configured, for
+example during `mise prune`, it contains only defaults. Save anything the uninstaller needs in
+`install_path` during `BackendInstall` instead of relying on `ctx.options`.
+
 ## Creating a Backend Plugin
 
 ### Using the Template Repository
@@ -175,6 +200,7 @@ my-backend-plugin/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
 │   ├── backend_install.lua         # BackendInstall hook
 │   ├── backend_exec_env.lua        # BackendExecEnv hook
+│   ├── backend_uninstall.lua       # Optional cleanup before removal
 │   ├── backend_list_tools.lua      # Optional finite tool catalog
 │   └── backend_search_tools.lua    # Optional query-driven tool search
 
@@ -323,6 +349,16 @@ until a tool has been selected.
 | `ctx.install_path`  | Installation directory      | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
 | `ctx.download_path` | Download directory          | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
 | `ctx.options`       | Tool options from mise.toml | `{exe = "rg"}`                                                     |
+
+### BackendUninstall Context
+
+| Variable            | Description                        | Example                                                            |
+| ------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `ctx.tool`          | The tool name                      | `"prettier"`                                                       |
+| `ctx.version`       | The installed version              | `"3.0.0"`                                                          |
+| `ctx.install_path`  | Installation directory             | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
+| `ctx.download_path` | Download directory                 | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
+| `ctx.options`       | Tool options from current config   | `{exe = "rg"}`                                                     |
 
 ### BackendExecEnv Context
 

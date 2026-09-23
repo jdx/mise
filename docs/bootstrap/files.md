@@ -56,6 +56,33 @@ directory as <span v-pre>`{{ config_root }}`</span>, and the destination as
 included in plans, dry-run descriptions, status output, or privileged helper
 output.
 
+Set `remove_empty = true` beside `template = true` to remove the target when
+the template renders to empty or whitespace-only content. This lets a single
+declaration switch a file on and off from `vars` or the environment:
+
+```toml
+[vars]
+proxy_host = "proxy.internal:3128"
+
+[bootstrap.files."/etc/apt/apt.conf.d/95proxy"]
+template = true
+remove_empty = true
+content = """
+{% if vars.proxy_host %}Acquire::http::Proxy "http://{{ vars.proxy_host }}";
+{% endif %}"""
+```
+
+With `proxy_host` set, mise writes the file. Set it to `""` and the next apply
+removes `/etc/apt/apt.conf.d/95proxy`; the plan shows the removal as
+`absent (template rendered empty)`, and `notify` services fire as for any other
+removal. A directory at the target is still refused, as with
+`state = "absent"`. When a secret the template needs is unavailable, mise cannot
+tell whether the template is empty, so it never removes the file: status reports
+it as not inspected and apply fails as for any other template. `remove_empty` is
+rejected on files without `template = true` and on `state = "absent"` files.
+The file's declared state remains present for validation, so its parent
+directories must still allow a present file.
+
 mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
 rename. Changes are attempted as the current user first. If the filesystem
@@ -94,7 +121,8 @@ These entries never create, replace, or remove the file:
   opened without following symlinks, so it never lands on a symlink's target.
   On Linux, the owner of a file it cannot read can still change its mode
   without `sudo`.
-- `template` and `replace` require `source` or `content` and are rejected here.
+- `template`, `remove_empty`, and `replace` require `source` or `content` and
+  are rejected here.
 - `mise bootstrap unapply` keeps the file, since mise never managed its content.
 
 `notify` fires when mise changes the file's permissions.
