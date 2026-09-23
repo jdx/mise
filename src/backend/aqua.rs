@@ -2619,7 +2619,24 @@ impl AquaBackend {
         }
 
         let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &tarball_path) {
+            let url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|platform| platform.url.clone());
+            return Err(match url {
+                Some(url) => {
+                    github::with_checksum_mismatch_note(
+                        err,
+                        &url,
+                        &tarball_path,
+                        lockfile_has_checksum,
+                    )
+                    .await
+                }
+                None => err,
+            });
+        }
         Ok(())
     }
 
@@ -5908,6 +5925,7 @@ no_asset: true
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 

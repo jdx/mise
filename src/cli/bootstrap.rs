@@ -9,7 +9,7 @@ use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dotfiles::{Dotfiles, DotfilesApply};
+use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -1709,33 +1709,18 @@ impl Bootstrap {
             let edits = system::edits::edits_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfiles");
-                let opts = system::files::ApplyOpts {
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    force: self.force_dotfiles,
-                    force_hint: "use --force-dotfiles or run `mise dot apply --force`",
-                    yes: self.yes,
-                };
-                if !system::files::apply(&config, &files, &opts, &secrets, &mut vec![])? {
-                    return Ok(declined());
-                }
             }
-
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfile edits");
-                let opts = system::edits::ApplyOpts {
-                    part: "dotfiles",
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    yes: self.yes,
-                };
-                if !system::edits::apply(&config, &edits, &opts, &mut vec![])? {
-                    return Ok(declined());
-                }
+            }
+            // the same [history.reload] commands `mise dot apply` runs, for
+            // the targets this phase writes
+            if (!files.is_empty() || !edits.is_empty())
+                && !write_and_reload(self.dry_run, |written| {
+                    self.apply_dotfiles(&config, &files, &edits, &secrets, written)
+                })?
+            {
+                return Ok(declined());
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
@@ -2107,6 +2092,45 @@ impl Bootstrap {
             bail!("bootstrap from repository failed with {status}");
         }
         Ok(())
+    }
+
+    /// The dotfiles phase's whole-file entries, then its edits, appending
+    /// each written target to `written`. Returns `false` when a prompt was
+    /// declined.
+    fn apply_dotfiles(
+        &self,
+        config: &Config,
+        files: &[system::files::FileRequest],
+        edits: &[system::edits::EditRequest],
+        secrets: &system::secrets::SecretValues,
+        written: &mut Vec<PathBuf>,
+    ) -> Result<bool> {
+        if !files.is_empty() {
+            info!("bootstrap: dotfiles");
+            let opts = system::files::ApplyOpts {
+                dry_run: self.dry_run,
+                verbose: false,
+                force: self.force_dotfiles,
+                force_hint: "use --force-dotfiles or run `mise dot apply --force`",
+                yes: self.yes,
+            };
+            if !system::files::apply(config, files, &opts, secrets, written)? {
+                return Ok(false);
+            }
+        }
+        if !edits.is_empty() {
+            info!("bootstrap: dotfile edits");
+            let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
+                dry_run: self.dry_run,
+                verbose: false,
+                yes: self.yes,
+            };
+            if !system::edits::apply(config, edits, &opts, written)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     async fn run_hooks(
