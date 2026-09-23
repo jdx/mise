@@ -11,7 +11,8 @@ cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 mkdir -p "$MISE_CONFIG_DIR" one two
-ports=$(python3 - <<'PYPORT'
+ports=$(
+  python3 - <<'PYPORT'
 import random
 import socket
 sockets = []
