@@ -3,6 +3,7 @@ pub(crate) mod hook_env;
 pub(crate) mod ports;
 pub(crate) mod presets;
 pub(crate) mod providers;
+mod providers_nats;
 pub(crate) mod prune;
 pub(crate) mod runtime;
 pub(crate) mod tasks;

@@ -6408,7 +6408,7 @@
               "resource": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]{0,62}$",
-                "description": "Database shared by consumers choosing this same name. Omit for a checkout-specific database."
+                "description": "Database or NATS account shared by consumers choosing this name. Omit for a checkout-specific resource."
               }
             }
           }

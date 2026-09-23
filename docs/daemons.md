@@ -1177,3 +1177,45 @@ migrations or automatically delete databases.
 After changing a consumer's resource selection, restart its daemon. Use
 `mise daemons ls --json` to inspect `provider`, `resource` and `ownership`; use
 `mise daemons providers ls --json` for the server's port and storage location.
+
+### Share NATS without sharing messages
+
+NATS providers use an account for each resource. Accounts have separate subject
+and JetStream namespaces, so two checkouts can use identical stream and subject
+names without receiving each other's messages:
+
+```toml
+# Global configuration
+[daemon_providers.local-nats]
+preset = "nats"
+version = "2"
+port = "auto"
+```
+
+```toml
+# Project configuration
+[daemons.messages]
+provider = "local-nats"
+```
+
+As with SQL providers, omit `resource` for a checkout-specific account or set the
+same explicit resource name in several consumers to share that account and its
+messages. `NATS_URL` includes the account's username and password.
+
+Mise generates persistent credentials when first resolving a NATS resource's
+connection settings, including during environment inspection. Credentials and
+managed configuration are stored in private files under the provider's state
+directory. Inspecting the environment does not start NATS or provision a live
+account. Daemon listing output omits passwords; treat exported `NATS_URL` values
+as credentials.
+
+Starting a consumer adds its account through a validated configuration reload.
+Existing accounts and their connections remain available. Provider restarts keep
+credentials and JetStream data; stopping a consumer does not remove its account.
+`options.jetstream = false` disables JetStream while retaining separate subject
+namespaces.
+
+Automatic account provisioning currently requires mise-managed, loopback-only
+NATS configuration. Custom configuration files and TLS/certificate authentication
+are rejected for providers; use an ordinary local NATS daemon for those setups.
+Mise does not rewrite an existing NATS configuration or certificate mapping.
