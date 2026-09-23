@@ -500,7 +500,9 @@ For a symlink, point the edit at the real file you want to change.
 
 Removing an entry from config leaves its file, block, or line in place.
 To remove them too, run `mise dot unapply` before deleting
-the entry from your config.
+the entry from your config. To remove a file from machines that already
+applied an old entry, replace the entry with a `state = "absent"` declaration
+under [`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
 
 ## Unapplying
 
