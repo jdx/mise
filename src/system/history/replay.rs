@@ -120,6 +120,9 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
         bail!("`--all` needs `--to <ref>`");
     }
     let (store, tracked, entries) = crate::system::history::open().await?;
+    // A rollback writes and removes live files, so it does not run on a
+    // rule set that could not be fully built.
+    tracked.refuse_unusable_exclusions()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("rolling back requires git"))?;
@@ -1288,27 +1291,49 @@ fn decide(
                 );
             }
             let from = format!("{} {}", kind_of(&cmode), &coid[..7]);
-            match classify(checkpoint, &display) {
-                PathState::Absent => (Action::Delete, from, "missing".into()),
-                PathState::Uncovered => (
-                    Action::Skip(format!(
-                        "not covered by checkpoint {}",
-                        &checkpoint.uuid[..8]
-                    )),
-                    from,
-                    "?".into(),
-                ),
-                PathState::Omitted(reason) => (Action::Skip(reason), from, "?".into()),
+            // one decision point: the state decides whether the file is
+            // removed, and every answer but `Absent` keeps it
+            match classify(checkpoint, &display).skip_reason(&checkpoint.uuid) {
+                None => (Action::Delete, from, "missing".into()),
+                Some(reason) => (Action::Skip(reason), from, "?".into()),
             }
         }
         (None, None) => (Action::Unchanged, "missing".into(), "missing".into()),
     }
 }
 
-enum PathState {
+pub(crate) enum PathState {
+    /// The checkpoint positively covered this path and did not hold it,
+    /// so it was absent. Only this answer permits removing a live file.
     Absent,
     Uncovered,
     Omitted(String),
+    /// The checkpoint's own exclusion rules cannot be evaluated here, so
+    /// whether it covered this path is unknown.
+    ///
+    /// **An exclusion rule that cannot be evaluated never causes a live
+    /// file to be deleted.** A checkpoint records its globs as written,
+    /// and one naming an environment variable resolves differently — or
+    /// not at all — in another environment. Dropping such a rule is safe
+    /// while capturing, where the cost is saving something unintended;
+    /// here the cost would be destroying a file the snapshot never held.
+    Unevaluable(String),
+}
+
+impl PathState {
+    /// Why the live file is left alone, or `None` when the checkpoint
+    /// positively covered the path and did not hold it.
+    ///
+    /// **`None` is the only answer that permits removing a live file.**
+    /// Every reader of a `PathState` decides through this one method, so
+    /// a new state cannot become a deleting one by omission.
+    pub(crate) fn skip_reason(self, checkpoint: &str) -> Option<String> {
+        match self {
+            PathState::Absent => None,
+            PathState::Uncovered => Some(format!("not covered by checkpoint {}", &checkpoint[..8])),
+            PathState::Omitted(reason) | PathState::Unevaluable(reason) => Some(reason),
+        }
+    }
 }
 
 /// The repository a path lies in, when that repository is itself inside a
@@ -1323,7 +1348,23 @@ fn nested_repository_at_or_above(tracked: &TrackedSet, path: &Path) -> Option<Pa
 
 /// What a checkpoint says about a path it does not hold.
 fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
-    let coverage = &checkpoint.tree.coverage;
+    classify_coverage(&checkpoint.tree.coverage, display)
+}
+
+/// The same question asked of a coverage record on its own, so the
+/// answer can be compared with what a capture decided from the same set.
+///
+/// **`Absent` is returned only when the recorded coverage positively says
+/// the path was covered and captured. Every other answer keeps the live
+/// file.** The two that are not `Absent` say different things, and the
+/// user sees the difference: `Omitted` carries the record's own
+/// explanation for a path the checkpoint deliberately left out — most
+/// often a repository it skipped, which is an explanation a user can act
+/// on — while `Unevaluable` means this mise cannot interpret the record
+/// at all, because a newer matcher wrote it or a rule in it cannot be
+/// read. Either way the answer to a question that cannot be answered is
+/// never "delete this file".
+pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str) -> PathState {
     let under = |prefix: &str| super::tracked::display_under(display, prefix);
     // **A repository the checkpoint recorded as skipped is not something
     // it ever held.** The filesystem check finds one that still has its
@@ -1346,33 +1387,57 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
             return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
         }
     }
-    let covered = coverage.entries.iter().any(|entry| under(&entry.path));
-    if !covered {
+    // the most-specific entry owns the path, exactly as
+    // `TrackedSet::entry_for` decides during capture. Picking the first
+    // declared ancestor instead would judge a nested entry's files by the
+    // outer entry's root, and a replay would then call a file uncovered
+    // that the checkpoint actually holds.
+    let Some(owner) =
+        super::tracked::owning_display(&coverage.entries, display, |entry| entry.path.as_str())
+    else {
         return PathState::Uncovered;
-    }
+    };
     let local = file::replace_path(Path::new(display));
-    if let Ok(exclude) = super::tracked::ExcludeSet::new(&coverage.exclude)
-        && exclude.is_match(&local)
+    let root = file::replace_path(Path::new(&owner.path));
+    // Recompile saved exclusions against the current filesystem. If a
+    // symlink now expands a rule into an unusable glob, coverage is unknown.
+    // A checkpoint written by another matcher read its exclusions
+    // differently — an older one matched more for some patterns, and a
+    // newer one is simply unknown here. Either way, where it has
+    // exclusions, what it covered cannot be reconstructed.
+    let has_patterns = !coverage.exclude.is_empty()
+        || owner
+            .exclude
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty());
+    let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
+    let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
+        .ok()
+        .filter(|exclude| exclude.unusable().is_empty());
+    if let Some(exclude) = &exclude
+        && !legacy
+        && exclude.is_match(&local, &root)
     {
         return PathState::Uncovered;
     }
     // the entry's own list, recorded with the checkpoint: a file it left
     // out was never known to be absent
-    let owner = coverage
-        .entries
-        .iter()
-        .filter(|entry| under(&entry.path))
-        .max_by_key(|entry| entry.path.len());
-    if let Some(entry) = owner
-        && super::tracked::excluded_by_entry(
-            &file::replace_path(Path::new(&entry.path)),
-            entry.exclude.as_deref().unwrap_or(&[]),
-            &local,
-        )
-    {
+    if super::tracked::excluded_by_entry(&root, owner.exclude.as_deref().unwrap_or(&[]), &local) {
         return PathState::Uncovered;
     }
-    PathState::Absent
+    // everything readable says the checkpoint covered this path — but a
+    // rule that could not be read, or one this checkpoint never recorded
+    // the expansion of, makes that a guess, and a guess must not delete a
+    // file
+    if legacy {
+        return PathState::Unevaluable(
+            "this checkpoint's exclusions were read by a different matcher, so what it covered cannot be determined".into(),
+        );
+    }
+    match exclude {
+        None => PathState::Unevaluable("an exclusion cannot be read".into()),
+        Some(_) => PathState::Absent,
+    }
 }
 
 fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<()> {

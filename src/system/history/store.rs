@@ -375,7 +375,7 @@ impl Checkpoint {
             .filter(|entry| {
                 path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
             })
-            .max_by_key(|entry| entry.path.len())?;
+            .max_by_key(|entry| Path::new(&entry.path).components().count())?;
         super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
     }
 
@@ -576,6 +576,14 @@ pub(crate) struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// Which matcher read `exclude` when this checkpoint was written.
+    ///
+    /// Added later, so its absence marks a checkpoint written by a mise
+    /// that read exclusion globs differently. A replay cannot know what
+    /// such a checkpoint covered, so it says so rather than treating an
+    /// unmatched path as one the snapshot held and deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

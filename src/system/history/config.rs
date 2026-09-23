@@ -196,6 +196,23 @@ pub(crate) fn exclude_globs() -> Result<Vec<String>> {
     Ok(globs)
 }
 
+/// The configuration files that declare `pattern` as an exclusion.
+///
+/// Read only to build a refusal message. A rule the matcher cannot use
+/// has to be findable, and "somewhere in your configuration" is not a
+/// place: `[history] exclude` is composed from the system and global
+/// layers, so the pattern alone does not say which file to edit.
+pub(crate) fn exclusion_sources(pattern: &str) -> Vec<PathBuf> {
+    let Ok(layers) = layers() else {
+        return vec![];
+    };
+    layers
+        .into_iter()
+        .filter(|(_, layer)| layer.exclude.iter().any(|glob| glob == pattern))
+        .map(|(path, _)| path)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

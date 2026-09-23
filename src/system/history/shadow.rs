@@ -305,6 +305,7 @@ fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
 
 impl HistoryRepo {
     pub(crate) const HISTORY_REF: &'static str = "refs/heads/main";
+    const MATCHER_TRAILER: &'static str = "Mise-History-Matcher: ";
     const RECORD_TRAILER: &'static str = "Mise-History: ";
     pub(crate) fn path_in(state_dir: &Path) -> PathBuf {
         repo_dir_in(state_dir)
@@ -659,12 +660,17 @@ impl HistoryRepo {
             },
         };
         let record = checkpoint.for_commit();
-        let message = format!(
+        let mut message = format!(
             "{}\n\n{}{}",
             checkpoint.description,
             Self::RECORD_TRAILER,
             serde_json::to_string(&record)?
         );
+        // A separate trailer preserves compatibility with older clients,
+        // whose Mise-History JSON record rejects unknown fields.
+        if let Some(matcher) = checkpoint.tree.coverage.matcher {
+            message.push_str(&format!("\n{}{matcher}", Self::MATCHER_TRAILER));
+        }
         let parent = self.ref_oid(Self::HISTORY_REF)?;
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
     }
@@ -777,6 +783,13 @@ impl HistoryRepo {
             changes: Default::default(),
             operation: None,
         };
+        record.tree.coverage.matcher = message
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix(Self::MATCHER_TRAILER))
+            .map(str::parse)
+            .transpose()
+            .wrap_err_with(|| format!("reading history matcher version for {commit}"))?;
         record.created_at = commit_object
             .time()?
             .format(gix::date::time::format::ISO8601_STRICT)?;
@@ -867,6 +880,9 @@ impl HistoryRepo {
                 entries: tracked.entries.clone(),
                 ..Default::default()
             });
+            // The writer's matcher determines known absences; rebuilding
+            // metadata must not reinterpret an old snapshot as current.
+            coverage.matcher = record.tree.coverage.matcher;
             for entry in &mut coverage.entries {
                 entry.state = record
                     .tree
@@ -1856,6 +1872,46 @@ mod tests {
             .into_iter()
             .map(|entry| entry.path)
             .collect()
+    }
+
+    #[test]
+    fn rebuilding_preserves_the_writers_matcher_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let manifest = super::super::manifest::Manifest {
+            enrollment: vec![super::super::manifest::Enrollment {
+                path: "home/.native".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: Some(vec!["sessions/**".into()]),
+            }],
+            ..Default::default()
+        };
+        let tree = manifest
+            .write(&repo, &repo.empty_object("tree").unwrap())
+            .unwrap();
+        let current = super::super::tracked::MATCHER_VERSION;
+        for matcher in [None, Some(current), Some(current + 1)] {
+            let mut checkpoint =
+                crate::system::history::checkpoint::test_checkpoint("matcher", Some(&tree));
+            checkpoint.tree.coverage.matcher = matcher;
+            let commit = repo.write_checkpoint(Some(&tree), &checkpoint).unwrap();
+            let rebuilt = repo.read_meta(&commit).unwrap();
+            assert_eq!(rebuilt.tree.coverage.matcher, matcher);
+            let state = super::super::replay::classify_coverage(
+                &rebuilt.tree.coverage,
+                "~/.native/new.txt",
+            );
+            if matcher == Some(current) {
+                assert!(matches!(state, super::super::replay::PathState::Absent));
+            } else {
+                assert!(matches!(
+                    state,
+                    super::super::replay::PathState::Unevaluable(_)
+                ));
+            }
+        }
     }
 
     #[test]

@@ -241,7 +241,18 @@ impl Store {
                 })
         });
         let uuid = draft.uuid.clone().unwrap_or_else(store::new_uuid);
-        let (mut walk, walk_error) = match tracked.walk() {
+        // **The refusal lives here, where a checkpoint is about to be
+        // written, and nowhere earlier.** An `[history] exclude` rule the
+        // matcher cannot compile must not quietly broaden a stored — and
+        // publishable — snapshot to the paths it was written to leave out.
+        // Walking is not storing: `mise dot paths`, the previews, `mise
+        // dot status` and the watch set all still work and report the
+        // rule, so the command that diagnoses the problem is not the
+        // command it breaks.
+        let (mut walk, walk_error) = match tracked
+            .refuse_unusable_exclusions()
+            .and_then(|()| tracked.walk())
+        {
             Ok(walk) => (walk, None),
             Err(err) if draft.operation.is_some() => {
                 // Keep the operation journal even when its outcome cannot be
@@ -251,9 +262,7 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        for warning in &walk.warnings {
-            warn!("history: {warning}");
-        }
+        walk.report_warnings();
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
@@ -683,11 +692,7 @@ impl Store {
         }
         let mut overlays = vec![];
         for held in &draft.held {
-            let Some(entry) = entries
-                .iter()
-                .filter(|entry| held.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count())
-            else {
+            let Some(entry) = super::tracked::owning_entry(entries, held) else {
                 continue;
             };
             let tree_path = entry.tree_path(held)?;

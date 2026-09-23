@@ -170,6 +170,7 @@ impl DotfilesTrack {
             .filter_map(|(_, normalized)| preview_set.entry_index_for(normalized))
             .collect();
         let preview_walk = preview_set.walk_selected(&targets)?;
+        preview_walk.report_warnings();
         let mut previews: Vec<String> = vec![];
         for (target, normalized) in resolved {
             let target_key = normalized_target(&target);
@@ -741,8 +742,54 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 /// Adds (or removes) a glob in `[history] exclude` of the global config.
 /// Returns whether the file changed.
-pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
+/// The `[history] exclude` rule that names exactly `key` and nothing
+/// else.
+///
+/// **A path is a literal; the list holds globs.** `mise dot untrack`
+/// writes the path it can no longer track, and written as-is a name
+/// holding `[` is an unclosed character class the matcher refuses, while
+/// one holding `*` or `?` silently matches the neighbours too. The glob
+/// metacharacters are escaped with the escape of the matcher that
+/// compiles the rule, so it means that one path. `$` has no escape in
+/// this pattern language — it is refused outright rather than read as an
+/// environment variable — so such a path is reported by
+/// [`edit_exclude`] instead of being written.
+pub(crate) fn exclude_rule_for_path(key: &str, directory: bool) -> String {
+    let escaped = globset::escape(key);
+    match directory {
+        true => format!("{escaped}/**"),
+        false => escaped,
+    }
+}
+
+/// What an edit to the global exclude list did.
+pub(crate) struct ExcludeEdit {
+    /// Whether the list moved.
+    pub changed: bool,
+    /// Rules still in the list that mean the same argument, after a
+    /// removal took the one it named out. A removal that leaves one of
+    /// these behind has not re-included the path, so the caller must not
+    /// say it has.
+    pub still_excluding: Vec<String>,
+}
+
+pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<ExcludeEdit> {
     use toml_edit::{Item, Value};
+    // **mise never writes a rule mise would refuse to load.** Every
+    // writer of this list arrives here — `mise dot exclude`, and
+    // `mise dot untrack` covering a path it can no longer track — and a
+    // rule the matcher cannot compile stops every later capture until
+    // someone edits the file by hand. So the check belongs at the write,
+    // not at one caller: `untrack` had no check, and untracking a file
+    // whose name held a `[` or a `$` wrote configuration that disabled
+    // `mise dot save`.
+    if add
+        && let Some(reason) = crate::system::history::tracked::unusable_pattern(
+            glob.strip_prefix('!').unwrap_or(glob),
+        )
+    {
+        bail!("{glob}: {reason}");
+    }
     let global = crate::config::global_shared_config_path();
     let mut doc = read_document(&global)?;
     let history = doc
@@ -761,20 +808,290 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
             display_path(&global)
         );
     };
-    let present = array.iter().any(|value| value.as_str() == Some(glob));
-    let changed = if add && !present {
-        array.push(Value::String(toml_edit::Formatted::new(glob.to_string())));
-        true
-    } else if !add && present {
-        array.retain(|value| value.as_str() != Some(glob));
-        true
+    let (changed, still_excluding) = if add {
+        (append_rule(array, glob), vec![])
     } else {
-        false
+        let changed = remove_argument(array, glob);
+        (changed, rules_still_held(array, glob))
     };
     if changed {
         crate::file::write(&global, doc.to_string())?;
     }
-    Ok(changed)
+    Ok(ExcludeEdit {
+        changed,
+        still_excluding,
+    })
+}
+
+/// The rules that mean `argument` and are still in the list.
+///
+/// **A removal that leaves a sibling spelling behind has not
+/// re-included the path.** `mise dot untrack` writes the escaped rule
+/// for a path, so a list can hold both a glob a user typed and the
+/// escaped rule for a file of that name; taking back the glob leaves the
+/// file excluded. Saying "is captured again" there was simply false, and
+/// this is what lets the caller say what actually happened instead.
+fn rules_still_held(array: &toml_edit::Array, argument: &str) -> Vec<String> {
+    let held: Vec<String> = list_entries(array).into_iter().flatten().collect();
+    let mut candidates = vec![argument.to_string()];
+    candidates.extend(path_rules_for_argument(argument));
+    candidates
+        .into_iter()
+        .filter(|rule| held.contains(rule))
+        .collect()
+}
+
+/// The entries of a list as plain strings, for comparing an edit's result
+/// with what was there before.
+fn list_entries(array: &toml_edit::Array) -> Vec<Option<String>> {
+    array
+        .iter()
+        .map(|value| value.as_str().map(str::to_string))
+        .collect()
+}
+
+/// Puts `glob` in force in a list the last matching pattern decides, and
+/// reports whether that changed it.
+///
+/// **The rule: append the requested rule at the end, after removing any
+/// earlier entry whose pattern string is exactly the requested one, in
+/// either polarity. Report it as already in force only when that leaves
+/// the list unchanged.**
+///
+/// This decides the question without reasoning about whether one glob
+/// subsumes another. The list is last-match-wins, so the appended rule
+/// decides every file the pattern matches whatever overlapping globs sit
+/// earlier — `["foo", "!foo*"]` really does re-include `foo` until
+/// `exclude foo` appends its own copy, and testing literal membership
+/// would have called that "already excluded" and written nothing.
+/// Dropping the earlier entries that spell the pattern exactly cannot
+/// change any other path's outcome either, because a pattern bears only
+/// on the paths it matches and the appended copy already decides those.
+fn append_rule(array: &mut toml_edit::Array, glob: &str) -> bool {
+    // compared without its polarity on both sides: `mise dot exclude
+    // '!foo'` and `mise dot exclude foo` are the same rule written two
+    // ways, and either one appended must take the other's earlier copy
+    // with it — otherwise the list keeps a stale entry the doc above
+    // says it removes
+    let bare = |pattern: &str| pattern.strip_prefix('!').unwrap_or(pattern).to_string();
+    let subject = bare(glob);
+    let before = list_entries(array);
+    array.retain(|value| match value.as_str() {
+        Some(entry) => bare(entry) != subject,
+        None => true,
+    });
+    array.push(string(glob));
+    list_entries(array) != before
+}
+
+/// Removes `glob` from the list, and reports whether that changed
+/// anything. This is not [`append_rule`] with a negation: `mise dot
+/// include` takes back a glob the user wrote with `mise dot exclude`, so
+/// it removes that entry rather than appending `!glob` beside it, and it
+/// leaves a hand-written `!glob` alone — that entry already re-includes,
+/// which is what the caller wants.
+/// Takes a rule out of the list, in either spelling it may have been
+/// written in.
+///
+/// **What the user names is a path or a glob; what the list holds may be
+/// the escaped form of it.** `mise dot exclude` writes a glob as typed,
+/// while `mise dot untrack` writes a literal path with its glob
+/// metacharacters escaped, so the rule for `~/.codex/cache[1]` is on disk
+/// as `~/.codex/cache[[]1[]]`. Matching only the exact string left
+/// `mise dot include '~/.codex/cache[1]'` reporting that the path was not
+/// excluded while the escaped rule went on matching it — the undo for
+/// `untrack` simply did not work. Escaping a real glob produces something
+/// no list holds, so trying both spellings cannot remove a rule the user
+/// did not name.
+/// Takes exactly `rule` out of the list. No spelling is inferred here:
+/// what to remove is [`rules_for_argument`]'s answer.
+fn drop_glob(array: &mut toml_edit::Array, rule: &str) -> bool {
+    let before = list_entries(array);
+    array.retain(|value| value.as_str() != Some(rule));
+    list_entries(array) != before
+}
+
+/// Takes back whatever the list holds for `argument`, and reports
+/// whether that changed anything.
+///
+/// **What the user typed wins over what it could be derived into.** A
+/// rooted argument is both a possible glob and a possible path:
+/// `~/.codex/foo*` is the rule a user typed with `mise dot exclude`, and
+/// it is also what `mise dot untrack` would have written for a file
+/// literally named `foo*` — escaped, as `~/.codex/foo[*]`. Removing both
+/// derivations unconditionally meant taking back a glob silently
+/// re-included a file someone had untracked by name, which is the same
+/// collision `foo*` and `foo[*]` already had, surviving one spelling
+/// further up in rooted form. No syntax tells the two apart, because
+/// `cache[1]` is a valid glob as well as a real filename.
+///
+/// The list settles what syntax cannot: remove the entry that spells the
+/// argument exactly, and derive the path spellings only when the list
+/// holds no such entry — which is precisely the `untrack` undo the
+/// derivation exists for.
+fn remove_argument(array: &mut toml_edit::Array, argument: &str) -> bool {
+    if drop_glob(array, argument) {
+        return true;
+    }
+    // every rule that means this argument, not the first one found:
+    // `any` would stop at the first removal and leave the rest
+    let mut changed = false;
+    for rule in path_rules_for_argument(argument) {
+        changed |= drop_glob(array, &rule);
+    }
+    changed
+}
+
+/// The list entries [`exclude_rule_for_path`] could have written for an
+/// argument that names a path.
+///
+/// `mise dot untrack` writes a path through that function, the single
+/// one that turns a path into a rule, so the same function says what to
+/// remove — both forms it can produce, since which one was written
+/// depended on whether the path was a directory then, and the answer now
+/// is not evidence about then.
+///
+/// Matching spellings against each other instead was wrong twice over:
+/// it removed `foo[*]` when asked for `foo*`, which are different rules,
+/// and it never removed the `/**` form at all, so a directory untrack
+/// could not be undone.
+fn path_rules_for_argument(argument: &str) -> Vec<String> {
+    // A path is absolute or `~`-rooted; a glob like `sessions/**` is
+    // neither, and deriving from it would invent a rule nobody wrote.
+    let target = crate::system::files::resolve_target_arg(argument);
+    if !target.is_absolute() {
+        return vec![];
+    }
+    let key = normalized_target(&target);
+    let mut rules = vec![];
+    for directory in [false, true] {
+        let rule = exclude_rule_for_path(&key, directory);
+        if rule != argument && !rules.contains(&rule) {
+            rules.push(rule);
+        }
+    }
+    rules
+}
+
+#[cfg(test)]
+mod exclude_list_tests {
+    use super::*;
+
+    /// The same rule written with either polarity is one rule: appending
+    /// it takes the other spelling's earlier copy with it, whichever way
+    /// round they were written.
+    #[test]
+    fn a_rule_replaces_its_own_negation_either_way_round() {
+        for (existing, appended, expected) in [
+            (vec!["foo"], "!foo", vec!["!foo"]),
+            (vec!["!foo"], "foo", vec!["foo"]),
+            (vec!["foo", "bar"], "!foo", vec!["bar", "!foo"]),
+            (vec!["!foo", "bar"], "!foo", vec!["bar", "!foo"]),
+            (vec!["bar"], "!foo", vec!["bar", "!foo"]),
+        ] {
+            let mut list = array(&existing);
+            append_rule(&mut list, appended);
+            assert_eq!(entries(&list), expected, "{existing:?} + {appended:?}");
+        }
+    }
+
+    /// **A rooted glob and the escaped rule for a file of that name are
+    /// two different rules, and taking one back must not take the
+    /// other.** `~/.codex/foo*` is what `mise dot exclude` writes for a
+    /// glob; `~/.codex/foo[*]` is what `mise dot untrack` writes for a
+    /// file literally named `foo*`. Deriving both from the argument
+    /// removed the literal rule too, so `mise dot include` on the glob
+    /// silently re-included a file someone had untracked by name. This
+    /// is the `foo*` / `foo[*]` collision one spelling further up: bare
+    /// arguments never derive, so only the rooted form still had it.
+    #[test]
+    fn a_rooted_glob_does_not_take_the_literal_rule_with_it() {
+        let glob = "~/.codex/foo*";
+        let literal = exclude_rule_for_path(glob, false);
+        assert_eq!(literal, "~/.codex/foo[*]", "escaping changed spelling");
+
+        let mut list = array(&[glob, &literal]);
+        assert!(remove_argument(&mut list, glob));
+        assert_eq!(
+            entries(&list),
+            vec![literal.clone()],
+            "taking back a rooted glob removed the rule for a file named `foo*`"
+        );
+
+        // and the same argument still undoes an `untrack` when that
+        // escaped rule is all the list holds — which is what deriving
+        // the path spellings is for
+        let mut list = array(&[&literal]);
+        assert!(remove_argument(&mut list, glob));
+        assert!(
+            entries(&list).is_empty(),
+            "the untrack undo stopped working once nothing spelled the argument"
+        );
+
+        // the directory spelling is reached the same way, and only when
+        // the argument itself is not in the list
+        let directory = exclude_rule_for_path("~/.codex/logs[a]", true);
+        assert_eq!(directory, "~/.codex/logs[[]a[]]/**");
+        let mut list = array(&["~/.codex/logs[a]", &directory]);
+        assert!(remove_argument(&mut list, "~/.codex/logs[a]"));
+        assert_eq!(entries(&list), vec![directory.clone()]);
+        let mut list = array(&[&directory]);
+        assert!(remove_argument(&mut list, "~/.codex/logs[a]"));
+        assert!(entries(&list).is_empty());
+    }
+
+    fn array(entries: &[&str]) -> toml_edit::Array {
+        let mut array = toml_edit::Array::new();
+        for entry in entries {
+            array.push(string(entry));
+        }
+        array
+    }
+
+    fn entries(array: &toml_edit::Array) -> Vec<String> {
+        array
+            .iter()
+            .filter_map(|value| value.as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// The list is last-match-wins, so an edit appends its rule and drops
+    /// the pattern's earlier entries, and reports no change only when
+    /// that leaves the list as it was.
+    #[test]
+    fn an_edit_appends_its_rule_and_reports_a_change_only_when_the_list_moves() {
+        let mut list = array(&["foo"]);
+        assert!(!append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["foo"]);
+
+        // the earlier `foo` is not the rule in force here: `!foo*` is
+        let mut list = array(&["foo", "!foo*"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["!foo*", "foo"]);
+
+        let mut list = array(&["foo", "!foo"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["foo"]);
+
+        // every other rule keeps its place and its meaning
+        let mut list = array(&["foo", "*.key", "!foo", "sessions/**"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["*.key", "sessions/**", "foo"]);
+    }
+
+    /// `mise dot include` takes back a glob `mise dot exclude` wrote, so
+    /// it removes that entry rather than negating it.
+    #[test]
+    fn an_include_removes_the_glob_rather_than_negating_it() {
+        let mut list = array(&["*.log", "cache"]);
+        assert!(drop_glob(&mut list, "cache"));
+        assert_eq!(entries(&list), ["*.log"]);
+        assert!(!drop_glob(&mut list, "cache"));
+        // a hand-written re-include is left alone
+        let mut list = array(&["*.log", "!important.log"]);
+        assert!(!drop_glob(&mut list, "important.log"));
+        assert_eq!(entries(&list), ["*.log", "!important.log"]);
+    }
 }
 
 #[cfg(test)]

@@ -57,6 +57,7 @@ impl DotfilesPaths {
             None => TrackedSet::effective().await?,
         };
         let walk = tracked.walk()?;
+        walk.report_warnings();
         let mut counts = vec![0u64; tracked.entries.len()];
         for (owner, _) in walk.files.values() {
             if let Some(count) = counts.get_mut(*owner) {
@@ -184,19 +185,33 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
     if glob.is_empty() {
         eyre::bail!("a glob is required");
     }
+    // the refusal lives in the writer, so every caller gets it
     let global = crate::config::global_config_path();
-    let changed = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
-    match (add, changed) {
+    let edit = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
+    match (add, edit.changed) {
         (true, true) => info!(
             "history: {glob} is excluded from capture ({})",
             display_path(&global)
         ),
         (true, false) => info!("history: {glob} was already excluded"),
-        (false, true) => info!(
-            "history: {glob} is captured again ({})",
+        // **Only say it is captured again when nothing still excludes
+        // it.** A list can hold both a glob a user typed and the escaped
+        // rule `mise dot untrack` writes for a file of that name, and
+        // taking back the one they named leaves the other in force.
+        (false, true) if !edit.still_excluding.is_empty() => info!(
+            "history: {glob} is out of the exclude list, but {} still excludes it ({}); run `mise dot include` on that rule to take it out too",
+            edit.still_excluding
+                .iter()
+                .map(|rule| format!("`{rule}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
             display_path(&global)
         ),
-        (false, false) => info!("history: {glob} was not excluded"),
+        (false, true) => info!(
+            "history: removed exclusion rule {glob} ({})",
+            display_path(&global)
+        ),
+        (false, false) => info!("history: exclusion rule {glob} was not present"),
     }
     Ok(())
 }

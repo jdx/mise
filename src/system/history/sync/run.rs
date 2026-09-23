@@ -253,6 +253,10 @@ pub(crate) fn sync_locked(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
+    // Synchronizing publishes and applies, so it does not run on a rule
+    // set that could not be fully built: the missing rules are exactly
+    // the paths that would then look selected here.
+    tracked.refuse_unusable_exclusions()?;
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
         None => origin()?,
@@ -1037,18 +1041,14 @@ pub(super) fn eligible(
 ) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => {
-                entry.variant == variant
-                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
-                    && !tracked.excluded_by_lists(exclude, &path)
-            }
+            Some(entry) => entry.variant == variant && !tracked.excluded_by_lists(exclude, &path),
             None => false,
         },
         Located::Config(path) => {
-            tracked.entry_for(&path).is_some_and(|entry| {
-                entry.variant.is_none()
-                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
-            }) && !tracked.excluded_by_lists(exclude, &path)
+            tracked
+                .entry_for(&path)
+                .is_some_and(|entry| entry.variant.is_none())
+                && !tracked.excluded_by_lists(exclude, &path)
         }
         Located::Marker => false,
         Located::Unmapped => false,
