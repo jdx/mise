@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# A `[tasks."<file>"]` block naming a discovered script exactly replaces that
-# script when it spells out its own command and outranks the config that
-# selected the script's include; otherwise it overlays metadata onto it.
+# A `[tasks.<name>]` block that declares a command claims the discovered scripts
+# that name reaches -- the script named exactly, or every script sharing the
+# stem -- when it outranks the config that selected the script's include.
+# Otherwise it overlays metadata onto the script instead.
 
 mkdir -p mise-tasks mytasks scripts .mise .config
 
@@ -98,10 +99,10 @@ assert "mise run meta" "GREETING=from-toml"
 # An extensionless script is matched by its plain name, so the same rule applies.
 assert "mise run bare" "inline-bare-ran"
 
-# The extension-stripped spelling is a different task name, so the script
-# survives alongside it and the exact name wins for "mise run other".
+# The extension-stripped spelling claims the script it names, so both spellings
+# do the same thing and the script is not left behind under either.
 assert "mise run other" "inline-other-ran"
-assert "mise run other.sh" "other-script-ran"
+assert_fail "mise run other.sh"
 
 # "file" counts as a command too, so the block points the task elsewhere.
 assert "mise run redirected" "elsewhere-ran"

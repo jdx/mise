@@ -1291,9 +1291,8 @@ env = { GREETING = "hi" }
 its description. The script's full name includes its extension; `mise run`
 also accepts the name without the extension.
 
-For a block configuring the script, both spellings behave identically, so the
-name you use is a matter of taste. Dependencies work the same way under either
-one:
+Both spellings behave identically, so the name you use is a matter of taste.
+Dependencies work the same way under either one:
 
 ```toml [mise.toml]
 [tasks.hello] # or [tasks."hello.sh"]
@@ -1303,31 +1302,34 @@ depends = ["lint"]
 
 `mise run hello` runs `lint` and then the script.
 
-A block that declares its own `run`, `run_windows`, or `file` is not
-configuring the script, and what happens then depends on the spelling. Under the
-extension-stripped name the two coexist: `[tasks.hello]` is a separate task,
-`mise run hello` picks it, and the script stays reachable as
-`mise run hello.sh`. Under the script's full name they cannot, so
-`[tasks."hello.sh"]` replaces the script and its command is what runs:
+A block that declares its own `run`, `run_windows`, or `file` is not configuring
+the script — it says what the name runs, and the scripts that name reaches stop
+being tasks of their own. Either spelling does this:
 
 ```toml [mise.toml]
-[tasks."hello.sh"]
+[tasks.hello] # or [tasks."hello.sh"]
 run = "echo hi" # runs instead of mise-tasks/hello.sh
 ```
 
+The name reaches scripts the same way it does when configuring them, so
+`[tasks."hello.sh"]` claims only `hello.sh` while `[tasks.hello]` claims every
+script sharing that stem — both `hello.sh` and `hello.js`, if both exist.
+
 ::: warning
-Earlier versions of mise silently dropped that `run` and ran the script anyway.
-If a config relies on the old behavior, remove the command from the block.
+Earlier versions of mise did neither. A `run` under the script's full name was
+silently dropped and the script ran anyway, while a `run` under the stripped
+name defined a second task and left the script reachable as `mise run hello.sh`.
+To keep a script and a command side by side, give the command a name of its own.
 :::
 
 Taking a script over needs the standing of the config that found it: a block
-replaces the script only when it comes from the config whose
+claims the script only when it comes from the config whose
 [`task_config.includes`](#task_config.includes) selected the script's directory,
 or from a higher-precedence one. A block from further down that chain is treated
 as configuring the script like any other — its metadata applies and the script
 keeps running. When no config declares `task_config.includes` and the directory
 comes from the defaults, no config claimed the script and there is nothing to
-outrank, so a block from anywhere in the chain replaces it. A task from an
+outrank, so a block from anywhere in the chain claims it. A task from an
 [included TOML file](#included-toml-files) has always followed this same rule.
 
 On Windows, a script paired with a
@@ -1336,20 +1338,20 @@ under the bare stem, so `build.sh` plus `build.ps1` is configured as
 `[tasks.build]` rather than `[tasks."build.ps1"]`.
 
 If an inline command already uses the name `hello` in another config file,
-metadata under `[tasks.hello]` applies to that task rather than to `hello.sh`,
-which stays reachable as `mise run hello.sh`. See
+metadata under `[tasks.hello]` applies to that task — and so does metadata under
+`[tasks."hello.sh"]`, since the command claimed that script. See
 [layered task definitions](#layered-task-definitions).
 
 Where several blocks name one script, only the highest-precedence one applies —
-this is a separate question from whether a block may replace the script at all.
-A block that replaced the script counts as that one definition, so blocks below
-it add nothing to the replacement either. The rest contribute nothing, not even
-additive fields such as `env` or `alias`,
-and because the two spellings name one script they compete for that single slot: a
-`[tasks.hello]` in `mise.local.toml` replaces a `[tasks."hello.sh"]` in
-`mise.toml` rather than adding to it. If multiple scripts share a name without
-the extension, such as `hello.sh` and `hello.js`, a `[tasks.hello]` block
-applies to both. Use the full name to configure just one script.
+a separate question from whether a block may claim the script at all. The rest
+contribute nothing, not even additive fields such as `env` or `alias`, and
+because the two spellings name one script they compete for that single slot: a
+`[tasks.hello]` in `mise.local.toml` wins over a `[tasks."hello.sh"]` in
+`mise.toml` rather than adding to it. A block that claimed the script is that
+one definition, so blocks below it add nothing to the task it became either. If
+multiple scripts share a name without the extension, such as `hello.sh` and
+`hello.js`, a `[tasks.hello]` block applies to both. Use the full name to
+configure just one script.
 
 #### Layered task definitions
 
