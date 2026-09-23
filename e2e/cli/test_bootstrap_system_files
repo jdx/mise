@@ -327,7 +327,15 @@ content = "replaced"
 EOF
   assert_succeed "mise bootstrap files apply --yes"
   assert "sudo cat $linked_real/locked/root.conf" "replaced"
-  # The harness cannot delete root-owned files.
-  sudo rm -rf "$linked_real/locked"
+  # Only root can remove these, which it does relative to the resolved path.
+  cat <<EOF >mise.toml
+[bootstrap.files."$linked_real/locked/root.conf"]
+state = "absent"
+
+[bootstrap.directories."$linked_real/locked"]
+state = "absent"
+EOF
+  assert_succeed "mise bootstrap files apply --yes"
+  assert_directory_not_exists "$linked_real/locked"
 fi
 chmod o-w "$PWD"
