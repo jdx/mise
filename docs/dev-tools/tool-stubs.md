@@ -276,20 +276,14 @@ bin = "gh"
 ### Locked Tool Stub
 
 Lock a backend stub to record a concrete version and the platform download
-metadata its backend can provide. The generator writes this under `[lock]`;
-the top-level `tool` still selects the backend, and `version` becomes the
-resolved version.
+metadata its backend can provide. Installs then use the recorded URLs, verify
+the recorded checksums, and work in locked mode (`--locked` or
+`MISE_LOCKED=1`).
 
 Stored URLs can avoid release discovery on later installs. They do not remove
 private-download authentication or every backend's verification and policy
 requests. Review the generated platforms and checksums; a backend that cannot
 provide a URL cannot supply the same download shortcut.
-
-The `[lock]` section acts as the stub's lockfile: installs verify the recorded
-checksums, and the stub runs in locked mode (`--locked` or `MISE_LOCKED=1`)
-without a `mise.lock`. A `[lock]` that records platforms but not the current
-one is ignored, so locked mode rejects the stub on that platform. A stub
-without `[lock]` still needs a `mise.lock` entry next to it in locked mode.
 
 #### Locking a Stub
 
@@ -297,20 +291,64 @@ without `[lock]` still needs a `mise.lock` entry next to it in locked mode.
 # Create a stub with a fuzzy version
 mise generate tool-stub ./bin/node --version 24
 
-# Lock it to pin the exact version and add platform URLs/checksums
+# Resolve the version and record platform URLs/checksums
 mise generate tool-stub ./bin/node --lock
 ```
 
-By default, this resolves the version and fetches URLs for all common platforms (linux-x64, linux-x64-musl, linux-arm64, linux-arm64-musl, macos-x64, macos-arm64, and windows-x64). If `lockfile_platforms` is configured, it uses those platforms plus the current platform instead. The generated metadata is written into a `[lock]` section in the stub.
+Where the lock data goes depends on where the stub lives:
+
+- **Inside a project**, it goes into the `mise.lock` of the nearest project
+  config above the stub, the same lockfile that config's tools use. The stub
+  keeps its version request (`24`), just as `mise.toml` does, and `mise.lock`
+  records the resolved version. This uses the lockfile's existing platforms, or
+  the default platforms for a new lockfile.
+- **Outside a project, or with `--embed`**, it goes into a `[lock]` section in
+  the stub and the stub's `version` is pinned to the resolved version. Use this
+  for a stub that is copied or downloaded without its project. It fetches URLs
+  for all common platforms (linux-x64, linux-x64-musl, linux-arm64,
+  linux-arm64-musl, macos-x64, macos-arm64, and windows-x64), or
+  `lockfile_platforms` plus the current platform when that is configured.
+
+```toml
+# mise.lock
+lockfile_version = 2
+tool-stubs = ["bin/node"]
+
+[[tools.node]]
+version = "24.13.0"
+specifiers = ["24"]
+# ...platform URLs and checksums
+```
+
+`tool-stubs` lists the stubs whose entries the lockfile holds, relative to the
+lockfile. No config declares those tools, so this is how `mise lock` knows to
+keep their entries and refresh them with the rest of the lockfile. When a
+listed stub is deleted, `mise lock` removes it from the list and prunes its
+entry.
+
+A stub finds its lockfile from where the stub file lives, not from the
+directory it is run from, and a symlinked stub is followed to its real
+location. `./bin/node` and `~/.local/bin/node` linked to it both use the
+project's `mise.lock` from any working directory. Local and environment configs
+(`mise.local.toml`, `mise.{env}.toml`) are not used, so a committed stub locks
+the same way on every machine.
+
+An embedded `[lock]` takes precedence over `mise.lock`, but only when it covers
+the current platform. In locked mode, a stub needs lock data for the current
+platform from one of the two, or it is rejected like any unlocked tool.
 
 #### Bumping a Locked Version
 
-To bump the version of a locked stub, pass `--version` along with `--lock`:
+To pick a newer version, run `--lock` again. It resolves the stub's version
+request from scratch. Pass `--version` to change the request itself:
 
 ```bash
 # Select Node.js 26 and regenerate the locked metadata
 mise generate tool-stub ./bin/node --lock --version 26
 ```
+
+For a stub recorded in `mise.lock`, `mise lock --bump` also re-resolves its
+version request.
 
 ### HTTP Backend with Platform Support
 

@@ -3472,7 +3472,23 @@ This reads an existing stub file and fills in any missing checksum/size fields b
         flag --http help="HTTP backend type to use" default=http {
             arg <HTTP>
         }
-        flag --lock help="Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls" {
+        flag --embed help="Write the lock data into the stub's own `[lock]` section even inside a project" requires=--lock {
+            long_help #"""
+Write the lock data into the stub's own `[lock]` section even inside a project
+
+Use this for a stub that is copied or downloaded on its own, without its
+project's `mise.lock`.
+"""#
+        }
+        flag --lock help="Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub" {
+            long_help #"""
+Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
+
+Inside a project, the data goes into the `mise.lock` of the nearest project
+config above the stub, and the stub keeps its version request. Outside a
+project, or with `--embed`, the stub is pinned to the exact version and the
+data goes into its `[lock]` section.
+"""#
             conflicts "--url" "--platform-url" "--bin" "--platform-bin" "--fetch" "--skip-download"
         }
         flag --platform-bin help="Platform-specific binary paths in the format platform:path" var=#true {
@@ -3516,7 +3532,7 @@ mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz -
 # Replace the URL with a real artifact before fetching metadata or executing it
 """# help="Create a draft for your own artifact without fetching the placeholder URL"
         example "mise generate tool-stub ./bin/node --fetch" help="Fill missing checksums and sizes in an existing stub"
-        example "mise generate tool-stub ./bin/registry-node --lock --version 22" help="For an existing registry-backed stub, resolve and embed version/platform lock data"
+        example "mise generate tool-stub ./bin/registry-node --lock --version 22" help="For an existing registry-backed stub, resolve and record version/platform lock data"
         complete output type=path
     }
 }

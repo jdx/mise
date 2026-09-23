@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# Inside a project, a tool stub's lock data lives in the project's mise.lock,
+# found by walking up from where the stub lives.
+
+export MISE_LOCKFILE=1
+
+mkdir -p proj/bin elsewhere pathbin
+cd proj || exit 1
+echo '[tools]' >mise.toml
+# A committed stub locks the same way everywhere, so local configs are skipped.
+echo '[tools]' >mise.local.toml
+
+cat >bin/jq <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "aqua:jqlang/jq"
+version = "1.7"
+EOF
+chmod +x bin/jq
+
+assert_contains "mise generate tool-stub bin/jq --lock" "Updated lockfile:"
+# The stub keeps its request; the lockfile records the resolution and the stub.
+assert_not_contains "cat bin/jq" "[lock"
+assert_contains "cat bin/jq" 'version = "1.7"'
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "cat mise.lock" '[[tools."aqua:jqlang/jq"]]'
+assert_fail "test -f mise.local.lock"
+
+# Checksums from mise.lock are verified. This runs before jq is installed.
+cp mise.lock mise.lock.good
+sed -e "s/^checksum = .*/checksum = \"sha256:$(printf '0%.0s' {1..64})\"/" mise.lock.good >mise.lock
+assert_fail_contains "mise tool-stub bin/jq --version 2>&1" "Checksum mismatch"
+cp mise.lock.good mise.lock
+
+# Locked mode works from any directory, and through a symlink to the stub.
+ln -s "$PWD/bin/jq" ../pathbin/jq
+cd ../elsewhere || exit 1
+assert_contains "MISE_LOCKED=1 mise tool-stub ../pathbin/jq --version" "jq-1.7"
+cd ../proj || exit 1
+
+# `mise lock` keeps the stub's entry even though no config declares the tool.
+assert_succeed "mise lock"
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "cat mise.lock" '[[tools."aqua:jqlang/jq"]]'
+
+# Once the stub is gone, `mise lock` drops its reference and its entry.
+mv bin/jq jq.bak
+assert_succeed "mise lock"
+assert_not_contains "cat mise.lock" "tool-stubs"
+assert_not_contains "cat mise.lock" "jqlang"
+mv jq.bak bin/jq
+
+# --embed keeps the lock in the stub and takes it out of mise.lock.
+assert_succeed "mise generate tool-stub bin/jq --lock"
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "mise generate tool-stub bin/jq --lock --embed" "Updated tool stub"
+assert_contains "cat bin/jq" "[lock.platforms."
+assert_contains "cat bin/jq" 'version = "1.7"'
+assert_not_contains "cat mise.lock" "tool-stubs"
+assert_succeed "mise lock"
+assert_not_contains "cat mise.lock" "jqlang"

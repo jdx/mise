@@ -239,7 +239,8 @@ URL checks skip backends that cannot record a download URL: `asdf`, `cargo`,
 `core:swift`, and vfox backend plugins. This exemption is specific to artifact
 URLs; npm and PyPI dependency graphs have their own locked-install checks.
 vfox tool plugins can record URLs and participate in URL locking.
-Tools resolved from a [tool stub](/dev-tools/tool-stubs) also skip URL checks.
+[Tool stubs](/dev-tools/tool-stubs#locked-tool-stub) follow the same rules,
+using their own `[lock]` or their project's `mise.lock`.
 
 ## Dependency graphs
 

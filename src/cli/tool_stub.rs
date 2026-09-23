@@ -35,6 +35,7 @@ pub(crate) struct ToolStubFile {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ToolStubLock {
+    #[serde(default)]
     pub platforms: BTreeMap<String, ToolStubLockPlatform>,
 }
 
@@ -100,10 +101,10 @@ pub(crate) fn locked_tool_from_stub(
         return Ok(None);
     }
     if !lock.platforms.is_empty()
-        && !lock
+        && lock
             .platforms
             .get(platform_key)
-            .is_some_and(|p| p.url.is_some())
+            .is_none_or(|p| p.url.is_none())
     {
         return Ok(None);
     }

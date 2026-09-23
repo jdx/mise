@@ -14,7 +14,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBu
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -50,6 +50,34 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
     {
         tools.push(tool);
     }
+}
+
+/// Tool stubs listed in a lockfile that still find it from where they live,
+/// each paired with its parsed stub or the error parsing it.
+fn live_tool_stubs(
+    config: &Config,
+    lockfile_path: &Path,
+) -> Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)> {
+    let mut lockfile = match Lockfile::read(lockfile_path) {
+        Ok(lockfile) => lockfile,
+        Err(err) => {
+            debug!(
+                "skipping tool stubs of {}: {err}",
+                display_path(lockfile_path)
+            );
+            return vec![];
+        }
+    };
+    lockfile.retain_live_tool_stubs(lockfile_path, config.monorepo_lockfile_root().as_deref());
+    lockfile
+        .tool_stubs()
+        .iter()
+        .map(|reference| {
+            let path = lockfile::tool_stub_path(lockfile_path, reference);
+            let stub = crate::cli::tool_stub::ToolStubFile::from_file(&path);
+            (path, stub)
+        })
+        .collect()
 }
 
 /// Create or refresh lockfile versions, checksums, and download URLs
@@ -578,6 +606,10 @@ impl Lock {
                         &mut lockfile,
                         configured_selectors.as_ref(),
                     );
+                    let pruned_stubs = lockfile.retain_live_tool_stubs(
+                        &lockfile_path,
+                        config.monorepo_lockfile_root().as_deref(),
+                    );
                     let format_changed = if self.upgrade {
                         if lockfile.tools().is_empty() {
                             self.prepare_lockfile_format(&lockfile_path, &mut lockfile)
@@ -591,7 +623,7 @@ impl Lock {
                         self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
                         false
                     };
-                    if format_changed || !pruned_tools.is_empty() {
+                    if format_changed || !pruned_tools.is_empty() || pruned_stubs {
                         if atomic {
                             staged_upgrade_writes.push(StagedUpgradeWrite {
                                 path: lockfile_path.clone(),
@@ -686,6 +718,8 @@ impl Lock {
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
             }
+            lockfile
+                .retain_live_tool_stubs(&lockfile_path, config.monorepo_lockfile_root().as_deref());
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
@@ -1433,6 +1467,24 @@ impl Lock {
             }
         }
 
+        for (path, stub) in live_tool_stubs(config, target_lockfile_path) {
+            let request = stub.and_then(|stub| stub.to_tool_request(&path));
+            match request {
+                Ok(request) => {
+                    configured_tools.insert(request.ba().short.clone());
+                    configured_backends.insert(request.ba().full());
+                }
+                Err(err) => {
+                    debug!(
+                        "skipping stale-tool pruning for {} because {} could not be parsed: {err}",
+                        display_path(target_lockfile_path),
+                        display_path(&path)
+                    );
+                    return None;
+                }
+            }
+        }
+
         Some((configured_tools, configured_backends))
     }
 
@@ -1622,8 +1674,8 @@ impl Lock {
                 }
             } else if tv.request.source().path().is_some() {
                 // Path-backed sources that do not map to a mise lockfile, such
-                // as .tool-versions and tool stubs, should not be folded into
-                // an arbitrary project mise.lock.
+                // as .tool-versions, should not be folded into an arbitrary
+                // project mise.lock. Tool stubs map through the pass below.
                 continue;
             } else {
                 if Settings::get().generate_lockfiles() {
@@ -1761,6 +1813,30 @@ impl Lock {
                     }
                 }
             }
+        }
+
+        // Third pass: tool stubs that read their entries from this lockfile.
+        // They are not part of any config, so nothing above sees them.
+        for (path, stub) in live_tool_stubs(config, target_lockfile_path) {
+            let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
+                Ok(request) => request,
+                Err(err) => {
+                    warn!("skipping tool stub {}: {err:#}", display_path(&path));
+                    continue;
+                }
+            };
+            let resolve_options = request.resolve_options(context.resolve_options)?;
+            let tv = request
+                .resolve(config, &resolve_options)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve tool stub {} for lockfile {}",
+                        display_path(&path),
+                        display_path(target_lockfile_path)
+                    )
+                })?;
+            push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
         }
 
         self.add_task_tools_to_lock(
