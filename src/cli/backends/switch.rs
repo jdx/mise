@@ -63,8 +63,8 @@ impl BackendsSwitch {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let switches = self.find_switches(&config).await?;
-        let switches = self.drop_shadowed(&config, switches).await?;
-        if switches.is_empty() {
+        let (switches, shadowed) = self.drop_shadowed(&config, switches).await?;
+        if switches.is_empty() && shadowed.is_empty() {
             let scope = if self.global { "global" } else { "project" };
             if self.tool.is_empty() {
                 miseprintln!(
@@ -79,6 +79,20 @@ impl BackendsSwitch {
             );
         }
 
+        if !switches.is_empty() {
+            self.switch(switches).await?;
+        }
+        if !shadowed.is_empty() {
+            bail!(
+                "did not switch {}; `mise lock` cannot relock a tool another config shadows, so run this from a directory whose config does not set it",
+                shadowed.join(", ")
+            );
+        }
+        Ok(())
+    }
+
+    /// Rewrite, relock, and reinstall the switches.
+    async fn switch(&self, switches: Vec<Switch>) -> Result<()> {
         let mut by_lockfile: BTreeMap<&PathBuf, Vec<&Switch>> = BTreeMap::new();
         for switch in &switches {
             by_lockfile
@@ -271,13 +285,13 @@ impl BackendsSwitch {
 
     /// `mise lock` locks each tool from the config that wins for it, so it
     /// cannot relock a lock entry whose tool another config shadows (a project
-    /// tool with the same name as a global one). Skip those entries, saying
-    /// why, and switch the rest.
+    /// tool with the same name as a global one). Set those entries aside so
+    /// the rest can switch and the command can still fail for them.
     async fn drop_shadowed(
         &self,
         config: &Arc<Config>,
         switches: Vec<Switch>,
-    ) -> Result<Vec<Switch>> {
+    ) -> Result<(Vec<Switch>, Vec<String>)> {
         let mut active: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
         for (_, tv) in config.get_toolset().await?.list_current_versions() {
             if let Some((lockfile, _)) =
@@ -288,20 +302,22 @@ impl BackendsSwitch {
                     .or_insert((lockfile, tv.request.source().to_string()));
             }
         }
-        Ok(switches
+        let mut shadowed = vec![];
+        let kept = switches
             .into_iter()
             .filter(|s| match active.get(&s.short) {
                 Some((lockfile, source)) if lockfile != &s.lockfile => {
-                    warn!(
-                        "skipping {} in {}: it is shadowed by {source}, so `mise lock` cannot relock it; run this from a directory whose config does not set it",
+                    shadowed.push(format!(
+                        "{} in {} (shadowed by {source})",
                         s.short,
                         display_path(&s.lockfile),
-                    );
+                    ));
                     false
                 }
                 _ => true,
             })
-            .collect())
+            .collect();
+        Ok((kept, shadowed))
     }
 
     /// Every configured tool, or each named one, that a lock entry in this
