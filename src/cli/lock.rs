@@ -25,10 +25,15 @@ type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
 /// Without its version list a request can only resolve to itself, and that
 /// string is not known to be a version: `4` would be locked as a release that
 /// may not exist. A version the lockfile already holds, or one that is
-/// installed, is known to exist.
-fn reject_unverified_versions(tools: &[LockTool]) -> Result<()> {
+/// installed, is known to exist. `cli_versions` are the `tool@version`
+/// arguments, which lock can record without changing the configured request.
+fn reject_unverified_versions(tools: &[LockTool], cli_versions: &[(String, String)]) -> Result<()> {
     for (ba, tv) in tools {
-        if tv.version != tv.request.version() || tv.resolved_from_lockfile() {
+        let as_requested = tv.version == tv.request.version()
+            || cli_versions
+                .iter()
+                .any(|(full, version)| *full == ba.full() && *version == tv.version);
+        if !as_requested || tv.resolved_from_lockfile() {
             continue;
         }
         let Some(cause) = crate::backend::version_listing_failure(ba) else {
@@ -562,7 +567,12 @@ impl Lock {
                     continue;
                 }
             }
-            reject_unverified_versions(&tools)?;
+            let cli_versions: Vec<_> = self
+                .tool
+                .iter()
+                .filter_map(|tool| Some((tool.ba.full(), tool.tvr.as_ref()?.version())))
+                .collect();
+            reject_unverified_versions(&tools, &cli_versions)?;
             let configured_selectors = self.configured_tool_selectors_for_target(
                 &config,
                 &tools,
