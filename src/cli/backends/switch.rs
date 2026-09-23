@@ -63,7 +63,7 @@ impl BackendsSwitch {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let switches = self.find_switches(&config).await?;
-        self.ensure_not_shadowed(&config, &switches).await?;
+        let switches = self.drop_shadowed(&config, switches).await?;
         if switches.is_empty() {
             let scope = if self.global { "global" } else { "project" };
             if self.tool.is_empty() {
@@ -243,23 +243,27 @@ impl BackendsSwitch {
     }
 
     /// The versions each lockfile in this command's scope locks, resolved from
-    /// the config files that lockfile serves. Resolving each config on its own
-    /// keeps a project tool from hiding a global one with the same name.
+    /// every config source (mise.toml, idiomatic version files, .tool-versions)
+    /// on its own, so a project tool cannot hide a global one with the same
+    /// name. Each tool maps to its lockfile the way `mise lock` maps it.
     async fn scoped_versions(&self, config: &Arc<Config>) -> Result<Vec<(PathBuf, ToolVersion)>> {
+        let targets: BTreeSet<PathBuf> = self
+            .lock(vec![])
+            .lockfile_targets(config)
+            .into_keys()
+            .collect();
         let mut versions = vec![];
-        for (lockfile, config_paths) in self.lock(vec![]).lockfile_targets(config) {
-            for path in config_paths {
-                let Some(cf) = config.config_files.get(&path) else {
-                    continue;
-                };
-                let mut ts: Toolset = cf.to_tool_request_set()?.into();
-                ts.resolve_with_opts(config, &ResolveOptions::default())
-                    .await?;
-                versions.extend(
-                    ts.list_current_versions()
-                        .into_iter()
-                        .map(|(_, tv)| (lockfile.clone(), tv)),
-                );
+        for cf in config.config_files.values() {
+            let mut ts: Toolset = cf.to_tool_request_set()?.into();
+            ts.resolve_with_opts(config, &ResolveOptions::default())
+                .await?;
+            for (_, tv) in ts.list_current_versions() {
+                if let Some((lockfile, _)) =
+                    lockfile::lockfile_path_for_tool_source(config, tv.request.source())
+                    && targets.contains(&lockfile)
+                {
+                    versions.push((lockfile, tv));
+                }
             }
         }
         Ok(versions)
@@ -267,35 +271,37 @@ impl BackendsSwitch {
 
     /// `mise lock` locks each tool from the config that wins for it, so it
     /// cannot relock a lock entry whose tool another config shadows (a project
-    /// tool with the same name as a global one). Refuse before rewriting it.
-    async fn ensure_not_shadowed(&self, config: &Arc<Config>, switches: &[Switch]) -> Result<()> {
-        let ts = config.get_toolset().await?;
-        let shadowed = ts
-            .list_current_versions()
-            .into_iter()
-            .filter_map(|(_, tv)| {
-                let (active, _) =
-                    lockfile::lockfile_path_for_tool_source(config, tv.request.source())?;
-                switches
-                    .iter()
-                    .find(|s| s.short == tv.short() && s.lockfile != active)
-                    .map(|s| {
-                        format!(
-                            "{} in {} is shadowed by {}",
-                            s.short,
-                            display_path(&s.lockfile),
-                            tv.request.source()
-                        )
-                    })
-            })
-            .collect::<BTreeSet<_>>();
-        if shadowed.is_empty() {
-            return Ok(());
+    /// tool with the same name as a global one). Skip those entries, saying
+    /// why, and switch the rest.
+    async fn drop_shadowed(
+        &self,
+        config: &Arc<Config>,
+        switches: Vec<Switch>,
+    ) -> Result<Vec<Switch>> {
+        let mut active: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
+        for (_, tv) in config.get_toolset().await?.list_current_versions() {
+            if let Some((lockfile, _)) =
+                lockfile::lockfile_path_for_tool_source(config, tv.request.source())
+            {
+                active
+                    .entry(tv.short().to_string())
+                    .or_insert((lockfile, tv.request.source().to_string()));
+            }
         }
-        bail!(
-            "{}; run this from a directory whose config does not set it",
-            shadowed.into_iter().collect::<Vec<_>>().join(", ")
-        )
+        Ok(switches
+            .into_iter()
+            .filter(|s| match active.get(&s.short) {
+                Some((lockfile, source)) if lockfile != &s.lockfile => {
+                    warn!(
+                        "skipping {} in {}: it is shadowed by {source}, so `mise lock` cannot relock it; run this from a directory whose config does not set it",
+                        s.short,
+                        display_path(&s.lockfile),
+                    );
+                    false
+                }
+                _ => true,
+            })
+            .collect())
     }
 
     /// Every configured tool, or each named one, that a lock entry in this

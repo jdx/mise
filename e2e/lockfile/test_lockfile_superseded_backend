@@ -117,7 +117,7 @@ assert_contains "mise backends switch --dry-run" "every tool in the project lock
 # `mise lock --global` locks hk from the project config that shadows it, so it
 # cannot relock the global entry; the switch refuses without touching it.
 cp "$MISE_CONFIG_DIR/mise.lock" global.lock.before
-assert_fail_contains "mise backends switch --global" "is shadowed by"
+assert_contains "mise backends switch --global 2>&1" "is shadowed by"
 assert "cmp -s $MISE_CONFIG_DIR/mise.lock global.lock.before && echo same" "same"
 rm mise.toml mise.lock global.lock.before
 assert_contains "mise backends switch --global --dry-run 2>&1" 'would switch hk@1.58.1'
