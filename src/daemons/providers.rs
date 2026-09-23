@@ -385,7 +385,10 @@ fn base_env() -> EnvMap {
 
 #[derive(Serialize, Deserialize)]
 struct Execution {
+    // Older provider manifests still serve process and probe execution.
+    #[serde(default)]
     preset: String,
+    #[serde(default)]
     port: u16,
     env: EnvMap,
     commands: IndexMap<String, String>,
@@ -673,6 +676,11 @@ impl Resource {
         let root = self.provider;
         let execution: Execution =
             serde_json::from_slice(&std::fs::read(root.join("execution.json"))?)?;
+        if !matches!(execution.preset.as_str(), "postgres" | "cockroachdb") || execution.port == 0 {
+            bail!(
+                "provider metadata predates resource support; explicitly restart its provider first"
+            );
+        }
         {
             let _lock = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
             let port = execution.port;
@@ -814,6 +822,17 @@ mod tests {
                     .contains("does not accept")
             );
         }
+    }
+
+    #[test]
+    fn old_manifests_remain_readable_for_processes_and_probes() {
+        let execution: Execution = serde_json::from_value(serde_json::json!({
+            "env": {"PATH": "/bin"}, "commands": {"ready_cmd": "true"}, "root": "/tmp/provider"
+        }))
+        .unwrap();
+        assert_eq!(execution.commands["ready_cmd"], "true");
+        assert_eq!(execution.env["PATH"], "/bin");
+        assert_eq!(execution.root, PathBuf::from("/tmp/provider"));
     }
 
     #[test]
