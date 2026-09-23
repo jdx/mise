@@ -4226,13 +4226,27 @@ fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result
 }
 
 /// Other Unix systems (macOS, the BSDs) implement `fchmodat` with
-/// `AT_SYMLINK_NOFOLLOW` directly.
+/// `AT_SYMLINK_NOFOLLOW` directly. There it changes a symlink's own mode
+/// rather than failing, so a link is refused first; one swapped in after that
+/// check only has its own mode changed, never its target's.
 #[cfg(all(unix, not(target_os = "linux")))]
 fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result<()> {
     use nix::errno::Errno;
     use nix::fcntl::AT_FDCWD;
     use nix::sys::stat::{FchmodatFlags, fchmodat};
 
+    let file_type = std::fs::symlink_metadata(path)
+        .wrap_err_with(|| format!("failed to inspect {}", path.display_user()))?
+        .file_type();
+    if file_type.is_symlink() {
+        bail!(
+            "{} is a symlink, which is never followed",
+            path.display_user()
+        );
+    }
+    if !file_type.is_file() && !file_type.is_dir() {
+        bail!("{} is not a file or directory", path.display_user());
+    }
     match fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink) {
         Ok(()) => Ok(()),
         // one errno on some systems, two on others
