@@ -69,6 +69,15 @@ assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
 assert_contains "cat $target" "work = true"
 rm "$target"
 
+# a target that already holds the rendered content gets a record from a
+# converged apply, so turning the render empty later removes it without --force
+assert_succeed "WORK=1 mise dot apply --yes"
+rm -rf "$MISE_STATE_DIR/dotfiles/targets"
+assert_succeed "WORK=1 mise dot apply --yes"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "1"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+
 # a tracked target removed by an apply comes back with undo and rollback
 assert_succeed "WORK=1 mise dot apply --yes"
 assert_succeed "mise dot track ~/.config/app/work.toml"
