@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# A completion driver that cancels an in-flight completion closes the read end
+# of mise's stdout. mise must exit quietly instead of panicking on EPIPE.
+
+cat >mise.toml <<'EOF_TOML'
+[tasks.build]
+run = 'true'
+EOF_TOML
+
+# The reader closes its stdin before mise can write, so every write hits EPIPE.
+# Under pipefail the pipeline's status is mise's, since the reader succeeds.
+status=0
+mise __complete_word__ --shell bash --line 'mise run ' --bash-word '' \
+  2>stderr.txt | {
+  exec 0<&-
+  sleep 1
+} || status=$?
+[[ $status == 0 ]] || fail "completion exited $status on a closed stdout: $(cat stderr.txt)"
+assert_not_contains "cat stderr.txt" "panicked"
+assert_not_contains "cat stderr.txt" "Broken pipe"
+
+# A reader that stays open still receives the candidates.
+assert_contains "mise __complete_word__ --shell bash --line 'mise run ' --bash-word ''" "build"
+
+# An unreadable completion spec is reported as an error, not a panic.
+assert_fail "mise __usage_complete_word bogus" "mise ERROR"
