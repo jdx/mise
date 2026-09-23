@@ -434,11 +434,31 @@ export const commands: { [key: string]: Command } = {
       __init: {
         hide: true,
       },
+      "__provider-exec": {
+        hide: true,
+      },
       logs: {
         hide: false,
       },
       ls: {
         hide: false,
+      },
+      providers: {
+        hide: false,
+        subcommands: {
+          ls: {
+            hide: false,
+          },
+          restart: {
+            hide: false,
+          },
+          start: {
+            hide: false,
+          },
+          stop: {
+            hide: false,
+          },
+        },
       },
       prune: {
         hide: false,
