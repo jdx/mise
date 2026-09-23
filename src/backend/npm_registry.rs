@@ -23,6 +23,7 @@ use eyre::Result;
 use crate::backend::VersionInfo;
 use crate::backend::npm::is_semver_prerelease;
 use crate::config::Settings;
+use crate::http::HTTP_FETCH;
 
 /// Process-wide npm registry client. Registry URLs, scoped registries, and
 /// auth are read once from the environment and the user's `~/.npmrc`; the
@@ -130,6 +131,39 @@ pub(crate) async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
                     .is_none_or(|metadata| metadata.deprecated.is_none())
         })
         .cloned())
+}
+
+/// Search the configured default registry for packages matching `query`
+/// through its `/-/v1/search` endpoint.
+pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
+    #[derive(serde::Deserialize)]
+    struct SearchResponse {
+        objects: Vec<SearchObject>,
+    }
+    #[derive(serde::Deserialize)]
+    struct SearchObject {
+        package: SearchPackage,
+    }
+    #[derive(serde::Deserialize)]
+    struct SearchPackage {
+        name: String,
+        description: Option<String>,
+    }
+
+    let registry = NpmConfig::load(&meta_dir()).registry;
+    let url = url::Url::parse_with_params(
+        &format!("{}/-/v1/search", registry.trim_end_matches('/')),
+        &[("text", query), ("size", &limit.to_string())],
+    )?;
+    let res: SearchResponse = HTTP_FETCH.json(url).await?;
+    Ok(res
+        .objects
+        .into_iter()
+        .map(|o| vfox::BackendTool {
+            name: o.package.name,
+            description: o.package.description,
+        })
+        .collect())
 }
 
 /// Download the exact npm registry tarball for a package version, honoring

@@ -7660,6 +7660,10 @@ Search for available tools
 
 Searches the registry and installed backend catalogs for tools matching NAME.
 
+Prefix NAME with a backend to also search that backend's package registry:
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Unprefixed searches do not use the
+network.
+
 By default, it will show all tools that fuzzy match the search term. For
 non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
@@ -7703,6 +7707,13 @@ jq    Command\-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq \- interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+.RE
+.PP
+.PP
+.RS 4
+mise search \-\-match\-type equal npm:typescript\-language\-server
+Tool                            Description
+npm:typescript\-language\-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 .RE
 .PP
 .PP

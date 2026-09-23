@@ -22,6 +22,10 @@ pub(crate) enum MatchType {
 ///
 /// Searches the registry and installed backend catalogs for tools matching NAME.
 ///
+/// Prefix NAME with a backend to also search that backend's package registry:
+/// `npm:`, `cargo:`, `gem:`, or `dotnet:`. Unprefixed searches do not use the
+/// network.
+///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
 #[derive(Debug, usage_rs::Args)]
@@ -33,6 +37,11 @@ jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq"###
+    ),
+    example(
+        r###"mise search --match-type equal npm:typescript-language-server
+Tool                            Description
+npm:typescript-language-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver"###
     ),
     example(
         r###"mise search --interactive
@@ -74,7 +83,8 @@ pub(crate) struct Search {
 
 impl Search {
     pub(crate) async fn run(self) -> Result<()> {
-        let tools = crate::tool_catalog::search(self.name.as_deref().unwrap_or_default()).await;
+        let query = self.name.as_deref().unwrap_or_default();
+        let mut tools = crate::tool_catalog::search(query).await;
         if self.complete {
             self.print_completions(&tools, true);
             return Ok(());
@@ -83,6 +93,11 @@ impl Search {
             self.print_completions(&tools, false);
             return Ok(());
         }
+        tools.extend(crate::tool_catalog::search_package_registry(query).await);
+        let tools = tools
+            .into_iter()
+            .unique_by(|tool| tool.id.clone())
+            .collect_vec();
         if self.interactive {
             self.interactive(&tools)?;
         } else {
@@ -256,9 +271,7 @@ impl Search {
 fn search_description(tool: &ToolCatalogEntry) -> String {
     match &tool.source {
         ToolCatalogSource::Registry(registry_tool) => get_description(registry_tool),
-        ToolCatalogSource::VfoxBackend => {
-            tool.description.clone().unwrap_or_else(|| tool.id.clone())
-        }
+        ToolCatalogSource::Backend => tool.description.clone().unwrap_or_else(|| tool.id.clone()),
     }
 }
 

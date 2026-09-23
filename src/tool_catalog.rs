@@ -3,6 +3,8 @@ use std::path::Path;
 use futures_util::{StreamExt, future, stream};
 use itertools::Itertools;
 
+use crate::backend::backend_type::BackendType;
+use crate::backend::{cargo, dotnet, gem, npm_registry};
 use crate::cache::CacheManagerBuilder;
 use crate::config::Settings;
 use crate::plugins::PluginType;
@@ -12,11 +14,19 @@ use crate::toolset::install_state;
 use crate::{dirs, timeout};
 
 const BACKEND_CATALOG_CONCURRENCY: usize = 8;
+/// Built-in backends whose package registry has a search API.
+const PACKAGE_REGISTRY_BACKENDS: &[BackendType] = &[
+    BackendType::Cargo,
+    BackendType::Dotnet,
+    BackendType::Gem,
+    BackendType::Npm,
+];
+const SEARCH_LIMIT: usize = 20;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ToolCatalogSource {
     Registry(&'static RegistryTool),
-    VfoxBackend,
+    Backend,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +41,7 @@ impl ToolCatalogEntry {
     pub(crate) fn canonical_id(&self) -> &str {
         match &self.source {
             ToolCatalogSource::Registry(tool) => tool.short,
-            ToolCatalogSource::VfoxBackend => &self.id,
+            ToolCatalogSource::Backend => &self.id,
         }
     }
 
@@ -41,14 +51,14 @@ impl ToolCatalogEntry {
                 .description
                 .or_else(|| tool.backends().first().copied())
                 .unwrap_or_default(),
-            ToolCatalogSource::VfoxBackend => self.description.as_deref().unwrap_or_default(),
+            ToolCatalogSource::Backend => self.description.as_deref().unwrap_or_default(),
         }
     }
 
     pub(crate) fn selectable(&self) -> bool {
         match &self.source {
             ToolCatalogSource::Registry(tool) => !tool.backends().is_empty(),
-            ToolCatalogSource::VfoxBackend => true,
+            ToolCatalogSource::Backend => true,
         }
     }
 }
@@ -118,31 +128,96 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
         .collect::<Vec<_>>()
         .await;
     for (plugin_name, tools) in backend_catalogs {
-        entries.extend(tools.into_iter().filter_map(|tool| {
-            let name = tool.name.trim();
-            if !valid_tool_name(name) {
-                debug!("ignoring invalid tool name from backend plugin {plugin_name}: {name:?}");
-                return None;
-            }
-            let id = format!("{plugin_name}:{name}");
-            if !tool_enabled(enable_tools.as_ref(), &disable_tools, &id) {
-                return None;
-            }
-            Some(ToolCatalogEntry {
-                id,
-                name: name.to_string(),
-                description: tool
-                    .description
-                    .filter(|description| !description.is_empty()),
-                source: ToolCatalogSource::VfoxBackend,
-            })
-        }));
+        entries.extend(backend_entries(plugin_name, tools));
     }
 
     entries
         .into_iter()
         .unique_by(|entry| entry.id.clone())
         .collect()
+}
+
+/// Searches a built-in backend's package registry for a `backend:query`
+/// search, e.g. `npm:prettier`. Unprefixed queries return nothing, so plain
+/// searches and shell completion stay offline.
+pub(crate) async fn search_package_registry(query: &str) -> Vec<ToolCatalogEntry> {
+    let Some((backend, query)) = query.split_once(':') else {
+        return vec![];
+    };
+    let settings = Settings::get();
+    let backend_type = BackendType::guess(backend);
+    if query.is_empty()
+        || !PACKAGE_REGISTRY_BACKENDS.contains(&backend_type)
+        || settings.offline()
+        || settings.disable_backends.iter().any(|b| b == backend)
+        || (backend_type.is_experimental() && !settings.experimental)
+    {
+        return vec![];
+    }
+    let cache = CacheManagerBuilder::new(
+        dirs::CACHE
+            .join("package-registry-search")
+            .join(format!("{backend}.msgpack.z")),
+    )
+    .with_cache_key(query.to_string())
+    .with_fresh_duration(settings.fetch_remote_versions_cache())
+    .build();
+    let result = cache
+        .get_or_try_init_async(|| async {
+            timeout::run_with_timeout_async(
+                || async {
+                    match backend_type {
+                        BackendType::Cargo => cargo::search_tools(query, SEARCH_LIMIT).await,
+                        BackendType::Dotnet => dotnet::search_tools(query, SEARCH_LIMIT).await,
+                        BackendType::Gem => gem::search_tools(query, SEARCH_LIMIT).await,
+                        BackendType::Npm => npm_registry::search_tools(query, SEARCH_LIMIT).await,
+                        _ => Ok(vec![]),
+                    }
+                },
+                settings.fetch_remote_versions_timeout(),
+            )
+            .await
+        })
+        .await;
+    let tools = match result {
+        Ok(tools) => tools.clone(),
+        Err(err) => {
+            warn!("failed to search {backend} packages for {query}: {err:#}");
+            return vec![];
+        }
+    };
+    backend_entries(backend, tools).collect()
+}
+
+fn backend_entries(
+    backend: &str,
+    tools: Vec<vfox::BackendTool>,
+) -> impl Iterator<Item = ToolCatalogEntry> + '_ {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    tools.into_iter().filter_map(move |tool| {
+        let name = tool.name.trim();
+        if !valid_tool_name(name) {
+            debug!("ignoring invalid tool name from backend {backend}: {name:?}");
+            return None;
+        }
+        let id = format!("{backend}:{name}");
+        if !tool_enabled(enable_tools.as_ref(), &disable_tools, &id) {
+            return None;
+        }
+        Some(ToolCatalogEntry {
+            id,
+            name: name.to_string(),
+            // Registry descriptions can span several lines, which would break
+            // table rows and completion output.
+            description: tool
+                .description
+                .map(|description| description.split_whitespace().join(" "))
+                .filter(|description| !description.is_empty()),
+            source: ToolCatalogSource::Backend,
+        })
+    })
 }
 
 fn backend_query_targets_plugin(plugin_name: &str, query: &str) -> bool {
@@ -284,6 +359,41 @@ mod tests {
         assert_eq!(backend_search_query("npm", "npm:"), None);
         assert_eq!(backend_search_query("npm", "cargo:react"), None);
         assert_eq!(backend_search_query("npm", ""), None);
+    }
+
+    #[tokio::test]
+    async fn test_search_package_registry_skips_without_network() {
+        // None of these reach a package registry, so they must return
+        // immediately with no results.
+        for query in ["", "prettier", "npm:", "pipx:black", "github:jdx/mise"] {
+            assert!(search_package_registry(query).await.is_empty(), "{query}");
+        }
+    }
+
+    #[test]
+    fn test_backend_entries_normalizes_descriptions() {
+        let tools = vec![
+            vfox::BackendTool {
+                name: "rubocop".into(),
+                description: Some("A linter.\n  It formats too.".into()),
+            },
+            vfox::BackendTool {
+                name: "blank".into(),
+                description: Some(" \n".into()),
+            },
+            vfox::BackendTool {
+                name: "bad name".into(),
+                description: None,
+            },
+        ];
+        let entries = backend_entries("gem", tools).collect_vec();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "gem:rubocop");
+        assert_eq!(
+            entries[0].description.as_deref(),
+            Some("A linter. It formats too.")
+        );
+        assert_eq!(entries[1].description, None);
     }
 
     #[test]

@@ -55,7 +55,7 @@ impl Backend for DotnetBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        let feed_url = self.get_search_url().await?;
+        let feed_url = nuget_search_url().await?;
 
         let feed: NugetFeedSearch = HTTP_FETCH
             .json(format!(
@@ -154,27 +154,54 @@ impl DotnetBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
+}
 
-    async fn get_search_url(&self) -> eyre::Result<String> {
-        let settings = Settings::get();
-        let nuget_registry = settings.dotnet.registry_url.as_str();
+async fn nuget_search_url() -> eyre::Result<String> {
+    let settings = Settings::get();
+    let nuget_registry = settings.dotnet.registry_url.as_str();
 
-        let services: NugetFeed = HTTP_FETCH.json(nuget_registry).await?;
+    let services: NugetFeed = HTTP_FETCH.json(nuget_registry).await?;
 
-        let feed = services
-            .resources
-            .iter()
-            .find(|x| x.service_type == "SearchQueryService/3.5.0")
-            .or_else(|| {
-                services
-                    .resources
-                    .iter()
-                    .find(|x| x.service_type == "SearchQueryService")
-            })
-            .ok_or_else(|| eyre!("No SearchQueryService found"))?;
+    let feed = services
+        .resources
+        .iter()
+        .find(|x| x.service_type == "SearchQueryService/3.5.0")
+        .or_else(|| {
+            services
+                .resources
+                .iter()
+                .find(|x| x.service_type == "SearchQueryService")
+        })
+        .ok_or_else(|| eyre!("No SearchQueryService found"))?;
 
-        Ok(feed.id.clone())
-    }
+    Ok(feed.id.clone())
+}
+
+/// Search the configured NuGet feed for .NET tool packages matching `query`.
+pub(crate) async fn search_tools(
+    query: &str,
+    limit: usize,
+) -> eyre::Result<Vec<vfox::BackendTool>> {
+    let feed_url = nuget_search_url().await?;
+    let url = url::Url::parse_with_params(
+        &feed_url,
+        &[
+            ("q", query),
+            ("packageType", "dotnettool"),
+            ("take", &limit.to_string()),
+            ("prerelease", "false"),
+            ("semVerLevel", "2.0.0"),
+        ],
+    )?;
+    let feed: NugetFeedSearch = HTTP_FETCH.json(url).await?;
+    Ok(feed
+        .data
+        .into_iter()
+        .map(|d| vfox::BackendTool {
+            name: d.id,
+            description: d.description,
+        })
+        .collect())
 }
 
 fn dotnet_legacy_prerelease_package_flag_enabled() -> bool {
@@ -217,6 +244,8 @@ struct NugetFeedSearch {
 #[derive(serde::Deserialize)]
 struct NugetFeedSearchData {
     id: String,
+    #[serde(default)]
+    description: Option<String>,
     versions: Vec<NugetFeedSearchDataVersion>,
 }
 

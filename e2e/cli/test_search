@@ -67,3 +67,13 @@ assert_fail "mise search --match-type equal mosint" "not found in registry"
 
 # Disabled roots whose catch-all override is an error message are excluded
 assert_fail "mise search --match-type equal gorename" "not found in registry"
+
+# A backend prefix also searches that backend's package registry
+assert_contains "mise search npm:typescript-language-server" "npm:typescript-language-server"
+assert_contains "mise search --match-type equal cargo:ripgrep" "cargo:ripgrep"
+assert_contains "mise search --match-type equal gem:rubocop" "gem:rubocop"
+assert_contains "mise search --match-type equal dotnet:GitVersion.Tool" "dotnet:GitVersion.Tool"
+
+# Shell completion and offline mode never query package registries
+assert_not_contains "mise search --complete-ids npm:typescript-language-server" "npm:typescript-language-server"
+assert_fail "MISE_OFFLINE=1 mise search --match-type equal npm:typescript-language-server" "not found in registry"
