@@ -150,7 +150,10 @@ assert "cat real-ssh/config" "host example"
 
 # Declared ownership is changed as root, which does not follow a symlink in a
 # directory another user could write. Status and apply both say so, and apply
-# leaves the file alone instead of asking for sudo.
+# leaves the file alone instead of asking for sudo. CI runs this as root in a
+# root-owned directory, which root trusts, so make the symlink's directory
+# writable by others for this case.
+chmod o+w "$PWD"
 cat <<EOF >mise.toml
 [bootstrap.files."$PWD/linked-ssh/config"]
 mode = "0640"
@@ -161,6 +164,7 @@ assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "decla
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "declare the resolved path instead"
 assert "stat -c %a real-ssh/config" "600"
+chmod o-w "$PWD"
 
 # A missing target is not created, and apply still succeeds.
 missing_file="$PWD/missing-perms.conf"

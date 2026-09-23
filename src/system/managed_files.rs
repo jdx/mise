@@ -1899,9 +1899,11 @@ fn create_directory(
 
 /// A path component that is a symlink in a directory someone other than root
 /// could have written, which the component-by-component walk refuses.
+#[cfg(unix)]
 #[derive(Debug)]
 struct UntrustedSymlink(PathBuf);
 
+#[cfg(unix)]
 impl std::fmt::Display for UntrustedSymlink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -1912,8 +1914,10 @@ impl std::fmt::Display for UntrustedSymlink {
     }
 }
 
+#[cfg(unix)]
 impl std::error::Error for UntrustedSymlink {}
 
+#[cfg(unix)]
 fn is_untrusted_symlink(error: &eyre::Report) -> bool {
     error
         .chain()
