@@ -64,7 +64,7 @@ fn at_typed_completer(request: &usage_rs::complete::CompletionRequest) -> bool {
 /// The `run=` usage-rs emits for a typed completer (`#[usage(complete = …)]`) passes the line as
 /// `--line={{ words | … }}`, but `CompletionRequest::parse` only reads `--line` followed by a
 /// separate word and skips the joined form. The completer would then see an empty line: no
-/// prefix, and none of its command's flags.
+/// prefix, and none of its command's flags. Remove once usage-rs includes jdx/usage#1487.
 fn split_line_option(argv: &[OsString]) -> Vec<OsString> {
     argv.iter()
         .flat_map(
