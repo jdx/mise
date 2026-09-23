@@ -196,6 +196,12 @@ struct PrivilegedPathInspection {
     /// untrusted parent symlinks; see [`untrusted_parent_symlink`].
     #[serde(default)]
     check_parent_symlinks: bool,
+    /// Whether this is a `[bootstrap.directories]` entry rather than a file.
+    #[serde(default)]
+    directory: bool,
+    /// Whether a directory removal is recursive, which always runs as root.
+    #[serde(default)]
+    recursive: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -886,7 +892,21 @@ impl ManagedDirectoryRequest {
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
-        match self.plan()?.action {
+        let action = self.plan()?.action;
+        if action == ResourceAction::Unknown
+            && let Some(PathInspection::UntrustedParent { symlink }) = &self.inspection
+        {
+            bail!(
+                "refusing to {} {}: {}",
+                match self.state {
+                    ManagedState::Absent => "remove directory",
+                    ManagedState::Present => "create directory",
+                },
+                self.path.display(),
+                untrusted_parent_reason(symlink)
+            );
+        }
+        match action {
             ResourceAction::Noop => return Ok(None),
             ResourceAction::Unknown if self.state == ManagedState::Absent => bail!(
                 "refusing to remove non-directory path {} as a directory; declare it in [bootstrap.files]",
@@ -1402,6 +1422,8 @@ fn inspect_paths(
             mode: file.mode,
             check_metadata: file.state == ManagedState::Present,
             check_parent_symlinks: true,
+            directory: false,
+            recursive: false,
         };
         match inspect_path(request.clone()) {
             Ok(inspection) => file.inspection = Some(inspection),
@@ -1420,7 +1442,9 @@ fn inspect_paths(
             group: directory.group.clone(),
             mode: Some(directory.mode),
             check_metadata: directory.state == ManagedState::Present,
-            check_parent_symlinks: false,
+            check_parent_symlinks: true,
+            directory: true,
+            recursive: directory.recursive,
         };
         match inspect_path(request.clone()) {
             Ok(inspection) => directory.inspection = Some(inspection),
@@ -1658,7 +1682,8 @@ fn describe_inspection(
 /// `requires_preemptive_elevation`. Any other change goes to the privileged
 /// helper only when the current user is refused, which this predicts: only
 /// a file's owner can change its mode, and writing or removing a file needs
-/// a parent directory the user can modify.
+/// a parent directory the user can modify. Directories are predicted by
+/// [`directory_change_runs_elevated`].
 #[cfg(unix)]
 fn change_runs_elevated(
     request: &PrivilegedPathInspection,
@@ -1671,6 +1696,9 @@ fn change_runs_elevated(
         return Ok(true);
     }
     let uid = uid.as_raw();
+    if request.directory {
+        return directory_change_runs_elevated(request, path, entry, inspection, uid);
+    }
     let declares_ownership = request.owner.is_some() || request.group.is_some();
     let PathInspection::Present {
         kind,
@@ -1701,6 +1729,40 @@ fn change_runs_elevated(
         (false, _) => {
             *kind != ManagedPathKind::Directory && !user_can_modify_entry(path, entry, uid)?
         }
+    })
+}
+
+/// The [`change_runs_elevated`] prediction for a `[bootstrap.directories]`
+/// entry. Creating a directory or changing its metadata walks its path with
+/// [`open_or_create_directory_tree`], which resolves it strictly as any user,
+/// so those changes count too. A recursive removal always runs as root; see
+/// `requires_preemptive_elevation`.
+#[cfg(unix)]
+fn directory_change_runs_elevated(
+    request: &PrivilegedPathInspection,
+    path: &Path,
+    entry: Option<&EntryMetadata>,
+    inspection: &PathInspection,
+    uid: u32,
+) -> Result<bool> {
+    let PathInspection::Present {
+        kind,
+        metadata_matches,
+        ..
+    } = inspection
+    else {
+        // Only a present directory is created.
+        return Ok(request.check_metadata);
+    };
+    Ok(match (request.check_metadata, *kind) {
+        (true, ManagedPathKind::Directory) => !metadata_matches,
+        // Another entry type is replaced, or refused without replace.
+        (true, _) => true,
+        (false, ManagedPathKind::Directory) => {
+            request.recursive || !user_can_modify_entry(path, entry, uid)?
+        }
+        // Other entry types are refused, not removed.
+        (false, _) => false,
     })
 }
 
@@ -2239,6 +2301,10 @@ fn create_directory(
     mode: u32,
     replace: bool,
 ) -> Result<()> {
+    #[cfg(unix)]
+    if runs_as_root() {
+        return create_directory_strictly(path, owner, group, mode, replace);
+    }
     match fs::symlink_metadata(path) {
         Err(error)
             if matches!(
@@ -2278,6 +2344,52 @@ fn create_directory(
         set_metadata(path, owner, group, mode)
             .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
     }
+}
+
+/// Create a directory as root without following untrusted parent symlinks.
+/// An entry of another type is unlinked relative to its strictly opened
+/// parent, and the directory is then created and opened the same way.
+#[cfg(unix)]
+fn create_directory_strictly(
+    path: &Path,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: u32,
+    replace: bool,
+) -> Result<()> {
+    use nix::fcntl::AtFlags;
+    use nix::sys::stat::fstatat;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    match open_parent_strictly(path) {
+        // A missing parent is created by the walk below, and one that is not
+        // a directory fails it.
+        Err(error)
+            if has_errno(&error, nix::errno::Errno::ENOENT)
+                || has_errno(&error, nix::errno::Errno::ENOTDIR) => {}
+        Err(error) => return Err(error),
+        Ok((parent, name)) => match fstatat(&parent, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Err(nix::errno::Errno::ENOENT) => {}
+            Err(error) => {
+                return Err(error)
+                    .wrap_err_with(|| format!("failed to inspect directory {}", path.display()));
+            }
+            Ok(stat) if EntryMetadata::from_stat(&stat).kind == ManagedPathKind::Directory => {}
+            Ok(_) if !replace => {
+                bail!("refusing to replace non-directory path: {}", path.display())
+            }
+            Ok(_) => unlinkat(&parent, name, UnlinkatFlags::NoRemoveDir).wrap_err_with(|| {
+                format!(
+                    "failed to remove existing path before creating directory {}",
+                    path.display()
+                )
+            })?,
+        },
+    }
+    let directory = open_or_create_directory_tree(path)
+        .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+    set_descriptor_metadata(&directory, owner, group, Some(mode))
+        .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
 }
 
 /// A path component that is a symlink in a directory someone other than root
@@ -2825,6 +2937,10 @@ const MODE_BITS: [(u32, nix::sys::stat::Mode); 12] = [
 ];
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
+    #[cfg(unix)]
+    if runs_as_root() {
+        return remove_directory_strictly(path, recursive);
+    }
     match fs::symlink_metadata(path) {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err.into()),
@@ -2833,6 +2949,34 @@ fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
         }
         Ok(_) if recursive => fs::remove_dir_all(path).map_err(Into::into),
         Ok(_) => fs::remove_dir(path).map_err(Into::into),
+    }
+}
+
+/// Remove a directory as root without following untrusted parent symlinks.
+/// It is removed relative to its strictly opened parent, and a recursive
+/// removal never follows a symlink inside the tree; see
+/// [`crate::file::remove_all_at`].
+#[cfg(unix)]
+fn remove_directory_strictly(path: &Path, recursive: bool) -> Result<()> {
+    use nix::fcntl::AtFlags;
+    use nix::sys::stat::fstatat;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    let (parent, name) = match open_parent_strictly(path) {
+        Ok(parent) => parent,
+        Err(error) if has_errno(&error, nix::errno::Errno::ENOENT) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    match fstatat(&parent, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Err(nix::errno::Errno::ENOENT) => Ok(()),
+        Err(error) => Err(error).wrap_err_with(|| format!("failed to inspect {}", path.display())),
+        Ok(stat) if EntryMetadata::from_stat(&stat).kind != ManagedPathKind::Directory => {
+            bail!("refusing to remove non-directory path: {}", path.display())
+        }
+        Ok(_) if recursive => crate::file::remove_all_at(&parent, name)
+            .wrap_err_with(|| format!("failed to remove directory {}", path.display())),
+        Ok(_) => unlinkat(&parent, name, UnlinkatFlags::RemoveDir)
+            .wrap_err_with(|| format!("failed to remove directory {}", path.display())),
     }
 }
 
@@ -3327,6 +3471,8 @@ mod tests {
                 mode: unreadable.mode,
                 check_metadata: true,
                 check_parent_symlinks: true,
+                directory: false,
+                recursive: false,
             })
             .unwrap(),
         );
@@ -3419,6 +3565,22 @@ mod tests {
             assert!(error.contains(verb), "{error}");
             assert!(error.contains("declare the resolved path"), "{error}");
         }
+
+        for (state, verb) in [
+            (ManagedState::Present, "refusing to create directory"),
+            (ManagedState::Absent, "refusing to remove directory"),
+        ] {
+            let mut request = directory("/home/user/linked/dir", state);
+            request.inspection = untrusted();
+            assert_eq!(request.plan().unwrap().action, ResourceAction::Unknown);
+            let error = request.operation().unwrap_err().to_string();
+            assert!(error.contains(verb), "{error}");
+            assert!(
+                error.contains("crosses symlink /home/user/linked"),
+                "{error}"
+            );
+            assert!(error.contains("declare the resolved path"), "{error}");
+        }
     }
 
     /// Status and dry-run report an untrusted parent symlink only for a
@@ -3452,6 +3614,8 @@ mod tests {
                 mode: Some(0o600),
                 check_metadata: state == ManagedState::Present,
                 check_parent_symlinks: true,
+                directory: false,
+                recursive: false,
             })
             .unwrap()
         };
@@ -3550,6 +3714,8 @@ mod tests {
             mode: Some(0o600),
             check_metadata: true,
             check_parent_symlinks: true,
+            directory: false,
+            recursive: false,
         })
         .unwrap_err();
         assert!(is_permission_denied(&error), "{error:#}");
@@ -3625,6 +3791,8 @@ mod tests {
                 mode: None,
                 check_metadata: true,
                 check_parent_symlinks: true,
+                directory: false,
+                recursive: false,
             },
             &through_link,
         )
@@ -3662,6 +3830,8 @@ mod tests {
                     mode: Some(0o640),
                     check_metadata: true,
                     check_parent_symlinks: true,
+                    directory: false,
+                    recursive: false,
                 },
                 &path,
             )
@@ -3678,6 +3848,8 @@ mod tests {
                     mode: None,
                     check_metadata: false,
                     check_parent_symlinks: true,
+                    directory: false,
+                    recursive: false,
                 },
                 &temp.path().join("missing/config"),
             )
@@ -3778,6 +3950,274 @@ mod tests {
         assert!(!path.exists());
         remove_file_strictly(&path).unwrap();
         remove_file_strictly(&temp.path().join("missing/config")).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn directory_inspection(
+        path: &Path,
+        state: ManagedState,
+        recursive: bool,
+        mode: u32,
+    ) -> PrivilegedPathInspection {
+        PrivilegedPathInspection {
+            path: path.to_path_buf(),
+            expected_content: None,
+            owner: None,
+            group: None,
+            mode: Some(mode),
+            check_metadata: state == ManagedState::Present,
+            check_parent_symlinks: true,
+            directory: true,
+            recursive,
+        }
+    }
+
+    #[cfg(unix)]
+    fn sorted_entries(path: &Path) -> Vec<std::ffi::OsString> {
+        let mut names = fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    /// As root, directory creation, replacement, removal, and inspection
+    /// resolve the parent without following a symlink another user could have
+    /// planted. The strict functions are called directly, since root-owned
+    /// parents are trusted and the refusal cannot be staged as root here.
+    #[cfg(unix)]
+    #[test]
+    fn strict_directory_operations_refuse_untrusted_parent_symlinks() {
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
+        fs::create_dir(outside.path().join("existing")).unwrap();
+        fs::write(outside.path().join("existing/child"), "kept").unwrap();
+        fs::write(outside.path().join("file"), "kept").unwrap();
+        let linked = temp.path().join("linked");
+        std::os::unix::fs::symlink(outside.path(), &linked).unwrap();
+        let assert_refused = |error: eyre::Report| {
+            assert_eq!(
+                untrusted_symlink(&error),
+                Some(linked.as_path()),
+                "unexpected error: {error:#}"
+            );
+        };
+
+        assert_refused(
+            create_directory_strictly(&linked.join("new"), None, None, 0o755, false).unwrap_err(),
+        );
+        assert_refused(
+            create_directory_strictly(&linked.join("file"), None, None, 0o755, true).unwrap_err(),
+        );
+        assert_refused(remove_directory_strictly(&linked.join("existing"), false).unwrap_err());
+        assert_refused(remove_directory_strictly(&linked.join("existing"), true).unwrap_err());
+        for (path, state) in [
+            (linked.join("existing"), ManagedState::Absent),
+            (linked.join("new"), ManagedState::Present),
+        ] {
+            let inspection =
+                inspect_path_strictly(&directory_inspection(&path, state, true, 0o755), &path)
+                    .unwrap();
+            assert!(
+                matches!(&inspection, PathInspection::UntrustedParent { symlink } if *symlink == linked),
+                "{inspection:?}"
+            );
+        }
+        assert_eq!(sorted_entries(outside.path()), vec!["existing", "file"]);
+        assert_eq!(
+            fs::read_to_string(outside.path().join("existing/child")).unwrap(),
+            "kept"
+        );
+        assert_eq!(
+            fs::read_to_string(outside.path().join("file")).unwrap(),
+            "kept"
+        );
+
+        // The by-path removal a user-level change uses follows the link.
+        remove_directory(&linked.join("existing"), true).unwrap();
+        assert!(!outside.path().join("existing").exists());
+    }
+
+    /// The strict directory creation, removal, and inspection behave like
+    /// their by-path versions when no untrusted symlink is in the way, and a
+    /// recursive removal never follows a symlink inside the tree.
+    #[cfg(unix)]
+    #[test]
+    fn strict_directory_operations_match_the_by_path_versions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
+        fs::write(outside.path().join("keep"), "kept").unwrap();
+        let inspect = |path: &Path, state: ManagedState| {
+            inspect_path_strictly(&directory_inspection(path, state, false, 0o750), path).unwrap()
+        };
+
+        // Missing parents are created, and the mode applies to the directory.
+        let nested = temp.path().join("a/b");
+        assert!(matches!(
+            inspect(&nested, ManagedState::Present),
+            PathInspection::Missing
+        ));
+        create_directory_strictly(&nested, None, None, 0o750, false).unwrap();
+        assert_eq!(mode(&nested), 0o750);
+        assert!(matches!(
+            inspect(&nested, ManagedState::Present),
+            PathInspection::Present {
+                kind: ManagedPathKind::Directory,
+                metadata_matches: true,
+                ..
+            }
+        ));
+        create_directory_strictly(&nested, None, None, 0o700, false).unwrap();
+        assert_eq!(mode(&nested), 0o700);
+
+        // Other entry types need replace; a symlink is replaced, not followed.
+        let file = temp.path().join("file");
+        fs::write(&file, "").unwrap();
+        let error = create_directory_strictly(&file, None, None, 0o755, false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to replace non-directory path"),
+            "{error}"
+        );
+        create_directory_strictly(&file, None, None, 0o755, true).unwrap();
+        assert!(file.is_dir());
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        create_directory_strictly(&link, None, None, 0o755, true).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_dir());
+        assert_eq!(sorted_entries(outside.path()), vec!["keep"]);
+
+        // Removal skips missing paths and refuses other entry types.
+        remove_directory_strictly(&temp.path().join("missing"), false).unwrap();
+        remove_directory_strictly(&temp.path().join("missing/child"), true).unwrap();
+        let regular = temp.path().join("regular");
+        fs::write(&regular, "").unwrap();
+        let error = remove_directory_strictly(&regular, true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to remove non-directory path"),
+            "{error}"
+        );
+        let dir_link = temp.path().join("dir-link");
+        std::os::unix::fs::symlink(outside.path(), &dir_link).unwrap();
+        let error = remove_directory_strictly(&dir_link, true)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("refusing to remove non-directory path"),
+            "{error}"
+        );
+        assert!(matches!(
+            inspect(&dir_link, ManagedState::Absent),
+            PathInspection::Present {
+                kind: ManagedPathKind::Symlink,
+                ..
+            }
+        ));
+
+        // A non-empty directory needs recursive, which removes symlinks
+        // inside the tree without following them.
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("inner")).unwrap();
+        fs::write(tree.join("inner/file"), "").unwrap();
+        std::os::unix::fs::symlink(outside.path(), tree.join("inner/dir-link")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("keep"), tree.join("file-link")).unwrap();
+        let error = format!("{:#}", remove_directory_strictly(&tree, false).unwrap_err());
+        assert!(error.contains("Directory not empty"), "{error}");
+        assert!(tree.join("inner/file").exists());
+        remove_directory_strictly(&tree, true).unwrap();
+        assert!(!tree.exists());
+        assert_eq!(sorted_entries(outside.path()), vec!["keep"]);
+        assert_eq!(
+            fs::read_to_string(outside.path().join("keep")).unwrap(),
+            "kept"
+        );
+        remove_directory_strictly(&nested, false).unwrap();
+        assert!(!nested.exists());
+        assert!(matches!(
+            inspect(&nested, ManagedState::Absent),
+            PathInspection::Missing
+        ));
+    }
+
+    /// Status and dry-run report an untrusted parent symlink for a directory
+    /// change that resolves its path strictly: creating a directory or
+    /// changing its metadata walks it strictly as any user, and a recursive
+    /// removal runs as root.
+    #[cfg(unix)]
+    #[test]
+    fn directory_inspection_flags_untrusted_parents_for_strict_changes() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
+        let linked = temp.path().join("linked");
+        std::os::unix::fs::symlink(outside.path(), &linked).unwrap();
+        let existing = linked.join("existing");
+        fs::create_dir(&existing).unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
+        let inspect = |path: &Path, state: ManagedState, recursive: bool, mode: u32| {
+            inspect_path(directory_inspection(path, state, recursive, mode)).unwrap()
+        };
+        let refused = |inspection: PathInspection| matches!(inspection, PathInspection::UntrustedParent { symlink } if symlink == linked);
+
+        // Nothing to change, or a single rmdir the user makes by path.
+        assert!(!refused(inspect(
+            &existing,
+            ManagedState::Present,
+            false,
+            0o755
+        )));
+        assert!(!refused(inspect(
+            &existing,
+            ManagedState::Absent,
+            false,
+            0o755
+        )));
+        assert!(!refused(inspect(
+            &linked.join("missing"),
+            ManagedState::Absent,
+            true,
+            0o755
+        )));
+
+        // Creating, updating, and recursively removing resolve strictly.
+        assert!(refused(inspect(
+            &linked.join("new"),
+            ManagedState::Present,
+            false,
+            0o755
+        )));
+        assert!(refused(inspect(
+            &existing,
+            ManagedState::Present,
+            false,
+            0o700
+        )));
+        assert!(refused(inspect(
+            &existing,
+            ManagedState::Absent,
+            true,
+            0o755
+        )));
+
+        // A parent the user cannot modify sends a single rmdir to root.
+        fs::set_permissions(outside.path(), fs::Permissions::from_mode(0o555)).unwrap();
+        let removal = inspect(&existing, ManagedState::Absent, false, 0o755);
+        fs::set_permissions(outside.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(refused(removal));
     }
 
     #[test]

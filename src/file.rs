@@ -184,6 +184,52 @@ pub(crate) fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+/// Remove `name` under `parent` and, for a directory, everything below it,
+/// without following a symlink anywhere in the tree. Every entry is resolved
+/// relative to a descriptor for the directory holding it: a symlink is
+/// unlinked, never descended into, and a directory is opened with
+/// `O_NOFOLLOW`, so an entry swapped for a symlink mid-walk fails the open
+/// instead of redirecting the removal. Directories are removed bottom-up. A
+/// missing `name` is not an error.
+#[cfg(unix)]
+pub(crate) fn remove_all_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    let stat =
+        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(nix::errno::Errno::ENOENT) => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let mut directory = nix::dir::Dir::from_fd(fd)?;
+        let entries = directory
+            .iter()
+            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for entry in entries {
+            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
+                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
+            }
+        }
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+    } else {
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+    }
+    Ok(())
+}
+
 /// Removes a path, retrying when a concurrent writer recreates directory entries while
 /// [`fs::remove_dir_all`] is running.
 ///
