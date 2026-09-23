@@ -1,7 +1,7 @@
 backends = [
   { full = "packslip:github.com/aubepkg/aube", min_version = "2.2.11" },
-  "aqua:jdx/aube",
-  "github:jdx/aube",
+  "aqua:aubepkg/aube",
+  "github:aubepkg/aube",
   "cargo:aube",
 ]
 bins = ["aube", "aubr", "aubx"]
