@@ -4670,16 +4670,26 @@
                   },
                   "not": {
                     "anyOf": [
-                      { "required": ["source"] },
-                      { "required": ["content"] }
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      }
                     ]
                   }
                 },
                 "then": {
                   "anyOf": [
-                    { "required": ["mode"] },
-                    { "required": ["owner"] },
-                    { "required": ["group"] }
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["group"]
+                    }
                   ],
                   "properties": {
                     "template": {

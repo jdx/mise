@@ -128,9 +128,39 @@ mode = "0644"
 EOF
 
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
-assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "only regular files are managed without source or content"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "only existing regular files are managed without source or content"
 assert "stat -c %a '$perms_file'" "600"
 assert_succeed "test -L '$link_file'"
+
+# A mode change the user makes to their own file follows a symlinked parent
+# directory, like any path they open themselves.
+mkdir -p real-ssh
+echo "host example" >real-ssh/config
+chmod 0644 real-ssh/config
+ln -s "$PWD/real-ssh" "$PWD/linked-ssh"
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/linked-ssh/config"]
+mode = "0600"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run" "would set permissions on file $PWD/linked-ssh/config"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a real-ssh/config" "600"
+assert "cat real-ssh/config" "host example"
+
+# Declared ownership is changed as root, which does not follow a symlink in a
+# directory another user could write. Status and apply both say so, and apply
+# leaves the file alone instead of asking for sudo.
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/linked-ssh/config"]
+mode = "0640"
+owner = "$(id -un)"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "declare the resolved path instead"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "declare the resolved path instead"
+assert "stat -c %a real-ssh/config" "600"
 
 # A missing target is not created, and apply still succeeds.
 missing_file="$PWD/missing-perms.conf"

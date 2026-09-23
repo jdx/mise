@@ -127,6 +127,19 @@ These entries never create, replace, or remove the file:
 
 `notify` fires when mise changes the file's permissions.
 
+How mise resolves the path depends on who makes the change. A mode change to
+a file the current user owns is made as that user, and symlinked parent
+directories are followed like any other path they open, so
+`~/.ssh/config` works when `~/.ssh` is a symlink. A change that needs root,
+such as a declared `owner` or `group` or a mode change to another user's file,
+resolves the parent directories one at a time. A symlink in a directory owned by
+root that no other user can write is followed, as `/etc` is on macOS. Any other
+symlinked parent directory is refused, because a user who could write that
+directory could otherwise redirect root's change to a file such as
+`/etc/shadow`. Status and dry-run report such an entry as `unknown` with the
+reason, and apply warns and leaves the file unchanged. Declare the resolved
+path instead.
+
 ## Files before packages
 
 Set `phase = "pre-packages"` on files and directories needed by the package
