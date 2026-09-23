@@ -4870,9 +4870,8 @@ pub(crate) fn ensure_locked_url_matches_version(
 
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
-/// The backend a lock entry records for `short`, preferring the entry locked at
-/// `version` when one exists: a tool whose registry backends depend on the
-/// version can lock different versions under different backends.
+/// The backend `short`'s lock entries record for `version`; see
+/// [`locked_backend`].
 pub(crate) fn get_locked_backend_for_version(
     config: &Config,
     short: &str,
@@ -4897,10 +4896,28 @@ pub(crate) fn get_locked_backend_for_version(
             })
         })
         .collect::<Vec<_>>();
-    version
-        .and_then(|version| entries.iter().find(|tool| tool.version == version))
-        .or_else(|| entries.first())
-        .and_then(|tool| tool.backend.clone())
+    locked_backend(&entries, version)
+}
+
+/// Which of a tool's lock entries decides its backend. Without a `version`,
+/// the first entry's. Otherwise the entry locked at `version`, or else the
+/// backend every entry shares: another version (a bump, say) inherits the
+/// locked backend only when the tool is locked under one backend, and entries
+/// that already split versions across backends leave the choice to the
+/// registry.
+fn locked_backend(entries: &[&LockfileTool], version: Option<&str>) -> Option<String> {
+    let Some(version) = version else {
+        return entries.first().and_then(|tool| tool.backend.clone());
+    };
+    if let Some(tool) = entries.iter().find(|tool| tool.version == version) {
+        return tool.backend.clone();
+    }
+    let backend = entries.first()?.backend.clone();
+    entries
+        .iter()
+        .all(|tool| tool.backend == backend)
+        .then_some(backend)
+        .flatten()
 }
 
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
@@ -6817,6 +6834,40 @@ options = { exe = "rg" }
         assert_eq!(first, second, "lockfile serialization was not idempotent");
         assert_eq!(second.matches("[[tools.ruby]]").count(), 2);
         assert_eq!(second.matches("platforms.windows-x64").count(), 1);
+    }
+
+    #[test]
+    fn locked_backend_inherits_only_an_unambiguous_backend() {
+        let entry = |version: &str, backend: &str| LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::new(),
+            aube: None,
+            uv: None,
+        };
+        let aqua_old = entry("1.57.0", "aqua:jdx/hk");
+        let aqua_new = entry("1.58.1", "aqua:jdx/hk");
+        let packslip_new = entry("1.58.1", "packslip:github.com/jdx/hk");
+
+        let one_backend = [&aqua_old, &aqua_new];
+        assert_eq!(
+            locked_backend(&one_backend, Some("2.0.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+
+        let split = [&aqua_old, &packslip_new];
+        assert_eq!(
+            locked_backend(&split, Some("1.58.1")).as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert_eq!(
+            locked_backend(&split, Some("1.57.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+        assert_eq!(locked_backend(&split, Some("2.0.0")), None);
+        assert_eq!(locked_backend(&split, None).as_deref(), Some("aqua:jdx/hk"));
     }
 
     #[test]
