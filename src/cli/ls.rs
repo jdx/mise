@@ -895,4 +895,13 @@ mod tests {
     fn no_filter_entries_match_nothing() {
         assert!(!matches_requested_tool(&[], &ba("node")));
     }
+
+    /// `--grouped` heads the pipx section `pypi`, so `--backend` has to take that name back.
+    #[test]
+    fn backend_flag_accepts_the_grouped_heading() {
+        for name in ["pypi", "pipx"] {
+            assert_eq!(name.parse::<BackendType>().unwrap(), BackendType::Pipx);
+        }
+        assert_eq!(BackendType::Pipx.to_string(), "pypi");
+    }
 }
