@@ -998,7 +998,7 @@ fn build_dotfiles_layer(
         }
 
         if req.dot_prefix {
-            add_dot_prefix_files(req, &oci_target_path(req)?, &mut entries)?;
+            add_source_files(req, &oci_target_path(req)?, &mut entries)?;
             continue;
         }
 
@@ -1019,6 +1019,11 @@ fn build_dotfiles_layer(
                         permissions,
                     )?;
                 }
+                // apply copies a directory file by file, so the same
+                // filtered walk decides what the image gets
+                None if req.mode == FileMode::Copy && req.source.is_dir() => {
+                    add_source_files(req, &oci_target_path(req)?, &mut entries)?;
+                }
                 None => {
                     collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                         .wrap_err_with(|| {
@@ -1034,22 +1039,7 @@ fn build_dotfiles_layer(
                         req.source.display()
                     );
                 }
-                let target = oci_target_path(req)?;
-                entries.add_dir(target.clone())?;
-                for entry in walkdir::WalkDir::new(&req.source).sort_by_file_name() {
-                    let entry = entry?;
-                    let ft = entry.file_type();
-                    if !(ft.is_file() || ft.is_symlink()) {
-                        continue;
-                    }
-                    let rel = entry.path().strip_prefix(&req.source)?;
-                    let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
-                    entries.add_file(
-                        path,
-                        file::read(entry.path())?,
-                        source_mode(entry.path())?,
-                    )?;
-                }
+                add_source_files(req, &oci_target_path(req)?, &mut entries)?;
             }
             FileMode::Template => {
                 let rendered = crate::system::files::render_template_for_oci(cfg, req)?;
@@ -1087,16 +1077,17 @@ fn build_dotfiles_layer(
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
 }
 
-/// A `dot_prefix` entry goes through the same filtered, collision-checked
-/// walk apply uses, so `exclude` and `manifest` decide which names reach the
-/// image and two sources never claim one path.
-fn add_dot_prefix_files(
+/// A directory-walking entry (`symlink-each`, a directory `copy`, or any
+/// `dot_prefix` entry) goes through the same filtered walk apply uses, so
+/// `exclude` and `manifest` decide which files reach the image and, with
+/// `dot_prefix`, two sources never claim one path.
+fn add_source_files(
     req: &FileRequest,
     target: &str,
     entries: &mut DotfilesLayerEntries,
 ) -> Result<()> {
     entries.add_dir(target.to_string())?;
-    for (source, deployed) in crate::system::files::dot_prefix_files(req)? {
+    for (source, deployed) in crate::system::files::directory_source_files(req)? {
         // a FIFO or socket would block or fail the read; a link to one too
         if !std::fs::metadata(&source).is_ok_and(|meta| meta.is_file()) {
             warn!(
@@ -1499,6 +1490,82 @@ mod tests {
     }
 
     #[test]
+    fn directory_entries_use_the_filtered_walk() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        file::create_dir_all(source.join("app"))?;
+        file::create_dir_all(source.join("cache"))?;
+        file::write(source.join("app/config.toml"), "config")?;
+        file::write(source.join("bashrc"), "bashrc")?;
+        file::write(source.join("debug.log"), "log")?;
+        file::write(source.join("cache/blob"), "blob")?;
+        let request = |mode, manifest| FileRequest {
+            target_raw: "~".into(),
+            target: dir.path().join("home"),
+            source: source.clone(),
+            content: None,
+            mode,
+            exclude: vec![
+                glob::Pattern::new("*.log").unwrap(),
+                glob::Pattern::new("cache").unwrap(),
+            ],
+            include: None,
+            manifest,
+            permissions: None,
+            base: dir.path().to_path_buf(),
+            origin: crate::system::resources::ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: Some(source.clone()),
+            },
+            policy: crate::system::files::FilePolicy::for_mode(mode),
+            variants: vec![],
+            enabled: true,
+            remove_empty: false,
+            relative: false,
+            dot_prefix: false,
+        };
+        let layer_paths = |req: &FileRequest| -> Result<(Vec<String>, Vec<String>)> {
+            let mut entries = DotfilesLayerEntries::default();
+            add_source_files(req, "root", &mut entries)?;
+            Ok((
+                entries.files.keys().cloned().collect(),
+                entries.dirs.iter().cloned().collect(),
+            ))
+        };
+
+        for mode in [FileMode::SymlinkEach, FileMode::Copy] {
+            let (files, dirs) = layer_paths(&request(mode, None))?;
+            assert_eq!(files, ["root/app/config.toml", "root/bashrc"], "{mode:?}");
+            assert_eq!(dirs, ["root", "root/app"], "{mode:?}");
+        }
+
+        // with a git manifest, a file git does not track stays out too
+        let git = |args: &[&str]| -> Result<()> {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&source)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .status()?;
+            eyre::ensure!(status.success(), "git {args:?} failed");
+            Ok(())
+        };
+        git(&["init", "-q"])?;
+        git(&["add", "app/config.toml", "debug.log", "cache/blob"])?;
+        for mode in [FileMode::SymlinkEach, FileMode::Copy] {
+            let (files, dirs) = layer_paths(&request(
+                mode,
+                Some(crate::system::files::FileManifest::Git),
+            ))?;
+            assert_eq!(files, ["root/app/config.toml"], "{mode:?}");
+            assert_eq!(dirs, ["root", "root/app"], "{mode:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn dot_prefix_entries_use_the_filtered_walk() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let source = dir.path().join("src");
@@ -1532,7 +1599,7 @@ mod tests {
             dot_prefix: true,
         };
         let mut entries = DotfilesLayerEntries::default();
-        add_dot_prefix_files(&req, "root", &mut entries)?;
+        add_source_files(&req, "root", &mut entries)?;
         let files = entries
             .files
             .iter()
@@ -1555,13 +1622,13 @@ mod tests {
                 nix::sys::stat::Mode::from_bits_truncate(0o600),
             )?;
             let mut entries = DotfilesLayerEntries::default();
-            add_dot_prefix_files(&req, "root", &mut entries)?;
+            add_source_files(&req, "root", &mut entries)?;
             assert!(!entries.files.contains_key("root/.pipe"));
             assert!(entries.files.contains_key("root/.bashrc"));
         }
 
         req.exclude.clear();
-        let err = add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default())
+        let err = add_source_files(&req, "root", &mut DotfilesLayerEntries::default())
             .unwrap_err()
             .to_string();
         assert!(err.contains("both deploy to"), "{err}");
