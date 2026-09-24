@@ -342,7 +342,7 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
 /// This endpoint is intentionally shaped like GitHub's release object so the
 /// normal backend asset-selection code remains authoritative on the client.
 pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<GithubRelease>> {
-    if !enabled_for_github_repo(repo) {
+    if !enabled_for_github_repo(repo) || github_release_is_url_replaced(repo, tag) {
         return Ok(None);
     }
 
@@ -614,6 +614,28 @@ pub(crate) fn github_is_url_replaced(repo: Option<&str>) -> bool {
         debug!("url_replacements reroutes GitHub; not using mise-versions for GitHub metadata");
     }
     replaced
+}
+
+/// Whether `url_replacements` reroutes the GitHub API URL for this exact
+/// release, which a rule written for one tag can do without touching the
+/// URLs [`github_is_url_replaced`] tries.
+pub(crate) fn github_release_is_url_replaced(repo: &str, tag: &str) -> bool {
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    let path = if tag == "latest" {
+        "latest".to_string()
+    } else {
+        format!("tags/{}", encode_path_segment(tag))
+    };
+    let Ok(original) = url::Url::parse(&format!(
+        "https://api.github.com/repos/{repo}/releases/{path}"
+    )) else {
+        return false;
+    };
+    let mut replaced = original.clone();
+    http::apply_url_replacements(&mut replaced);
+    replaced != original
 }
 
 fn split_github_repo(repo: &str) -> Option<(&str, &str)> {
