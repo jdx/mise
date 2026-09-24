@@ -118,3 +118,31 @@ EOF
 assert "mise run dispatch" ":false:"
 assert "mise run dispatch build" "build:false:"
 assert "mise run dispatch build --release needle" "build:true:needle"
+
+# A selected subcommand's omitted values must not inherit a sibling's defaults.
+cat <<'EOF' >mise.toml
+[tasks.child]
+usage = 'arg "<value>"'
+run = 'echo "$usage_value"'
+
+[tasks.dispatch]
+usage = '''
+cmd "publish" {
+  flag "--release" default=#true
+  arg "[filter]" default="all"
+}
+cmd "check" {
+  flag "--release"
+  arg "[filter]"
+}
+'''
+depends = [{ task = 'child', args = ['{{usage.cmd}}:{{usage.release}}:{{usage.filter}}'] }]
+run = 'echo inline:{{usage.release}}:{{usage.filter}}'
+EOF
+
+assert "mise run dispatch check" "check:false:
+inline:false:"
+assert "mise run dispatch publish" "publish:true:all
+inline:true:all"
+assert "mise run dispatch check --release needle" "check:true:needle
+inline:true:needle"

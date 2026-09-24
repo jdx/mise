@@ -933,6 +933,11 @@ impl TaskScriptParser {
         usage: &usage::parse::ParseOutput,
     ) -> HashMap<String, tera::Value> {
         let mut usage_ctx = Self::make_usage_ctx_from_spec_defaults(spec);
+        // Initial rendering needs keys from every command. At runtime, defaults
+        // from the selected command path must win over unselected siblings.
+        for cmd in &usage.cmds {
+            usage_ctx.extend(Self::make_usage_ctx_from_command_defaults(cmd));
+        }
 
         // These values are not escaped or shell-quoted.
         let to_tera_value =
@@ -972,47 +977,16 @@ impl TaskScriptParser {
     /// Build a usage context hashmap from a `usage::Spec` using default values
     /// or sensible fallbacks. Recurses into subcommands so that `{{ usage.X }}`
     /// references don't error during the initial template render. At runtime,
-    /// `make_usage_ctx` overlays these fallbacks with real parsed values.
+    /// `make_usage_ctx` overlays these fallbacks with defaults from the selected
+    /// command path and real parsed values.
     pub(super) fn make_usage_ctx_from_spec_defaults(
         spec: &usage::Spec,
     ) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         fn collect_cmd_defaults(cmd: &usage::SpecCommand, ctx: &mut HashMap<String, tera::Value>) {
-            for arg in &cmd.args {
-                let name = arg.name.to_snake_case();
-                if ctx.contains_key(&name) {
-                    continue;
-                }
-                let value = if arg.var {
-                    tera::Value::from(arg.default.clone())
-                } else if let Some(default) = arg.default.first() {
-                    tera::Value::from(default.clone())
-                } else {
-                    tera::Value::from(String::new())
-                };
-                ctx.insert(name, value);
-            }
-
-            for flag in &cmd.flags {
-                let name = flag.name.to_snake_case();
-                if ctx.contains_key(&name) {
-                    continue;
-                }
-                let value = if flag.var {
-                    tera::Value::from(flag.default.clone())
-                } else if flag.count {
-                    tera::Value::from(0)
-                } else if flag.arg.is_some() {
-                    tera::Value::from(flag.default.first().cloned().unwrap_or_default())
-                } else if let Some(default) = flag.default.first() {
-                    default
-                        .parse::<bool>()
-                        .map_or_else(|_| tera::Value::from(default.clone()), tera::Value::from)
-                } else {
-                    tera::Value::from(false)
-                };
-                ctx.insert(name, value);
+            for (name, value) in TaskScriptParser::make_usage_ctx_from_command_defaults(cmd) {
+                ctx.entry(name).or_insert(value);
             }
 
             // SpecCommand::subcommands is an IndexMap, so iteration order is deterministic
@@ -1028,6 +1002,42 @@ impl TaskScriptParser {
         }
 
         usage_ctx
+    }
+
+    fn make_usage_ctx_from_command_defaults(
+        cmd: &usage::SpecCommand,
+    ) -> HashMap<String, tera::Value> {
+        let mut ctx = HashMap::new();
+        for arg in &cmd.args {
+            let name = arg.name.to_snake_case();
+            let value = if arg.var {
+                tera::Value::from(arg.default.clone())
+            } else if let Some(default) = arg.default.first() {
+                tera::Value::from(default.clone())
+            } else {
+                tera::Value::from(String::new())
+            };
+            ctx.entry(name).or_insert(value);
+        }
+
+        for flag in &cmd.flags {
+            let name = flag.name.to_snake_case();
+            let value = if flag.var {
+                tera::Value::from(flag.default.clone())
+            } else if flag.count {
+                tera::Value::from(0)
+            } else if flag.arg.is_some() {
+                tera::Value::from(flag.default.first().cloned().unwrap_or_default())
+            } else if let Some(default) = flag.default.first() {
+                default
+                    .parse::<bool>()
+                    .map_or_else(|_| tera::Value::from(default.clone()), tera::Value::from)
+            } else {
+                tera::Value::from(false)
+            };
+            ctx.entry(name).or_insert(value);
+        }
+        ctx
     }
 }
 
@@ -2079,6 +2089,67 @@ flag "--tag <tag>" var=#true
         assert_eq!(ctx["output_file"], tera::Value::from(""));
         assert_eq!(ctx["verbose"], tera::Value::from(0));
         assert!(ctx["tag"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_usage_ctx_selected_subcommand_defaults() {
+        let spec: usage::Spec = r#"
+flag "--global"
+cmd "publish" {
+    flag "--release" default=#true
+    flag "--output <file>" default="dist"
+    flag "--tag <tag>" var=#true default="stable"
+    arg "[filter]" default="all"
+}
+cmd "check" {
+    alias "c"
+    flag "--release"
+    flag "--output <file>"
+    flag "--tag <tag>" var=#true
+    arg "[filter]"
+}
+"#
+        .parse()
+        .unwrap();
+        for name in ["check", "c"] {
+            let parsed = usage::Parser::new(&spec)
+                .parse(&[String::new(), name.to_string()])
+                .unwrap();
+            let ctx = TaskScriptParser::make_usage_ctx(&spec, &parsed);
+            assert_eq!(ctx["global"], tera::Value::from(false));
+            assert_eq!(ctx["release"], tera::Value::from(false));
+            assert_eq!(ctx["output"], tera::Value::from(""));
+            assert!(ctx["tag"].as_array().unwrap().is_empty());
+            assert_eq!(ctx["filter"], tera::Value::from(""));
+        }
+    }
+
+    #[test]
+    fn test_usage_ctx_nested_subcommand_fallback_types() {
+        let spec: usage::Spec = r#"
+cmd "parent" {
+    flag "--mode"
+    cmd "first" {
+        flag "--mode <mode>" default="release"
+    }
+    cmd "second" {
+        flag "--mode" count=#true
+    }
+}
+"#
+        .parse()
+        .unwrap();
+        for (args, expected) in [
+            (vec!["", "parent"], tera::Value::from(false)),
+            (vec!["", "parent", "first"], tera::Value::from("release")),
+            (vec!["", "parent", "second"], tera::Value::from(0)),
+            (vec!["", "parent", "second", "--mode"], tera::Value::from(1)),
+        ] {
+            let args: Vec<String> = args.into_iter().map(String::from).collect();
+            let parsed = usage::Parser::new(&spec).parse(&args).unwrap();
+            let ctx = TaskScriptParser::make_usage_ctx(&spec, &parsed);
+            assert_eq!(ctx["mode"], expected);
+        }
     }
 
     #[tokio::test]
