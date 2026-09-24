@@ -74,17 +74,18 @@ struct VersionEntry {
     prerelease: Option<bool>,
 }
 
-/// The highest release-list page mise-versions serves.
-pub(crate) const GITHUB_RELEASES_MAX_PAGE: u32 = 10;
-
 /// One page of a repository's releases from mise-versions.
 #[derive(serde::Deserialize)]
 pub(crate) struct GithubReleasesPage {
     /// GitHub's order, drafts removed.
     pub releases: Vec<GithubRelease>,
-    /// The page to request next, or `None` on the last one. Counted before
-    /// drafts were removed, so a short page is not necessarily the last.
+    /// The page to request next, or `None` when there is none to request
+    /// here. Counted before drafts were removed, so a short page is not
+    /// necessarily the last.
     pub next_page: Option<u32>,
+    /// More releases exist than mise-versions serves; the rest are GitHub's.
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -878,7 +879,7 @@ mod tests {
         let page: GithubReleasesPage = serde_json::from_str(
             r#"{"releases":[{"tag_name":"v1.0.0","draft":false,"prerelease":false,
                 "created_at":"2026-01-01T00:00:00Z","published_at":"2026-01-02T00:00:00Z",
-                "assets":[]}],"next_page":null}"#,
+                "assets":[]}],"next_page":null,"truncated":false}"#,
         )
         .unwrap();
         assert_eq!(page.releases.len(), 1);
@@ -1019,6 +1020,7 @@ mod tests {
         let page = |releases| GithubReleasesPage {
             releases,
             next_page: None,
+            truncated: false,
         };
 
         let mut ok = page(vec![

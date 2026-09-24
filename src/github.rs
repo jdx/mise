@@ -327,20 +327,16 @@ where
         let list = fetch_page(page).await?;
         releases.extend(list.releases);
         pages_fetched += 1;
-        let Some(next_page) = list.next_page else {
-            break;
-        };
-        if !list_all
-            && (has_stopping_stable_release(&releases, require_assets)
-                || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        let more = list.next_page.is_some() || list.truncated;
+        if !more
+            || !list_all
+                && (has_stopping_stable_release(&releases, require_assets)
+                    || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
         {
             break;
         }
-        // Past the pages mise-versions serves: GitHub has to answer instead.
-        if next_page > crate::versions_host::GITHUB_RELEASES_MAX_PAGE {
-            return None;
-        }
-        page = next_page;
+        // `None` past the pages mise-versions serves: GitHub has to answer.
+        page = list.next_page?;
     }
     Some(releases)
 }
@@ -2230,6 +2226,7 @@ something_else = "value"
         crate::versions_host::GithubReleasesPage {
             releases,
             next_page,
+            truncated: false,
         }
     }
 
@@ -2341,18 +2338,25 @@ something_else = "value"
 
     #[tokio::test]
     async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
-        let max = crate::versions_host::GITHUB_RELEASES_MAX_PAGE;
-        let pages = (1..=max)
-            .map(|p| {
-                Some(mirrored_page(
-                    vec![make_release(&format!("v{p}"))],
-                    Some(p + 1),
-                ))
-            })
-            .collect();
+        let pages = vec![
+            Some(mirrored_page(vec![make_release("v2")], Some(2))),
+            Some(crate::versions_host::GithubReleasesPage {
+                truncated: true,
+                ..mirrored_page(vec![make_release("v1")], None)
+            }),
+        ];
         let (releases, requested) = paginate_canned(pages, false, true).await;
         assert_eq!(releases, None);
-        assert_eq!(requested.len(), max as usize);
+        assert_eq!(requested, [1, 2]);
+
+        // Without MISE_LIST_ALL_VERSIONS a stable release ends the listing
+        // first, so the mirror's pages are enough.
+        let pages = vec![Some(crate::versions_host::GithubReleasesPage {
+            truncated: true,
+            ..mirrored_page(vec![make_release("v1")], None)
+        })];
+        let (releases, _) = paginate_canned(pages, false, false).await;
+        assert_eq!(releases.unwrap(), ["v1"]);
     }
 
     fn make_prerelease(tag: &str) -> GithubRelease {
