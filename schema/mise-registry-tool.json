@@ -136,7 +136,18 @@
               }
             },
             "required": ["full"],
-            "unevaluatedProperties": false
+            "unevaluatedProperties": false,
+            "if": {
+              "required": ["attestations_since"]
+            },
+            "then": {
+              "properties": {
+                "full": {
+                  "type": "string",
+                  "pattern": "^github:"
+                }
+              }
+            }
           }
         ]
       },

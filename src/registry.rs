@@ -862,11 +862,24 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
 /// entry that lists the backend, so it applies to `gh` and `github:cli/cli`
 /// alike.
 pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
-    shorts_for_full(full).iter().any(|short| {
-        REGISTRY
-            .get(short)
-            .and_then(|tool| tool.get_backend(full))
-            .is_some_and(|backend| backend.requires_github_attestations(version))
+    // Declared backends, not `backends()`: a `MISE_BACKENDS_<TOOL>` override
+    // changes which backend is chosen, not what the registry says about one.
+    static REQUIREMENTS: Lazy<HashMap<&'static str, Vec<&'static RegistryBackend>>> =
+        Lazy::new(|| {
+            let mut map: HashMap<&'static str, Vec<&'static RegistryBackend>> = HashMap::new();
+            for (_, tool) in REGISTRY.iter() {
+                for backend in tool.backends {
+                    if backend.attestations_since.is_some() {
+                        map.entry(backend.full).or_default().push(backend);
+                    }
+                }
+            }
+            map
+        });
+    REQUIREMENTS.get(full).is_some_and(|backends| {
+        backends
+            .iter()
+            .any(|backend| backend.requires_github_attestations(version))
     })
 }
 
