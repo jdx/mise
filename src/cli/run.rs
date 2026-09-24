@@ -710,9 +710,13 @@ impl Run {
         // file-based remote tasks have their files resolved to local cache.
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         // Only remote tasks need fetching, so skip the span when there are none.
-        let fetch_telemetry = telemetry
-            .as_ref()
-            .filter(|_| task_list.iter().any(|t| t.is_remote()));
+        let fetch_telemetry = telemetry.as_ref().filter(|_| {
+            task_list.iter().any(|t| {
+                t.file.as_ref().is_some_and(|f| {
+                    crate::task::task_fetcher::TaskFetcher::is_remote_source(&f.to_string_lossy())
+                })
+            })
+        });
         otel::TaskRunTelemetry::phase(
             fetch_telemetry,
             "fetch tasks",
