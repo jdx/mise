@@ -99,14 +99,11 @@ if [ -L "$fslock" ] || [ ! -d "$fslock" ]; then
 fi
 "${SUDO[@]}" chmod 1777 "$fslock"
 
-msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
-if [ -z "$msrv" ]; then
-	echo "failed to parse rust-version from Cargo.toml" >&2
-	exit 1
-fi
-
-rustup toolchain install "$msrv" --profile minimal --no-self-update -c rustfmt,clippy
-rustup default "$msrv"
+# Track latest stable (not the Cargo.toml MSRV) so clippy/rustfmt match what
+# contributors run. `rustup update` moves an existing stable to the newest.
+rustup toolchain install stable --profile minimal --no-self-update -c rustfmt,clippy
+rustup update stable --no-self-update
+rustup default stable
 
 cargo build --all-features --ignore-rust-version
 # Always invoke this binary. `mise activate --shims` prepends shims that may
