@@ -330,18 +330,9 @@ impl Backend for PIPXBackend {
                             let url = registry_url.replace("{}", &package);
                             let html = HTTP_FETCH.get_html(url).await?;
 
-                            let version = Self::versions_from_simple_index(&package, &html)
-                                .into_iter()
-                                .filter(|v| {
-                                    !v.contains("dev")
-                                        && !v.contains("a")
-                                        && !v.contains("b")
-                                        && !v.contains("rc")
-                                })
-                                .sorted_by_cached_key(|v| Versioning::new(v))
-                                .next_back();
-
-                            Ok(version)
+                            Ok(Self::latest_stable_from_simple_index(
+                                Self::versions_from_simple_index(&package, &html),
+                            ))
                         }
                     })
                     .await
@@ -894,6 +885,14 @@ impl PIPXBackend {
             .rev()
             .find(|v| !is_python_prerelease(&v.version))
             .map(|v| v.version)
+    }
+
+    fn latest_stable_from_simple_index(versions: Vec<String>) -> Option<String> {
+        versions
+            .into_iter()
+            .filter(|v| !is_python_prerelease(v))
+            .sorted_by_cached_key(|v| Versioning::new(v))
+            .next_back()
     }
 
     fn versions_from_github_releases(releases: Vec<GithubRelease>) -> Vec<VersionInfo> {
@@ -1463,6 +1462,17 @@ mod tests {
         assert_eq!(
             PIPXBackend::versions_from_simple_index("demo-pkg", html),
             vec!["1.0.0", "2.0.0", "2.1.0", "3.0.0rc1"]
+        );
+    }
+
+    #[test]
+    fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
+        let versions = ["1.0", "1.1+gpu.dev0", "1.2.dev0", "1.3b1", "1.4-rc1"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
+            Some("1.1+gpu.dev0")
         );
     }
 
