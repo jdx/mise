@@ -16,5 +16,7 @@ bash "$repo_root/.cursor/install.sh" >&2
 # The bootstrap persists shims via /etc/profile.d, which non-login agent
 # shells may not source. Export them for this session too.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-	echo 'export PATH="$HOME/.local/share/mise/shims:/usr/local/bin:$PATH"' >>"$CLAUDE_ENV_FILE"
+	cat >>"$CLAUDE_ENV_FILE" <<'ENV'
+export PATH="$HOME/.local/share/mise/shims:/usr/local/bin:$PATH"
+ENV
 fi
