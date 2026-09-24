@@ -704,7 +704,11 @@ impl Run {
         // is a local until the tasks start so that a setup failure drops it,
         // which ends the root span as an error and flushes it.
         let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
-        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+        // A raw run hands every task the terminal, so it never reads task
+        // output and must not take the stream over from an ancestor.
+        let captures_output = !(self.raw || Settings::get().raw);
+        let telemetry =
+            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output);
 
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.

@@ -72,7 +72,13 @@ impl TaskRunTelemetry {
     /// When mise is invoked from another mise run (or any OTEL-aware
     /// parent), the `TRACEPARENT` env var carries W3C Traceparent so
     /// the nested run joins the same distributed trace.
-    pub(crate) fn init_if_enabled(requested_task_names: &[String]) -> Option<Self> {
+    ///
+    /// `captures_output` is false for a `--raw` run, which never reads task
+    /// output and so must not claim an ancestor's log stream.
+    pub(crate) fn init_if_enabled(
+        requested_task_names: &[String],
+        captures_output: bool,
+    ) -> Option<Self> {
         let traces = traces_enabled();
         let logs = logs_enabled();
         if !traces && !logs {
@@ -107,7 +113,9 @@ impl TaskRunTelemetry {
         // Take over log reporting from an ancestor `mise` — but only once we
         // know we can actually export, otherwise the lines would be dropped
         // on both sides.
-        let log_claim = output_forwarder.is_some().then(LogClaim::acquire).flatten();
+        let log_claim = (captures_output && output_forwarder.is_some())
+            .then(LogClaim::acquire)
+            .flatten();
 
         Some(Self::new(
             &root_span_name,
