@@ -105,11 +105,14 @@ fn process_is_alive(pid: u32) -> bool {
 
 #[cfg(windows)]
 fn process_is_alive(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
 
-    // SAFETY: OpenProcess/CloseHandle are called with a valid pid and the
-    // handle is closed exactly once on the success path.
+    // SAFETY: OpenProcess/GetExitCodeProcess/CloseHandle are called with a
+    // valid pid and handle, and the handle is closed exactly once on the
+    // success path.
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() || handle == INVALID_HANDLE_VALUE {
@@ -117,8 +120,13 @@ fn process_is_alive(pid: u32) -> bool {
             return windows_sys::Win32::Foundation::GetLastError()
                 == windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED;
         }
+        // An exited process stays openable while anything holds a handle to
+        // it, so opening it proves nothing; its exit code says whether it
+        // is still running.
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(handle, &mut code);
         CloseHandle(handle);
-        true
+        ok == 0 || code == STILL_ACTIVE as u32
     }
 }
 
@@ -256,8 +264,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // SAFETY: single-threaded test; the var is removed before returning.
         unsafe { std::env::set_var(LOG_CLAIM_ENV, dir.path()) };
-        let claim = LogClaim::acquire().expect("claim should be acquired");
+        let claim = LogClaim::acquire();
         unsafe { std::env::remove_var(LOG_CLAIM_ENV) };
+        let claim = claim.expect("claim should be acquired");
 
         let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
         assert!(watcher.claimed());

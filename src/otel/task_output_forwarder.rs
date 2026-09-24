@@ -130,6 +130,7 @@ impl TaskOutputForwarder {
         task_args: &[String],
         span_cx: Option<&SpanContext>,
         claim: Option<LogClaimWatcher>,
+        streams: ExportStreams,
         mut cmd: CmdLineRunner<'a>,
     ) -> CmdLineRunner<'a> {
         let (Some(forwarder), Some(span_cx)) = (forwarder, span_cx) else {
@@ -147,15 +148,32 @@ impl TaskOutputForwarder {
             trace_flags: span_cx.trace_flags(),
             claim,
         };
-        cmd = cmd.with_stdout_observer(forwarder.hook(cx.clone(), false));
-        cmd = cmd.with_stderr_observer(forwarder.hook(cx, true));
+        if streams.stdout {
+            cmd = cmd.with_stdout_observer(forwarder.hook(cx.clone(), false));
+        }
+        if streams.stderr {
+            cmd = cmd.with_stderr_observer(forwarder.hook(cx, true));
+        }
         cmd
     }
+}
+
+/// Which of a task's streams may be exported. A stream the task silences
+/// can still be piped (the task cache captures it), so it needs saying.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ExportStreams {
+    pub(crate) stdout: bool,
+    pub(crate) stderr: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const BOTH: ExportStreams = ExportStreams {
+        stdout: true,
+        stderr: true,
+    };
     use opentelemetry::InstrumentationScope;
     use opentelemetry::logs::AnyValue;
     use opentelemetry_sdk::error::OTelSdkResult;
@@ -220,14 +238,22 @@ mod tests {
         let ctx = test_span_context();
         // No forwarder — cmd passes through unchanged
         let cmd = CmdLineRunner::new("true");
-        let cmd = TaskOutputForwarder::attach_hooks(None, "build", &[], Some(&ctx), None, cmd);
+        let cmd =
+            TaskOutputForwarder::attach_hooks(None, "build", &[], Some(&ctx), None, BOTH, cmd);
         assert!(!cmd.has_stdout_observer());
 
         // No context — cmd passes through unchanged
         let forwarder = TaskOutputForwarder::new(noop_provider());
         let cmd = CmdLineRunner::new("true");
-        let cmd =
-            TaskOutputForwarder::attach_hooks(Some(&forwarder), "build", &[], None, None, cmd);
+        let cmd = TaskOutputForwarder::attach_hooks(
+            Some(&forwarder),
+            "build",
+            &[],
+            None,
+            None,
+            BOTH,
+            cmd,
+        );
         assert!(!cmd.has_stdout_observer());
         forwarder.shutdown();
     }
@@ -243,6 +269,7 @@ mod tests {
             &[],
             Some(&ctx),
             None,
+            BOTH,
             cmd,
         );
         assert!(cmd.has_stdout_observer());
@@ -261,6 +288,7 @@ mod tests {
             &[],
             Some(&ctx),
             Some(claim.clone()),
+            BOTH,
             CmdLineRunner::new("true"),
         );
         assert_eq!(

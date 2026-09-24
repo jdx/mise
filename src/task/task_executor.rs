@@ -1712,6 +1712,10 @@ impl TaskExecutor {
                 otel_claim_dir
                     .as_ref()
                     .map(|dir| crate::otel::LogClaimWatcher::new(dir.path().to_path_buf())),
+                crate::otel::ExportStreams {
+                    stdout: !task.silent.suppresses_stdout(),
+                    stderr: !task.silent.suppresses_stderr(),
+                },
                 cmd,
             );
         }
@@ -1852,15 +1856,14 @@ impl TaskExecutor {
                     // Inheriting stdio hands the child the terminal directly,
                     // which would bypass the observer that tees lines to the
                     // collector — keep the pipe when log export is active.
-                    let tee = cmd.has_stdout_observer();
                     if task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::null());
-                    } else if !tee {
+                    } else if !cmd.has_stdout_observer() {
                         cmd = cmd.stdout(Stdio::inherit());
                     }
                     if task.silent.suppresses_stderr() {
                         cmd = cmd.stderr(Stdio::null());
-                    } else if !tee {
+                    } else if !cmd.has_stderr_observer() {
                         cmd = cmd.stderr(Stdio::inherit());
                     }
                 }

@@ -3,7 +3,7 @@ mod task_output_forwarder;
 pub(crate) mod task_run_telemetry;
 
 pub(crate) use log_claim::{LOG_CLAIM_ENV, LogClaim, LogClaimWatcher};
-pub(crate) use task_output_forwarder::TaskOutputForwarder;
+pub(crate) use task_output_forwarder::{ExportStreams, TaskOutputForwarder};
 pub(crate) use task_run_telemetry::TaskRunTelemetry;
 
 use crate::config::Settings;
@@ -55,11 +55,11 @@ fn export_timeout(signal_var: &str) -> Option<Duration> {
 /// logs endpoint configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or the
 /// signal-specific `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
 pub(crate) fn logs_enabled() -> bool {
-    if !Settings::get().otel.logs {
-        return false;
-    }
-    std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
-        || std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").is_ok()
+    let settings = Settings::get();
+    settings.otel.logs
+        && !settings.offline()
+        && (env_is_set("OTEL_EXPORTER_OTLP_ENDPOINT")
+            || env_is_set("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"))
 }
 
 // ── Resource ────────────────────────────────────────────────────────

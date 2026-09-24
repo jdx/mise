@@ -222,6 +222,10 @@ instance — is detected as stale and the outer run resumes exporting. Nested ru
 concurrently from a single task (`mise run a & mise run b &`) each register, so the outer
 run stays quiet until the last of them exits.
 
+The claim covers the whole nested run, so output from a task that the nested run starts
+with `--raw` is exported by neither run: the nested run doesn't read it and the outer run
+defers to the nested one. Terminal output is unaffected.
+
 :::tip
 Every output mode that reads task output line by line exports it: `prefix`,
 `keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. The `silent` output mode

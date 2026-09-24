@@ -714,6 +714,11 @@ impl<'a> CmdLineRunner<'a> {
         self.observe_stdout.is_some()
     }
 
+    /// Whether a stderr observer is attached. See [`Self::has_stdout_observer`].
+    pub(crate) fn has_stderr_observer(&self) -> bool {
+        self.observe_stderr.is_some()
+    }
+
     pub(crate) fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.cmd.current_dir(dir);
         self
