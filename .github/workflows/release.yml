@@ -283,7 +283,9 @@ jobs:
     needs: [gate]
     if: needs.gate.outputs.build == 'true'
     name: build-tarball-windows-${{matrix.arch}}
-    runs-on: windows-latest
+    # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
+    # with fat LTO and panic=unwind ran past the 150-minute timeout.
+    runs-on: ${{matrix.runner}}
     # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
     # link this job now does is the long pole and its cost varies a lot with
     # available memory — locally the same relink took ~20 minutes with RAM to spare
@@ -296,18 +298,28 @@ jobs:
         include:
           - arch: arm64
             target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
           - arch: x64
             target: x86_64-pc-windows-msvc
+            runner: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Install rustup only if the runner image lacks it.
+      - name: Install rustup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+            Invoke-WebRequest https://win.rustup.rs/aarch64 -OutFile rustup-init.exe
+            ./rustup-init.exe -y --profile minimal
+            Remove-Item rustup-init.exe
+            Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.cargo\bin"
+          }
       - run: rustup target add ${{matrix.target}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
           OS: windows
           ARCH: ${{matrix.arch}}
-      # The runner is x64 and cannot execute the arm64 binary.
       - name: Smoke-test vfox Lua errors
-        if: matrix.arch == 'x64'
         run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
