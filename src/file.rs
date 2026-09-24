@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -1970,10 +1970,24 @@ pub(crate) fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The largest zstd window mise decodes: 2^30 (1 GiB). libzstd refuses frames
+/// with a window above 2^27 (128 MiB) unless the caller raises the limit, the
+/// same limit the `zstd` CLI lifts with `--long`. Large release archives such
+/// as LLVM's are compressed with a 1 GiB window. Going no higher bounds the
+/// memory an archive can make the decoder allocate, and 2^30 is also the most
+/// libzstd supports on 32-bit platforms.
+const ZSTD_WINDOW_LOG_MAX: u32 = 30;
+
+fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R>>> {
+    let mut dec = zstd::Decoder::new(reader)?;
+    dec.window_log_max(ZSTD_WINDOW_LOG_MAX)?;
+    Ok(dec)
+}
+
 pub(crate) fn un_zst(input: &Path, dest: &Path) -> Result<()> {
     debug!("zstd -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = zstd::Decoder::new(f)?;
+    let mut dec = zstd_decoder(f)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
@@ -2230,7 +2244,7 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
         ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         ExtractionFormat::TarBz2 => Box::new(BzDecoder::new(f)),
-        ExtractionFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        ExtractionFormat::TarZst => Box::new(zstd_decoder(f)?),
         ExtractionFormat::Tar => Box::new(f),
         ExtractionFormat::TarBr | ExtractionFormat::TarLz4 | ExtractionFormat::TarSz => {
             bail!("{format} format not supported")
@@ -3784,6 +3798,41 @@ esac
 
         let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
         assert!(err.to_string().contains("non-regular archive entry"));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_zst_decodes_a_long_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar.zst");
+        let mut tar = Vec::new();
+        {
+            let mut builder = jdx_tar::Builder::new(&mut tar);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+            header.set_size(4);
+            header.set_mode(0o755);
+            builder
+                .append_data(&mut header, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        // A streamed frame has no content size, so it carries a window
+        // descriptor. Rewrite it to 2^30, the window LLVM's releases declare,
+        // rather than making the test allocate a 1 GiB compression window.
+        let mut encoder = zstd::Encoder::new(Vec::new(), 1).unwrap();
+        encoder.write_all(&tar).unwrap();
+        let mut zst = encoder.finish().unwrap();
+        assert_eq!(&zst[..4], &[0x28, 0xb5, 0x2f, 0xfd]);
+        assert_eq!(
+            zst[4] & 0x23,
+            0,
+            "expected no single-segment flag or dictionary id"
+        );
+        zst[5] = 20 << 3;
+        fs::write(&archive_path, &zst).unwrap();
+
+        let files = archive_content_files(&archive_path, ExtractionFormat::TarZst, 1).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "tool");
     }
 
     #[test]
