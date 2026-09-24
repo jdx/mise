@@ -3883,6 +3883,10 @@ docs = '''
 Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
 and advanced regex-based URL transformations for download mirroring and custom registries.
 
+Rerouting `api.github.com` or `github.com` also stops mise from using
+[mise-versions](#use_versions_host) for GitHub release metadata and attestations,
+so all GitHub data comes from the replacement.
+
 See [URL Replacements](/url-replacements.html) for more information.
 '''
 env = "MISE_URL_REPLACEMENTS"
@@ -3916,6 +3920,12 @@ If the versions host does not have the requested metadata yet, mise falls back t
 GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
 users who disable this setting still need normal GitHub authentication when they
 would otherwise exceed GitHub's rate limits.
+
+When [`url_replacements`](#url_replacements) reroutes `api.github.com` or
+`github.com`, mise does not use this host for GitHub release metadata or
+attestations. The replacement is the only source of GitHub data, since this host
+only describes github.com itself. Version lists for registry tools still come
+from this host.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
