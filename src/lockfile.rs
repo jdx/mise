@@ -1,5 +1,7 @@
 pub(crate) mod generate;
 mod graph;
+
+pub(crate) use graph::sidecar_root;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::backend::backend_type::BackendType;
@@ -38,6 +40,11 @@ static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
 static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
+type LockfilesByPrecedence = HashMap<Vec<PathBuf>, Arc<Vec<Lockfile>>>;
+/// The lockfiles [`read_all_lockfiles`] merges, highest precedence first,
+/// filled alongside its cache.
+static LOCKFILES_BY_PRECEDENCE_CACHE: Lazy<Mutex<LockfilesByPrecedence>> =
+    Lazy::new(Default::default);
 type LegacyLockfilePathsCacheKey = (PathBuf, Option<bool>, Vec<String>);
 static LEGACY_LOCKFILE_PATHS_CACHE: Lazy<
     Mutex<HashMap<LegacyLockfilePathsCacheKey, IndexSet<PathBuf>>>,
@@ -60,6 +67,9 @@ pub(crate) fn invalidate_caches() {
         cache.clear();
     }
     if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
         cache.clear();
     }
     if let Ok(mut cache) = LEGACY_LOCKFILE_PATHS_CACHE.lock() {
@@ -1148,9 +1158,50 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// Whether `short`'s entry at `version` records artifact data for any platform.
+    pub(crate) fn has_platforms(&self, short: &str, version: &str) -> bool {
+        self.tools_for(short).is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                entry.version == version && entry.platforms.values().any(|p| !p.is_empty())
+            })
+        })
+    }
+
     fn tools_for_mut(&mut self, short: &str) -> Option<&mut Vec<LockfileTool>> {
         let key = self.tool_key(short)?.clone();
         self.tools.get_mut(&key)
+    }
+
+    /// Move `short`'s entries at `versions` locked under `from` to the backend
+    /// `to` returns for their version, keeping the version and dropping the
+    /// artifact data and dependency graphs recorded for the old backend so the
+    /// next lock records the new one's. Returns each moved version with its new
+    /// backend and whether the old entry carried artifact data.
+    pub(crate) fn switch_backend(
+        &mut self,
+        short: &str,
+        from: &str,
+        versions: &BTreeSet<String>,
+        to: impl Fn(&str) -> Option<String>,
+    ) -> Vec<(String, String, bool)> {
+        let Some(entries) = self.tools_for_mut(short) else {
+            return vec![];
+        };
+        let mut moved = vec![];
+        for entry in entries.iter_mut().filter(|entry| {
+            entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
+        }) {
+            if let Some(backend) = to(&entry.version) {
+                let had_platforms = entry.platforms.values().any(|p| !p.is_empty());
+                entry.backend = Some(backend.clone());
+                entry.platforms.clear();
+                // Dependency graphs are recorded per backend too.
+                entry.aube = None;
+                entry.uv = None;
+                moved.push((entry.version.clone(), backend, had_platforms));
+            }
+        }
+        moved
     }
 
     pub(crate) fn bind_request(
@@ -4113,27 +4164,29 @@ fn preserve_absent_tool_entries(
     });
 }
 
+fn derive_lockfile_discovery(config: &Config) -> LockfileDiscovery {
+    let monorepo_root = config.monorepo_lockfile_root();
+    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
+    let cache_key = config
+        .config_files
+        .keys()
+        .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
+        .chain(legacy_lockfiles.iter().cloned())
+        .unique()
+        .collect();
+    LockfileDiscovery {
+        cache_key,
+        monorepo_root,
+        legacy_lockfiles,
+    }
+}
+
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     // Derived once per config: this runs on every backend-identity lookup, and
     // walking each config path plus deduping the results dominated those calls.
     // The monorepo root and legacy paths ride along so the miss path below
     // reuses them instead of repeating the discovery.
-    let discovery = config.lockfile_discovery(|| {
-        let monorepo_root = config.monorepo_lockfile_root();
-        let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
-        let cache_key = config
-            .config_files
-            .keys()
-            .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
-            .chain(legacy_lockfiles.iter().cloned())
-            .unique()
-            .collect();
-        LockfileDiscovery {
-            cache_key,
-            monorepo_root,
-            legacy_lockfiles,
-        }
-    });
+    let discovery = config.lockfile_discovery(|| derive_lockfile_discovery(config));
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = ALL_LOCKFILES_CACHE
         .lock()
@@ -4149,6 +4202,9 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 
     let mut seen_roots: HashSet<PathBuf> = HashSet::new();
     let mut all: Vec<Lockfile> = Vec::new();
+    // Where each root's lockfiles start in `all`. Roots are read from the
+    // outermost config in, while each root's own lockfiles go highest first.
+    let mut root_starts: Vec<usize> = Vec::new();
 
     for (path, cf) in config.config_files.iter().rev() {
         if !cf.source().is_mise_toml() {
@@ -4161,6 +4217,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
             continue;
         }
         seen_roots.insert(root.clone());
+        root_starts.push(all.len());
 
         // Read lockfiles in priority order (highest first):
         // 1. mise.<env>.local.lock (explicit MISE_ENV, then auto platform envs)
@@ -4182,8 +4239,20 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         let main_path = root.join("mise.lock");
         push_existing_lockfile(&mut all, &main_path);
     }
+    let roots_end = all.len();
     for legacy_path in legacy_lockfiles {
         push_existing_lockfile(&mut all, legacy_path);
+    }
+    // Highest precedence first: the innermost root's lockfiles, each root in
+    // its own order, then the legacy lockfiles.
+    let mut by_precedence = Vec::with_capacity(all.len());
+    for (i, &start) in root_starts.iter().enumerate().rev() {
+        let end = root_starts.get(i + 1).copied().unwrap_or(roots_end);
+        by_precedence.extend_from_slice(&all[start..end]);
+    }
+    by_precedence.extend_from_slice(&all[roots_end..]);
+    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
+        cache.insert(discovery.cache_key.clone(), Arc::new(by_precedence));
     }
 
     let result = all.into_iter().fold(None, |acc: Option<Lockfile>, l| {
@@ -4199,6 +4268,36 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     let result = Arc::new(result);
     cache.insert(discovery.cache_key.clone(), Arc::clone(&result));
     result
+}
+
+/// The lockfiles [`read_all_lockfiles`] merges, highest precedence first.
+fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
+    let key = |config: &Config| {
+        config
+            .lockfile_discovery(|| derive_lockfile_discovery(config))
+            .cache_key
+            .clone()
+    };
+    let cached = |key: &Vec<PathBuf>| {
+        LOCKFILES_BY_PRECEDENCE_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(key)
+            .cloned()
+    };
+    // Derives the discovery and, on a cache miss, fills both caches.
+    read_all_lockfiles(config);
+    let key = key(config);
+    if let Some(lockfiles) = cached(&key) {
+        return lockfiles;
+    }
+    // The merged view was cached without this one; rebuild both.
+    ALL_LOCKFILES_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&key);
+    read_all_lockfiles(config);
+    cached(&key).unwrap_or_default()
 }
 
 fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
@@ -4827,26 +4926,65 @@ pub(crate) fn ensure_locked_url_matches_version(
 
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
-pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
+/// The backend `short`'s lock entries record for `version`; see
+/// [`locked_backend`].
+pub(crate) fn get_locked_backend_for_version(
+    config: &Config,
+    short: &str,
+    version: Option<&str>,
+) -> Option<String> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
         return None;
     }
 
-    let lockfile = read_all_lockfiles(config);
-
-    lockfile
-        .tools_for(short)
-        .into_iter()
-        .flatten()
-        .filter_map(|tool| tool.backend.as_ref())
-        .find(|&full| {
-            // Discovery includes parent lockfiles and runs before registry fallback.
-            // A recorded backend must not revive a disabled backend for a shorthand.
-            let ba = BackendArg::new(full.clone(), Some(full.clone()));
-            !backend::is_disabled_backend_type(&ba.backend_type())
+    // Discovery includes parent lockfiles and runs before registry fallback.
+    // A recorded backend must not revive a disabled backend for a shorthand,
+    // and one mise cannot construct must not hide a usable entry, the same
+    // test lockfile resolution applies to its candidates.
+    let usable = |tool: &&LockfileTool| {
+        tool.backend.as_ref().is_some_and(|full| {
+            backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
+                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
         })
-        .cloned()
+    };
+    // The lockfile with the highest precedence that locks the tool decides
+    // alone: a global or parent lockfile already on another backend must not
+    // override or split a project's entries.
+    let lockfiles = read_lockfiles_by_precedence(config);
+    let entries = lockfiles
+        .iter()
+        .map(|lockfile| {
+            lockfile
+                .tools_for(short)
+                .into_iter()
+                .flatten()
+                .filter(usable)
+                .collect::<Vec<_>>()
+        })
+        .find(|entries| !entries.is_empty())?;
+    locked_backend(&entries, version)
+}
+
+/// Which of a tool's lock entries decides its backend. Without a `version`,
+/// the first entry's. Otherwise the entry locked at `version`, or else the
+/// backend every entry shares: another version (a bump, say) inherits the
+/// locked backend only when the tool is locked under one backend, and entries
+/// that already split versions across backends leave the choice to the
+/// registry.
+fn locked_backend(entries: &[&LockfileTool], version: Option<&str>) -> Option<String> {
+    let Some(version) = version else {
+        return entries.first().and_then(|tool| tool.backend.clone());
+    };
+    if let Some(tool) = entries.iter().find(|tool| tool.version == version) {
+        return tool.backend.clone();
+    }
+    let backend = entries.first()?.backend.clone();
+    entries
+        .iter()
+        .all(|tool| tool.backend == backend)
+        .then_some(backend)
+        .flatten()
 }
 
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
@@ -6763,6 +6901,102 @@ options = { exe = "rg" }
         assert_eq!(first, second, "lockfile serialization was not idempotent");
         assert_eq!(second.matches("[[tools.ruby]]").count(), 2);
         assert_eq!(second.matches("platforms.windows-x64").count(), 1);
+    }
+
+    #[test]
+    fn locked_backend_inherits_only_an_unambiguous_backend() {
+        let entry = |version: &str, backend: &str| LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::new(),
+            aube: None,
+            uv: None,
+        };
+        let aqua_old = entry("1.57.0", "aqua:jdx/hk");
+        let aqua_new = entry("1.58.1", "aqua:jdx/hk");
+        let packslip_new = entry("1.58.1", "packslip:github.com/jdx/hk");
+
+        let one_backend = [&aqua_old, &aqua_new];
+        assert_eq!(
+            locked_backend(&one_backend, Some("2.0.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+
+        let split = [&aqua_old, &packslip_new];
+        assert_eq!(
+            locked_backend(&split, Some("1.58.1")).as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert_eq!(
+            locked_backend(&split, Some("1.57.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+        assert_eq!(locked_backend(&split, Some("2.0.0")), None);
+        assert_eq!(locked_backend(&split, None).as_deref(), Some("aqua:jdx/hk"));
+    }
+
+    #[test]
+    fn switch_backend_moves_only_the_given_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        std::fs::write(
+            &path,
+            r#"lockfile_version = 2
+
+[[tools.hk]]
+version = "1.57.0"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+url = "https://example.com/hk-1.57.0"
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+checksum = "sha256:abc"
+url = "https://example.com/hk-1.58.1"
+
+[tools.hk."platforms.macos-arm64"]
+url = "https://example.com/hk-1.58.1-mac"
+"#,
+        )
+        .unwrap();
+        let mut lockfile = Lockfile::read(&path).unwrap();
+        let moved = lockfile.switch_backend(
+            "hk",
+            "aqua:jdx/hk",
+            &BTreeSet::from(["1.58.1".to_string()]),
+            |_| Some("packslip:github.com/jdx/hk".to_string()),
+        );
+        assert_eq!(
+            moved,
+            vec![(
+                "1.58.1".to_string(),
+                "packslip:github.com/jdx/hk".to_string(),
+                true
+            )]
+        );
+        assert!(!lockfile.has_platforms("hk", "1.58.1"));
+        assert!(lockfile.has_platforms("hk", "1.57.0"));
+        lockfile.save(&path).unwrap();
+
+        // The switched entry drops the old backend's artifacts; the version
+        // that was not asked for keeps its backend and artifacts.
+        let reread = Lockfile::read(&path).unwrap();
+        let entries = reread.tools_for("hk").unwrap();
+        let switched = entries.iter().find(|t| t.version == "1.58.1").unwrap();
+        assert_eq!(
+            switched.backend.as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert!(switched.platforms.is_empty());
+        let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
+        assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
+        assert!(reread.has_platforms("hk", "1.57.0"));
     }
 
     #[test]
