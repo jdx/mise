@@ -18,8 +18,7 @@ assert_quiet_on_closed_stdout() {
     echo >reader_closed
   } || status=$?
   [[ $status == 0 ]] || fail "mise $* exited $status on a closed stdout: $(cat stderr.txt)"
-  assert_not_contains "cat stderr.txt" "panicked"
-  assert_not_contains "cat stderr.txt" "Broken pipe"
+  [[ ! -s stderr.txt ]] || fail "mise $* wrote to stderr on a closed stdout: $(cat stderr.txt)"
 }
 
 assert_quiet_on_closed_stdout --help
