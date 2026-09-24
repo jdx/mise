@@ -2,4 +2,7 @@ description = "OpenBao exists to provide a software solution to manage, store, a
 test = { cmd = "bao version", expected = "OpenBao v{{version}}" }
 version_order = "semver"
 
-backends = ["aqua:openbao/openbao/bao", "github:openbao/openbao"]
+backends = [
+  "aqua:openbao/openbao/bao",
+  { full = "github:openbao/openbao", attestations_since = "2.7.0-beta20260909" },
+]

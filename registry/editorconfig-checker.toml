@@ -1,5 +1,5 @@
 backends = [
-  "github:editorconfig-checker/editorconfig-checker",
+  { full = "github:editorconfig-checker/editorconfig-checker", attestations_since = "3.10.0" },
   "asdf:gabitchov/asdf-editorconfig-checker",
 ]
 description = "A tool to verify that your files are in harmony with your .editorconfig"

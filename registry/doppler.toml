@@ -4,6 +4,7 @@ version_order = "semver"
 
 bins = ["doppler"]
 [[backends]]
+attestations_since = "3.76.4"
 full = "github:DopplerHQ/cli"
 
 [[backends]]

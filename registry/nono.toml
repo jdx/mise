@@ -1,4 +1,4 @@
-backends = ["github:nolabs-ai/nono"]
+backends = [{ full = "github:nolabs-ai/nono", attestations_since = "0.66.0" }]
 bins = ["nono"]
 description = "Sandbox any AI agent in seconds - zero setup, zero latency."
 test = { cmd = "nono --version", expected = "nono {{version}}" }

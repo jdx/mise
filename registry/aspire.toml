@@ -2,5 +2,5 @@ description = "Aspire is the tool for code-first, extensible, observable dev and
 test = { cmd = "aspire --version", expected = "{{version}}" }
 version_order = "semver"
 
-backends = ["github:microsoft/aspire"]
+backends = [{ full = "github:microsoft/aspire", attestations_since = "13.5.2" }]
 bins = ["aspire"]

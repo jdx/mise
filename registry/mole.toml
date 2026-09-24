@@ -5,6 +5,7 @@ test = { cmd = "mo --version", expected = "Mole version {{version}}" }
 version_order = "semver"
 
 [[backends]]
+attestations_since = "1.52.0"
 full = "github:tw93/Mole"
 min_version = "1.16.1"
 

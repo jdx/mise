@@ -1,4 +1,7 @@
-backends = ["aqua:herdrdev/herdr", "github:herdrdev/herdr"]
+backends = [
+  "aqua:herdrdev/herdr",
+  { full = "github:herdrdev/herdr", attestations_since = "0.1.0" },
+]
 description = "Agent multiplexer that lives in your terminal"
 test = { cmd = "herdr --version", expected = "herdr {{version}}" }
 version_order = "semver"

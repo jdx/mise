@@ -1,4 +1,7 @@
-backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
+backends = [
+  { full = "github:pantsbuild/scie-pants", attestations_since = "0.13.2-beta.1" },
+  "asdf:robzr/asdf-scie-pants",
+]
 bins = ["scie-pants"]
 description = "Protects your Pants from the elements"
 version_order = "semver"

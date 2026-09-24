@@ -1,6 +1,6 @@
 backends = [
   { full = "packslip:github.com/jdx/mr-boxington", min_version = "1.8.3" },
-  "github:jdx/mr-boxington",
+  { full = "github:jdx/mr-boxington", attestations_since = "0.5.2" },
 ]
 bins = ["mbx"]
 description = "A Cargo wrapper with a shared, self-pruning compilation cache"

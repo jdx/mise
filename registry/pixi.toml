@@ -1,4 +1,4 @@
-backends = ["github:prefix-dev/pixi"]
+backends = [{ full = "github:prefix-dev/pixi", attestations_since = "0.71.1" }]
 bins = ["pixi"]
 description = "Package management made easy"
 idiomatic_files = [
