@@ -187,7 +187,7 @@ pub(crate) async fn list_releases_from_url(
 /// `github:` backend with `prerelease = true`) use this variant; the cache is
 /// shared with [`list_releases`] so there's no extra API cost.
 pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
-    let key = repo.to_kebab_case();
+    let key = format!("{}-{RELEASE_LIST_CACHE_VERSION}", repo.to_kebab_case());
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
@@ -245,11 +245,16 @@ pub(crate) async fn list_releases_including_prereleases_from_url(
 /// is still recognisable.
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
-        "{}-{}",
+        "{}-{}-{RELEASE_LIST_CACHE_VERSION}",
         format!("{api_url}-{repo}").to_kebab_case(),
         crate::hash::hash_to_str(&(api_url, repo, require_assets))
     )
 }
+
+/// Bumped when cached release lists can no longer be trusted as written:
+/// "2" since assets record `from_versions_host`, so a list cached before that
+/// could pass mirrored asset IDs off as GitHub's.
+const RELEASE_LIST_CACHE_VERSION: &str = "2";
 
 /// Whether the bounded prerelease fallback has found what it went looking for:
 /// a stable release the caller will actually keep.
