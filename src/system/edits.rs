@@ -237,10 +237,10 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             let is_whole_file_table = table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("remove_empty")
-                || table.contains_key("dot_prefix")
                 || (table.contains_key("source")
                     || table.contains_key("content")
-                    || table.contains_key("permissions"))
+                    || table.contains_key("permissions")
+                    || table.contains_key("dot_prefix"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -251,11 +251,13 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             }
             // an edit owns lines in a file, not the file itself; dropping
             // the key silently would leave the declared mode unapplied
-            if table.contains_key("permissions") {
-                warn!(
-                    "[dotfiles].\"{path_and_id}\": permissions applies to whole-file entries, not block or line edits, ignoring entry"
-                );
-                return None;
+            for key in ["permissions", "dot_prefix"] {
+                if table.contains_key(key) {
+                    warn!(
+                        "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not block or line edits, ignoring entry"
+                    );
+                    return None;
+                }
             }
         }
         _ => return None,
