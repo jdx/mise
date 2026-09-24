@@ -412,6 +412,10 @@ pub(crate) enum FileTomlEntry {
         /// template only: remove the target when the template renders empty
         #[serde(default)]
         remove_empty: Option<bool>,
+        /// symlink modes only: link with a relative target, overriding
+        /// `dotfiles.relative_symlinks`
+        #[serde(default)]
+        relative: Option<bool>,
     },
 }
 
@@ -495,6 +499,9 @@ pub(crate) struct FileRequest {
     /// template only: an empty (whitespace-only) render removes the target
     /// instead of writing an empty file
     pub remove_empty: bool,
+    /// symlink modes only: links point at the source by a path relative to
+    /// the link's directory (see [`relative_link_path`])
+    pub relative: bool,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -796,6 +803,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.mode == second.mode
         && first.manifest == second.manifest
         && first.remove_empty == second.remove_empty
+        && first.relative == second.relative
         && first.permissions == second.permissions
         // a track entry's list is a policy a later layer may change, like
         // autosave; a deployment entry's list is part of what it deploys
@@ -843,10 +851,12 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    if table.contains_key("permissions") {
-                        bail!(
-                            "dotfile {target}: permissions applies to whole-file entries, not block or line edits"
-                        );
+                    for key in ["permissions", "relative"] {
+                        if table.contains_key(key) {
+                            bail!(
+                                "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
+                            );
+                        }
                     }
                     continue;
                 }
@@ -868,6 +878,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "variants"
                             | "enabled"
                             | "remove_empty"
+                            | "relative"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -890,6 +901,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 permissions,
                 variants,
                 remove_empty,
+                relative,
                 ..
             } = entry
             {
@@ -976,6 +988,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     && (content.is_some() || permissions_only || mode != FileMode::Template)
                 {
                     bail!("dotfile {target}: remove_empty requires mode = \"template\"");
+                }
+                if relative == Some(true)
+                    && (content.is_some()
+                        || permissions_only
+                        || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+                {
+                    bail!(
+                        "dotfile {target}: relative requires mode = \"symlink\" or \"symlink-each\""
+                    );
                 }
                 if !matches!(mode, FileMode::Track | FileMode::Absent)
                     && !permissions_only
@@ -1205,7 +1226,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("remove_empty")
                 || ((table.contains_key("source")
                     || table.contains_key("content")
-                    || table.contains_key("permissions"))
+                    || table.contains_key("permissions")
+                    || table.contains_key("relative"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -1246,9 +1268,11 @@ fn merge_file_entry(
         variants,
         enabled,
         remove_empty,
+        relative,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1274,6 +1298,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            relative,
         } => (
             source,
             content,
@@ -1287,6 +1312,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            relative,
         ),
     };
     // `{ permissions = "0600" }` alone manages only an existing target's
@@ -1352,11 +1378,16 @@ fn merge_file_entry(
         return;
     }
     if mode.as_deref() == Some("track") {
-        if source.is_some() || content.is_some() || manifest.is_some() || remove_empty {
+        if source.is_some()
+            || content.is_some()
+            || manifest.is_some()
+            || remove_empty
+            || relative == Some(true)
+        {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, or remove_empty",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, or relative",
             );
             return;
         }
@@ -1428,6 +1459,7 @@ fn merge_file_entry(
             variants: selectors,
             enabled,
             remove_empty: false,
+            relative: false,
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -1478,9 +1510,9 @@ fn merge_file_entry(
             );
             return;
         }
-        if remove_empty {
+        if remove_empty || relative == Some(true) {
             warn!(
-                "[dotfiles].\"{target_raw}\": remove_empty requires mode = \"template\", ignoring entry"
+                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty or relative, ignoring entry"
             );
             return;
         }
@@ -1516,6 +1548,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                relative: false,
             },
         );
         return;
@@ -1600,6 +1633,16 @@ fn merge_file_entry(
         );
         return;
     }
+    if relative == Some(true)
+        && (content.is_some()
+            || permissions_only
+            || !matches!(mode, FileMode::Symlink | FileMode::SymlinkEach))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": relative requires mode = \"symlink\" or \"symlink-each\", ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -1632,6 +1675,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                relative: false,
             },
         );
         return;
@@ -1655,6 +1699,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                relative: false,
             },
         );
         return;
@@ -1698,9 +1743,20 @@ fn merge_file_entry(
         variants: vec![],
         enabled,
         remove_empty,
+        relative: relative_symlinks(mode, relative),
     }) {
         merged.insert((req.target.clone(), false), req);
     }
+}
+
+/// Whether an entry in `mode` links by relative path: its own `relative` key
+/// when set, else `dotfiles.relative_symlinks`. Only symlink modes link, and
+/// never on Windows, where a directory link is a junction and has no
+/// relative form.
+pub(crate) fn relative_symlinks(mode: FileMode, declared: Option<bool>) -> bool {
+    cfg!(unix)
+        && matches!(mode, FileMode::Symlink | FileMode::SymlinkEach)
+        && declared.unwrap_or_else(|| Settings::get().dotfiles.relative_symlinks)
 }
 
 /// Resolve the default deployment mode, warning and using symlinks for unsupported values.
@@ -1809,6 +1865,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         policy,
         enabled,
         remove_empty,
+        relative,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -1828,6 +1885,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            relative,
         }];
     }
 
@@ -1882,6 +1940,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            relative,
         }];
     }
 
@@ -1921,6 +1980,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 variants: vec![],
                 enabled,
                 remove_empty,
+                relative,
             })
         })
         .collect()
@@ -2083,7 +2143,7 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
     match req.mode {
         FileMode::Track => Ok(FileState::Tracked),
         FileMode::Absent => check_absent(&req.target),
-        FileMode::Symlink => check_symlink(&req.source, &req.target),
+        FileMode::Symlink => check_symlink(&req.source, &req.target, req.relative),
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => {
             if req.permissions.is_some() {
@@ -2272,7 +2332,11 @@ fn check_absent(target: &Path) -> Result<FileState> {
     }
 }
 
-fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
+/// With `relative`, a link that reaches the source by an absolute path is not
+/// applied: it is re-pointed, so turning the option on converts links an
+/// earlier apply made. Without it, any link reaching the source is accepted,
+/// relative or not, as it always was.
+fn check_symlink(source: &Path, target: &Path, relative: bool) -> Result<FileState> {
     // On Windows a file link is a real symlink when the privilege was available and a copy
     // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
     // through to the copy comparison when it is not a symlink.
@@ -2281,13 +2345,18 @@ fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
     }
     if target.is_symlink() {
         let dest = std::fs::read_link(target)?;
-        if dest == *source || points_at_same_file(target, source) {
-            Ok(FileState::Applied)
-        } else {
+        if !link_points_to(source, target) {
             Ok(FileState::Differs(format!(
                 "symlink points to {}",
                 dest.display_user()
             )))
+        } else if relative && dest.is_absolute() {
+            Ok(FileState::Differs(format!(
+                "symlink points to {} by an absolute path; relative requested",
+                dest.display_user()
+            )))
+        } else {
+            Ok(FileState::Applied)
         }
     } else if target.exists() {
         Ok(FileState::Differs("exists but is not a symlink".into()))
@@ -2333,7 +2402,7 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
     let mut missing = 0;
     let mut differs: Option<String> = None;
     for (source, target) in files {
-        match check_symlink(&source, &target)? {
+        match check_symlink(&source, &target, req.relative)? {
             FileState::Applied => applied += 1,
             FileState::Missing => missing += 1,
             FileState::Differs(reason) => {
@@ -3105,18 +3174,64 @@ fn link_points_to(source: &Path, target: &Path) -> bool {
         return false;
     }
     std::fs::read_link(target).is_ok_and(|dest| {
-        let resolved = if dest.is_absolute() {
-            dest.clone()
-        } else {
-            target
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(&dest)
-        };
         dest == source
-            || lexical_normalize(&resolved) == lexical_normalize(source)
             || points_at_same_file(target, source)
+            || if dest.is_absolute() {
+                lexical_normalize(&dest) == lexical_normalize(source)
+            } else {
+                // the kernel resolves a relative link from the directory the
+                // link physically sits in, so its text is read from there too:
+                // read from the configured spelling, a link in a symlinked
+                // directory could seem to reach a source it does not
+                resolve_relative_link(target, &dest)
+                    .is_some_and(|resolved| resolved == physical_path(source))
+            }
     })
+}
+
+/// Where a link at `target` holding the relative `dest` physically leads,
+/// stepping through `dest` from the link's canonical directory as the
+/// kernel does (see [`walk_physical`]).
+fn resolve_relative_link(target: &Path, dest: &Path) -> Option<PathBuf> {
+    walk_physical(target.parent()?.canonicalize().ok()?, dest)
+}
+
+/// Where `path` physically is, without requiring it to exist (so a deleted
+/// file or a dangling link still has a location). Its own last component is
+/// not followed: a source that is a symlink is the link, not what it names.
+fn physical_path(path: &Path) -> PathBuf {
+    walk_physical(PathBuf::new(), path).unwrap_or_else(|| lexical_normalize(path))
+}
+
+/// Append `path` to `base` a component at a time, resolving every directory
+/// on the way before a later `..` steps out of it: `alias/../x` climbs out
+/// of wherever `alias` really leads, so collapsing it lexically first could
+/// name a different file. A component that does not exist cannot be a
+/// symlink and is kept as written; a dangling one in the middle has no
+/// location at all.
+fn walk_physical(mut cur: PathBuf, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let components = path.components().collect::<Vec<_>>();
+    for (i, component) in components.iter().enumerate() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => cur.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                cur.pop();
+            }
+            Component::Normal(name) => {
+                cur.push(name);
+                if i + 1 < components.len() {
+                    match cur.canonicalize() {
+                        Ok(canonical) => cur = canonical,
+                        Err(_) if std::fs::symlink_metadata(&cur).is_err() => {}
+                        Err(_) => return None,
+                    }
+                }
+            }
+        }
+    }
+    Some(cur)
 }
 
 fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> Vec<PathBuf> {
@@ -4109,8 +4224,9 @@ fn plan_unapply_one<'a>(
         {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
-                if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
-                {
+                // `link_points_to` also resolves a relative link whose source
+                // is gone, which `canonicalize` cannot
+                if opts.force || link_points_to(&req.source, &req.target) {
                     paths.insert(req.target.clone(), ());
                 } else {
                     bail!(
@@ -4440,10 +4556,12 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
 fn describe(req: &FileRequest) -> Result<String> {
     let src = req.source.display_user();
     let tgt = req.target.display_user();
+    // `ln -r` (GNU) is the familiar spelling of a relative link
+    let ln = if req.relative { "ln -sfr" } else { "ln -sf" };
     Ok(match req.mode {
         FileMode::Track => format!("track {tgt} in place"),
         FileMode::Absent => format!("rm {tgt}"),
-        FileMode::Symlink => format!("ln -sf {src} {tgt}"),
+        FileMode::Symlink => format!("{ln} {src} {tgt}"),
         FileMode::SymlinkEach => {
             let stale = stale_links(req)?.len();
             let removals = match stale {
@@ -4451,7 +4569,7 @@ fn describe(req: &FileRequest) -> Result<String> {
                 n => format!(", rm {n} stale link(s)"),
             };
             format!(
-                "ln -sf {src}/* into {tgt}/ ({} files){removals}",
+                "{ln} {src}/* into {tgt}/ ({} files){removals}",
                 walk_source_files(req)?.len()
             )
         }
@@ -4927,7 +5045,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     match req.mode {
         FileMode::Symlink => {
             replace_recorded(&req.target, written, || {
-                link_path(&req.source, &req.target, true)
+                link_path(&req.source, &req.target, req.relative, true)
             })?;
             // the link is in place; listing what it exposes only feeds
             // reload matching, so a walk that fails must not fail the apply
@@ -4953,13 +5071,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             // entry would never converge
             file::create_dir_all(&req.target)?;
             for (source, target) in walk_source_files(req)? {
-                if check_symlink(&source, &target)? == FileState::Applied {
+                if check_symlink(&source, &target, req.relative)? == FileState::Applied {
                     continue;
                 }
                 if let Some(parent) = target.parent() {
                     file::create_dir_all(parent)?;
                 }
-                replace_recorded(&target, written, || link_path(&source, &target, false))?;
+                replace_recorded(&target, written, || {
+                    link_path(&source, &target, req.relative, false)
+                })?;
             }
             prune_stale_links(req, written)?;
         }
@@ -5317,7 +5437,12 @@ fn replace_recorded(
 /// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
 /// its unapply planner is `#[cfg(not(windows))]`-guarded and falls through to the content
 /// comparison, which rejects a symlink — creating one there would make unapply demand `--force`.
-fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Result<()> {
+fn link_path(
+    source: &Path,
+    target: &Path,
+    relative: bool,
+    allow_windows_symlink: bool,
+) -> Result<()> {
     #[cfg(windows)]
     if source.is_file() {
         // Windows grants SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is
@@ -5333,8 +5458,45 @@ fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Resul
     }
     #[cfg(not(windows))]
     let _ = allow_windows_symlink;
-    file::make_symlink(source, target)?;
+    if relative {
+        file::make_symlink(&relative_link_path(source, target), target)?;
+    } else {
+        file::make_symlink(source, target)?;
+    }
     Ok(())
+}
+
+/// The path a link at `target` should hold to reach `source` relatively.
+///
+/// The kernel resolves `..` in a link against the directory the link
+/// physically sits in, so a path worked out from the configured spelling is
+/// only used when it resolves to the source from there (it does not when
+/// the link's directory is itself reached through a symlink). Otherwise the
+/// path runs between the canonical locations, and if even that cannot be
+/// worked out the link stays absolute.
+fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
+    let Some(parent) = target.parent() else {
+        return source.to_path_buf();
+    };
+    // `physical_path` rather than `canonicalize`: a `symlink-each` source may
+    // be a dangling link, which must still get a relative link or the entry
+    // would never converge
+    let physical_source = physical_path(source);
+    let source = lexical_normalize(source);
+    let resolves =
+        |rel: &Path| resolve_relative_link(target, rel).is_some_and(|p| p == physical_source);
+    if let Some(rel) = pathdiff::diff_paths(&source, lexical_normalize(parent))
+        && resolves(&rel)
+    {
+        return rel;
+    }
+    if let Ok(canonical_parent) = parent.canonicalize()
+        && let Some(rel) = pathdiff::diff_paths(&physical_source, canonical_parent)
+        && resolves(&rel)
+    {
+        return rel;
+    }
+    source
 }
 
 #[cfg(test)]
@@ -5563,6 +5725,7 @@ variants = [{{ {field} = "linux" }}]"#
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            relative: false,
         }
     }
 
@@ -6002,6 +6165,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            relative: false,
         };
         let mut first = request(vec!["sessions"], true);
         first.override_from(request(vec!["cache"], true));
@@ -6119,6 +6283,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            relative: false,
         }
     }
 
@@ -6821,13 +6986,13 @@ source = "oldrc""#,
         let target = dir.path().join("linked");
         file::write(&source, "contents")?;
 
-        link_path(&source, &target, true)?;
+        link_path(&source, &target, false, true)?;
 
         assert!(
             target.exists() || target.is_symlink(),
             "link_path produced nothing"
         );
-        assert_eq!(check_symlink(&source, &target)?, FileState::Applied);
+        assert_eq!(check_symlink(&source, &target, false)?, FileState::Applied);
         Ok(())
     }
 
@@ -6842,7 +7007,7 @@ source = "oldrc""#,
         let target = dir.path().join("copied");
         file::write(&source, "contents")?;
 
-        link_path(&source, &target, false)?;
+        link_path(&source, &target, false, false)?;
 
         assert!(
             !target.is_symlink(),
@@ -6863,9 +7028,171 @@ source = "oldrc""#,
         file::write(&target, "something else")?;
 
         assert!(!matches!(
-            check_symlink(&source, &target)?,
+            check_symlink(&source, &target, false)?,
             FileState::Applied
         ));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_reaches_the_source_and_survives_a_move() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let source = home.join("dotfiles/foo");
+        let target = home.join(".config/foo");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "contents")?;
+        file::create_dir_all(target.parent().unwrap())?;
+
+        link_path(&source, &target, true, true)?;
+
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            PathBuf::from("../dotfiles/foo")
+        );
+        assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
+        // either setting accepts a relative link that reaches the source
+        assert_eq!(check_symlink(&source, &target, false)?, FileState::Applied);
+
+        let moved = dir.path().join("moved");
+        std::fs::rename(&home, &moved)?;
+        assert_eq!(file::read_to_string(moved.join(".config/foo"))?, "contents");
+        Ok(())
+    }
+
+    /// Turning `relative` on must convert a link an earlier apply made.
+    #[cfg(unix)]
+    #[test]
+    fn relative_rejects_an_absolute_link_to_the_source() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("linked");
+        file::write(&source, "contents")?;
+        link_path(&source, &target, false, true)?;
+
+        assert!(matches!(
+            check_symlink(&source, &target, true)?,
+            FileState::Differs(_)
+        ));
+        Ok(())
+    }
+
+    /// `..` in a link resolves against the directory the link physically
+    /// sits in, so a link directory reached through a symlink must not get
+    /// a path computed from its configured spelling.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_resolves_from_a_symlinked_link_directory() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("home/dotfiles/foo");
+        let real_config = dir.path().join("elsewhere/config");
+        let config = dir.path().join("home/.config");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "contents")?;
+        file::create_dir_all(&real_config)?;
+        file::make_symlink(&real_config, &config)?;
+        let target = config.join("foo");
+
+        link_path(&source, &target, true, true)?;
+
+        assert!(std::fs::read_link(&target)?.is_relative());
+        assert_eq!(file::read_to_string(&target)?, "contents");
+        assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// Builds `home/dotfiles/foo` and a `home/.config` that is a symlink to
+    /// `elsewhere/config`, returning (source, link directory, root).
+    #[cfg(unix)]
+    fn symlinked_link_dir() -> Result<(tempfile::TempDir, PathBuf, PathBuf)> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("home/dotfiles/foo");
+        let real_config = dir.path().join("elsewhere/config");
+        let config = dir.path().join("home/.config");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "contents")?;
+        file::create_dir_all(&real_config)?;
+        file::make_symlink(&real_config, &config)?;
+        Ok((dir, source, config))
+    }
+
+    /// Unapply and `symlink-each` pruning must still own a link written from
+    /// the canonical link directory once its source file is deleted.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_in_a_symlinked_directory_is_owned_after_its_source_goes() -> Result<()> {
+        let (_dir, source, config) = symlinked_link_dir()?;
+        let target = config.join("foo");
+        link_path(&source, &target, true, true)?;
+        std::fs::remove_file(&source)?;
+
+        assert!(link_points_to(&source, &target));
+        Ok(())
+    }
+
+    /// Read from the configured spelling, `../dotfiles/foo` in `~/.config`
+    /// names `~/dotfiles/foo`, but physically it leads somewhere else. That
+    /// link is not mise's to remove.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_matching_only_as_text_is_not_owned() -> Result<()> {
+        let (dir, source, config) = symlinked_link_dir()?;
+        let other = dir.path().join("elsewhere/dotfiles/foo");
+        file::create_dir_all(other.parent().unwrap())?;
+        file::write(&other, "someone else's")?;
+        let target = config.join("foo");
+        file::make_symlink(Path::new("../dotfiles/foo"), &target)?;
+
+        assert!(!link_points_to(&source, &target));
+        assert!(!matches!(
+            check_symlink(&source, &target, true)?,
+            FileState::Applied
+        ));
+        Ok(())
+    }
+
+    /// A dangling symlink in a `symlink-each` source still gets a relative
+    /// link, or the entry would be rewritten on every apply.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_to_a_dangling_source_converges() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfiles/dangling");
+        let target = dir.path().join("home/dangling");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&dir.path().join("nowhere"), &source)?;
+
+        link_path(&source, &target, true, false)?;
+
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            PathBuf::from("../dotfiles/dangling")
+        );
+        assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// `alias/../dotfile` leaves wherever `alias` really leads, not the
+    /// directory the link sits in, so it names a different file here.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_through_a_symlink_then_parent_is_not_owned() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let other = dir.path().join("real/dotfile");
+        file::write(&source, "mine")?;
+        file::create_dir_all(dir.path().join("real/sub"))?;
+        file::write(&other, "someone else's")?;
+        file::make_symlink(&dir.path().join("real/sub"), &dir.path().join("alias"))?;
+        let target = dir.path().join("link");
+        file::make_symlink(Path::new("alias/../dotfile"), &target)?;
+        assert_eq!(file::read_to_string(&target)?, "someone else's");
+
+        assert!(!link_points_to(&source, &target));
+        std::fs::remove_file(&other)?;
+        assert!(!link_points_to(&source, &target));
         Ok(())
     }
 
@@ -7265,6 +7592,39 @@ source = "oldrc""#,
         let mut req = link_req(&source, &dir.join("target"), FileMode::Template);
         req.remove_empty = remove_empty;
         Ok(req)
+    }
+
+    #[test]
+    fn relative_is_rejected_outside_symlink_modes() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let validate = |entry: &str| -> Result<()> {
+            let body = format!("[dotfiles]\n\"~/.relative-test\" = {entry}\n");
+            let mut configs = ConfigMap::new();
+            configs.insert(
+                path.clone(),
+                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+            );
+            validate_incoming_files(&configs)
+        };
+        validate(r#"{ source = "a", mode = "symlink", relative = true }"#)?;
+        validate(r#"{ source = "a", mode = "symlink-each", relative = true }"#)?;
+        validate(r#"{ source = "a", mode = "copy", relative = false }"#)?;
+        for entry in [
+            r#"{ source = "a", mode = "copy", relative = true }"#,
+            r#"{ source = "a.tera", mode = "template", relative = true }"#,
+            r#"{ content = "x", relative = true }"#,
+            r#"{ permissions = "0600", relative = true }"#,
+            r#"{ mode = "absent", relative = true }"#,
+            r#"{ mode = "track", relative = true }"#,
+            r#"{ block = "x", relative = true }"#,
+            r#"{ line = "x", relative = false }"#,
+        ] {
+            assert!(validate(entry).is_err(), "{entry} should be rejected");
+        }
+        Ok(())
     }
 
     #[test]

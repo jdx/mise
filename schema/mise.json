@@ -849,6 +849,11 @@
               "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
               "type": "string"
             },
+            "relative_symlinks": {
+              "default": false,
+              "description": "Create dotfile symlinks with relative targets instead of absolute ones.",
+              "type": "boolean"
+            },
             "root": {
               "default": "~/.dotfiles",
               "description": "Root directory used for implied dotfile sources.",
@@ -4397,6 +4402,10 @@
                 "default": false,
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
               },
+              "relative": {
+                "type": "boolean",
+                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -4475,6 +4484,34 @@
               }
             },
             "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "relative": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "required": ["mode"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["symlink", "symlink-each"]
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": false,
+                      "content": false,
+                      "permissions": false,
+                      "block": false,
+                      "line": false
+                    }
+                  }
+                ]
+              },
               {
                 "anyOf": [
                   {

@@ -581,6 +581,19 @@ description = "Default mode for dotfile entries when mode is omitted. Options: `
 env = "MISE_DOTFILES_DEFAULT_MODE"
 type = "String"
 
+[dotfiles.relative_symlinks]
+default = false
+description = "Create dotfile symlinks with relative targets instead of absolute ones."
+docs = """
+Applies to `symlink` and `symlink-each` entries; an entry's `relative` key overrides it.
+Relative links keep working when the home directory is mounted at a different path on
+another machine or the tree is moved, as long as the target and source stay in the same
+place relative to each other. Ignored on Windows, where directory links are junctions,
+which cannot be relative.
+"""
+env = "MISE_DOTFILES_RELATIVE_SYMLINKS"
+type = "Bool"
+
 [dotfiles.root]
 default = "~/.dotfiles"
 description = "Root directory used for implied dotfile sources."
