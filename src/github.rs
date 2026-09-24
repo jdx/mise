@@ -87,6 +87,12 @@ pub(crate) struct GithubAsset {
     /// `published_at` when the maintainer replaced it after publishing.
     #[serde(default)]
     pub updated_at: Option<String>,
+    /// mise-versions supplied this asset, so the asset ID in `url` must be
+    /// confirmed before use. Set by mise when it pins mirrored data (a value
+    /// in the mirror's own JSON is overwritten), and kept in release caches so
+    /// a later run still knows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_versions_host: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,13 +187,36 @@ pub(crate) async fn list_releases_from_url(
 /// `github:` backend with `prerelease = true`) use this variant; the cache is
 /// shared with [`list_releases`] so there's no extra API cost.
 pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
-    let key = repo.to_kebab_case();
+    // The version goes into the hash: appended as text, "owner/foo" would
+    // collide with the old key of a repository named "owner/foo-2".
+    let key = format!(
+        "{}-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&(repo, RELEASE_LIST_CACHE_VERSION, mirror_source(repo)))
+    );
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
-        .await?
-        .to_vec())
+    Ok(remember_mirrored_assets(
+        cache
+            .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
+            .await?
+            .to_vec(),
+    ))
+}
+
+/// Re-register assets mise-versions supplied, for releases that may have come
+/// out of an on-disk cache written by an earlier run.
+fn remember_mirrored_assets<R: std::borrow::Borrow<GithubRelease>, T: AsRef<[R]>>(
+    releases: T,
+) -> T {
+    for release in releases.as_ref() {
+        for asset in &release.borrow().assets {
+            if asset.from_versions_host {
+                crate::versions_host::remember_mirrored_asset_api_url(&asset.url);
+            }
+        }
+    }
+    releases
 }
 
 /// `require_assets` reaches the fetch loop from the caller's own filter: the
@@ -204,10 +233,12 @@ pub(crate) async fn list_releases_including_prereleases_from_url(
     let key = releases_cache_key(api_url, repo, require_assets);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
-        .await?
-        .to_vec())
+    Ok(remember_mirrored_assets(
+        cache
+            .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
+            .await?
+            .to_vec(),
+    ))
 }
 
 /// Cache key for one release listing.
@@ -222,8 +253,28 @@ fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String
     format!(
         "{}-{}",
         format!("{api_url}-{repo}").to_kebab_case(),
-        crate::hash::hash_to_str(&(api_url, repo, require_assets))
+        crate::hash::hash_to_str(&(
+            api_url,
+            repo,
+            require_assets,
+            RELEASE_LIST_CACHE_VERSION,
+            mirror_source(repo)
+        ))
     )
+}
+
+/// Bumped when cached release lists can no longer be trusted as written:
+/// "2" since assets record `from_versions_host`, so a list cached before that
+/// could pass mirrored asset IDs off as GitHub's.
+const RELEASE_LIST_CACHE_VERSION: &str = "2";
+
+/// Part of every release cache key: whether mise-versions may answer for
+/// `repo`. Turning `use_versions_host` off, or adding a `url_replacements`
+/// rule for GitHub, then starts from a fresh cache instead of serving mirror
+/// data cached before it.
+fn mirror_source(repo: &str) -> bool {
+    // Not `prefer_offline`: offline runs should keep reading what was cached.
+    Settings::get().use_versions_host && !crate::versions_host::github_is_url_replaced(Some(repo))
 }
 
 /// Whether the bounded prerelease fallback has found what it went looking for:
@@ -246,6 +297,12 @@ async fn list_releases_(
     repo: &str,
     require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
+    if is_public_github_api_base(api_url)
+        && let Some(releases) = list_releases_from_versions_host(repo, require_assets).await
+    {
+        return Ok(releases);
+    }
+
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -277,6 +334,96 @@ async fn list_releases_(
     releases.retain(|r| !r.draft);
 
     Ok(releases)
+}
+
+/// [`list_releases_`] through mise-versions. `None` sends the caller to
+/// GitHub for the whole list rather than for the remaining pages, since two
+/// sources may not agree on where a page ends.
+async fn list_releases_from_versions_host(
+    repo: &str,
+    require_assets: bool,
+) -> Option<Vec<GithubRelease>> {
+    let releases =
+        paginate_mirrored_releases(require_assets, *env::MISE_LIST_ALL_VERSIONS, |page| async move {
+            match crate::versions_host::github_releases(repo, page).await {
+                Ok(list) => list,
+                Err(err) => {
+                    warn!(
+                        "mise-versions endpoint=github_releases repo={repo} page={page} outcome=failed fallback=true error={err:#}"
+                    );
+                    None
+                }
+            }
+        })
+        .await?;
+    trace!("got GitHub releases for {repo} from mise-versions");
+    Some(releases)
+}
+
+/// Page through mirrored release lists with the same stopping rules as the
+/// direct loop in [`list_releases_`].
+async fn paginate_mirrored_releases<F, Fut>(
+    require_assets: bool,
+    list_all: bool,
+    mut fetch_page: F,
+) -> Option<Vec<GithubRelease>>
+where
+    F: FnMut(u32) -> Fut,
+    Fut: std::future::Future<Output = Option<crate::versions_host::GithubReleasesPage>>,
+{
+    let mut releases = Vec::new();
+    let mut page = 1;
+    let mut pages_fetched = 0;
+    loop {
+        let list = fetch_page(page).await?;
+        releases.extend(list.releases);
+        pages_fetched += 1;
+        let more = list.next_page.is_some() || list.truncated;
+        if !more
+            || !list_all
+                && (has_stopping_stable_release(&releases, require_assets)
+                    || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        {
+            break;
+        }
+        // `None` past the pages mise-versions serves: GitHub has to answer.
+        // The page count bounds the loop even if a page number repeats.
+        if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
+            return None;
+        }
+        page = list.next_page?;
+    }
+    Some(releases)
+}
+
+/// Whether any of `attested` (repositories that attestations vouch for, as
+/// `owner/repo`) is `owner/repo`, directly or through a rename or transfer.
+pub(crate) async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]) -> bool {
+    let requested = format!("{owner}/{repo}");
+    if attested.iter().any(|a| a.eq_ignore_ascii_case(&requested)) {
+        return true;
+    }
+    // A rename or transfer: attestations name the repository as it was when
+    // they were made. Ask GitHub where both names lead now. It keeps
+    // redirecting an old name until someone else takes it, so matching here
+    // is GitHub's word that they are the same repository.
+    let Ok(canonical) = canonical_repo(&requested).await else {
+        return false;
+    };
+    let mut others: Vec<String> = attested.iter().map(|a| a.to_ascii_lowercase()).collect();
+    others.sort();
+    others.dedup();
+    // An attestation set is a handful of entries; don't let a long one turn
+    // into a stream of requests.
+    for other in others.iter().take(5) {
+        if canonical_repo(other)
+            .await
+            .is_ok_and(|c| c.eq_ignore_ascii_case(&canonical))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) async fn list_tags(repo: &str) -> Result<Vec<String>> {
@@ -402,12 +549,14 @@ pub(crate) async fn get_release_with_versions_host(
     let key = release_cache_key(API_URL, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cache
+    let release = cache
         .get_or_try_init_async_if(
             async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await
+        .await?;
+    remember_mirrored_assets([&release]);
+    Ok(release)
 }
 
 pub(crate) async fn get_release_for_url_with_versions_host(
@@ -419,21 +568,33 @@ pub(crate) async fn get_release_for_url_with_versions_host(
     let key = release_cache_key(api_url, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cache
+    let release = cache
         .get_or_try_init_async_if(
             async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await
+        .await?;
+    remember_mirrored_assets([&release]);
+    Ok(release)
 }
 
 fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
-    let source = if use_versions_host {
-        "hosted"
+    // "hosted-2": entries from before assets recorded `from_versions_host`
+    // would pass mirrored asset IDs off as GitHub's, so they aren't reused.
+    let source = if use_versions_host
+        && mirror_source(repo)
+        && !crate::versions_host::github_release_is_url_replaced(repo, tag)
+    {
+        "hosted-2"
     } else {
         "direct"
     };
     format!("{api_url}-{repo}-{tag}-{source}").to_kebab_case()
+}
+
+#[cfg(test)]
+pub(crate) fn release_cache_key_for_test(repo: &str, tag: &str) -> String {
+    release_cache_key(API_URL, repo, tag, true)
 }
 
 fn should_cache_release(release: &GithubRelease) -> bool {
@@ -693,16 +854,67 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
                     "browser URL returned HTML (likely an auth page), \
                      using the API asset endpoint"
                 );
-                api_url.to_string()
+                checked_api_asset_url(browser_url, api_url).await
             } else {
                 browser_url.to_string()
             }
         }
         Err(e) => {
             debug!("HEAD on browser URL failed ({e}), using the API asset endpoint");
-            api_url.to_string()
+            checked_api_asset_url(browser_url, api_url).await
         }
     }
+}
+
+/// `api_url` if the GitHub release asset it names is the file `browser_url`
+/// downloads; otherwise `browser_url`, which then fails on its own.
+///
+/// mise-versions can pair a correct browser URL with any asset ID in the
+/// repository, and the ID is only used here, when the browser URL can't be.
+/// One metadata request settles it: GitHub reports which tag and file the ID
+/// is. Only IDs mise-versions supplied are checked, so GitHub's own release
+/// data (private repos, where this fallback is routine) costs nothing extra.
+async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
+    if !crate::versions_host::is_mirrored_asset_api_url(api_url) {
+        return api_url.to_string();
+    }
+    let asset = async {
+        let mut headers = get_headers(api_url)?;
+        headers.insert(
+            "accept",
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
+        crate::http::HTTP_FETCH
+            .json_with_headers::<GithubAsset, _>(api_url, &headers)
+            .await
+    };
+    match asset.await {
+        Ok(asset) if same_release_download(browser_url, &asset.browser_download_url) => {
+            api_url.to_string()
+        }
+        Ok(asset) => {
+            warn!(
+                "GitHub release asset {api_url} is {}, not {browser_url}; not using it",
+                asset.browser_download_url
+            );
+            browser_url.to_string()
+        }
+        Err(err) => {
+            warn!("could not confirm GitHub release asset {api_url} is {browser_url}: {err:#}");
+            browser_url.to_string()
+        }
+    }
+}
+
+/// Whether two github.com release download URLs are the same tag and file.
+/// The repository may differ: GitHub reports a renamed repository's new name.
+fn same_release_download(a: &str, b: &str) -> bool {
+    fn tag_and_file(url: &str) -> Option<String> {
+        let url = url::Url::parse(url).ok()?;
+        let (_, rest) = url.path().split_once("/releases/download/")?;
+        urlencoding::decode(rest).ok().map(|rest| rest.into_owned())
+    }
+    tag_and_file(a).is_some_and(|a| tag_and_file(b).is_some_and(|b| a == b))
 }
 
 /// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
@@ -1236,6 +1448,7 @@ mod tests {
             created_at: "2026-09-23T01:40:00Z".to_string(),
             published_at: Some("2026-09-23T01:45:05Z".to_string()),
             assets: vec![GithubAsset {
+                from_versions_host: false,
                 name: "rumdl.tar.gz".to_string(),
                 browser_download_url: String::new(),
                 url: String::new(),
@@ -1295,7 +1508,59 @@ mod tests {
         );
     }
 
+    // Not from mise-versions, so falling back to it skips the asset identity
+    // check (see `checked_api_asset_url`), as for a private repo.
     const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
+
+    #[test]
+    fn test_mirrored_assets_survive_the_release_cache() {
+        let api_url = "https://api.github.com/repos/o/cached/releases/assets/7";
+        let release = GithubRelease {
+            assets: vec![GithubAsset {
+                from_versions_host: true,
+                url: api_url.to_string(),
+                ..make_asset("tool.tar.gz")
+            }],
+            ..make_release("v1.0.0")
+        };
+        // Written to and read back from a cache, as a later run would.
+        let cached: GithubRelease =
+            serde_json::from_str(&serde_json::to_string(&release).unwrap()).unwrap();
+        assert!(cached.assets[0].from_versions_host);
+        assert!(!crate::versions_host::is_mirrored_asset_api_url(api_url));
+        remember_mirrored_assets([&cached]);
+        assert!(crate::versions_host::is_mirrored_asset_api_url(api_url));
+
+        // GitHub's own data never carries the flag.
+        let direct = serde_json::to_string(&make_asset("tool.tar.gz")).unwrap();
+        assert!(!direct.contains("from_versions_host"), "{direct}");
+    }
+
+    #[test]
+    fn test_same_release_download() {
+        let url = "https://github.com/o/r/releases/download/v1.0.0/tool-linux.tar.gz";
+        assert!(same_release_download(url, url));
+        // A renamed repository: same tag and file.
+        assert!(same_release_download(
+            url,
+            "https://github.com/new-o/new-r/releases/download/v1.0.0/tool-linux.tar.gz"
+        ));
+        // Encoding differences don't matter.
+        assert!(same_release_download(
+            "https://github.com/o/r/releases/download/release%2F1/a%20b.zip",
+            "https://github.com/o/r/releases/download/release/1/a b.zip"
+        ));
+        // Another file, another tag, or not a download.
+        assert!(!same_release_download(
+            url,
+            "https://github.com/o/r/releases/download/v1.0.0/tool-windows.zip"
+        ));
+        assert!(!same_release_download(
+            url,
+            "https://github.com/o/r/releases/download/v0.9.0/tool-linux.tar.gz"
+        ));
+        assert!(!same_release_download(url, "https://github.com/o/r"));
+    }
 
     #[test]
     fn test_github_content_headers_request_raw_content() {
@@ -1816,6 +2081,7 @@ something_else = "value"
 
     fn asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://example.invalid/{name}"),
             url: format!("https://example.invalid/api/{name}"),
@@ -1987,6 +2253,7 @@ something_else = "value"
 
     fn make_asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://github.com/owner/repo/releases/download/{name}"),
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
@@ -2119,6 +2386,169 @@ something_else = "value"
             .unwrap();
         assert_eq!(release.assets[0].name, "direct-github-api.tar.gz");
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_attested_by_repository_matches_the_requested_repo_without_a_request() {
+        // An exact (case-insensitive) match never asks github.com.
+        assert!(attested_by_repository("JDX", "Mise", &["jdx/mise".to_string()]).await);
+    }
+
+    fn mirrored_page(
+        releases: Vec<GithubRelease>,
+        next_page: Option<u32>,
+    ) -> crate::versions_host::GithubReleasesPage {
+        crate::versions_host::GithubReleasesPage {
+            releases,
+            next_page,
+            truncated: false,
+        }
+    }
+
+    /// Runs the mirror pagination over canned pages, recording which pages it asked for.
+    async fn paginate_canned(
+        pages: Vec<Option<crate::versions_host::GithubReleasesPage>>,
+        require_assets: bool,
+        list_all: bool,
+    ) -> (Option<Vec<String>>, Vec<u32>) {
+        let pages = std::sync::Mutex::new(pages.into_iter().map(Some).collect::<Vec<_>>());
+        let requested = std::sync::Mutex::new(vec![]);
+        let releases = paginate_mirrored_releases(require_assets, list_all, |page| {
+            requested.lock().unwrap().push(page);
+            let list = pages.lock().unwrap()[page as usize - 1].take().unwrap();
+            async move { list }
+        })
+        .await;
+        (
+            releases.map(|r| r.into_iter().map(|r| r.tag_name).collect()),
+            requested.into_inner().unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_stop_at_a_stable_release() {
+        let (releases, requested) = paginate_canned(
+            vec![Some(mirrored_page(
+                vec![make_prerelease("v2.0.0-rc.1"), make_release("v1.0.0")],
+                Some(2),
+            ))],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+        assert_eq!(requested, [1]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_follow_next_page_past_prereleases() {
+        // An empty page with a next page is what a page of drafts looks like
+        // once the mirror has removed them.
+        let (releases, requested) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_prerelease("v2.0.0-rc.1")], Some(2))),
+                Some(mirrored_page(vec![], Some(3))),
+                Some(mirrored_page(vec![make_release("v1.0.0")], None)),
+            ],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+        assert_eq!(requested, [1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_are_bounded_like_the_direct_listing() {
+        let pages = (1..=MAX_RELEASE_FALLBACK_PAGES as u32 + 1)
+            .map(|p| {
+                Some(mirrored_page(
+                    vec![make_prerelease(&format!("v0.0.{p}-rc"))],
+                    Some(p + 1),
+                ))
+            })
+            .collect();
+        let (releases, requested) = paginate_canned(pages, false, false).await;
+        assert_eq!(releases.unwrap().len(), MAX_RELEASE_FALLBACK_PAGES);
+        assert_eq!(requested.len(), MAX_RELEASE_FALLBACK_PAGES);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_require_assets_keeps_paginating() {
+        let (releases, _) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_release("v2.0.0")], Some(2))),
+                Some(mirrored_page(
+                    vec![GithubRelease {
+                        assets: vec![make_asset("tool.tar.gz")],
+                        ..make_release("v1.0.0")
+                    }],
+                    None,
+                )),
+            ],
+            true,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0", "v1.0.0"]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_never_mix_sources() {
+        // No mirror answer for a later page discards the earlier ones.
+        let (releases, _) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_prerelease("v2.0.0-rc.1")], Some(2))),
+                None,
+            ],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases, None);
+
+        let (releases, _) = paginate_canned(vec![None], false, false).await;
+        assert_eq!(releases, None);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_stop_on_a_repeating_page() {
+        // Even a page that keeps pointing back at itself ends the listing,
+        // after at most the pages the mirror serves.
+        let requested = std::sync::Mutex::new(0);
+        let releases = paginate_mirrored_releases(false, true, |_| {
+            *requested.lock().unwrap() += 1;
+            async { Some(mirrored_page(vec![make_release("v1")], Some(1))) }
+        })
+        .await;
+        assert!(releases.is_none());
+        assert_eq!(
+            requested.into_inner().unwrap(),
+            crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
+        let pages = vec![
+            Some(mirrored_page(vec![make_release("v2")], Some(2))),
+            Some(crate::versions_host::GithubReleasesPage {
+                truncated: true,
+                ..mirrored_page(vec![make_release("v1")], None)
+            }),
+        ];
+        let (releases, requested) = paginate_canned(pages, false, true).await;
+        assert_eq!(releases, None);
+        assert_eq!(requested, [1, 2]);
+
+        // Without MISE_LIST_ALL_VERSIONS a stable release ends the listing
+        // first, so the mirror's pages are enough.
+        let pages = vec![Some(crate::versions_host::GithubReleasesPage {
+            truncated: true,
+            ..mirrored_page(vec![make_release("v1")], None)
+        })];
+        let (releases, _) = paginate_canned(pages, false, false).await;
+        assert_eq!(releases.unwrap(), ["v1"]);
     }
 
     fn make_prerelease(tag: &str) -> GithubRelease {

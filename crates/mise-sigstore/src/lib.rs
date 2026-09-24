@@ -611,6 +611,63 @@ pub async fn verify_github_attestation_with_attestations(
     verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
 }
 
+/// Verify attestations that did not come from GitHub's attestations API for
+/// the repository (a cache or mirror, say), and return the repository each
+/// verified attestation vouches for, as `owner/repo`.
+///
+/// `/repos/{owner}/{repo}/attestations` only lists attestations made in that
+/// repository. Held attestations carry no such guarantee — any repository can
+/// attest any digest — so the caller must check the returned repositories.
+/// An attestation that verifies but names no repository is not returned.
+pub async fn verify_github_attestation_sources(
+    artifact_path: &Path,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> Result<Vec<String>> {
+    if attestations.is_empty() {
+        return Err(AttestationError::NoAttestations);
+    }
+
+    let artifact = tokio::fs::read(artifact_path).await?;
+    let mut trust_roots = TrustRoots::default();
+    let mut sources = Vec::new();
+    let mut errors = Vec::new();
+    for attestation in attestations {
+        let Some(bundle_value) = &attestation.bundle else {
+            continue;
+        };
+        let bundle = match serde_json::from_value::<Bundle>(bundle_value.clone()) {
+            Ok(bundle) => bundle,
+            Err(e) => {
+                errors.push(e.to_string());
+                continue;
+            }
+        };
+        match verify_bundle_with_trust_roots(
+            Artifact::from(artifact.as_slice()),
+            &bundle,
+            signer_workflow,
+            &mut trust_roots,
+        )
+        .await
+        {
+            Ok(()) => match bundle_source_repository(&bundle) {
+                Some(repository) => sources.push(repository),
+                None => errors.push("verified attestation names no source repository".to_string()),
+            },
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+
+    if sources.is_empty() {
+        return Err(AttestationError::Verification(join_error_strings(
+            errors,
+            || "No valid attestations found".to_string(),
+        )));
+    }
+    Ok(sources)
+}
+
 async fn verify_github_attestation_inner(request: GithubAttestationRequest<'_>) -> Result<bool> {
     let mut builder = AttestationClient::builder().retry_config(request.retry_config);
     if let Some(token) = request.token {
@@ -1387,6 +1444,115 @@ fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> Result<()> 
 /// Parses the cert with x509-cert rather than byte-searching the DER, so we
 /// only match the actual issuer organization field — not arbitrary substrings
 /// elsewhere in the certificate.
+/// Fulcio's Source Repository URI: the repository whose workflow run was
+/// signed, even when a reusable workflow from another repository signed it
+/// (that one is the certificate's SAN). A DER UTF8String.
+const FULCIO_SOURCE_REPOSITORY_URI_OID: &str = "1.3.6.1.4.1.57264.1.12";
+/// Fulcio's deprecated GitHub Workflow Repository (`owner/repo`), found on
+/// certificates issued before the one above existed. Raw bytes, not DER.
+const FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID: &str = "1.3.6.1.4.1.57264.1.5";
+/// The identity GitHub signs its own release attestations with.
+const GITHUB_RELEASE_ATTESTER_IDENTITY: &str = "https://dotcom.releases.github.com";
+const IN_TOTO_RELEASE_PREDICATE_PREFIX: &str = "https://in-toto.io/attestation/release/";
+
+/// The repository, as `owner/repo`, that a bundle's signature vouches for.
+/// Only meaningful for a bundle that already verified, so its certificate is
+/// trusted.
+///
+/// - GitHub Actions certificates name it in a Fulcio extension.
+/// - GitHub's release attestations (made for every immutable release) are
+///   signed by GitHub itself, and name it in the signed statement. The
+///   statement is only trusted when GitHub's release attester signed it:
+///   any workflow can sign a statement that claims to be a release.
+fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+    let cert = Certificate::from_der(bundle.signing_certificate()?.as_bytes()).ok()?;
+    if let Some(repository) = certificate_source_repository(&cert) {
+        return Some(repository);
+    }
+    // The release attester is GitHub's own signer, so its certificate must
+    // come from GitHub's CA, not the public Sigstore one.
+    if !is_github_internal_certificate(bundle)
+        || !certificate_uri_sans(&cert)
+            .iter()
+            .any(|uri| uri == GITHUB_RELEASE_ATTESTER_IDENTITY)
+    {
+        return None;
+    }
+    let sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) = &bundle.content else {
+        return None;
+    };
+    release_statement_repository(&envelope.decode_payload())
+}
+
+fn certificate_source_repository(cert: &x509_cert::Certificate) -> Option<String> {
+    use x509_cert::der::Decode;
+    use x509_cert::der::asn1::Utf8StringRef;
+    let extensions = cert.tbs_certificate().extensions()?;
+    let extension = |oid: &str| {
+        extensions
+            .iter()
+            .find(|ext| ext.extn_id.to_string() == oid)
+            .map(|ext| ext.extn_value.as_bytes())
+    };
+    if let Some(value) = extension(FULCIO_SOURCE_REPOSITORY_URI_OID) {
+        let uri = Utf8StringRef::from_der(value).ok()?;
+        return github_repository_from_uri(uri.as_str());
+    }
+    let value = extension(FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
+    let repository = std::str::from_utf8(value).ok()?;
+    valid_github_repository(repository).then(|| repository.to_string())
+}
+
+fn certificate_uri_sans(cert: &x509_cert::Certificate) -> Vec<String> {
+    use x509_cert::ext::pkix::SubjectAltName;
+    use x509_cert::ext::pkix::name::GeneralName;
+    let Ok(Some(san)) = cert.tbs_certificate().get_extension::<SubjectAltName>() else {
+        return Vec::new();
+    };
+    san.1
+        .0
+        .iter()
+        .filter_map(|name| match name {
+            GeneralName::UniformResourceIdentifier(uri) => Some(uri.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn release_statement_repository(payload: &[u8]) -> Option<String> {
+    let statement: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    if !statement
+        .get("predicateType")?
+        .as_str()?
+        .starts_with(IN_TOTO_RELEASE_PREDICATE_PREFIX)
+    {
+        return None;
+    }
+    let repository = statement.get("predicate")?.get("repository")?.as_str()?;
+    valid_github_repository(repository).then(|| repository.to_string())
+}
+
+fn github_repository_from_uri(uri: &str) -> Option<String> {
+    let repository = uri.strip_prefix("https://github.com/")?;
+    valid_github_repository(repository).then(|| repository.to_string())
+}
+
+fn valid_github_repository(repository: &str) -> bool {
+    let mut parts = repository.split('/');
+    let valid_part = |part: Option<&str>| {
+        part.is_some_and(|p| {
+            !p.is_empty()
+                && p != "."
+                && p != ".."
+                && p.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        })
+    };
+    valid_part(parts.next()) && valid_part(parts.next()) && parts.next().is_none()
+}
+
 fn cert_issuer_organization(cert_der: &[u8]) -> Option<String> {
     use x509_cert::Certificate;
     use x509_cert::der::Decode;
@@ -1664,6 +1830,127 @@ mod tests {
         assert_eq!(
             query.get("predicate_type").map(String::as_str),
             Some("https://slsa.dev/provenance/v1")
+        );
+    }
+
+    fn fixture_bundle(json: &str) -> Bundle {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn build_provenance_names_its_source_repository() {
+        let bundle = fixture_bundle(include_str!(
+            "../tests/fixtures/github_build_provenance_jdx_mise.json"
+        ));
+        assert_eq!(
+            bundle_source_repository(&bundle).as_deref(),
+            Some("jdx/mise")
+        );
+    }
+
+    #[test]
+    fn github_release_attestation_names_its_repository() {
+        let bundle = fixture_bundle(include_str!(
+            "../tests/fixtures/github_release_attestation_jdx_mise.json"
+        ));
+        assert_eq!(
+            bundle_source_repository(&bundle).as_deref(),
+            Some("jdx/mise")
+        );
+    }
+
+    #[tokio::test]
+    async fn fixture_bundles_verify_against_their_artifact() {
+        // mise-v2026.9.12-linux-x64.tar.gz, which both fixtures attest.
+        let digest = Sha256Hash::from_hex(
+            "b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff",
+        )
+        .unwrap();
+        let mut trust_roots = TrustRoots::default();
+        for json in [
+            include_str!("../tests/fixtures/github_build_provenance_jdx_mise.json"),
+            include_str!("../tests/fixtures/github_release_attestation_jdx_mise.json"),
+        ] {
+            verify_bundle_with_trust_roots(
+                Artifact::from(&digest),
+                &fixture_bundle(json),
+                None,
+                &mut trust_roots,
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn release_statements_are_only_trusted_from_the_release_attester() {
+        // A workflow certificate carrying a statement that claims to be a
+        // release of another repository: the certificate's own source
+        // repository wins, and the statement is never read.
+        let mut bundle = fixture_bundle(include_str!(
+            "../tests/fixtures/github_build_provenance_jdx_mise.json"
+        ));
+        let sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) = &mut bundle.content
+        else {
+            panic!("fixture is a DSSE bundle");
+        };
+        let forged = serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "predicateType": "https://in-toto.io/attestation/release/v0.2",
+            "subject": [],
+            "predicate": {"repository": "victim/repo"},
+        });
+        envelope.payload = serde_json::to_vec(&forged).unwrap().into();
+        assert_eq!(
+            bundle_source_repository(&bundle).as_deref(),
+            Some("jdx/mise")
+        );
+    }
+
+    #[test]
+    fn release_statement_repository_requires_a_release_predicate() {
+        let statement = |predicate_type: &str, repository: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "predicateType": predicate_type,
+                "predicate": {"repository": repository},
+            }))
+            .unwrap()
+        };
+        assert_eq!(
+            release_statement_repository(&statement(
+                "https://in-toto.io/attestation/release/v0.2",
+                "jdx/mise"
+            ))
+            .as_deref(),
+            Some("jdx/mise")
+        );
+        assert_eq!(
+            release_statement_repository(&statement("https://slsa.dev/provenance/v1", "jdx/mise")),
+            None
+        );
+        assert_eq!(
+            release_statement_repository(&statement(
+                "https://in-toto.io/attestation/release/v0.2",
+                "jdx/mise/../x"
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn github_repository_from_uri_requires_owner_and_repo() {
+        assert_eq!(
+            github_repository_from_uri("https://github.com/jdx/mise").as_deref(),
+            Some("jdx/mise")
+        );
+        assert_eq!(github_repository_from_uri("https://github.com/jdx"), None);
+        assert_eq!(
+            github_repository_from_uri("https://github.com/jdx/mise/x"),
+            None
+        );
+        assert_eq!(
+            github_repository_from_uri("https://gitlab.com/jdx/mise"),
+            None
         );
     }
 

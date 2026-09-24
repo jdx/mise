@@ -1040,13 +1040,9 @@ impl PackslipBackend {
         if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
             return Ok(Some(latest.clone()));
         }
-        let release = match github::get_release_with_versions_host(
-            &repo,
-            "latest",
-            self.versions_host_applies(),
-        )
-        .await
-        {
+        // The release mirror serves any public repo, unlike the per-tool
+        // catalog `versions_host_applies` guards.
+        let release = match github::get_release_with_versions_host(&repo, "latest", true).await {
             Ok(release) => release,
             Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
             Err(err) => return Err(err),

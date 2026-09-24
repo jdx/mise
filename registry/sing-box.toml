@@ -1,4 +1,6 @@
-backends = ["github:sagernet/sing-box"]
+backends = [
+  { full = "github:sagernet/sing-box", attestations_since = "1.14.0-alpha.45" },
+]
 bins = ["sing-box"]
 description = "The universal proxy platform"
 test = { cmd = "sing-box version | head -n1 | awk '{print $3}'", expected = "{{version}}" }

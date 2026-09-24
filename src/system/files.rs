@@ -862,7 +862,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    for key in ["permissions", "relative"] {
+                    for key in ["permissions", "relative", "dot_prefix"] {
                         if table.contains_key(key) {
                             bail!(
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
@@ -1248,7 +1248,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || ((table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions")
-                    || table.contains_key("relative"))
+                    || table.contains_key("relative")
+                    || table.contains_key("dot_prefix"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")

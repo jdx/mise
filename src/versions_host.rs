@@ -74,6 +74,23 @@ struct VersionEntry {
     prerelease: Option<bool>,
 }
 
+/// The most release-list pages mise-versions serves.
+pub(crate) const GITHUB_RELEASES_MAX_PAGES: usize = 10;
+
+/// One page of a repository's releases from mise-versions.
+#[derive(serde::Deserialize)]
+pub(crate) struct GithubReleasesPage {
+    /// GitHub's order, drafts removed.
+    pub releases: Vec<GithubRelease>,
+    /// The page to request next, or `None` when there is none to request
+    /// here. Counted before drafts were removed, so a short page is not
+    /// necessarily the last.
+    pub next_page: Option<u32>,
+    /// More releases exist than mise-versions serves; the rest are GitHub's.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
     attestations: Vec<Attestation>,
@@ -86,6 +103,7 @@ struct VersionsHostLogContext<'a> {
     repo: Option<&'a str>,
     tag: Option<&'a str>,
     digest: Option<&'a str>,
+    page: Option<u32>,
     full: Option<&'a str>,
     version: Option<&'a str>,
 }
@@ -98,6 +116,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: None,
             tag: None,
             digest: None,
+            page: None,
             full: None,
             version: None,
         }
@@ -110,6 +129,20 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: Some(repo),
             tag: Some(tag),
             digest: None,
+            page: None,
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_releases(repo: &'a str, page: u32) -> Self {
+        Self {
+            endpoint: "github_releases",
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: Some(page),
             full: None,
             version: None,
         }
@@ -122,6 +155,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: Some(repo),
             tag: None,
             digest: Some(digest),
+            page: None,
             full: None,
             version: None,
         }
@@ -134,6 +168,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: None,
             tag: None,
             digest: None,
+            page: None,
             full: Some(full),
             version: Some(version),
         }
@@ -152,6 +187,9 @@ impl<'a> VersionsHostLogContext<'a> {
         }
         if let Some(digest) = self.digest {
             fields.push_str(&format!(" digest={}", log_value(digest)));
+        }
+        if let Some(page) = self.page {
+            fields.push_str(&format!(" page={page}"));
         }
         if let Some(full) = self.full {
             fields.push_str(&format!(
@@ -304,7 +342,7 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
 /// This endpoint is intentionally shaped like GitHub's release object so the
 /// normal backend asset-selection code remains authoritative on the client.
 pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<GithubRelease>> {
-    if !enabled_for_github_metadata() {
+    if !enabled_for_github_repo(repo) || github_release_is_url_replaced(repo, tag) {
         return Ok(None);
     }
 
@@ -319,11 +357,11 @@ pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option
     );
 
     let ctx = VersionsHostLogContext::github_release(repo, tag);
-    let Some(release) = fetch_optional_json(&url, ctx).await? else {
+    let Some(mut release) = fetch_optional_json::<GithubRelease>(&url, ctx).await? else {
         return Ok(None);
     };
-    if !valid_github_release_asset_urls(&release, owner, repo_name) {
-        log_versions_host_warn(ctx, "invalid_asset_urls", "fallback=true");
+    if release.assets.is_empty() {
+        log_versions_host_warn(ctx, "no_assets", "fallback=true");
         return Ok(None);
     }
     if !valid_github_release_tag(&release, tag) {
@@ -337,8 +375,75 @@ pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option
         );
         return Ok(None);
     }
+    if let Err(asset) = pin_github_release_assets(&mut release, owner, repo_name) {
+        log_versions_host_warn(
+            ctx,
+            "invalid_asset_url",
+            &format!("asset={} fallback=true", log_value(&asset)),
+        );
+        return Ok(None);
+    }
     log_versions_host_trace(ctx, "success", "");
     Ok(Some(release))
+}
+
+/// Fetch one page (100 releases) of a public repository's release list from
+/// the versions host, shaped like GitHub's so the caller's filtering stays
+/// authoritative.
+pub(crate) async fn github_releases(
+    repo: &str,
+    page: u32,
+) -> eyre::Result<Option<GithubReleasesPage>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_releases_url(owner, repo_name, page);
+    let ctx = VersionsHostLogContext::github_releases(repo, page);
+    let Some(mut list) = fetch_optional_json::<GithubReleasesPage>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    if list.next_page.is_some_and(|next| next != page + 1) {
+        log_versions_host_warn(ctx, "invalid_next_page", "fallback=true");
+        return Ok(None);
+    }
+    if let Err(tag) = pin_listed_releases(&mut list, owner, repo_name) {
+        log_versions_host_warn(
+            ctx,
+            "invalid_release",
+            &format!("tag={} fallback=true", log_value(&tag)),
+        );
+        return Ok(None);
+    }
+    log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
+    Ok(Some(list))
+}
+
+fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases?page={page}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+    )
+}
+
+/// Check and pin every listed release (see [`pin_github_release_assets`]).
+/// Drafts are refused too: the mirror must never publish them. Returns the
+/// tag of the first release that fails.
+fn pin_listed_releases(
+    list: &mut GithubReleasesPage,
+    owner: &str,
+    repo: &str,
+) -> Result<(), String> {
+    for release in &mut list.releases {
+        if release.draft || pin_github_release_assets(release, owner, repo).is_err() {
+            return Err(release.tag_name.clone());
+        }
+    }
+    Ok(())
 }
 
 /// Fetch cached GitHub Artifact Attestation payloads by artifact digest.
@@ -349,7 +454,7 @@ pub(crate) async fn github_attestations(
     repo: &str,
     digest: &str,
 ) -> eyre::Result<Option<Vec<Attestation>>> {
-    if !enabled_for_github_metadata() {
+    if !enabled_for_github_repo(repo) {
         return Ok(None);
     }
 
@@ -396,7 +501,17 @@ where
             let status = resp.status();
             debug!("GET {url} {status}");
             if status.is_success() {
-                return Ok(Some(resp.json().await?));
+                return match resp.json().await {
+                    Ok(value) => Ok(Some(value)),
+                    Err(err) => {
+                        log_versions_host_warn(
+                            ctx,
+                            "invalid_response",
+                            &format!("fallback=true error={}", log_value(&err.to_string())),
+                        );
+                        Ok(None)
+                    }
+                };
             }
             let body = resp.text().await.unwrap_or_default();
             match status.as_u16() {
@@ -456,9 +571,71 @@ fn versions_host_error_message(status: u16, body: &str) -> String {
     )
 }
 
-fn enabled_for_github_metadata() -> bool {
+pub(crate) fn enabled_for_github_metadata() -> bool {
     let settings = Settings::get();
-    !settings.prefer_offline() && settings.use_versions_host
+    !settings.prefer_offline() && settings.use_versions_host && !github_is_url_replaced(None)
+}
+
+/// [`enabled_for_github_metadata`] for one repository (`owner/repo`), which
+/// also catches `url_replacements` rules that only match its paths.
+pub(crate) fn enabled_for_github_repo(repo: &str) -> bool {
+    enabled_for_github_metadata() && !github_is_url_replaced(Some(repo))
+}
+
+/// Whether `url_replacements` sends GitHub's API, or this repository's
+/// release and attestation endpoints, somewhere else (a proxy, a mirror, a
+/// test fixture). mise-versions answers for api.github.com itself, so when
+/// that is rerouted the replacement is the only source of GitHub metadata.
+/// Rules that only reroute downloads (github.com release assets) don't
+/// count: mise-versions' download URLs go through them like GitHub's do.
+pub(crate) fn github_is_url_replaced(repo: Option<&str>) -> bool {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    let mut urls = vec!["https://api.github.com/".to_string()];
+    if let Some(repo) = repo {
+        urls.extend([
+            format!("https://api.github.com/repos/{repo}/releases"),
+            format!("https://api.github.com/repos/{repo}/releases/latest"),
+            format!("https://api.github.com/repos/{repo}/releases/tags/v1.0.0"),
+            format!("https://api.github.com/repos/{repo}/attestations/sha256:0"),
+        ]);
+    }
+    let replaced = urls.iter().any(|original| {
+        let Ok(original) = url::Url::parse(original) else {
+            return false;
+        };
+        let mut replaced = original.clone();
+        http::apply_url_replacements(&mut replaced);
+        replaced != original
+    });
+    if replaced && !LOGGED.swap(true, Ordering::Relaxed) {
+        debug!("url_replacements reroutes GitHub; not using mise-versions for GitHub metadata");
+    }
+    replaced
+}
+
+/// Whether `url_replacements` reroutes the GitHub API URL for this exact
+/// release, which a rule written for one tag can do without touching the
+/// URLs [`github_is_url_replaced`] tries.
+pub(crate) fn github_release_is_url_replaced(repo: &str, tag: &str) -> bool {
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    let path = if tag == "latest" {
+        "latest".to_string()
+    } else {
+        format!("tags/{}", encode_path_segment(tag))
+    };
+    let Ok(original) = url::Url::parse(&format!(
+        "https://api.github.com/repos/{repo}/releases/{path}"
+    )) else {
+        return false;
+    };
+    let mut replaced = original.clone();
+    http::apply_url_replacements(&mut replaced);
+    replaced != original
 }
 
 fn split_github_repo(repo: &str) -> Option<(&str, &str)> {
@@ -474,46 +651,129 @@ fn encode_digest_path_segment(digest: &str) -> String {
     encode_path_segment(digest).replace("%3A", ":")
 }
 
-fn valid_github_release_asset_urls(release: &GithubRelease, owner: &str, repo: &str) -> bool {
-    !release.assets.is_empty()
-        && release.assets.iter().all(|asset| {
-            valid_github_browser_download_url(
-                &asset.browser_download_url,
-                owner,
-                repo,
-                &release.tag_name,
-            ) && valid_github_asset_api_url(&asset.url, owner, repo)
-        })
+/// Check a mirrored release's asset URLs and pin them to `owner/repo`.
+///
+/// mise-versions chose these URLs, so it must not get to choose what they
+/// download. Each browser URL has to be a github.com download of this
+/// release's tag and of this asset's name, and each API URL a GitHub release
+/// asset. When either names a repository other than `owner/repo` (GitHub
+/// reports the new name after a rename or transfer), it is rewritten to
+/// `owner/repo`: GitHub redirects the old name itself, and the mirror can no
+/// longer send a download anywhere but where GitHub sends `owner/repo`.
+///
+/// Returns the name of the first asset that fails.
+fn pin_github_release_assets(
+    release: &mut GithubRelease,
+    owner: &str,
+    repo: &str,
+) -> Result<(), String> {
+    for asset in &mut release.assets {
+        let browser = pinned_browser_download_url(
+            &asset.browser_download_url,
+            owner,
+            repo,
+            &release.tag_name,
+            &asset.name,
+        );
+        let api = pinned_asset_api_url(&asset.url, owner, repo);
+        let (Some(browser), Some(api)) = (browser, api) else {
+            return Err(asset.name.clone());
+        };
+        if browser != asset.browser_download_url {
+            trace!(
+                "mise-versions lists {} under another repository; pinning it to {owner}/{repo}",
+                asset.browser_download_url
+            );
+        }
+        asset.browser_download_url = browser;
+        asset.url = api;
+        asset.from_versions_host = true;
+        remember_mirrored_asset_api_url(&asset.url);
+    }
+    Ok(())
+}
+
+/// API asset URLs whose asset ID mise-versions chose. Only these need their
+/// identity confirmed before use (see `github::checked_api_asset_url`);
+/// GitHub's own release data, such as for private repos, is taken as given.
+/// Filled when mise-versions data is pinned, and again from each
+/// `GithubAsset::from_versions_host` when a release comes out of a cache.
+static MIRRORED_ASSET_API_URLS: LazyLock<std::sync::Mutex<HashSet<String>>> =
+    LazyLock::new(Default::default);
+
+pub(crate) fn remember_mirrored_asset_api_url(url: &str) {
+    MIRRORED_ASSET_API_URLS
+        .lock()
+        .unwrap()
+        .insert(url.to_string());
+}
+
+pub(crate) fn is_mirrored_asset_api_url(url: &str) -> bool {
+    MIRRORED_ASSET_API_URLS.lock().unwrap().contains(url)
 }
 
 fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
     tag == "latest" || release.tag_name == tag
 }
 
-fn valid_github_browser_download_url(url: &str, owner: &str, repo: &str, tag: &str) -> bool {
-    let Ok(url) = url::Url::parse(url) else {
-        return false;
+/// `https://github.com/{o}/{r}/releases/download/{tag}/{asset}` with `{o}/{r}`
+/// pinned to `owner/repo`, or `None` when the URL is not a download of
+/// `asset` from `tag`.
+fn pinned_browser_download_url(
+    url: &str,
+    owner: &str,
+    repo: &str,
+    tag: &str,
+    asset: &str,
+) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("github.com") {
+        return None;
+    }
+    let segments: Vec<_> = parsed.path_segments()?.collect();
+    let [o, r, "releases", "download", tag_segments @ .., file] = segments.as_slice() else {
+        return None;
     };
-    if url.scheme() != "https" || url.host_str() != Some("github.com") {
-        return false;
+    if o.is_empty()
+        || r.is_empty()
+        || !path_segments_match(tag_segments, tag)
+        || !path_segment_matches(file, asset)
+    {
+        return None;
     }
-    let segments: Vec<_> = url.path_segments().into_iter().flatten().collect();
-    if segments.len() < 6 {
-        return false;
+    if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
+        return Some(url.to_string());
     }
-    matches!(
-        (
-            segments.first(),
-            segments.get(1),
-            segments.get(2),
-            segments.get(3),
-            segments.last()
-        ),
-        (Some(o), Some(r), Some(&"releases"), Some(&"download"), Some(_asset))
-            if github_repo_segment_matches(o, owner)
-                && github_repo_segment_matches(r, repo)
-                && path_segments_match(&segments[4..segments.len() - 1], tag)
-    )
+    Some(format!(
+        "https://github.com/{}/{}/{}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+        segments[2..].join("/")
+    ))
+}
+
+/// `https://api.github.com/repos/{o}/{r}/releases/assets/{id}` with `{o}/{r}`
+/// pinned to `owner/repo`, or `None` when the URL is not a release asset.
+fn pinned_asset_api_url(url: &str, owner: &str, repo: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("api.github.com") {
+        return None;
+    }
+    let segments: Vec<_> = parsed.path_segments()?.collect();
+    let ["repos", o, r, "releases", "assets", id] = segments.as_slice() else {
+        return None;
+    };
+    if o.is_empty() || r.is_empty() || id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
+        return Some(url.to_string());
+    }
+    Some(format!(
+        "https://api.github.com/repos/{}/{}/releases/assets/{id}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+    ))
 }
 
 fn github_repo_segment_matches(segment: &str, expected: &str) -> bool {
@@ -526,29 +786,6 @@ fn path_segment_matches(segment: &str, expected: &str) -> bool {
 
 fn path_segments_match(segments: &[&str], expected: &str) -> bool {
     !segments.is_empty() && path_segment_matches(&segments.join("/"), expected)
-}
-
-fn valid_github_asset_api_url(url: &str, owner: &str, repo: &str) -> bool {
-    let Ok(url) = url::Url::parse(url) else {
-        return false;
-    };
-    if url.scheme() != "https" || url.host_str() != Some("api.github.com") {
-        return false;
-    }
-    let mut segments = url.path_segments().into_iter().flatten();
-    matches!(
-        (
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next()
-        ),
-        (Some("repos"), Some(o), Some(r), Some("releases"), Some("assets"), Some(_), None)
-            if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo)
-    )
 }
 
 /// Tracks a tool installation asynchronously (fire-and-forget)
@@ -720,102 +957,199 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_github_browser_download_url() {
-        assert!(valid_github_browser_download_url(
-            "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
-            "jdx",
-            "mise-test-fixtures",
-            "v1.0.0"
-        ));
-        assert!(valid_github_browser_download_url(
-            "https://github.com/jdx/mise-test-fixtures/releases/download/release%2F2026/hello-world.tar.gz",
-            "jdx",
-            "mise-test-fixtures",
-            "release/2026"
-        ));
-        assert!(valid_github_browser_download_url(
-            "https://github.com/Dicklesworthstone/destructive_command_guard/releases/download/v0.5.6/dcg-aarch64-apple-darwin.tar.xz",
-            "Dicklesworthstone",
-            "Destructive_command_guard",
-            "v0.5.6"
-        ));
-        assert!(valid_github_browser_download_url(
-            "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64",
-            "biomejs",
-            "biome",
-            "@biomejs/biome@2.5.2"
-        ));
-        assert!(!valid_github_browser_download_url(
-            "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
-            "jdx",
-            "mise-test-fixtures",
-            "v1.0.0"
-        ));
-        assert!(!valid_github_browser_download_url(
-            "https://evil.example.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
-            "jdx",
-            "mise-test-fixtures",
-            "v1.0.0"
-        ));
-        assert!(!valid_github_browser_download_url(
-            "https://github.com/other/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
-            "jdx",
-            "mise-test-fixtures",
-            "v1.0.0"
-        ));
-        assert!(!valid_github_browser_download_url(
-            "https://github.com/jdx/mise-test-fixtures/releases/download",
-            "jdx",
-            "mise-test-fixtures",
-            "v1.0.0"
-        ));
+    fn test_github_releases_url_encodes_repo() {
+        assert_eq!(
+            github_releases_url("jdx", "mise.test", 3),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/mise.test/releases?page=3"
+        );
     }
 
     #[test]
-    fn test_valid_github_asset_api_url() {
-        assert!(valid_github_asset_api_url(
-            "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
-            "jdx",
-            "mise-test-fixtures"
-        ));
-        assert!(valid_github_asset_api_url(
-            "https://api.github.com/repos/Dicklesworthstone/destructive_command_guard/releases/assets/430632958",
-            "Dicklesworthstone",
-            "Destructive_command_guard"
-        ));
-        assert!(!valid_github_asset_api_url(
-            "https://api.github.com/repos/other/mise-test-fixtures/releases/assets/1",
-            "jdx",
-            "mise-test-fixtures"
-        ));
-        assert!(!valid_github_asset_api_url(
-            "https://github.com/jdx/mise-test-fixtures/releases/assets/1",
-            "jdx",
-            "mise-test-fixtures"
-        ));
-        assert!(!valid_github_asset_api_url(
-            "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1/extra",
-            "jdx",
-            "mise-test-fixtures"
-        ));
+    fn test_github_releases_page_deserializes() {
+        let page: GithubReleasesPage = serde_json::from_str(
+            r#"{"releases":[{"tag_name":"v1.0.0","draft":false,"prerelease":false,
+                "created_at":"2026-01-01T00:00:00Z","published_at":"2026-01-02T00:00:00Z",
+                "assets":[]}],"next_page":null,"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(page.releases.len(), 1);
+        assert_eq!(
+            page.releases[0].published_at.as_deref(),
+            Some("2026-01-02T00:00:00Z")
+        );
+        assert_eq!(page.next_page, None);
     }
 
     #[test]
-    fn test_valid_github_release_asset_urls_rejects_empty_assets() {
-        let release = GithubRelease {
-            tag_name: "v1.0.0".into(),
-            draft: false,
+    fn test_pinned_browser_download_url() {
+        let pin = |url: &str, tag: &str, asset: &str| {
+            pinned_browser_download_url(url, "jdx", "mise-test-fixtures", tag, asset)
+        };
+        let fixture =
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz";
+        assert_eq!(
+            pin(fixture, "v1.0.0", "hello-world.tar.gz").as_deref(),
+            Some(fixture)
+        );
+        // Case differences are the same repository; the URL is kept as is.
+        let upper =
+            "https://github.com/JDX/Mise-Test-Fixtures/releases/download/v1.0.0/hello-world.tar.gz";
+        assert_eq!(
+            pin(upper, "v1.0.0", "hello-world.tar.gz").as_deref(),
+            Some(upper)
+        );
+        // Tags and asset names are compared decoded.
+        let encoded = "https://github.com/jdx/mise-test-fixtures/releases/download/release%2F2026/hello%20world.tar.gz";
+        assert_eq!(
+            pin(encoded, "release/2026", "hello world.tar.gz").as_deref(),
+            Some(encoded)
+        );
+        assert!(
+            pin(
+                "https://github.com/jdx/mise-test-fixtures/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64",
+                "@biomejs/biome@2.5.2",
+                "biome-linux-x64"
+            )
+            .is_some()
+        );
+
+        // Another repository (GitHub reports a renamed repository's new
+        // name) is pinned back to the requested one.
+        assert_eq!(
+            pin(
+                "https://github.com/new-owner/new-name/releases/download/v1.0.0/hello-world.tar.gz",
+                "v1.0.0",
+                "hello-world.tar.gz"
+            )
+            .as_deref(),
+            Some(fixture)
+        );
+
+        // Another tag, another file, another host, or not a download at all.
+        assert!(
+            pin(
+                "https://github.com/jdx/mise-test-fixtures/releases/download/v0.9.0/hello-world.tar.gz",
+                "v1.0.0",
+                "hello-world.tar.gz"
+            )
+            .is_none()
+        );
+        assert!(pin(fixture, "v1.0.0", "hello-world-windows.zip").is_none());
+        assert!(
+            pin(
+                "https://evil.example.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+                "v1.0.0",
+                "hello-world.tar.gz"
+            )
+            .is_none()
+        );
+        assert!(
+            pin(
+                "http://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+                "v1.0.0",
+                "hello-world.tar.gz"
+            )
+            .is_none()
+        );
+        assert!(
+            pin(
+                "https://github.com/jdx/mise-test-fixtures/releases/download",
+                "v1.0.0",
+                "download"
+            )
+            .is_none()
+        );
+        assert!(
+            pin(
+                "https://github.com/jdx/mise-test-fixtures/archive/v1.0.0/hello-world.tar.gz",
+                "v1.0.0",
+                "hello-world.tar.gz"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_pinned_asset_api_url() {
+        let pin = |url: &str| pinned_asset_api_url(url, "jdx", "mise-test-fixtures");
+        let fixture = "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1";
+        assert_eq!(pin(fixture).as_deref(), Some(fixture));
+        assert_eq!(
+            pin("https://api.github.com/repos/other/renamed/releases/assets/1").as_deref(),
+            Some(fixture)
+        );
+        assert!(pin("https://github.com/jdx/mise-test-fixtures/releases/assets/1").is_none());
+        assert!(
+            pin("https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1/extra")
+                .is_none()
+        );
+        assert!(
+            pin("https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/x").is_none()
+        );
+        assert!(pin("https://api.github.com/repos/jdx/mise-test-fixtures/git/blobs/1").is_none());
+    }
+
+    #[test]
+    fn test_pin_listed_releases() {
+        let release = |tag: &str, draft: bool, asset_owner: &str, file: &str| GithubRelease {
+            tag_name: tag.into(),
+            draft,
             prerelease: false,
             created_at: "2026-01-01T00:00:00Z".into(),
             published_at: None,
-            assets: vec![],
+            assets: vec![crate::github::GithubAsset {
+                from_versions_host: false,
+                name: "tool.tar.gz".into(),
+                browser_download_url: format!(
+                    "https://github.com/{asset_owner}/mise/releases/download/{tag}/{file}"
+                ),
+                url: format!("https://api.github.com/repos/{asset_owner}/mise/releases/assets/1"),
+                digest: None,
+                updated_at: None,
+            }],
+        };
+        let page = |releases| GithubReleasesPage {
+            releases,
+            next_page: None,
+            truncated: false,
         };
 
-        assert!(!valid_github_release_asset_urls(
-            &release,
-            "jdx",
-            "mise-test-fixtures"
+        let mut ok = page(vec![
+            release("v1.0.0", false, "jdx", "tool.tar.gz"),
+            GithubRelease {
+                assets: vec![],
+                ..release("v0.1.0", false, "jdx", "tool.tar.gz")
+            },
+            release("v0.9.0", false, "renamed-from", "tool.tar.gz"),
+        ]);
+        assert_eq!(pin_listed_releases(&mut ok, "jdx", "mise"), Ok(()));
+        assert_eq!(
+            ok.releases[2].assets[0].browser_download_url,
+            "https://github.com/jdx/mise/releases/download/v0.9.0/tool.tar.gz"
+        );
+        assert_eq!(
+            ok.releases[2].assets[0].url,
+            "https://api.github.com/repos/jdx/mise/releases/assets/1"
+        );
+        // Pinned API URLs are remembered as mirror-supplied, so their asset ID
+        // is confirmed before use; other API URLs are not.
+        assert!(is_mirrored_asset_api_url(&ok.releases[2].assets[0].url));
+        assert!(!is_mirrored_asset_api_url(
+            "https://api.github.com/repos/jdx/private-tool/releases/assets/1"
         ));
+
+        let mut draft = page(vec![release("v1.0.0", true, "jdx", "tool.tar.gz")]);
+        assert_eq!(
+            pin_listed_releases(&mut draft, "jdx", "mise"),
+            Err("v1.0.0".to_string())
+        );
+
+        // The listed name must be the file the URL downloads.
+        let mut swapped = page(vec![release("v1.0.0", false, "jdx", "other.tar.gz")]);
+        assert_eq!(
+            pin_listed_releases(&mut swapped, "jdx", "mise"),
+            Err("v1.0.0".to_string())
+        );
     }
 
     #[test]
