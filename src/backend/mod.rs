@@ -3744,8 +3744,8 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
         let _state_lock =
-            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|| {
-                ctx.pr.set_message("waiting for install lock".into());
+            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|pid| {
+                ctx.pr.set_message(install_lock_wait_message(pid));
             })?;
 
         let mut install_satisfied = self
@@ -5977,6 +5977,17 @@ const DOWNLOAD_OPERATION_WEIGHT: f64 = 0.7;
 
 /// Replacing an existing install before the new one is fetched.
 const UNINSTALL_OPERATION_WEIGHT: f64 = 0.05;
+
+/// What an install says while another process holds its tool-version lock.
+/// Naming the PID matters: the holder is usually a shim auto-installing the
+/// tool, and a shim's command line reads like the tool (`node app.js`), not
+/// like mise.
+pub(crate) fn install_lock_wait_message(holder_pid: Option<u32>) -> String {
+    match holder_pid {
+        Some(pid) => format!("waiting for install lock held by pid {pid}"),
+        None => "waiting for install lock".to_string(),
+    }
+}
 
 /// Weight the first operation as the fetch and split the remainder evenly over
 /// whatever verification and unpacking steps the backend declared.

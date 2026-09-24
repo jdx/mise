@@ -11,6 +11,7 @@ pub(crate) type OnLockedFn = Box<dyn Fn(&Path)>;
 pub(crate) struct LockFile {
     path: PathBuf,
     on_locked: Option<OnLockedFn>,
+    record_pid: bool,
 }
 
 impl LockFile {
@@ -26,6 +27,7 @@ impl LockFile {
         Self {
             path: path.to_path_buf(),
             on_locked: None,
+            record_pid: false,
         }
     }
 
@@ -37,25 +39,39 @@ impl LockFile {
         self
     }
 
+    /// Writes the holder's PID into the lock file while it is held, so a
+    /// waiter can say which process it is waiting on. Only for lock files
+    /// whose contents nothing else reads; unlocking truncates the file.
+    pub(crate) fn with_pid(mut self) -> Self {
+        self.record_pid = true;
+        self
+    }
+
     pub(crate) fn lock(self) -> Result<fslock::LockFile> {
-        self.lock_with_notice(&|| {})
+        self.lock_with_notice(&|_| {})
     }
 
     /// Like [`Self::lock`], but also runs a borrowed `on_wait` when the lock is
     /// contended. For callers whose progress reporter cannot move into the
     /// `'static` callback but should still say why the install is paused.
-    pub(crate) fn lock_with_notice(self, on_wait: &dyn Fn()) -> Result<fslock::LockFile> {
+    /// `on_wait` receives the holder's PID when the lock was taken
+    /// [`Self::with_pid`] and the holder is still recorded.
+    pub(crate) fn lock_with_notice(
+        self,
+        on_wait: &dyn Fn(Option<u32>),
+    ) -> Result<fslock::LockFile> {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
         let mut lock = fslock::LockFile::open(&self.path)?;
         if !lock.try_lock()? {
-            if let Some(f) = self.on_locked {
+            if let Some(f) = &self.on_locked {
                 f(&self.path)
             }
-            on_wait();
+            on_wait(self.holder_pid());
             lock.lock()?;
         }
+        self.record_holder_pid();
         Ok(lock)
     }
 
@@ -65,10 +81,47 @@ impl LockFile {
         }
         let mut lock = fslock::LockFile::open(&self.path)?;
         if lock.try_lock()? {
+            self.record_holder_pid();
             Ok(Some(lock))
         } else {
             Ok(None)
         }
+    }
+
+    /// Writes our PID for waiters to report. The PID is only a diagnostic, so
+    /// failing to write it (a full disk, or Windows refusing a second handle
+    /// to the locked file) must not fail the lock: fslock's `lock_with_pid`
+    /// would release the lock and error instead. Unlocking through the fslock
+    /// handle truncates the file either way.
+    fn record_holder_pid(&self) {
+        if !self.record_pid {
+            return;
+        }
+        let result = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&self.path)
+            .and_then(|mut file| {
+                use std::io::Write;
+                writeln!(file, "{}", std::process::id())
+            });
+        if let Err(err) = result {
+            debug!(
+                "failed to record lock holder pid in {}: {err}",
+                display_path(&self.path)
+            );
+        }
+    }
+
+    /// The PID the current holder recorded, if any. Best effort: the holder
+    /// may release (and truncate) the file between our failed attempt and this
+    /// read, and on Windows the locked file cannot be read at all.
+    fn holder_pid(&self) -> Option<u32> {
+        if !self.record_pid {
+            return None;
+        }
+        let contents = std::fs::read_to_string(&self.path).ok()?;
+        contents.lines().next()?.trim().parse().ok()
     }
 }
 
@@ -107,5 +160,29 @@ mod tests {
         assert!(LockFile::at(&path).try_lock().unwrap().is_none());
         drop(direct);
         assert!(LockFile::at(&path).try_lock().unwrap().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn waiter_learns_the_recorded_holder_pid() {
+        use std::sync::mpsc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("install.lock");
+        let held = LockFile::at(&path).with_pid().try_lock().unwrap().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let waiter_path = path.clone();
+        let waiter = std::thread::spawn(move || {
+            let lock = LockFile::at(&waiter_path)
+                .with_pid()
+                .lock_with_notice(&|pid| tx.send(pid).unwrap())
+                .unwrap();
+            drop(lock);
+        });
+        assert_eq!(rx.recv().unwrap(), Some(std::process::id()));
+        drop(held);
+        waiter.join().unwrap();
+        // Unlocking erases the PID so a later waiter never names a stale holder.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
     }
 }
