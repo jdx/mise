@@ -90,10 +90,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
-        .into_iter()
-        .filter(|v| is_concrete_install(v))
-        .collect::<HashSet<_>>();
+    let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
     let default_alias = Alias::default();
     let aliases = &config
@@ -180,10 +177,7 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
-        .into_iter()
-        .filter(|v| is_concrete_install(v))
-        .collect::<HashSet<_>>();
+    let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, None, backend, installs_dir);
     for (from, to) in symlinks {
         let from_name = from.clone();
@@ -267,6 +261,22 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
         .filter(|v| !install_state::is_install_incomplete(installs_dir, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+        .collect()
+}
+
+/// Real install directories a rebuild must never replace with a selector
+/// link. An interrupted install is not eligible for links, but its directory
+/// still holds whatever the installer got to: a `1.1` that never finished must
+/// not be wiped and turned into a link to a complete `1.1.0`.
+fn concrete_installs_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> HashSet<String> {
+    installed_versions_in_dir(backend, installs_dir)
+        .into_iter()
+        .chain(
+            real_installs_in_dir(installs_dir)
+                .into_iter()
+                .filter(|v| install_state::is_install_incomplete(installs_dir, v)),
+        )
+        .filter(|v| is_concrete_install(v))
         .collect()
 }
 
@@ -622,6 +632,28 @@ mod tests {
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         // the install itself is never touched
         assert!(installs_dir.join("2.1.0").is_dir());
+        Ok(())
+    }
+
+    /// An interrupted `1.1` sits in the slot a complete `1.1.0` generates a
+    /// `1.1` link for; it is no longer eligible, but it must stay protected.
+    #[test]
+    fn concrete_installs_in_dir_protects_interrupted_installs() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
+        fs::create_dir_all(installs_dir.join("1.1.0"))?;
+        fs::create_dir_all(installs_dir.join("1.1"))?;
+        let _interrupted = interrupted_install(&installs_dir, "1.1")?;
+
+        let backend = npm_test_backend();
+        assert_eq!(
+            installed_versions_in_dir(&backend, &installs_dir),
+            ["1.1.0"]
+        );
+        assert_eq!(
+            concrete_installs_in_dir(&backend, &installs_dir),
+            HashSet::from(["1.1".to_string(), "1.1.0".to_string()])
+        );
         Ok(())
     }
 
