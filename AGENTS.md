@@ -290,9 +290,9 @@ When referencing mise documentation URLs, use the correct path structure based o
 
 Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
 
-## Cursor Cloud specific instructions
+## Cloud agent instructions (Cursor Cloud and Claude Code on the web)
 
-Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/install.sh`. Draft environment builds often run as `ubuntu` rather than `root`; the script handles both (passwordless sudo, cargo/rustup permissions, world-writable `/tmp/fslock`).
+Cursor Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/install.sh`. Claude Code on the web runs the same script from the SessionStart hook in `.claude/settings.json` (`.claude/hooks/session-start.sh`), which exits immediately unless `CLAUDE_CODE_REMOTE=true`, sends the bootstrap output to stderr, and adds the mise shims and `/usr/local/bin` to `PATH` through `CLAUDE_ENV_FILE`. The hook runs synchronously, so the session starts after the build finishes. Claude cloud containers do not provide a GitHub token by default; add `GITHUB_TOKEN` as an environment secret to avoid GitHub API rate limits during `mise install` and e2e tests. Draft environment builds often run as `ubuntu` rather than `root`; the script handles both (passwordless sudo, cargo/rustup permissions, world-writable `/tmp/fslock`).
 
 The install script:
 
