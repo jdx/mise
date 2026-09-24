@@ -25,7 +25,7 @@ use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
 #[cfg(any(windows, test))]
-const NATIVE_SHIM_MARKER: &[u8] = include_bytes!("../crates/mise-shim/native-shim-marker");
+const NATIVE_SHIM_MARKER: &[u8] = include_bytes!("assets/native-shim-marker");
 const GENERATED_SHELL_SHIM_HEADER: &str = "#!/bin/sh\n# mise generated shim\n";
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated shim\r\n";
