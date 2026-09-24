@@ -1212,10 +1212,13 @@ impl Run {
                 } else {
                     let was_stopping =
                         this.add_failed_task(task.clone(), status) || this.is_interrupted();
-                    // A task that exited on its own failed even if another
-                    // failure came first; only one mise killed is cancelled.
-                    cancelled |=
-                        was_stopping && !this.continue_on_error && Error::is_killed_by_signal(err);
+                    // A task that exited on its own, or panicked, failed even
+                    // if another failure came first; only one mise killed is
+                    // cancelled.
+                    cancelled |= was_stopping
+                        && !this.continue_on_error
+                        && !panicked
+                        && Error::is_killed_by_signal(err);
                     was_stopping
                 };
                 if !interrupted && !was_stopping && (panicked || status.is_none()) {
