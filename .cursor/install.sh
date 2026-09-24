@@ -105,7 +105,12 @@ rustup toolchain install stable --profile minimal --no-self-update -c rustfmt,cl
 rustup update stable --no-self-update
 rustup default stable
 
-cargo build --all-features --ignore-rust-version
+# Bootstrap binary for the steps below. Skip when one already exists: this
+# build runs outside mise's cargo wrapper, so rebuilding here would dirty the
+# -sys crates that `mise run build` (below) just left warm.
+if [ ! -x target/debug/mise ]; then
+	cargo build --all-features --ignore-rust-version
+fi
 # Always invoke this binary. `mise activate --shims` prepends shims that may
 # point at an older mise which still ran tool-level postinstall under MISE_SAFE.
 mise_bin=/usr/local/bin/mise
@@ -127,6 +132,11 @@ MISE_SAFE=1 "$mise_bin" install
 # safe mode so a branch-defined hook or tool-level postinstall could not run
 # with GitHub tokens.
 "$mise_bin" trust
+# Agents build through `mise run build`, where mise.toml's [wrappers.cargo]
+# (mbx) sets HOST_CC/CMAKE. Those change -sys crate fingerprints, so rebuild
+# once under the wrapper to leave target/ warm for the command agents use.
+# Tokens are withheld because this runs checkout-controlled task config.
+env -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN "$mise_bin" run build
 hk install --mise
 
 # Snapshots keep disk state but reset process env, so `eval "$(mise activate …)"`
