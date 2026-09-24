@@ -308,7 +308,11 @@ fn preset(name: &str) -> Result<Preset> {
 /// log, after its tools were installed.
 pub(crate) fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<()> {
     #[cfg(unix)]
-    if nix::unistd::geteuid().is_root() && preset(preset_name)?.refuses_root {
+    let root = nix::unistd::geteuid().is_root();
+    // Windows has no root; presets are rejected there before anything starts.
+    #[cfg(not(unix))]
+    let root = false;
+    if root && preset(preset_name)?.refuses_root {
         bail!(
             "{label} cannot run as root: the {preset_name} preset's server refuses root privileges. \
              Run mise as a regular user, for example by adding one and switching to it with \
