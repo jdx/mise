@@ -235,7 +235,7 @@ impl TaskRunTelemetry {
             Err(err) => {
                 let code = crate::errors::Error::get_exit_status(err).unwrap_or(1);
                 span.set_attribute(KeyValue::new("process.exit.code", code as i64));
-                span.set_status(Status::error(err.to_string()));
+                span.set_status(Status::error(redact(&err.to_string())));
             }
         }
         span.end_with_timestamp(end_time);
@@ -307,6 +307,15 @@ impl Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         self.finish();
+    }
+}
+
+/// Apply the config's redactions, as terminal output does. Before a config
+/// is loaded (and in unit tests) there is nothing to redact.
+fn redact(input: &str) -> String {
+    match crate::config::Config::maybe_get() {
+        Some(config) => config.redact(input),
+        None => input.to_string(),
     }
 }
 

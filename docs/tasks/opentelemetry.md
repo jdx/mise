@@ -132,7 +132,8 @@ For monorepos, this makes it easier to see which package or subproject a task ca
 
 Spans are live for exactly as long as the thing they measure, so durations nest the way
 you'd expect: the root span opens once the tasks to run are known and closes after the
-last task finishes, and each group span covers its members.
+last task finishes. A group span opens with its first task and stays open until the run
+ends, since mise can't know whether another task from that package is still to come.
 
 Setup runs inside the root span, each phase under its own span with
 `mise.span_type = "setup"`: fetching [remote tasks](/tasks/toml-tasks#remote-tasks) (only when
@@ -171,9 +172,15 @@ terminated by a signal and have no exit code of their own, cancelled tasks carry
 failed.
 
 A sibling that exits with its own non-zero status after the first failure is still an
-`Error`: only tasks mise ended with a signal count as cancelled. Windows reports a
+`Error`, and so is one that crashes: only tasks ended by the SIGTERM mise sends count as
+cancelled. Windows reports a
 terminated process as an ordinary exit code, so there every task that ends after the
 first failure is recorded as cancelled.
+
+A task whose tools fail to install never starts, but it still gets an `Error` span, since
+its failure is what stopped the run.
+
+Error messages in span status go through the same redactions as task args.
 
 When `--timeout` expires, the root span is ended as an `Error` and flushed. Tasks still
 running at that point are not exported.

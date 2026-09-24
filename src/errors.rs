@@ -180,14 +180,18 @@ impl Error {
         }
     }
 
-    /// Whether the command was ended by a signal rather than exiting on its
-    /// own, e.g. the SIGTERM mise sends to a failed task's siblings.
+    /// Whether the command was ended by the SIGTERM mise sends to a failed
+    /// task's siblings, rather than exiting or crashing on its own.
     #[cfg(unix)]
     pub(crate) fn is_killed_by_signal(err: &Report) -> bool {
         use std::os::unix::process::ExitStatusExt;
 
         err.downcast_ref::<Error>().is_some_and(|err| {
-            matches!(err, Error::ScriptFailed(_, Some(status), _) if status.signal().is_some())
+            matches!(
+                err,
+                Error::ScriptFailed(_, Some(status), _)
+                    if status.signal() == Some(nix::sys::signal::SIGTERM as i32)
+            )
         })
     }
 
