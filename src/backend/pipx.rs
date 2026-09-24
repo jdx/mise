@@ -17,7 +17,7 @@ use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::plugins::is_pep440_prerelease;
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -896,7 +896,7 @@ impl PIPXBackend {
         Self::versions_from_pypi_package(data)
             .into_iter()
             .rev()
-            .find(|v| !PEP440_PRERELEASE_REGEX.is_match(&v.version))
+            .find(|v| !is_pep440_prerelease(&v.version))
             .map(|v| v.version)
     }
 
@@ -1433,7 +1433,7 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 /// unknowns: an authoritative flag from a GitHub release (either value) wins
 /// over pattern detection.
 fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if version.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&version.version) {
+    if version.prerelease.is_none() && is_pep440_prerelease(&version.version) {
         version.prerelease = Some(true);
     }
     version
@@ -2055,6 +2055,27 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         ]));
 
         assert_eq!(version.as_deref(), Some("1.1.0"));
+    }
+
+    #[test]
+    fn test_pep440_local_label_does_not_mark_prerelease() {
+        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+            (
+                "1.0.0",
+                vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
+            ),
+            (
+                "1.1+build1dev0",
+                vec![pypi_release(Some("2024-02-01T00:00:00Z"), false)],
+            ),
+        ]));
+        assert_eq!(version.as_deref(), Some("1.1+build1dev0"));
+
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+build1dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
     }
 
     #[test]

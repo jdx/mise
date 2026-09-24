@@ -304,6 +304,16 @@ pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(r"(?i)[0-9](?:(?:a|b|c|rc)[0-9]+|[-_.]?dev[0-9]*)(?:$|[^a-z0-9])").unwrap()
 });
 
+/// Whether a PEP 440 version is a pre-release. Only the public version is
+/// checked: a local label (`+build1dev0`) is free-form and never makes a
+/// release a pre-release.
+pub(crate) fn is_pep440_prerelease(version: &str) -> bool {
+    let public = version
+        .split_once('+')
+        .map_or(version, |(public, _)| public);
+    PEP440_PRERELEASE_REGEX.is_match(public)
+}
+
 pub(crate) fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
 
@@ -993,6 +1003,12 @@ mod tests {
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0dev"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1.dev2"));
         assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-devtools"));
+
+        // Local version labels are ignored.
+        assert!(is_pep440_prerelease("1.0.0c1+build"));
+        assert!(is_pep440_prerelease("1.0.dev0+local"));
+        assert!(!is_pep440_prerelease("1.1+build1dev0"));
+        assert!(!is_pep440_prerelease("1.1+abc1a1"));
 
         // Stable releases — including `.postN`, which PEP 440 specifies as a
         // post-release (after a stable), NOT a pre-release.

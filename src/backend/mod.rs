@@ -27,7 +27,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
+use crate::plugins::{PluginType, VERSION_REGEX, is_pep440_prerelease};
 use crate::registry::{
     REGISTRY, RegistryIdiomaticFile, full_to_url, normalize_remote, tool_enabled,
 };
@@ -6111,7 +6111,7 @@ pub(crate) fn fuzzy_match_versions_pep440(
         // when filter_prereleases is on.
         versions
             .into_iter()
-            .filter(|v| query == v || !PEP440_PRERELEASE_REGEX.is_match(v))
+            .filter(|v| query == v || !is_pep440_prerelease(v))
             .collect()
     } else {
         versions
