@@ -3386,7 +3386,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| !install_state::is_install_incomplete(&installs_path, v))
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();

@@ -7,7 +7,7 @@ use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
-use crate::toolset::{ToolRequest, Toolset};
+use crate::toolset::{ToolRequest, Toolset, install_state};
 use crate::{backend, env, file};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
@@ -264,7 +264,7 @@ fn list_symlinks_for_dir(
 fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
-        .filter(|v| !installs_dir.join(v).join("incomplete").exists())
+        .filter(|v| !install_state::is_install_incomplete(installs_dir, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
@@ -492,6 +492,37 @@ mod tests {
         Arc::new(crate::backend::npm::test_backend("happy", None, None))
     }
 
+    /// An installs dir for `tool` whose name no other test shares. The
+    /// incomplete marker lives in the cache dir every test process shares, keyed
+    /// by this name, so a fixed name would leak one test's marker into another.
+    fn unique_installs_dir(temp_dir: &tempfile::TempDir, tool: &str) -> PathBuf {
+        let suffix = temp_dir.path().file_name().unwrap().to_string_lossy();
+        temp_dir
+            .path()
+            .join("installs")
+            .join(format!("{tool}{suffix}"))
+    }
+
+    /// Removes the marker [`interrupted_install`] wrote when the test ends.
+    struct InterruptedInstall(PathBuf);
+
+    impl Drop for InterruptedInstall {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Leaves `installs_dir/<v>` the way an interrupted install does: the
+    /// directory exists and the incomplete marker is still in the cache.
+    fn interrupted_install(installs_dir: &Path, v: &str) -> Result<InterruptedInstall> {
+        let marker = install_state::incomplete_marker_for_install_dir(installs_dir, v).unwrap();
+        fs::create_dir_all(marker.parent().unwrap())?;
+        fs::write(&marker, "")?;
+        Ok(InterruptedInstall(
+            marker.parent().unwrap().parent().unwrap().to_path_buf(),
+        ))
+    }
+
     #[test]
     fn run_all_rebuilds_attempts_every_item() {
         let mut attempted = vec![];
@@ -572,9 +603,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_removes_links_into_ineligible_installs() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2.1"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
@@ -647,9 +678,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_keeps_names_it_does_not_generate() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("next"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
@@ -668,9 +699,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_keeps_names_this_rebuild_asked_for() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
         let desired = IndexMap::from([("latest".to_string(), PathBuf::from("./2.1.0"))]);
 
@@ -689,9 +720,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_keeps_configured_aliases() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2"))?;
         let aliases = IndexMap::from([("2".to_string(), "2.1.0".to_string())]);
 
@@ -726,9 +757,9 @@ mod tests {
     #[test]
     fn generated_symlink_namespace_covers_ineligible_installs() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
 
         let namespace = generated_symlink_namespace(&installs_dir);
 
@@ -746,9 +777,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_claims_generated_names_whoever_wrote_them() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "2.1.0")?;
         // hand-made, but occupying a name mise generates
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
         // hand-made, name mise never generates
@@ -776,9 +807,9 @@ mod tests {
     #[test]
     fn prune_stale_generated_symlinks_keeps_sub_request_pins() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("19.0.0"))?;
-        fs::write(installs_dir.join("19.0.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&installs_dir, "19.0.0")?;
         // `node@sub-1:20` resolving to 19.0.0, pinned from some other directory
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("sub-1-20"))?;
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("latest"))?;

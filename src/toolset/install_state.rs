@@ -249,7 +249,7 @@ fn scan_versions(dir: &Path) -> Result<Vec<String>> {
         .into_iter()
         .filter(|v| !v.starts_with('.'))
         .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-        .filter(|v| !dir.join(v).join("incomplete").exists())
+        .filter(|v| !is_install_incomplete(dir, v))
         .sorted_by_cached_key(|v| {
             let normalized = normalize_version_for_sort(v);
             (Versioning::new(normalized), v.to_string())
@@ -926,10 +926,28 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
 }
 
 pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
-    dirs::CACHE
-        .join(crate::backend::tool_directory_name(short))
-        .join(v)
-        .join("incomplete")
+    incomplete_marker(crate::backend::tool_directory_name(short), v)
+}
+
+fn incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
+    dirs::CACHE.join(tool_dir_name).join(v).join("incomplete")
+}
+
+/// The incomplete marker for the version directory `installs_dir/<v>`.
+///
+/// The marker lives under the cache dir, keyed by the tool's directory name,
+/// not inside the install: code that only has an install dir in hand (a
+/// directory scan, a shared or system install root) must look it up here
+/// rather than at `installs_dir/<v>/incomplete`, which nothing writes.
+pub(crate) fn incomplete_marker_for_install_dir(installs_dir: &Path, v: &str) -> Option<PathBuf> {
+    installs_dir
+        .file_name()
+        .map(|tool_dir_name| incomplete_marker(tool_dir_name, v))
+}
+
+/// Whether `installs_dir/<v>` belongs to an install that never finished.
+pub(crate) fn is_install_incomplete(installs_dir: &Path, v: &str) -> bool {
+    incomplete_marker_for_install_dir(installs_dir, v).is_some_and(|marker| marker.exists())
 }
 
 fn tool_version_lock(short: &str, v: &str) -> LockFile {
