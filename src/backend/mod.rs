@@ -130,13 +130,6 @@ pub(crate) fn version_listing_failure(ba: &BackendArg) -> Option<String> {
         .cloned()
 }
 
-pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
-    let full = ba.full_without_opts();
-    REGISTRY
-        .get(ba.short.as_str())
-        .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
-}
-
 /// mise-versions publishes one version list per registry short name, generated from the
 /// entry's first backend. Every other backend of the same entry lists different versions:
 /// a `min_version` boundary routes older requests to a later backend, and platform or
@@ -1435,16 +1428,6 @@ mod tests {
     }
 
     #[test]
-    fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
-        let ba = BackendArg::new(
-            "communique".to_string(),
-            Some("github:jdx/communique[asset_pattern=communique-*]".to_string()),
-        );
-
-        assert!(backend_arg_matches_registry_backend(&ba));
-    }
-
-    #[test]
     fn test_only_the_preferred_registry_backend_may_use_the_versions_host() {
         // mise-versions publishes one list per short name, built from the preferred
         // backend. A `min_version` boundary routes older requests to a later backend
@@ -1454,9 +1437,6 @@ mod tests {
             Some("packslip:github.com/jdx/hk".to_string()),
         );
         let fallback = BackendArg::new("hk".to_string(), Some("aqua:jdx/hk".to_string()));
-
-        assert!(backend_arg_matches_registry_backend(&preferred));
-        assert!(backend_arg_matches_registry_backend(&fallback));
 
         assert!(backend_arg_is_preferred_registry_backend(&preferred));
         assert!(!backend_arg_is_preferred_registry_backend(&fallback));

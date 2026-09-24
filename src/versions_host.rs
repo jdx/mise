@@ -74,6 +74,19 @@ struct VersionEntry {
     prerelease: Option<bool>,
 }
 
+/// The highest release-list page mise-versions serves.
+pub(crate) const GITHUB_RELEASES_MAX_PAGE: u32 = 10;
+
+/// One page of a repository's releases from mise-versions.
+#[derive(serde::Deserialize)]
+pub(crate) struct GithubReleasesPage {
+    /// GitHub's order, drafts removed.
+    pub releases: Vec<GithubRelease>,
+    /// The page to request next, or `None` on the last one. Counted before
+    /// drafts were removed, so a short page is not necessarily the last.
+    pub next_page: Option<u32>,
+}
+
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
     attestations: Vec<Attestation>,
@@ -86,6 +99,7 @@ struct VersionsHostLogContext<'a> {
     repo: Option<&'a str>,
     tag: Option<&'a str>,
     digest: Option<&'a str>,
+    page: Option<u32>,
     full: Option<&'a str>,
     version: Option<&'a str>,
 }
@@ -98,6 +112,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: None,
             tag: None,
             digest: None,
+            page: None,
             full: None,
             version: None,
         }
@@ -110,6 +125,20 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: Some(repo),
             tag: Some(tag),
             digest: None,
+            page: None,
+            full: None,
+            version: None,
+        }
+    }
+
+    fn github_releases(repo: &'a str, page: u32) -> Self {
+        Self {
+            endpoint: "github_releases",
+            tool: None,
+            repo: Some(repo),
+            tag: None,
+            digest: None,
+            page: Some(page),
             full: None,
             version: None,
         }
@@ -122,6 +151,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: Some(repo),
             tag: None,
             digest: Some(digest),
+            page: None,
             full: None,
             version: None,
         }
@@ -134,6 +164,7 @@ impl<'a> VersionsHostLogContext<'a> {
             repo: None,
             tag: None,
             digest: None,
+            page: None,
             full: Some(full),
             version: Some(version),
         }
@@ -152,6 +183,9 @@ impl<'a> VersionsHostLogContext<'a> {
         }
         if let Some(digest) = self.digest {
             fields.push_str(&format!(" digest={}", log_value(digest)));
+        }
+        if let Some(page) = self.page {
+            fields.push_str(&format!(" page={page}"));
         }
         if let Some(full) = self.full {
             fields.push_str(&format!(
@@ -341,6 +375,57 @@ pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option
     Ok(Some(release))
 }
 
+/// Fetch one page (100 releases) of a public repository's release list from
+/// the versions host, shaped like GitHub's so the caller's filtering stays
+/// authoritative.
+pub(crate) async fn github_releases(
+    repo: &str,
+    page: u32,
+) -> eyre::Result<Option<GithubReleasesPage>> {
+    if !enabled_for_github_metadata() {
+        return Ok(None);
+    }
+
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_releases_url(owner, repo_name, page);
+    let ctx = VersionsHostLogContext::github_releases(repo, page);
+    let Some(list) = fetch_optional_json::<GithubReleasesPage>(&url, ctx).await? else {
+        return Ok(None);
+    };
+    if let Some(release) = invalid_listed_release(&list, owner, repo_name) {
+        log_versions_host_warn(
+            ctx,
+            "invalid_release",
+            &format!("tag={} fallback=true", log_value(&release.tag_name)),
+        );
+        return Ok(None);
+    }
+    log_versions_host_trace(ctx, "success", &format!("releases={}", list.releases.len()));
+    Ok(Some(list))
+}
+
+fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
+    format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases?page={page}",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+    )
+}
+
+/// The first listed release the client must not accept: a draft, or one
+/// whose assets download from somewhere other than `owner/repo`.
+fn invalid_listed_release<'a>(
+    list: &'a GithubReleasesPage,
+    owner: &str,
+    repo: &str,
+) -> Option<&'a GithubRelease> {
+    list.releases
+        .iter()
+        .find(|r| r.draft || !github_release_asset_urls_match(r, owner, repo))
+}
+
 /// Fetch cached GitHub Artifact Attestation payloads by artifact digest.
 ///
 /// The returned bundles are not trusted by virtue of coming from mise-versions;
@@ -396,7 +481,17 @@ where
             let status = resp.status();
             debug!("GET {url} {status}");
             if status.is_success() {
-                return Ok(Some(resp.json().await?));
+                return match resp.json().await {
+                    Ok(value) => Ok(Some(value)),
+                    Err(err) => {
+                        log_versions_host_warn(
+                            ctx,
+                            "invalid_response",
+                            &format!("fallback=true error={}", log_value(&err.to_string())),
+                        );
+                        Ok(None)
+                    }
+                };
             }
             let body = resp.text().await.unwrap_or_default();
             match status.as_u16() {
@@ -475,15 +570,20 @@ fn encode_digest_path_segment(digest: &str) -> String {
 }
 
 fn valid_github_release_asset_urls(release: &GithubRelease, owner: &str, repo: &str) -> bool {
-    !release.assets.is_empty()
-        && release.assets.iter().all(|asset| {
-            valid_github_browser_download_url(
-                &asset.browser_download_url,
-                owner,
-                repo,
-                &release.tag_name,
-            ) && valid_github_asset_api_url(&asset.url, owner, repo)
-        })
+    !release.assets.is_empty() && github_release_asset_urls_match(release, owner, repo)
+}
+
+/// Every asset of `release` downloads from `owner/repo`. A release with no
+/// assets passes; listings keep those.
+fn github_release_asset_urls_match(release: &GithubRelease, owner: &str, repo: &str) -> bool {
+    release.assets.iter().all(|asset| {
+        valid_github_browser_download_url(
+            &asset.browser_download_url,
+            owner,
+            repo,
+            &release.tag_name,
+        ) && valid_github_asset_api_url(&asset.url, owner, repo)
+    })
 }
 
 fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
@@ -798,6 +898,80 @@ mod tests {
             "jdx",
             "mise-test-fixtures"
         ));
+    }
+
+    #[test]
+    fn test_github_releases_url_encodes_repo() {
+        assert_eq!(
+            github_releases_url("jdx", "mise.test", 3),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/mise.test/releases?page=3"
+        );
+    }
+
+    #[test]
+    fn test_github_releases_page_deserializes() {
+        let page: GithubReleasesPage = serde_json::from_str(
+            r#"{"releases":[{"tag_name":"v1.0.0","draft":false,"prerelease":false,
+                "created_at":"2026-01-01T00:00:00Z","published_at":"2026-01-02T00:00:00Z",
+                "assets":[]}],"next_page":null}"#,
+        )
+        .unwrap();
+        assert_eq!(page.releases.len(), 1);
+        assert_eq!(
+            page.releases[0].published_at.as_deref(),
+            Some("2026-01-02T00:00:00Z")
+        );
+        assert_eq!(page.next_page, None);
+    }
+
+    #[test]
+    fn test_invalid_listed_release() {
+        let release = |tag: &str, draft: bool, asset_owner: &str| GithubRelease {
+            tag_name: tag.into(),
+            draft,
+            prerelease: false,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            published_at: None,
+            assets: vec![crate::github::GithubAsset {
+                name: "tool.tar.gz".into(),
+                browser_download_url: format!(
+                    "https://github.com/{asset_owner}/mise/releases/download/{tag}/tool.tar.gz"
+                ),
+                url: format!("https://api.github.com/repos/{asset_owner}/mise/releases/assets/1"),
+                digest: None,
+                updated_at: None,
+            }],
+        };
+        let page = |releases| GithubReleasesPage {
+            releases,
+            next_page: None,
+        };
+        let no_assets = GithubRelease {
+            assets: vec![],
+            ..release("v0.1.0", false, "jdx")
+        };
+
+        assert!(
+            invalid_listed_release(
+                &page(vec![release("v1.0.0", false, "jdx"), no_assets]),
+                "jdx",
+                "mise"
+            )
+            .is_none()
+        );
+        assert_eq!(
+            invalid_listed_release(&page(vec![release("v1.0.0", true, "jdx")]), "jdx", "mise")
+                .map(|r| r.tag_name.as_str()),
+            Some("v1.0.0")
+        );
+        assert!(
+            invalid_listed_release(
+                &page(vec![release("v1.0.0", false, "attacker")]),
+                "jdx",
+                "mise"
+            )
+            .is_some()
+        );
     }
 
     #[test]

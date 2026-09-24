@@ -799,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn test_use_versions_host_for_attestations_respects_registry_gate() {
+    fn test_use_versions_host_for_attestations_respects_caller_gate() {
         let _settings = SettingsGuard::with_versions_host(None, Some(true));
 
         assert!(!use_versions_host_for_attestations(

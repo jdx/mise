@@ -246,6 +246,12 @@ async fn list_releases_(
     repo: &str,
     require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
+    if is_public_github_api_base(api_url)
+        && let Some(releases) = list_releases_from_versions_host(repo, require_assets).await
+    {
+        return Ok(releases);
+    }
+
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -277,6 +283,66 @@ async fn list_releases_(
     releases.retain(|r| !r.draft);
 
     Ok(releases)
+}
+
+/// [`list_releases_`] through mise-versions. `None` sends the caller to
+/// GitHub for the whole list rather than for the remaining pages, since two
+/// sources may not agree on where a page ends.
+async fn list_releases_from_versions_host(
+    repo: &str,
+    require_assets: bool,
+) -> Option<Vec<GithubRelease>> {
+    let releases =
+        paginate_mirrored_releases(require_assets, *env::MISE_LIST_ALL_VERSIONS, |page| async move {
+            match crate::versions_host::github_releases(repo, page).await {
+                Ok(list) => list,
+                Err(err) => {
+                    warn!(
+                        "mise-versions endpoint=github_releases repo={repo} page={page} outcome=failed fallback=true error={err:#}"
+                    );
+                    None
+                }
+            }
+        })
+        .await?;
+    trace!("got GitHub releases for {repo} from mise-versions");
+    Some(releases)
+}
+
+/// Page through mirrored release lists with the same stopping rules as the
+/// direct loop in [`list_releases_`].
+async fn paginate_mirrored_releases<F, Fut>(
+    require_assets: bool,
+    list_all: bool,
+    mut fetch_page: F,
+) -> Option<Vec<GithubRelease>>
+where
+    F: FnMut(u32) -> Fut,
+    Fut: std::future::Future<Output = Option<crate::versions_host::GithubReleasesPage>>,
+{
+    let mut releases = Vec::new();
+    let mut page = 1;
+    let mut pages_fetched = 0;
+    loop {
+        let list = fetch_page(page).await?;
+        releases.extend(list.releases);
+        pages_fetched += 1;
+        let Some(next_page) = list.next_page else {
+            break;
+        };
+        if !list_all
+            && (has_stopping_stable_release(&releases, require_assets)
+                || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
+        {
+            break;
+        }
+        // Past the pages mise-versions serves: GitHub has to answer instead.
+        if next_page > crate::versions_host::GITHUB_RELEASES_MAX_PAGE {
+            return None;
+        }
+        page = next_page;
+    }
+    Some(releases)
 }
 
 pub(crate) async fn list_tags(repo: &str) -> Result<Vec<String>> {
@@ -2119,6 +2185,138 @@ something_else = "value"
             .unwrap();
         assert_eq!(release.assets[0].name, "direct-github-api.tar.gz");
         mock.assert_async().await;
+    }
+
+    fn mirrored_page(
+        releases: Vec<GithubRelease>,
+        next_page: Option<u32>,
+    ) -> crate::versions_host::GithubReleasesPage {
+        crate::versions_host::GithubReleasesPage {
+            releases,
+            next_page,
+        }
+    }
+
+    /// Runs the mirror pagination over canned pages, recording which pages it asked for.
+    async fn paginate_canned(
+        pages: Vec<Option<crate::versions_host::GithubReleasesPage>>,
+        require_assets: bool,
+        list_all: bool,
+    ) -> (Option<Vec<String>>, Vec<u32>) {
+        let pages = std::sync::Mutex::new(pages.into_iter().map(Some).collect::<Vec<_>>());
+        let requested = std::sync::Mutex::new(vec![]);
+        let releases = paginate_mirrored_releases(require_assets, list_all, |page| {
+            requested.lock().unwrap().push(page);
+            let list = pages.lock().unwrap()[page as usize - 1].take().unwrap();
+            async move { list }
+        })
+        .await;
+        (
+            releases.map(|r| r.into_iter().map(|r| r.tag_name).collect()),
+            requested.into_inner().unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_stop_at_a_stable_release() {
+        let (releases, requested) = paginate_canned(
+            vec![Some(mirrored_page(
+                vec![make_prerelease("v2.0.0-rc.1"), make_release("v1.0.0")],
+                Some(2),
+            ))],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+        assert_eq!(requested, [1]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_follow_next_page_past_prereleases() {
+        // An empty page with a next page is what a page of drafts looks like
+        // once the mirror has removed them.
+        let (releases, requested) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_prerelease("v2.0.0-rc.1")], Some(2))),
+                Some(mirrored_page(vec![], Some(3))),
+                Some(mirrored_page(vec![make_release("v1.0.0")], None)),
+            ],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0-rc.1", "v1.0.0"]);
+        assert_eq!(requested, [1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_are_bounded_like_the_direct_listing() {
+        let pages = (1..=MAX_RELEASE_FALLBACK_PAGES as u32 + 1)
+            .map(|p| {
+                Some(mirrored_page(
+                    vec![make_prerelease(&format!("v0.0.{p}-rc"))],
+                    Some(p + 1),
+                ))
+            })
+            .collect();
+        let (releases, requested) = paginate_canned(pages, false, false).await;
+        assert_eq!(releases.unwrap().len(), MAX_RELEASE_FALLBACK_PAGES);
+        assert_eq!(requested.len(), MAX_RELEASE_FALLBACK_PAGES);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_require_assets_keeps_paginating() {
+        let (releases, _) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_release("v2.0.0")], Some(2))),
+                Some(mirrored_page(
+                    vec![GithubRelease {
+                        assets: vec![make_asset("tool.tar.gz")],
+                        ..make_release("v1.0.0")
+                    }],
+                    None,
+                )),
+            ],
+            true,
+            false,
+        )
+        .await;
+        assert_eq!(releases.unwrap(), ["v2.0.0", "v1.0.0"]);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_never_mix_sources() {
+        // No mirror answer for a later page discards the earlier ones.
+        let (releases, _) = paginate_canned(
+            vec![
+                Some(mirrored_page(vec![make_prerelease("v2.0.0-rc.1")], Some(2))),
+                None,
+            ],
+            false,
+            false,
+        )
+        .await;
+        assert_eq!(releases, None);
+
+        let (releases, _) = paginate_canned(vec![None], false, false).await;
+        assert_eq!(releases, None);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_defer_to_github_past_the_served_pages() {
+        let max = crate::versions_host::GITHUB_RELEASES_MAX_PAGE;
+        let pages = (1..=max)
+            .map(|p| {
+                Some(mirrored_page(
+                    vec![make_release(&format!("v{p}"))],
+                    Some(p + 1),
+                ))
+            })
+            .collect();
+        let (releases, requested) = paginate_canned(pages, false, true).await;
+        assert_eq!(releases, None);
+        assert_eq!(requested.len(), max as usize);
     }
 
     fn make_prerelease(tag: &str) -> GithubRelease {
