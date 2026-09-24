@@ -1036,6 +1036,17 @@ impl Client {
             }
         });
 
+        // Warn (once) when the transfer crawls, instead of silently waiting out
+        // the whole budget: a throttled host that trickles bytes never trips the
+        // per-read `http_timeout`, and shims queued behind this install's lock
+        // would otherwise wait with no hint of why.
+        let download = async {
+            tokio::select! {
+                result = download => result,
+                never = warn_when_download_is_slow(&url, &bytes_received) => match never {},
+            }
+        };
+
         let metadata = match tokio::time::timeout(total_timeout, download).await {
             Ok(result) => result?,
             Err(_) => {
@@ -2323,6 +2334,74 @@ where
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }
+        }
+    }
+}
+
+/// Averaged over a full [`SLOW_DOWNLOAD_WINDOW`], throughput below this is
+/// reported. At 16 KiB/s the default 30 minute `http_download_timeout` covers
+/// under 30 MB, so a typical tool archive would not finish in time.
+const SLOW_DOWNLOAD_BYTES_PER_SEC: u64 = 16 * 1024;
+const SLOW_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60);
+const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Tracks transfer throughput over tumbling windows. `bytes_received` restarts
+/// from zero on each retry attempt, so a drop is treated as a new attempt.
+struct SlowDownloadDetector {
+    window_start: Instant,
+    window_start_total: u64,
+    last_attempt_bytes: u64,
+    total: u64,
+}
+
+impl SlowDownloadDetector {
+    fn new(now: Instant) -> Self {
+        Self {
+            window_start: now,
+            window_start_total: 0,
+            last_attempt_bytes: 0,
+            total: 0,
+        }
+    }
+
+    /// Records the current attempt's byte count and, once a full window has
+    /// elapsed, returns that window's rate in bytes/sec if it was too slow.
+    fn observe(&mut self, now: Instant, attempt_bytes: u64) -> Option<u64> {
+        self.total += attempt_bytes
+            .checked_sub(self.last_attempt_bytes)
+            .unwrap_or(attempt_bytes);
+        self.last_attempt_bytes = attempt_bytes;
+        let elapsed = now.duration_since(self.window_start);
+        if elapsed < SLOW_DOWNLOAD_WINDOW {
+            return None;
+        }
+        let bytes = self.total - self.window_start_total;
+        self.window_start = now;
+        self.window_start_total = self.total;
+        let rate = (bytes as f64 / elapsed.as_secs_f64()) as u64;
+        (rate < SLOW_DOWNLOAD_BYTES_PER_SEC).then_some(rate)
+    }
+}
+
+/// Runs alongside a download and never completes. Warns at most once.
+async fn warn_when_download_is_slow(
+    url: &Url,
+    bytes_received: &AtomicU64,
+) -> std::convert::Infallible {
+    let mut detector = SlowDownloadDetector::new(Instant::now());
+    let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
+    ticks.tick().await;
+    loop {
+        ticks.tick().await;
+        let received = bytes_received.load(Ordering::Relaxed);
+        if let Some(rate) = detector.observe(Instant::now(), received) {
+            warn!(
+                "downloading {url} is very slow ({}/s over the last minute). \
+                 mise keeps trying until `http_download_timeout` runs out; \
+                 if this host is throttled, a mirror setting for this tool (such as `node.mirror_url`) may help",
+                bytesize::ByteSize::b(rate).display().iec(),
+            );
+            return std::future::pending().await;
         }
     }
 }
@@ -4808,5 +4887,47 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
                 "https://cdn.example.com/artifacts/v1.0.0/file.tar.gz"
             );
         });
+    }
+
+    #[test]
+    fn slow_download_detector_reports_a_crawling_window_once_it_is_full() {
+        let start = Instant::now();
+        let mut detector = SlowDownloadDetector::new(start);
+        // ~3 kB/s, like a throttled CDN edge.
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(30), 90_000),
+            None
+        );
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(60), 180_000),
+            Some(3_000)
+        );
+    }
+
+    #[test]
+    fn slow_download_detector_ignores_healthy_windows() {
+        let start = Instant::now();
+        let mut detector = SlowDownloadDetector::new(start);
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(60), 60 * 1024 * 1024),
+            None
+        );
+    }
+
+    #[test]
+    fn slow_download_detector_counts_bytes_across_retry_attempts() {
+        let start = Instant::now();
+        let mut detector = SlowDownloadDetector::new(start);
+        // First attempt reaches 1.5 MiB, then a retry restarts the counter.
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(20), 1536 * 1024),
+            None
+        );
+        // The second attempt's bytes add to the first's instead of looking
+        // like the transfer went backwards.
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(60), 100 * 1024),
+            None
+        );
     }
 }
