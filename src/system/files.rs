@@ -3187,30 +3187,50 @@ fn link_points_to(source: &Path, target: &Path) -> bool {
     })
 }
 
-/// Where a link at `target` holding the relative `dest` physically leads.
-/// `..` steps up from the link's canonical directory, as the kernel does,
-/// not from the configured spelling of it.
+/// Where a link at `target` holding the relative `dest` physically leads,
+/// stepping through `dest` from the link's canonical directory as the
+/// kernel does (see [`walk_physical`]).
 fn resolve_relative_link(target: &Path, dest: &Path) -> Option<PathBuf> {
-    let parent = target.parent()?.canonicalize().ok()?;
-    Some(physical_path(&parent.join(dest)))
+    walk_physical(target.parent()?.canonicalize().ok()?, dest)
 }
 
-/// Where `path` physically is, without requiring it to exist: the canonical
-/// path when it resolves, else its canonical parent joined with its name
-/// (so a deleted file or a dangling link still has a location), else its
-/// lexical form.
+/// Where `path` physically is, without requiring it to exist (so a deleted
+/// file or a dangling link still has a location). Its own last component is
+/// not followed: a source that is a symlink is the link, not what it names.
 fn physical_path(path: &Path) -> PathBuf {
     let path = lexical_normalize(path);
-    if let Ok(canonical) = path.canonicalize() {
-        return canonical;
+    walk_physical(PathBuf::new(), &path).unwrap_or(path)
+}
+
+/// Append `path` to `base` a component at a time, resolving every directory
+/// on the way before a later `..` steps out of it: `alias/../x` climbs out
+/// of wherever `alias` really leads, so collapsing it lexically first could
+/// name a different file. A component that does not exist cannot be a
+/// symlink and is kept as written; a dangling one in the middle has no
+/// location at all.
+fn walk_physical(mut cur: PathBuf, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let components = path.components().collect::<Vec<_>>();
+    for (i, component) in components.iter().enumerate() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => cur.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                cur.pop();
+            }
+            Component::Normal(name) => {
+                cur.push(name);
+                if i + 1 < components.len() {
+                    match cur.canonicalize() {
+                        Ok(canonical) => cur = canonical,
+                        Err(_) if std::fs::symlink_metadata(&cur).is_err() => {}
+                        Err(_) => return None,
+                    }
+                }
+            }
+        }
     }
-    match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => match parent.canonicalize() {
-            Ok(parent) => parent.join(name),
-            Err(_) => path,
-        },
-        _ => path,
-    }
+    Some(cur)
 }
 
 fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> Vec<PathBuf> {
@@ -7150,6 +7170,28 @@ source = "oldrc""#,
             PathBuf::from("../dotfiles/dangling")
         );
         assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// `alias/../dotfile` leaves wherever `alias` really leads, not the
+    /// directory the link sits in, so it names a different file here.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_through_a_symlink_then_parent_is_not_owned() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let other = dir.path().join("real/dotfile");
+        file::write(&source, "mine")?;
+        file::create_dir_all(dir.path().join("real/sub"))?;
+        file::write(&other, "someone else's")?;
+        file::make_symlink(&dir.path().join("real/sub"), &dir.path().join("alias"))?;
+        let target = dir.path().join("link");
+        file::make_symlink(Path::new("alias/../dotfile"), &target)?;
+        assert_eq!(file::read_to_string(&target)?, "someone else's");
+
+        assert!(!link_points_to(&source, &target));
+        std::fs::remove_file(&other)?;
+        assert!(!link_points_to(&source, &target));
         Ok(())
     }
 
