@@ -121,7 +121,7 @@ impl SettingsLs {
 
     fn complete(&self) -> Result<()> {
         for (k, sm) in SETTINGS_META.iter() {
-            println!("{k}:{}", sm.description.replace(":", "\\:"));
+            miseprintln!("{k}:{}", sm.description.replace(":", "\\:"));
         }
         Ok(())
     }

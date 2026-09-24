@@ -113,6 +113,58 @@ wait_for_file() {
   fail "$description did not appear within ${attempts}s: $file"
 }
 
+# Start the e2e HTTP server (helpers/scripts/http_test_server.py) in the
+# background and wait until it listens. Sets HTTP_PORT and HTTP_SERVER_PID.
+#
+#   start_http_server [--dir DIR] [--bind ADDR] [--headers-log DIR] \
+#     [--handler FILE|- [ARGS...]]
+#
+# Without --handler it serves the script's fixed routes, then files under DIR
+# (default: the current directory). --handler - reads the handler module from
+# stdin; see the script's docstring for what the module must define.
+#
+# The server exits with the test shell, so there is nothing to clean up. Call
+# this from the test shell itself: a server started in a subshell or command
+# substitution exits with that subshell.
+start_http_server() {
+  local state_dir
+  state_dir="$(mktemp -d "${TMPDIR:-/tmp}/http-server.XXXXXX")"
+  local args=(--port-file "$state_dir/port")
+  while (($# > 0)); do
+    if [[ $1 == --handler ]]; then
+      if [[ ${2:-} == - ]]; then
+        cat >"$state_dir/handler.py"
+        args+=(--handler "$state_dir/handler.py")
+      else
+        args+=(--handler "${2:?--handler needs a file}")
+      fi
+      shift 2
+      args+=("$@")
+      break
+    fi
+    args+=("$1")
+    shift
+  done
+
+  python3 "$TEST_ROOT/helpers/scripts/http_test_server.py" "${args[@]}" >"$state_dir/log" 2>&1 &
+  HTTP_SERVER_PID=$!
+  local i
+  for ((i = 0; i < 600; i++)); do
+    if [[ -s "$state_dir/port" ]]; then
+      # shellcheck disable=SC2034 # read by the calling test
+      HTTP_PORT="$(cat "$state_dir/port")"
+      return 0
+    fi
+    if ! kill -0 "$HTTP_SERVER_PID" 2>/dev/null; then
+      cat "$state_dir/log" >&2
+      fail "HTTP test server exited before listening"
+    fi
+    sleep 0.05
+  done
+  cat "$state_dir/log" >&2
+  fail "HTTP test server did not listen within 30s"
+}
+
 # Safeguard against running the test directly, which would execute in the actual user home
 [[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 

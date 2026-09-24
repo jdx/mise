@@ -17,6 +17,9 @@ env:
   NPM_CONFIG_FUND: false
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
+  # The all-features debug build gets SIGKILLed (out of memory) on this runner.
+  # These builds only run tasks and are never debugged, so skip debuginfo.
+  CARGO_PROFILE_DEV_DEBUG: 0
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:

@@ -17,6 +17,7 @@ use crate::hooks::backend_list_tools::BackendListToolsContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::backend_search_tools::BackendSearchToolsContext;
 use crate::hooks::backend_tools::BackendTool;
+use crate::hooks::backend_uninstall::BackendUninstallContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
@@ -627,6 +628,32 @@ impl Vfox {
         };
         plugin.backend_install(ctx).await?;
         Ok(())
+    }
+
+    /// Runs the plugin's `BackendUninstall` hook, if it has one, before mise removes the
+    /// install directory.
+    pub async fn backend_uninstall(
+        &self,
+        sdk: &str,
+        tool: &str,
+        version: &str,
+        install_path: PathBuf,
+        download_path: PathBuf,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<()> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        if !plugin.get_metadata()?.hooks.contains("backend_uninstall") {
+            return Ok(());
+        }
+        plugin
+            .backend_uninstall(BackendUninstallContext {
+                tool: tool.to_string(),
+                version: version.to_string(),
+                install_path,
+                download_path,
+                options,
+            })
+            .await
     }
 
     pub async fn backend_exec_env(

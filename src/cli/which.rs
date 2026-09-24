@@ -101,7 +101,7 @@ impl Which {
             .sorted()
             .collect_vec();
         for bin in bins {
-            println!("{bin}");
+            miseprintln!("{bin}");
         }
         Ok(())
     }

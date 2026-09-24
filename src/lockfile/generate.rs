@@ -262,7 +262,6 @@ pub(crate) fn is_current(
         || platforms.is_empty()
         || previous.tools.len() != tools.len()
         || !previous.conda_packages.is_empty()
-        || !previous.pkgx_packages.is_empty()
         || Settings::get().force_provenance_verify()
     {
         return Ok(false);
@@ -417,7 +416,6 @@ pub(crate) async fn generate(
         }
     }
     candidate.conda_packages = previous.conda_packages.clone();
-    candidate.pkgx_packages = previous.pkgx_packages.clone();
     let report = MultiProgressReport::get().add("lock");
     let mut progress = ProgressGuard {
         report: report.as_ref(),
@@ -443,10 +441,7 @@ pub(crate) async fn generate(
                     .flatten()
             })
             .filter(|info| {
-                info.url.is_some()
-                    || info.install.is_some()
-                    || info.conda_deps.is_some()
-                    || info.pkgx_deps.is_some()
+                info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
             entries
@@ -482,7 +477,6 @@ pub(crate) async fn generate(
                     Ok(info.clone()),
                     options,
                     BTreeMap::new(),
-                    BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 ),
             ));
@@ -499,7 +493,6 @@ pub(crate) async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
                     BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 )
@@ -538,7 +531,7 @@ pub(crate) async fn generate(
     }
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
     for (_, specifier, resolution) in resolved {
-        let (short, version, backend, platform, info, options, conda, pkgx, status) = resolution;
+        let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             continue;
         }
@@ -581,9 +574,6 @@ pub(crate) async fn generate(
         for (key, value) in conda {
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
-        for (key, value) in pkgx {
-            candidate.set_pkgx_package(&platform.to_key(), &key, value);
-        }
     }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.aube.is_none()) {
@@ -621,7 +611,6 @@ pub(crate) async fn generate(
     ))
     .await?;
     candidate.cleanup_unreferenced_conda_packages();
-    candidate.cleanup_unreferenced_pkgx_packages();
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
@@ -1276,11 +1265,6 @@ mod tests {
         let mut changed = old.clone();
         changed
             .conda_packages
-            .insert("linux-x64".into(), BTreeMap::new());
-        assert!(!is_current(&changed, &tools, &platforms).unwrap());
-        let mut changed = old.clone();
-        changed
-            .pkgx_packages
             .insert("linux-x64".into(), BTreeMap::new());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
     }

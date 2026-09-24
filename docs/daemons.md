@@ -531,6 +531,10 @@ PostgreSQL uses the `postgres` user with local trust authentication. Set
 to `postgres`. Changing it later does not create another database in an existing
 cluster.
 
+PostgreSQL does not run as root. Run mise as a regular user to start it, for
+example with `USER` in a container image. As root, starting a PostgreSQL daemon or
+provider fails before mise installs anything.
+
 Exports: `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, and `DATABASE_URL`.
 
 #### Redis
@@ -1087,3 +1091,135 @@ after upgrading to get shell PID tracking; old activation scripts display a hint
 
 Project sessions also apply to native pitchfork daemons configured for automatic
 lifecycle management. See [pitchfork's shell sessions](https://pitchfork.jdx.dev/guides/shell-hook.html).
+
+## Shared server providers
+
+Define shared servers in your global mise configuration. Providers have their own
+ports, tool versions and persistent storage, independent of any project checkout:
+
+```toml
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+```
+
+Providers support the PostgreSQL, CockroachDB and NATS presets. Provider names use
+lowercase letters, digits and hyphens. Like project daemons, they require
+`experimental = true` and Pitchfork.
+
+```sh
+mise daemons providers ls --json
+mise daemons providers start local-postgres
+mise daemons providers stop local-postgres
+mise daemons providers restart local-postgres
+```
+
+Management commands require explicit provider names. Providers do not join project
+daemon groups or shell start/stop sessions, and do not shut down when idle. Change
+server settings in global configuration, then explicitly restart the provider.
+Mise refuses to replace a running provider's configuration through another start.
+
+By default, provider data lives under `$MISE_STATE_DIR/daemon-providers/<name>/data`.
+Set `data_dir` to choose another location; relative paths resolve beneath that
+provider's state directory. Removing a project or pruning deleted worktrees does
+not remove provider data. Renaming a provider does not move its existing data.
+
+Provider processes and their readiness probes use the provider's tools and a
+minimal environment, without the invoking project's environment, tools or profile.
+Servers listen locally and use the presets' local-development authentication.
+
+### Choose what to share
+
+Keep an ordinary preset declaration for a server and data owned by this checkout.
+To share a server while keeping a separate database, select a global provider:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+```
+
+Mise derives a database name from the canonical checkout path and daemon name.
+Each worktree or unrelated project gets its own database on the same server.
+Symlinked paths to the same checkout keep the same database. Moving the checkout
+changes that identity; the previous database remains on the provider.
+
+To share the database too, choose the same resource name in each consumer:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+resource = "shared_app"
+```
+
+Resource names start with a lowercase letter and contain at most 63 lowercase
+letters, digits or underscores. This is development isolation between trusted
+local projects, not a security boundary: SQL clients use the preset's existing
+local superuser authentication.
+
+Use a local configuration or profile override to opt into sharing. Mise never
+selects a provider automatically, and a missing provider is an error. A provider
+reference accepts only `provider` and `resource`; server versions, options and
+storage belong in global configuration.
+
+PostgreSQL and CockroachDB resources export their usual preset connection
+variables, pointing at the selected database. Explicit `[env]` values still win.
+The provider's tool version does not become a tool requirement for the consumer.
+
+Starting `db`, running a task with `daemons = ["db"]`, or starting an application
+with `depends = ["db"]` waits for both the server and database provisioning.
+`mise daemons register` prepares this dependency chain without starting the server
+or creating databases, including for later hostname-triggered application starts.
+
+Each consumer has a small readiness process managed by Pitchfork. Stopping or
+pruning that consumer stops its readiness process, leaving the shared server and
+its data intact. Starting another consumer provisions additional databases even
+when the provider's data directory already exists. Concurrent provisioning is
+serialized and existing databases are preserved. Mise does not run application
+migrations or automatically delete databases.
+
+After changing a consumer's resource selection, restart its daemon. Use
+`mise daemons ls --json` to inspect `provider`, `resource` and `ownership`; use
+`mise daemons providers ls --json` for the server's port and storage location.
+
+### Share NATS without sharing messages
+
+NATS providers use an account for each resource. Accounts have separate subject
+and JetStream namespaces, so two checkouts can use identical stream and subject
+names without receiving each other's messages:
+
+```toml
+# Global configuration
+[daemon_providers.local-nats]
+preset = "nats"
+version = "2"
+port = "auto"
+```
+
+```toml
+# Project configuration
+[daemons.messages]
+provider = "local-nats"
+```
+
+As with SQL providers, omit `resource` for a checkout-specific account or set the
+same explicit resource name in several consumers to share that account and its
+messages. `NATS_URL` includes the account's username and password.
+
+Mise generates persistent credentials when first resolving a NATS resource's
+connection settings, including during environment inspection. Credentials and
+managed configuration are stored in private files under the provider's state
+directory. Inspecting the environment does not start NATS or provision a live
+account. Daemon listing output omits passwords; treat exported `NATS_URL` values
+as credentials.
+
+Starting a consumer adds its account through a validated configuration reload.
+Existing accounts and their connections remain available. Provider restarts keep
+credentials and JetStream data; stopping a consumer does not remove its account.
+`options.jetstream = false` disables JetStream while retaining separate subject
+namespaces.
+
+Automatic account provisioning currently requires mise-managed, loopback-only
+NATS configuration. Custom configuration files and TLS/certificate authentication
+are rejected for providers; use an ordinary local NATS daemon for those setups.
+Mise does not rewrite an existing NATS configuration or certificate mapping.

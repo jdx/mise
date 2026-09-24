@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -181,6 +181,54 @@ pub(crate) fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         _ => {}
     };
+    Ok(())
+}
+
+/// Remove `name` under `parent` and, for a directory, everything below it,
+/// without following a symlink anywhere in the tree. Every entry is resolved
+/// relative to a descriptor for the directory holding it: a symlink is
+/// unlinked, never descended into, and a directory is opened with
+/// `O_NOFOLLOW`, so an entry swapped for a symlink mid-walk fails the open
+/// instead of redirecting the removal. Directories are removed bottom-up. A
+/// missing `name` is not an error.
+#[cfg(unix)]
+pub(crate) fn remove_all_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    let stat =
+        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(nix::errno::Errno::ENOENT) => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+    // Compare the whole type field: sockets and block devices share the
+    // directory bit.
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode & nix::libc::S_IFMT);
+    if kind == nix::sys::stat::SFlag::S_IFDIR {
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let mut directory = nix::dir::Dir::from_fd(fd)?;
+        let entries = directory
+            .iter()
+            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for entry in entries {
+            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
+                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
+            }
+        }
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+    } else {
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+    }
     Ok(())
 }
 
@@ -430,19 +478,6 @@ pub(crate) fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) 
             copy(from, to)
         }
     }
-}
-
-pub(crate) fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
-    let from = from.as_ref();
-    let to = to.as_ref();
-    trace!("cp -r {} {}", from.display(), to.display());
-    recursive_ls(from)?.into_iter().try_for_each(|path| {
-        let relative = path.strip_prefix(from)?;
-        let dest = to.join(relative);
-        create_dir_all(dest.parent().unwrap())?;
-        copy(&path, &dest)?;
-        Ok(())
-    })
 }
 
 pub(crate) fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
@@ -1017,19 +1052,6 @@ pub(crate) fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     }
 
     Ok(output)
-}
-
-pub(crate) fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(Default::default());
-    }
-
-    Ok(WalkDir::new(dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_ok(|e| e.file_type().is_file())
-        .map_ok(|e| e.path().to_path_buf())
-        .try_collect()?)
 }
 
 #[cfg(unix)]
@@ -1948,10 +1970,24 @@ pub(crate) fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The largest zstd window mise decodes: 2^30 (1 GiB). libzstd refuses frames
+/// with a window above 2^27 (128 MiB) unless the caller raises the limit, the
+/// same limit the `zstd` CLI lifts with `--long`. Large release archives such
+/// as LLVM's are compressed with a 1 GiB window. Going no higher bounds the
+/// memory an archive can make the decoder allocate, and 2^30 is also the most
+/// libzstd supports on 32-bit platforms.
+const ZSTD_WINDOW_LOG_MAX: u32 = 30;
+
+fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R>>> {
+    let mut dec = zstd::Decoder::new(reader)?;
+    dec.window_log_max(ZSTD_WINDOW_LOG_MAX)?;
+    Ok(dec)
+}
+
 pub(crate) fn un_zst(input: &Path, dest: &Path) -> Result<()> {
     debug!("zstd -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = zstd::Decoder::new(f)?;
+    let mut dec = zstd_decoder(f)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
@@ -2208,7 +2244,7 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
         ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         ExtractionFormat::TarBz2 => Box::new(BzDecoder::new(f)),
-        ExtractionFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        ExtractionFormat::TarZst => Box::new(zstd_decoder(f)?),
         ExtractionFormat::Tar => Box::new(f),
         ExtractionFormat::TarBr | ExtractionFormat::TarLz4 | ExtractionFormat::TarSz => {
             bail!("{format} format not supported")
@@ -3762,6 +3798,41 @@ esac
 
         let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
         assert!(err.to_string().contains("non-regular archive entry"));
+    }
+
+    #[test]
+    fn test_archive_content_files_tar_zst_decodes_a_long_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.tar.zst");
+        let mut tar = Vec::new();
+        {
+            let mut builder = jdx_tar::Builder::new(&mut tar);
+            let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+            header.set_size(4);
+            header.set_mode(0o755);
+            builder
+                .append_data(&mut header, "pkg/tool", &b"tool"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        // A streamed frame has no content size, so it carries a window
+        // descriptor. Rewrite it to 2^30, the window LLVM's releases declare,
+        // rather than making the test allocate a 1 GiB compression window.
+        let mut encoder = zstd::Encoder::new(Vec::new(), 1).unwrap();
+        encoder.write_all(&tar).unwrap();
+        let mut zst = encoder.finish().unwrap();
+        assert_eq!(&zst[..4], &[0x28, 0xb5, 0x2f, 0xfd]);
+        assert_eq!(
+            zst[4] & 0x23,
+            0,
+            "expected no single-segment flag or dictionary id"
+        );
+        zst[5] = 20 << 3;
+        fs::write(&archive_path, &zst).unwrap();
+
+        let files = archive_content_files(&archive_path, ExtractionFormat::TarZst, 1).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "tool");
     }
 
     #[test]

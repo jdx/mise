@@ -4,7 +4,6 @@ set -euo pipefail
 
 PLUGIN_DIR="$PWD/vfox-url-replacements"
 SERVER_ROOT="$PWD/server"
-PORT_FILE="$PWD/server-port"
 NETRC_FILE="$PWD/netrc"
 mkdir -p "$PLUGIN_DIR/hooks" "$SERVER_ROOT/archive/bin"
 
@@ -69,16 +68,8 @@ cp "$SERVER_ROOT/tool.tar.gz" "$SERVER_ROOT/mirrored-artifact"
 printf '1.0.0\n' >"$SERVER_ROOT/versions.txt"
 printf 'lua-http-download\n' >"$SERVER_ROOT/supplement.txt"
 
-python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
-import http.server
-import os
-import socketserver
-import sys
-
-root, port_file = sys.argv[1:]
-os.chdir(root)
-
-class AuthenticatedHandler(http.server.SimpleHTTPRequestHandler):
+start_http_server --dir "$SERVER_ROOT" --handler - <<'PY'
+class Handler(TestHandler):
     def authenticate(self):
         if self.headers.get("Authorization") == "Basic bWlycm9yOnNlY3JldA==":
             return True
@@ -94,19 +85,7 @@ class AuthenticatedHandler(http.server.SimpleHTTPRequestHandler):
     def do_HEAD(self):
         if self.authenticate():
             super().do_HEAD()
-
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), AuthenticatedHandler) as httpd:
-    with open(port_file, "w") as file:
-        file.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
 PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "vfox URL replacement server port" 30 "$SERVER_PID"
-SERVER_PORT=$(cat "$PORT_FILE")
 
 cat >"$NETRC_FILE" <<'EOF'
 machine 127.0.0.1
@@ -120,8 +99,8 @@ cat >mise.toml <<EOF
 netrc_file = "$NETRC_FILE"
 
 [settings.url_replacements]
-"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$SERVER_PORT/mirrored-artifact"
-"https://upstream.invalid/" = "http://127.0.0.1:$SERVER_PORT/"
+"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$HTTP_PORT/mirrored-artifact"
+"https://upstream.invalid/" = "http://127.0.0.1:$HTTP_PORT/"
 
 [tools]
 "vfox:file://$PLUGIN_DIR" = "1.0.0"

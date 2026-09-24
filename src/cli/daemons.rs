@@ -28,6 +28,11 @@ pub(crate) struct Daemons {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
+    Providers(daemons::providers::Providers),
+    #[usage(name = "__provider-exec", hide = true)]
+    ProviderExec(daemons::providers::Exec),
+    #[usage(name = "__resource", hide = true)]
+    Resource(daemons::providers::Resource),
     Start(Args),
     Register(Register),
     Stop(Args),
@@ -146,6 +151,9 @@ impl Daemons {
                     args.legacy_database.as_deref(),
                 );
             }
+            Some(Commands::Providers(args)) => return args.run().await,
+            Some(Commands::ProviderExec(args)) => return args.run(),
+            Some(Commands::Resource(args)) => return args.run().await,
             Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),
             Some(Commands::Register(_)) => ("register", vec![], false),
@@ -354,6 +362,9 @@ impl Daemons {
             // config valid, but starting the daemon anyway would run it without
             // something it declared it needs. Say which import is missing.
             daemons::ensure_not_blocked(loaded, &starting, None)?;
+            if action != "register" {
+                daemons::presets::ensure_set_runnable_as_user(&starting)?;
+            }
             starting
         } else {
             daemons::DaemonSet::default()
@@ -506,7 +517,7 @@ impl Daemons {
                         None
                     };
                     let host = daemon.and_then(|d| d.host.as_deref());
-                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "data_dir": daemon.and_then(|d| d.data_dir.as_ref()), "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "data_dir": daemon.and_then(|d| d.data_dir.as_ref()), "provider": daemon.and_then(|d| d.provider.as_ref()).map(|b| &b.provider.name), "resource": daemon.and_then(|d| d.provider.as_ref()).map(|b| &b.resource), "ownership": if daemon.is_some_and(|d| d.provider.is_some()) { "consumer" } else { "project" }, "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
                 }
                 continue;
             }
@@ -515,6 +526,7 @@ impl Daemons {
             // depend on, since pitchfork starts dependencies with them.
             let here = set.restricted_to(&starting);
             if install {
+                daemons::providers::install_set(&here).await?;
                 // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.

@@ -29,10 +29,11 @@ allows only the intended service account or root to read them.
 
 File content may come from `source` or inline `content`. Relative source paths
 are resolved from the configuration file that declares them, and source paths
-beginning with `~/` are resolved from the user's home directory. Present files
-must declare exactly one content source. Targets must be absolute paths or
-begin with `~/`, which resolves from the user's home directory. mise refuses to
-manage `/` itself.
+beginning with `~/` are resolved from the user's home directory. A file may
+declare at most one content source; a present file with neither manages only
+its [permissions](#permissions-without-content). Targets must be absolute paths
+or begin with `~/`, which resolves from the user's home directory. mise refuses
+to manage `/` itself.
 
 Directory creation uses `mkdir -p` semantics, so missing parent directories are
 created automatically. The configured ownership and mode apply to the declared
@@ -55,6 +56,33 @@ directory as <span v-pre>`{{ config_root }}`</span>, and the destination as
 included in plans, dry-run descriptions, status output, or privileged helper
 output.
 
+Set `remove_empty = true` beside `template = true` to remove the target when
+the template renders to empty or whitespace-only content. This lets a single
+declaration switch a file on and off from `vars` or the environment:
+
+```toml
+[vars]
+proxy_host = "proxy.internal:3128"
+
+[bootstrap.files."/etc/apt/apt.conf.d/95proxy"]
+template = true
+remove_empty = true
+content = """
+{% if vars.proxy_host %}Acquire::http::Proxy "http://{{ vars.proxy_host }}";
+{% endif %}"""
+```
+
+With `proxy_host` set, mise writes the file. Set it to `""` and the next apply
+removes `/etc/apt/apt.conf.d/95proxy`; the plan shows the removal as
+`absent (template rendered empty)`, and `notify` services fire as for any other
+removal. A directory at the target is still refused, as with
+`state = "absent"`. When a secret the template needs is unavailable, mise cannot
+tell whether the template is empty, so it never removes the file: status reports
+it as not inspected and apply fails as for any other template. `remove_empty` is
+rejected on files without `template = true` and on `state = "absent"` files.
+The file's declared state remains present for validation, so its parent
+directories must still allow a present file.
+
 mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
 rename. Changes are attempted as the current user first. If the filesystem
@@ -65,6 +93,60 @@ search one of its parent directories, mise compares its metadata and content in
 one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
+
+How mise resolves a file's path depends on who makes the change. A change the
+current user can make is made as that user, and symlinked parent directories
+are followed like any other path they open, so `~/.ssh/config` works when
+`~/.ssh` is a symlink. A change made as root, such as one that declares `owner`
+or `group` or writes into a directory the user cannot modify, resolves the
+parent directories one at a time, then inspects, writes, renames, or removes
+the file relative to the directory it opened. A symlink in a directory owned by
+root that no other user can write is followed, as `/etc` is on macOS. Any other
+symlinked parent directory is refused, because a user who could write that
+directory could otherwise redirect root's change to a file such as
+`/etc/shadow`. When mise itself runs as root, every file is inspected and
+changed this way. Status and dry-run report such a file as `unknown` with the
+symlink it crosses, and apply fails with the same reason. Declare the resolved
+path instead.
+
+## Permissions without content
+
+Leave out `source` and `content` to manage a file's mode, owner, or group while
+something else manages what it contains, such as a package, an installer, or
+the user:
+
+```toml
+[bootstrap.files."/etc/ssh/sshd_config"]
+mode = "0600"
+owner = "root"
+```
+
+Declare at least one of `mode`, `owner`, or `group`. Only the declared fields
+are compared and changed: without `mode`, the mode is left as it is rather than
+reset to `0644`. mise changes the existing file in place, so its content and
+inode are untouched and hard links and open handles keep pointing at it.
+Changing the owner or group may clear setuid and setgid bits, as it does with
+`chown`; declare `mode` to keep them.
+
+These entries never create, replace, or remove the file:
+
+- A missing target is skipped with a warning, and apply still succeeds.
+- A symlink, directory, or other non-regular file is reported as `unknown`;
+  apply warns and leaves it unchanged. The change is made through a handle
+  opened without following symlinks, so it never lands on a symlink's target.
+  On Linux and macOS, the owner of a file it cannot read can still change its
+  mode without `sudo`; other Unix systems may retry that change through `sudo`.
+- `template`, `remove_empty`, and `replace` require `source` or `content` and
+  are rejected here.
+- `mise bootstrap unapply` keeps the file, since mise never managed its content.
+
+`notify` fires when mise changes the file's permissions.
+
+A mode change to a file the current user owns is made as that user; a
+declared `owner` or `group`, or a mode change to another user's file, is made
+as root. Parent directories are resolved as described above, except that apply
+warns and leaves the file unchanged instead of failing when root would cross an
+untrusted symlink.
 
 ## Files before packages
 

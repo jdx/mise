@@ -242,7 +242,7 @@ impl Set {
     async fn complete(&self) -> Result<()> {
         let config = Config::get().await?;
         for ev in self.cur_env(&config).await? {
-            println!("{}", ev.key);
+            miseprintln!("{}", ev.key);
         }
         Ok(())
     }

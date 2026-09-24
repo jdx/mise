@@ -157,6 +157,9 @@ List built\-in backends
 \fIAliases: \fRlist
 .RE
 .TP
+\fBbackends switch\fR
+Switch tools to the backend the registry now installs them from
+.TP
 \fBbin\-paths\fR
 List all the active runtime bin paths
 .TP
@@ -516,6 +519,21 @@ Print the script to disable mise in the current shell session
 .RS
 \fIAliases: \fRdaemon
 .RE
+.TP
+\fBdaemons providers\fR
+Manage shared servers defined in global [daemon_providers].
+.TP
+\fBdaemons providers ls\fR
+List configured and previously managed shared servers.
+.TP
+\fBdaemons providers start\fR
+Start the named shared servers.
+.TP
+\fBdaemons providers stop\fR
+Stop the named shared servers without deleting their data.
+.TP
+\fBdaemons providers restart\fR
+Restart the named shared servers with their current configuration.
 .TP
 \fBdaemons start\fR
 Arguments passed to pitchfork; daemon names may be short or qualified.
@@ -1302,6 +1320,52 @@ Installed plugin availability and built\-in backends are separate lists
 .RS 4
 mise backends ls
 mise plugins ls
+.RE
+.SH "MISE BACKENDS SWITCH"
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `\-\-global`.
+.PP
+\fBUsage:\fR mise backends switch [OPTIONS] [<TOOL@VERSION>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would switch without changing the lockfile or installs
+.TP
+\fB\-g, \-\-global\fR
+Switch tools in the global config's lockfile instead of the project's
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL@VERSION>\fR
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
+\fBExamples:\fR
+.PP
+Move communique to the registry's current backend
+.PP
+.RS 4
+mise backends switch communique
+.RE
+.PP
+List every locked tool the registry now installs from another backend
+.PP
+.RS 4
+mise backends switch \-\-dry\-run
 .RE
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths
@@ -3951,6 +4015,58 @@ With no subcommand, list configured and previously managed daemons.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE DAEMONS PROVIDERS"
+Manage shared servers defined in global [daemon_providers].
+.PP
+\fBUsage:\fR mise daemons providers [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS LS"
+List configured and previously managed shared servers.
+.PP
+\fBUsage:\fR mise daemons providers ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS START"
+Start the named shared servers.
+.PP
+\fBUsage:\fR mise daemons providers start [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS STOP"
+Stop the named shared servers without deleting their data.
+.PP
+\fBUsage:\fR mise daemons providers stop [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS RESTART"
+Restart the named shared servers with their current configuration.
+.PP
+\fBUsage:\fR mise daemons providers restart [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE DAEMONS START"
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .PP
@@ -6055,6 +6171,8 @@ re\-resolved against the latest matching remote versions, so the lockfile
 advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade \-\-bump` to rewrite pins in mise.toml).
+If the remote versions cannot be fetched, it fails rather than keep
+the locked version.
 .TP
 \fB\-\-json\fR
 Output version changes as JSON
@@ -6170,6 +6288,12 @@ Truncate long terminal output to fit the available width
 \fIDefault: \fRtrue
 .RE
 .TP
+\fB\-b, \-\-backend\fR \fI<BACKEND>\fR
+Only show tools from this backend, e.g. aqua, cargo, core, go
+
+Registry shorthands count as the backend they resolve to, so `jq` is listed
+under aqua. Repeat the flag to show several backends.
+.TP
 \fB\-c, \-\-current\fR
 Only show tool versions currently specified in a mise.toml
 .TP
@@ -6178,6 +6302,11 @@ Only show tool versions currently specified in the global mise.toml
 .TP
 \fB\-i, \-\-installed\fR
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+.TP
+\fB\-\-grouped\fR
+List tools in a separate section for each backend
+
+Cannot be combined with \-\-json; use \-\-backend to filter JSON output.
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
@@ -6260,6 +6389,18 @@ Include references from every tracked configuration file
 .PP
 .RS 4
 mise ls \-\-all\-sources
+.RE
+.PP
+Show only tools from the go or cargo backends
+.PP
+.RS 4
+mise ls \-\-backend go \-\-backend cargo
+.RE
+.PP
+List tools in a separate section for each backend
+.PP
+.RS 4
+mise ls \-\-grouped
 .RE
 .SH "MISE LS-REMOTE"
 List tool versions available to install
@@ -7570,6 +7711,11 @@ Search for available tools
 
 Searches the registry and installed backend catalogs for tools matching NAME.
 
+Prefix NAME with a backend to also search that backend's package registry:
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `\-\-all` to search every backend,
+including all of those package registries. Otherwise, unprefixed searches do
+not query package registries.
+
 By default, it will show all tools that fuzzy match the search term. For
 non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
@@ -7577,6 +7723,9 @@ non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-a, \-\-all\fR
+Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries
 .TP
 \fB\-i, \-\-interactive\fR
 Show an interactive search menu
@@ -7613,6 +7762,13 @@ jq    Command\-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq \- interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+.RE
+.PP
+.PP
+.RS 4
+mise search \-\-match\-type equal npm:typescript\-language\-server
+Tool                            Description
+npm:typescript\-language\-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 .RE
 .PP
 .PP
@@ -9271,6 +9427,9 @@ Only show requested versions
 \fB\-\-tool\-options\fR
 Only show tool options
 .TP
+\fB\-\-url\fR
+Only show the project URL from the registry
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9586,8 +9745,11 @@ Upgrade to the latest version available, bumping the version in mise.toml
 For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
 this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
-It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
-would change your config to `node = "22"`.
+With a bare tool, it keeps the same precision as what was there before, so if you instead had
+`node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
+provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
+For version selectors, `settings.pin` persists the resolved concrete version. Requests from non\-writable
+sources are not persisted. For example, `mise upgrade node@latest \-\-bump` writes `latest`.
 .TP
 \fB\-i, \-\-interactive\fR
 Choose which tools to upgrade from a multiselect menu

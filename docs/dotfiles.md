@@ -198,8 +198,8 @@ and configuration before changing the original file.
 
 `apply` also runs as part of [`mise bootstrap`](/bootstrap.html), with the
 configured `pre-dotfiles` and `post-dotfiles` hooks. `mise install` and
-`mise bootstrap packages` leave dotfiles alone. After `mise dot apply`
-writes a target, it runs the matching
+`mise bootstrap packages` leave dotfiles alone. After `mise dot apply` or
+the dotfiles phase of `mise bootstrap` writes a target, it runs the matching
 [`[history.reload]` commands](/history.html#reload-an-application-after-restoring-files),
 for example to reload the application that reads it.
 
@@ -216,6 +216,7 @@ Choose how mise creates a target from its source:
 | `symlink-each` | Create directories and link each file within them.                | The target directory also holds files you want mise to leave alone.   |
 | `copy`         | Copy a file or directory, overwriting matching files.             | The application needs a regular file or writes its own configuration. |
 | `template`     | Render a source file with the [template engine](/templates.html). | The output depends on machine-specific variables.                     |
+| `absent`       | Remove a file or symlink at the target; takes no source.          | A file you no longer use should not exist on any machine.             |
 
 For example, to link a directory:
 
@@ -233,6 +234,58 @@ or remove previously created links.
 Directory copies keep existing target files when you delete or exclude their
 sources. Review and remove those leftover copies yourself.
 
+### Removing files {#absent}
+
+Use `mode = "absent"` to remove a file you no longer want on your
+machines, such as the configuration of a tool you replaced:
+
+```toml
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+```
+
+`mise dot apply` deletes `~/.oldrc` if it exists and does nothing once it
+is gone. The entry is the instruction, so mise removes a regular file or a
+symlink without comparing its content. It removes a symlink itself, never
+the file or directory the link points to.
+
+An `absent` entry never removes a directory, or anything else that is
+not a regular file or symlink, such as a socket or FIFO. For those
+targets, `status` and `apply` report an error naming the path, even with
+`--force`. Remove it yourself. The one exception is a parent directory mise
+created when an earlier entry wrote this target: once the file is gone and
+the directory is empty, it goes too, as [for templates](#remove-empty).
+
+An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
+`permissions`, `encrypt`, `remove_empty`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
+and an edit entry cannot change the file it removes.
+
+An `absent` target names exactly one path, so it cannot contain `*`, `?`,
+or `[`. To remove a file whose name contains those characters, declare
+`state = "absent"` under
+[`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
+
+`mise dot status` shows the entry as `absent` once the target is gone, and
+as `would remove` while a file or symlink is still there.
+`mise dot apply --dry-run` prints `rm <target>`.
+
+When a [tracked](#tracking-files-in-place) path is removed, the removal is
+recorded like any other apply, so `mise dot undo` restores the file.
+`mise dot unapply` leaves the target alone, because mise did not create
+the file. `mise oci build` adds an OCI whiteout for an `absent` target, so a
+file the base image has there is hidden.
+
+[Destination variants](#platform-specific-destinations) work with
+`absent`, so you can remove a file on some machines only:
+
+```toml
+[dotfiles."~/.bash_profile"]
+mode = "absent"
+variants = [{ os = "macos" }]
+```
+
+Machines that match no variant skip the entry.
+
 ### Platform-specific destinations
 
 Use `variants` to deploy one source to different paths on different machines:
@@ -248,8 +301,8 @@ variants = [
 ]
 ```
 
-Destination variants work with `copy`, `symlink`, `symlink-each`, and
-`template`. They share the [tracking variant selectors](#variants): `os`
+Destination variants work with `copy`, `symlink`, `symlink-each`,
+`template`, and [`absent`](#absent). They share the [tracking variant selectors](#variants): `os`
 (optionally with an architecture), `profile` (a mise environment selected
 with `-E` or `MISE_ENV`), and `default = true`. The most specific matching
 variant wins; ties are reported as invalid, and no match without a default
@@ -313,7 +366,8 @@ Templates can use `env`, `vars`, `exec()`, and the rest of the
 <span v-pre>`{{ secret(name="logical_name") }}`</span>. Use
 `--prompt-secrets` with a dotfiles command to securely prompt for missing
 values. Applying a template writes its rendered content and gives the target
-the source file's permissions. A later apply also repairs changed permissions.
+the source file's permissions, or the ones [`permissions`](#permissions) sets.
+A later apply also repairs changed permissions.
 
 `status`, `diff`, and `apply` render templates to check their output. This
 executes any `exec()` calls in those templates, using your trusted config.
@@ -325,6 +379,66 @@ layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.
+
+#### Removing a target when a template renders empty {#remove-empty}
+
+A template normally writes its output even when that output is empty. With
+`remove_empty = true`, an output that is empty or contains only whitespace
+removes the target instead. This lets one template decide whether a file
+exists at all, for example a work-only config:
+
+```toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "work.toml.tera", mode = "template", remove_empty = true }
+```
+
+<div v-pre>
+
+```jinja
+{% if env.WORK == "1" %}
+[proxy]
+url = "http://proxy.example.com"
+{% endif %}
+```
+
+</div>
+
+With `WORK=1`, `mise dot apply` writes the file. Without it, the template
+renders empty and the next apply removes the file. Setting the variable again
+recreates it. `status` and `diff` show a pending removal before any apply.
+
+mise removes a target only when it can tell the file is its own. The target
+must be empty or whitespace-only, or it must still hold exactly the content
+mise last wrote there. Otherwise, apply reports a conflict and keeps the file,
+as it does for other [conflicts](#conflicts). Use `mise dot apply --force` to
+remove it anyway. mise never removes a directory at the target without
+`--force`, and a target it cannot read (for example one written with
+`permissions = "0200"`) is also a conflict, because mise cannot confirm the
+content is its own.
+
+Parent directories that mise created for the target are removed with it once
+they are empty. In the example, if `~/.config/app` did not exist before the
+first apply, removing `work.toml` also removes `app`. Directories that already
+existed, directories that still hold other files, and directories another entry
+needs are kept. Only directories physically inside your home directory are
+removed: your home directory itself and anything outside it are kept. That
+covers `/opt/app` for a target `/opt/app/app.toml`, and `~/.config/app` when
+`~/.config` is a symlink to a directory outside your home.
+
+mise stores a digest of what it last wrote to each template target, and the
+directories it created, in `$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
+`remove_empty` later still allows a safe removal. An apply that finds a target
+already byte-for-byte identical to the render also records it, so that file
+counts as written by mise: removing it loses nothing the template cannot
+produce again, and any later edit makes it a conflict. Because the record is
+local, a machine that has never applied the template treats an existing
+target with other non-empty content as a conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
+[history](#tracking-files-in-place) tracks it.
+
+`remove_empty` is valid only with `mode = "template"`. With it set, `mise oci
+build` leaves the file out of the image when the template renders empty. It
+also adds an OCI whiteout for that path, so a file the base image has there is
+hidden too.
 
 See [Windows](#windows) for differences in link behavior on that platform.
 
@@ -361,7 +475,8 @@ always written explicitly.
 
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. On Unix, the resulting file has permissions `0600`,
-so only its owner can read and write it:
+so only its owner can read and write it, unless
+[`permissions`](#permissions) sets others:
 
 ```toml
 [dotfiles]
@@ -371,6 +486,49 @@ so only its owner can read and write it:
 Use `content` on its own. It cannot be combined with `source`, `mode`,
 `exclude`, `manifest`, or the edit options `block`, `line`, `template`, and
 `comment`.
+
+### Permissions
+
+Set `permissions` to an octal string to give the target those permissions
+instead of the ones it would otherwise get. It works with `copy` and
+`template` entries that have a file source, and with inline `content`:
+
+```toml
+[dotfiles]
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600" }
+```
+
+`mise dot status` reports a target whose permissions have changed since, and
+the next apply sets them again.
+
+On its own, `permissions` manages only the permissions of a file or
+directory that already exists. mise never creates it, never changes its
+content, and never infers a source for it from `dotfiles.root`:
+
+```toml
+[dotfiles]
+"~/.ssh" = { permissions = "0700" }
+"~/.ssh/config" = { permissions = "0600" }
+```
+
+When the target does not exist, there is nothing to adjust: apply warns and
+skips it, and status counts it as applied with the reason
+`target absent; permissions not applied`, so `mise dot status --missing`
+does not fail. A directory that another entry creates in the same apply still
+gets its permissions. When the target is a symlink, mise does not follow it:
+status reports it and apply skips it with a warning, and a link swapped in
+while mise runs is refused rather than followed. `mise dot edit` does not
+create a missing target. Unapply never removes a target whose permissions are
+all mise manages.
+
+A declared mode may deny even the owner read access, such as `0200`. mise
+then checks only the target's permissions, because it cannot read the
+content back.
+
+`permissions` cannot be combined with `symlink` or `symlink-each`, which have
+no permissions of their own, with `track`, whose history records the file's
+mode, or with a directory source. A permissions-only target cannot contain
+wildcards. On Windows, `permissions` is ignored with a warning.
 
 ### Matching multiple source files
 
@@ -517,7 +675,8 @@ For a symlink, point the edit at the real file you want to change.
 Removing an entry from config leaves its file, block, or line in place.
 To remove them too, run `mise dot unapply` before deleting
 the entry from your config. To remove a file from machines that already
-applied an old entry, replace the entry with a `state = "absent"` declaration
+applied an old entry, or one that no entry created, replace the entry with
+[`mode = "absent"`](#absent), or with a `state = "absent"` declaration
 under [`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
 
 ## Unapplying
@@ -534,8 +693,19 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
   matches. Modified targets require `--force`.
 - Directory copies are removed file by file. Unmanaged neighbors always
   survive, and directories are removed only when empty.
+- Targets with only [`permissions`](#permissions) are never removed.
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
+- `absent` entries are skipped. mise does not recreate the file they removed.
+
+When a `symlink`, `copy`, `template`, or inline `content` target is removed,
+the parent directories mise created for it go too, once they are empty.
+Directories that existed before mise wrote the target, or that hold other
+files, are kept, as are directories another remaining entry needs. Only
+directories physically inside your home directory are removed, never the home
+directory itself or anything outside it, including through a symlinked parent. mise records the directories it creates in
+`$MISE_STATE_DIR/dotfiles/`, so targets written by an older version remove
+none.
 
 If you deleted a source file from a copied directory, unapply cannot
 identify its old copy. Remove that leftover file yourself. Use `--dry-run`
@@ -588,7 +758,14 @@ change. mise also records which paths the operation touched. Run
 ### JSON output
 
 `mise dot status --json` uses `source_missing` for the
-`source missing` state. Each entry also includes an `origin` object
+`source missing` state. A `differs` entry also carries a human-readable
+`reason`, and so does a permissions-only entry whose target does not
+exist. An entry that sets `permissions` includes them as an octal string.
+An `absent` entry has `"mode": "absent"` and
+`"source": null`. Its state is `applied` once the target is gone and
+`differs` while a file or symlink is still there, with a `reason` such as
+`present; will be removed`, or a template that renders empty and will be
+removed. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved
 source path.

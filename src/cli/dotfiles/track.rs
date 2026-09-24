@@ -1210,6 +1210,7 @@ mod declaration_tests {
             exclude: vec![],
             include: None,
             manifest: None,
+            permissions: None,
             base: PathBuf::from("/home/test"),
             origin: ResourceOrigin {
                 config: PathBuf::from("/home/test/.config/mise/config.toml"),
@@ -1220,6 +1221,7 @@ mod declaration_tests {
             policy,
             variants: vec![],
             enabled: true,
+            remove_empty: false,
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);

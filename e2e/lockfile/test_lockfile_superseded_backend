@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+# A tool locked under a backend the registry has since replaced keeps using the
+# locked backend, including when `mise lock --bump` re-resolves its version, and
+# mise says how to switch. hk moved from Aqua to Packslip at 1.58.1; Aqua still
+# serves every release.
+export MISE_LOCKFILE=1
+export MISE_MINIMUM_RELEASE_AGE=0
+detect_platform
+
+reset_lockfile() {
+  cat <<'EOF' >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.57.0"
+backend = "aqua:jdx/hk"
+specifiers = ["1"]
+EOF
+}
+
+cat <<'EOF' >mise.toml
+[tools]
+hk = "1"
+EOF
+reset_lockfile
+
+echo "=== --bump with a tool argument re-resolves under the locked backend ==="
+mise lock --bump hk --platform "$MISE_PLATFORM" 2>stderr
+assert_contains "cat mise.lock" 'version = "1.58.1"'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+assert_not_contains "cat mise.lock" 'packslip:'
+assert_contains "cat stderr" 'hk is locked to aqua:jdx/hk, but the registry now installs it from packslip:github.com/jdx/hk'
+assert_contains "cat stderr" 'mise backends switch hk'
+
+echo "=== --bump without arguments keeps the locked backend too ==="
+reset_lockfile
+mise lock --bump --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'version = "1.58.1"'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+
+echo "=== installing warns and installs from the locked backend ==="
+assert_contains "mise install 2>&1" 'mise backends switch hk'
+assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "aqua:jdx/hk"'
+
+echo "=== --dry-run reports the switch without writing ==="
+assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@1.58.1 from aqua:jdx/hk to packslip:github.com/jdx/hk'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+
+echo "=== named tools accept a version or the locked backend ==="
+assert_contains "mise backends switch --dry-run hk@1.58.1 2>&1" 'would switch hk@1.58.1'
+assert_contains "mise backends switch --dry-run aqua:jdx/hk 2>&1" 'would switch hk@1.58.1'
+assert_fail_contains "mise backends switch --dry-run hk@1.57.0" "not locked to a backend the registry has replaced"
+
+echo "=== a switch that cannot relock restores the lockfile ==="
+cp mise.lock mise.lock.before
+assert_fail_contains "MISE_OFFLINE=1 mise backends switch hk" "restored the previous lockfiles"
+assert "cmp -s mise.lock mise.lock.before && echo same" "same"
+
+echo "=== switch moves the lock entry at the same version and reinstalls ==="
+mise backends switch hk
+assert_contains "cat mise.lock" 'version = "1.58.1"'
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_contains "cat mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
+assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "packslip:github.com/jdx/hk"'
+assert_contains "mise exec -- hk --version" "hk 1.58.1"
+assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
+assert_contains "mise backends switch" "every tool in the project lockfile already uses the registry's backend"
+assert_fail_contains "mise backends switch hk" "not locked to a backend the registry has replaced"
+
+echo "=== a backend named in the config is the user's choice, not superseded ==="
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:jdx/hk" = "1.58.1"
+EOF
+cat <<'EOF' >mise.lock
+lockfile_version = 2
+
+[[tools."aqua:jdx/hk"]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+EOF
+assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
+
+echo "=== the global lockfile switches only with --global ==="
+# The project's own hk, already on the registry's backend, must not hide the
+# global one.
+cat <<'EOF' >mise.toml
+[tools]
+hk = "1.58.1"
+EOF
+cat <<'EOF' >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "packslip:github.com/jdx/hk"
+specifiers = ["1.58.1"]
+EOF
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+hk = "1"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/mise.lock"
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+specifiers = ["1"]
+
+[tools.hk."platforms.$MISE_PLATFORM"]
+url = "https://github.com/jdx/hk/releases/download/v1.58.1/placeholder"
+EOF
+assert_contains "mise backends switch --dry-run" "every tool in the project lockfile already uses the registry's backend"
+cp mise.lock project.lock.before
+assert_contains "mise backends switch --global --dry-run 2>&1" 'would switch hk@1.58.1'
+mise backends switch --global
+# the project's own hk entry is not touched
+assert "cmp -s mise.lock project.lock.before && echo same" "same"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'placeholder'
+# the relock kept the lockfile's one platform instead of the common defaults
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'platforms.windows-x64'
+
+echo "=== a global lockfile already switched does not unlock the project's backend ==="
+# The global lockfile now locks hk on packslip; the project's own entries,
+# all on aqua, still decide its backend when --bump picks a new version.
+cat <<'TOML' >mise.toml
+[tools]
+hk = "1"
+TOML
+reset_lockfile
+mise lock --bump hk --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'version = "1.58.1"'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'

@@ -104,7 +104,27 @@ pub(crate) async fn plan(
     directories.retain(|directory| !base_directory_paths.contains(&directory.path));
 
     for mut file in files {
-        if declares_absence(file.state, "file", &file.path, opts, &mut unapply) {
+        // A template that renders empty applied nothing, so like a declared
+        // absence there is nothing for unapply to undo. `--force` does not
+        // change that: it covers a target that drifted from what the module
+        // wrote, and an empty render leaves nothing to compare the target with.
+        let reason = if file.rendered_empty() {
+            "template rendered empty, nothing was applied for it"
+        } else {
+            DECLARED_ABSENT
+        };
+        if declares_absence(file.state, "file", &file.path, reason, opts, &mut unapply) {
+            continue;
+        }
+        // The module only set this file's permissions; its content, and so
+        // the file itself, belongs to something else. Say so every time: the
+        // permissions it set stay behind.
+        if file.is_metadata_only() {
+            unapply.skipped.push(Skip {
+                kind: "file",
+                name: file.path.to_string_lossy().into_owned(),
+                reason: "its content is not managed by mise, only its permissions".into(),
+            });
             continue;
         }
         let Some(removal) = classify(&file.plan()?.action, "file", &file.path, opts, &mut unapply)
@@ -222,10 +242,15 @@ pub(crate) async fn plan(
             }
             Ok(false) => {
                 if opts.verbose {
+                    let reason = if request.mode == files::FileMode::Absent {
+                        "declared absent, nothing was applied for it"
+                    } else {
+                        "already absent"
+                    };
                     unapply.skipped.push(Skip {
                         kind: "dotfile",
                         name,
-                        reason: "already absent".into(),
+                        reason: reason.into(),
                     });
                 }
             }
@@ -288,6 +313,7 @@ pub(crate) async fn plan(
             directory.state,
             "directory",
             &directory.path,
+            DECLARED_ABSENT,
             opts,
             &mut unapply,
         ) {
@@ -364,6 +390,7 @@ fn declares_absence(
     state: ManagedState,
     kind: &'static str,
     path: &Path,
+    reason: &str,
     opts: &UnapplyOpts,
     unapply: &mut Unapply,
 ) -> bool {
@@ -374,11 +401,13 @@ fn declares_absence(
         unapply.skipped.push(Skip {
             kind,
             name: path.to_string_lossy().into_owned(),
-            reason: "declared absent, nothing was applied for it".into(),
+            reason: reason.into(),
         });
     }
     true
 }
+
+const DECLARED_ABSENT: &str = "declared absent, nothing was applied for it";
 
 /// Decide whether a managed path can be removed from its current state.
 ///
@@ -535,7 +564,7 @@ pub(crate) async fn execute(
         edits::execute_unapply(&edit_plan, &edit_opts)?;
     }
     if !unapply.dotfiles.is_empty() {
-        files::execute_unapply(&dotfile_plan, &dotfile_opts)?;
+        files::execute_unapply(config, &dotfile_plan, &dotfile_opts)?;
     }
 
     if !unapply.files.is_empty() || !unapply.directories.is_empty() {

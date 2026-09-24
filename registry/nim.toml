@@ -1,0 +1,58 @@
+description = "The Nim programming language"
+detect = ["*.nimble", "nimble.lock", "nim.cfg", "config.nims"]
+idiomatic_files = [".nim-version"]
+os = ["linux", "macos", "windows"]
+test = { cmd = "nim --version", expected = "{{version}}" }
+version_order = "semver"
+
+bins = [
+  "atlas",
+  "nim",
+  "nimble",
+  "nimgrep",
+  "nimpretty",
+  "nimsuggest",
+  "testament",
+]
+[[backends]]
+full = "http:nim"
+platforms = [
+  "linux-x64",
+  "linux-arm64",
+  "macos-x64",
+  "macos-arm64",
+  "windows-x64",
+]
+
+[backends.options]
+strip_components = 1
+version_list_url = "https://nim-lang.org/install.html"
+version_regex = 'nim-(\d+\.\d+\.\d+)-linux_x64\.tar\.xz'
+
+[backends.options.platforms.linux-x64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}-linux_x64.tar.xz.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}-linux_x64.tar.xz"
+
+[backends.options.platforms.linux-arm64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}-linux_arm64.tar.xz.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}-linux_arm64.tar.xz"
+
+[backends.options.platforms.macos-x64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}-macosx_x64.tar.xz.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}-macosx_x64.tar.xz"
+
+[backends.options.platforms.macos-arm64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}-macosx_arm64.tar.xz.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}-macosx_arm64.tar.xz"
+
+[backends.options.platforms.windows-x64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}_x64.zip.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}_x64.zip"
+
+# windows-arm64 runs the x64 build under emulation, which is what
+# `backend_matches_platform` already assumes -- `windows-x64` in `platforms`
+# matches windows-arm64, so without this block it resolves the backend and then
+# fails looking for a URL. Nim publishes no arm64 Windows build.
+[backends.options.platforms.windows-arm64]
+checksum_url = "https://nim-lang.org/download/nim-{{ version }}_x64.zip.sha256"
+url = "https://nim-lang.org/download/nim-{{ version }}_x64.zip"

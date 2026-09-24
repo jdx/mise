@@ -1660,7 +1660,15 @@ impl UnifiedGitBackend {
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
 
-        self.verify_checksum(ctx, tv, &file_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &file_path) {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
@@ -1763,7 +1771,17 @@ impl UnifiedGitBackend {
             .await?;
         ctx.pr.next_operation();
 
-        self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)?;
+        if let Err(err) =
+            self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)
+        {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
         let expected_provenance = artifact_info.provenance.clone();
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
             if let Some(provenance) = expected_provenance.as_ref() {
@@ -3481,6 +3499,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
                     digest: None,
+                    updated_at: None,
                 })
                 .collect(),
         }
