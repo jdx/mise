@@ -698,10 +698,27 @@ impl Run {
             }
         }
 
+        // Start OpenTelemetry as soon as the requested tasks are known, so the
+        // root span covers the whole invocation, setup included, and is named
+        // after what was invoked rather than the resolved dependency set. It
+        // is a local until the tasks start so that a setup failure drops it,
+        // which ends the root span as an error and flushes it.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
+        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&config, &mut task_list).await?;
+        // Only remote tasks need fetching, so skip the span when there are none.
+        let fetch_telemetry = telemetry
+            .as_ref()
+            .filter(|_| task_list.iter().any(|t| t.is_remote()));
+        otel::TaskRunTelemetry::phase(
+            fetch_telemetry,
+            "fetch tasks",
+            fetcher.fetch_tasks(&config, &mut task_list),
+        )
+        .await?;
 
         // Re-render sources, outputs, and dependencies with this invocation's
         // usage arg/flag values before resolving the execution graph.
@@ -720,15 +737,6 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
-        // Capture the user-requested task names before dependency resolution,
-        // so the OpenTelemetry root span is named after what was invoked
-        // rather than the (much larger) resolved dep set.
-        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
-        // Start OpenTelemetry here so the root span covers the whole
-        // invocation, setup included. It is a local until the tasks start so
-        // that a setup failure drops it, which ends the root span as an error
-        // and flushes it.
-        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
         let execution_tasks = task_list.clone();
         let resolved_tasks = otel::TaskRunTelemetry::phase(
             telemetry.as_ref(),

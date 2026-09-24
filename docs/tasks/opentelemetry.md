@@ -90,7 +90,8 @@ Each `mise run` creates one trace.
 That trace contains:
 
 - a root span covering the whole `mise run`
-- setup spans for resolving tasks, installing tools, running deps providers, and starting daemons
+- setup spans for fetching remote tasks, resolving tasks, installing tools, running deps
+  providers, and starting daemons
 - task spans for individual tasks
 - monorepo group spans when tasks come from different `config_root`s
 
@@ -121,7 +122,8 @@ you'd expect: the root span opens once the tasks to run are known and closes aft
 last task finishes, and each group span covers its members.
 
 Setup runs inside the root span, each phase under its own span with
-`mise.span_type = "setup"`: resolving the task graph, installing missing tools,
+`mise.span_type = "setup"`: fetching [remote tasks](/tasks/toml-tasks#remote-tasks) (only when
+there are any), resolving the task graph, installing missing tools,
 running automatic deps providers, and starting daemons. A slow first run on a fresh CI
 runner shows up as a long `install tools` span, not as unexplained time before the first
 task. A failed phase is marked as an error, and so is the root span.
