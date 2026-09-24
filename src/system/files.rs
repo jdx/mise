@@ -3470,11 +3470,11 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     Ok(files)
 }
 
-/// Every (source file, target path) pair of a `dot_prefix` entry, for builds
-/// that skip apply's footprint validation: the source must be a directory,
-/// and no two of its paths may deploy to the same place.
-pub(crate) fn dot_prefix_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
-    if !req.source.is_dir() {
+/// Every (source file, target path) pair of a directory-walking entry, for
+/// builds that skip apply's footprint validation: a `dot_prefix` source must
+/// be a directory, and no two of its paths may deploy to the same place.
+pub(crate) fn directory_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+    if req.dot_prefix && !req.source.is_dir() {
         return Err(dot_prefix_file_source(req));
     }
     walk_source_files(req)
@@ -8001,7 +8001,7 @@ source = "oldrc""#,
         let err = walk_source_files(&req).unwrap_err().to_string();
         assert!(err.contains("to be a directory"), "{err}");
         // builds that skip apply's footprint validation still check it
-        assert!(dot_prefix_files(&req).is_err());
+        assert!(directory_source_files(&req).is_err());
         Ok(())
     }
 
@@ -8067,7 +8067,7 @@ source = "oldrc""#,
             err.contains("dot_prefix requires the source to be a directory"),
             "{err}"
         );
-        assert!(dot_prefix_files(&req).is_err());
+        assert!(directory_source_files(&req).is_err());
         Ok(())
     }
 
