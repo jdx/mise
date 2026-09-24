@@ -23,6 +23,39 @@ use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+
+/// Without its version list a request can only resolve to itself, and that
+/// string is not known to be a version: `4` would be locked as a release that
+/// may not exist. A version the lockfile already holds, or one that is
+/// installed, is known to exist. `cli_versions` are the `tool@version`
+/// arguments, which lock can record without changing the configured request.
+fn reject_unverified_versions(tools: &[LockTool], cli_versions: &[(String, String)]) -> Result<()> {
+    for (ba, tv) in tools {
+        let as_requested = tv.version == tv.request.version()
+            || cli_versions
+                .iter()
+                .any(|(full, version)| *full == ba.full() && *version == tv.version);
+        if !as_requested || tv.resolved_from_lockfile() {
+            continue;
+        }
+        let Some(cause) = crate::backend::version_listing_failure(ba) else {
+            continue;
+        };
+        if tv
+            .backend()
+            .is_ok_and(|backend| backend.list_installed_versions().contains(&tv.version))
+        {
+            continue;
+        }
+        bail!(
+            "cannot lock {}@{}: unable to fetch versions for {}: {cause}",
+            ba.short,
+            tv.version,
+            ba.full()
+        );
+    }
+    Ok(())
+}
 type ToolSelectors = (BTreeSet<String>, BTreeSet<String>);
 
 struct LockCollectionContext<'a> {
@@ -545,6 +578,12 @@ impl Lock {
                     continue;
                 }
             }
+            let cli_versions: Vec<_> = self
+                .tool
+                .iter()
+                .filter_map(|tool| Some((tool.ba.full(), tool.tvr.as_ref()?.version())))
+                .collect();
+            reject_unverified_versions(&tools, &cli_versions)?;
             for (_, tv) in &tools {
                 tv.ba().warn_if_locked_backend_superseded(&tv.version);
             }

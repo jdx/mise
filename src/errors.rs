@@ -85,6 +85,20 @@ fn render_stderr_tail(tail: &Option<String>) -> String {
     }
 }
 
+/// When the version list could not be fetched, the version being installed
+/// was never checked against it, so the install error alone can mislead.
+fn version_listing_hint(tr: &ToolRequest) -> String {
+    crate::backend::version_listing_failure(tr.ba())
+        .map(|cause| {
+            format!(
+                "\nnote: {}@{} was not checked against its version list, which could not be fetched: {cause}",
+                tr.ba().full(),
+                tr.version()
+            )
+        })
+        .unwrap_or_default()
+}
+
 fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> String {
     if failed_installations.is_empty() {
         return "Installation failed".to_string();
@@ -97,10 +111,11 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         // Show the underlying error with the tool context
         // Use {:#} to show full error chain (includes wrapped errors)
         return format!(
-            "Failed to install {}@{}: {:#}",
+            "Failed to install {}@{}: {:#}{}",
             tr.ba().full(),
             tr.version(),
-            error
+            error,
+            version_listing_hint(tr)
         );
     }
 
@@ -108,7 +123,12 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     // Sort by tool name for deterministic output (parallel installs complete in arbitrary order)
     let mut sorted_failures: Vec<_> = failed_installations
         .iter()
-        .map(|(tr, err)| (format!("{}@{}", tr.ba().full(), tr.version()), err))
+        .map(|(tr, err)| {
+            (
+                format!("{}@{}", tr.ba().full(), tr.version()),
+                format!("{err:#}{}", version_listing_hint(tr)),
+            )
+        })
         .collect();
     sorted_failures.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -126,7 +146,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     // Show detailed errors for each failure (in sorted order)
     // Use {:#} to show full error chain (includes wrapped errors)
     for (name, error) in sorted_failures.iter() {
-        output.push(format!("\n{}: {:#}", name, error));
+        output.push(format!("\n{name}: {error}"));
     }
 
     output.join("\n")
