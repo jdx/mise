@@ -107,9 +107,11 @@ rustup default stable
 
 # Bootstrap binary for the steps below. Skip when one already exists: this
 # build runs outside mise's cargo wrapper, so rebuilding here would dirty the
-# -sys crates that `mise run build` (below) just left warm.
+# -sys crates that `mise run build` (below) just left warm. Tokens are
+# withheld from checkout-controlled build scripts.
 if [ ! -x target/debug/mise ]; then
-	cargo build --all-features --ignore-rust-version
+	env -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN \
+		cargo build --all-features --ignore-rust-version
 fi
 # Always invoke this binary. `mise activate --shims` prepends shims that may
 # point at an older mise which still ran tool-level postinstall under MISE_SAFE.
