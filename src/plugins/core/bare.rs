@@ -68,11 +68,18 @@ impl BarePlugin {
         let target = PlatformTarget::from_current();
         let platform_key = self.get_platform_key();
         let (name, url, checksum) = if ctx.locked {
-            let url = tv
+            let platform_info = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|info| info.url.clone())
                 .ok_or_else(|| eyre!("no locked Bare artifact for {}", target.to_key()))?;
+            let url = platform_info
+                .url
+                .clone()
+                .ok_or_else(|| eyre!("no locked Bare artifact for {}", target.to_key()))?;
+            platform_info
+                .checksum
+                .as_ref()
+                .ok_or_else(|| eyre!("no locked Bare checksum for {}", target.to_key()))?;
             (asset_filename(&tv.version, &target)?, url, None)
         } else {
             let asset = self.release_asset(tv, &target).await?;

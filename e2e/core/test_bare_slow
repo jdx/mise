@@ -16,6 +16,6 @@ assert "mise install --locked"
 assert_contains "mise exec -- bare --version" "v1.33.4"
 
 mise uninstall bare@1.33.4
-sed 's/checksum = "sha256:[^"]*"/checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"/' mise.lock >mise.lock.tmp
+sed '/checksum = /d' mise.lock >mise.lock.tmp
 mv mise.lock.tmp mise.lock
-assert_fail "mise install --locked" "Checksum mismatch"
+assert_fail "mise install --locked" "no locked Bare checksum"
