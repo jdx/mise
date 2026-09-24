@@ -15,7 +15,7 @@ use crate::backend::version_list;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::http::HTTP;
+use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -1242,10 +1242,21 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
-        ctx.pr.set_message(format!("download {filename}"));
-        let download = HTTP
-            .download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
-            .await?;
+        let download = match local_artifact_path(&url)? {
+            Some(src) => {
+                ctx.pr.set_message(format!("copy {filename}"));
+                if let Some(parent) = file_path.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                file::run_blocking(|| file::copy(&src, &file_path))?;
+                DownloadFileMetadata::default()
+            }
+            None => {
+                ctx.pr.set_message(format!("download {filename}"));
+                HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
+                    .await?
+            }
+        };
 
         // Verify artifact (checksum if provided)
         if opts.checksum().is_some() {
@@ -1385,6 +1396,25 @@ impl Backend for HttpBackend {
 /// (which would otherwise make `tool.` and `tool` share a cache entry). The key
 /// still differs whenever the rename config differs, which is all it needs to do;
 /// the human-readable part of the cache key is the file checksum, not this token.
+/// The local file a `file://` artifact URL names, so an archive fetched by hand
+/// (or from a mirror mise cannot reach) installs exactly like a downloaded one.
+/// Any other scheme is left to the HTTP client.
+fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return Ok(None);
+    };
+    if parsed.scheme() != "file" {
+        return Ok(None);
+    }
+    let path = parsed
+        .to_file_path()
+        .map_err(|_| eyre::eyre!("invalid file URL: {url}"))?;
+    if !path.is_file() {
+        eyre::bail!("local artifact not found: {}", path.display());
+    }
+    Ok(Some(path))
+}
+
 fn rename_cache_token(rename: &toml::Value) -> String {
     hash::hash_blake3_to_str(&rename.to_string())
 }
@@ -1394,6 +1424,27 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
+
+    #[test]
+    fn local_artifact_path_only_claims_file_urls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("my tool-1.0.0.tar.gz");
+        std::fs::write(&archive, b"").unwrap();
+        let url = url::Url::from_file_path(&archive).unwrap().to_string();
+
+        assert_eq!(local_artifact_path(&url).unwrap(), Some(archive.clone()));
+        assert_eq!(
+            local_artifact_path("https://example.com/tool.tar.gz").unwrap(),
+            None
+        );
+
+        let missing = url::Url::from_file_path(tmp.path().join("missing.tar.gz")).unwrap();
+        let err = local_artifact_path(missing.as_str()).unwrap_err();
+        assert!(
+            err.to_string().contains("local artifact not found"),
+            "{err}"
+        );
+    }
 
     #[test]
     fn windows_script_launcher_preserves_script_filename() {
