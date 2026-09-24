@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+
+# Exports traces and logs from `mise run` to a local OTLP/HTTP JSON receiver
+# and checks what arrives on the wire: span parenting, status, nested-run
+# propagation, and log correlation.
+
+cat <<'EOF_SERVER' >collector.py
+import http.server
+import pathlib
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        signal = self.path.rsplit("/", 1)[-1]
+        with open("content-types.log", "a") as f:
+            f.write(f"{signal} {self.headers['Content-Type']}\n")
+        with open(f"{signal}.jsonl", "ab") as f:
+            f.write(body.replace(b"\n", b"") + b"\n")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *_args):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+pathlib.Path("collector.port").write_text(str(server.server_port), encoding="utf-8")
+server.serve_forever()
+EOF_SERVER
+
+# Prints one line per span: "<name> parent=<parent name> status=<code> [attrs]",
+# and one per log record: "log <task span name>: <body>".
+cat <<'EOF_SUMMARY' >summary.py
+import json
+import pathlib
+import sys
+
+signal = sys.argv[1]
+path = pathlib.Path(f"{signal}.jsonl")
+if not path.exists():
+    sys.exit(0)
+batches = [json.loads(line) for line in path.read_text().splitlines()]
+spans = [
+    span
+    for batch in (json.loads(l) for l in pathlib.Path("traces.jsonl").read_text().splitlines())
+    for rs in batch.get("resourceSpans", [])
+    for ss in rs.get("scopeSpans", [])
+    for span in ss.get("spans", [])
+] if pathlib.Path("traces.jsonl").exists() else []
+names = {s["spanId"]: s["name"] for s in spans}
+
+
+def attrs(item, keys):
+    out = []
+    for kv in item.get("attributes", []):
+        if kv["key"] in keys:
+            value = next(iter(kv["value"].values()))
+            if not isinstance(value, str):
+                value = json.dumps(value)
+            out.append(f"{kv['key']}={value}")
+    return " ".join(out)
+
+
+if signal == "traces":
+    for s in spans:
+        parent = names.get(s.get("parentSpanId", ""), "-")
+        status = s.get("status", {}).get("code", 0)
+        extra = attrs(s, {"process.exit.code", "mise.task.cancelled", "mise.span_type"})
+        print(f"{s['name']} parent={parent} status={status} {extra}".rstrip())
+    print("traces=" + str(len({s["traceId"] for s in spans})))
+else:
+    for batch in batches:
+        for rl in batch.get("resourceLogs", []):
+            for sl in rl.get("scopeLogs", []):
+                for rec in sl.get("logRecords", []):
+                    body = rec["body"]["stringValue"]
+                    print(f"log {names.get(rec.get('spanId', ''), '?')}: {body}")
+EOF_SUMMARY
+
+python3 collector.py &
+collector_pid=$!
+trap 'kill "$collector_pid" 2>/dev/null || true' EXIT
+wait_for_file collector.port "OTLP collector port" 30 "$collector_pid"
+
+port="$(cat collector.port)"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:$port"
+
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = "echo from-a"
+[tasks.b]
+run = "echo from-b; mise run inner"
+[tasks.inner]
+run = "echo from-inner"
+[tasks.all]
+depends = ["a", "b"]
+[tasks.fail]
+run = "sleep 1; exit 3"
+[tasks.slow]
+run = "sleep 30"
+[tasks.fail-fast]
+depends = ["fail", "slow"]
+EOF
+
+# An endpoint alone is not enough: nothing is exported until otel.enabled.
+mise run all
+assert_fail "test -e traces.jsonl"
+
+export MISE_OTEL_ENABLED=1
+
+# OTLP/HTTP defaults to protobuf, per the spec.
+mise run a
+assert "cat content-types.log" "traces application/x-protobuf"
+rm traces.jsonl content-types.log
+
+# The rest of the test reads JSON.
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+mise run all
+traces="$(python3 summary.py traces)"
+echo "$traces"
+assert_contains "echo '$traces'" "mise run all parent=- status=1 mise.span_type=run"
+assert_contains "echo '$traces'" "install tools parent=mise run all status=1 mise.span_type=setup"
+assert_contains "echo '$traces'" "a parent=mise run all status=1 process.exit.code=0"
+assert_contains "echo '$traces'" "b parent=mise run all status=1 process.exit.code=0"
+# The nested run joins the outer trace under the task that invoked it.
+assert_contains "echo '$traces'" "mise run inner parent=b status=1"
+assert_contains "echo '$traces'" "inner parent=mise run inner status=1 process.exit.code=0"
+assert_contains "echo '$traces'" "traces=1"
+# Task output is not exported unless otel.logs is also set.
+assert_fail "test -e logs.jsonl"
+
+# Only the task that failed is an error; the sibling it stopped is cancelled.
+rm traces.jsonl
+assert_fail "mise run fail-fast"
+traces="$(python3 summary.py traces)"
+echo "$traces"
+assert_contains "echo '$traces'" "fail parent=mise run fail-fast status=2 process.exit.code=3"
+assert_contains "echo '$traces'" "slow parent=mise run fail-fast status=0 mise.task.cancelled=true"
+assert_contains "echo '$traces'" "mise run fail-fast parent=- status=2"
+
+# With otel.logs, each line is exported once, against the task that printed it,
+# including output of the nested run that flows through the outer task.
+rm traces.jsonl
+MISE_OTEL_LOGS=1 mise run all
+logs="$(python3 summary.py logs)"
+echo "$logs"
+assert_contains "echo '$logs'" "log a: from-a"
+assert_contains "echo '$logs'" "log b: from-b"
+assert_contains "echo '$logs'" "log inner: from-inner"
+assert "python3 summary.py logs | grep -c from-inner" "1"

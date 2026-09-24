@@ -40,6 +40,35 @@ fn env_is_set(key: &str) -> bool {
     std::env::var(key).is_ok_and(|v| !v.trim().is_empty())
 }
 
+/// The OTLP/HTTP encoding: JSON when `OTEL_EXPORTER_OTLP_<SIGNAL>_PROTOCOL` or
+/// `OTEL_EXPORTER_OTLP_PROTOCOL` asks for `http/json`, protobuf otherwise.
+/// Set explicitly because the exporter's own fallback, with the `http-json`
+/// feature enabled, is JSON, and the spec's default is protobuf.
+fn http_protocol(signal_var: &str) -> opentelemetry_otlp::Protocol {
+    select_http_protocol(
+        std::env::var(signal_var).ok().as_deref(),
+        std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok().as_deref(),
+    )
+}
+
+/// Like the exporter, an unrecognised signal-specific value falls back to
+/// the generic one, and values are case-insensitive. gRPC isn't built in, so
+/// it falls through to the protobuf default too.
+fn select_http_protocol(
+    signal: Option<&str>,
+    generic: Option<&str>,
+) -> opentelemetry_otlp::Protocol {
+    use opentelemetry_otlp::Protocol;
+    let parse = |value: Option<&str>| match value?.trim().to_ascii_lowercase().as_str() {
+        "http/json" => Some(Protocol::HttpJson),
+        "http/protobuf" => Some(Protocol::HttpBinary),
+        _ => None,
+    };
+    parse(signal)
+        .or_else(|| parse(generic))
+        .unwrap_or(Protocol::HttpBinary)
+}
+
 /// The per-request export timeout, unless the user configured one for this
 /// signal (`OTEL_EXPORTER_OTLP_<SIGNAL>_TIMEOUT`) or for all of them.
 fn export_timeout(signal_var: &str) -> Option<Duration> {
@@ -91,7 +120,9 @@ pub(crate) fn build_resource() -> Resource {
 /// `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
 /// `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, etc.
 pub(crate) fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvider> {
-    let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http();
+    let mut builder = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_protocol(http_protocol("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"));
     if let Some(timeout) = export_timeout("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT") {
         builder = builder.with_timeout(timeout);
     }
@@ -116,7 +147,9 @@ pub(crate) fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvi
 
 /// Build a `SdkLoggerProvider` with the OTLP/HTTP protobuf exporter.
 pub(crate) fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvider> {
-    let mut builder = opentelemetry_otlp::LogExporter::builder().with_http();
+    let mut builder = opentelemetry_otlp::LogExporter::builder()
+        .with_http()
+        .with_protocol(http_protocol("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"));
     if let Some(timeout) = export_timeout("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT") {
         builder = builder.with_timeout(timeout);
     }
@@ -137,4 +170,43 @@ pub(crate) fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvi
             .with_resource(resource)
             .build(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry_otlp::Protocol;
+
+    #[test]
+    fn http_protocol_defaults_to_protobuf() {
+        assert_eq!(select_http_protocol(None, None), Protocol::HttpBinary);
+        assert_eq!(
+            select_http_protocol(Some("grpc"), None),
+            Protocol::HttpBinary
+        );
+    }
+
+    #[test]
+    fn http_protocol_prefers_a_valid_signal_value() {
+        assert_eq!(
+            select_http_protocol(Some("http/protobuf"), Some("http/json")),
+            Protocol::HttpBinary
+        );
+        assert_eq!(
+            select_http_protocol(Some(" HTTP/JSON "), None),
+            Protocol::HttpJson
+        );
+    }
+
+    #[test]
+    fn http_protocol_skips_an_invalid_signal_value() {
+        assert_eq!(
+            select_http_protocol(Some("typo"), Some("http/json")),
+            Protocol::HttpJson
+        );
+        assert_eq!(
+            select_http_protocol(Some(""), Some("http/json")),
+            Protocol::HttpJson
+        );
+    }
 }
