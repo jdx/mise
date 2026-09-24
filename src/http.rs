@@ -1019,6 +1019,9 @@ impl Client {
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
         let bytes_received = Arc::new(AtomicU64::new(0));
+        // Bytes from attempts before the current one, so the slow-download
+        // watchdog sees a total that never goes backwards on retry.
+        let earlier_attempts_bytes = Arc::new(AtomicU64::new(0));
 
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
@@ -1026,11 +1029,13 @@ impl Client {
         let download = retry_async("GET", &url, || {
             let attempt = attempt.clone();
             let bytes_received = bytes_received.clone();
+            let earlier_attempts_bytes = earlier_attempts_bytes.clone();
             let request_url = url.clone();
             let partial = partial.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
-                bytes_received.store(0, Ordering::Relaxed);
+                earlier_attempts_bytes
+                    .fetch_add(bytes_received.swap(0, Ordering::Relaxed), Ordering::Relaxed);
                 self.download_file_attempt(request_url, headers, &partial, pr, &bytes_received)
                     .await
             }
@@ -1043,7 +1048,10 @@ impl Client {
         let download = async {
             tokio::select! {
                 result = download => result,
-                never = warn_when_download_is_slow(&url, &bytes_received) => match never {},
+                never = warn_when_download_is_slow(&url, || {
+                    earlier_attempts_bytes.load(Ordering::Relaxed)
+                        + bytes_received.load(Ordering::Relaxed)
+                }) => match never {},
             }
         };
 
@@ -2345,13 +2353,10 @@ const SLOW_DOWNLOAD_BYTES_PER_SEC: u64 = 16 * 1024;
 const SLOW_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60);
 const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Tracks transfer throughput over tumbling windows. `bytes_received` restarts
-/// from zero on each retry attempt, so a drop is treated as a new attempt.
+/// Tracks transfer throughput over tumbling windows of a monotonic byte total.
 struct SlowDownloadDetector {
     window_start: Instant,
     window_start_total: u64,
-    last_attempt_bytes: u64,
-    total: u64,
 }
 
 impl SlowDownloadDetector {
@@ -2359,46 +2364,44 @@ impl SlowDownloadDetector {
         Self {
             window_start: now,
             window_start_total: 0,
-            last_attempt_bytes: 0,
-            total: 0,
         }
     }
 
-    /// Records the current attempt's byte count and, once a full window has
-    /// elapsed, returns that window's rate in bytes/sec if it was too slow.
-    fn observe(&mut self, now: Instant, attempt_bytes: u64) -> Option<u64> {
-        self.total += attempt_bytes
-            .checked_sub(self.last_attempt_bytes)
-            .unwrap_or(attempt_bytes);
-        self.last_attempt_bytes = attempt_bytes;
+    /// Records the bytes received so far across all attempts and, once a full
+    /// window has elapsed, returns that window's rate in bytes/sec if it was
+    /// too slow.
+    fn observe(&mut self, now: Instant, total: u64) -> Option<u64> {
         let elapsed = now.duration_since(self.window_start);
         if elapsed < SLOW_DOWNLOAD_WINDOW {
             return None;
         }
-        let bytes = self.total - self.window_start_total;
+        let bytes = total.saturating_sub(self.window_start_total);
         self.window_start = now;
-        self.window_start_total = self.total;
+        self.window_start_total = total;
         let rate = (bytes as f64 / elapsed.as_secs_f64()) as u64;
         (rate < SLOW_DOWNLOAD_BYTES_PER_SEC).then_some(rate)
     }
 }
 
 /// Runs alongside a download and never completes. Warns at most once.
+///
+/// Names only the host: download URLs can carry credentials in their userinfo,
+/// query, or path (presigned URLs), and this is a warning, not a debug line.
 async fn warn_when_download_is_slow(
     url: &Url,
-    bytes_received: &AtomicU64,
+    total_bytes: impl Fn() -> u64,
 ) -> std::convert::Infallible {
     let mut detector = SlowDownloadDetector::new(Instant::now());
     let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
     ticks.tick().await;
     loop {
         ticks.tick().await;
-        let received = bytes_received.load(Ordering::Relaxed);
-        if let Some(rate) = detector.observe(Instant::now(), received) {
+        if let Some(rate) = detector.observe(Instant::now(), total_bytes()) {
             warn!(
-                "downloading {url} is very slow ({}/s over the last minute). \
+                "download from {} is very slow ({}/s over the last minute). \
                  mise keeps trying until `http_download_timeout` runs out; \
-                 if this host is throttled, a mirror setting for this tool (such as `node.mirror_url`) may help",
+                 if the host is throttling this connection, switching to a mirror may help",
+                url.host_str().unwrap_or("the server"),
                 bytesize::ByteSize::b(rate).display().iec(),
             );
             return std::future::pending().await;
@@ -4915,19 +4918,17 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     }
 
     #[test]
-    fn slow_download_detector_counts_bytes_across_retry_attempts() {
+    fn slow_download_detector_measures_each_window_from_its_own_start() {
         let start = Instant::now();
         let mut detector = SlowDownloadDetector::new(start);
-        // First attempt reaches 1.5 MiB, then a retry restarts the counter.
+        // A healthy first minute does not hide a crawling second minute.
         assert_eq!(
-            detector.observe(start + Duration::from_secs(20), 1536 * 1024),
+            detector.observe(start + Duration::from_secs(60), 60 * 1024 * 1024),
             None
         );
-        // The second attempt's bytes add to the first's instead of looking
-        // like the transfer went backwards.
         assert_eq!(
-            detector.observe(start + Duration::from_secs(60), 100 * 1024),
-            None
+            detector.observe(start + Duration::from_secs(120), 60 * 1024 * 1024 + 60_000),
+            Some(1_000)
         );
     }
 }
