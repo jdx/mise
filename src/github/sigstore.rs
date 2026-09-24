@@ -60,16 +60,17 @@ async fn shared_verification(
 
 #[derive(Debug)]
 enum CachedAttestationVerification {
-    Verified,
+    /// These repositories (`owner/repo`) made attestations that verified.
+    Verified(Vec<String>),
     Retry(Option<AttestationError>),
 }
 
 fn classify_cached_attestation_verification(
-    result: AttestationResult<bool>,
+    result: AttestationResult<Vec<String>>,
 ) -> CachedAttestationVerification {
     match result {
-        Ok(true) => CachedAttestationVerification::Verified,
-        Ok(false) => CachedAttestationVerification::Retry(None),
+        Ok(sources) if !sources.is_empty() => CachedAttestationVerification::Verified(sources),
+        Ok(_) => CachedAttestationVerification::Retry(None),
         Err(err) => CachedAttestationVerification::Retry(Some(err)),
     }
 }
@@ -218,14 +219,26 @@ async fn verify_attestation_uncached(
                     // caches it. Treat only a successful verification as authoritative so an
                     // incomplete cached set can still be refreshed from GitHub directly.
                     match classify_cached_attestation_verification(
-                        mise_sigstore::verify_github_attestation_with_attestations(
+                        mise_sigstore::verify_github_attestation_sources(
                             artifact_path,
                             &attestations,
                             expected_workflow,
                         )
                         .await,
                     ) {
-                        CachedAttestationVerification::Verified => return Ok(true),
+                        // Anyone can attest any digest from their own
+                        // repository; GitHub's API only lists the requested
+                        // repository's, but a mirror could list anyone's.
+                        CachedAttestationVerification::Verified(sources)
+                            if crate::github::attested_by_repository(owner, repo, &sources)
+                                .await =>
+                        {
+                            return Ok(true);
+                        }
+                        CachedAttestationVerification::Verified(sources) => warn!(
+                            "mise-versions returned attestations for {owner}/{repo} made by {}; verifying with GitHub instead",
+                            sources.join(", ")
+                        ),
                         CachedAttestationVerification::Retry(None) => debug!(
                             "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
                         ),
@@ -362,12 +375,21 @@ pub(crate) async fn detect_attestations(
 ) -> Result<bool, DetectError> {
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
-            Ok(Some(attestations)) => {
+            Ok(Some(attestations)) if !attestations.is_empty() => {
                 trace!(
                     "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
                     attestations.len()
                 );
-                return Ok(!attestations.is_empty());
+                return Ok(true);
+            }
+            // This probe decides what the lockfile records, and a lockfile
+            // without provenance never asks for it again, so only GitHub may
+            // answer "none". A "yes" is safe to take: it only leads to
+            // verification.
+            Ok(Some(_)) => {
+                debug!(
+                    "mise-versions has no attestations for {owner}/{repo}@{digest}; asking GitHub"
+                )
             }
             Ok(None) => {}
             Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
@@ -685,11 +707,11 @@ mod tests {
     #[test]
     fn test_cached_attestation_verification_accepts_only_success() {
         assert!(matches!(
-            classify_cached_attestation_verification(Ok(true)),
-            CachedAttestationVerification::Verified
+            classify_cached_attestation_verification(Ok(vec!["jdx/mise".to_string()])),
+            CachedAttestationVerification::Verified(sources) if sources == ["jdx/mise"]
         ));
         assert!(matches!(
-            classify_cached_attestation_verification(Ok(false)),
+            classify_cached_attestation_verification(Ok(vec![])),
             CachedAttestationVerification::Retry(None)
         ));
 

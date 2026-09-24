@@ -345,6 +345,36 @@ where
     Some(releases)
 }
 
+/// Whether any of `attested` (repositories that attestations vouch for, as
+/// `owner/repo`) is `owner/repo`, directly or through a rename or transfer.
+pub(crate) async fn attested_by_repository(owner: &str, repo: &str, attested: &[String]) -> bool {
+    let requested = format!("{owner}/{repo}");
+    if attested.iter().any(|a| a.eq_ignore_ascii_case(&requested)) {
+        return true;
+    }
+    // A rename or transfer: attestations name the repository as it was when
+    // they were made. Ask GitHub where both names lead now. It keeps
+    // redirecting an old name until someone else takes it, so matching here
+    // is GitHub's word that they are the same repository.
+    let Ok(canonical) = canonical_repo(&requested).await else {
+        return false;
+    };
+    let mut others: Vec<String> = attested.iter().map(|a| a.to_ascii_lowercase()).collect();
+    others.sort();
+    others.dedup();
+    // An attestation set is a handful of entries; don't let a long one turn
+    // into a stream of requests.
+    for other in others.iter().take(5) {
+        if canonical_repo(other)
+            .await
+            .is_ok_and(|c| c.eq_ignore_ascii_case(&canonical))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub(crate) async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = repo.to_kebab_case();
     let cache = get_tags_cache(&key).await;
@@ -2185,6 +2215,12 @@ something_else = "value"
             .unwrap();
         assert_eq!(release.assets[0].name, "direct-github-api.tar.gz");
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_attested_by_repository_matches_the_requested_repo_without_a_request() {
+        // An exact (case-insensitive) match never asks github.com.
+        assert!(attested_by_repository("JDX", "Mise", &["jdx/mise".to_string()]).await);
     }
 
     fn mirrored_page(

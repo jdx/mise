@@ -1584,6 +1584,7 @@ impl AquaBackend {
         let predicate_type = attestations.predicate_type.as_deref();
         let mut verified_repo = repo.clone();
 
+        let use_versions_host = self.use_versions_host_for_github_metadata(&repo);
         let mut result = crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
             &pkg.repo_owner,
@@ -1591,9 +1592,29 @@ impl AquaBackend {
             signer_workflow.as_deref(),
             predicate_type,
             None,
-            self.use_versions_host_for_github_metadata(&repo),
+            use_versions_host,
         )
         .await;
+        // The aqua registry says this package publishes attestations, so
+        // mise-versions answering "none" is stale or lying; only GitHub can
+        // settle it.
+        if use_versions_host
+            && matches!(
+                result,
+                Err(crate::github::sigstore::AttestationError::NoAttestations)
+            )
+        {
+            result = crate::github::sigstore::verify_attestation_with_predicate_type(
+                artifact_path,
+                &pkg.repo_owner,
+                &pkg.repo_name,
+                signer_workflow.as_deref(),
+                predicate_type,
+                None,
+                false,
+            )
+            .await;
+        }
 
         // GitHub keeps release URLs working after a repository transfer, but the
         // certificate identity uses the canonical repository name. Verification
