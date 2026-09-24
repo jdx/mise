@@ -916,8 +916,7 @@ impl TaskScriptParser {
             let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
             self.inject_extra_vars(&mut tera_ctx);
             tera_ctx.insert("env", &env);
-            let mut usage_map = Self::make_usage_ctx_from_spec_defaults(spec);
-            usage_map.extend(Self::make_usage_ctx(&m));
+            let usage_map = Self::make_usage_ctx(spec, &m);
             tera_ctx.insert("usage", &usage_map);
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
@@ -926,10 +925,14 @@ impl TaskScriptParser {
         Ok(out)
     }
 
+    /// Build the runtime template context, including typed fallbacks for omitted
+    /// args/flags. The usage parser only returns supplied or explicitly defaulted
+    /// values, but every template-rendering path needs the same declared keys.
     pub(crate) fn make_usage_ctx(
+        spec: &usage::Spec,
         usage: &usage::parse::ParseOutput,
     ) -> HashMap<String, tera::Value> {
-        let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
+        let mut usage_ctx = Self::make_usage_ctx_from_spec_defaults(spec);
 
         // These values are not escaped or shell-quoted.
         let to_tera_value =
@@ -968,9 +971,8 @@ impl TaskScriptParser {
 
     /// Build a usage context hashmap from a `usage::Spec` using default values
     /// or sensible fallbacks. Recurses into subcommands so that `{{ usage.X }}`
-    /// references don't error during the initial template render (which is only
-    /// used for deprecated spec collection — actual execution re-renders via
-    /// `parse_run_scripts_with_args` with real parsed values).
+    /// references don't error during the initial template render. At runtime,
+    /// `make_usage_ctx` overlays these fallbacks with real parsed values.
     pub(super) fn make_usage_ctx_from_spec_defaults(
         spec: &usage::Spec,
     ) -> HashMap<String, tera::Value> {
@@ -2049,11 +2051,34 @@ mod tests {
             .with_env(env_map)
             .parse(&[String::new()])
             .unwrap();
-        let usage_ctx = TaskScriptParser::make_usage_ctx(&parsed);
+        let usage_ctx = TaskScriptParser::make_usage_ctx(&spec, &parsed);
         assert_eq!(
             usage_ctx["nodenames"].as_array().unwrap()[0],
             tera::Value::from("foo bar baz")
         );
+    }
+
+    #[test]
+    fn test_usage_ctx_omitted_values() {
+        let spec: usage::Spec = r#"
+arg "[filter]"
+arg "[files]" var=#true
+flag "--release"
+flag "--output-file <file>"
+flag "-v --verbose" count=#true
+flag "--tag <tag>" var=#true
+"#
+        .parse()
+        .unwrap();
+        let parsed = usage::Parser::new(&spec).parse(&[String::new()]).unwrap();
+        let ctx = TaskScriptParser::make_usage_ctx(&spec, &parsed);
+
+        assert_eq!(ctx["filter"], tera::Value::from(""));
+        assert!(ctx["files"].as_array().unwrap().is_empty());
+        assert_eq!(ctx["release"], tera::Value::from(false));
+        assert_eq!(ctx["output_file"], tera::Value::from(""));
+        assert_eq!(ctx["verbose"], tera::Value::from(0));
+        assert!(ctx["tag"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

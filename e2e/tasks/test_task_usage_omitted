@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# Omitted optional values must not cause deferred dependencies to disappear.
+cat <<'EOF' >mise.toml
+[tasks.child]
+run = 'echo child'
+
+[tasks.parent]
+usage = 'flag "--release"'
+depends = ['child {% if usage.release %}--release{% endif %}']
+run = 'echo parent'
+
+[tasks.structured]
+usage = 'flag "--release"'
+depends = [{ task = 'child', args = ['{% if usage.release %}--release{% endif %}'] }]
+
+[tasks.wrapper]
+depends = ['parent']
+
+[tasks.argument]
+usage = 'arg "[filter]"'
+depends = ['child {{usage.filter}}']
+
+[tasks.call]
+usage = 'flag "--release"'
+run = [{ task = 'child', args = ['mode={% if usage.release %}release{% else %}debug{% endif %}'] }]
+
+[tasks.post]
+usage = 'flag "--release"'
+depends_post = ['child {% if usage.release %}--release{% endif %}']
+run = 'echo post'
+
+[tasks.explicit-default]
+usage = 'arg "[filter]" default="all"'
+depends = ['child {{usage.filter}}']
+
+[tasks.mixed]
+usage = '''
+arg "[filter]"
+flag "--release"
+'''
+depends = ['child {{usage.filter}} {% if usage.release %}--release{% endif %}']
+
+[tasks.conditional]
+usage = 'flag "--release"'
+depends = ['{% if usage.release %}missing-child{% endif %}', 'child']
+
+[tasks.required]
+usage = 'arg "<filter>"'
+depends = ['child {{usage.filter}}']
+run = 'touch should-not-run'
+
+[tasks.typo]
+usage = 'flag "--release"'
+depends = ['child {{usage.relese}}']
+run = 'touch should-not-run'
+EOF
+
+assert "mise run parent" "child
+parent"
+assert "mise run parent --release" "child --release
+parent"
+assert "mise run structured" "child"
+assert "mise run structured --release" "child --release"
+assert "mise run wrapper" "child
+parent"
+assert "mise run argument" "child"
+assert "mise run argument needle" "child needle"
+assert "mise run call" "child mode=debug"
+assert "mise run call --release" "child mode=release"
+assert "mise run post" "post
+child"
+assert "mise run post --release" "post
+child --release"
+assert "mise run explicit-default" "child all"
+assert "mise run explicit-default needle" "child needle"
+assert "mise run mixed" "child"
+assert "mise run mixed needle" "child needle"
+assert "mise run mixed --release" "child --release"
+assert "mise run mixed needle --release" "child needle --release"
+assert "mise run conditional" "child"
+assert_fail "mise run required" "Missing required arg: <filter>"
+assert_fail "mise run typo" 'relese'
+assert "test ! -e should-not-run && echo ok" "ok"
+
+# A wait_for edge must survive an omitted flag when both tasks are scheduled.
+cat <<'EOF' >mise.toml
+[tasks.slow]
+run = 'sleep 0.1; echo slow >> order.txt'
+
+[tasks.waiter]
+usage = 'flag "--release"'
+wait_for = ['slow {% if usage.release %}--release{% endif %}']
+run = 'echo waiter >> order.txt'
+EOF
+
+mise run waiter ::: slow
+assert "cat order.txt" "slow
+waiter"
+
+# Optional values in selected subcommands also get typed fallbacks, and parsed
+# values still override them. The default command remains the empty string.
+cat <<'EOF' >mise.toml
+[tasks.child]
+usage = 'arg "<value>"'
+run = 'echo "$usage_value"'
+
+[tasks.dispatch]
+usage = '''
+cmd "build" {
+  flag "--release"
+  arg "[filter]"
+}
+'''
+depends = [{ task = 'child', args = ['{{usage.cmd}}:{{usage.release}}:{{usage.filter}}'] }]
+EOF
+
+assert "mise run dispatch" ":false:"
+assert "mise run dispatch build" "build:false:"
+assert "mise run dispatch build --release needle" "build:true:needle"
