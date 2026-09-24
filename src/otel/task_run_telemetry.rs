@@ -86,21 +86,24 @@ impl TaskRunTelemetry {
         let root_span_name = format!("mise run{suffix}");
 
         let resource = crate::otel::build_resource();
-        let provider = if traces {
-            crate::otel::build_tracer_provider(resource.clone())?
-        } else {
-            // Logs-only mode: no exporter, so spans never leave the process.
-            // The SDK still assigns real trace/span IDs, which is all log
-            // records need to carry trace context.
-            SdkTracerProvider::builder()
-                .with_resource(resource.clone())
-                .build()
-        };
+        // The two signals are built independently, so a trace exporter that
+        // fails to build doesn't take log export down with it.
+        let exporting_provider = traces
+            .then(|| crate::otel::build_tracer_provider(resource.clone()))
+            .flatten();
         let output_forwarder = if logs {
-            crate::otel::build_logger_provider(resource).map(TaskOutputForwarder::new)
+            crate::otel::build_logger_provider(resource.clone()).map(TaskOutputForwarder::new)
         } else {
             None
         };
+        if exporting_provider.is_none() && output_forwarder.is_none() {
+            return None;
+        }
+        // Without trace export, spans never leave the process. The SDK still
+        // assigns real trace/span IDs, which is all log records need to carry
+        // trace context.
+        let provider = exporting_provider
+            .unwrap_or_else(|| SdkTracerProvider::builder().with_resource(resource).build());
         // Take over log reporting from an ancestor `mise` — but only once we
         // know we can actually export, otherwise the lines would be dropped
         // on both sides.
