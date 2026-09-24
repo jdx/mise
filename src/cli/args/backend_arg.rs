@@ -550,12 +550,18 @@ impl BackendArg {
                 };
             }
 
+            // A locked backend stays in use when the registry moves the tool to
+            // another one, so re-resolving a version (`mise lock --bump`,
+            // `mise upgrade`) cannot silently change where it installs from.
+            // `mise backends switch` adopts the registry's backend. With
+            // version-dependent registry backends, the lock only holds for
+            // versions its backend can serve.
             let config = Config::get_();
-            // With version-dependent backends, the first lockfile entry may
-            // belong to another version. ToolVersion restores the backend from
-            // the matching lock entry after resolving this request's binding.
-            if !self.has_registry_version()
-                && let Some(backend) = lockfile::get_locked_backend(&config, short)
+            if let Some(backend) = lockfile::get_locked_backend_for_version(
+                &config,
+                short,
+                self.registry_version.as_deref(),
+            ) && self.locked_backend_serves_registry_version(&backend)
             {
                 return backend;
             }
@@ -657,6 +663,60 @@ impl BackendArg {
 
     pub(crate) fn has_registry_version(&self) -> bool {
         self.registry_version.is_some()
+    }
+
+    fn locked_backend_serves_registry_version(&self, backend: &str) -> bool {
+        let Some(version) = self.registry_version.as_deref() else {
+            return true;
+        };
+        self.registry_tool()
+            .is_none_or(|tool| tool.backend_supports_version(backend, version))
+    }
+
+    /// The backend this tool resolved to and the registry's backend for it at
+    /// `version`, when they differ. `None` for a backend the user named
+    /// (`github:owner/repo`), an environment or alias override, or a tool the
+    /// registry does not know. A tool restored from its lock entry counts as
+    /// explicit, so this asks whether the user wrote a bare shorthand instead.
+    pub(crate) fn superseded_backend(&self, version: &str) -> Option<(String, String)> {
+        if self.short.contains(':') || self.has_env_backend_override() || !config::is_loaded() {
+            return None;
+        }
+        if Config::get_()
+            .all_aliases
+            .get(&self.short)
+            .is_some_and(|alias| alias.backend.is_some())
+        {
+            return None;
+        }
+        let registry = self
+            .registry_tool()?
+            .backends_for_version(Some(version))
+            .first()?
+            .to_string();
+        let current = self.full_without_opts();
+        (current != registry).then_some((current, registry))
+    }
+
+    /// [`Self::superseded_backend`], when it is a lock entry that keeps the
+    /// tool on the replaced backend.
+    pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
+        let (current, registry) = self.superseded_backend(version)?;
+        let locked =
+            lockfile::get_locked_backend_for_version(&Config::get_(), &self.short, Some(version))?;
+        (locked == current).then_some((current, registry))
+    }
+
+    /// Warn that the lockfile keeps this tool on a backend the registry has
+    /// replaced, and how to adopt the new one.
+    pub(crate) fn warn_if_locked_backend_superseded(&self, version: &str) {
+        if let Some((locked, registry)) = self.superseded_locked_backend(version) {
+            warn_once!(
+                "{short} is locked to {locked}, but the registry now installs it from {registry}. \
+                 Run `mise backends switch {short}` to switch.",
+                short = self.short,
+            );
+        }
     }
 
     pub(crate) fn full_without_opts(&self) -> String {

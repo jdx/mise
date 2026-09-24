@@ -13,15 +13,9 @@ set -euo pipefail
 # Served from a local stand-in for the GitHub API so the fixture is stable and
 # the test needs no network.
 
-PORT_FILE="$PWD/server-port"
-
-python3 - "$PORT_FILE" <<'PY' &
+start_http_server --handler - <<'PY'
 import http.server
 import json
-import socketserver
-import sys
-
-port_file = sys.argv[1]
 
 WITH_ASSET = {
     "tag_name": "v2.0.0",
@@ -50,7 +44,7 @@ WITHOUT_ASSET = {
 }
 
 
-class ReleasesHandler(http.server.BaseHTTPRequestHandler):
+class Handler(http.server.BaseHTTPRequestHandler):
     def reply(self, payload):
         body = json.dumps(payload).encode()
         self.send_response(200)
@@ -68,25 +62,9 @@ class ReleasesHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
-
-    def log_message(self, *args):
-        pass
-
-
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), ReleasesHandler) as httpd:
-    with open(port_file, "w") as file:
-        file.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
 PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
 
-wait_for_file "$PORT_FILE" "github api stand-in port" 30 "$SERVER_PID"
-SERVER_PORT=$(cat "$PORT_FILE")
-
-TOOL="github:acme/tool[api_url=http://127.0.0.1:$SERVER_PORT]"
+TOOL="github:acme/tool[api_url=http://127.0.0.1:$HTTP_PORT]"
 
 # The release that carries an asset is listed. Asserting this first is what
 # keeps the next line from passing vacuously -- if the listing were empty for
@@ -108,7 +86,7 @@ assert "mise latest '$TOOL'" "2.0.0"
 cat >mise.toml <<EOF
 [tools."github:acme/tool"]
 version = "latest"
-api_url = "http://127.0.0.1:$SERVER_PORT"
+api_url = "http://127.0.0.1:$HTTP_PORT"
 prerelease = true
 
 [tools."github:acme/tool".platforms]

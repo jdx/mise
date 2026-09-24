@@ -63,7 +63,6 @@
 - [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): The npm backend installs command-line packages from npm registries into separate tool directories. Keep your application's dependencies in package.json and use its package manager or mise deps to…
 - [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The Packslip backend installs tools using signed release manifests published by their maintainers. mise verifies the release, selects the build for your platform, and installs its executables.
 - [pypi](https://mise.jdx.dev/dev-tools/backends/pypi.html): The pypi backend installs Python command-line applications in isolated virtual environments. Each tool gets its own dependencies.
-- [pkgx](https://mise.jdx.dev/dev-tools/backends/pkgx.html): The pkgx backend installs packages from the pkgx pantry without shelling out to the pkgx CLI. mise resolves pantry metadata, downloads pkgx bottles from dist.pkgx.dev, verifies bottle checksums when…
 - [spm](https://mise.jdx.dev/dev-tools/backends/spm.html): You may install executables managed by Swift Package Manager directly from GitHub or GitLab releases.
 - [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html): The ubi backend is deprecated. Use the GitHub backend instead.
 - [vfox](https://mise.jdx.dev/dev-tools/backends/vfox.html): vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
@@ -178,6 +177,7 @@
 - [mise activate](https://mise.jdx.dev/cli/activate.html): Print the script to activate mise in an interactive shell
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
+- [mise backends switch](https://mise.jdx.dev/cli/backends/switch.html): Switch tools to the backend the registry now installs them from
 - [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
 - [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine from the current configuration
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
