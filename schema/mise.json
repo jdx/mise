@@ -4505,6 +4505,7 @@
                     "properties": {
                       "mode": false,
                       "content": false,
+                      "permissions": false,
                       "block": false,
                       "line": false
                     }

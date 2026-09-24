@@ -27,6 +27,7 @@ for entry in \
   '{ source = "a", mode = "copy", relative = true }' \
   '{ source = "a.tera", mode = "template", relative = true }' \
   '{ content = "x", relative = true }' \
+  '{ permissions = "0600", relative = true }' \
   '{ mode = "absent", relative = true }'; do
   printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >relative.toml
   assert_fail "$TOMBI_LINT relative.toml"

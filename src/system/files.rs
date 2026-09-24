@@ -2343,7 +2343,7 @@ fn check_symlink(source: &Path, target: &Path, relative: bool) -> Result<FileSta
     }
     if target.is_symlink() {
         let dest = std::fs::read_link(target)?;
-        if !(dest == *source || points_at_same_file(target, source)) {
+        if !link_points_to(source, target) {
             Ok(FileState::Differs(format!(
                 "symlink points to {}",
                 dest.display_user()
@@ -3172,18 +3172,45 @@ fn link_points_to(source: &Path, target: &Path) -> bool {
         return false;
     }
     std::fs::read_link(target).is_ok_and(|dest| {
-        let resolved = if dest.is_absolute() {
-            dest.clone()
-        } else {
-            target
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(&dest)
-        };
         dest == source
-            || lexical_normalize(&resolved) == lexical_normalize(source)
             || points_at_same_file(target, source)
+            || if dest.is_absolute() {
+                lexical_normalize(&dest) == lexical_normalize(source)
+            } else {
+                // the kernel resolves a relative link from the directory the
+                // link physically sits in, so its text is read from there too:
+                // read from the configured spelling, a link in a symlinked
+                // directory could seem to reach a source it does not
+                resolve_relative_link(target, &dest)
+                    .is_some_and(|resolved| resolved == physical_path(source))
+            }
     })
+}
+
+/// Where a link at `target` holding the relative `dest` physically leads.
+/// `..` steps up from the link's canonical directory, as the kernel does,
+/// not from the configured spelling of it.
+fn resolve_relative_link(target: &Path, dest: &Path) -> Option<PathBuf> {
+    let parent = target.parent()?.canonicalize().ok()?;
+    Some(physical_path(&parent.join(dest)))
+}
+
+/// Where `path` physically is, without requiring it to exist: the canonical
+/// path when it resolves, else its canonical parent joined with its name
+/// (so a deleted file or a dangling link still has a location), else its
+/// lexical form.
+fn physical_path(path: &Path) -> PathBuf {
+    let path = lexical_normalize(path);
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => match parent.canonicalize() {
+            Ok(parent) => parent.join(name),
+            Err(_) => path,
+        },
+        _ => path,
+    }
 }
 
 fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> Vec<PathBuf> {
@@ -5431,22 +5458,19 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
         return source.to_path_buf();
     };
     let source = lexical_normalize(source);
-    let Ok(canonical_source) = source.canonicalize() else {
-        return source;
-    };
-    let resolves = |rel: &Path| {
-        parent
-            .join(rel)
-            .canonicalize()
-            .is_ok_and(|p| p == canonical_source)
-    };
+    // `physical_path` rather than `canonicalize`: a `symlink-each` source may
+    // be a dangling link, which must still get a relative link or the entry
+    // would never converge
+    let physical_source = physical_path(&source);
+    let resolves =
+        |rel: &Path| resolve_relative_link(target, rel).is_some_and(|p| p == physical_source);
     if let Some(rel) = pathdiff::diff_paths(&source, lexical_normalize(parent))
         && resolves(&rel)
     {
         return rel;
     }
     if let Ok(canonical_parent) = parent.canonicalize()
-        && let Some(rel) = pathdiff::diff_paths(&canonical_source, canonical_parent)
+        && let Some(rel) = pathdiff::diff_paths(&physical_source, canonical_parent)
         && resolves(&rel)
     {
         return rel;
@@ -7053,6 +7077,78 @@ source = "oldrc""#,
 
         assert!(std::fs::read_link(&target)?.is_relative());
         assert_eq!(file::read_to_string(&target)?, "contents");
+        assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// Builds `home/dotfiles/foo` and a `home/.config` that is a symlink to
+    /// `elsewhere/config`, returning (source, link directory, root).
+    #[cfg(unix)]
+    fn symlinked_link_dir() -> Result<(tempfile::TempDir, PathBuf, PathBuf)> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("home/dotfiles/foo");
+        let real_config = dir.path().join("elsewhere/config");
+        let config = dir.path().join("home/.config");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "contents")?;
+        file::create_dir_all(&real_config)?;
+        file::make_symlink(&real_config, &config)?;
+        Ok((dir, source, config))
+    }
+
+    /// Unapply and `symlink-each` pruning must still own a link written from
+    /// the canonical link directory once its source file is deleted.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_in_a_symlinked_directory_is_owned_after_its_source_goes() -> Result<()> {
+        let (_dir, source, config) = symlinked_link_dir()?;
+        let target = config.join("foo");
+        link_path(&source, &target, true, true)?;
+        std::fs::remove_file(&source)?;
+
+        assert!(link_points_to(&source, &target));
+        Ok(())
+    }
+
+    /// Read from the configured spelling, `../dotfiles/foo` in `~/.config`
+    /// names `~/dotfiles/foo`, but physically it leads somewhere else. That
+    /// link is not mise's to remove.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_matching_only_as_text_is_not_owned() -> Result<()> {
+        let (dir, source, config) = symlinked_link_dir()?;
+        let other = dir.path().join("elsewhere/dotfiles/foo");
+        file::create_dir_all(other.parent().unwrap())?;
+        file::write(&other, "someone else's")?;
+        let target = config.join("foo");
+        file::make_symlink(Path::new("../dotfiles/foo"), &target)?;
+
+        assert!(!link_points_to(&source, &target));
+        assert!(!matches!(
+            check_symlink(&source, &target, true)?,
+            FileState::Applied
+        ));
+        Ok(())
+    }
+
+    /// A dangling symlink in a `symlink-each` source still gets a relative
+    /// link, or the entry would be rewritten on every apply.
+    #[cfg(unix)]
+    #[test]
+    fn relative_link_to_a_dangling_source_converges() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfiles/dangling");
+        let target = dir.path().join("home/dangling");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&dir.path().join("nowhere"), &source)?;
+
+        link_path(&source, &target, true, false)?;
+
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            PathBuf::from("../dotfiles/dangling")
+        );
         assert_eq!(check_symlink(&source, &target, true)?, FileState::Applied);
         Ok(())
     }
