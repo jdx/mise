@@ -336,6 +336,10 @@ where
             break;
         }
         // `None` past the pages mise-versions serves: GitHub has to answer.
+        // The page count bounds the loop even if a page number repeats.
+        if pages_fetched >= crate::versions_host::GITHUB_RELEASES_MAX_PAGES {
+            return None;
+        }
         page = list.next_page?;
     }
     Some(releases)
@@ -2334,6 +2338,23 @@ something_else = "value"
 
         let (releases, _) = paginate_canned(vec![None], false, false).await;
         assert_eq!(releases, None);
+    }
+
+    #[tokio::test]
+    async fn test_mirrored_releases_stop_on_a_repeating_page() {
+        // Even a page that keeps pointing back at itself ends the listing,
+        // after at most the pages the mirror serves.
+        let requested = std::sync::Mutex::new(0);
+        let releases = paginate_mirrored_releases(false, true, |_| {
+            *requested.lock().unwrap() += 1;
+            async { Some(mirrored_page(vec![make_release("v1")], Some(1))) }
+        })
+        .await;
+        assert!(releases.is_none());
+        assert_eq!(
+            requested.into_inner().unwrap(),
+            crate::versions_host::GITHUB_RELEASES_MAX_PAGES
+        );
     }
 
     #[tokio::test]

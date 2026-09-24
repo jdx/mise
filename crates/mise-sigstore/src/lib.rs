@@ -1471,9 +1471,12 @@ fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     if let Some(repository) = certificate_source_repository(&cert) {
         return Some(repository);
     }
-    if !certificate_uri_sans(&cert)
-        .iter()
-        .any(|uri| uri == GITHUB_RELEASE_ATTESTER_IDENTITY)
+    // The release attester is GitHub's own signer, so its certificate must
+    // come from GitHub's CA, not the public Sigstore one.
+    if !is_github_internal_certificate(bundle)
+        || !certificate_uri_sans(&cert)
+            .iter()
+            .any(|uri| uri == GITHUB_RELEASE_ATTESTER_IDENTITY)
     {
         return None;
     }

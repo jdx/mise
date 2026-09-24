@@ -2603,22 +2603,10 @@ impl UnifiedGitBackend {
             && opts.github_attestations()
             && attestations_supported(&api_url)
         {
-            let mut result = self
-                .try_verify_github_attestations(ctx, tv, file_path, &api_url, true)
-                .await;
-            // mise-versions answering "no attestations" for an artifact the
-            // lockfile says has them is either stale or lying; only GitHub can
-            // settle it.
-            if matches!(result, Err(VerificationStatus::NoAttestations))
-                && expected_provenance
-                    .as_ref()
-                    .is_some_and(|expected| expected.is_github_attestations())
+            match self
+                .try_verify_github_attestations(ctx, tv, file_path, &api_url)
+                .await
             {
-                result = self
-                    .try_verify_github_attestations(ctx, tv, file_path, &api_url, false)
-                    .await;
-            }
-            match result {
                 Ok(true) => {
                     // Defense-in-depth: verify the result matches the lockfile expectation
                     if let Some(expected) = expected_provenance
@@ -2722,7 +2710,6 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         file_path: &std::path::Path,
         api_url: &str,
-        use_versions_host: bool,
     ) -> std::result::Result<bool, VerificationStatus> {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
@@ -2743,7 +2730,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
-            use_versions_host,
+            true,
         )
         .await
         {

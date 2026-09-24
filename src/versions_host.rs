@@ -74,6 +74,9 @@ struct VersionEntry {
     prerelease: Option<bool>,
 }
 
+/// The most release-list pages mise-versions serves.
+pub(crate) const GITHUB_RELEASES_MAX_PAGES: usize = 10;
+
 /// One page of a repository's releases from mise-versions.
 #[derive(serde::Deserialize)]
 pub(crate) struct GithubReleasesPage {
@@ -403,6 +406,10 @@ pub(crate) async fn github_releases(
     let Some(mut list) = fetch_optional_json::<GithubReleasesPage>(&url, ctx).await? else {
         return Ok(None);
     };
+    if list.next_page.is_some_and(|next| next != page + 1) {
+        log_versions_host_warn(ctx, "invalid_next_page", "fallback=true");
+        return Ok(None);
+    }
     if let Err(tag) = pin_listed_releases(&mut list, owner, repo_name) {
         log_versions_host_warn(
             ctx,

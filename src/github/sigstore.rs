@@ -209,7 +209,12 @@ async fn verify_attestation_uncached(
                     attestations.len()
                 );
                 if attestations.is_empty() {
-                    return Err(AttestationError::NoAttestations);
+                    // Only GitHub may answer "none": whatever this call
+                    // concludes can be written to the lockfile, and a
+                    // lockfile without provenance never asks again.
+                    debug!(
+                        "mise-versions has no GitHub attestations for {owner}/{repo}; asking GitHub"
+                    );
                 } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
                     debug!(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
