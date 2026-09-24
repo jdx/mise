@@ -127,7 +127,7 @@ impl ConfigLs {
     async fn display_tracked_configs(&self) -> Result<()> {
         let tracked_configs = Tracker::list_all()?.into_iter().unique().sorted();
         for path in tracked_configs {
-            println!("{}", path.display());
+            miseprintln!("{}", path.display());
         }
         Ok(())
     }

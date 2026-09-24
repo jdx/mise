@@ -12,6 +12,7 @@ use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
 use crate::file::display_path;
+use crate::otel;
 use crate::task::has_any_usage_spec;
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
@@ -26,6 +27,8 @@ use bytesize::ByteSize;
 use eyre::{Context, Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
+// Brings `Span::span_context` into scope for the live task spans.
+use opentelemetry::trace::Span as _;
 use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
@@ -320,6 +323,9 @@ pub(crate) struct Run {
 
     #[usage(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[usage(skip)]
+    pub telemetry: Option<otel::TaskRunTelemetry>,
 }
 
 fn affected_task_args(args: &[String]) -> Vec<String> {
@@ -582,11 +588,11 @@ impl Run {
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
-            print!("{}", render_subcommand_help("run", false));
+            miseprint!("{}", render_subcommand_help("run", false))?;
             return Ok(());
         }
         if self.task.as_deref() == Some("--help") {
-            print!("{}", render_subcommand_help("run", true));
+            miseprint!("{}", render_subcommand_help("run", true))?;
             return Ok(());
         }
 
@@ -635,7 +641,7 @@ impl Run {
 
                     if has_any_usage_spec(&spec) {
                         // Task has usage spec defined, render help using usage library
-                        println!("{}", render_usage_help(&spec, &self.args));
+                        miseprintln!("{}", render_usage_help(&spec, &self.args));
                     } else {
                         // Task has no usage defined, show basic task info
                         display_task_help(task)?;
@@ -644,7 +650,7 @@ impl Run {
                 }
             } else {
                 // No task found, show run command help
-                print!("{}", render_subcommand_help("run", true));
+                miseprint!("{}", render_subcommand_help("run", true))?;
                 return Ok(());
             }
         }
@@ -692,10 +698,35 @@ impl Run {
             }
         }
 
+        // Start OpenTelemetry as soon as the requested tasks are known, so the
+        // root span covers the whole invocation, setup included, and is named
+        // after what was invoked rather than the resolved dependency set. It
+        // is a local until the tasks start so that a setup failure drops it,
+        // which ends the root span as an error and flushes it.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
+        // A raw run hands every task the terminal, so it never reads task
+        // output and must not take the stream over from an ancestor.
+        let captures_output = !(self.raw || Settings::get().raw);
+        let telemetry =
+            otel::TaskRunTelemetry::init_if_enabled(&requested_task_names, captures_output);
+
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&config, &mut task_list).await?;
+        // Only remote tasks need fetching, so skip the span when there are none.
+        let fetch_telemetry = telemetry.as_ref().filter(|_| {
+            task_list.iter().any(|t| {
+                t.file.as_ref().is_some_and(|f| {
+                    crate::task::task_fetcher::TaskFetcher::is_remote_source(&f.to_string_lossy())
+                })
+            })
+        });
+        otel::TaskRunTelemetry::phase(
+            fetch_telemetry,
+            "fetch tasks",
+            fetcher.fetch_tasks(&config, &mut task_list),
+        )
+        .await?;
 
         // Re-render sources, outputs, and dependencies with this invocation's
         // usage arg/flag values before resolving the execution graph.
@@ -715,7 +746,12 @@ impl Run {
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
         let execution_tasks = task_list.clone();
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks = otel::TaskRunTelemetry::phase(
+            telemetry.as_ref(),
+            "resolve tasks",
+            resolve_depends(&config, task_list),
+        )
+        .await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -805,7 +841,12 @@ impl Run {
             ..Default::default()
         };
         let previewed_tools = if !self.skip_tools {
-            let (installed, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+            let (installed, missing) = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "install tools",
+                ts.install_missing_versions(&mut config, &opts),
+            )
+            .await?;
             // Lazy tools stay uninstalled until a task runs one of their commands, which
             // only works if their bootstrap shims exist. A hand-edited `lazy = true`
             // entry has none until the farm is rebuilt (discussion #12678).
@@ -822,15 +863,18 @@ impl Run {
         // Run auto-enabled deps steps (unless --no-deps)
         if let Some(engine) = deps_engine {
             let (env, env_remove) = ts.env_with_path_and_removals(&config).await?;
-            let result = engine
-                .run(DepsOptions {
+            let result = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "deps",
+                engine.run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     dry_run: self.dry_run,
                     env,
                     env_remove,
                     ..Default::default()
-                })
-                .await?;
+                }),
+            )
+            .await?;
             for step in result.steps {
                 if let DepsStepResult::WouldRun(id, reason) = step {
                     info!("[dry-run] Would install dependency: {id} ({reason})");
@@ -849,9 +893,23 @@ impl Run {
         // spawned task, and its daemons are not started; see the note in
         // docs/daemons.md.
         if !self.skip_deps {
-            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run, !self.skip_tools)
-                .await?;
+            otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "start daemons",
+                crate::daemons::tasks::start(
+                    &config,
+                    &resolved_tasks,
+                    self.dry_run,
+                    !self.skip_tools,
+                ),
+            )
+            .await?;
         }
+
+        // Hand telemetry to the run before the timeout wrapper so traces are
+        // finalized even when the run is cancelled by --timeout:
+        // TaskRunTelemetry finishes on drop.
+        self.telemetry = telemetry;
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
@@ -860,17 +918,27 @@ impl Run {
             Settings::get().task_timeout_duration()
         };
 
-        if let Some(timeout) = timeout {
+        // Spawned tasks keep their own handles on the telemetry, so a run that
+        // times out or fails can't rely on drop to flush it in time. `finish`
+        // is idempotent and marks the root span as an error unless the run
+        // already succeeded.
+        let telemetry = self.telemetry.clone();
+        let result = if let Some(timeout) = timeout {
             tokio::time::timeout(
                 timeout,
                 self.parallelize_tasks(config, execution_tasks, previewed_tools),
             )
             .await
-            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))
+            .flatten()
         } else {
             self.parallelize_tasks(config, execution_tasks, previewed_tools)
-                .await?
+                .await
+        };
+        if let Some(t) = telemetry {
+            t.finish();
         }
+        result?;
 
         time!("run done");
         Ok(())
@@ -900,6 +968,9 @@ impl Run {
 
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;
+        if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
+            executor.output_forwarder = t.output_forwarder();
+        }
 
         // Validate every scheduled invocation before starting the scheduler so
         // an invalid parent or dependency cannot run any task commands first.
@@ -958,6 +1029,15 @@ impl Run {
             .await?;
 
         let join_result = scheduler.join_all(this.continue_on_error).await;
+        if let Some(t) = &this.telemetry {
+            // Mark success only when everything actually succeeded.
+            if !this.is_stopping() && join_result.is_ok() {
+                t.set_succeeded();
+            }
+            // Finalize explicitly: `this` holds the only remaining handle, so
+            // relying on drop alone would order this after results display.
+            t.finish();
+        }
         join_result?;
 
         // Step 6: Display results and handle failures
@@ -1054,7 +1134,7 @@ impl Run {
                 {
                     return Ok(());
                 }
-                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                this.fail_sched_job_before_start(&ctx.config, task, deps_for_remove, err)
                     .await;
                 return Ok(());
             }
@@ -1093,6 +1173,18 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.completion_state(), deps.dependency_state(&task))
             };
+            // The task's span stays live for as long as the task runs, so its
+            // context is available for W3C propagation. Ended below.
+            // Args go through the same redactions as terminal output.
+            let otel_args: Vec<String> = match &this.telemetry {
+                Some(_) => task.args.iter().map(|a| ctx.config.redact(a)).collect(),
+                None => vec![],
+            };
+            let otel_span = this
+                .telemetry
+                .as_ref()
+                .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
+            let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1102,6 +1194,7 @@ impl Run {
                 semaphore,
                 permit: &mut permit,
                 allow_during_interruption,
+                otel_span_cx,
             }))
             .catch_unwind()
             .await
@@ -1112,6 +1205,7 @@ impl Run {
                     true,
                 ),
             };
+            let otel_end = std::time::SystemTime::now();
             // If the task executed or restored outputs and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
@@ -1142,6 +1236,11 @@ impl Run {
                 Error::is_sigint(err)
                     || (ctrlc::is_cancelled() && Error::is_task_interrupted_before_start(err))
             });
+            // Whether this task's failure is collateral damage — a ctrl-c, or
+            // an earlier task failing and SIGTERMing its siblings — rather
+            // than a fault of its own. Only the task that actually failed
+            // should be reported as an error, in the terminal and in the span.
+            let mut cancelled = interrupted;
             if let Err(err) = &result {
                 if interrupted {
                     this.mark_interrupted();
@@ -1157,7 +1256,16 @@ impl Run {
                 let was_stopping = if interrupted {
                     this.is_stopping()
                 } else {
-                    this.add_failed_task(task.clone(), status) || this.is_interrupted()
+                    let was_stopping =
+                        this.add_failed_task(task.clone(), status) || this.is_interrupted();
+                    // A task that exited on its own, or panicked, failed even
+                    // if another failure came first; only one mise killed is
+                    // cancelled.
+                    cancelled |= was_stopping
+                        && !this.continue_on_error
+                        && !panicked
+                        && Error::is_killed_by_signal(err);
+                    was_stopping
                 };
                 if !interrupted && !was_stopping && (panicked || status.is_none()) {
                     let prefix = task.estyled_prefix();
@@ -1185,6 +1293,11 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
+            // Close the task's span with real timing and status.
+            if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
+                t.end_task(span, &task, &otel_args, otel_end, &result, cancelled);
+            }
+
             if let Some(oh) = &this.output_handler
                 && oh.output(Some(&task)) == TaskOutput::KeepOrder
             {
@@ -1215,6 +1328,7 @@ impl Run {
     /// an execution failure, then release its dependency graph entry.
     async fn fail_sched_job_before_start(
         &self,
+        config: &Config,
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         err: eyre::Report,
@@ -1233,6 +1347,14 @@ impl Run {
             crate::cmd::CmdLineRunner::kill_all();
         }
         self.retire_keep_order_slot(&task);
+        // The task never started, but its failure is what stopped the run, so
+        // it still gets a span; otherwise the trace's only error is the root.
+        if let Some(t) = &self.telemetry {
+            let args: Vec<String> = task.args.iter().map(|a| config.redact(a)).collect();
+            let span = t.start_task(&task, &args, config.project_root.as_ref());
+            let end_time = std::time::SystemTime::now();
+            t.end_task(span, &task, &args, end_time, &Err(err), false);
+        }
         let mut deps = deps_for_remove.lock().await;
         deps.mark_executed(&task);
         deps.remove(&task);

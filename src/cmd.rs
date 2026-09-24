@@ -110,6 +110,19 @@ where
 
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
+fn chain_observers<'a, F: Fn(&str) + Send + 'a>(
+    previous: Option<OutputObserver<'a>>,
+    next: F,
+) -> OutputObserver<'a> {
+    match previous {
+        Some(previous) => Box::new(move |line| {
+            previous(line);
+            next(line);
+        }),
+        None => Box::new(next),
+    }
+}
+
 pub(crate) struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
@@ -681,14 +694,29 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Add an observer for each stdout line. Observers compose: one added
+    /// later runs after the earlier ones instead of replacing them, so the
+    /// task cache and log export can both watch the same stream.
     pub(crate) fn with_stdout_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
-        self.observe_stdout = Some(Box::new(observer));
+        self.observe_stdout = Some(chain_observers(self.observe_stdout.take(), observer));
         self
     }
 
+    /// Add an observer for each stderr line. See [`Self::with_stdout_observer`].
     pub(crate) fn with_stderr_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
-        self.observe_stderr = Some(Box::new(observer));
+        self.observe_stderr = Some(chain_observers(self.observe_stderr.take(), observer));
         self
+    }
+
+    /// Whether a stdout observer is attached. Used to decide whether stdout
+    /// must stay piped in output modes that would otherwise inherit it.
+    pub(crate) fn has_stdout_observer(&self) -> bool {
+        self.observe_stdout.is_some()
+    }
+
+    /// Whether a stderr observer is attached. See [`Self::has_stdout_observer`].
+    pub(crate) fn has_stderr_observer(&self) -> bool {
+        self.observe_stderr.is_some()
     }
 
     pub(crate) fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
@@ -783,7 +811,7 @@ impl<'a> CmdLineRunner<'a> {
         Ok(self)
     }
 
-    fn get_env(&self, key: &str) -> Option<&OsStr> {
+    pub(crate) fn get_env(&self, key: &str) -> Option<&OsStr> {
         for (k, v) in self.cmd.as_std().get_envs() {
             if k == key {
                 return v;
@@ -2621,6 +2649,21 @@ mod tests {
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
         assert_eq!(observed_stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[tokio::test]
+    async fn test_output_observers_compose() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (first, second) = (seen.clone(), seen.clone());
+        super::CmdLineRunner::new("sh")
+            .args(["-c", "printf out"])
+            .with_on_stdout(|_| {})
+            .with_stdout_observer(move |line| first.lock().unwrap().push(format!("1:{line}")))
+            .with_stdout_observer(move |line| second.lock().unwrap().push(format!("2:{line}")))
+            .execute_async()
+            .await
+            .unwrap();
+        assert_eq!(seen.lock().unwrap().as_slice(), ["1:out", "2:out"]);
     }
 
     #[cfg(unix)]

@@ -1,4 +1,5 @@
 use eyre::Result;
+use futures_util::future::LocalBoxFuture;
 use std::path::Path;
 
 mod add;
@@ -119,30 +120,32 @@ impl Dotfiles {
         outcome
     }
 
-    async fn dispatch(self) -> Result<()> {
+    /// Boxed rather than `async` to keep debug builds' main stack small;
+    /// see `cli::Commands::run`.
+    fn dispatch(self) -> LocalBoxFuture<'static, Result<()>> {
         match self.command {
-            Commands::Add(cmd) => cmd.run().await,
-            Commands::Apply(cmd) => crate::cli::bootstrap::run_dotfiles_apply(cmd).await,
-            Commands::Capture(cmd) => cmd.run().await,
-            Commands::Conflicts(cmd) => cmd.run().await,
-            Commands::Diff(cmd) => cmd.run().await,
-            Commands::Edit(cmd) => cmd.run().await,
-            Commands::Exclude(cmd) => cmd.run().await,
-            Commands::History(cmd) => cmd.run().await,
-            Commands::Include(cmd) => cmd.run().await,
-            Commands::Origin(cmd) => cmd.run().await,
-            Commands::Paths(cmd) => cmd.run().await,
-            Commands::Pull(cmd) => cmd.run().await,
-            Commands::Recover(cmd) => cmd.run().await,
-            Commands::Rollback(cmd) => cmd.run().await,
-            Commands::Save(cmd) => cmd.run().await,
-            Commands::Status(cmd) => cmd.run().await,
-            Commands::Sync(cmd) => cmd.run().await,
-            Commands::Track(cmd) => cmd.run().await,
-            Commands::Unapply(cmd) => cmd.run().await,
-            Commands::Undo(cmd) => cmd.run().await,
-            Commands::Untrack(cmd) => cmd.run().await,
-            Commands::Watch(cmd) => cmd.run().await,
+            Commands::Add(cmd) => Box::pin(cmd.run()),
+            Commands::Apply(cmd) => Box::pin(crate::cli::bootstrap::run_dotfiles_apply(cmd)),
+            Commands::Capture(cmd) => Box::pin(cmd.run()),
+            Commands::Conflicts(cmd) => Box::pin(cmd.run()),
+            Commands::Diff(cmd) => Box::pin(cmd.run()),
+            Commands::Edit(cmd) => Box::pin(cmd.run()),
+            Commands::Exclude(cmd) => Box::pin(cmd.run()),
+            Commands::History(cmd) => Box::pin(cmd.run()),
+            Commands::Include(cmd) => Box::pin(cmd.run()),
+            Commands::Origin(cmd) => Box::pin(cmd.run()),
+            Commands::Paths(cmd) => Box::pin(cmd.run()),
+            Commands::Pull(cmd) => Box::pin(cmd.run()),
+            Commands::Recover(cmd) => Box::pin(cmd.run()),
+            Commands::Rollback(cmd) => Box::pin(cmd.run()),
+            Commands::Save(cmd) => Box::pin(cmd.run()),
+            Commands::Status(cmd) => Box::pin(cmd.run()),
+            Commands::Sync(cmd) => Box::pin(cmd.run()),
+            Commands::Track(cmd) => Box::pin(cmd.run()),
+            Commands::Unapply(cmd) => Box::pin(cmd.run()),
+            Commands::Undo(cmd) => Box::pin(cmd.run()),
+            Commands::Untrack(cmd) => Box::pin(cmd.run()),
+            Commands::Watch(cmd) => Box::pin(cmd.run()),
         }
     }
 }

@@ -849,6 +849,11 @@
               "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
               "type": "string"
             },
+            "relative_symlinks": {
+              "default": false,
+              "description": "Create dotfile symlinks with relative targets instead of absolute ones.",
+              "type": "boolean"
+            },
             "root": {
               "default": "~/.dotfiles",
               "description": "Root directory used for implied dotfile sources.",
@@ -1590,6 +1595,22 @@
         "os": {
           "description": "OS to use for precompiled binaries.",
           "type": "string"
+        },
+        "otel": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry trace export for task executions.",
+              "type": "boolean"
+            },
+            "logs": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry log export for task stdout/stderr.",
+              "type": "boolean"
+            }
+          }
         },
         "override_config_filenames": {
           "default": [],
@@ -4386,6 +4407,10 @@
                 "default": false,
                 "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
               },
+              "relative": {
+                "type": "boolean",
+                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -4464,6 +4489,34 @@
               }
             },
             "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "relative": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "required": ["mode"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["symlink", "symlink-each"]
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": false,
+                      "content": false,
+                      "permissions": false,
+                      "block": false,
+                      "line": false
+                    }
+                  }
+                ]
+              },
               {
                 "anyOf": [
                   {

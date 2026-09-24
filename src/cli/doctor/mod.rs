@@ -311,12 +311,13 @@ impl Doctor {
         }
 
         let out = serde_json::to_string_pretty(&data)?;
-        println!("{out}");
+        let written = miseprint!("{out}\n");
 
+        // Diagnosed problems decide the exit status even when the reader has gone away.
         if !self.errors.is_empty() {
             return Err(crate::request_exit(1));
         }
-        Ok(())
+        Ok(written?)
     }
 
     async fn doctor(mut self) -> eyre::Result<()> {
@@ -505,7 +506,7 @@ impl Doctor {
         info::section("config_files", render_config_files(config))?;
         info::section("env_files", render_env_files(config).await?)?;
         if IGNORED_CONFIG_FILES.is_empty() {
-            println!();
+            miseprintln!();
             info::inline_section("ignored_config_files", "(none)")?;
         } else {
             info::section(

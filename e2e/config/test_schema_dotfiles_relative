@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["relative.toml"]
+TOML
+
+cat >relative.toml <<'TOML'
+[settings]
+dotfiles.relative_symlinks = true
+[dotfiles]
+"~/.a" = { source = "a", mode = "symlink", relative = true }
+"~/.b" = { source = "b", mode = "symlink-each", relative = true }
+"~/.c" = { source = "c", relative = true }
+"~/.d" = { source = "d", mode = "copy", relative = false }
+TOML
+assert_succeed "$TOMBI_LINT relative.toml"
+
+for entry in \
+  '{ source = "a", mode = "copy", relative = true }' \
+  '{ source = "a.tera", mode = "template", relative = true }' \
+  '{ content = "x", relative = true }' \
+  '{ permissions = "0600", relative = true }' \
+  '{ mode = "absent", relative = true }'; do
+  printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >relative.toml
+  assert_fail "$TOMBI_LINT relative.toml"
+done

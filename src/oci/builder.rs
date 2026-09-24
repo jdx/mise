@@ -942,7 +942,13 @@ fn lock_tool_install(tv: &ToolVersion) -> Result<fslock::LockFile> {
     crate::toolset::install_state::lock_tool_version_with_notice(
         &tv.ba().short,
         &tv.tv_pathname(),
-        &|| info!("oci: waiting for {} install lock", tv.style()),
+        &|pid| {
+            info!(
+                "oci: {} {}",
+                tv.style(),
+                crate::backend::install_lock_wait_message(pid)
+            )
+        },
     )
 }
 

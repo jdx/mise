@@ -123,6 +123,7 @@
 - [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): [!WARNING] Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
 - [Task Templates](https://mise.jdx.dev/tasks/templates.html): Define a task template when several tasks share commands, tools, environment variables, or dependencies. Each task selects a template with extends and supplies the settings that differ.
 - [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own mise.toml with…
+- [OpenTelemetry](https://mise.jdx.dev/tasks/opentelemetry.html): mise can export traces (and, separately, task stdout/stderr logs) for mise run to any OpenTelemetry-compatible backend such as Jaeger, Grafana Tempo, or SigNoz.
 - [Sandboxing](https://mise.jdx.dev/sandboxing.html): mise can restrict filesystem, network, and environment access for commands launched by mise exec and mise run. Restrictions use the host operating system, with different support on Linux and macOS.
 
 ## Plugins

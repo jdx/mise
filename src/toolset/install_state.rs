@@ -933,7 +933,7 @@ pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
 }
 
 fn tool_version_lock(short: &str, v: &str) -> LockFile {
-    LockFile::new(&incomplete_file_path(short, v))
+    LockFile::new(&incomplete_file_path(short, v)).with_pid()
 }
 
 /// Acquires the transaction lock for one logical tool version.
@@ -943,15 +943,18 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
 pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
-    lock_tool_version_with_notice(short, v, &|| {})
+    lock_tool_version_with_notice(short, v, &|_| {})
 }
 
 /// [`lock_tool_version`] that also tells the caller when it is actually
 /// waiting, so an install can report the pause instead of looking hung.
+/// `on_wait` receives the PID of the process holding the lock when known:
+/// that process is usually a shim, whose command line looks like the tool
+/// it is installing rather than mise.
 pub(crate) fn lock_tool_version_with_notice(
     short: &str,
     v: &str,
-    on_wait: &dyn Fn(),
+    on_wait: &dyn Fn(Option<u32>),
 ) -> Result<fslock::LockFile> {
     tool_version_lock(short, v)
         .with_callback(|lock| {
@@ -1132,7 +1135,7 @@ mod tests {
         // Uncontended: no notice.
         let first = {
             let noticed = noticed.clone();
-            super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+            super::lock_tool_version_with_notice(&short, "1.0.0", &|_| {
                 noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             })
             .unwrap()
@@ -1146,18 +1149,23 @@ mod tests {
             let short = short.clone();
             let noticed = noticed.clone();
             std::thread::spawn(move || {
-                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|pid| {
                     noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    noticed_tx.send(()).unwrap();
+                    noticed_tx.send(pid).unwrap();
                 })
                 .unwrap();
                 acquired_tx.send(()).unwrap();
                 drop(lock);
             })
         };
-        noticed_rx
+        let holder = noticed_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("the waiter should have reported the wait");
+        // Windows may refuse to read a locked file, so only Unix must name the holder.
+        #[cfg(unix)]
+        assert_eq!(holder, Some(std::process::id()));
+        #[cfg(windows)]
+        let _ = holder;
         assert_eq!(count(), 1);
         assert!(
             acquired_rx.try_recv().is_err(),

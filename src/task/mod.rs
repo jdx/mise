@@ -4053,15 +4053,9 @@ pub(crate) async fn parse_usage_values_from_task(
             return Ok(IndexMap::new());
         }
     };
-    let mut values: IndexMap<String, tera::Value> =
-        TaskScriptParser::make_usage_ctx(&po).into_iter().collect();
-    // `make_usage_ctx` only inserts `cmd` when a subcommand was actually selected.
-    // Templates referencing `{{ usage.cmd }}` should still resolve (to "") when
-    // subcommands are defined in the spec but none was selected.
-    if !spec.cmd.subcommands.is_empty() && !values.contains_key("cmd") {
-        values.insert("cmd".to_string(), tera::Value::from(String::new()));
-    }
-    Ok(values)
+    Ok(TaskScriptParser::make_usage_ctx(&spec, &po)
+        .into_iter()
+        .collect())
 }
 
 #[cfg(test)]
