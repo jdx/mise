@@ -3376,8 +3376,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string_lossy()
                         .to_string();
                     // A `latest` link written before the backend could tell this
-                    // version is a pre-release must not keep winning.
-                    if !filter || !self.is_backend_prerelease(&version) {
+                    // version is a pre-release must not keep winning, and neither
+                    // may one left pointing into an interrupted install.
+                    if (!filter || !self.is_backend_prerelease(&version))
+                        && !install_state::is_install_incomplete(&installs_path, &version)
+                    {
                         return Ok(Some(version));
                     }
                 }
