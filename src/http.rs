@@ -2446,17 +2446,10 @@ async fn warn_when_download_is_slow(
         ticks.tick().await;
         let now = Instant::now();
         let total = progress.total();
-        // Blame the server actually sending the bytes, which may differ from
-        // the requested URL after replacements or redirects. A retry can land
-        // on another host; measure each host on its own so a slow host's bytes
-        // are never reported under a healthy one's name.
-        let host = progress.host.lock().unwrap().clone();
-        if host != window_host {
-            detector.restart(now, total);
-            window_host = host;
-            continue;
-        }
+        // Judge the window that just elapsed against the host that served it.
         if let Some(rate) = detector.observe(now, total) {
+            // Blame the server actually sending the bytes, which may differ
+            // from the requested URL after replacements or redirects.
             let host = window_host
                 .clone()
                 .or_else(|| url.host_str().map(str::to_string))
@@ -2469,6 +2462,13 @@ async fn warn_when_download_is_slow(
                 bytesize::ByteSize::b(rate).display().iec(),
             );
             return std::future::pending().await;
+        }
+        // A retry can land on another host. Start that host's own window so a
+        // slow host's bytes are never reported under a healthy one's name.
+        let host = progress.host.lock().unwrap().clone();
+        if host != window_host {
+            detector.restart(now, total);
+            window_host = host;
         }
     }
 }
