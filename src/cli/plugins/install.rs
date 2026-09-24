@@ -118,7 +118,7 @@ impl PluginsInstall {
             let plugin_name = plugin.clone();
             spawn_plugin_task(&mut jset, &mut task_names, plugin_name, async move {
                 let _permit = semaphore.acquire_owned().await?;
-                println!("installing {plugin}");
+                miseprintln!("installing {plugin}");
                 this.install_one(&config, plugin, None).await
             });
         }

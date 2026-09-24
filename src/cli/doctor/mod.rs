@@ -311,7 +311,7 @@ impl Doctor {
         }
 
         let out = serde_json::to_string_pretty(&data)?;
-        println!("{out}");
+        miseprintln!("{out}");
 
         if !self.errors.is_empty() {
             return Err(crate::request_exit(1));
@@ -505,7 +505,7 @@ impl Doctor {
         info::section("config_files", render_config_files(config))?;
         info::section("env_files", render_env_files(config).await?)?;
         if IGNORED_CONFIG_FILES.is_empty() {
-            println!();
+            miseprintln!();
             info::inline_section("ignored_config_files", "(none)")?;
         } else {
             info::section(

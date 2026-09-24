@@ -60,7 +60,7 @@ impl Shell {
         if self.unset {
             for ta in &self.tool {
                 let op = shell.unset_env(&tool_env_var_name(&ta.ba.short));
-                print!("{op}");
+                miseprint!("{op}")?;
             }
             return Ok(());
         }
@@ -92,7 +92,7 @@ impl Shell {
             if matches!(source, ToolSource::Argument) {
                 let k = tool_env_var_name(p.id());
                 let op = shell.set_env(&k, &tv.version);
-                print!("{op}");
+                miseprint!("{op}")?;
             }
         }
 

@@ -567,24 +567,26 @@ async fn run_matched_hook(
             }
         }
         HookAction::CurrentShell { script, .. } => {
+            // This function cannot return an error, so a closed stdout is ignored here and
+            // hook-env's own output reports it instead of panicking.
             if let Some(shell) = shell {
                 // Set hook environment variables so shell hooks can access them
-                println!(
+                let _ = calm_io::stdoutln!(
                     "{}",
                     shell.set_env("MISE_PROJECT_ROOT", &roots.project.to_string_lossy())
                 );
-                println!(
+                let _ = calm_io::stdoutln!(
                     "{}",
                     shell.set_env("MISE_CONFIG_ROOT", &roots.config.to_string_lossy())
                 );
                 if let Some(cwd) = dirs::CWD.as_ref() {
-                    println!(
+                    let _ = calm_io::stdoutln!(
                         "{}",
                         shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy())
                     );
                 }
                 if let Some((Some(old), _new)) = hook_env::dir_change() {
-                    println!(
+                    let _ = calm_io::stdoutln!(
                         "{}",
                         shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy())
                     );
@@ -592,10 +594,10 @@ async fn run_matched_hook(
                 if let Some(tools) = installed_tools
                     && let Ok(json) = serde_json::to_string(tools)
                 {
-                    println!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
+                    let _ = calm_io::stdoutln!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
                 }
             }
-            println!("{script}");
+            let _ = calm_io::stdoutln!("{script}");
         }
         HookAction::Run { .. } => {
             if let Err(e) = execute(

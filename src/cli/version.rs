@@ -132,7 +132,7 @@ impl Version {
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
         });
-        println!("{}", serde_json::to_string_pretty(&json)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&json)?);
         Ok(())
     }
 }

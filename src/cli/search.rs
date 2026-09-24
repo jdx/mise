@@ -92,7 +92,7 @@ impl Search {
         let query = self.name.as_deref().unwrap_or_default();
         if self.complete || self.complete_ids {
             let tools = crate::tool_catalog::search(query).await;
-            self.print_completions(&tools, self.complete);
+            self.print_completions(&tools, self.complete)?;
             return Ok(());
         }
         let (catalog, package_registry) = tokio::join!(
@@ -262,18 +262,19 @@ impl Search {
             .collect()
     }
 
-    fn print_completions(&self, tools: &[ToolCatalogEntry], descriptions: bool) {
+    fn print_completions(&self, tools: &[ToolCatalogEntry], descriptions: bool) -> Result<()> {
         for tool in tools {
             if descriptions {
-                println!(
+                miseprintln!(
                     "{}:{}",
                     tool.id.replace(':', "\\:"),
                     tool.selector_description().replace(':', "\\:")
                 );
             } else {
-                println!("{}", tool.id);
+                miseprintln!("{}", tool.id);
             }
         }
+        Ok(())
     }
 }
 
