@@ -3380,6 +3380,7 @@ mod tests {
                 variants: vec![],
                 enabled: true,
                 remove_empty: false,
+                relative: false,
             }]);
         }
         assert!(set.entries.is_empty());
@@ -4552,6 +4553,7 @@ mod tests {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            relative: false,
         }]);
         assert_eq!(set.manifest.enrollment.len(), 1);
         assert_eq!(
