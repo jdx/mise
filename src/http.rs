@@ -1018,20 +1018,20 @@ impl Client {
             tokio::task::spawn_blocking(move || crate::lock_file::LockFile::new(&lock_path).lock())
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
-        let bytes = Arc::new(DownloadBytes::default());
+        let progress = Arc::new(DownloadProgress::default());
 
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
         // send_with_https_fallback) is used inside to avoid retry-on-retry.
         let download = retry_async("GET", &url, || {
             let attempt = attempt.clone();
-            let bytes = bytes.clone();
+            let progress = progress.clone();
             let request_url = url.clone();
             let partial = partial.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
-                bytes.start_attempt();
-                self.download_file_attempt(request_url, headers, &partial, pr, &bytes.attempt)
+                progress.start_attempt();
+                self.download_file_attempt(request_url, headers, &partial, pr, &progress)
                     .await
             }
         });
@@ -1043,7 +1043,7 @@ impl Client {
         let download = async {
             tokio::select! {
                 result = download => result,
-                never = warn_when_download_is_slow(&url, || bytes.total()) => match never {},
+                never = warn_when_download_is_slow(&url, &progress) => match never {},
             }
         };
 
@@ -1061,7 +1061,7 @@ impl Client {
                     format_duration(total_timeout),
                     url,
                     attempt.load(Ordering::Relaxed),
-                    bytes.attempt.load(Ordering::Relaxed),
+                    progress.attempt.load(Ordering::Relaxed),
                 )
             }
         };
@@ -1081,7 +1081,7 @@ impl Client {
         headers: &HeaderMap,
         partial: &PartialDownload,
         pr: Option<&dyn SingleReport>,
-        bytes_received: &AtomicU64,
+        progress: &DownloadProgress,
     ) -> Result<DownloadFileMetadata> {
         let mut restarted_without_resume = false;
         loop {
@@ -1122,6 +1122,7 @@ impl Client {
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
+            progress.served_by(resp.url());
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp
@@ -1243,7 +1244,9 @@ impl Client {
                         bail!("download cancelled by user");
                     }
                     file.write_all(&chunk).await?;
-                    bytes_received.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                    progress
+                        .attempt
+                        .fetch_add(chunk.len() as u64, Ordering::Relaxed);
                     if let Some(pr) = pr {
                         pr.inc(chunk.len() as u64);
                     }
@@ -2345,16 +2348,22 @@ const SLOW_DOWNLOAD_BYTES_PER_SEC: u64 = 16 * 1024;
 const SLOW_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60);
 const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Bytes received by a retried download. `attempt` restarts at zero on each
-/// retry (the timeout error reports it per attempt); `total` never goes
-/// backwards, which the slow-download watchdog relies on.
+/// Progress of a retried download. `attempt` restarts at zero on each retry
+/// (the timeout error reports it per attempt); `total` never goes backwards,
+/// which the slow-download watchdog relies on.
 #[derive(Default)]
-struct DownloadBytes {
+struct DownloadProgress {
     attempt: AtomicU64,
     earlier_attempts: AtomicU64,
+    /// Host of the latest response, after `url_replacements` and redirects.
+    host: Mutex<Option<String>>,
 }
 
-impl DownloadBytes {
+impl DownloadProgress {
+    fn served_by(&self, url: &Url) {
+        *self.host.lock().unwrap() = url.host_str().map(str::to_string);
+    }
+
     fn start_attempt(&self) {
         self.earlier_attempts
             .fetch_add(self.attempt.swap(0, Ordering::Relaxed), Ordering::Relaxed);
@@ -2401,19 +2410,28 @@ impl SlowDownloadDetector {
 /// query, or path (presigned URLs), and this is a warning, not a debug line.
 async fn warn_when_download_is_slow(
     url: &Url,
-    total_bytes: impl Fn() -> u64,
+    progress: &DownloadProgress,
 ) -> std::convert::Infallible {
     let mut detector = SlowDownloadDetector::new(Instant::now());
     let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
     ticks.tick().await;
     loop {
         ticks.tick().await;
-        if let Some(rate) = detector.observe(Instant::now(), total_bytes()) {
+        if let Some(rate) = detector.observe(Instant::now(), progress.total()) {
+            // Blame the server actually sending the bytes, which may differ
+            // from the requested URL after replacements or redirects.
+            let host = progress
+                .host
+                .lock()
+                .unwrap()
+                .clone()
+                .or_else(|| url.host_str().map(str::to_string))
+                .unwrap_or_else(|| "the server".to_string());
             warn!(
                 "download from {} is very slow ({}/s over the last minute). \
                  mise keeps trying until `http_download_timeout` runs out; \
                  if the host is throttling this connection, switching to a mirror may help",
-                url.host_str().unwrap_or("the server"),
+                host,
                 bytesize::ByteSize::b(rate).display().iec(),
             );
             return std::future::pending().await;
@@ -4946,7 +4964,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 
     #[test]
     fn download_bytes_total_survives_retries() {
-        let bytes = DownloadBytes::default();
+        let bytes = DownloadProgress::default();
         bytes.start_attempt();
         bytes.attempt.fetch_add(1_500, Ordering::Relaxed);
         assert_eq!(bytes.total(), 1_500);
@@ -4958,5 +4976,15 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         bytes.attempt.fetch_add(2_000, Ordering::Relaxed);
         assert_eq!(bytes.attempt.load(Ordering::Relaxed), 2_000);
         assert_eq!(bytes.total(), 3_500);
+    }
+
+    #[test]
+    fn download_progress_names_the_host_that_served_the_response() {
+        let progress = DownloadProgress::default();
+        progress.served_by(&Url::parse("https://mirror.example/node.tar.gz").unwrap());
+        assert_eq!(
+            progress.host.lock().unwrap().as_deref(),
+            Some("mirror.example")
+        );
     }
 }
