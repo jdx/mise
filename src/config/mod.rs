@@ -2808,14 +2808,13 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
                 found.extend(
-                    glob(&dir, &pattern)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|path| {
-                            !is_conf_d_file(path)
-                                || conf_d_file_environment(path)
-                                    .is_some_and(|(environment, _)| environment == env_name)
-                        }),
+                    // config_glob applies loading's exclusions, such as hidden
+                    // conf.d fragments and folders
+                    config_glob(&dir, &pattern).into_iter().filter(|path| {
+                        !is_conf_d_file(path)
+                            || conf_d_file_environment(path)
+                                .is_some_and(|(environment, _)| environment == env_name)
+                    }),
                 );
             }
         }
