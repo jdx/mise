@@ -851,10 +851,12 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    if table.contains_key("permissions") {
-                        bail!(
-                            "dotfile {target}: permissions applies to whole-file entries, not block or line edits"
-                        );
+                    for key in ["permissions", "relative"] {
+                        if table.contains_key(key) {
+                            bail!(
+                                "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
+                            );
+                        }
                     }
                     continue;
                 }
@@ -1222,10 +1224,10 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
-                || table.contains_key("relative")
                 || ((table.contains_key("source")
                     || table.contains_key("content")
-                    || table.contains_key("permissions"))
+                    || table.contains_key("permissions")
+                    || table.contains_key("relative"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -3198,8 +3200,7 @@ fn resolve_relative_link(target: &Path, dest: &Path) -> Option<PathBuf> {
 /// file or a dangling link still has a location). Its own last component is
 /// not followed: a source that is a symlink is the link, not what it names.
 fn physical_path(path: &Path) -> PathBuf {
-    let path = lexical_normalize(path);
-    walk_physical(PathBuf::new(), &path).unwrap_or(path)
+    walk_physical(PathBuf::new(), path).unwrap_or_else(|| lexical_normalize(path))
 }
 
 /// Append `path` to `base` a component at a time, resolving every directory
@@ -5477,11 +5478,11 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
     let Some(parent) = target.parent() else {
         return source.to_path_buf();
     };
-    let source = lexical_normalize(source);
     // `physical_path` rather than `canonicalize`: a `symlink-each` source may
     // be a dangling link, which must still get a relative link or the entry
     // would never converge
-    let physical_source = physical_path(&source);
+    let physical_source = physical_path(source);
+    let source = lexical_normalize(source);
     let resolves =
         |rel: &Path| resolve_relative_link(target, rel).is_some_and(|p| p == physical_source);
     if let Some(rel) = pathdiff::diff_paths(&source, lexical_normalize(parent))
@@ -7618,6 +7619,8 @@ source = "oldrc""#,
             r#"{ permissions = "0600", relative = true }"#,
             r#"{ mode = "absent", relative = true }"#,
             r#"{ mode = "track", relative = true }"#,
+            r#"{ block = "x", relative = true }"#,
+            r#"{ line = "x", relative = false }"#,
         ] {
             assert!(validate(entry).is_err(), "{entry} should be rejected");
         }
