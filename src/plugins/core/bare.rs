@@ -18,7 +18,6 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::packslip_requirements::glibc_version;
-use crate::platform::Platform;
 use crate::plugins;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
@@ -91,7 +90,7 @@ impl BarePlugin {
 
     /// Downloads the Bare runtime artifact for the current platform.
     /// If locked, uses the URL and checksum from the lockfile.
-    /// Otherwise, fetches the latest release asset from GitHub and requires a SHA-256 digest.
+    /// Otherwise, fetches the latest release asset from GitHub (checksum verified if available).
     async fn download(
         &self,
         ctx: &InstallContext,
@@ -117,13 +116,7 @@ impl BarePlugin {
             (asset_filename(&tv.version, &target)?, url, None)
         } else {
             let asset = self.release_asset(tv, &target).await?;
-            let digest = asset.digest.ok_or_else(|| {
-                eyre!(
-                    "Bare release asset {} has no SHA-256 digest; refusing to install without integrity check",
-                    asset.name
-                )
-            })?;
-            (asset.name, asset.browser_download_url, Some(digest))
+            (asset.name, asset.browser_download_url, asset.digest)
         };
         let tarball_path = tv.download_path().join(&name);
         pr.set_message(format!("download {name}"));
@@ -185,7 +178,7 @@ impl Backend for BarePlugin {
     }
 
     /// Lists all available remote versions of Bare from GitHub releases.
-    /// Filters to only include versions that have a matching asset for the current platform.
+    /// Filters to only include versions that have a matching asset with a SHA-256 digest for the current platform.
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let target = PlatformTarget::from_current();
         let mut versions = Vec::new();
@@ -194,7 +187,11 @@ impl Backend for BarePlugin {
                 continue;
             };
             let filename = asset_filename(version, &target)?;
-            if release.assets.iter().any(|asset| asset.name == filename) {
+            if release
+                .assets
+                .iter()
+                .any(|asset| asset.name == filename && asset.digest.is_some())
+            {
                 versions.push(VersionInfo {
                     version: version.to_string(),
                     created_at: Some(release.released_at().to_string()),
@@ -222,57 +219,18 @@ impl Backend for BarePlugin {
     }
 
     /// Resolves lockfile information for a specific version and platform.
-    /// Fetches the GitHub release asset and returns its checksum and download URL.
+    /// Fetches the GitHub release asset and returns its checksum (if available) and download URL.
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let asset = self.release_asset(tv, target).await?;
-        let checksum = asset.digest.ok_or_else(|| {
-            eyre!(
-                "Bare release asset {} has no SHA-256 digest; refusing to install without integrity check",
-                asset.name
-            )
-        })?;
         Ok(PlatformInfo {
-            checksum: Some(checksum),
+            checksum: asset.digest,
             url: Some(asset.browser_download_url),
             ..Default::default()
         })
-    }
-
-    /// Returns platform variants for lockfile generation.
-    /// Bare provides both macOS architectures (x64 and ARM64) to ensure
-    /// lockfiles are complete for cross-platform teams.
-    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
-        if platform.qualifier.is_some() {
-            return vec![platform.clone()];
-        }
-
-        let mut variants = vec![platform.clone()];
-
-        match (platform.os.as_str(), platform.arch.as_str()) {
-            ("macos", "arm64") => {
-                // Add macOS x64 variant for cross-platform lockfile completeness
-                variants.push(Platform {
-                    os: "macos".to_string(),
-                    arch: "x64".to_string(),
-                    qualifier: None,
-                });
-            }
-            ("macos", "x64") => {
-                // Add macOS ARM64 variant for cross-platform lockfile completeness
-                variants.push(Platform {
-                    os: "macos".to_string(),
-                    arch: "arm64".to_string(),
-                    qualifier: None,
-                });
-            }
-            _ => {}
-        }
-
-        variants
     }
 }
 
