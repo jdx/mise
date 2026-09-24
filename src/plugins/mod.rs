@@ -312,17 +312,10 @@ fn pep440_public_version(version: &str) -> &str {
         .map_or(version, |(public, _)| public)
 }
 
-/// Whether a PEP 440 version is a pre-release. Only the public version is
-/// checked: a local label (`+build1dev0`) is free-form and never makes a
-/// release a pre-release.
-pub(crate) fn is_pep440_prerelease(version: &str) -> bool {
-    PEP440_PRERELEASE_REGEX.is_match(pep440_public_version(version))
-}
-
 /// Pre-release detection for Python-flavored backends: the PEP 440 rule plus
 /// the shared [`VERSION_REGEX`] channel tags, both applied to the public
-/// version only so a local label like `+gpu.dev0` never marks a release as a
-/// pre-release.
+/// version only. A local label (`+gpu.dev0`, `+build1dev0`) is free-form and
+/// never makes a release a pre-release.
 pub(crate) fn is_python_prerelease(version: &str) -> bool {
     let public = pep440_public_version(version);
     PEP440_PRERELEASE_REGEX.is_match(public) || VERSION_REGEX.is_match(public)
@@ -1035,10 +1028,10 @@ mod tests {
         assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-devtools"));
 
         // Local version labels are ignored.
-        assert!(is_pep440_prerelease("1.0.0c1+build"));
-        assert!(is_pep440_prerelease("1.0.dev0+local"));
-        assert!(!is_pep440_prerelease("1.1+build1dev0"));
-        assert!(!is_pep440_prerelease("1.1+abc1a1"));
+        assert!(is_python_prerelease("1.0.0c1+build"));
+        assert!(is_python_prerelease("1.0.dev0+local"));
+        assert!(!is_python_prerelease("1.1+build1dev0"));
+        assert!(!is_python_prerelease("1.1+abc1a1"));
 
         // Stable releases — including `.postN`, which PEP 440 specifies as a
         // post-release (after a stable), NOT a pre-release.

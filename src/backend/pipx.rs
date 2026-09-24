@@ -17,7 +17,7 @@ use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::{is_pep440_prerelease, is_python_prerelease};
+use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -892,7 +892,7 @@ impl PIPXBackend {
         Self::versions_from_pypi_package(data)
             .into_iter()
             .rev()
-            .find(|v| !is_pep440_prerelease(&v.version))
+            .find(|v| !is_python_prerelease(&v.version))
             .map(|v| v.version)
     }
 
@@ -2049,6 +2049,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             (
                 "2024.5.1.123456.dev0",
                 vec![pypi_release(Some("2024-05-01T00:00:00Z"), false)],
+            ),
+            (
+                "2.0-rc1",
+                vec![pypi_release(Some("2024-06-01T00:00:00Z"), false)],
             ),
         ]));
 
