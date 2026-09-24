@@ -64,17 +64,14 @@ impl LockFile {
             create_dir_all(parent)?;
         }
         let mut lock = fslock::LockFile::open(&self.path)?;
-        if !self.try_acquire(&mut lock)? {
+        if !lock.try_lock()? {
             if let Some(f) = &self.on_locked {
                 f(&self.path)
             }
             on_wait(self.holder_pid());
-            if self.record_pid {
-                lock.lock_with_pid()?;
-            } else {
-                lock.lock()?;
-            }
+            lock.lock()?;
         }
+        self.record_holder_pid();
         Ok(lock)
     }
 
@@ -83,19 +80,37 @@ impl LockFile {
             create_dir_all(parent)?;
         }
         let mut lock = fslock::LockFile::open(&self.path)?;
-        if self.try_acquire(&mut lock)? {
+        if lock.try_lock()? {
+            self.record_holder_pid();
             Ok(Some(lock))
         } else {
             Ok(None)
         }
     }
 
-    fn try_acquire(&self, lock: &mut fslock::LockFile) -> Result<bool> {
-        Ok(if self.record_pid {
-            lock.try_lock_with_pid()?
-        } else {
-            lock.try_lock()?
-        })
+    /// Writes our PID for waiters to report. The PID is only a diagnostic, so
+    /// failing to write it (a full disk, or Windows refusing a second handle
+    /// to the locked file) must not fail the lock: fslock's `lock_with_pid`
+    /// would release the lock and error instead. Unlocking through the fslock
+    /// handle truncates the file either way.
+    fn record_holder_pid(&self) {
+        if !self.record_pid {
+            return;
+        }
+        let result = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&self.path)
+            .and_then(|mut file| {
+                use std::io::Write;
+                writeln!(file, "{}", std::process::id())
+            });
+        if let Err(err) = result {
+            debug!(
+                "failed to record lock holder pid in {}: {err}",
+                display_path(&self.path)
+            );
+        }
     }
 
     /// The PID the current holder recorded, if any. Best effort: the holder
