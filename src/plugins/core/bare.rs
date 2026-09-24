@@ -75,10 +75,7 @@ impl BarePlugin {
         let version_str = glibc_version().await.ok_or_else(|| {
             eyre!("Failed to detect glibc version. Bare requires glibc 2.35 or newer on Linux.")
         })?;
-        let version = version_str
-            .split_whitespace()
-            .nth(1)
-            .ok_or_else(|| eyre!("Unexpected glibc version format: {version_str}"))?;
+        let version = version_str.as_str();
         let parts: Vec<u32> = version.split('.').map(|s| s.parse().unwrap_or(0)).collect();
         let major = parts.first().copied().unwrap_or(0);
         let minor = parts.get(1).copied().unwrap_or(0);
