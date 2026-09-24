@@ -40,6 +40,21 @@ fn env_is_set(key: &str) -> bool {
     std::env::var(key).is_ok_and(|v| !v.trim().is_empty())
 }
 
+/// The OTLP/HTTP encoding: JSON when `OTEL_EXPORTER_OTLP_<SIGNAL>_PROTOCOL` or
+/// `OTEL_EXPORTER_OTLP_PROTOCOL` asks for `http/json`, protobuf otherwise.
+/// Set explicitly because the exporter's own fallback, with the `http-json`
+/// feature enabled, is JSON, and the spec's default is protobuf.
+fn http_protocol(signal_var: &str) -> opentelemetry_otlp::Protocol {
+    let requested = std::env::var(signal_var)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok());
+    match requested.as_deref().map(str::trim) {
+        Some("http/json") => opentelemetry_otlp::Protocol::HttpJson,
+        _ => opentelemetry_otlp::Protocol::HttpBinary,
+    }
+}
+
 /// The per-request export timeout, unless the user configured one for this
 /// signal (`OTEL_EXPORTER_OTLP_<SIGNAL>_TIMEOUT`) or for all of them.
 fn export_timeout(signal_var: &str) -> Option<Duration> {
@@ -91,7 +106,9 @@ pub(crate) fn build_resource() -> Resource {
 /// `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
 /// `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, etc.
 pub(crate) fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvider> {
-    let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http();
+    let mut builder = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_protocol(http_protocol("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"));
     if let Some(timeout) = export_timeout("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT") {
         builder = builder.with_timeout(timeout);
     }
@@ -116,7 +133,9 @@ pub(crate) fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvi
 
 /// Build a `SdkLoggerProvider` with the OTLP/HTTP protobuf exporter.
 pub(crate) fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvider> {
-    let mut builder = opentelemetry_otlp::LogExporter::builder().with_http();
+    let mut builder = opentelemetry_otlp::LogExporter::builder()
+        .with_http()
+        .with_protocol(http_protocol("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"));
     if let Some(timeout) = export_timeout("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT") {
         builder = builder.with_timeout(timeout);
     }

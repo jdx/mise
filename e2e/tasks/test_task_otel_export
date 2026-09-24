@@ -13,6 +13,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         signal = self.path.rsplit("/", 1)[-1]
+        with open("content-types.log", "a") as f:
+            f.write(f"{signal} {self.headers['Content-Type']}\n")
         with open(f"{signal}.jsonl", "ab") as f:
             f.write(body.replace(b"\n", b"") + b"\n")
         self.send_response(200)
@@ -86,7 +88,6 @@ wait_for_file collector.port "OTLP collector port" 30 "$collector_pid"
 
 port="$(cat collector.port)"
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:$port"
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
 
 cat <<'EOF' >mise.toml
 [tasks.a]
@@ -110,6 +111,14 @@ mise run all
 assert_fail "test -e traces.jsonl"
 
 export MISE_OTEL_ENABLED=1
+
+# OTLP/HTTP defaults to protobuf, per the spec.
+mise run a
+assert "cat content-types.log" "traces application/x-protobuf"
+rm traces.jsonl content-types.log
+
+# The rest of the test reads JSON.
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
 mise run all
 traces="$(python3 summary.py traces)"
 echo "$traces"
