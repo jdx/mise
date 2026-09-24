@@ -1018,25 +1018,20 @@ impl Client {
             tokio::task::spawn_blocking(move || crate::lock_file::LockFile::new(&lock_path).lock())
                 .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
-        let bytes_received = Arc::new(AtomicU64::new(0));
-        // Bytes from attempts before the current one, so the slow-download
-        // watchdog sees a total that never goes backwards on retry.
-        let earlier_attempts_bytes = Arc::new(AtomicU64::new(0));
+        let bytes = Arc::new(DownloadBytes::default());
 
         // Retry the whole transfer, resuming a validated partial response when
         // possible. send_once_with_https_fallback_allow_416 (not
         // send_with_https_fallback) is used inside to avoid retry-on-retry.
         let download = retry_async("GET", &url, || {
             let attempt = attempt.clone();
-            let bytes_received = bytes_received.clone();
-            let earlier_attempts_bytes = earlier_attempts_bytes.clone();
+            let bytes = bytes.clone();
             let request_url = url.clone();
             let partial = partial.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
-                earlier_attempts_bytes
-                    .fetch_add(bytes_received.swap(0, Ordering::Relaxed), Ordering::Relaxed);
-                self.download_file_attempt(request_url, headers, &partial, pr, &bytes_received)
+                bytes.start_attempt();
+                self.download_file_attempt(request_url, headers, &partial, pr, &bytes.attempt)
                     .await
             }
         });
@@ -1048,10 +1043,7 @@ impl Client {
         let download = async {
             tokio::select! {
                 result = download => result,
-                never = warn_when_download_is_slow(&url, || {
-                    earlier_attempts_bytes.load(Ordering::Relaxed)
-                        + bytes_received.load(Ordering::Relaxed)
-                }) => match never {},
+                never = warn_when_download_is_slow(&url, || bytes.total()) => match never {},
             }
         };
 
@@ -1069,7 +1061,7 @@ impl Client {
                     format_duration(total_timeout),
                     url,
                     attempt.load(Ordering::Relaxed),
-                    bytes_received.load(Ordering::Relaxed),
+                    bytes.attempt.load(Ordering::Relaxed),
                 )
             }
         };
@@ -2352,6 +2344,26 @@ where
 const SLOW_DOWNLOAD_BYTES_PER_SEC: u64 = 16 * 1024;
 const SLOW_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60);
 const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Bytes received by a retried download. `attempt` restarts at zero on each
+/// retry (the timeout error reports it per attempt); `total` never goes
+/// backwards, which the slow-download watchdog relies on.
+#[derive(Default)]
+struct DownloadBytes {
+    attempt: AtomicU64,
+    earlier_attempts: AtomicU64,
+}
+
+impl DownloadBytes {
+    fn start_attempt(&self) {
+        self.earlier_attempts
+            .fetch_add(self.attempt.swap(0, Ordering::Relaxed), Ordering::Relaxed);
+    }
+
+    fn total(&self) -> u64 {
+        self.earlier_attempts.load(Ordering::Relaxed) + self.attempt.load(Ordering::Relaxed)
+    }
+}
 
 /// Tracks transfer throughput over tumbling windows of a monotonic byte total.
 struct SlowDownloadDetector {
@@ -4930,5 +4942,21 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             detector.observe(start + Duration::from_secs(120), 60 * 1024 * 1024 + 60_000),
             Some(1_000)
         );
+    }
+
+    #[test]
+    fn download_bytes_total_survives_retries() {
+        let bytes = DownloadBytes::default();
+        bytes.start_attempt();
+        bytes.attempt.fetch_add(1_500, Ordering::Relaxed);
+        assert_eq!(bytes.total(), 1_500);
+        // A retry restarts the per-attempt count but keeps the total, even once
+        // the new attempt passes the old attempt's count.
+        bytes.start_attempt();
+        assert_eq!(bytes.attempt.load(Ordering::Relaxed), 0);
+        assert_eq!(bytes.total(), 1_500);
+        bytes.attempt.fetch_add(2_000, Ordering::Relaxed);
+        assert_eq!(bytes.attempt.load(Ordering::Relaxed), 2_000);
+        assert_eq!(bytes.total(), 3_500);
     }
 }
