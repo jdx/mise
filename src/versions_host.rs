@@ -571,9 +571,26 @@ fn versions_host_error_message(status: u16, body: &str) -> String {
     )
 }
 
-fn enabled_for_github_metadata() -> bool {
+pub(crate) fn enabled_for_github_metadata() -> bool {
     let settings = Settings::get();
-    !settings.prefer_offline() && settings.use_versions_host
+    !settings.prefer_offline() && settings.use_versions_host && !github_is_url_replaced()
+}
+
+/// Whether `url_replacements` sends GitHub somewhere else (a proxy, a mirror,
+/// a test fixture). mise-versions answers for github.com itself, so it must
+/// not stand in for whatever the user routed GitHub to.
+fn github_is_url_replaced() -> bool {
+    if Settings::get().url_replacements.is_none() {
+        return false;
+    }
+    ["https://api.github.com/", "https://github.com/"]
+        .iter()
+        .any(|original| {
+            let original = url::Url::parse(original).expect("valid GitHub URL");
+            let mut replaced = original.clone();
+            http::apply_url_replacements(&mut replaced);
+            replaced != original
+        })
 }
 
 fn split_github_repo(repo: &str) -> Option<(&str, &str)> {

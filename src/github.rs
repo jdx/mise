@@ -789,16 +789,71 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
                     "browser URL returned HTML (likely an auth page), \
                      using the API asset endpoint"
                 );
-                api_url.to_string()
+                checked_api_asset_url(browser_url, api_url).await
             } else {
                 browser_url.to_string()
             }
         }
         Err(e) => {
             debug!("HEAD on browser URL failed ({e}), using the API asset endpoint");
-            api_url.to_string()
+            checked_api_asset_url(browser_url, api_url).await
         }
     }
+}
+
+/// `api_url` if the GitHub release asset it names is the file `browser_url`
+/// downloads; otherwise `browser_url`, which then fails on its own.
+///
+/// Release metadata (possibly from mise-versions) can pair a correct browser
+/// URL with any asset ID in the repository, and the ID is only used here,
+/// when the browser URL can't be. One metadata request settles it: GitHub
+/// reports which tag and file the ID is. That request only happens on this
+/// fallback, which public releases essentially never reach.
+async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
+    let Ok(url) = url::Url::parse(api_url) else {
+        return api_url.to_string();
+    };
+    // Only api.github.com asset IDs come from mise-versions.
+    if url.host_str() != Some("api.github.com") || !url.path().contains("/releases/assets/") {
+        return api_url.to_string();
+    }
+    let asset = async {
+        let mut headers = get_headers(api_url)?;
+        headers.insert(
+            "accept",
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
+        crate::http::HTTP_FETCH
+            .json_with_headers::<GithubAsset, _>(api_url, &headers)
+            .await
+    };
+    match asset.await {
+        Ok(asset) if same_release_download(browser_url, &asset.browser_download_url) => {
+            api_url.to_string()
+        }
+        Ok(asset) => {
+            warn!(
+                "GitHub release asset {api_url} is {}, not {browser_url}; not using it",
+                asset.browser_download_url
+            );
+            browser_url.to_string()
+        }
+        Err(err) => {
+            warn!("could not confirm GitHub release asset {api_url} is {browser_url}: {err:#}");
+            browser_url.to_string()
+        }
+    }
+}
+
+/// Whether two github.com release download URLs are the same tag and file.
+/// The repository may differ: GitHub reports a renamed repository's new name.
+fn same_release_download(a: &str, b: &str) -> bool {
+    fn tag_and_file(url: &str) -> Option<String> {
+        let url = url::Url::parse(url).ok()?;
+        let (_, rest) = url.path().split_once("/releases/download/")?;
+        urlencoding::decode(rest).ok().map(|rest| rest.into_owned())
+    }
+    tag_and_file(a).is_some_and(|a| tag_and_file(b).is_some_and(|b| a == b))
 }
 
 /// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
@@ -1391,7 +1446,35 @@ mod tests {
         );
     }
 
-    const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
+    // Not api.github.com, so falling back to it skips the asset identity check
+    // (see `checked_api_asset_url`), which these tests don't exercise.
+    const ASSET_API_URL: &str = "https://github-api.example.com/repos/o/r/releases/assets/1";
+
+    #[test]
+    fn test_same_release_download() {
+        let url = "https://github.com/o/r/releases/download/v1.0.0/tool-linux.tar.gz";
+        assert!(same_release_download(url, url));
+        // A renamed repository: same tag and file.
+        assert!(same_release_download(
+            url,
+            "https://github.com/new-o/new-r/releases/download/v1.0.0/tool-linux.tar.gz"
+        ));
+        // Encoding differences don't matter.
+        assert!(same_release_download(
+            "https://github.com/o/r/releases/download/release%2F1/a%20b.zip",
+            "https://github.com/o/r/releases/download/release/1/a b.zip"
+        ));
+        // Another file, another tag, or not a download.
+        assert!(!same_release_download(
+            url,
+            "https://github.com/o/r/releases/download/v1.0.0/tool-windows.zip"
+        ));
+        assert!(!same_release_download(
+            url,
+            "https://github.com/o/r/releases/download/v0.9.0/tool-linux.tar.gz"
+        ));
+        assert!(!same_release_download(url, "https://github.com/o/r"));
+    }
 
     #[test]
     fn test_github_content_headers_request_raw_content() {
