@@ -320,7 +320,7 @@ format). This means:
   or export any telemetry.
 - Export failures are logged at debug level and never break task execution.
 - Each export request times out after 3 seconds unless `OTEL_EXPORTER_OTLP_TIMEOUT` (or
-  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT`) says otherwise, so an unreachable collector
+  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` / `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT`) says otherwise, so an unreachable collector
   delays the end of `mise run` by at most that much.
 - Offline mode (`--offline` / `MISE_OFFLINE=1`) turns export off.
 - Task args in span names and attributes go through the same

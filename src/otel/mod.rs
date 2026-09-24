@@ -116,10 +116,11 @@ pub(crate) fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvi
 
 /// Build a `SdkLoggerProvider` with the OTLP/HTTP protobuf exporter.
 pub(crate) fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvider> {
-    let exporter = match opentelemetry_otlp::LogExporter::builder()
-        .with_http()
-        .build()
-    {
+    let mut builder = opentelemetry_otlp::LogExporter::builder().with_http();
+    if let Some(timeout) = export_timeout("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT") {
+        builder = builder.with_timeout(timeout);
+    }
+    let exporter = match builder.build() {
         Ok(e) => e,
         Err(err) => {
             debug!("otel: failed to build log exporter: {err}");
