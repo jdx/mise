@@ -1538,7 +1538,6 @@ mod tests {
     #[test]
     fn dot_prefix_entries_use_the_filtered_walk() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let source = dir.path().join("src");
         let mut req = dot_prefix_req(dir.path())?;
         let mut entries = DotfilesLayerEntries::default();
         add_dot_prefix_files(&req, "root", &mut entries)?;
@@ -1558,6 +1557,7 @@ mod tests {
 
         #[cfg(unix)]
         {
+            let source = &req.source;
             // reading a FIFO would wait for a writer forever
             nix::unistd::mkfifo(
                 &source.join("dot-pipe"),
