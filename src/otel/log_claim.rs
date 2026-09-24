@@ -7,10 +7,13 @@
 //! task's span.
 //!
 //! The inner run is the more precise reporter, so it wins. Before spawning a
-//! task we hand it a claim path; a nested `mise run` that exports its own task
-//! logs creates that file for as long as it lives, and we skip forwarding
-//! while it exists. Sequential nested runs hand the stream back and forth, so
-//! output the outer task writes itself is still exported by us:
+//! task we hand it a claim directory; a nested `mise run` that exports its own
+//! task logs creates a file named after its pid there for as long as it lives,
+//! and we skip forwarding while any such file belongs to a live process. Each
+//! nested run owns its own file, so concurrent nested runs
+//! (`mise run a & mise run b &`) keep the stream claimed until the last one
+//! exits. Sequential nested runs hand the stream back and forth, so output the
+//! outer task writes itself is still exported by us:
 //!
 //! ```text
 //! run = "echo building; mise run inner; echo done"
@@ -23,55 +26,60 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Env var naming the claim file a nested `mise run` creates while it is
-/// exporting its own task logs. Set on task subprocesses only when this
+/// Env var naming the claim directory a nested `mise run` registers in while
+/// it is exporting its own task logs. Set on task subprocesses only when this
 /// process is actually capturing their output.
 pub(crate) const LOG_CLAIM_ENV: &str = "MISE_TASK_OTEL_LOG_CLAIM";
 
-/// Parent side: the claim file handed to a task's subprocess.
+/// Parent side: the claim directory handed to a task's subprocess.
 #[derive(Clone, Debug)]
 pub(crate) struct LogClaimWatcher {
-    path: Arc<PathBuf>,
+    dir: Arc<PathBuf>,
 }
 
 impl LogClaimWatcher {
-    pub(crate) fn new(path: PathBuf) -> Self {
-        Self {
-            path: Arc::new(path),
-        }
+    pub(crate) fn new(dir: PathBuf) -> Self {
+        Self { dir: Arc::new(dir) }
     }
 
     pub(crate) fn path(&self) -> &Path {
-        &self.path
+        &self.dir
     }
 
     /// Whether a live nested `mise run` currently owns the stream.
     ///
     /// Checked per forwarded line, which is what lets the outer task resume
     /// exporting the moment the nested run finishes. When no claim exists —
-    /// the common case — this costs one failed `open`, cheap next to building
-    /// and queueing an OTLP record.
+    /// the common case — this costs one read of an empty directory, cheap
+    /// next to building and queueing an OTLP record.
     ///
     /// A claim whose owner is gone is treated as released and cleaned up.
     /// A nested run killed with `SIGKILL` never runs its destructor, so
     /// without this the outer task would stop exporting for the rest of the
-    /// command rather than for the rest of the nested run.
+    /// command rather than for the rest of the nested run. Entries that
+    /// aren't pids are ignored: erring this way risks duplicating a line;
+    /// erring the other way risks dropping every remaining line.
     pub(crate) fn claimed(&self) -> bool {
-        let Ok(owner) = std::fs::read_to_string(self.path()) else {
+        let Ok(entries) = std::fs::read_dir(self.path()) else {
             return false;
         };
-        match owner.trim().parse::<u32>() {
-            Ok(pid) if process_is_alive(pid) => true,
-            Ok(pid) => {
+        let mut claimed = false;
+        for entry in entries.flatten() {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|n| n.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if process_is_alive(pid) {
+                claimed = true;
+            } else {
                 trace!("otel: reclaiming log stream from dead pid {pid}");
-                let _ = std::fs::remove_file(self.path());
-                false
+                let _ = std::fs::remove_file(entry.path());
             }
-            // Unparseable claim: treat the stream as ours. Erring this way
-            // risks duplicating a line; erring the other way risks dropping
-            // every remaining line.
-            Err(_) => false,
         }
+        claimed
     }
 }
 
@@ -114,52 +122,40 @@ fn process_is_alive(pid: u32) -> bool {
     }
 }
 
-/// Child side: registers this run as the owner of the inherited stream for as
+/// Child side: registers this run as an owner of the inherited stream for as
 /// long as it lives. Released on drop.
 #[derive(Debug)]
 pub(crate) struct LogClaim {
     path: PathBuf,
-    pid: String,
 }
 
 impl LogClaim {
-    /// Claim the stream if an ancestor `mise` handed us a claim path.
+    /// Claim the stream if an ancestor `mise` handed us a claim directory.
     ///
     /// Only call this when we will actually export our own task logs —
     /// claiming without exporting would drop the lines on both sides.
     pub(crate) fn acquire() -> Option<Self> {
-        let path = PathBuf::from(std::env::var_os(LOG_CLAIM_ENV)?);
-        let pid = std::process::id().to_string();
-        // Write-then-rename so the ancestor reading this concurrently sees
-        // either no claim or a complete one, never a half-written pid.
-        let tmp = path.with_extension(format!("tmp.{pid}"));
-        if let Err(err) = std::fs::write(&tmp, &pid).and_then(|()| std::fs::rename(&tmp, &path)) {
+        let dir = PathBuf::from(std::env::var_os(LOG_CLAIM_ENV)?);
+        let path = dir.join(std::process::id().to_string());
+        // The file's existence is the claim, so creating it empty is atomic
+        // from the ancestor's point of view.
+        if let Err(err) = std::fs::File::create(&path) {
             // Not fatal: without the claim the ancestor keeps forwarding, so
             // the lines are duplicated rather than lost.
             debug!(
                 "otel: failed to claim log stream at {}: {err}",
                 path.display()
             );
-            let _ = std::fs::remove_file(&tmp);
             return None;
         }
         trace!("otel: claimed log stream at {}", path.display());
-        Some(Self { path, pid })
+        Some(Self { path })
     }
 }
 
 impl Drop for LogClaim {
     fn drop(&mut self) {
-        // Only release if we're still the owner. Two nested runs sharing one
-        // parent task (`mise run a & mise run b &`) both write the file; the
-        // first to exit must not hand the stream back while the other is
-        // still reporting.
-        match std::fs::read_to_string(&self.path) {
-            Ok(owner) if owner.trim() == self.pid => {
-                let _ = std::fs::remove_file(&self.path);
-            }
-            _ => {}
-        }
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
@@ -185,106 +181,87 @@ mod tests {
         std::process::id()
     }
 
-    #[test]
-    fn watcher_reports_claim_file_lifecycle() {
-        let dir = tempfile::tempdir().unwrap();
-        let watcher = LogClaimWatcher::new(dir.path().join("claim"));
-        assert!(!watcher.claimed(), "unclaimed before anyone writes");
-
-        std::fs::write(watcher.path(), live_pid().to_string()).unwrap();
-        assert!(watcher.claimed());
-
-        std::fs::remove_file(watcher.path()).unwrap();
-        assert!(!watcher.claimed(), "released once the file is gone");
+    fn claim_as(dir: &Path, pid: u32) -> LogClaim {
+        let path = dir.join(pid.to_string());
+        std::fs::File::create(&path).unwrap();
+        LogClaim { path }
     }
 
     #[test]
-    fn claim_releases_on_drop() {
+    fn watcher_reports_claim_lifecycle() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("claim");
-        let watcher = LogClaimWatcher::new(path.clone());
+        let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
+        assert!(!watcher.claimed(), "unclaimed before anyone registers");
 
-        let pid = live_pid();
-        let claim = LogClaim {
-            path: path.clone(),
-            pid: pid.to_string(),
-        };
-        std::fs::write(&path, pid.to_string()).unwrap();
+        let claim = claim_as(dir.path(), live_pid());
         assert!(watcher.claimed());
 
         drop(claim);
-        assert!(!watcher.claimed());
+        assert!(
+            !watcher.claimed(),
+            "released once the owner drops its claim"
+        );
     }
 
+    #[cfg(unix)]
     #[test]
-    fn claim_does_not_release_a_stream_another_run_took_over() {
+    fn concurrent_claims_hold_the_stream_until_the_last_is_released() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("claim");
-        let watcher = LogClaimWatcher::new(path.clone());
+        let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
+        // `mise run a & mise run b &`: two live nested runs under one task.
+        let mut other = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let a = claim_as(dir.path(), live_pid());
+        let b = claim_as(dir.path(), other.id());
 
-        let first = LogClaim {
-            path: path.clone(),
-            pid: dead_pid().to_string(),
-        };
-        // A concurrent nested run claims the same stream after us.
-        std::fs::write(&path, live_pid().to_string()).unwrap();
-
-        drop(first);
-        assert!(
-            watcher.claimed(),
-            "the run that still owns the stream keeps it"
-        );
+        drop(a);
+        assert!(watcher.claimed(), "b is still exporting its own lines");
+        drop(b);
+        assert!(!watcher.claimed());
+        other.kill().unwrap();
+        other.wait().unwrap();
     }
 
     #[test]
     fn stale_claim_from_a_dead_process_is_released() {
         let dir = tempfile::tempdir().unwrap();
-        let watcher = LogClaimWatcher::new(dir.path().join("claim"));
+        let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
         // A nested run killed with SIGKILL never runs its destructor, so its
-        // claim file outlives it.
-        std::fs::write(watcher.path(), dead_pid().to_string()).unwrap();
+        // claim outlives it.
+        let stale = dir.path().join(dead_pid().to_string());
+        std::fs::File::create(&stale).unwrap();
 
         assert!(
             !watcher.claimed(),
             "a claim whose owner is gone must not suppress the outer task"
         );
         assert!(
-            !watcher.path().exists(),
+            !stale.exists(),
             "the stale claim should be cleaned up so later checks stay cheap"
         );
     }
 
     #[test]
-    fn unreadable_claim_does_not_suppress_the_outer_task() {
+    fn unrecognised_entries_do_not_suppress_the_outer_task() {
         let dir = tempfile::tempdir().unwrap();
-        let watcher = LogClaimWatcher::new(dir.path().join("claim"));
-        std::fs::write(watcher.path(), "not-a-pid").unwrap();
+        let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("not-a-pid"), "").unwrap();
         assert!(!watcher.claimed());
     }
 
     #[test]
-    fn acquire_publishes_a_complete_claim() {
+    fn acquire_registers_this_process() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("claim");
         // SAFETY: single-threaded test; the var is removed before returning.
-        unsafe { std::env::set_var(LOG_CLAIM_ENV, &path) };
+        unsafe { std::env::set_var(LOG_CLAIM_ENV, dir.path()) };
         let claim = LogClaim::acquire().expect("claim should be acquired");
         unsafe { std::env::remove_var(LOG_CLAIM_ENV) };
 
-        let watcher = LogClaimWatcher::new(path.clone());
+        let watcher = LogClaimWatcher::new(dir.path().to_path_buf());
         assert!(watcher.claimed());
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            std::process::id().to_string()
-        );
-        // No temp file left behind by the atomic publish.
-        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n != "claim")
-            .collect();
-        assert!(leftovers.is_empty(), "unexpected leftovers: {leftovers:?}");
+        assert!(dir.path().join(std::process::id().to_string()).exists());
 
         drop(claim);
         assert!(!watcher.claimed());

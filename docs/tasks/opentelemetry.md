@@ -187,7 +187,8 @@ before enabling it.
 
 When enabled, each line of task stdout and stderr is exported as an OTLP log record
 linked to the corresponding task span, so you can inspect output directly from the
-trace.
+trace. The link needs the spans too: with `otel.logs` but not `otel.enabled`, records
+still carry trace and span IDs, but no spans are exported for them to point at.
 
 - stdout is exported with severity `INFO`
 - stderr is exported with severity `WARN` (many tools write progress, diagnostics,
@@ -197,9 +198,10 @@ trace.
 ### Nested `mise run`
 
 When a task shells out to `mise run`, the inner run's output flows up through the outer
-task's pipe, so both processes see the same lines. mise hands each task a claim path
-(`MISE_TASK_OTEL_LOG_CLAIM`); a nested run that exports its own task logs holds that
-claim while it is alive, and the outer run skips exporting for as long as it does. Each
+task's pipe, so both processes see the same lines. mise hands each task a claim directory
+(`MISE_TASK_OTEL_LOG_CLAIM`); a nested run that exports its own task logs registers there
+while it is alive, and the outer run skips exporting for as long as any nested run is
+registered. Each
 line is therefore exported exactly once, by the innermost run that knows which task
 actually produced it:
 
@@ -214,22 +216,24 @@ only gates log export. Traces are unaffected too: a nested run still contributes
 spans to the same trace via `TRACEPARENT`.
 
 A nested run only takes over if it exports logs itself, so disabling `otel.logs` for the
-inner run leaves the outer run reporting its output as before. A claim records the owning
-process, so one that dies without releasing it — killed with `SIGKILL`, for instance — is
-detected as stale and the outer run resumes exporting. Two nested runs started
-concurrently from a single task (`mise run a & mise run b &`) share one claim; if they
-exit at different times the outer run may briefly re-export the survivor's lines.
+inner run leaves the outer run reporting its output as before. Each registration records
+the owning process, so one that dies without releasing it — killed with `SIGKILL`, for
+instance — is detected as stale and the outer run resumes exporting. Nested runs started
+concurrently from a single task (`mise run a & mise run b &`) each register, so the outer
+run stays quiet until the last of them exits.
 
-::: tip
-Log streaming works with any output mode that captures task output line-by-line (`prefix`,
-`keep-order`, `timed`, and `interleave`/`quiet` when no redactions are configured). With
-`--raw`, output goes straight to the terminal and is not exported as logs.
+:::tip
+Every output mode that reads task output line by line exports it: `prefix`,
+`keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. The `silent` output mode
+and output a task [silences](/tasks/task-configuration#silent) are not read, so they are
+not exported. With
+`--raw`, output goes straight to the terminal and is not exported either.
 
-In `interleave`/`quiet` mode the child process's stdio is piped (not a TTY) while log
-export is active so mise can tee every line to the collector. This can change buffering,
-colour output, progress bars, prompts, and any `isatty()`-dependent behaviour. Run
-affected tasks under `--raw` to keep a real TTY (at the cost of log export for that
-task).
+In `interleave`/`quiet` mode mise normally hands the task the terminal directly. While log
+export is on it keeps a pipe instead so it can read every line, so the task no longer sees
+a TTY. This can change buffering, colour output, progress bars, prompts, and any
+`isatty()`-dependent behaviour. Run affected tasks under `--raw` to keep a real TTY (at
+the cost of log export for that task).
 :::
 
 ## Privacy and Trust Boundary
@@ -264,7 +268,8 @@ What log export (`otel.logs`) additionally sends:
   or shell tracing).
 - **Redaction.** mise's terminal redaction (`redactions = […]` in `mise.toml`)
   applies before lines are forwarded to the OTLP log pipeline, so redacted values
-  are also redacted in exported logs. However, redaction only covers values you've
+  are also redacted in exported logs, and so are task args on log records. However,
+  redaction only covers values you've
   explicitly listed — it does not detect arbitrary secrets in output.
 - **`--raw`.** `--raw` bypasses mise's line capture entirely, so task output goes
   straight to the terminal and is **not** exported as logs. Note that this also

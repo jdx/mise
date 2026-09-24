@@ -254,7 +254,7 @@ mod tests {
         let collector = TaskOutputForwarder::new(noop_provider());
         let ctx = test_span_context();
         let dir = tempfile::tempdir().unwrap();
-        let claim = LogClaimWatcher::new(dir.path().join("claim"));
+        let claim = LogClaimWatcher::new(dir.path().to_path_buf());
         let cmd = TaskOutputForwarder::attach_hooks(
             Some(&collector),
             "build",
@@ -276,7 +276,7 @@ mod tests {
         let (provider, exporter) = test_provider();
         let collector = TaskOutputForwarder::new(provider);
         let dir = tempfile::tempdir().unwrap();
-        let claim = LogClaimWatcher::new(dir.path().join("claim"));
+        let claim = LogClaimWatcher::new(dir.path().to_path_buf());
         let hook = collector.hook(
             HookContext {
                 task_name: Arc::from("outer"),
@@ -292,10 +292,11 @@ mod tests {
         // The outer task's own output is ours to report.
         hook("building");
         // A nested `mise run` takes over...
-        std::fs::write(claim.path(), std::process::id().to_string()).unwrap();
+        let owner = claim.path().join(std::process::id().to_string());
+        std::fs::File::create(&owner).unwrap();
         hook("relayed from inner");
         // ...and hands the stream back when it exits.
-        std::fs::remove_file(claim.path()).unwrap();
+        std::fs::remove_file(&owner).unwrap();
         hook("done");
         collector.shutdown();
 

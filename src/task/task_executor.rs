@@ -1691,20 +1691,27 @@ impl TaskExecutor {
         // nested `mise run` to take over a stream nobody is reading.
         let forwards_output =
             self.output_forwarder.is_some() && !raw && !task.silent.suppresses_both();
-        // Holds the claim file for the lifetime of the command; dropping it
-        // cleans up. See `otel::log_claim` for the hand-off protocol.
-        let otel_claim_dir = if forwards_output {
-            Some(tempfile::tempdir()?)
-        } else {
-            None
-        };
-        if let Some(dir) = &otel_claim_dir {
+        // Holds the claim directory for the lifetime of the command; dropping
+        // it cleans up. See `otel::log_claim` for the hand-off protocol.
+        // Failing to create it only costs the nested-run hand-off, which is no
+        // reason to fail the task: nested output is then exported twice.
+        let otel_claim_dir = forwards_output
+            .then(|| {
+                tempfile::tempdir()
+                    .inspect_err(|err| debug!("otel: failed to create log claim dir: {err}"))
+                    .ok()
+            })
+            .flatten();
+        if forwards_output {
+            let redacted_args: Vec<String> = task.args.iter().map(|a| config.redact(a)).collect();
             cmd = crate::otel::TaskOutputForwarder::attach_hooks(
                 self.output_forwarder.as_ref(),
                 &task.name,
-                &task.args,
+                &redacted_args,
                 otel_span_cx,
-                Some(crate::otel::LogClaimWatcher::new(dir.path().join("claim"))),
+                otel_claim_dir
+                    .as_ref()
+                    .map(|dir| crate::otel::LogClaimWatcher::new(dir.path().to_path_buf())),
                 cmd,
             );
         }

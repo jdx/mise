@@ -872,7 +872,7 @@ mod tests {
         // need real trace/span IDs to correlate against.
         let provider = SdkTracerProvider::builder().build();
         let t = TaskRunTelemetry::new("mise run", provider, Context::new(), None, None);
-        let span = t.start_task(&task_for("build", "", &[]), None);
+        let span = t.start_task(&task_for("build", "", &[]), &[], None);
         let cx = span.span_context().clone();
         assert!(cx.is_valid(), "log correlation needs valid ids");
         assert!(cx.is_sampled(), "unsampled would zero the trace flags");
