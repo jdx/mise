@@ -304,16 +304,6 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # Install rustup only if the runner image lacks it.
-      - name: Install rustup
-        shell: pwsh
-        run: |
-          if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
-            Invoke-WebRequest https://win.rustup.rs/aarch64 -OutFile rustup-init.exe
-            ./rustup-init.exe -y --profile minimal
-            Remove-Item rustup-init.exe
-            Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.cargo\bin"
-          }
       - run: rustup target add ${{matrix.target}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
