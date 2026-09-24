@@ -1554,7 +1554,11 @@ mod tests {
 
         // with a git manifest, a file git does not track stays out too
         let git = |args: &[&str]| -> Result<()> {
-            let status = std::process::Command::new("git")
+            // an inherited GIT_DIR or GIT_INDEX_FILE would point these at
+            // another repository
+            let mut cmd = std::process::Command::new("git");
+            crate::git::sanitize_git_command(&mut cmd);
+            let status = cmd
                 .arg("-C")
                 .arg(&source)
                 .args(args)
@@ -1613,7 +1617,6 @@ mod tests {
     #[test]
     fn dot_prefix_entries_use_the_filtered_walk() -> Result<()> {
         let dir = tempfile::tempdir()?;
-        let source = dir.path().join("src");
         let mut req = dot_prefix_req(dir.path())?;
         let mut entries = DotfilesLayerEntries::default();
         add_source_files(&req, "root", &mut entries)?;
@@ -1633,6 +1636,7 @@ mod tests {
 
         #[cfg(unix)]
         {
+            let source = &req.source;
             // reading a FIFO would wait for a writer forever
             nix::unistd::mkfifo(
                 &source.join("dot-pipe"),
