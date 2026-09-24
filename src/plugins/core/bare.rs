@@ -222,7 +222,6 @@ impl Backend for BarePlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        Self::validate_glibc_version(target).await?;
         let asset = self.release_asset(tv, target).await?;
         Ok(PlatformInfo {
             checksum: asset.digest,
