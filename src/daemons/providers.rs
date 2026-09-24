@@ -221,7 +221,7 @@ impl Provider {
         Ok(rt)
     }
 
-    fn ensure_runnable_as_user(&self) -> Result<()> {
+    pub(crate) fn ensure_runnable_as_user(&self) -> Result<()> {
         match self.daemon()?.preset {
             Some(preset) => {
                 presets::ensure_runnable_as_user(&format!("daemon provider {}", self.name), &preset)
@@ -231,7 +231,6 @@ impl Provider {
     }
 
     pub(crate) async fn install(&self) -> Result<()> {
-        self.ensure_runnable_as_user()?;
         let daemon = self.daemon()?;
         let mut config = self.tool_config(&daemon).await?;
         let mut ts = crate::toolset::Toolset::default();
