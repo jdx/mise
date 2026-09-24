@@ -45,14 +45,28 @@ fn env_is_set(key: &str) -> bool {
 /// Set explicitly because the exporter's own fallback, with the `http-json`
 /// feature enabled, is JSON, and the spec's default is protobuf.
 fn http_protocol(signal_var: &str) -> opentelemetry_otlp::Protocol {
-    let requested = std::env::var(signal_var)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok());
-    match requested.as_deref().map(str::trim) {
-        Some("http/json") => opentelemetry_otlp::Protocol::HttpJson,
-        _ => opentelemetry_otlp::Protocol::HttpBinary,
-    }
+    select_http_protocol(
+        std::env::var(signal_var).ok().as_deref(),
+        std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok().as_deref(),
+    )
+}
+
+/// Like the exporter, an unrecognised signal-specific value falls back to
+/// the generic one, and values are case-insensitive. gRPC isn't built in, so
+/// it falls through to the protobuf default too.
+fn select_http_protocol(
+    signal: Option<&str>,
+    generic: Option<&str>,
+) -> opentelemetry_otlp::Protocol {
+    use opentelemetry_otlp::Protocol;
+    let parse = |value: Option<&str>| match value?.trim().to_ascii_lowercase().as_str() {
+        "http/json" => Some(Protocol::HttpJson),
+        "http/protobuf" => Some(Protocol::HttpBinary),
+        _ => None,
+    };
+    parse(signal)
+        .or_else(|| parse(generic))
+        .unwrap_or(Protocol::HttpBinary)
 }
 
 /// The per-request export timeout, unless the user configured one for this
@@ -156,4 +170,43 @@ pub(crate) fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvi
             .with_resource(resource)
             .build(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry_otlp::Protocol;
+
+    #[test]
+    fn http_protocol_defaults_to_protobuf() {
+        assert_eq!(select_http_protocol(None, None), Protocol::HttpBinary);
+        assert_eq!(
+            select_http_protocol(Some("grpc"), None),
+            Protocol::HttpBinary
+        );
+    }
+
+    #[test]
+    fn http_protocol_prefers_a_valid_signal_value() {
+        assert_eq!(
+            select_http_protocol(Some("http/protobuf"), Some("http/json")),
+            Protocol::HttpBinary
+        );
+        assert_eq!(
+            select_http_protocol(Some(" HTTP/JSON "), None),
+            Protocol::HttpJson
+        );
+    }
+
+    #[test]
+    fn http_protocol_skips_an_invalid_signal_value() {
+        assert_eq!(
+            select_http_protocol(Some("typo"), Some("http/json")),
+            Protocol::HttpJson
+        );
+        assert_eq!(
+            select_http_protocol(Some(""), Some("http/json")),
+            Protocol::HttpJson
+        );
+    }
 }
