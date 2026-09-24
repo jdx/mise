@@ -804,17 +804,13 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
 /// `api_url` if the GitHub release asset it names is the file `browser_url`
 /// downloads; otherwise `browser_url`, which then fails on its own.
 ///
-/// Release metadata (possibly from mise-versions) can pair a correct browser
-/// URL with any asset ID in the repository, and the ID is only used here,
-/// when the browser URL can't be. One metadata request settles it: GitHub
-/// reports which tag and file the ID is. That request only happens on this
-/// fallback, which public releases essentially never reach.
+/// mise-versions can pair a correct browser URL with any asset ID in the
+/// repository, and the ID is only used here, when the browser URL can't be.
+/// One metadata request settles it: GitHub reports which tag and file the ID
+/// is. Only IDs mise-versions supplied are checked, so GitHub's own release
+/// data (private repos, where this fallback is routine) costs nothing extra.
 async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
-    let Ok(url) = url::Url::parse(api_url) else {
-        return api_url.to_string();
-    };
-    // Only api.github.com asset IDs come from mise-versions.
-    if url.host_str() != Some("api.github.com") || !url.path().contains("/releases/assets/") {
+    if !crate::versions_host::is_mirrored_asset_api_url(api_url) {
         return api_url.to_string();
     }
     let asset = async {
@@ -1446,9 +1442,9 @@ mod tests {
         );
     }
 
-    // Not api.github.com, so falling back to it skips the asset identity check
-    // (see `checked_api_asset_url`), which these tests don't exercise.
-    const ASSET_API_URL: &str = "https://github-api.example.com/repos/o/r/releases/assets/1";
+    // Not from mise-versions, so falling back to it skips the asset identity
+    // check (see `checked_api_asset_url`), as for a private repo.
+    const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
 
     #[test]
     fn test_same_release_download() {
