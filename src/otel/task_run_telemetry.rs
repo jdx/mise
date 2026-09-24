@@ -266,7 +266,7 @@ impl TaskRunTelemetry {
         let result = fut.await;
         match &result {
             Ok(_) => span.set_status(Status::Ok),
-            Err(err) => span.set_status(Status::error(err.to_string())),
+            Err(err) => span.set_status(Status::error(redact(&err.to_string()))),
         }
         span.end();
         result
