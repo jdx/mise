@@ -3313,28 +3313,33 @@ fn linked_source_rel(req: &FileRequest, link: &Path, rel: &Path, dest: &Path) ->
     if !req.dot_prefix {
         return Some(rel.to_path_buf());
     }
-    let source_rel = resolved_link_dest(link, dest)
-        .strip_prefix(lexical_normalize(&req.source))
-        .ok()?
-        .to_path_buf();
+    // a relative destination is read from where the link physically sits,
+    // as the kernel reads it (see `link_points_to`)
+    let (dest, source) = if dest.is_absolute() {
+        (lexical_normalize(dest), lexical_normalize(&req.source))
+    } else {
+        (
+            resolve_relative_link(link, dest)?,
+            physical_path(&req.source),
+        )
+    };
+    let source_rel = dest.strip_prefix(source).ok()?.to_path_buf();
     (target_rel(req, &source_rel) == rel).then_some(source_rel)
 }
 
-/// Where a link's destination points, with a relative destination (from
-/// `relative` or `dotfiles.relative_symlinks`) resolved against the link's
-/// directory, lexically like the destination itself.
-fn resolved_link_dest(link: &Path, dest: &Path) -> PathBuf {
-    match link.parent() {
-        Some(parent) if dest.is_relative() => lexical_normalize(&parent.join(dest)),
-        _ => lexical_normalize(dest),
-    }
-}
-
-/// Whether a link reads as pointing at `expected`, absolutely or relatively.
-/// Compared as paths, so the `.` in a source like `/dotfiles/.` doesn't have
-/// to match character for character, and a dangling link still counts.
+/// Whether a link's destination names `expected`, even when `expected` no
+/// longer exists. Compared as paths, so the `.` in a source like
+/// `/dotfiles/.` doesn't have to match character for character; a relative
+/// destination (`relative` or `dotfiles.relative_symlinks`) is resolved from
+/// where the link physically sits, like [`link_points_to`] does.
 fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
-    dest == expected || resolved_link_dest(link, dest) == lexical_normalize(expected)
+    dest == expected
+        || if dest.is_absolute() {
+            lexical_normalize(dest) == lexical_normalize(expected)
+        } else {
+            resolve_relative_link(link, dest)
+                .is_some_and(|resolved| resolved == physical_path(expected))
+        }
 }
 
 /// Legacy ownership discovery for installations that predate persistent

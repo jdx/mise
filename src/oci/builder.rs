@@ -1097,8 +1097,10 @@ fn add_dot_prefix_files(
 ) -> Result<()> {
     entries.add_dir(target.to_string())?;
     for (source, deployed) in crate::system::files::dot_prefix_files(req)? {
-        // a FIFO or socket would block or fail the read; a link to one too
-        if !std::fs::metadata(&source).is_ok_and(|meta| meta.is_file()) {
+        // a FIFO or socket would block or fail the read, and so would a link
+        // to one; a dangling link or a link to a directory still fails the
+        // read below, so a declared dotfile is never silently left out
+        if std::fs::metadata(&source).is_ok_and(|meta| !meta.is_file() && !meta.is_dir()) {
             warn!(
                 "oci: skipping non-file [dotfiles] source entry {}",
                 source.display()
@@ -1558,6 +1560,13 @@ mod tests {
             add_dot_prefix_files(&req, "root", &mut entries)?;
             assert!(!entries.files.contains_key("root/.pipe"));
             assert!(entries.files.contains_key("root/.bashrc"));
+
+            std::fs::remove_file(source.join("dot-pipe"))?;
+            std::os::unix::fs::symlink(source.join("missing"), source.join("dot-dangling"))?;
+            assert!(
+                add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default()).is_err()
+            );
+            std::fs::remove_file(source.join("dot-dangling"))?;
         }
 
         req.exclude.clear();
