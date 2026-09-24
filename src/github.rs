@@ -187,7 +187,13 @@ pub(crate) async fn list_releases_from_url(
 /// `github:` backend with `prerelease = true`) use this variant; the cache is
 /// shared with [`list_releases`] so there's no extra API cost.
 pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
-    let key = format!("{}-{RELEASE_LIST_CACHE_VERSION}", repo.to_kebab_case());
+    // The version goes into the hash: appended as text, "owner/foo" would
+    // collide with the old key of a repository named "owner/foo-2".
+    let key = format!(
+        "{}-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&(repo, RELEASE_LIST_CACHE_VERSION))
+    );
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(remember_mirrored_assets(
@@ -245,9 +251,9 @@ pub(crate) async fn list_releases_including_prereleases_from_url(
 /// is still recognisable.
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
-        "{}-{}-{RELEASE_LIST_CACHE_VERSION}",
+        "{}-{}",
         format!("{api_url}-{repo}").to_kebab_case(),
-        crate::hash::hash_to_str(&(api_url, repo, require_assets))
+        crate::hash::hash_to_str(&(api_url, repo, require_assets, RELEASE_LIST_CACHE_VERSION))
     )
 }
 
