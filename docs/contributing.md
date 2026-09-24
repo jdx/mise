@@ -685,6 +685,50 @@ backend identifiers, backend overrides, and a matching lockfile's recorded
 backend remain authoritative. A failed download or signature verification does
 not trigger fallback. A backend without `min_version` has no lower bound.
 
+#### Required attestations
+
+When a project publishes [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
+for its release assets, set `attestations_since` on its `github:` backend to the
+first version whose assets all carry them:
+
+```toml
+version_order = "semver"
+backends = [
+  { full = "github:aubepkg/aube", attestations_since = "2.2.5" },
+]
+```
+
+For that version and later ones, mise requires a verified GitHub attestation
+for every downloaded asset, including `additional_asset_patterns` assets. An
+install or `mise lock` that finds none fails as a possible downgrade instead of
+silently skipping verification. The same applies when only another kind of
+provenance, such as SLSA, verifies. It also holds when the "none" came from the
+shared mise-versions cache, or from a lockfile written after one. Earlier
+versions, and versions that are not semantic versions, are unaffected. Users who
+turn off `github_attestations` are also unaffected.
+
+The value must be a complete semantic version. The tool's `version_order` can
+be anything: mise compares only the version being installed against the
+boundary and never orders a version list. A version that isn't a semantic
+version (`nightly`, `1.0`, `2024.01.15`) is never required.
+
+Pick a boundary such that every release whose version is a semantic version at
+or past it carries attestations. Be careful with projects that publish backports
+out of order. If a patch to an older line was the first attested release, a
+newer line released before it would wrongly be required.
+
+Either kind of GitHub attestation satisfies it, as long as it names the tool's
+repository:
+
+- a build provenance attestation made by the project's workflow
+  (`actions/attest-build-provenance`), checked with
+  `gh attestation verify <file> --repo owner/repo`;
+- GitHub's release attestation, which every immutable release gets for all of
+  its assets, checked with `gh release verify-asset <tag> <file> --repo owner/repo`.
+
+Check every asset of the boundary release, and the release before it, before
+adding the field. The boundary is the first release where every asset passes.
+
 #### Idiomatic version files
 
 Registry tools can opt into [idiomatic version files](/configuration.html#idiomatic-version-files)

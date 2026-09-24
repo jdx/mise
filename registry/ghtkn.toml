@@ -1,4 +1,7 @@
-backends = ["aqua:suzuki-shunsuke/ghtkn", "github:suzuki-shunsuke/ghtkn"]
+backends = [
+  "aqua:suzuki-shunsuke/ghtkn",
+  { full = "github:suzuki-shunsuke/ghtkn", attestations_since = "0.1.0-0" },
+]
 description = "Create short-lived GitHub App User Access Tokens for secure local development"
 test = { cmd = "ghtkn --version", expected = "ghtkn version {{version}}" }
 version_order = "semver"

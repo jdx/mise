@@ -1,4 +1,6 @@
-backends = ["github:pocketbase/pocketbase"]
+backends = [
+  { full = "github:pocketbase/pocketbase", attestations_since = "0.34.1" },
+]
 bins = ["pocketbase"]
 description = "Open Source realtime backend in 1 file"
 test = { cmd = "pocketbase --version", expected = "pocketbase version {{version}}" }
