@@ -17,6 +17,7 @@ use crate::github::{self, GithubAsset};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::packslip_requirements::glibc_version;
 use crate::plugins;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
@@ -29,16 +30,19 @@ pub(super) struct BarePlugin {
 }
 
 impl BarePlugin {
+    /// Creates a new BarePlugin instance.
     pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("bare")),
         }
     }
 
+    /// Returns the path to the bare binary for the given tool version.
     fn bin_path(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join(bin_name())
     }
 
+    /// Finds the GitHub release asset matching the current platform for the given version.
     async fn release_asset(
         &self,
         tv: &ToolVersion,
@@ -59,6 +63,37 @@ impl BarePlugin {
             })
     }
 
+    /// Validates that the current system's glibc version meets Bare's minimum requirement (2.35+).
+    /// Returns an error if glibc is too old or detection fails on Linux.
+    async fn validate_glibc_version(target: &PlatformTarget) -> Result<()> {
+        if target.os_name() != "linux" {
+            return Ok(());
+        }
+        if target.libc() == Some("musl") {
+            return Ok(());
+        }
+        let version_str = glibc_version().await.ok_or_else(|| {
+            eyre!("Failed to detect glibc version. Bare requires glibc 2.35 or newer on Linux.")
+        })?;
+        let version = version_str
+            .split_whitespace()
+            .nth(1)
+            .ok_or_else(|| eyre!("Unexpected glibc version format: {version_str}"))?;
+        let parts: Vec<u32> = version.split('.').map(|s| s.parse().unwrap_or(0)).collect();
+        let major = parts.first().copied().unwrap_or(0);
+        let minor = parts.get(1).copied().unwrap_or(0);
+        if major < 2 || (major == 2 && minor < 35) {
+            return Err(eyre!(
+                "Bare requires glibc 2.35 or newer, found {version}. \
+                See https://github.com/holepunchto/bare#platform-support"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Downloads the Bare runtime artifact for the current platform.
+    /// If locked, uses the URL and checksum from the lockfile.
+    /// Otherwise, fetches the latest release asset from GitHub.
     async fn download(
         &self,
         ctx: &InstallContext,
@@ -66,6 +101,7 @@ impl BarePlugin {
         pr: &dyn SingleReport,
     ) -> Result<PathBuf> {
         let target = PlatformTarget::from_current();
+        Self::validate_glibc_version(&target).await?;
         let platform_key = self.get_platform_key();
         let (name, url, checksum) = if ctx.locked {
             let platform_info = tv
@@ -98,6 +134,7 @@ impl BarePlugin {
         Ok(tarball_path)
     }
 
+    /// Extracts and installs the Bare binary from the downloaded tarball.
     fn install(&self, tv: &ToolVersion, pr: &dyn SingleReport, tarball_path: &Path) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
@@ -117,6 +154,7 @@ impl BarePlugin {
         Ok(())
     }
 
+    /// Verifies the installed Bare binary works by running `bare --version`.
     fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("bare --version".into());
         CmdLineRunner::new(self.bin_path(tv))
@@ -129,16 +167,21 @@ impl BarePlugin {
 
 #[async_trait]
 impl Backend for BarePlugin {
+    /// Returns the backend argument configuration for this plugin.
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
 
+    /// Returns the security features supported by this backend.
+    /// Bare provides SHA-256 checksum verification for downloaded artifacts.
     async fn security_info(&self) -> Vec<SecurityFeature> {
         vec![SecurityFeature::Checksum {
             algorithm: Some("sha256".to_string()),
         }]
     }
 
+    /// Lists all available remote versions of Bare from GitHub releases.
+    /// Filters to only include versions that have a matching asset for the current platform.
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let target = PlatformTarget::from_current();
         let mut versions = Vec::new();
@@ -158,6 +201,8 @@ impl Backend for BarePlugin {
         Ok(versions)
     }
 
+    /// Installs a specific version of Bare.
+    /// Downloads the platform-specific artifact, verifies its checksum, extracts it, and verifies the binary works.
     async fn install_version_(
         &self,
         ctx: &InstallContext,
@@ -172,11 +217,15 @@ impl Backend for BarePlugin {
         Ok(tv)
     }
 
+    /// Resolves lockfile information for a specific version and platform.
+    /// Fetches the GitHub release asset and returns its checksum and download URL.
+    /// Validates the platform's glibc version meets Bare's minimum requirement.
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        Self::validate_glibc_version(target).await?;
         let asset = self.release_asset(tv, target).await?;
         Ok(PlatformInfo {
             checksum: asset.digest,
@@ -186,6 +235,9 @@ impl Backend for BarePlugin {
     }
 }
 
+/// Returns the release asset filename for the given version and platform target.
+/// Validates that the platform is supported (Linux glibc, macOS, Windows on x64/arm64).
+/// Returns an error for unsupported platforms or architectures.
 fn asset_filename(version: &str, target: &PlatformTarget) -> Result<String> {
     if target.os_name() == "linux" && target.libc() == Some("musl") {
         return Err(eyre!("Bare does not publish musl Linux binaries"));
@@ -204,6 +256,7 @@ fn asset_filename(version: &str, target: &PlatformTarget) -> Result<String> {
     Ok(format!("bare-runtime-{os}-{arch}-{version}.tgz"))
 }
 
+/// Returns the bare binary name for the current platform.
 fn bin_name() -> &'static str {
     if cfg!(windows) { "bare.exe" } else { "bare" }
 }

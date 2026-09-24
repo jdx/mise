@@ -34,7 +34,7 @@ The built-in backend supports the upstream desktop artifacts:
 
 | Platform                    | Architectures |
 | --------------------------- | ------------- |
-| Linux (glibc 2.34 or newer) | x64, ARM64    |
+| Linux (glibc 2.35 or newer) | x64, ARM64    |
 | macOS                       | x64, ARM64    |
 | Windows                     | x64, ARM64    |
 
