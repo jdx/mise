@@ -269,10 +269,12 @@ fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String
 const RELEASE_LIST_CACHE_VERSION: &str = "2";
 
 /// Part of every release cache key: whether mise-versions may answer for
-/// `repo`. Adding a `url_replacements` rule for GitHub then starts from a
-/// fresh cache instead of serving mirror data cached before it.
+/// `repo`. Turning `use_versions_host` off, or adding a `url_replacements`
+/// rule for GitHub, then starts from a fresh cache instead of serving mirror
+/// data cached before it.
 fn mirror_source(repo: &str) -> bool {
-    !crate::versions_host::github_is_url_replaced(Some(repo))
+    // Not `prefer_offline`: offline runs should keep reading what was cached.
+    Settings::get().use_versions_host && !crate::versions_host::github_is_url_replaced(Some(repo))
 }
 
 /// Whether the bounded prerelease fallback has found what it went looking for:
@@ -579,12 +581,20 @@ pub(crate) async fn get_release_for_url_with_versions_host(
 fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
     // "hosted-2": entries from before assets recorded `from_versions_host`
     // would pass mirrored asset IDs off as GitHub's, so they aren't reused.
-    let source = if use_versions_host && mirror_source(repo) {
+    let source = if use_versions_host
+        && mirror_source(repo)
+        && !crate::versions_host::github_release_is_url_replaced(repo, tag)
+    {
         "hosted-2"
     } else {
         "direct"
     };
     format!("{api_url}-{repo}-{tag}-{source}").to_kebab_case()
+}
+
+#[cfg(test)]
+pub(crate) fn release_cache_key_for_test(repo: &str, tag: &str) -> String {
+    release_cache_key(API_URL, repo, tag, true)
 }
 
 fn should_cache_release(release: &GithubRelease) -> bool {

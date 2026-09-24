@@ -861,6 +861,31 @@ mod tests {
     }
 
     #[test]
+    fn test_exact_release_url_replacements_are_honored() {
+        // A rule for one release's API URL takes that release off mise-versions
+        // and out of the mirrored cache entry, and leaves other tags alone.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/tool/releases/tags/v2.0.0".to_string()
+                => "https://github-proxy.example.com/acme/tool/v2.0.0".to_string(),
+        }));
+
+        assert!(crate::versions_host::github_release_is_url_replaced(
+            "acme/tool",
+            "v2.0.0"
+        ));
+        assert!(!crate::versions_host::github_release_is_url_replaced(
+            "acme/tool",
+            "v1.0.0"
+        ));
+        assert!(
+            crate::github::release_cache_key_for_test("acme/tool", "v2.0.0").ends_with("direct")
+        );
+        assert!(
+            crate::github::release_cache_key_for_test("acme/tool", "v1.0.0").ends_with("hosted-2")
+        );
+    }
+
+    #[test]
     fn test_download_only_url_replacements_keep_mise_versions() {
         // Mirroring release downloads (the documented Artifactory example)
         // doesn't change where release metadata comes from.
