@@ -221,7 +221,17 @@ impl Provider {
         Ok(rt)
     }
 
+    fn ensure_runnable_as_user(&self) -> Result<()> {
+        match self.daemon()?.preset {
+            Some(preset) => {
+                presets::ensure_runnable_as_user(&format!("daemon provider {}", self.name), &preset)
+            }
+            None => Ok(()),
+        }
+    }
+
     pub(crate) async fn install(&self) -> Result<()> {
+        self.ensure_runnable_as_user()?;
         let daemon = self.daemon()?;
         let mut config = self.tool_config(&daemon).await?;
         let mut ts = crate::toolset::Toolset::default();
@@ -554,6 +564,10 @@ impl Providers {
             .filter(|p| names.is_empty() || names.contains(&p.name))
         {
             let root = directory(&provider.name);
+            // Ahead of the supervisor lookup: installing Pitchfork would not help.
+            if action != "ls" && action != "stop" {
+                provider.ensure_runnable_as_user()?;
+            }
             let rt = provider.runtime().await;
             if action == "ls" {
                 let daemon = provider.daemon().ok();

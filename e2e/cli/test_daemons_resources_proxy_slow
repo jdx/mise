@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
   echo "Skipping: set MISE_TEST_PITCHFORK to a build with dependency-aware proxy startup"

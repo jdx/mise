@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 export MISE_EXPERIMENTAL=1
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
   mise install pitchfork@2.27.0 --minimum-release-age 0s

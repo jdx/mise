@@ -47,6 +47,9 @@ struct Preset {
     /// against the mise marker (for example Postgres's `PG_VERSION`).
     #[serde(default)]
     data_version_file: Option<String>,
+    /// The tool exits when run as root, as `initdb` and `postgres` do.
+    #[serde(default)]
+    refuses_root: bool,
     #[serde(default)]
     options: IndexMap<String, OptionSpec>,
     #[serde(default)]
@@ -298,6 +301,31 @@ fn preset(name: &str) -> Result<Preset> {
             )
         })?;
     Ok(toml::from_str(content)?)
+}
+
+/// Fails before anything is installed or started when `label` would run a preset
+/// that refuses root. Otherwise the tool's own refusal surfaces only in the daemon
+/// log, after its tools were installed.
+pub(crate) fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<()> {
+    #[cfg(unix)]
+    if nix::unistd::geteuid().is_root() && preset(preset_name)?.refuses_root {
+        bail!(
+            "{label} cannot run as root: the {preset_name} preset's server refuses root privileges. \
+             Run mise as a regular user, for example by adding one and switching to it with \
+             `USER` in a Dockerfile or with `su - <user>`"
+        );
+    }
+    Ok(())
+}
+
+/// [`ensure_runnable_as_user`] for every preset daemon about to start.
+pub(crate) fn ensure_set_runnable_as_user(set: &super::DaemonSet) -> Result<()> {
+    for daemon in set.daemons.values() {
+        if let Some(preset) = &daemon.preset {
+            ensure_runnable_as_user(&format!("daemon {}", daemon.name), preset)?;
+        }
+    }
+    Ok(())
 }
 
 /// The well-known port a preset binds when nothing overrides it, and the base
@@ -1141,6 +1169,7 @@ pub(crate) fn initialize(
     if cfg!(windows) {
         bail!("daemon presets are not supported on Windows yet");
     }
+    ensure_runnable_as_user("this daemon", preset_name)?;
     let preset = preset(preset_name)?;
     let owned;
     let values = match values {

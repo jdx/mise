@@ -362,6 +362,9 @@ impl Daemons {
             // config valid, but starting the daemon anyway would run it without
             // something it declared it needs. Say which import is missing.
             daemons::ensure_not_blocked(loaded, &starting, None)?;
+            if action != "register" {
+                daemons::presets::ensure_set_runnable_as_user(&starting)?;
+            }
             starting
         } else {
             daemons::DaemonSet::default()
