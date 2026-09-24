@@ -5,6 +5,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use eyre::{Result, bail};
+use futures_util::future::LocalBoxFuture;
 use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -2551,37 +2552,39 @@ fn is_declined(summary: &Summary) -> bool {
 }
 
 impl Commands {
-    async fn run(self) -> Result<()> {
+    /// Boxed rather than `async` to keep debug builds' main stack small;
+    /// see `cli::Commands::run`.
+    fn run(self) -> LocalBoxFuture<'static, Result<()>> {
         match self {
-            Self::ApplyAccountPlan(cmd) => cmd.run(),
-            Self::ApplyServicePlan(cmd) => cmd.run(),
-            Self::ApplyFirewallPlan(cmd) => cmd.run(),
-            Self::ApplySystemPlan(cmd) => cmd.run(),
-            Self::InspectSystemFiles(cmd) => cmd.run(),
-            Self::InspectFirewallPlan(cmd) => cmd.run(),
-            Self::ServiceExec(cmd) => cmd.run().await,
-            Self::Accounts(cmd) => cmd.run().await,
-            Self::ConfigRoots(cmd) => cmd.run().await,
-            Self::Compose(cmd) => cmd.run().await,
-            Self::Dotfiles(cmd) => cmd.run().await,
-            Self::Files(cmd) => cmd.run().await,
-            Self::Firewall(cmd) => cmd.run().await,
-            Self::Launchd(cmd) => cmd.run().await,
-            Self::Linux(cmd) => cmd.run().await,
-            Self::Macos(cmd) => cmd.run().await,
-            Self::MacosDefaults(cmd) => cmd.run().await,
-            Self::MiseShellActivate(cmd) => cmd.run().await,
-            Self::Packages(cmd) => cmd.run().await,
-            Self::Plan(cmd) => cmd.run().await,
-            Self::Plugins(cmd) => cmd.run().await,
-            Self::Remote(cmd) => cmd.run().await,
-            Self::Repos(cmd) => cmd.run().await,
-            Self::Secrets(cmd) => cmd.run().await,
-            Self::Services(cmd) => cmd.run().await,
-            Self::Status(cmd) => cmd.run().await,
-            Self::Systemd(cmd) => cmd.run().await,
-            Self::Unapply(cmd) => cmd.run().await,
-            Self::User(cmd) => cmd.run().await,
+            Self::ApplyAccountPlan(cmd) => Box::pin(async move { cmd.run() }),
+            Self::ApplyServicePlan(cmd) => Box::pin(async move { cmd.run() }),
+            Self::ApplyFirewallPlan(cmd) => Box::pin(async move { cmd.run() }),
+            Self::ApplySystemPlan(cmd) => Box::pin(async move { cmd.run() }),
+            Self::InspectSystemFiles(cmd) => Box::pin(async move { cmd.run() }),
+            Self::InspectFirewallPlan(cmd) => Box::pin(async move { cmd.run() }),
+            Self::ServiceExec(cmd) => Box::pin(cmd.run()),
+            Self::Accounts(cmd) => Box::pin(cmd.run()),
+            Self::ConfigRoots(cmd) => Box::pin(cmd.run()),
+            Self::Compose(cmd) => Box::pin(cmd.run()),
+            Self::Dotfiles(cmd) => Box::pin(cmd.run()),
+            Self::Files(cmd) => Box::pin(cmd.run()),
+            Self::Firewall(cmd) => Box::pin(cmd.run()),
+            Self::Launchd(cmd) => Box::pin(cmd.run()),
+            Self::Linux(cmd) => Box::pin(cmd.run()),
+            Self::Macos(cmd) => Box::pin(cmd.run()),
+            Self::MacosDefaults(cmd) => Box::pin(cmd.run()),
+            Self::MiseShellActivate(cmd) => Box::pin(cmd.run()),
+            Self::Packages(cmd) => Box::pin(cmd.run()),
+            Self::Plan(cmd) => Box::pin(cmd.run()),
+            Self::Plugins(cmd) => Box::pin(cmd.run()),
+            Self::Remote(cmd) => Box::pin(cmd.run()),
+            Self::Repos(cmd) => Box::pin(cmd.run()),
+            Self::Secrets(cmd) => Box::pin(cmd.run()),
+            Self::Services(cmd) => Box::pin(cmd.run()),
+            Self::Status(cmd) => Box::pin(cmd.run()),
+            Self::Systemd(cmd) => Box::pin(cmd.run()),
+            Self::Unapply(cmd) => Box::pin(cmd.run()),
+            Self::User(cmd) => Box::pin(cmd.run()),
         }
     }
 }
