@@ -14,7 +14,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
-use crate::registry::{REGISTRY, shorts_for_full};
+use crate::registry::REGISTRY;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -25,9 +25,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{
-        self, Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata,
-    },
+    backend::{self, Backend, MISE_BINS_DIR, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -2091,11 +2089,11 @@ impl AquaBackend {
         }
     }
 
+    /// mise-versions serves any public github.com repo, but only the package's
+    /// own repo may come from it: an aqua package that reads another repo's
+    /// releases (a foreign attestation signer, say) asks GitHub directly.
     fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
         let full = self.ba.full_without_opts();
-        if !backend_arg_matches_registry_backend(&self.ba) && shorts_for_full(&full).is_empty() {
-            return false;
-        }
         let Some(aqua_id) = full.strip_prefix("aqua:") else {
             return false;
         };
@@ -3980,7 +3978,7 @@ packages:
     }
 
     #[test]
-    fn test_use_versions_host_for_github_metadata_only_for_registry_tools() {
+    fn test_use_versions_host_for_github_metadata_only_for_the_package_repo() {
         let registry_backend = AquaBackend::from_arg(BackendArg::new(
             "act".to_string(),
             Some("aqua:nektos/act".to_string()),
@@ -4004,9 +4002,10 @@ packages:
             "aws/session-manager-plugin".to_string(),
             Some("aqua:aws/session-manager-plugin".to_string()),
         ));
-        assert!(
-            !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
-        );
+        assert!(direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin"));
+        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/other"));
+        // A repo name that merely shares a prefix is a different repo.
+        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/session-manager"));
     }
 
     #[test]
@@ -5781,6 +5780,7 @@ version_overrides:
 
     fn release_asset(name: &str) -> github::GithubAsset {
         github::GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: String::new(),
             url: String::new(),
@@ -6051,6 +6051,7 @@ no_asset: true
 
     fn asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),

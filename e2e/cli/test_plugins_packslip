@@ -2,6 +2,9 @@
 set -euo pipefail
 
 export MISE_MINIMUM_RELEASE_AGE=0
+# The fixture server stands in for GitHub; the real mise-versions would answer
+# for the real repository instead.
+export MISE_USE_VERSIONS_HOST=0
 export MISE_DATA_DIR="$PWD/data"
 unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN
 mkdir server-state

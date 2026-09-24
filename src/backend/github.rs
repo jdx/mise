@@ -8,10 +8,7 @@ use crate::backend::static_helpers::{
     lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
     verify_artifact,
 };
-use crate::backend::{
-    MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
-    runtime_path_for_install_path,
-};
+use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
 use crate::file;
@@ -797,18 +794,12 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
             let api_url = api_url.clone();
             let repo = repo.clone();
             async move {
-                github::get_release_for_url_with_versions_host(
-                    &api_url,
-                    &repo,
-                    &candidate,
-                    use_versions_host,
-                )
-                .await
+                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+                    .await
             }
         })
         .await
@@ -1118,10 +1109,6 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn use_versions_host_for_github_metadata(&self) -> bool {
-        backend_arg_matches_registry_backend(&self.ba)
-    }
-
     fn additional_artifacts_match_patterns(
         &self,
         tv: &ToolVersion,
@@ -1180,13 +1167,7 @@ impl UnifiedGitBackend {
         repo: &str,
         tag: &str,
     ) -> Result<github::GithubRelease> {
-        github::get_release_for_url_with_versions_host(
-            api_url,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(),
-        )
-        .await
+        github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await
     }
 
     /// Detect what provenance type is available for a release by checking its assets
@@ -1205,17 +1186,13 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -1238,11 +1215,7 @@ impl UnifiedGitBackend {
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
                 match crate::github::sigstore::detect_attestations(
-                    owner,
-                    repo_name,
-                    &api_url,
-                    digest,
-                    self.use_versions_host_for_github_metadata(),
+                    owner, repo_name, &api_url, digest, true,
                 )
                 .await
                 {
@@ -1376,7 +1349,7 @@ impl UnifiedGitBackend {
                     repo_name,
                     None,
                     Some(&api_url),
-                    self.use_versions_host_for_github_metadata(),
+                    true,
                 )
                 .await
                 {
@@ -1405,17 +1378,13 @@ impl UnifiedGitBackend {
         if settings.slsa && settings.github.slsa {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
-            let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
                         github::get_release_for_url_with_versions_host(
-                            &api_url,
-                            &repo,
-                            &candidate,
-                            use_versions_host,
+                            &api_url, &repo, &candidate, true,
                         )
                         .await
                     }
@@ -2761,7 +2730,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
-            self.use_versions_host_for_github_metadata(),
+            true,
         )
         .await
         {
@@ -2865,17 +2834,13 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -3495,6 +3460,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             assets: assets
                 .into_iter()
                 .map(|name| github::GithubAsset {
+                    from_versions_host: false,
                     name: name.into(),
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
