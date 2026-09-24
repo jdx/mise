@@ -59,21 +59,34 @@ impl BarePlugin {
             })
     }
 
-    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let asset = self
-            .release_asset(tv, &PlatformTarget::from_current())
-            .await?;
-        let tarball_path = tv.download_path().join(&asset.name);
-        pr.set_message(format!("download {}", asset.name));
-        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(pr))
-            .await?;
+    async fn download(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> Result<PathBuf> {
+        let target = PlatformTarget::from_current();
+        let platform_key = self.get_platform_key();
+        let (name, url, checksum) = if ctx.locked {
+            let url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|info| info.url.clone())
+                .ok_or_else(|| eyre!("no locked Bare artifact for {}", target.to_key()))?;
+            (asset_filename(&tv.version, &target)?, url, None)
+        } else {
+            let asset = self.release_asset(tv, &target).await?;
+            (asset.name, asset.browser_download_url, asset.digest)
+        };
+        let tarball_path = tv.download_path().join(&name);
+        pr.set_message(format!("download {name}"));
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
-        let platform_info = tv
-            .lock_platforms
-            .entry(self.get_platform_key())
-            .or_default();
-        platform_info.url = Some(asset.browser_download_url);
-        platform_info.checksum = asset.digest;
+        if !ctx.locked {
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.url = Some(url);
+            platform_info.checksum = checksum;
+        }
 
         Ok(tarball_path)
     }
@@ -120,23 +133,22 @@ impl Backend for BarePlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        Ok(github::list_releases(REPO)
-            .await?
-            .into_iter()
-            .rev()
-            .filter_map(|release| {
-                let version = release.tag_name.strip_prefix('v')?.to_string();
-                release
-                    .assets
-                    .iter()
-                    .any(|asset| asset.name.starts_with("bare-runtime-"))
-                    .then(|| VersionInfo {
-                        version,
-                        created_at: Some(release.released_at().to_string()),
-                        ..Default::default()
-                    })
-            })
-            .collect())
+        let target = PlatformTarget::from_current();
+        let mut versions = Vec::new();
+        for release in github::list_releases(REPO).await?.into_iter().rev() {
+            let Some(version) = release.tag_name.strip_prefix('v') else {
+                continue;
+            };
+            let filename = asset_filename(version, &target)?;
+            if release.assets.iter().any(|asset| asset.name == filename) {
+                versions.push(VersionInfo {
+                    version: version.to_string(),
+                    created_at: Some(release.released_at().to_string()),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(versions)
     }
 
     async fn install_version_(
@@ -144,7 +156,7 @@ impl Backend for BarePlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(ctx, &mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();

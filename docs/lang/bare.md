@@ -44,17 +44,3 @@ An installed external plugin with the same name can change this behavior. Use
 `mise plugins ls` to check for overrides. See the
 [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/bare.rs)
 for backend details.
-
-## Tool Options
-
-The following [tool-options](/dev-tools/#tool-options) are available for the `bare` backend.
-These options go in the `[tools]` section of `mise.toml`.
-
-### `install_env`
-
-Set environment variables used while downloading and verifying Bare:
-
-```toml
-[tools]
-bare = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
-```
