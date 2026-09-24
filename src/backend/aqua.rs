@@ -5780,6 +5780,7 @@ version_overrides:
 
     fn release_asset(name: &str) -> github::GithubAsset {
         github::GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: String::new(),
             url: String::new(),
@@ -6050,6 +6051,7 @@ no_asset: true
 
     fn asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),

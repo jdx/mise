@@ -571,26 +571,9 @@ fn versions_host_error_message(status: u16, body: &str) -> String {
     )
 }
 
-pub(crate) fn enabled_for_github_metadata() -> bool {
+fn enabled_for_github_metadata() -> bool {
     let settings = Settings::get();
-    !settings.prefer_offline() && settings.use_versions_host && !github_is_url_replaced()
-}
-
-/// Whether `url_replacements` sends GitHub somewhere else (a proxy, a mirror,
-/// a test fixture). mise-versions answers for github.com itself, so it must
-/// not stand in for whatever the user routed GitHub to.
-fn github_is_url_replaced() -> bool {
-    if Settings::get().url_replacements.is_none() {
-        return false;
-    }
-    ["https://api.github.com/", "https://github.com/"]
-        .iter()
-        .any(|original| {
-            let original = url::Url::parse(original).expect("valid GitHub URL");
-            let mut replaced = original.clone();
-            http::apply_url_replacements(&mut replaced);
-            replaced != original
-        })
+    !settings.prefer_offline() && settings.use_versions_host
 }
 
 fn split_github_repo(repo: &str) -> Option<(&str, &str)> {
@@ -641,8 +624,9 @@ fn pin_github_release_assets(
             );
         }
         asset.browser_download_url = browser;
-        remember_mirrored_asset_api_url(&api);
         asset.url = api;
+        asset.from_versions_host = true;
+        remember_mirrored_asset_api_url(&asset.url);
     }
     Ok(())
 }
@@ -650,10 +634,12 @@ fn pin_github_release_assets(
 /// API asset URLs whose asset ID mise-versions chose. Only these need their
 /// identity confirmed before use (see `github::checked_api_asset_url`);
 /// GitHub's own release data, such as for private repos, is taken as given.
+/// Filled when mise-versions data is pinned, and again from each
+/// `GithubAsset::from_versions_host` when a release comes out of a cache.
 static MIRRORED_ASSET_API_URLS: LazyLock<std::sync::Mutex<HashSet<String>>> =
     LazyLock::new(Default::default);
 
-fn remember_mirrored_asset_api_url(url: &str) {
+pub(crate) fn remember_mirrored_asset_api_url(url: &str) {
     MIRRORED_ASSET_API_URLS
         .lock()
         .unwrap()
@@ -1050,6 +1036,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             published_at: None,
             assets: vec![crate::github::GithubAsset {
+                from_versions_host: false,
                 name: "tool.tar.gz".into(),
                 browser_download_url: format!(
                     "https://github.com/{asset_owner}/mise/releases/download/{tag}/{file}"
