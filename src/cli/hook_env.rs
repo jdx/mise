@@ -262,8 +262,8 @@ impl HookEnv {
 
         hooks::run_all_hooks(&config, &ts, &*shell).await;
         hooks::run_enter_hooks_for_newly_loaded_configs(&config, &ts, &*shell).await;
-        hooks::take_output_error()?;
         watch_files::execute_runs(&config, &ts).await;
+        hooks::take_output_error()?;
 
         Ok(())
     }
