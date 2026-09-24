@@ -1097,6 +1097,14 @@ fn add_dot_prefix_files(
 ) -> Result<()> {
     entries.add_dir(target.to_string())?;
     for (source, deployed) in crate::system::files::dot_prefix_files(req)? {
+        // a FIFO or socket would block or fail the read; a link to one too
+        if !std::fs::metadata(&source).is_ok_and(|meta| meta.is_file()) {
+            warn!(
+                "oci: skipping non-file [dotfiles] source entry {}",
+                source.display()
+            );
+            continue;
+        }
         let rel = deployed.strip_prefix(&req.target)?;
         for dir in rel.ancestors().skip(1) {
             if !dir.as_os_str().is_empty() {
@@ -1538,6 +1546,19 @@ mod tests {
             ]
         );
         assert!(entries.dirs.contains("root/.config/app"));
+
+        #[cfg(unix)]
+        {
+            // reading a FIFO would wait for a writer forever
+            nix::unistd::mkfifo(
+                &source.join("dot-pipe"),
+                nix::sys::stat::Mode::from_bits_truncate(0o600),
+            )?;
+            let mut entries = DotfilesLayerEntries::default();
+            add_dot_prefix_files(&req, "root", &mut entries)?;
+            assert!(!entries.files.contains_key("root/.pipe"));
+            assert!(entries.files.contains_key("root/.bashrc"));
+        }
 
         req.exclude.clear();
         let err = add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default())

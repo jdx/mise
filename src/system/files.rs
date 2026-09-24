@@ -8008,7 +8008,10 @@ source = "oldrc""#,
         assert_eq!(legacy_owned_links(&req)?, vec![plain.clone(), kept.clone()]);
 
         req.dot_prefix = true;
-        assert_eq!(legacy_stale_links(&req)?, vec![dotted.clone(), plain.clone()]);
+        assert_eq!(
+            legacy_stale_links(&req)?,
+            vec![dotted.clone(), plain.clone()]
+        );
         assert_eq!(legacy_owned_links(&req)?, vec![dotted, plain, kept]);
         Ok(())
     }
