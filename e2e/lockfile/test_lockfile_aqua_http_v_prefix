@@ -3,17 +3,10 @@
 export MISE_LOCKFILE=1
 export MISE_AQUA_BAKED_REGISTRY=0
 
-HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
-MISE_HTTP_TEST_PORT_FILE="$HTTP_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 &
-HTTP_SERVER_PID=$!
-
-cleanup() {
-  kill "$HTTP_SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+# Only the v-prefixed asset exists, so the lock must probe for it
+mkdir -p server
+printf 'tool\n' >server/tool-v1.2.3
+start_http_server --dir server
 
 REGISTRY_DIR="$PWD/aqua-registry-local"
 mkdir -p "$REGISTRY_DIR"
