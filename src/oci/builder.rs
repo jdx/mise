@@ -997,6 +997,11 @@ fn build_dotfiles_layer(
             );
         }
 
+        if req.dot_prefix {
+            add_dot_prefix_files(req, &oci_target_path(req)?, &mut entries)?;
+            continue;
+        }
+
         match req.mode {
             // a tracked file lives on the machine that tracks it, and a
             // permissions-only entry adjusts a file the image does not
@@ -1080,6 +1085,45 @@ fn build_dotfiles_layer(
     info!("oci: adding {} [dotfiles] entries", requests.len());
     let (files, dirs) = entries.into_layer_inputs();
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
+}
+
+/// A `dot_prefix` entry goes through the same filtered, collision-checked
+/// walk apply uses, so `exclude` and `manifest` decide which names reach the
+/// image and two sources never claim one path.
+fn add_dot_prefix_files(
+    req: &FileRequest,
+    target: &str,
+    entries: &mut DotfilesLayerEntries,
+) -> Result<()> {
+    entries.add_dir(target.to_string())?;
+    for (source, deployed) in crate::system::files::dot_prefix_files(req)? {
+        // a FIFO or socket would block or fail the read, and so would a link
+        // to one; a dangling link or a link to a directory still fails the
+        // read below, so a declared dotfile is never silently left out
+        if std::fs::metadata(&source).is_ok_and(|meta| !meta.is_file() && !meta.is_dir()) {
+            warn!(
+                "oci: skipping non-file [dotfiles] source entry {}",
+                source.display()
+            );
+            continue;
+        }
+        let rel = deployed.strip_prefix(&req.target)?;
+        for dir in rel.ancestors().skip(1) {
+            if !dir.as_os_str().is_empty() {
+                entries.add_dir(oci_join(target, dir))?;
+            }
+        }
+        entries.add_file(
+            oci_join(target, rel),
+            file::read(&source)?,
+            source_mode(&source)?,
+        )?;
+    }
+    Ok(())
+}
+
+fn oci_join(target: &str, rel: &std::path::Path) -> String {
+    format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"))
 }
 
 fn collect_source_as_files(
@@ -1453,6 +1497,122 @@ mod tests {
         }
         assert_eq!(whiteout, Some((jdx_tar::EntryType::File, 0)), "{paths:?}");
         assert!(!paths.iter().any(|p| p == "root/.config/app/work.toml"));
+        Ok(())
+    }
+
+    /// A `dot_prefix` entry for `~` over a source with a nested dotted
+    /// directory and an excluded `.bashrc` that would otherwise collide.
+    fn dot_prefix_req(dir: &std::path::Path) -> Result<FileRequest> {
+        let source = dir.join("src");
+        file::create_dir_all(source.join("dot-config/app"))?;
+        file::write(source.join("dot-bashrc"), "dotted")?;
+        file::write(source.join("dot-config/app/config.toml"), "config")?;
+        // excluded, so it neither collides with dot-bashrc nor ships
+        file::write(source.join(".bashrc"), "plain")?;
+        Ok(FileRequest {
+            target_raw: "~".into(),
+            target: dir.join("home"),
+            source: source.clone(),
+            content: None,
+            mode: FileMode::SymlinkEach,
+            exclude: vec![glob::Pattern::new(".bashrc")?],
+            include: None,
+            manifest: None,
+            permissions: None,
+            base: dir.to_path_buf(),
+            origin: crate::system::resources::ResourceOrigin {
+                config: dir.join("mise.toml"),
+                config_root: dir.to_path_buf(),
+                environment: vec![],
+                source: Some(source.clone()),
+            },
+            policy: crate::system::files::FilePolicy::for_mode(FileMode::SymlinkEach),
+            variants: vec![],
+            enabled: true,
+            remove_empty: false,
+            relative: false,
+            dot_prefix: true,
+        })
+    }
+
+    #[test]
+    fn dot_prefix_entries_use_the_filtered_walk() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut req = dot_prefix_req(dir.path())?;
+        let mut entries = DotfilesLayerEntries::default();
+        add_dot_prefix_files(&req, "root", &mut entries)?;
+        let files = entries
+            .files
+            .iter()
+            .map(|(path, (contents, _))| (path.as_str(), contents.as_slice()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files,
+            vec![
+                ("root/.bashrc", b"dotted".as_slice()),
+                ("root/.config/app/config.toml", b"config".as_slice()),
+            ]
+        );
+        assert!(entries.dirs.contains("root/.config/app"));
+
+        #[cfg(unix)]
+        {
+            let source = &req.source;
+            // reading a FIFO would wait for a writer forever
+            nix::unistd::mkfifo(
+                &source.join("dot-pipe"),
+                nix::sys::stat::Mode::from_bits_truncate(0o600),
+            )?;
+            let mut entries = DotfilesLayerEntries::default();
+            add_dot_prefix_files(&req, "root", &mut entries)?;
+            assert!(!entries.files.contains_key("root/.pipe"));
+            assert!(entries.files.contains_key("root/.bashrc"));
+
+            std::fs::remove_file(source.join("dot-pipe"))?;
+            std::os::unix::fs::symlink(source.join("missing"), source.join("dot-dangling"))?;
+            assert!(
+                add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default()).is_err()
+            );
+            std::fs::remove_file(source.join("dot-dangling"))?;
+        }
+
+        req.exclude.clear();
+        let err = add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("both deploy to"), "{err}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn dot_prefix_names_reach_the_built_layer() -> Result<()> {
+        let config = Config::get().await?;
+        let dir = tempfile::tempdir()?;
+        let req = dot_prefix_req(dir.path())?;
+        let blob = build_dotfiles_layer(&config, &[req], LayerOwner::default())?;
+        let mut archive =
+            jdx_tar::Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+        let mut files = vec![];
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if entry.entry_type() == jdx_tar::EntryType::File {
+                let path = entry.path()?.to_string_lossy().into_owned();
+                let mut contents = String::new();
+                std::io::Read::read_to_string(&mut entry, &mut contents)?;
+                files.push((path, contents));
+            }
+        }
+        files.sort();
+        assert_eq!(
+            files,
+            vec![
+                ("root/.bashrc".to_string(), "dotted".to_string()),
+                (
+                    "root/.config/app/config.toml".to_string(),
+                    "config".to_string()
+                ),
+            ]
+        );
         Ok(())
     }
 

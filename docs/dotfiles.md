@@ -614,6 +614,32 @@ the previous source. This makes `mise bootstrap -E home` and
 profile are removed, shared paths are repointed, and unmanaged neighbors are
 preserved.
 
+## Visible source names {#dot-prefix}
+
+Set `dot_prefix = true` on a directory-walking entry to keep the files in
+your dotfiles repository visible. Like GNU Stow's `--dotfiles` option, every
+path component named `dot-<name>` deploys as `.<name>`, and other names deploy
+unchanged:
+
+```toml
+[dotfiles]
+"~" = { source = "home", mode = "symlink-each", dot_prefix = true, exclude = ["README.md"] }
+```
+
+| Source                            | Target                      |
+| --------------------------------- | --------------------------- |
+| `home/dot-bashrc`                 | `~/.bashrc`                 |
+| `home/dot-config/foo/config.toml` | `~/.config/foo/config.toml` |
+| `home/bin/dot-helper`             | `~/bin/.helper`             |
+| `home/.editorconfig`              | `~/.editorconfig`           |
+
+`exclude` and `manifest = "git"` still work with source names, such as
+`dot-bashrc`. If two source paths deploy to the same target, such as
+`dot-bashrc` and `.bashrc`, apply fails and reports both paths. `dot_prefix`
+requires a directory source and `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
+a `dot_prefix` entry because it would copy target names into the source; edit
+the source directly instead.
+
 ## Edit entries
 
 Edit entries manage one piece of a file: the `mise activate` block in your

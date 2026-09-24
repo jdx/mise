@@ -1222,6 +1222,7 @@ mod declaration_tests {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            dot_prefix: false,
             relative: false,
         };
         // this file wrote both fields: they stay written at their values
