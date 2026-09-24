@@ -3376,8 +3376,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string_lossy()
                         .to_string();
                     // A `latest` link written before the backend could tell this
-                    // version is a pre-release must not keep winning.
-                    if !filter || !self.is_backend_prerelease(&version) {
+                    // version is a pre-release must not keep winning, and neither
+                    // may one left pointing into an interrupted install.
+                    if (!filter || !self.is_backend_prerelease(&version))
+                        && !install_state::incomplete_file_path(&self.ba().short, &version).exists()
+                    {
                         return Ok(Some(version));
                     }
                 }
@@ -3386,7 +3389,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
