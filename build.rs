@@ -292,6 +292,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             full: r#"{backend}"#,
                             platforms: &[],
                             min_version: None,
+                            attestations_since: None,
                             options: &[],
                         }}"##
                     ));
@@ -327,12 +328,32 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             format!("Some({})", raw_string_literal(value))
                         })
                         .unwrap_or_else(|| "None".to_string());
+                    let attestations_since = backend
+                        .get("attestations_since")
+                        .map(|value| {
+                            let value = value
+                                .as_str()
+                                .expect("backend attestations_since must be a string");
+                            assert_eq!(
+                                version_order, "VersionOrder::Semver",
+                                "[{short}] backend attestations_since requires version_order = semver"
+                            );
+                            assert!(
+                                full.starts_with("github:"),
+                                "[{short}] backend attestations_since is only supported for github: backends"
+                            );
+                            semver::Version::parse(value)
+                                .expect("backend attestations_since must be a semantic version");
+                            format!("Some({})", raw_string_literal(value))
+                        })
+                        .unwrap_or_else(|| "None".to_string());
                     let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
                             platforms: &[{platforms}],
                             min_version: {min_version},
+                            attestations_since: {attestations_since},
                             options: &[{options}],
                         }}"##,
                         platforms = platforms

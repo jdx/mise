@@ -685,6 +685,32 @@ backend identifiers, backend overrides, and a matching lockfile's recorded
 backend remain authoritative. A failed download or signature verification does
 not trigger fallback. A backend without `min_version` has no lower bound.
 
+#### Required attestations
+
+When a project publishes [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
+for its release assets, set `attestations_since` on its `github:` backend to the
+first version whose assets all carry them:
+
+```toml
+version_order = "semver"
+backends = [
+  { full = "github:aubepkg/aube", attestations_since = "2.2.5" },
+]
+```
+
+For that version and later ones, mise requires a verified attestation for the
+downloaded asset. An install or `mise lock` that finds none fails as a possible
+downgrade instead of silently skipping verification. This includes an answer
+from the shared mise-versions cache, or a lockfile written after one. Earlier
+versions, and versions that are not semantic versions, are unaffected. Users who
+turn off `github_attestations` are also unaffected.
+
+Like `min_version`, the value must be a complete semantic version, and the
+tool must use `version_order = "semver"`. Check every release asset of the
+boundary version before adding it: a GitHub release attestation for an
+immutable release covers all of its assets. `gh attestation verify <file>
+--repo owner/repo` confirms it for a single file.
+
 #### Idiomatic version files
 
 Registry tools can opt into [idiomatic version files](/configuration.html#idiomatic-version-files)

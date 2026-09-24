@@ -995,7 +995,13 @@ impl Backend for UnifiedGitBackend {
             Ok(mut asset) => {
                 let primary_explicit_pattern = opts.asset_pattern_for_target(target).is_some();
                 // Detect provenance availability from release assets and attestation API
-                let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                // A registry requirement is recorded without asking anyone;
+                // the lock-time verification below still has to pass.
+                let mut provenance = if let Some(required) =
+                    self.registry_required_provenance(tv, &opts)
+                {
+                    Some(required)
+                } else if !self.is_gitlab() && !self.is_forgejo() {
                     self.detect_provenance_type(tv, &opts, &asset, target, primary_explicit_pattern)
                         .await?
                 } else {
@@ -1107,6 +1113,30 @@ impl UnifiedGitBackend {
         } else {
             DEFAULT_GITHUB_API_BASE_URL
         }
+    }
+
+    /// The provenance the mise registry requires for `tv`'s primary asset:
+    /// GitHub attestations, for a tool the registry says publishes them from
+    /// this version on. Without this, "no attestations" (from mise-versions,
+    /// or a lockfile written after it) just skips verification. Off whenever
+    /// the user has turned GitHub attestations off.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (!self.is_gitlab()
+            && !self.is_forgejo()
+            && settings.github_attestations
+            && settings.github.github_attestations
+            && opts.github_attestations()
+            && attestations_supported(&opts.api_url())
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
     }
 
     fn additional_artifacts_match_patterns(
@@ -1624,10 +1654,13 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(PlatformInfo::has_checksum_and_provenance);
+        // The registry's requirement stands in for a lockfile that recorded
+        // none, including one written after a wrong "no attestations".
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
-            .and_then(|platform| platform.provenance.clone());
+            .and_then(|platform| platform.provenance.clone())
+            .or_else(|| self.registry_required_provenance(tv, opts));
 
         if let Err(err) = self.verify_checksum(ctx, tv, &file_path) {
             return Err(github::with_checksum_mismatch_note(
@@ -2687,12 +2720,13 @@ impl UnifiedGitBackend {
             }
         }
 
-        // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
+        // If the lockfile or the registry expects provenance but no verification
+        // succeeded, it's a downgrade attack
         if let Some(expected) = expected_provenance {
             return Err(eyre::eyre!(
-                "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
-                 This may indicate a downgrade attack. Enable the corresponding verification setting \
-                 or update the lockfile."
+                "Lockfile or mise registry requires {expected} provenance for {tv} but verification \
+                 was not performed. This may indicate a downgrade attack. Enable the corresponding \
+                 verification setting or update the lockfile."
             ));
         }
 

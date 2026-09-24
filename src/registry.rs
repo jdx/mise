@@ -171,10 +171,27 @@ pub(crate) struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub min_version: Option<&'static str>,
+    /// The first version whose release asset carries GitHub artifact
+    /// attestations. From it on, a missing attestation is a downgrade, not a
+    /// tool that doesn't publish them. Semver tools only, like `min_version`.
+    pub attestations_since: Option<&'static str>,
     pub options: &'static [(&'static str, &'static str)],
 }
 
 impl RegistryBackend {
+    /// Whether the concrete, installed `version` must carry GitHub artifact
+    /// attestations. Anything that is not a semantic version (a ref, a
+    /// channel, a build the registry can't place) is not required: the
+    /// boundary never orders opaque versions.
+    fn requires_github_attestations(&self, version: &str) -> bool {
+        let Some(since) = self.attestations_since else {
+            return false;
+        };
+        let since = semver::Version::parse(since).expect("validated registry attestations_since");
+        let version = version.trim_start_matches(['v', 'V']);
+        semver::Version::parse(version).is_ok_and(|v| !v.cmp_precedence(&since).is_lt())
+    }
+
     fn supports_version(&self, request: &str) -> bool {
         let Some(minimum) = self.min_version else {
             return true;
@@ -431,6 +448,11 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
         version_order == VersionOrder::Semver || backends.iter().all(|b| b.min_version.is_none()),
         "backend min_version requires version_order = \"semver\""
     );
+    ensure!(
+        version_order == VersionOrder::Semver
+            || backends.iter().all(|b| b.attestations_since.is_none()),
+        "backend attestations_since requires version_order = \"semver\""
+    );
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let bins = if table.contains_key("bins") {
         string_array(table.get("bins"), "bins")?
@@ -556,6 +578,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
             full: leak_string(full.clone()),
             platforms: &[],
             min_version: None,
+            attestations_since: None,
             options: &[],
         }),
         toml::Value::Table(table) => {
@@ -572,6 +595,21 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                         .ok_or_else(|| eyre::eyre!("backend min_version must be a string"))?;
                     semver::Version::parse(value)
                         .wrap_err("backend min_version must be a semantic version")?;
+                    Ok::<_, eyre::Report>(leak_string(value.to_string()))
+                })
+                .transpose()?;
+            let attestations_since = table
+                .get("attestations_since")
+                .map(|value| {
+                    let value = value.as_str().ok_or_else(|| {
+                        eyre::eyre!("backend attestations_since must be a string")
+                    })?;
+                    ensure!(
+                        full.starts_with("github:"),
+                        "backend attestations_since is only supported for github: backends"
+                    );
+                    semver::Version::parse(value)
+                        .wrap_err("backend attestations_since must be a semantic version")?;
                     Ok::<_, eyre::Report>(leak_string(value.to_string()))
                 })
                 .transpose()?;
@@ -594,6 +632,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                 full: leak_string(full.to_string()),
                 platforms: leak_vec(platforms),
                 min_version,
+                attestations_since,
                 options: leak_vec(options),
             })
         }
@@ -818,6 +857,19 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
             && (platforms.contains(&"x64") || platforms.contains(&"windows-x64")))
 }
 
+/// Whether the mise registry says `full` (a backend, without options) publishes
+/// GitHub artifact attestations for `version`. Checked for every registry
+/// entry that lists the backend, so it applies to `gh` and `github:cli/cli`
+/// alike.
+pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
+    shorts_for_full(full).iter().any(|short| {
+        REGISTRY
+            .get(short)
+            .and_then(|tool| tool.get_backend(full))
+            .is_some_and(|backend| backend.requires_github_attestations(version))
+    })
+}
+
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
     static EMPTY: Vec<&'static str> = vec![];
     static FULL_TO_SHORT: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
@@ -933,6 +985,7 @@ mod tests {
             full: "packslip:github.com/example/tool",
             platforms: &[],
             min_version: Some("1.58.1"),
+            attestations_since: None,
             options: &[],
         };
         for request in [
@@ -967,6 +1020,62 @@ mod tests {
         ] {
             assert!(backend.supports_version(request), "{request}");
         }
+    }
+
+    #[test]
+    fn registry_attestations_since_boundaries() {
+        let backend = super::RegistryBackend {
+            full: "github:example/tool",
+            platforms: &[],
+            min_version: None,
+            attestations_since: Some("2.50.0"),
+            options: &[],
+        };
+        for version in ["2.50.0", "v2.50.0", "V2.51.3", "3.0.0", "2.50.0+build.1"] {
+            assert!(backend.requires_github_attestations(version), "{version}");
+        }
+        // Earlier releases, and anything the registry can't place, are not
+        // required: opaque versions are never ordered.
+        for version in [
+            "2.49.9",
+            "2.50.0-rc.1",
+            "2.50",
+            "nightly",
+            "ref:main",
+            "2024.01.15.1",
+            "",
+        ] {
+            assert!(!backend.requires_github_attestations(version), "{version}");
+        }
+        let unset = super::RegistryBackend {
+            attestations_since: None,
+            ..backend
+        };
+        assert!(!unset.requires_github_attestations("9.9.9"));
+    }
+
+    #[test]
+    fn registry_attestations_since_parsing_and_validation() {
+        use super::*;
+        let parse = |order: &str, full: &str, since: &str| {
+            let source = format!(
+                r#"
+version_order = "{order}"
+backends = [{{ full = "{full}", attestations_since = {since} }}]
+"#
+            );
+            parse_registry_tool("example", &toml::from_str::<toml::Value>(&source).unwrap())
+        };
+        let (tool, _) = parse("semver", "github:example/tool", r#""2.50.0""#).unwrap();
+        assert_eq!(tool.backends[0].attestations_since, Some("2.50.0"));
+        for since in [r#""latest""#, r#""2.50""#, "true"] {
+            assert!(
+                parse("semver", "github:example/tool", since).is_err(),
+                "{since}"
+            );
+        }
+        assert!(parse("source", "github:example/tool", r#""2.50.0""#).is_err());
+        assert!(parse("semver", "aqua:example/tool", r#""2.50.0""#).is_err());
     }
 
     #[test]
@@ -1520,24 +1629,28 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "aqua:first/tool",
                 platforms: &["macos"],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "github:second/tool",
                 platforms: &["macos-x64"],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "cargo:third-tool",
                 platforms: &[],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "npm:excluded-tool",
                 platforms: &["linux"],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
         ];
@@ -1557,6 +1670,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             full: "github:owner/repo",
             platforms: &["darwin-amd64"],
             min_version: None,
+            attestations_since: None,
             options: &[],
         };
         assert!(!backend_matches_platform(
@@ -1586,6 +1700,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             full: "github:owner/repo",
             platforms: &[],
             min_version: None,
+            attestations_since: None,
             options: OPTIONS,
         }];
         let tool = RegistryTool {
@@ -1630,12 +1745,14 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "aqua:owner/repo",
                 platforms: &[],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
             RegistryBackend {
                 full: "npm:package",
                 platforms: &[],
                 min_version: None,
+                attestations_since: None,
                 options: &[],
             },
         ];
