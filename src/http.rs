@@ -2408,6 +2408,12 @@ impl SlowDownloadDetector {
         }
     }
 
+    /// Starts a fresh window, discarding what the current one measured.
+    fn restart(&mut self, now: Instant, total: u64) {
+        self.window_start = now;
+        self.window_start_total = total;
+    }
+
     /// Records the bytes received so far across all attempts and, once a full
     /// window has elapsed, returns that window's rate in bytes/sec if it was
     /// too slow.
@@ -2433,17 +2439,25 @@ async fn warn_when_download_is_slow(
     progress: &DownloadProgress,
 ) -> std::convert::Infallible {
     let mut detector = SlowDownloadDetector::new(Instant::now());
+    let mut window_host = None;
     let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
     ticks.tick().await;
     loop {
         ticks.tick().await;
-        if let Some(rate) = detector.observe(Instant::now(), progress.total()) {
-            // Blame the server actually sending the bytes, which may differ
-            // from the requested URL after replacements or redirects.
-            let host = progress
-                .host
-                .lock()
-                .unwrap()
+        let now = Instant::now();
+        let total = progress.total();
+        // Blame the server actually sending the bytes, which may differ from
+        // the requested URL after replacements or redirects. A retry can land
+        // on another host; measure each host on its own so a slow host's bytes
+        // are never reported under a healthy one's name.
+        let host = progress.host.lock().unwrap().clone();
+        if host != window_host {
+            detector.restart(now, total);
+            window_host = host;
+            continue;
+        }
+        if let Some(rate) = detector.observe(now, total) {
+            let host = window_host
                 .clone()
                 .or_else(|| url.host_str().map(str::to_string))
                 .unwrap_or_else(|| "the server".to_string());
@@ -4996,6 +5010,24 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         bytes.attempt.fetch_add(2_000, Ordering::Relaxed);
         assert_eq!(bytes.attempt.load(Ordering::Relaxed), 2_000);
         assert_eq!(bytes.total(), 3_500);
+    }
+
+    #[test]
+    fn slow_download_detector_restart_drops_the_previous_window() {
+        let start = Instant::now();
+        let mut detector = SlowDownloadDetector::new(start);
+        // 50 s at 1 kB/s from one host, then a retry reaches another host.
+        detector.restart(start + Duration::from_secs(50), 50_000);
+        // Without the restart this minute would already be judged.
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(60), 60_000),
+            None
+        );
+        // The new host's own full minute is what gets reported.
+        assert_eq!(
+            detector.observe(start + Duration::from_secs(110), 110_000),
+            Some(1_000)
+        );
     }
 
     #[test]
