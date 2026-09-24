@@ -862,10 +862,12 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
 pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
     // Declared backends, not `backends()`: a `MISE_BACKENDS_<TOOL>` override
     // changes which backend is chosen, not what the registry says about one.
+    // Both registries count, so a floating registry can add requirements but
+    // never drop one baked into this mise release.
     static REQUIREMENTS: Lazy<HashMap<&'static str, Vec<&'static RegistryBackend>>> =
         Lazy::new(|| {
             let mut map: HashMap<&'static str, Vec<&'static RegistryBackend>> = HashMap::new();
-            for (_, tool) in REGISTRY.iter() {
+            for (_, tool) in baked_registry().iter().chain(REGISTRY.iter()) {
                 for backend in tool.backends {
                     if backend.attestations_since.is_some() {
                         map.entry(backend.full).or_default().push(backend);
