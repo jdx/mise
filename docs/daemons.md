@@ -531,6 +531,10 @@ PostgreSQL uses the `postgres` user with local trust authentication. Set
 to `postgres`. Changing it later does not create another database in an existing
 cluster.
 
+PostgreSQL does not run as root. Run mise as a regular user to start it, for
+example with `USER` in a container image. As root, starting a PostgreSQL daemon or
+provider fails before mise installs anything.
+
 Exports: `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, and `DATABASE_URL`.
 
 #### Redis
