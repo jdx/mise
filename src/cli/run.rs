@@ -698,10 +698,31 @@ impl Run {
             }
         }
 
+        // Start OpenTelemetry as soon as the requested tasks are known, so the
+        // root span covers the whole invocation, setup included, and is named
+        // after what was invoked rather than the resolved dependency set. It
+        // is a local until the tasks start so that a setup failure drops it,
+        // which ends the root span as an error and flushes it.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
+        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+
         // Fetch remote task files before parsing usage specs, so that
         // file-based remote tasks have their files resolved to local cache.
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
-        fetcher.fetch_tasks(&config, &mut task_list).await?;
+        // Only remote tasks need fetching, so skip the span when there are none.
+        let fetch_telemetry = telemetry.as_ref().filter(|_| {
+            task_list.iter().any(|t| {
+                t.file.as_ref().is_some_and(|f| {
+                    crate::task::task_fetcher::TaskFetcher::is_remote_source(&f.to_string_lossy())
+                })
+            })
+        });
+        otel::TaskRunTelemetry::phase(
+            fetch_telemetry,
+            "fetch tasks",
+            fetcher.fetch_tasks(&config, &mut task_list),
+        )
+        .await?;
 
         // Re-render sources, outputs, and dependencies with this invocation's
         // usage arg/flag values before resolving the execution graph.
@@ -720,12 +741,13 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
-        // Capture the user-requested task names before dependency resolution,
-        // so the OpenTelemetry root span is named after what was invoked
-        // rather than the (much larger) resolved dep set.
-        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
         let execution_tasks = task_list.clone();
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks = otel::TaskRunTelemetry::phase(
+            telemetry.as_ref(),
+            "resolve tasks",
+            resolve_depends(&config, task_list),
+        )
+        .await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -815,7 +837,12 @@ impl Run {
             ..Default::default()
         };
         let previewed_tools = if !self.skip_tools {
-            let (installed, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+            let (installed, missing) = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "install tools",
+                ts.install_missing_versions(&mut config, &opts),
+            )
+            .await?;
             // Lazy tools stay uninstalled until a task runs one of their commands, which
             // only works if their bootstrap shims exist. A hand-edited `lazy = true`
             // entry has none until the farm is rebuilt (discussion #12678).
@@ -832,15 +859,18 @@ impl Run {
         // Run auto-enabled deps steps (unless --no-deps)
         if let Some(engine) = deps_engine {
             let (env, env_remove) = ts.env_with_path_and_removals(&config).await?;
-            let result = engine
-                .run(DepsOptions {
+            let result = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "deps",
+                engine.run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     dry_run: self.dry_run,
                     env,
                     env_remove,
                     ..Default::default()
-                })
-                .await?;
+                }),
+            )
+            .await?;
             for step in result.steps {
                 if let DepsStepResult::WouldRun(id, reason) = step {
                     info!("[dry-run] Would install dependency: {id} ({reason})");
@@ -859,14 +889,23 @@ impl Run {
         // spawned task, and its daemons are not started; see the note in
         // docs/daemons.md.
         if !self.skip_deps {
-            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run, !self.skip_tools)
-                .await?;
+            otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "start daemons",
+                crate::daemons::tasks::start(
+                    &config,
+                    &resolved_tasks,
+                    self.dry_run,
+                    !self.skip_tools,
+                ),
+            )
+            .await?;
         }
 
-        // Initialize OpenTelemetry before the timeout wrapper so traces are
+        // Hand telemetry to the run before the timeout wrapper so traces are
         // finalized even when the run is cancelled by --timeout:
         // TaskRunTelemetry finishes on drop.
-        self.telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+        self.telemetry = telemetry;
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
