@@ -78,6 +78,9 @@ struct TaskExecContext<'a> {
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
     allow_during_interruption: bool,
+    /// Context of this task's live OpenTelemetry span, used to correlate
+    /// exported log records with the task that produced them.
+    otel_span_cx: Option<&'a opentelemetry::trace::SpanContext>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -325,6 +328,8 @@ pub(crate) struct TaskExecutor {
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
+    /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
+    pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -377,6 +382,7 @@ impl TaskExecutor {
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
             sandbox: config.sandbox,
+            output_forwarder: None,
         }
     }
 
@@ -723,6 +729,7 @@ impl TaskExecutor {
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
             allow_during_interruption,
+            otel_span_cx: otel_span_cx.as_ref(),
         };
 
         let timer = std::time::Instant::now();
@@ -1584,6 +1591,7 @@ impl TaskExecutor {
             prefix,
             output_capture,
             allow_during_interruption,
+            otel_span_cx,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1675,6 +1683,43 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
+
+        // Only tee output into the OTLP log pipeline when this process will
+        // actually capture it. Under `raw` the child gets the terminal
+        // directly and a fully silenced task discards both streams, so the
+        // observers would never fire — and the claim path would then invite a
+        // nested `mise run` to take over a stream nobody is reading.
+        let forwards_output =
+            self.output_forwarder.is_some() && !raw && !task.silent.suppresses_both();
+        // Holds the claim directory for the lifetime of the command; dropping
+        // it cleans up. See `otel::log_claim` for the hand-off protocol.
+        // Failing to create it only costs the nested-run hand-off, which is no
+        // reason to fail the task: nested output is then exported twice.
+        let otel_claim_dir = forwards_output
+            .then(|| {
+                tempfile::tempdir()
+                    .inspect_err(|err| debug!("otel: failed to create log claim dir: {err}"))
+                    .ok()
+            })
+            .flatten();
+        if forwards_output {
+            let redacted_args: Vec<String> = task.args.iter().map(|a| config.redact(a)).collect();
+            cmd = crate::otel::TaskOutputForwarder::attach_hooks(
+                self.output_forwarder.as_ref(),
+                &task.name,
+                &redacted_args,
+                otel_span_cx,
+                otel_claim_dir
+                    .as_ref()
+                    .map(|dir| crate::otel::LogClaimWatcher::new(dir.path().to_path_buf())),
+                crate::otel::ExportStreams {
+                    stdout: !task.silent.suppresses_stdout(),
+                    stderr: !task.silent.suppresses_stderr(),
+                },
+                cmd,
+            );
+        }
+
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
@@ -1808,15 +1853,18 @@ impl TaskExecutor {
                         cmd = cmd.with_on_stderr(|_| {});
                     }
                 } else if raw || redactions.is_empty() {
-                    if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
-                    } else {
+                    // Inheriting stdio hands the child the terminal directly,
+                    // which would bypass the observer that tees lines to the
+                    // collector — keep the pipe when log export is active.
+                    if task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::null());
+                    } else if !cmd.has_stdout_observer() {
+                        cmd = cmd.stdout(Stdio::inherit());
                     }
-                    if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
-                    } else {
+                    if task.silent.suppresses_stderr() {
                         cmd = cmd.stderr(Stdio::null());
+                    } else if !cmd.has_stderr_observer() {
+                        cmd = cmd.stderr(Stdio::inherit());
                     }
                 }
             }

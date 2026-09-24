@@ -4,7 +4,7 @@ description: "Export OpenTelemetry traces for mise run to Jaeger, Tempo, or any 
 
 # OpenTelemetry <Badge type="warning" text="experimental" />
 
-mise can export traces for `mise run` to any
+mise can export traces (and, separately, task stdout/stderr logs) for `mise run` to any
 OpenTelemetry-compatible backend such as [Jaeger](https://www.jaegertracing.io/),
 [Grafana Tempo](https://grafana.com/oss/tempo/), or [SigNoz](https://signoz.io/).
 
@@ -12,6 +12,7 @@ This is useful when you want to answer questions like:
 
 - Which task is slow?
 - Which task failed?
+- What did a task print to stdout/stderr? _(requires log export, see below)_
 - Which part of a monorepo run did a task belong to?
 
 ## Quick Start
@@ -21,6 +22,9 @@ Enable OpenTelemetry trace export and set your collector endpoint:
 ```toml [mise.toml]
 [settings]
 otel.enabled = true
+# Optionally also ship task stdout/stderr as OTLP logs.
+# Read the privacy notes below before turning this on.
+otel.logs = true
 ```
 
 ```bash
@@ -38,6 +42,7 @@ If your collector is reachable, mise will export:
 - spans for individual tasks
 - grouped spans for monorepo task roots
 - a root span covering the whole `mise run`, with child spans for setup such as tool installs
+- task logs from stdout/stderr — only when `otel.logs` is also enabled
 
 ## Configuration
 
@@ -45,27 +50,35 @@ mise uses the standard
 [OpenTelemetry environment variables](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
 for configuration. The mise-specific settings are opt-in gates — they prevent mise from
 unexpectedly emitting telemetry in environments that set `OTEL_EXPORTER_OTLP_*` for other
-tools.
+tools, and they keep log export (which is a larger privacy/security boundary) separate
+from trace export.
 
-| Setting        | Env Var             | Default | Description                                            |
-| -------------- | ------------------- | ------- | ------------------------------------------------------ |
-| `otel.enabled` | `MISE_OTEL_ENABLED` | `false` | Enable OpenTelemetry trace export for task executions. |
+| Setting        | Env Var             | Default | Description                                                           |
+| -------------- | ------------------- | ------- | --------------------------------------------------------------------- |
+| `otel.enabled` | `MISE_OTEL_ENABLED` | `false` | Enable OpenTelemetry trace export for task executions.                |
+| `otel.logs`    | `MISE_OTEL_LOGS`    | `false` | Enable OpenTelemetry log export for task stdout/stderr (see Privacy). |
 
-Traces are exported only when `otel.enabled = true` **and** a traces endpoint is
-configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+Traces and logs are gated independently:
+
+- Traces are exported only when `otel.enabled = true` **and** a traces endpoint is
+  configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+- Logs are exported only when `otel.logs = true` **and** a logs endpoint is configured
+  (`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`).
 
 Setting `otel.enabled` does not, by itself, ship any task output to the collector.
 
 ### Standard OTEL Environment Variables
 
-When trace export is enabled, mise reads the following standard env vars:
+When trace and/or log export is enabled, mise reads the following standard env vars:
 
 | Env Var                              | Description                                                                     |
 | ------------------------------------ | ------------------------------------------------------------------------------- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`        | General OTLP endpoint (e.g. `http://localhost:4318`).                           |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Signal-specific traces endpoint. Takes priority over the general endpoint.      |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`   | Signal-specific logs endpoint. Takes priority over the general endpoint.        |
 | `OTEL_EXPORTER_OTLP_HEADERS`         | Headers for export requests (comma-separated `key=value` pairs), e.g. for auth. |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS`  | Signal-specific traces headers. Takes priority over the general headers.        |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS`    | Signal-specific logs headers. Takes priority over the general headers.          |
 | `OTEL_SERVICE_NAME`                  | The `service.name` resource attribute (defaults to `mise`).                     |
 | `OTEL_RESOURCE_ATTRIBUTES`           | Additional resource attributes (comma-separated `key=value` pairs).             |
 
@@ -172,9 +185,72 @@ Error messages in span status go through the same redactions as task args.
 When `--timeout` expires, the root span is ended as an `Error` and flushed. Tasks still
 running at that point are not exported.
 
+## Logs
+
+Log export is a separate, explicit opt-in (`otel.logs = true` / `MISE_OTEL_LOGS=1`)
+because shipping task stdout/stderr to the collector is a different trust boundary
+from trace export. Read [Privacy and Trust Boundary](#privacy-and-trust-boundary)
+before enabling it.
+
+When enabled, each line of task stdout and stderr is exported as an OTLP log record
+linked to the corresponding task span, so you can inspect output directly from the
+trace. The link needs the spans too: with `otel.logs` but not `otel.enabled`, records
+still carry trace and span IDs, but no spans are exported for them to point at.
+
+- stdout is exported with severity `INFO`
+- stderr is exported with severity `WARN` (many tools write progress, diagnostics,
+  and compiler warnings to stderr that are not errors — actual failure is conveyed
+  by the task span status and the `process.exit.code` attribute)
+
+### Nested `mise run`
+
+When a task shells out to `mise run`, the inner run's output flows up through the outer
+task's pipe, so both processes see the same lines. mise hands each task a claim directory
+(`MISE_TASK_OTEL_LOG_CLAIM`); a nested run that exports its own task logs registers there
+while it is alive, and the outer run skips exporting for as long as any nested run is
+registered. Each
+line is therefore exported exactly once, by the innermost run that knows which task
+actually produced it:
+
+```toml
+[tasks.outer]
+run = "echo building; mise run inner; echo done"
+```
+
+`building` and `done` are attributed to the `outer` task span, and everything `inner`
+prints is attributed to the `inner` task span. Terminal output is unaffected — the claim
+only gates log export. Traces are unaffected too: a nested run still contributes its
+spans to the same trace via `TRACEPARENT`.
+
+A nested run only takes over if it exports logs itself, so disabling `otel.logs` for the
+inner run leaves the outer run reporting its output as before. Each registration records
+the owning process, so one that dies without releasing it — killed with `SIGKILL`, for
+instance — is detected as stale and the outer run resumes exporting. Nested runs started
+concurrently from a single task (`mise run a & mise run b &`) each register, so the outer
+run stays quiet until the last of them exits.
+
+A nested `mise run --raw` never reads its tasks' output, so it doesn't claim the stream and
+the outer run keeps exporting it. Within a nested run that does claim the stream, a task
+that is itself `raw` (or `interactive`) is exported by neither run: the nested run doesn't
+read its output and the outer run defers to the nested one. Terminal output is unaffected.
+
+:::tip
+Every output mode that reads task output line by line exports it: `prefix`,
+`keep-order`, `timed`, `replacing`, `interleave`, and `quiet`. The `silent` output mode
+and output a task [silences](/tasks/task-configuration#silent) are not read, so they are
+not exported. With
+`--raw`, output goes straight to the terminal and is not exported either.
+
+In `interleave`/`quiet` mode mise normally hands the task the terminal directly. While log
+export is on it keeps a pipe instead so it can read every line, so the task no longer sees
+a TTY. This can change buffering, colour output, progress bars, prompts, and any
+`isatty()`-dependent behaviour. Run affected tasks under `--raw` to keep a real TTY (at
+the cost of log export for that task).
+:::
+
 ## Privacy and Trust Boundary
 
-Exporting traces ships information about your tasks to your OpenTelemetry
+Exporting traces and logs ships information about your tasks to your OpenTelemetry
 collector. Even though all of this is visible locally already, **the collector is a
 different trust boundary** — anything sent there may be stored, indexed, queryable
 by other users of that backend, and retained according to its policy.
@@ -186,6 +262,11 @@ What trace export (`otel.enabled`) sends per task:
 - `process.exit.code`
 - timing and span status
 
+What log export (`otel.logs`) additionally sends:
+
+- every line written to the task's stdout
+- every line written to the task's stderr
+
 **Implications:**
 
 - **Secrets in args.** If a secret appears in `mise.task.args` /
@@ -193,9 +274,21 @@ What trace export (`otel.enabled`) sends per task:
   export will ship it to the collector unless it matches one of your
   [redactions](/environments/#redactions). Prefer passing secrets via environment
   variables, which are never exported.
+- **Secrets in output.** With `otel.logs = true`, any secret that a task writes to
+  stdout/stderr is shipped to the collector. This includes anything the task
+  receives in env vars and accidentally echoes (e.g. via `set -x`, debug logging,
+  or shell tracing).
+- **Redaction.** mise's terminal redaction (`redactions = […]` in `mise.toml`)
+  applies before lines are forwarded to the OTLP log pipeline, so redacted values
+  are also redacted in exported logs, and so are task args on log records. However,
+  redaction only covers values you've
+  explicitly listed — it does not detect arbitrary secrets in output.
+- **`--raw`.** `--raw` bypasses mise's line capture entirely, so task output goes
+  straight to the terminal and is **not** exported as logs. Note that this also
+  disables redactions for that task.
 
-Task stdout/stderr is **not** exported by trace export — only the attributes listed
-above leave the machine.
+If you don't want task output leaving the machine, leave `otel.logs = false` (the
+default) and rely on trace export alone.
 
 ## Example: Local Development with Jaeger
 
@@ -235,11 +328,11 @@ format). This means:
 
 ## Notes
 
-- When `otel.enabled` is not set, mise does not create trace context or export any
-  telemetry.
+- When neither `otel.enabled` nor `otel.logs` is set, mise does not create trace context
+  or export any telemetry.
 - Export failures are logged at debug level and never break task execution.
 - Each export request times out after 3 seconds unless `OTEL_EXPORTER_OTLP_TIMEOUT` (or
-  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT`) says otherwise, so an unreachable collector
+  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` / `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT`) says otherwise, so an unreachable collector
   delays the end of `mise run` by at most that much.
 - Offline mode (`--offline` / `MISE_OFFLINE=1`) turns export off.
 - Task args in span names and attributes go through the same

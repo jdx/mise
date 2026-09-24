@@ -9,7 +9,7 @@
 //! span is alive while the task runs, its `SpanContext` is available for both
 //! W3C context propagation and log correlation.
 
-use crate::otel::traces_enabled;
+use crate::otel::{LogClaim, TaskOutputForwarder, logs_enabled, traces_enabled};
 use crate::task::Task;
 use crate::task::task_executor::TaskRunOutcome;
 use eyre::Result;
@@ -49,19 +49,39 @@ struct Inner {
     root_cx: Context,
     /// Live monorepo group spans keyed by config root.
     groups: Mutex<HashMap<PathBuf, Context>>,
+    /// `Some` only when log export is explicitly opted in via `otel.logs`.
+    /// Installed on the task executor so it can forward stdout/stderr lines.
+    output_forwarder: Option<TaskOutputForwarder>,
+    /// Held when an ancestor `mise` is capturing our output: tells it to stop
+    /// exporting these lines, since we report them against our own (more
+    /// granular) task spans. Released when this run is dropped.
+    _log_claim: Option<LogClaim>,
     has_failures: AtomicBool,
     finished: AtomicBool,
 }
 
 impl TaskRunTelemetry {
-    /// Initialize a `TaskRunTelemetry` if trace export is enabled, i.e.
-    /// `otel.enabled = true` and a traces endpoint is configured.
+    /// Initialize a `TaskRunTelemetry` if otel is configured.
+    ///
+    /// Traces and logs are gated independently:
+    /// - traces require `otel.enabled = true` and a traces endpoint
+    /// - logs require `otel.logs = true` and a logs endpoint
+    ///
+    /// Returns `None` when neither signal is enabled.
     ///
     /// When mise is invoked from another mise run (or any OTEL-aware
     /// parent), the `TRACEPARENT` env var carries W3C Traceparent so
     /// the nested run joins the same distributed trace.
-    pub(crate) fn init_if_enabled(requested_task_names: &[String]) -> Option<Self> {
-        if !traces_enabled() {
+    ///
+    /// `captures_output` is false for a `--raw` run, which never reads task
+    /// output and so must not claim an ancestor's log stream.
+    pub(crate) fn init_if_enabled(
+        requested_task_names: &[String],
+        captures_output: bool,
+    ) -> Option<Self> {
+        let traces = traces_enabled();
+        let logs = logs_enabled();
+        if !traces && !logs {
             return None;
         }
         let suffix = if requested_task_names.is_empty() {
@@ -71,11 +91,48 @@ impl TaskRunTelemetry {
         };
         let root_span_name = format!("mise run{suffix}");
 
-        let provider = crate::otel::build_tracer_provider(crate::otel::build_resource())?;
-        Some(Self::new(&root_span_name, provider, parent_cx_from_env()))
+        let resource = crate::otel::build_resource();
+        // The two signals are built independently, so a trace exporter that
+        // fails to build doesn't take log export down with it.
+        let exporting_provider = traces
+            .then(|| crate::otel::build_tracer_provider(resource.clone()))
+            .flatten();
+        let output_forwarder = if logs {
+            crate::otel::build_logger_provider(resource.clone()).map(TaskOutputForwarder::new)
+        } else {
+            None
+        };
+        if exporting_provider.is_none() && output_forwarder.is_none() {
+            return None;
+        }
+        // Without trace export, spans never leave the process. The SDK still
+        // assigns real trace/span IDs, which is all log records need to carry
+        // trace context.
+        let provider = exporting_provider
+            .unwrap_or_else(|| SdkTracerProvider::builder().with_resource(resource).build());
+        // Take over log reporting from an ancestor `mise` — but only once we
+        // know we can actually export, otherwise the lines would be dropped
+        // on both sides.
+        let log_claim = (captures_output && output_forwarder.is_some())
+            .then(LogClaim::acquire)
+            .flatten();
+
+        Some(Self::new(
+            &root_span_name,
+            provider,
+            parent_cx_from_env(),
+            output_forwarder,
+            log_claim,
+        ))
     }
 
-    fn new(root_span_name: &str, provider: SdkTracerProvider, parent_cx: Context) -> Self {
+    fn new(
+        root_span_name: &str,
+        provider: SdkTracerProvider,
+        parent_cx: Context,
+        output_forwarder: Option<TaskOutputForwarder>,
+        log_claim: Option<LogClaim>,
+    ) -> Self {
         let tracer = provider.tracer("mise.tasks");
         let mut root_span = tracer.start_with_context(root_span_name.to_string(), &parent_cx);
         root_span.set_attribute(KeyValue::new("mise.span_type", "run"));
@@ -85,10 +142,17 @@ impl TaskRunTelemetry {
                 tracer,
                 root_cx: Context::new().with_span(root_span),
                 groups: Mutex::new(HashMap::new()),
+                output_forwarder,
+                _log_claim: log_claim,
                 has_failures: AtomicBool::new(true),
                 finished: AtomicBool::new(false),
             }),
         }
+    }
+
+    /// The forwarder to install on the task executor, if log export is on.
+    pub(crate) fn output_forwarder(&self) -> Option<TaskOutputForwarder> {
+        self.inner.output_forwarder.clone()
     }
 
     /// Start a span for a task, parented under its monorepo group span
@@ -215,9 +279,9 @@ impl TaskRunTelemetry {
         self.inner.has_failures.store(false, Ordering::Relaxed);
     }
 
-    /// End the group and root spans and shut down the tracer provider,
-    /// flushing pending spans. Idempotent; also runs on drop so traces
-    /// survive cancellation (e.g. `--timeout`).
+    /// Flush logs, end the group and root spans, and shut down the tracer
+    /// provider. Idempotent; also runs on drop so traces survive
+    /// cancellation (e.g. `--timeout`).
     pub(crate) fn finish(&self) {
         self.inner.finish();
     }
@@ -227,6 +291,10 @@ impl Inner {
     fn finish(&self) {
         if self.finished.swap(true, Ordering::SeqCst) {
             return;
+        }
+        // Flush pending log batches before the spans they correlate to.
+        if let Some(forwarder) = &self.output_forwarder {
+            forwarder.shutdown();
         }
         for (_, cx) in self.groups.lock().unwrap().drain() {
             cx.span().end();
@@ -398,7 +466,7 @@ mod tests {
         let provider = SdkTracerProvider::builder()
             .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
             .build();
-        let t = TaskRunTelemetry::new(root_span_name, provider, parent_cx);
+        let t = TaskRunTelemetry::new(root_span_name, provider, parent_cx, None, None);
         (t, exporter)
     }
 
@@ -816,6 +884,18 @@ mod tests {
 
         let build = span_by_name(&exporter.finished_spans(), "build").clone();
         assert_eq!(build.end_time, end_time);
+    }
+
+    #[test]
+    fn task_span_context_is_valid_without_an_exporter() {
+        // Logs-only mode: no span processor at all, but log records still
+        // need real trace/span IDs to correlate against.
+        let provider = SdkTracerProvider::builder().build();
+        let t = TaskRunTelemetry::new("mise run", provider, Context::new(), None, None);
+        let span = t.start_task(&task_for("build", "", &[]), &[], None);
+        let cx = span.span_context().clone();
+        assert!(cx.is_valid(), "log correlation needs valid ids");
+        assert!(cx.is_sampled(), "unsampled would zero the trace flags");
     }
 
     #[test]
