@@ -17,7 +17,7 @@ use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::is_pep440_prerelease;
+use crate::plugins::{is_pep440_prerelease, is_python_prerelease};
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -239,10 +239,6 @@ impl Backend for PIPXBackend {
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
         Ok(vec!["uv"])
-    }
-
-    fn mark_prereleases_from_version_pattern(&self) -> bool {
-        true
     }
 
     /// PyPI versions follow PEP 440, so the shared filter alone (which only
@@ -1429,11 +1425,13 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
-/// ecosystems (e.g. Go pseudo-versions) would false-positive. Only fills in
-/// unknowns: an authoritative flag from a GitHub release (either value) wins
-/// over pattern detection.
+/// ecosystems (e.g. Go pseudo-versions) would false-positive. This replaces
+/// the generic `mark_prerelease`, so the shared channel tags are checked here
+/// too, against the public version only (`1.1+gpu.dev0` is stable). Only
+/// fills in unknowns: an authoritative flag from a GitHub release (either
+/// value) wins over pattern detection.
 fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if version.prerelease.is_none() && is_pep440_prerelease(&version.version) {
+    if version.prerelease.is_none() && is_python_prerelease(&version.version) {
         version.prerelease = Some(true);
     }
     version
@@ -2076,6 +2074,30 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             ..Default::default()
         });
         assert_eq!(stamped.prerelease, None);
+
+        // `.dev` inside the local label matches the shared channel-tag regex,
+        // which must not apply to the local label either.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+gpu.dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
+
+        // The shared channel tags still apply to the public version.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1-rc1".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, Some(true));
+    }
+
+    #[test]
+    fn test_pipx_stamps_prereleases_itself() {
+        // The generic `mark_prerelease` would flag `1.1+gpu.dev0` from the
+        // local label; pipx stamps with the PEP 440-aware rule instead.
+        assert!(
+            !PIPXBackend::from_arg("pipx:black".into()).mark_prereleases_from_version_pattern()
+        );
     }
 
     #[test]

@@ -304,14 +304,28 @@ pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(r"(?i)[0-9](?:(?:a|b|c|rc)[0-9]+|[-_.]?dev[0-9]*)(?:$|[^a-z0-9])").unwrap()
 });
 
+/// The public part of a PEP 440 version, without its local label
+/// (`1.1+gpu.dev0` -> `1.1`).
+fn pep440_public_version(version: &str) -> &str {
+    version
+        .split_once('+')
+        .map_or(version, |(public, _)| public)
+}
+
 /// Whether a PEP 440 version is a pre-release. Only the public version is
 /// checked: a local label (`+build1dev0`) is free-form and never makes a
 /// release a pre-release.
 pub(crate) fn is_pep440_prerelease(version: &str) -> bool {
-    let public = version
-        .split_once('+')
-        .map_or(version, |(public, _)| public);
-    PEP440_PRERELEASE_REGEX.is_match(public)
+    PEP440_PRERELEASE_REGEX.is_match(pep440_public_version(version))
+}
+
+/// Pre-release detection for Python-flavored backends: the PEP 440 rule plus
+/// the shared [`VERSION_REGEX`] channel tags, both applied to the public
+/// version only so a local label like `+gpu.dev0` never marks a release as a
+/// pre-release.
+pub(crate) fn is_python_prerelease(version: &str) -> bool {
+    let public = pep440_public_version(version);
+    PEP440_PRERELEASE_REGEX.is_match(public) || VERSION_REGEX.is_match(public)
 }
 
 pub(crate) fn get(short: &str) -> Result<PluginEnum> {
@@ -983,6 +997,22 @@ mod tests {
         // Go pseudo-versions and other identifiers with incidental `[abc]\d`
         // substrings (commit hashes) must not be flagged.
         assert!(!VERSION_REGEX.is_match("2.0.0-20260404020628-f149714c1d54"));
+    }
+
+    #[test]
+    fn test_is_python_prerelease_ignores_local_label() {
+        // The shared channel tags still count in the public version...
+        assert!(is_python_prerelease("1.0.0-rc1"));
+        assert!(is_python_prerelease("1.0.0.dev0"));
+        assert!(is_python_prerelease("3.12.0a1"));
+        assert!(is_python_prerelease("1.0.0-rc1+gpu"));
+
+        // ...but not inside a local label, which is free-form.
+        assert!(VERSION_REGEX.is_match("1.1+gpu.dev0"));
+        assert!(!is_python_prerelease("1.1+gpu.dev0"));
+        assert!(!is_python_prerelease("1.1+cu121.rc"));
+        assert!(!is_python_prerelease("1.1+build-nightly"));
+        assert!(!is_python_prerelease("1.1"));
     }
 
     #[test]
