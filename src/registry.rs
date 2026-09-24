@@ -171,9 +171,11 @@ pub(crate) struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub min_version: Option<&'static str>,
-    /// The first version whose release asset carries GitHub artifact
-    /// attestations. From it on, a missing attestation is a downgrade, not a
-    /// tool that doesn't publish them. Semver tools only, like `min_version`.
+    /// The first version whose release assets carry GitHub attestations. From
+    /// it on, a missing attestation is a downgrade, not a tool that doesn't
+    /// publish them. Only the one version being installed is compared, never
+    /// a version list, so unlike `min_version` any `version_order` works: a
+    /// version that isn't semver is simply not required.
     pub attestations_since: Option<&'static str>,
     pub options: &'static [(&'static str, &'static str)],
 }
@@ -448,11 +450,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
         version_order == VersionOrder::Semver || backends.iter().all(|b| b.min_version.is_none()),
         "backend min_version requires version_order = \"semver\""
     );
-    ensure!(
-        version_order == VersionOrder::Semver
-            || backends.iter().all(|b| b.attestations_since.is_none()),
-        "backend attestations_since requires version_order = \"semver\""
-    );
+
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let bins = if table.contains_key("bins") {
         string_array(table.get("bins"), "bins")?
@@ -1087,7 +1085,8 @@ backends = [{{ full = "{full}", attestations_since = {since} }}]
                 "{since}"
             );
         }
-        assert!(parse("source", "github:example/tool", r#""2.50.0""#).is_err());
+        // Any version order: only the installed version is compared.
+        assert!(parse("source", "github:example/tool", r#""2.50.0""#).is_ok());
         assert!(parse("semver", "aqua:example/tool", r#""2.50.0""#).is_err());
     }
 

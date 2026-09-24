@@ -132,7 +132,7 @@
               "attestations_since": {
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
-                "description": "First version whose release assets carry GitHub artifact attestations. From it on, installing without a verified attestation fails instead of skipping verification. github: backends only; requires version_order = semver."
+                "description": "First version whose release assets carry GitHub attestations. From it on, installing without a verified attestation fails instead of skipping verification. Versions that are not semantic versions are never required. github: backends only."
               }
             },
             "required": ["full"],
@@ -270,28 +270,6 @@
             "contains": {
               "type": "object",
               "required": ["min_version"]
-            },
-            "type": "array"
-          }
-        },
-        "required": ["backends"]
-      },
-      "then": {
-        "properties": {
-          "version_order": {
-            "const": "semver"
-          }
-        },
-        "required": ["version_order"]
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "backends": {
-            "contains": {
-              "type": "object",
-              "required": ["attestations_since"]
             },
             "type": "array"
           }

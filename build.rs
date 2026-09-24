@@ -334,10 +334,6 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             let value = value
                                 .as_str()
                                 .expect("backend attestations_since must be a string");
-                            assert_eq!(
-                                version_order, "VersionOrder::Semver",
-                                "[{short}] backend attestations_since requires version_order = semver"
-                            );
                             assert!(
                                 full.starts_with("github:"),
                                 "[{short}] backend attestations_since is only supported for github: backends"

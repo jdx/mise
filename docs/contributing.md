@@ -707,8 +707,15 @@ shared mise-versions cache, or from a lockfile written after one. Earlier
 versions, and versions that are not semantic versions, are unaffected. Users who
 turn off `github_attestations` are also unaffected.
 
-Like `min_version`, the value must be a complete semantic version, and the
-tool must use `version_order = "semver"`.
+The value must be a complete semantic version. The tool's `version_order` can
+be anything: mise compares only the version being installed against the
+boundary and never orders a version list. A version that isn't a semantic
+version (`nightly`, `1.0`, `2024.01.15`) is never required.
+
+Pick a boundary such that every release whose version is a semantic version at
+or past it carries attestations. Be careful with projects that publish backports
+out of order. If a patch to an older line was the first attested release, a
+newer line released before it would wrongly be required.
 
 Either kind of GitHub attestation satisfies it, as long as it names the tool's
 repository:
