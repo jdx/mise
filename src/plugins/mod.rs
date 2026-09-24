@@ -292,13 +292,17 @@ pub(crate) static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 ///
 /// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
 /// the regex requires a leading digit. `c` is included as PEP 440's recognized
-/// alternate spelling for `rc`. The trailing boundary `(?:$|[^a-z0-9])` keeps
-/// it from matching inside hex hashes or other identifiers.
+/// alternate spelling for `rc`. Developmental releases (`.devN`) are also
+/// pre-releases per PEP 440 and are excluded by pip/uv unless requested; the
+/// optional `[-_.]` separator and number cover the spellings PEP 440
+/// normalizes to `.devN`. The trailing boundary `(?:$|[^a-z0-9])` keeps it
+/// from matching inside hex hashes or other identifiers.
 ///
 /// Only consulted by Python-flavored backends (currently `pipx`); other
 /// backends would false-positive on hex hashes like `f149714c1d54`.
-pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
-    Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
+pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)[0-9](?:(?:a|b|c|rc)[0-9]+|[-_.]?dev[0-9]*)(?:$|[^a-z0-9])").unwrap()
+});
 
 pub(crate) fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
@@ -981,6 +985,14 @@ mod tests {
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3rc1"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0c1+build"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0a1.dev0"));
+
+        // Developmental releases are pre-releases too (uv/pip skip them by
+        // default).
+        assert!(PEP440_PRERELEASE_REGEX.is_match("2026.9.16.232951.dev0"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.dev1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0dev"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1.dev2"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-devtools"));
 
         // Stable releases — including `.postN`, which PEP 440 specifies as a
         // post-release (after a stable), NOT a pre-release.

@@ -2048,6 +2048,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 "2.0.0a1",
                 vec![pypi_release(Some("2024-04-01T00:00:00Z"), false)],
             ),
+            (
+                "2024.5.1.123456.dev0",
+                vec![pypi_release(Some("2024-05-01T00:00:00Z"), false)],
+            ),
         ]));
 
         assert_eq!(version.as_deref(), Some("1.1.0"));
