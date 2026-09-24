@@ -2374,14 +2374,33 @@ const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 struct DownloadProgress {
     attempt: AtomicU64,
     earlier_attempts: AtomicU64,
-    /// Host of the latest response, after `url_replacements` and redirects
+    /// Server of the latest response, after `url_replacements` and redirects
     /// (the upstream GitHub host for relayed responses).
-    host: Mutex<Option<String>>,
+    served_by: Mutex<Option<ServedBy>>,
+}
+
+/// When a host started serving a download, so throughput can be split
+/// exactly between hosts when a retry lands somewhere else.
+#[derive(Clone, Debug, PartialEq)]
+struct ServedBy {
+    host: String,
+    since: Instant,
+    total_at_start: u64,
 }
 
 impl DownloadProgress {
     fn served_by(&self, url: &Url) {
-        *self.host.lock().unwrap() = url.host_str().map(str::to_string);
+        let Some(host) = url.host_str() else {
+            return;
+        };
+        let mut served_by = self.served_by.lock().unwrap();
+        if served_by.as_ref().is_none_or(|s| s.host != host) {
+            *served_by = Some(ServedBy {
+                host: host.to_string(),
+                since: Instant::now(),
+                total_at_start: self.total(),
+            });
+        }
     }
 
     fn start_attempt(&self) {
@@ -2430,6 +2449,46 @@ impl SlowDownloadDetector {
     }
 }
 
+/// Decides, sample by sample, whether a download has been slow and which host
+/// to blame. Each host is measured on its own: when a retry lands on another
+/// host, the outgoing host's window ends exactly where the new host started.
+struct SlowDownloadWatch {
+    detector: SlowDownloadDetector,
+    host: Option<String>,
+}
+
+impl SlowDownloadWatch {
+    fn new(now: Instant) -> Self {
+        Self {
+            detector: SlowDownloadDetector::new(now),
+            host: None,
+        }
+    }
+
+    /// Returns the host to blame (if known) and its rate when a full window
+    /// was too slow.
+    fn sample(
+        &mut self,
+        now: Instant,
+        total: u64,
+        served_by: Option<&ServedBy>,
+    ) -> Option<(Option<String>, u64)> {
+        if let Some(served) = served_by
+            && self.host.as_deref() != Some(served.host.as_str())
+        {
+            let previous = self.host.replace(served.host.clone());
+            let slow = self.detector.observe(served.since, served.total_at_start);
+            self.detector.restart(served.since, served.total_at_start);
+            if let Some(rate) = slow {
+                return Some((previous, rate));
+            }
+        }
+        self.detector
+            .observe(now, total)
+            .map(|rate| (self.host.clone(), rate))
+    }
+}
+
 /// Runs alongside a download and never completes. Warns at most once.
 ///
 /// Names only the host: download URLs can carry credentials in their userinfo,
@@ -2438,20 +2497,16 @@ async fn warn_when_download_is_slow(
     url: &Url,
     progress: &DownloadProgress,
 ) -> std::convert::Infallible {
-    let mut detector = SlowDownloadDetector::new(Instant::now());
-    let mut window_host = None;
+    let mut watch = SlowDownloadWatch::new(Instant::now());
     let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
     ticks.tick().await;
     loop {
         ticks.tick().await;
-        let now = Instant::now();
-        let total = progress.total();
-        // Judge the window that just elapsed against the host that served it.
-        if let Some(rate) = detector.observe(now, total) {
-            // Blame the server actually sending the bytes, which may differ
-            // from the requested URL after replacements or redirects.
-            let host = window_host
-                .clone()
+        let served_by = progress.served_by.lock().unwrap().clone();
+        if let Some((host, rate)) =
+            watch.sample(Instant::now(), progress.total(), served_by.as_ref())
+        {
+            let host = host
                 .or_else(|| url.host_str().map(str::to_string))
                 .unwrap_or_else(|| "the server".to_string());
             warn!(
@@ -2462,13 +2517,6 @@ async fn warn_when_download_is_slow(
                 bytesize::ByteSize::b(rate).display().iec(),
             );
             return std::future::pending().await;
-        }
-        // A retry can land on another host. Start that host's own window so a
-        // slow host's bytes are never reported under a healthy one's name.
-        let host = progress.host.lock().unwrap().clone();
-        if host != window_host {
-            detector.restart(now, total);
-            window_host = host;
         }
     }
 }
@@ -5030,12 +5078,76 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
+    fn served(host: &str, since: Instant, total_at_start: u64) -> ServedBy {
+        ServedBy {
+            host: host.to_string(),
+            since,
+            total_at_start,
+        }
+    }
+
+    #[test]
+    fn slow_download_watch_blames_the_host_that_was_slow() {
+        let start = Instant::now();
+        let mut watch = SlowDownloadWatch::new(start);
+        let a = served("a.example", start, 0);
+        // 55 s healthy from a, then a retry reaches b, which stalls.
+        let b = served("b.example", start + Duration::from_secs(55), 55 << 20);
+        assert_eq!(
+            watch.sample(start + Duration::from_secs(5), 5 << 20, Some(&a)),
+            None
+        );
+        assert_eq!(
+            watch.sample(start + Duration::from_secs(60), 55 << 20, Some(&b)),
+            None,
+            "a was healthy and b has not had a full minute"
+        );
+        assert_eq!(
+            watch.sample(start + Duration::from_secs(115), 55 << 20, Some(&b)),
+            Some((Some("b.example".to_string()), 0))
+        );
+    }
+
+    #[test]
+    fn slow_download_watch_reports_a_slow_minute_that_ends_in_a_host_switch() {
+        let start = Instant::now();
+        let mut watch = SlowDownloadWatch::new(start);
+        let a = served("a.example", start, 0);
+        assert_eq!(
+            watch.sample(start + Duration::from_secs(5), 5_000, Some(&a)),
+            None
+        );
+        // a crawled at 1 kB/s for 62 s; b took over between samples.
+        let b = served("b.example", start + Duration::from_secs(62), 62_000);
+        assert_eq!(
+            watch.sample(start + Duration::from_secs(65), 10 << 20, Some(&b)),
+            Some((Some("a.example".to_string()), 1_000))
+        );
+    }
+
+    #[test]
+    fn download_progress_keeps_the_start_of_a_host_across_same_host_retries() {
+        let progress = DownloadProgress::default();
+        let url = Url::parse("https://mirror.example/node.tar.gz").unwrap();
+        progress.served_by(&url);
+        let first = progress.served_by.lock().unwrap().clone();
+        progress.start_attempt();
+        progress.attempt.fetch_add(10, Ordering::Relaxed);
+        progress.served_by(&url);
+        assert_eq!(*progress.served_by.lock().unwrap(), first);
+    }
+
     #[test]
     fn download_progress_names_the_host_that_served_the_response() {
         let progress = DownloadProgress::default();
         progress.served_by(&Url::parse("https://mirror.example/node.tar.gz").unwrap());
         assert_eq!(
-            progress.host.lock().unwrap().as_deref(),
+            progress
+                .served_by
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|s| s.host.as_str()),
             Some("mirror.example")
         );
     }
