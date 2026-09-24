@@ -2110,12 +2110,18 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
     } else {
         paths.extend([
             ".config/mise/conf.d/*.toml",
+            ".config/mise/conf.d/*/mise.toml",
+            ".config/mise/conf.d/*/mise.local.toml",
             ".config/mise/config.toml",
             ".config/mise/mise.toml",
             ".config/mise.toml",
             ".mise/conf.d/*.toml",
+            ".mise/conf.d/*/mise.toml",
+            ".mise/conf.d/*/mise.local.toml",
             ".mise/config.toml",
             "mise/conf.d/*.toml",
+            "mise/conf.d/*/mise.toml",
+            "mise/conf.d/*/mise.local.toml",
             "mise/config.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
@@ -2146,6 +2152,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".config/mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
@@ -2153,6 +2160,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!("mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!("mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
@@ -2160,6 +2168,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!(".mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
@@ -2167,6 +2176,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".config/mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
@@ -2174,6 +2184,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!("mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!("mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
@@ -2181,6 +2192,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!(".mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
@@ -2270,6 +2282,9 @@ fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         .unwrap_or_default()
         .into_iter()
         .filter(|path| {
+            if path.parent().is_some_and(is_conf_d_file) {
+                return is_conf_d_folder_file(path);
+            }
             !is_conf_d_file(path)
                 || !path
                     .file_name()
@@ -2437,6 +2452,37 @@ fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
 fn is_conf_d_file(p: &Path) -> bool {
     p.parent()
         .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
+}
+
+/// A config file inside a `conf.d` folder fragment, such as `conf.d/git/mise.toml`
+/// or `conf.d/git/mise.linux.toml`. The folder is the file's config root, so
+/// fragments keep their own sources and helpers next to their config.
+///
+/// Only `conf.d` directories mise reads count: a project that merely lives at
+/// `nginx/conf.d/site/mise.toml` is an ordinary project.
+pub(crate) fn is_conf_d_folder_file(p: &Path) -> bool {
+    let is_mise_filename = p
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("mise.") && name.ends_with(".toml"));
+    let Some(folder) = p.parent() else {
+        return false;
+    };
+    if !is_mise_filename
+        || !is_conf_d_file(folder)
+        || folder
+            .file_name()
+            .is_none_or(|name| name.to_string_lossy().starts_with('.'))
+    {
+        return false;
+    }
+    folder.parent().and_then(Path::parent).is_some_and(|owner| {
+        owner
+            .file_name()
+            .is_some_and(|name| name == "mise" || name == ".mise")
+            || owner == *dirs::CONFIG
+            || owner == *dirs::SYSTEM_CONFIG
+    })
 }
 
 /// The config files in `dir` that config loading would actually read, with the same
@@ -3029,6 +3075,31 @@ pub(crate) fn config_files_with_incoming(
                 .cloned(),
         )
         .collect();
+    // Folder fragments (`conf.d/<name>/mise.toml`) are found by their folder, so an
+    // incoming batch can introduce one through any of its files.
+    let conf_folders: std::collections::BTreeSet<PathBuf> = conf_files
+        .iter()
+        .filter(|p| p.is_dir())
+        .cloned()
+        .chain(
+            incoming
+                .iter()
+                .filter_map(|p| p.parent())
+                .filter(|folder| folder.parent() == Some(&conf_dir))
+                .map(Path::to_path_buf),
+        )
+        .filter(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| !name.to_string_lossy().starts_with('.'))
+        })
+        .collect();
+    let conf_folder_files = |name: &str| {
+        conf_folders
+            .iter()
+            .map(|folder| folder.join(name))
+            .collect::<Vec<_>>()
+    };
     for p in &conf_files {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
@@ -3039,6 +3110,8 @@ pub(crate) fn config_files_with_incoming(
             files.insert(p.clone());
         }
     }
+    files.extend(conf_folder_files("mise.toml"));
+    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
@@ -3048,6 +3121,7 @@ pub(crate) fn config_files_with_incoming(
                 false,
             ));
         }
+        files.extend(conf_folder_files(&format!("mise.{environment}.toml")));
         files.extend([
             dir.join(format!("config.{environment}.toml")),
             dir.join(format!("mise.{environment}.toml")),
@@ -3062,6 +3136,7 @@ pub(crate) fn config_files_with_incoming(
                 true,
             ));
         }
+        files.extend(conf_folder_files(&format!("mise.{environment}.local.toml")));
         files.extend([
             dir.join(format!("config.{environment}.local.toml")),
             dir.join(format!("mise.{environment}.local.toml")),
@@ -7830,29 +7905,38 @@ mod tests {
             env_config_patterns_with_conf_d("linux", true),
             vec![
                 ".config/mise/conf.d/*.linux.toml",
+                ".config/mise/conf.d/*/mise.linux.toml",
                 ".config/mise/config.linux.toml",
                 ".config/mise.linux.toml",
                 "mise/conf.d/*.linux.toml",
+                "mise/conf.d/*/mise.linux.toml",
                 "mise/config.linux.toml",
                 "mise.linux.toml",
                 ".mise/conf.d/*.linux.toml",
+                ".mise/conf.d/*/mise.linux.toml",
                 ".mise/config.linux.toml",
                 ".mise.linux.toml",
                 ".config/mise/conf.d/*.linux.local.toml",
+                ".config/mise/conf.d/*/mise.linux.local.toml",
                 ".config/mise/config.linux.local.toml",
                 ".config/mise.linux.local.toml",
                 "mise/conf.d/*.linux.local.toml",
+                "mise/conf.d/*/mise.linux.local.toml",
                 "mise/config.linux.local.toml",
                 "mise.linux.local.toml",
                 ".mise/conf.d/*.linux.local.toml",
+                ".mise/conf.d/*/mise.linux.local.toml",
                 ".mise/config.linux.local.toml",
                 ".mise.linux.local.toml",
             ]
         );
+        // Folder fragments are new, so their environment files are never
+        // subject to the env_conf_d migration.
         assert!(
             env_config_patterns_with_conf_d("linux", false)
                 .iter()
-                .all(|pattern| !pattern.contains("conf.d"))
+                .filter(|pattern| pattern.contains("conf.d"))
+                .all(|pattern| pattern.contains("conf.d/*/mise."))
         );
     }
 

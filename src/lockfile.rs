@@ -1859,6 +1859,7 @@ impl PreparedWrite {
 /// - `.mise/config.toml` -> `.mise/mise.lock`
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
 /// - `mise/conf.d/foo.toml` -> `mise/mise.lock`
+/// - `mise/conf.d/foo/mise.toml` -> `mise/mise.lock` (so do conf.d folder fragments)
 pub(crate) fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
@@ -1881,6 +1882,8 @@ pub(crate) fn lockfile_path_for_config(
     // For conf.d files, place lockfile at parent of conf.d so all conf.d files share one lockfile
     let lockfile_dir = if parent_name == "conf.d" {
         parent.parent().unwrap_or(parent)
+    } else if crate::config::is_conf_d_folder_file(config_path) {
+        parent.parent().and_then(Path::parent).unwrap_or(parent)
     } else {
         parent
     };
@@ -6109,6 +6112,18 @@ options = { exe = "rg" }
             lockfile_path_for_config(Path::new("/foo/bar/mise/conf.d/foo.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/mise/mise.lock"));
         assert!(!is_local);
+
+        // conf.d folder fragments share the same lockfile as file fragments
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/mise/conf.d/git/mise.toml"), None);
+        assert_eq!(path, PathBuf::from("/foo/bar/mise/mise.lock"));
+        assert!(!is_local);
+        let (path, is_local) = lockfile_path_for_config(
+            Path::new("/foo/bar/.mise/conf.d/git/mise.linux.local.toml"),
+            None,
+        );
+        assert_eq!(path, PathBuf::from("/foo/bar/.mise/mise.linux.local.lock"));
+        assert!(is_local);
     }
 
     #[test]

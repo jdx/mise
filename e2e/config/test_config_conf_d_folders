@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# A folder inside conf.d is a config fragment with its own config root:
+# conf.d/<name>/mise.toml always loads, mise.<env>.toml loads with that env,
+# and relative paths resolve inside the folder.
+
+# Project folder fragments
+mkdir -p .mise/conf.d/git .mise/conf.d/.hidden
+cat >.mise/conf.d/01-file.toml <<'EOF'
+[env]
+FRAGMENT_ORDER = "file"
+EOF
+cat >.mise/conf.d/git/mise.toml <<'EOF'
+[env]
+FRAGMENT_ORDER = "folder"
+GIT_ROOT = "{{ config_root }}"
+
+[tasks.where]
+run = "pwd"
+EOF
+cat >.mise/conf.d/git/mise.dev.toml <<'EOF'
+[env]
+GIT_ENV = "dev"
+EOF
+cat >.mise/conf.d/.hidden/mise.toml <<'EOF'
+[env]
+HIDDEN_FOLDER = "unexpected"
+EOF
+
+assert_contains "mise config ls" ".mise/conf.d/git/mise.toml"
+assert_not_contains "mise config ls" ".mise/conf.d/git/mise.dev.toml"
+assert_not_contains "mise config ls" ".hidden"
+# folders load after single-file fragments
+assert_contains "mise env -s bash" "FRAGMENT_ORDER=folder"
+assert_contains "mise env -s bash" "GIT_ROOT=$PWD/.mise/conf.d/git"
+assert_not_contains "mise env -s bash" "GIT_ENV"
+assert_not_contains "mise env -s bash" "HIDDEN_FOLDER"
+assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
+
+# environment files inside a folder follow the usual rule
+assert_contains "MISE_ENV=dev mise config ls" ".mise/conf.d/git/mise.dev.toml"
+assert_contains "MISE_ENV=dev mise env -s bash" "GIT_ENV=dev"
+
+# the project's own config still has higher precedence than every fragment
+cat >.mise/config.toml <<'EOF'
+[env]
+FRAGMENT_ORDER = "config"
+EOF
+assert_contains "mise env -s bash" "FRAGMENT_ORDER=config"
+
+# Global folder fragments keep relative sources and config_root inside the folder,
+# including when the folder is a symlink into a dotfiles checkout.
+mkdir -p "$HOME/dotfiles/shell/zsh" "$MISE_CONFIG_DIR/conf.d/dev-git"
+echo "[user]" >"$MISE_CONFIG_DIR/conf.d/dev-git/gitconfig"
+cat >"$MISE_CONFIG_DIR/conf.d/dev-git/mise.toml" <<'EOF'
+[env]
+DEV_GIT_ROOT = "{{ config_root }}"
+
+[dotfiles]
+"~/.gitconfig" = "gitconfig"
+EOF
+echo "# zsh" >"$HOME/dotfiles/shell/zsh/zshrc"
+cat >"$HOME/dotfiles/shell/zsh/mise.dev.toml" <<'EOF'
+[dotfiles]
+"~/.zshrc" = "zshrc"
+EOF
+ln -s "$HOME/dotfiles/shell/zsh" "$MISE_CONFIG_DIR/conf.d/shell-zsh"
+
+assert_contains "mise env -s bash" "DEV_GIT_ROOT=$MISE_CONFIG_DIR/conf.d/dev-git"
+assert_contains "mise bootstrap --dry-run" "conf.d/dev-git/gitconfig"
+assert_not_contains "mise bootstrap --dry-run" "zshrc"
+assert_contains "MISE_ENV=dev mise bootstrap --dry-run" "shell-zsh/zshrc"
