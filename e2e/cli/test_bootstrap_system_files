@@ -338,4 +338,59 @@ EOF
   assert_succeed "mise bootstrap files apply --yes"
   assert_directory_not_exists "$linked_real/locked"
 fi
+
+# Directories follow the same rule. Creating one walks its path strictly as
+# any user, so status, dry-run, and apply all refuse the link.
+mkdir "$linked_real/tree" "$linked_real/tree/inner" "$linked_real/empty" "$PWD/escape"
+echo kept >"$PWD/escape/keep"
+echo inner >"$linked_real/tree/inner/file"
+ln -s "$PWD/escape" "$linked_real/tree/inner/escape"
+echo file >"$linked_real/was-file"
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/created"]
+owner = "$managed_owner"
+
+[bootstrap.directories."$linked/was-file"]
+replace = true
+EOF
+assert_contains "mise bootstrap plan" "crosses symlink $linked"
+assert_contains "mise bootstrap files apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap files apply --yes" "refusing to create directory $linked/created"
+assert_directory_not_exists "$linked_real/created"
+assert "cat $linked_real/was-file" "file"
+
+# A recursive removal runs as root, which refuses the link and leaves the
+# tree intact.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/tree"]
+state = "absent"
+recursive = true
+EOF
+assert_contains "mise bootstrap plan" "crosses symlink $linked"
+assert_fail "mise bootstrap files apply --yes" "refusing to remove directory $linked/tree"
+assert "cat $linked_real/tree/inner/file" "inner"
+
+# Declared by its resolved path, the tree is removed without following the
+# symlink inside it.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked_real/tree"]
+state = "absent"
+recursive = true
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_not_exists "$linked_real/tree"
+assert "cat $PWD/escape/keep" "kept"
+
+# A single rmdir the user can make still follows the link.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/empty"]
+state = "absent"
+EOF
+if [[ "$(id -u)" == 0 ]]; then
+  assert_fail "mise bootstrap files apply --yes" "refusing to remove directory $linked/empty"
+  assert_directory_exists "$linked_real/empty"
+else
+  assert_succeed "mise bootstrap files apply --yes"
+  assert_directory_not_exists "$linked_real/empty"
+fi
 chmod o-w "$PWD"

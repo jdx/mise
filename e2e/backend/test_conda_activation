@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 
 CHANNEL_ROOT="$TMPDIR/conda-channel"
-PORT_FILE="$TMPDIR/conda-channel-port"
 mkdir -p "$CHANNEL_ROOT"
 
-python3 - "$CHANNEL_ROOT" "$PORT_FILE" <<'PY' &
+# Builds the channel, then serves it
+start_http_server --dir "$CHANNEL_ROOT" --handler - <<'PY'
 import hashlib
-import http.server
 import io
 import json
-import socketserver
-import sys
 import tarfile
 from pathlib import Path
 
-root = Path(sys.argv[1])
-port_file = Path(sys.argv[2])
-subdir = root / "noarch"
+subdir = Path("noarch")
 subdir.mkdir(parents=True)
 
 
@@ -94,36 +89,17 @@ packages = dict([
 }))
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=root, **kwargs)
-
-    def log_message(self, *_args):
-        pass
-
-
-with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
-    port_file.write_text(str(server.server_address[1]))
-    server.serve_forever()
+Handler = TestHandler
 PY
-SERVER_PID=$!
-cleanup() {
-  kill "$SERVER_PID" 2>/dev/null || true
-  wait "$SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "conda channel port" 30 "$SERVER_PID"
-SERVER_PORT="$(cat "$PORT_FILE")"
 
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
 
 [tools]
-"conda:fixture-one" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
-"conda:fixture-two" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
-"conda:fixture-solo" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
+"conda:fixture-one" = { version = "1.0.0", channel = "http://127.0.0.1:$HTTP_PORT" }
+"conda:fixture-two" = { version = "1.0.0", channel = "http://127.0.0.1:$HTTP_PORT" }
+"conda:fixture-solo" = { version = "1.0.0", channel = "http://127.0.0.1:$HTTP_PORT" }
 EOF
 
 mise install
@@ -157,7 +133,7 @@ assert_fail "test -L '$one_prefix/.mise-bins/fixture-one'"
 # resolves against the link's own directory, and a launcher's path against the caller's cwd.
 mkdir -p relative-root
 (cd relative-root && MISE_DATA_DIR=reldata MISE_LOCKFILE=0 \
-  MISE_CONDA_CHANNEL="http://127.0.0.1:$SERVER_PORT" \
+  MISE_CONDA_CHANNEL="http://127.0.0.1:$HTTP_PORT" \
   mise install conda:fixture-solo@1.0.0 conda:fixture-one@1.0.0)
 rel_installs="$PWD/relative-root/reldata/installs"
 assert_succeed "test -e '$rel_installs/conda-fixture-solo/1.0.0/.mise-bins/fixture-solo'"

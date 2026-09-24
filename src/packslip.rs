@@ -114,10 +114,11 @@ fn github_repo(statement: &Statement) -> Option<String> {
 }
 
 /// Where to fetch a repository file at the release's commit, and with what
-/// headers, for the forges mise knows how to read. GitHub goes through the
-/// contents API, so a token applies to a private repository and a missing
-/// file is an error rather than a login page; GitLab's raw URL serves
-/// public repositories.
+/// headers, for the forges mise knows how to read. GitHub goes through its
+/// raw-content CDN rather than the contents API, whose rate limit is the
+/// first thing to fail for users without a token: a token still applies to a
+/// private repository there, and a missing file is a 404 rather than a login
+/// page. GitLab's raw URL serves public repositories.
 /// `Ok(None)` means the forge is one mise cannot read repository files from.
 /// An `Err` is a real failure — a malformed token, say — and must not be
 /// reported as an unsupported forge.
@@ -134,12 +135,8 @@ pub(crate) fn repo_file_request(
     let repo = source.repo.trim_end_matches('/').trim_end_matches(".git");
     let rel = url_path(rel);
     if let Some(path) = repo.strip_prefix("https://github.com/") {
-        let url = format!("https://api.github.com/repos/{path}/contents/{rel}?ref={commit}");
-        let mut headers = github::get_headers(&url)?;
-        headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_static("application/vnd.github.raw+json"),
-        );
+        let url = format!("https://raw.githubusercontent.com/{path}/{commit}/{rel}");
+        let headers = github::get_headers(&url)?;
         Ok(Some((url, headers)))
     } else {
         Ok(repo.strip_prefix("https://gitlab.com/").map(|path| {
@@ -2005,24 +2002,20 @@ mod tests {
         assert_eq!(
             repo_file_request(&s, "docs/a?b#c.md").unwrap().unwrap().0,
             format!(
-                "https://api.github.com/repos/o/r/contents/docs/a%3Fb%23c.md?ref={}",
+                "https://raw.githubusercontent.com/o/r/{}/docs/a%3Fb%23c.md",
                 "c".repeat(40)
             ),
             "a name cannot rewrite the query or fragment"
         );
-        let (url, headers) = repo_file_request(&s, "completions/t.fish")
-            .unwrap()
-            .unwrap();
         assert_eq!(
-            url,
+            repo_file_request(&s, "completions/t.fish")
+                .unwrap()
+                .unwrap()
+                .0,
             format!(
-                "https://api.github.com/repos/o/r/contents/completions/t.fish?ref={}",
+                "https://raw.githubusercontent.com/o/r/{}/completions/t.fish",
                 "c".repeat(40)
             )
-        );
-        assert_eq!(
-            headers.get(reqwest::header::ACCEPT).unwrap(),
-            "application/vnd.github.raw+json"
         );
         let mut gitlab = s.clone();
         gitlab.predicate.source.as_mut().unwrap().repo = "https://gitlab.com/g/p.git".into();

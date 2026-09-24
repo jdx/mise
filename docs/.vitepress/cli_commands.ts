@@ -23,6 +23,9 @@ export const commands: { [key: string]: Command } = {
       ls: {
         hide: false,
       },
+      switch: {
+        hide: false,
+      },
     },
   },
   "bin-paths": {

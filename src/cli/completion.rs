@@ -11,8 +11,10 @@ use strum::EnumString;
 /// spec first, preserving its path fallback marker, then leave only unsupported requests to the
 /// compiled usage-rs tables.
 pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
+    let argv = split_line_option(argv);
+    let argv = argv.as_slice();
     let request = usage_rs::complete::CompletionRequest::parse(argv)?;
-    if request.candidates_for.is_some() {
+    if request.candidates_for.is_some() || at_typed_completer(&request) {
         return Cli::completion_request(argv);
     }
 
@@ -20,6 +22,58 @@ pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
     complete_spec(&spec, &request)
         .ok()
         .or_else(|| Cli::completion_request(argv))
+}
+
+/// Whether the cursor is on a value a `#[usage(complete = …)]` function answers.
+///
+/// Those are compiled into the binary, so answer them from the compiled tables directly. The
+/// runtime spec only has the `run=` usage-rs writes for them, which calls back into mise for
+/// values alone — its answer drops the descriptions, so a value containing a colon cannot be
+/// misread as `value:description`.
+fn at_typed_completer(request: &usage_rs::complete::CompletionRequest) -> bool {
+    fn meta_for<'a>(
+        meta: &'a usage_rs::spec::CommandMeta<'a>,
+        cmd: &usage_rs::Command<'_>,
+    ) -> Option<&'a usage_rs::spec::CommandMeta<'a>> {
+        if std::ptr::eq(meta.cmd, cmd) {
+            return Some(meta);
+        }
+        meta.subcommands.iter().find_map(|sub| meta_for(sub, cmd))
+    }
+
+    let spec = Cli::spec();
+    let position = usage_rs::complete::walk(spec.root.cmd, request.split.argv());
+    let Some(meta) = meta_for(spec.root, position.cmd) else {
+        return false;
+    };
+    match (position.awaiting_value, position.next_arg) {
+        (Some(flag), _) => meta
+            .flags
+            .iter()
+            .any(|f| std::ptr::eq(f.flag, flag) && f.complete.is_some()),
+        (None, Some(arg)) => meta
+            .args
+            .iter()
+            .any(|a| std::ptr::eq(a.arg, arg) && a.complete.is_some()),
+        (None, None) => false,
+    }
+}
+
+/// Rewrite `--line=LINE` as `--line LINE`.
+///
+/// The `run=` usage-rs emits for a typed completer (`#[usage(complete = …)]`) passes the line as
+/// `--line={{ words | … }}`, but `CompletionRequest::parse` only reads `--line` followed by a
+/// separate word and skips the joined form. The completer would then see an empty line: no
+/// prefix, and none of its command's flags. Remove once usage-rs includes jdx/usage#1487.
+fn split_line_option(argv: &[OsString]) -> Vec<OsString> {
+    argv.iter()
+        .flat_map(
+            |arg| match arg.to_str().and_then(|a| a.strip_prefix("--line=")) {
+                Some(line) => vec![OsString::from("--line"), OsString::from(line)],
+                None => vec![arg.clone()],
+            },
+        )
+        .collect()
 }
 
 /// The same native protocol for a verified Packslip resource, without loading
@@ -371,6 +425,42 @@ mod shell_name_tests {
         // here would state something false. This pins that adding it renamed nothing.
         let listed: Vec<&str> = Shell::DETAILS.iter().map(|choice| choice.value).collect();
         assert_eq!(listed, ["bash", "fish", "powershell", "zsh"]);
+    }
+
+    #[test]
+    fn a_typed_completer_reads_the_joined_line_option() {
+        // The form the `run=` of a `#[usage(complete = …)]` field passes back.
+        let argv: Vec<OsString> = [
+            "__complete_word__",
+            "--candidates",
+            "key",
+            "--line=mise config set settings.pyth",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = completion_request(&argv).unwrap();
+        assert!(answer.lines().any(|l| l == "settings.python"), "{answer}");
+        assert!(!answer.contains("settings.jobs"), "{answer}");
+    }
+
+    #[test]
+    fn a_typed_completer_keeps_its_descriptions() {
+        let argv: Vec<OsString> = [
+            "__complete_word__",
+            "--shell",
+            "fish",
+            "--line",
+            "mise config get tools.node.v",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = completion_request(&argv).unwrap();
+        assert!(
+            answer.contains("tools.node.version\tversion of the tool to install\n"),
+            "{answer}"
+        );
     }
 
     #[test]

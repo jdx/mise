@@ -157,6 +157,9 @@ List built\-in backends
 \fIAliases: \fRlist
 .RE
 .TP
+\fBbackends switch\fR
+Switch tools to the backend the registry now installs them from
+.TP
 \fBbin\-paths\fR
 List all the active runtime bin paths
 .TP
@@ -1317,6 +1320,52 @@ Installed plugin availability and built\-in backends are separate lists
 .RS 4
 mise backends ls
 mise plugins ls
+.RE
+.SH "MISE BACKENDS SWITCH"
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `\-\-global`.
+.PP
+\fBUsage:\fR mise backends switch [OPTIONS] [<TOOL@VERSION>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would switch without changing the lockfile or installs
+.TP
+\fB\-g, \-\-global\fR
+Switch tools in the global config's lockfile instead of the project's
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL@VERSION>\fR
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
+\fBExamples:\fR
+.PP
+Move communique to the registry's current backend
+.PP
+.RS 4
+mise backends switch communique
+.RE
+.PP
+List every locked tool the registry now installs from another backend
+.PP
+.RS 4
+mise backends switch \-\-dry\-run
 .RE
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths
@@ -6122,6 +6171,8 @@ re\-resolved against the latest matching remote versions, so the lockfile
 advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade \-\-bump` to rewrite pins in mise.toml).
+If the remote versions cannot be fetched, it fails rather than keep
+the locked version.
 .TP
 \fB\-\-json\fR
 Output version changes as JSON
@@ -7660,6 +7711,11 @@ Search for available tools
 
 Searches the registry and installed backend catalogs for tools matching NAME.
 
+Prefix NAME with a backend to also search that backend's package registry:
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `\-\-all` to search every backend,
+including all of those package registries. Otherwise, unprefixed searches do
+not query package registries.
+
 By default, it will show all tools that fuzzy match the search term. For
 non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
@@ -7667,6 +7723,9 @@ non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-a, \-\-all\fR
+Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries
 .TP
 \fB\-i, \-\-interactive\fR
 Show an interactive search menu
@@ -7703,6 +7762,13 @@ jq    Command\-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq \- interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+.RE
+.PP
+.PP
+.RS 4
+mise search \-\-match\-type equal npm:typescript\-language\-server
+Tool                            Description
+npm:typescript\-language\-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 .RE
 .PP
 .PP

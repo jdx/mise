@@ -452,6 +452,31 @@ mise backends ls
 mise plugins ls
 """# help="Installed plugin availability and built-in backends are separate lists"
     }
+    cmd switch help="Switch tools to the backend the registry now installs them from" effect=write {
+        long_help #"""
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `--global`.
+"""#
+        flag "-n --dry-run" help="Show what would switch without changing the lockfile or installs"
+        flag "-g --global" help="Switch tools in the global config's lockfile instead of the project's"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL@VERSION]…" help="Tools to switch" help_long=#"""
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
+"""# required=#false var=#true
+        example "mise backends switch communique" help="Move communique to the registry's current backend"
+        example "mise backends switch --dry-run" help="List every locked tool the registry now installs from another backend"
+    }
 }
 cmd bin-paths help="List all the active runtime bin paths" effect=read {
     flag --bin-names help="Output executable names instead of bin directories"
@@ -2150,6 +2175,7 @@ mise config get tools.python
 3.12
 """#
         complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
     }
     cmd ls help="List config files currently in use" effect=read {
         alias list
@@ -2224,6 +2250,7 @@ mise config set --remove env._.path ~/.local/bin
 """#
         example "mise config set settings.jobs 4" help="Type for `settings` is inferred"
         complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
     }
 }
 cmd current hide=#true help="Shows current active and installed runtime versions" effect=read {
@@ -3982,6 +4009,8 @@ re-resolved against the latest matching remote versions, so the lockfile
 advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
+If the remote versions cannot be fetched, it fails rather than keep
+the locked version.
 """#
     }
     flag --json help="Output version changes as JSON" {
@@ -5097,9 +5126,15 @@ Search for available tools
 
 Searches the registry and installed backend catalogs for tools matching NAME.
 
+Prefix NAME with a backend to also search that backend's package registry:
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
+including all of those package registries. Otherwise, unprefixed searches do
+not query package registries.
+
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
 """#
+    flag "-a --all" help="Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries"
     flag "-i --interactive" help="Show an interactive search menu" {
         conflicts "--match-type" "--no-header"
     }
@@ -5126,6 +5161,11 @@ jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+"""#
+    example #"""
+mise search --match-type equal npm:typescript-language-server
+Tool                            Description
+npm:typescript-language-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 """#
     example #"""
 mise search --interactive
