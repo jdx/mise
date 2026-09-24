@@ -3313,15 +3313,28 @@ fn linked_source_rel(req: &FileRequest, link: &Path, rel: &Path, dest: &Path) ->
     if !req.dot_prefix {
         return Some(rel.to_path_buf());
     }
-    let dest = match link.parent() {
-        Some(parent) if dest.is_relative() => parent.join(dest),
-        _ => dest.to_path_buf(),
-    };
-    let source_rel = lexical_normalize(&dest)
+    let source_rel = resolved_link_dest(link, dest)
         .strip_prefix(lexical_normalize(&req.source))
         .ok()?
         .to_path_buf();
     (target_rel(req, &source_rel) == rel).then_some(source_rel)
+}
+
+/// Where a link's destination points, with a relative destination (from
+/// `relative` or `dotfiles.relative_symlinks`) resolved against the link's
+/// directory, lexically like the destination itself.
+fn resolved_link_dest(link: &Path, dest: &Path) -> PathBuf {
+    match link.parent() {
+        Some(parent) if dest.is_relative() => lexical_normalize(&parent.join(dest)),
+        _ => lexical_normalize(dest),
+    }
+}
+
+/// Whether a link reads as pointing at `expected`, absolutely or relatively.
+/// Compared as paths, so the `.` in a source like `/dotfiles/.` doesn't have
+/// to match character for character, and a dangling link still counts.
+fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
+    dest == expected || resolved_link_dest(link, dest) == lexical_normalize(expected)
 }
 
 /// Legacy ownership discovery for installations that predate persistent
@@ -3359,9 +3372,9 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
             continue;
         };
         let expected = req.source.join(&source_rel);
-        // `dest` is compared as a path, so the `.` in a source like
-        // `/dotfiles/.` doesn't have to match character for character
-        if dest == expected && (!expected.exists() || is_excluded(&source_rel, &req.exclude)) {
+        if link_points_at(entry.path(), &dest, &expected)
+            && (!expected.exists() || is_excluded(&source_rel, &req.exclude))
+        {
             out.push(entry.path().to_path_buf());
         }
     }
@@ -4618,7 +4631,9 @@ fn legacy_owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
             continue;
         }
         let expected = req.source.join(&source_rel);
-        if dest == expected || points_at_same_file(entry.path(), &expected) {
+        if link_points_at(entry.path(), &dest, &expected)
+            || points_at_same_file(entry.path(), &expected)
+        {
             out.push(entry.path().to_path_buf());
         }
     }
@@ -7963,6 +7978,38 @@ source = "oldrc""#,
         assert!(err.contains("to be a directory"), "{err}");
         // builds that skip apply's footprint validation still check it
         assert!(dot_prefix_files(&req).is_err());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_cleanup_recognizes_relative_links() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        let target = dir.path().join("home");
+        file::create_dir_all(source.join("dot-config"))?;
+        file::create_dir_all(target.join(".config"))?;
+        file::write(source.join("kept"), "")?;
+        let plain = target.join("gone");
+        let dotted = target.join(".config/gone");
+        let kept = target.join("kept");
+        // dangling: their sources were removed before any state was recorded
+        file::make_symlink(&relative_link_path(&source.join("gone"), &plain), &plain)?;
+        file::make_symlink(
+            &relative_link_path(&source.join("dot-config/gone"), &dotted),
+            &dotted,
+        )?;
+        file::make_symlink(&relative_link_path(&source.join("kept"), &kept), &kept)?;
+        assert!(std::fs::read_link(&plain)?.is_relative());
+
+        let mut req = link_req(&source, &target, FileMode::SymlinkEach);
+        req.relative = true;
+        assert_eq!(legacy_stale_links(&req)?, vec![plain.clone()]);
+        assert_eq!(legacy_owned_links(&req)?, vec![plain.clone(), kept.clone()]);
+
+        req.dot_prefix = true;
+        assert_eq!(legacy_stale_links(&req)?, vec![dotted.clone(), plain.clone()]);
+        assert_eq!(legacy_owned_links(&req)?, vec![dotted, plain, kept]);
         Ok(())
     }
 
