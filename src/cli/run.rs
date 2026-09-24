@@ -1088,7 +1088,7 @@ impl Run {
                 {
                     return Ok(());
                 }
-                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                this.fail_sched_job_before_start(&ctx.config, task, deps_for_remove, err)
                     .await;
                 return Ok(());
             }
@@ -1282,6 +1282,7 @@ impl Run {
     /// an execution failure, then release its dependency graph entry.
     async fn fail_sched_job_before_start(
         &self,
+        config: &Config,
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         err: eyre::Report,
@@ -1300,6 +1301,14 @@ impl Run {
             crate::cmd::CmdLineRunner::kill_all();
         }
         self.retire_keep_order_slot(&task);
+        // The task never started, but its failure is what stopped the run, so
+        // it still gets a span; otherwise the trace's only error is the root.
+        if let Some(t) = &self.telemetry {
+            let args: Vec<String> = task.args.iter().map(|a| config.redact(a)).collect();
+            let span = t.start_task(&task, &args, config.project_root.as_ref());
+            let end_time = std::time::SystemTime::now();
+            t.end_task(span, &task, &args, end_time, &Err(err), false);
+        }
         let mut deps = deps_for_remove.lock().await;
         deps.mark_executed(&task);
         deps.remove(&task);
