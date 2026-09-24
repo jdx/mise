@@ -991,6 +991,10 @@ fn build_dotfiles_layer(
             );
         }
 
+        if req.dot_prefix {
+            crate::system::files::validate_dot_prefix(req)?;
+        }
+
         match req.mode {
             // a tracked file lives on the machine that tracks it, and a
             // permissions-only entry adjusts a file the image does not

@@ -4384,7 +4384,7 @@
               "dot_prefix": {
                 "type": "boolean",
                 "default": false,
-                "description": "symlink-each and copy modes only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
+                "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
               },
               "permissions": {
                 "type": "string",

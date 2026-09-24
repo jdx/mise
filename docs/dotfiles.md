@@ -613,7 +613,7 @@ unchanged:
 `exclude` and `manifest = "git"` still work with source names, such as
 `dot-bashrc`. If two source paths deploy to the same target, such as
 `dot-bashrc` and `.bashrc`, apply fails and reports both paths. `dot_prefix`
-requires `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
+requires a directory source and `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
 a `dot_prefix` entry because it would copy target names into the source; edit
 the source directly instead.
 

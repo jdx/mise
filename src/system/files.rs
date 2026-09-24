@@ -700,6 +700,9 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
                 request.source.display_user()
             );
         }
+        if request.dot_prefix && request.source.exists() && !request.source.is_dir() {
+            return Err(dot_prefix_file_source(request));
+        }
         if request.mode == FileMode::SymlinkEach
             && let Some(existing) = symlink_each_identities.insert(
                 (request.source.as_path(), request.target.as_path()),
@@ -3329,6 +3332,26 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
         check_dot_prefix_collisions(req, &files)?;
     }
     Ok(files)
+}
+
+/// Checks a `dot_prefix` entry outside apply, which validates it with the
+/// rest of the composed footprint: the source must be a directory, and no
+/// two of its paths may deploy to the same place.
+pub(crate) fn validate_dot_prefix(req: &FileRequest) -> Result<()> {
+    if !req.source.is_dir() {
+        return Err(dot_prefix_file_source(req));
+    }
+    walk_source_files(req).map(|_| ())
+}
+
+/// `dot_prefix` renames paths inside a directory; a single file keeps the
+/// target its entry names, so the option would silently do nothing.
+fn dot_prefix_file_source(req: &FileRequest) -> eyre::Report {
+    eyre::eyre!(
+        "[dotfiles].\"{}\": dot_prefix requires the source to be a directory: {}",
+        req.target_raw,
+        req.source.display_user()
+    )
 }
 
 /// The path under an entry's target that a source-relative path deploys to.
@@ -7578,6 +7601,26 @@ source = "oldrc""#,
         file::write(source.join(".config"), "")?;
         let err = walk_source_files(&req).unwrap_err().to_string();
         assert!(err.contains("to be a directory"), "{err}");
+        // builds that skip apply's footprint validation still check it
+        assert!(validate_dot_prefix(&req).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn dot_prefix_requires_a_directory_source() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dot-bashrc");
+        file::write(&source, "")?;
+        let mut req = link_req(&source, &dir.path().join(".bashrc"), FileMode::Copy);
+        req.dot_prefix = true;
+        let err = validate_composed_file_footprints(std::slice::from_ref(&req))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("dot_prefix requires the source to be a directory"),
+            "{err}"
+        );
+        assert!(validate_dot_prefix(&req).is_err());
         Ok(())
     }
 
