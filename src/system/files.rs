@@ -3318,10 +3318,13 @@ fn linked_source_rel(req: &FileRequest, link: &Path, rel: &Path, dest: &Path) ->
     let (dest, source) = if dest.is_absolute() {
         (lexical_normalize(dest), lexical_normalize(&req.source))
     } else {
-        (
-            resolve_relative_link(link, dest)?,
-            physical_path(&req.source),
-        )
+        // the source directory itself may be a symlink, which a link
+        // resolved physically has already stepped through
+        let source = req
+            .source
+            .canonicalize()
+            .unwrap_or_else(|_| physical_path(&req.source));
+        (resolve_relative_link(link, dest)?, source)
     };
     let source_rel = dest.strip_prefix(source).ok()?.to_path_buf();
     (target_rel(req, &source_rel) == rel).then_some(source_rel)
@@ -8018,6 +8021,19 @@ source = "oldrc""#,
             vec![dotted.clone(), plain.clone()]
         );
         assert_eq!(legacy_owned_links(&req)?, vec![dotted, plain, kept]);
+
+        // a source directory reached through a symlink: links resolve to
+        // where it really is, so the source root is compared canonically
+        let alias = dir.path().join("alias");
+        file::make_symlink(&source, &alias)?;
+        let aliased = target.join(".config/aliased");
+        file::make_symlink(
+            &relative_link_path(&alias.join("dot-config/aliased"), &aliased),
+            &aliased,
+        )?;
+        req.source = alias;
+        assert!(legacy_stale_links(&req)?.contains(&aliased));
+        assert!(legacy_owned_links(&req)?.contains(&aliased));
         Ok(())
     }
 
