@@ -1131,6 +1131,7 @@ mod tests {
             browser_download_url: "https://github.com/example/demo/releases/download/v1.2.3/demo-x86_64-unknown-linux-gnu.tar.gz".to_string(),
             url: "https://api.github.com/repos/example/demo/releases/assets/1".to_string(),
             digest: None,
+            updated_at: None,
         }];
 
         let discovered =

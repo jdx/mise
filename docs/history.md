@@ -213,12 +213,21 @@ loads these commands from system and global configuration before starting
 the operation. See [recovery details](#recovery-details) for interrupted
 writes and concurrent edits.
 
-The same commands run after `mise dot apply` writes a matching target: a
-symlink or copy it creates, a template it renders, or an edit it applies.
-A dry run writes nothing and reloads nothing, and `mise dot sync` never
-writes live files, so it runs no reload commands either. A glob under a
+The same commands run after `mise dot apply` or the dotfiles phase of
+`mise bootstrap` writes a matching target: a symlink or copy it creates, a
+template it renders, or an edit it applies. A bootstrap run that skips the
+dotfiles phase reloads nothing. A dry run writes nothing and reloads
+nothing, and `mise dot sync` never writes live files, so it runs no reload
+commands either. A glob under a
 directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
 a `"~/.config/hypr" = "dotfiles/hypr"` entry.
+
+Reload commands react to file changes; they are not a place for machine
+setup. Because they are read before the restore, commands that arrive in the
+same update, including the first `mise bootstrap --adopt`, do not run for it.
+Put setup steps such as installing shell plugins or fixing permissions in
+[`[tasks.bootstrap]`](/bootstrap.html#what-goes-where), which runs on
+adoption and on each `mise bootstrap` after a shared update.
 
 ## Sharing across machines
 
@@ -414,8 +423,11 @@ in Git rather than being restored as live configuration.
 fetches it into the history store. It restores the shared configuration
 first, then the tracked files it selects for this machine, and remembers
 the origin. Once conflicts are resolved, it runs bootstrap to install
-packages, tools, and services and render templates. The configuration and
-required sources must have been tracked and shared for those steps to work.
+packages, tools, and services, render templates, and run the shared
+`bootstrap` task. The configuration and required sources must have been
+tracked and shared for those steps to work. Later pulls restore files
+without running setup; run `mise bootstrap` to apply a shared update, which
+runs the task again.
 See [repository bootstrap](/bootstrap.html#starting-from-a-repository) for
 how this differs from cloning a global configuration repository.
 

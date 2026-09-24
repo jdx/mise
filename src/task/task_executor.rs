@@ -66,6 +66,8 @@ pub(crate) struct TaskRunContext<'a> {
     pub(crate) semaphore: Arc<Semaphore>,
     pub(crate) permit: &'a mut Option<OwnedSemaphorePermit>,
     pub(crate) allow_during_interruption: bool,
+    /// Context of this task's live OpenTelemetry span, when trace export is on.
+    pub(crate) otel_span_cx: Option<opentelemetry::trace::SpanContext>,
 }
 
 #[derive(Clone, Copy)]
@@ -76,6 +78,9 @@ struct TaskExecContext<'a> {
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
     allow_during_interruption: bool,
+    /// Context of this task's live OpenTelemetry span, used to correlate
+    /// exported log records with the task that produced them.
+    otel_span_cx: Option<&'a opentelemetry::trace::SpanContext>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -276,6 +281,15 @@ fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> 
     }
 }
 
+/// Push a failure onto `failed`, returning whether an earlier one was already
+/// there. See [`TaskExecutor::add_failed_task`].
+fn record_failed_task(failed: &FailedTasks, task: Task, status: Option<i32>) -> bool {
+    let mut failed = failed.lock().unwrap();
+    let was_stopping = !failed.is_empty();
+    failed.push((task, status.or(Some(1))));
+    was_stopping
+}
+
 /// Configuration for TaskExecutor
 pub(crate) struct TaskExecutorConfig {
     pub force: bool,
@@ -314,6 +328,8 @@ pub(crate) struct TaskExecutor {
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
+    /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
+    pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -366,6 +382,7 @@ impl TaskExecutor {
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
             sandbox: config.sandbox,
+            output_forwarder: None,
         }
     }
 
@@ -388,9 +405,15 @@ impl TaskExecutor {
         Ok(())
     }
 
-    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) {
-        let mut failed = self.failed_tasks.lock().unwrap();
-        failed.push((task, status.or(Some(1))));
+    /// Record a failed task, returning whether the run was already stopping
+    /// because an earlier task had failed.
+    ///
+    /// Unless `continue_on_error` is set, the first failure SIGTERMs every
+    /// sibling, so a later failure is almost always collateral damage. The
+    /// check and the push share one lock so two tasks failing at the same
+    /// time can't both see an empty list and both claim to be the cause.
+    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
+        record_failed_task(&self.failed_tasks, task, status)
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
@@ -502,6 +525,7 @@ impl TaskExecutor {
             semaphore,
             permit,
             allow_during_interruption,
+            otel_span_cx,
         } = ctx;
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -533,7 +557,9 @@ impl TaskExecutor {
             env_remove,
             task_env,
             extra_vars,
-        } = self.prepare_task_context(config, task).await?;
+        } = self
+            .prepare_task_context(config, task, otel_span_cx.as_ref())
+            .await?;
         let task_file = self
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
@@ -703,6 +729,7 @@ impl TaskExecutor {
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
             allow_during_interruption,
+            otel_span_cx: otel_span_cx.as_ref(),
         };
 
         let timer = std::time::Instant::now();
@@ -1564,6 +1591,7 @@ impl TaskExecutor {
             prefix,
             output_capture,
             allow_during_interruption,
+            otel_span_cx,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1655,6 +1683,43 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
+
+        // Only tee output into the OTLP log pipeline when this process will
+        // actually capture it. Under `raw` the child gets the terminal
+        // directly and a fully silenced task discards both streams, so the
+        // observers would never fire — and the claim path would then invite a
+        // nested `mise run` to take over a stream nobody is reading.
+        let forwards_output =
+            self.output_forwarder.is_some() && !raw && !task.silent.suppresses_both();
+        // Holds the claim directory for the lifetime of the command; dropping
+        // it cleans up. See `otel::log_claim` for the hand-off protocol.
+        // Failing to create it only costs the nested-run hand-off, which is no
+        // reason to fail the task: nested output is then exported twice.
+        let otel_claim_dir = forwards_output
+            .then(|| {
+                tempfile::tempdir()
+                    .inspect_err(|err| debug!("otel: failed to create log claim dir: {err}"))
+                    .ok()
+            })
+            .flatten();
+        if forwards_output {
+            let redacted_args: Vec<String> = task.args.iter().map(|a| config.redact(a)).collect();
+            cmd = crate::otel::TaskOutputForwarder::attach_hooks(
+                self.output_forwarder.as_ref(),
+                &task.name,
+                &redacted_args,
+                otel_span_cx,
+                otel_claim_dir
+                    .as_ref()
+                    .map(|dir| crate::otel::LogClaimWatcher::new(dir.path().to_path_buf())),
+                crate::otel::ExportStreams {
+                    stdout: !task.silent.suppresses_stdout(),
+                    stderr: !task.silent.suppresses_stderr(),
+                },
+                cmd,
+            );
+        }
+
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
@@ -1788,15 +1853,18 @@ impl TaskExecutor {
                         cmd = cmd.with_on_stderr(|_| {});
                     }
                 } else if raw || redactions.is_empty() {
-                    if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
-                    } else {
+                    // Inheriting stdio hands the child the terminal directly,
+                    // which would bypass the observer that tees lines to the
+                    // collector — keep the pipe when log export is active.
+                    if task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::null());
+                    } else if !cmd.has_stdout_observer() {
+                        cmd = cmd.stdout(Stdio::inherit());
                     }
-                    if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
-                    } else {
+                    if task.silent.suppresses_stderr() {
                         cmd = cmd.stderr(Stdio::null());
+                    } else if !cmd.has_stderr_observer() {
+                        cmd = cmd.stderr(Stdio::inherit());
                     }
                 }
             }
@@ -2102,6 +2170,7 @@ impl TaskExecutor {
         &self,
         config: &Arc<Config>,
         task: &Task,
+        otel_span_cx: Option<&opentelemetry::trace::SpanContext>,
     ) -> Result<PreparedTaskContext> {
         let mut tools = self.tool.clone();
         tools.extend(task.tool_args()?);
@@ -2166,6 +2235,31 @@ impl TaskExecutor {
                 "MISE_ENV",
                 crate::env::MISE_ENV.join(","),
             );
+        }
+        if let Some(span_cx) = otel_span_cx {
+            // Propagate trace context via the W3C env-carriers spec so
+            // nested `mise run` and any OTEL-instrumented tools the task
+            // invokes automatically join this distributed trace.
+            // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
+            let mut carrier = BTreeMap::new();
+            crate::otel::task_run_telemetry::inject_otel_context(&mut carrier, span_cx);
+            // A TRACESTATE inherited from an upstream trace belongs to that
+            // trace's span, not this one, so don't pass it on alongside the
+            // new TRACEPARENT.
+            if !carrier.contains_key("TRACESTATE") {
+                env.remove("TRACESTATE");
+                env_remove.insert("TRACESTATE".to_string());
+            }
+            for (key, value) in carrier {
+                // Kept out of __MISE_DIFF so a nested `mise hook-env` doesn't
+                // treat them as mise-managed env and unset the trace context.
+                Self::insert_env_excluded_from_nested_mise_diff(
+                    &mut env,
+                    &mut nested_mise_diff_exclude_keys,
+                    &key,
+                    value,
+                );
+            }
         }
         if let Some(cwd) = &*crate::dirs::CWD {
             Self::insert_env_excluded_from_nested_mise_diff(
@@ -2542,6 +2636,19 @@ mod tests {
         assert_eq!(
             task_env_path(Path::new(r"/tmp/tasks\build")),
             r"/tmp/tasks\build"
+        );
+    }
+
+    #[test]
+    fn record_failed_task_reports_only_the_first_failure_as_the_cause() {
+        let failed = FailedTasks::default();
+        assert!(!record_failed_task(&failed, Task::default(), Some(2)));
+        assert!(record_failed_task(&failed, Task::default(), None));
+        let failed = failed.lock().unwrap();
+        // A failure without an exit status is still recorded as a failure.
+        assert_eq!(
+            failed.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+            [Some(2), Some(1)]
         );
     }
 

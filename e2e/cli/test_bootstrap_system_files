@@ -261,3 +261,136 @@ recursive = true
 EOF
 assert_succeed "mise bootstrap files apply --yes"
 assert_directory_not_exists "$managed_dir"
+
+# Changes made as root never follow a parent symlink in a directory another
+# user can write; changes made as the invoking user still follow it. CI runs
+# this as root in a root-owned directory, which root trusts, so make the
+# symlink's directory writable by others.
+chmod o+w "$PWD"
+linked_real="$PWD/linked-real"
+linked="$PWD/linked"
+mkdir "$linked_real"
+ln -s "$linked_real" "$linked"
+cat <<EOF >mise.toml
+[bootstrap.files."$linked/owned.conf"]
+content = "owned"
+owner = "$managed_owner"
+EOF
+assert_contains "mise bootstrap plan" "crosses symlink $linked"
+assert_contains "mise bootstrap files apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap files apply --yes" "refusing to write file $linked/owned.conf"
+assert_fail "test -e $linked_real/owned.conf"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$linked/owned.conf"]
+content = "owned"
+EOF
+if [[ "$(id -u)" == 0 ]]; then
+  # As root, every change is made as root.
+  assert_fail "mise bootstrap files apply --yes" "refusing to write file $linked/owned.conf"
+  echo owned >"$linked_real/owned.conf"
+else
+  assert_succeed "mise bootstrap files apply --yes"
+fi
+assert "cat $linked_real/owned.conf" "owned"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$linked/owned.conf"]
+state = "absent"
+EOF
+if [[ "$(id -u)" == 0 ]]; then
+  assert_contains "mise bootstrap plan" "crosses symlink $linked"
+  assert_fail "mise bootstrap files apply --yes" "refusing to remove file $linked/owned.conf"
+  assert "cat $linked_real/owned.conf" "owned"
+else
+  # A removal the user cannot make runs as root, which refuses the link too.
+  chmod 0555 "$linked_real"
+  assert_contains "mise bootstrap plan" "crosses symlink $linked"
+  assert_fail "mise bootstrap files apply --yes" "refusing to remove file $linked/owned.conf"
+  chmod 0755 "$linked_real"
+  assert "cat $linked_real/owned.conf" "owned"
+  assert_succeed "mise bootstrap files apply --yes"
+  assert_fail "test -e $linked_real/owned.conf"
+
+  # A path only root can inspect is inspected without following the link.
+  sudo mkdir -m 0700 "$linked_real/locked"
+  sudo sh -c "echo secret >'$linked_real/locked/root.conf'"
+  cat <<EOF >mise.toml
+[bootstrap.files."$linked/locked/root.conf"]
+content = "secret"
+EOF
+  assert_contains "mise bootstrap plan" "crosses symlink $linked"
+  assert_fail "mise bootstrap files apply --yes" "refusing to write file"
+  cat <<EOF >mise.toml
+[bootstrap.files."$linked_real/locked/root.conf"]
+content = "replaced"
+EOF
+  assert_succeed "mise bootstrap files apply --yes"
+  assert "sudo cat $linked_real/locked/root.conf" "replaced"
+  # Only root can remove these, which it does relative to the resolved path.
+  cat <<EOF >mise.toml
+[bootstrap.files."$linked_real/locked/root.conf"]
+state = "absent"
+
+[bootstrap.directories."$linked_real/locked"]
+state = "absent"
+EOF
+  assert_succeed "mise bootstrap files apply --yes"
+  assert_directory_not_exists "$linked_real/locked"
+fi
+
+# Directories follow the same rule. Creating one walks its path strictly as
+# any user, so status, dry-run, and apply all refuse the link.
+mkdir "$linked_real/tree" "$linked_real/tree/inner" "$linked_real/empty" "$PWD/escape"
+echo kept >"$PWD/escape/keep"
+echo inner >"$linked_real/tree/inner/file"
+ln -s "$PWD/escape" "$linked_real/tree/inner/escape"
+echo file >"$linked_real/was-file"
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/created"]
+owner = "$managed_owner"
+
+[bootstrap.directories."$linked/was-file"]
+replace = true
+EOF
+assert_contains "mise bootstrap plan" "crosses symlink $linked"
+assert_contains "mise bootstrap files apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap files apply --yes" "refusing to create directory $linked/created"
+assert_directory_not_exists "$linked_real/created"
+assert "cat $linked_real/was-file" "file"
+
+# A recursive removal runs as root, which refuses the link and leaves the
+# tree intact.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/tree"]
+state = "absent"
+recursive = true
+EOF
+assert_contains "mise bootstrap plan" "crosses symlink $linked"
+assert_fail "mise bootstrap files apply --yes" "refusing to remove directory $linked/tree"
+assert "cat $linked_real/tree/inner/file" "inner"
+
+# Declared by its resolved path, the tree is removed without following the
+# symlink inside it.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked_real/tree"]
+state = "absent"
+recursive = true
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_not_exists "$linked_real/tree"
+assert "cat $PWD/escape/keep" "kept"
+
+# A single rmdir the user can make still follows the link.
+cat <<EOF >mise.toml
+[bootstrap.directories."$linked/empty"]
+state = "absent"
+EOF
+if [[ "$(id -u)" == 0 ]]; then
+  assert_fail "mise bootstrap files apply --yes" "refusing to remove directory $linked/empty"
+  assert_directory_exists "$linked_real/empty"
+else
+  assert_succeed "mise bootstrap files apply --yes"
+  assert_directory_not_exists "$linked_real/empty"
+fi
+chmod o-w "$PWD"

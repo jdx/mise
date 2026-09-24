@@ -2,6 +2,8 @@ binary = "postgres"
 data_version_file = "PG_VERSION"
 description = "PostgreSQL database"
 port = 5432
+# initdb and postgres exit immediately when run as root.
+refuses_root = true
 tool = "postgres"
 
 [version]

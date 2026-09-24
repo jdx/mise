@@ -23,6 +23,8 @@ mod test;
 #[cfg(test)]
 #[path = "../build/lockfile_rollout.rs"]
 mod lockfile_rollout;
+#[path = "../build/registry_url.rs"]
+mod registry_url;
 
 #[macro_use]
 mod output;
@@ -32,6 +34,8 @@ mod hint;
 
 #[macro_use]
 mod timings;
+
+mod otel;
 
 #[macro_use]
 mod cmd;

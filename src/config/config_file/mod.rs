@@ -149,6 +149,9 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         IndexMap::new()
     }
 
+    fn daemon_providers(&self) -> IndexMap<String, ::toml::Table> {
+        Default::default()
+    }
     fn daemon_settings(&self) -> Option<crate::daemons::DaemonSettings> {
         None
     }

@@ -7,7 +7,7 @@
   "$defs": {
     "backendFull": {
       "type": "string",
-      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|packslip|pipx|pkgx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|packslip|pipx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
     "optionValue": {
       "description": "Backend option value.",
@@ -232,6 +232,11 @@
       "required": ["cmd", "expected"],
       "unevaluatedProperties": false,
       "description": "Command to test the tool installation"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https?://[^{}\\s]+$",
+      "description": "Project homepage or repository, shown by `mise tool` and linked from the registry page. Set it when the URL inferred from the first backend is missing or wrong"
     },
     "version_order": {
       "type": "string",

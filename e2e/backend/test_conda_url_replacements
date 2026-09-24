@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
 
 CHANNEL_ROOT="$TMPDIR/conda-mirror"
-PORT_FILE="$TMPDIR/conda-mirror-port"
 REQUEST_LOG="$TMPDIR/conda-mirror-requests"
 mkdir -p "$CHANNEL_ROOT/mirror/noarch"
 
-python3 - "$CHANNEL_ROOT" "$PORT_FILE" "$REQUEST_LOG" <<'PY' &
+start_http_server --dir "$CHANNEL_ROOT" --handler - "$REQUEST_LOG" <<'PY'
 import hashlib
-import http.server
 import io
 import json
-import socketserver
 import sys
 import tarfile
 from pathlib import Path
 
-root = Path(sys.argv[1])
-port_file = Path(sys.argv[2])
-request_log = Path(sys.argv[3])
-subdir = root / "mirror" / "noarch"
+request_log = Path(sys.argv[1])
+subdir = Path("mirror") / "noarch"
 
 name = "url-replacement-fixture"
 version = "1.0.0"
@@ -68,34 +63,14 @@ package = {
 }))
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=root, **kwargs)
-
+class Handler(TestHandler):
     def do_GET(self):
         with request_log.open("a") as log:
             log.write(self.path + "\n")
         super().do_GET()
-
-    def log_message(self, *_args):
-        pass
-
-
-with socketserver.TCPServer(("127.0.0.1", 0), Handler) as server:
-    port_file.write_text(str(server.server_address[1]))
-    server.serve_forever()
 PY
-SERVER_PID=$!
-cleanup() {
-  kill "$SERVER_PID" 2>/dev/null || true
-  wait "$SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "conda mirror port" 30 "$SERVER_PID"
-SERVER_PORT="$(cat "$PORT_FILE")"
 UPSTREAM="http://conda.invalid/upstream"
-MIRROR="http://127.0.0.1:$SERVER_PORT/mirror"
+MIRROR="http://127.0.0.1:$HTTP_PORT/mirror"
 
 cat >mise.toml <<EOF
 [settings]

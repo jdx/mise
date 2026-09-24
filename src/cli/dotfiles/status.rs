@@ -72,10 +72,13 @@ impl DotfilesStatus {
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
-            let state = match system::files::check(&config, req, &secrets) {
-                Ok(state) => state,
-                Err(err) => FileState::Differs(format!("{err}")),
+            // an absent entry that cannot be checked (a directory at the
+            // target, say) is an error, not a pending removal
+            let (state, removable) = match system::files::check(&config, req, &secrets) {
+                Ok(state) => (state, true),
+                Err(err) => (FileState::Differs(format!("{err}")), false),
             };
+            let removal = req.mode == system::files::FileMode::Absent && removable;
             let (omitted, nested) = match state {
                 FileState::Tracked => (
                     paths_under(&history.omitted, &req.target),
@@ -83,10 +86,18 @@ impl DotfilesStatus {
                 ),
                 _ => (0, 0),
             };
+            let absent = matches!(state, FileState::Applied)
+                .then(|| system::files::permissions_target_absent(req))
+                .flatten();
             let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
+                FileState::Applied if removal => "absent".to_string(),
+                FileState::Applied => match absent {
+                    Some(reason) => format!("applied ({reason})"),
+                    None => "applied".to_string(),
+                },
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) if removal => format!("would remove ({reason})"),
                 FileState::Differs(reason) => format!("differs ({reason})"),
                 FileState::Tracked if omitted > 0 || nested > 0 => {
                     let mut parts = vec![];
@@ -102,9 +113,9 @@ impl DotfilesStatus {
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
-                json_files.push(json!({
+                let mut entry = json!({
                     "target": req.target_raw,
-                    "source": (req.mode != system::files::FileMode::Content)
+                    "source": req.mode.has_source()
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
@@ -117,15 +128,31 @@ impl DotfilesStatus {
                     },
                     "omitted": omitted,
                     "nested": nested,
-                }));
+                });
+                if let Some(permissions) = req.permissions {
+                    entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                // e.g. an absent target that is still present, or a
+                // permissions-only target that does not exist
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(if removal {
+                        format!("{reason}; will be removed")
+                    } else {
+                        reason.clone()
+                    });
+                } else if let Some(reason) = absent {
+                    entry["reason"] = json!(reason);
+                }
+                json_files.push(entry);
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    if req.mode == system::files::FileMode::Content {
-                        "inline".to_string()
-                    } else {
-                        req.source.display_user()
+                    match req.mode {
+                        system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Absent => "-".to_string(),
+                        system::files::FileMode::Permissions => "-".to_string(),
+                        _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
                     state_str,

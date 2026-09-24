@@ -89,7 +89,7 @@ impl Usage {
         // Older `usage` CLIs reject the spec outright, so this
         // moves in lockstep with the fields and layouts the spec actually carries.
         let min_version = r#"min_usage_version "6.11""#;
-        println!("{min_version}\n{}", completion_spec().to_string().trim());
+        miseprintln!("{min_version}\n{}", completion_spec().to_string().trim());
         Ok(())
     }
 }

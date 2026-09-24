@@ -2,6 +2,8 @@
 pub(crate) mod hook_env;
 pub(crate) mod ports;
 pub(crate) mod presets;
+pub(crate) mod providers;
+mod providers_nats;
 pub(crate) mod prune;
 pub(crate) mod runtime;
 pub(crate) mod tasks;
@@ -134,6 +136,7 @@ pub(crate) struct Daemon {
     /// available while configuration is still being parsed.
     pub task: Option<String>,
     pub tool: Option<(String, String)>,
+    pub provider: Option<providers::Binding>,
     pub exports: IndexMap<String, String>,
     /// True when this daemon was declared by another project and pulled in with
     /// `project =`. Its tools and exported environment belong to that project.
@@ -375,6 +378,17 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             );
         }
     }
+    let provider_names = declarations
+        .values()
+        .filter_map(|(decl, _, _)| match decl {
+            Declaration::Definition(table) => table
+                .get("provider")
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned),
+            Declaration::Preset(_) => None,
+        })
+        .collect();
+    let providers = providers::load_selected(files, Some(&provider_names))?;
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
     // Keyed by the importing root: a name means an import only in the project
@@ -418,6 +432,13 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             imported_ids.insert((root.clone(), name.clone()), key.clone());
             set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
+            continue;
+        }
+        if let Declaration::Definition(table) = &declaration
+            && table.contains_key("provider")
+        {
+            let daemon = providers::binding(&providers, &name, table.clone(), source, root)?;
+            set.daemons.insert(name, daemon);
             continue;
         }
         let settings = settings_for(&settings, &root);
@@ -889,6 +910,7 @@ fn build(
         data_dir: None,
         task,
         tool: None,
+        provider: None,
         exports,
         imported,
         port: claim,
