@@ -588,11 +588,11 @@ impl Run {
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
-            print!("{}", render_subcommand_help("run", false));
+            miseprint!("{}", render_subcommand_help("run", false))?;
             return Ok(());
         }
         if self.task.as_deref() == Some("--help") {
-            print!("{}", render_subcommand_help("run", true));
+            miseprint!("{}", render_subcommand_help("run", true))?;
             return Ok(());
         }
 
@@ -641,7 +641,7 @@ impl Run {
 
                     if has_any_usage_spec(&spec) {
                         // Task has usage spec defined, render help using usage library
-                        println!("{}", render_usage_help(&spec, &self.args));
+                        miseprintln!("{}", render_usage_help(&spec, &self.args));
                     } else {
                         // Task has no usage defined, show basic task info
                         display_task_help(task)?;
@@ -650,7 +650,7 @@ impl Run {
                 }
             } else {
                 // No task found, show run command help
-                print!("{}", render_subcommand_help("run", true));
+                miseprint!("{}", render_subcommand_help("run", true))?;
                 return Ok(());
             }
         }

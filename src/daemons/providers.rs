@@ -787,7 +787,7 @@ impl Resource {
         }
         // Readiness is output only after provisioning succeeded. Pitchfork owns
         // this small process, so stopping a consumer cannot stop the provider.
-        println!("mise shared resource ready");
+        miseprintln!("mise shared resource ready");
         use std::io::Write;
         std::io::stdout().flush()?;
         std::future::pending::<()>().await;

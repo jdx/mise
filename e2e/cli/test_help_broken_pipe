@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# A reader that closes the pipe before mise writes (e.g. `mise --help | less`
+# quit early) must not make mise panic on EPIPE and abort with a core dump.
+
+# mise starts only after the reader has closed its stdin (signalled through the
+# FIFO), so its first write always hits EPIPE. Under pipefail the pipeline's
+# status is mise's, since the reader succeeds.
+assert_quiet_on_closed_stdout() {
+  rm -f reader_closed
+  mkfifo reader_closed
+  local status=0
+  {
+    read -r _ <reader_closed
+    exec mise "$@" 2>stderr.txt
+  } | {
+    exec 0<&-
+    echo >reader_closed
+  } || status=$?
+  [[ $status == 0 ]] || fail "mise $* exited $status on a closed stdout: $(cat stderr.txt)"
+  [[ ! -s stderr.txt ]] || fail "mise $* wrote to stderr on a closed stdout: $(cat stderr.txt)"
+}
+
+assert_quiet_on_closed_stdout --help
+assert_quiet_on_closed_stdout help
+assert_quiet_on_closed_stdout help settings
+assert_quiet_on_closed_stdout settings --help
+assert_quiet_on_closed_stdout run --help
+assert_quiet_on_closed_stdout watch --help
+assert_quiet_on_closed_stdout usage
+
+# A reader that stays open still receives the page.
+assert_contains "mise help settings" "Usage: mise settings"

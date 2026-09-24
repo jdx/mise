@@ -158,22 +158,17 @@ impl Registry {
     }
 
     fn complete(&self) -> Result<()> {
-        self.filtered_tools()
-            .map(|(short, rt)| {
-                (
-                    short.to_string(),
-                    rt.description
-                        .or(rt.backends().first().cloned())
-                        .unwrap_or_default(),
-                )
-            })
-            .for_each(|(short, description)| {
-                println!(
-                    "{}:{}",
-                    short.replace(":", "\\:"),
-                    description.replace(":", "\\:")
-                );
-            });
+        for (short, rt) in self.filtered_tools() {
+            let description = rt
+                .description
+                .or(rt.backends().first().cloned())
+                .unwrap_or_default();
+            miseprintln!(
+                "{}:{}",
+                short.replace(":", "\\:"),
+                description.replace(":", "\\:")
+            );
+        }
         Ok(())
     }
 

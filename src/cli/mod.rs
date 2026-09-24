@@ -1170,7 +1170,7 @@ impl Cli {
                 // Handle special case: "help", "-h", or "--help" as task should print help
                 if task == "help" || task == "-h" || task == "--help" {
                     if let Some(page) = render_page(Cli::spec(), Cli::command(), false) {
-                        print!("{page}");
+                        miseprint!("{page}")?;
                     }
                     return Err(request_exit(0));
                 }
@@ -1252,7 +1252,7 @@ impl Cli {
                 }
             }
             if let Some(page) = render_page(Cli::spec(), Cli::command(), false) {
-                print!("{page}");
+                miseprint!("{page}")?;
             }
             Err(request_exit(1))
         }
@@ -1273,14 +1273,18 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
     let spec = Cli::spec();
     match err {
         usage_rs::Error::Help { cmd, long } => {
-            if let Some(page) = render_page(spec, cmd, long) {
-                print!("{page}");
+            if let Some(page) = render_page(spec, cmd, long)
+                && let Err(err) = miseprint!("{page}")
+            {
+                return err.into();
             }
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
-            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style()) {
-                print!("{page}");
+            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style())
+                && let Err(err) = miseprint!("{page}")
+            {
+                return err.into();
             }
             request_exit(0)
         }
@@ -1288,7 +1292,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
             // stderr, which `console` tracks separately from stdout.
             if let Some(page) = usage_rs::help::render_styled(spec, cmd, false, help_style_stderr())
             {
-                eprint!("{page}");
+                let _ = calm_io::stderr!("{page}");
             }
             request_exit(2)
         }
@@ -1299,11 +1303,13 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
                 spec.version
             }
             .unwrap_or_default();
-            println!("{} {version}", spec.name);
+            if let Err(err) = miseprint!("{} {version}\n", spec.name) {
+                return err.into();
+            }
             request_exit(0)
         }
         err => {
-            eprint!("{}", usage_rs::render_failure(spec, argv, &err));
+            let _ = calm_io::stderr!("{}", usage_rs::render_failure(spec, argv, &err));
             request_exit(2)
         }
     }
