@@ -16,7 +16,7 @@ use crate::install_before::{
     BeforeDateSource, format_hidden_release_details, minimum_release_age_label,
     resolve_before_date_for_tool_with_source,
 };
-use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
+use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
@@ -56,8 +56,6 @@ pub(crate) struct ToolVersion {
     pub(crate) install_path_is_explicit: bool,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
-    /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
-    pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
     /// Portable dependency graph used by embedded aube installs.
     pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
     pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
@@ -155,7 +153,6 @@ impl ToolVersion {
             install_path_is_exact: false,
             install_path_is_explicit: false,
             conda_packages: Default::default(),
-            pkgx_packages: Default::default(),
             aube_lock: None,
             uv_lock: None,
             uv_python: None,
