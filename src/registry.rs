@@ -867,7 +867,7 @@ pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
     static REQUIREMENTS: Lazy<HashMap<&'static str, Vec<&'static RegistryBackend>>> =
         Lazy::new(|| {
             let mut map: HashMap<&'static str, Vec<&'static RegistryBackend>> = HashMap::new();
-            for (_, tool) in baked_registry().iter().chain(REGISTRY.iter()) {
+            for (_, tool) in BAKED_REGISTRY.iter().chain(REGISTRY.iter()) {
                 for backend in tool.backends {
                     if backend.attestations_since.is_some() {
                         map.entry(backend.full).or_default().push(backend);
