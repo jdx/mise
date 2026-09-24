@@ -1248,7 +1248,7 @@ impl Backend for HttpBackend {
                 if let Some(parent) = file_path.parent() {
                     file::create_dir_all(parent)?;
                 }
-                file::copy(&src, &file_path)?;
+                file::run_blocking(|| file::copy(&src, &file_path))?;
                 DownloadFileMetadata::default()
             }
             None => {
