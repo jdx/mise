@@ -452,6 +452,31 @@ mise backends ls
 mise plugins ls
 """# help="Installed plugin availability and built-in backends are separate lists"
     }
+    cmd switch help="Switch tools to the backend the registry now installs them from" effect=write {
+        long_help #"""
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `--global`.
+"""#
+        flag "-n --dry-run" help="Show what would switch without changing the lockfile or installs"
+        flag "-g --global" help="Switch tools in the global config's lockfile instead of the project's"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL@VERSION]…" help="Tools to switch" help_long=#"""
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
+"""# required=#false var=#true
+        example "mise backends switch communique" help="Move communique to the registry's current backend"
+        example "mise backends switch --dry-run" help="List every locked tool the registry now installs from another backend"
+    }
 }
 cmd bin-paths help="List all the active runtime bin paths" effect=read {
     flag --bin-names help="Output executable names instead of bin directories"

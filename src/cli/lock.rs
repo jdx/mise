@@ -23,6 +23,39 @@ use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
 type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+
+/// Without its version list a request can only resolve to itself, and that
+/// string is not known to be a version: `4` would be locked as a release that
+/// may not exist. A version the lockfile already holds, or one that is
+/// installed, is known to exist. `cli_versions` are the `tool@version`
+/// arguments, which lock can record without changing the configured request.
+fn reject_unverified_versions(tools: &[LockTool], cli_versions: &[(String, String)]) -> Result<()> {
+    for (ba, tv) in tools {
+        let as_requested = tv.version == tv.request.version()
+            || cli_versions
+                .iter()
+                .any(|(full, version)| *full == ba.full() && *version == tv.version);
+        if !as_requested || tv.resolved_from_lockfile() {
+            continue;
+        }
+        let Some(cause) = crate::backend::version_listing_failure(ba) else {
+            continue;
+        };
+        if tv
+            .backend()
+            .is_ok_and(|backend| backend.list_installed_versions().contains(&tv.version))
+        {
+            continue;
+        }
+        bail!(
+            "cannot lock {}@{}: unable to fetch versions for {}: {cause}",
+            ba.short,
+            tv.version,
+            ba.full()
+        );
+    }
+    Ok(())
+}
 type ToolSelectors = (BTreeSet<String>, BTreeSet<String>);
 
 struct LockCollectionContext<'a> {
@@ -199,6 +232,11 @@ pub(crate) struct Lock {
     /// combined with tool arguments.
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
+
+    /// Restrict the run to these lockfiles, for callers that relock the
+    /// entries they rewrote (`mise backends switch`).
+    #[usage(skip)]
+    pub lockfiles: Option<BTreeSet<PathBuf>>,
 }
 
 /// A lockfile version change reported by `--json`
@@ -371,6 +409,7 @@ impl Lock {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
         .await
@@ -387,7 +426,7 @@ impl Lock {
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
         let atomic = self.upgrade || generate;
-        if !self.dry_run && !atomic {
+        if !self.dry_run && !atomic && self.lockfiles.is_none() {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -432,7 +471,7 @@ impl Lock {
         };
         let lockfile_targets =
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
-        let migration_inputs = lockfile::monorepo_lockfile_migration_paths(&config);
+        let migration_inputs = self.monorepo_migration_paths(&config);
         let can_skip_generation = generate
             && installed.is_some_and(|versions| versions.is_empty())
             && !self.upgrade
@@ -538,6 +577,15 @@ impl Lock {
                 if tools.is_empty() && !lockfile_path.exists() {
                     continue;
                 }
+            }
+            let cli_versions: Vec<_> = self
+                .tool
+                .iter()
+                .filter_map(|tool| Some((tool.ba.full(), tool.tvr.as_ref()?.version())))
+                .collect();
+            reject_unverified_versions(&tools, &cli_versions)?;
+            for (_, tv) in &tools {
+                tv.ba().warn_if_locked_backend_superseded(&tv.version);
             }
             let configured_selectors = self.configured_tool_selectors_for_target(
                 &config,
@@ -924,7 +972,7 @@ impl Lock {
         // lockfiles untouched on failure.
         if !self.dry_run && atomic {
             verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
-            let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
+            let migration_paths = self.monorepo_migration_paths(&config);
             let mutation_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
                 .map(|staged| staged.path.clone())
@@ -1544,6 +1592,25 @@ impl Lock {
         Ok(())
     }
 
+    /// Legacy monorepo lockfiles to migrate. A run restricted to particular
+    /// lockfiles migrates none: its caller snapshots only those lockfiles.
+    fn monorepo_migration_paths(&self, config: &Config) -> Vec<(PathBuf, PathBuf)> {
+        if self.lockfiles.is_some() {
+            return vec![];
+        }
+        lockfile::monorepo_lockfile_migration_paths(config)
+    }
+
+    /// The lockfiles a run with these flags writes for the loaded config, each
+    /// with the config files whose tools it locks.
+    pub(crate) fn lockfile_targets(
+        &self,
+        config: &Config,
+    ) -> indexmap::IndexMap<PathBuf, Vec<PathBuf>> {
+        let scoped = self.config_paths_in_lock_scope(config, &config.config_files);
+        self.get_lockfile_targets(config, &config.config_files, &scoped)
+    }
+
     fn config_paths_in_lock_scope(
         &self,
         config: &Config,
@@ -1639,6 +1706,13 @@ impl Lock {
                 config.monorepo_lockfile_root().as_deref(),
             );
             if self.local && !is_local {
+                continue;
+            }
+            if self
+                .lockfiles
+                .as_ref()
+                .is_some_and(|only| !only.contains(&lockfile_path))
+            {
                 continue;
             }
             targets.entry(lockfile_path).or_default().push(path.clone());
@@ -2190,7 +2264,7 @@ impl Lock {
                         debug!("{msg}");
                     }
                     let error_is_fatal =
-                        resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+                        resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -2360,6 +2434,7 @@ mod tests {
             minimum_release_age: None,
             bump: false,
             upgrade: false,
+            lockfiles: None,
             json: false,
         }
     }
@@ -2400,12 +2475,11 @@ mod tests {
             Err(error.clone()),
             BTreeMap::new(),
             BTreeMap::new(),
-            BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Required,
         );
         let mut lockfile = Lockfile::default();
         let resolution_error = resolution.4.as_ref().err().cloned();
-        let error_is_fatal = resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+        let error_is_fatal = resolution.7 == crate::lockfile::LockResolutionStatus::Required;
 
         let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
         let (status, returned_error) =
@@ -2712,7 +2786,6 @@ mod tests {
             "asdf:dummy".to_string(),
             Platform::parse("linux-x64").unwrap(),
             Ok(PlatformInfo::default()),
-            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Optional,

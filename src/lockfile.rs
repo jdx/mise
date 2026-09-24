@@ -1,10 +1,11 @@
 pub(crate) mod generate;
 mod graph;
+
+pub(crate) use graph::sidecar_root;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
-use crate::backend::pkgx::PkgxBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, Backend};
 use crate::cli::args::BackendArg;
@@ -38,6 +39,11 @@ static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
 static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
     Lazy::new(Default::default);
+type LockfilesByPrecedence = HashMap<Vec<PathBuf>, Arc<Vec<Lockfile>>>;
+/// The lockfiles [`read_all_lockfiles`] merges, highest precedence first,
+/// filled alongside its cache.
+static LOCKFILES_BY_PRECEDENCE_CACHE: Lazy<Mutex<LockfilesByPrecedence>> =
+    Lazy::new(Default::default);
 type LegacyLockfilePathsCacheKey = (PathBuf, Option<bool>, Vec<String>);
 static LEGACY_LOCKFILE_PATHS_CACHE: Lazy<
     Mutex<HashMap<LegacyLockfilePathsCacheKey, IndexSet<PathBuf>>>,
@@ -60,6 +66,9 @@ pub(crate) fn invalidate_caches() {
         cache.clear();
     }
     if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
         cache.clear();
     }
     if let Ok(mut cache) = LEGACY_LOCKFILE_PATHS_CACHE.lock() {
@@ -233,9 +242,6 @@ pub(crate) struct Lockfile {
     /// Basename includes version+build (e.g., "ncurses-6.4-h7ea286d_0")
     #[serde(skip)]
     conda_packages: BTreeMap<String, BTreeMap<String, CondaPackageInfo>>,
-    /// Shared pkgx packages: platform -> package@version -> PkgxPackageInfo
-    #[serde(skip)]
-    pkgx_packages: BTreeMap<String, BTreeMap<String, PkgxPackageInfo>>,
     /// Revision of the source lockfile for each entry in a merged lookup.
     #[serde(skip)]
     entry_lockfile_versions: BTreeMap<LockfileEntryKey, u32>,
@@ -269,7 +275,6 @@ impl Default for Lockfile {
             generated_header_url: None,
             tools: BTreeMap::new(),
             conda_packages: BTreeMap::new(),
-            pkgx_packages: BTreeMap::new(),
             entry_lockfile_versions: BTreeMap::new(),
             tool_stubs: BTreeSet::new(),
         }
@@ -544,15 +549,6 @@ pub(crate) struct PlatformInfo {
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
-    /// References to pkgx packages in the shared pkgx-packages section (by package@version)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pkgx_deps: Option<Vec<String>>,
-    /// Pkgx-provided binaries for the main package, captured for locked installs.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pkgx_provides: Option<Vec<String>>,
-    /// Pkgx runtime environment for the main package, captured for locked installs.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pkgx_runtime_env: Option<BTreeMap<String, String>>,
     /// Type of provenance detected or verified (SLSA carries its URL).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
@@ -577,7 +573,6 @@ pub(crate) struct PlatformInfo {
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
 pub(crate) use crate::backend::conda::CondaPackageInfo;
-pub(crate) use crate::backend::pkgx::PkgxPackageInfo;
 
 impl<'de> Deserialize<'de> for PlatformInfo {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -597,9 +592,6 @@ impl PlatformInfo {
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
-            && self.pkgx_deps.is_none()
-            && self.pkgx_provides.is_none()
-            && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
             && self.provenance_verified.is_none()
             && self.signer.is_none()
@@ -615,9 +607,6 @@ impl PlatformInfo {
         PlatformInfo {
             install: self.install.clone(),
             conda_deps: self.conda_deps.clone(),
-            pkgx_deps: self.pkgx_deps.clone(),
-            pkgx_provides: self.pkgx_provides.clone(),
-            pkgx_runtime_env: self.pkgx_runtime_env.clone(),
             checksum: None,
             size: None,
             url: None,
@@ -711,15 +700,6 @@ impl PlatformInfo {
             },
             url_api,
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            pkgx_deps: self.pkgx_deps.clone().or_else(|| other.pkgx_deps.clone()),
-            pkgx_provides: self
-                .pkgx_provides
-                .clone()
-                .or_else(|| other.pkgx_provides.clone()),
-            pkgx_runtime_env: self
-                .pkgx_runtime_env
-                .clone()
-                .or_else(|| other.pkgx_runtime_env.clone()),
             provenance,
             provenance_verified,
             github_attestations: None,
@@ -787,28 +767,6 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     Some(toml::Value::String(s)) => {
                         bail!("unrecognized github_attestations status {s:?} in lockfile")
-                    }
-                    _ => None,
-                };
-                let pkgx_deps = match t.remove("pkgx_deps") {
-                    Some(toml::Value::Array(arr)) => Some(
-                        arr.into_iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect(),
-                    ),
-                    _ => None,
-                };
-                let pkgx_provides = match t.remove("pkgx_provides") {
-                    Some(toml::Value::Array(arr)) => Some(
-                        arr.into_iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect(),
-                    ),
-                    _ => None,
-                };
-                let pkgx_runtime_env = match t.remove("pkgx_runtime_env") {
-                    Some(toml::Value::Table(table)) => {
-                        Some(string_table_from_toml_value(toml::Value::Table(table))?)
                     }
                     _ => None,
                 };
@@ -883,9 +841,6 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     url,
                     url_api,
                     conda_deps,
-                    pkgx_deps,
-                    pkgx_provides,
-                    pkgx_runtime_env,
                     provenance,
                     provenance_verified,
                     github_attestations,
@@ -921,28 +876,6 @@ impl From<PlatformInfo> for toml::Value {
                 .collect::<Vec<_>>()
                 .into();
             table.insert("conda_deps".to_string(), deps);
-        }
-        if let Some(pkgx_deps) = platform_info.pkgx_deps {
-            let deps: toml::Value = pkgx_deps
-                .into_iter()
-                .map(toml::Value::String)
-                .collect::<Vec<_>>()
-                .into();
-            table.insert("pkgx_deps".to_string(), deps);
-        }
-        if let Some(pkgx_provides) = platform_info.pkgx_provides {
-            let provides: toml::Value = pkgx_provides
-                .into_iter()
-                .map(toml::Value::String)
-                .collect::<Vec<_>>()
-                .into();
-            table.insert("pkgx_provides".to_string(), provides);
-        }
-        if let Some(pkgx_runtime_env) = platform_info.pkgx_runtime_env {
-            table.insert(
-                "pkgx_runtime_env".to_string(),
-                toml::Value::Table(toml_table_from_string_map(pkgx_runtime_env)),
-            );
         }
         if !platform_info.additional_artifacts.is_empty() {
             let artifacts = platform_info
@@ -1048,65 +981,6 @@ impl TryFrom<toml::Value> for CondaPackageInfo {
     }
 }
 
-impl TryFrom<toml::Value> for PkgxPackageInfo {
-    type Error = Report;
-    fn try_from(value: toml::Value) -> Result<Self> {
-        match value {
-            toml::Value::Table(mut t) => {
-                let url = t
-                    .remove("url")
-                    .and_then(|v| match v {
-                        toml::Value::String(s) => Some(s),
-                        _ => None,
-                    })
-                    .ok_or_else(|| eyre::eyre!("missing url in pkgx package info"))?;
-                let checksum = match t.remove("checksum") {
-                    Some(toml::Value::String(s)) => Some(s),
-                    _ => None,
-                };
-                let pkgx_provides = match t.remove("pkgx_provides") {
-                    Some(toml::Value::Array(arr)) => Some(
-                        arr.into_iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect(),
-                    ),
-                    _ => None,
-                };
-                let pkgx_runtime_env = match t.remove("pkgx_runtime_env") {
-                    Some(toml::Value::Table(table)) => {
-                        Some(string_table_from_toml_value(toml::Value::Table(table))?)
-                    }
-                    _ => None,
-                };
-                Ok(PkgxPackageInfo {
-                    url,
-                    checksum,
-                    pkgx_provides,
-                    pkgx_runtime_env,
-                })
-            }
-            _ => bail!("unsupported pkgx package info format"),
-        }
-    }
-}
-
-fn string_table_from_toml_value(value: toml::Value) -> Result<BTreeMap<String, String>> {
-    match value {
-        toml::Value::Table(table) => Ok(table
-            .into_iter()
-            .filter_map(|(key, value)| match value {
-                toml::Value::String(value) => Some((key, value)),
-                _ => None,
-            })
-            .collect()),
-        _ => Ok(BTreeMap::new()),
-    }
-}
-
-fn toml_table_from_string_map(values: BTreeMap<String, String>) -> toml::Table {
-    values.into_iter().map(|(k, v)| (k, v.into())).collect()
-}
-
 fn existing_lockfile_doc_url(content: &str) -> Option<String> {
     content
         .lines()
@@ -1148,9 +1022,50 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// Whether `short`'s entry at `version` records artifact data for any platform.
+    pub(crate) fn has_platforms(&self, short: &str, version: &str) -> bool {
+        self.tools_for(short).is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                entry.version == version && entry.platforms.values().any(|p| !p.is_empty())
+            })
+        })
+    }
+
     fn tools_for_mut(&mut self, short: &str) -> Option<&mut Vec<LockfileTool>> {
         let key = self.tool_key(short)?.clone();
         self.tools.get_mut(&key)
+    }
+
+    /// Move `short`'s entries at `versions` locked under `from` to the backend
+    /// `to` returns for their version, keeping the version and dropping the
+    /// artifact data and dependency graphs recorded for the old backend so the
+    /// next lock records the new one's. Returns each moved version with its new
+    /// backend and whether the old entry carried artifact data.
+    pub(crate) fn switch_backend(
+        &mut self,
+        short: &str,
+        from: &str,
+        versions: &BTreeSet<String>,
+        to: impl Fn(&str) -> Option<String>,
+    ) -> Vec<(String, String, bool)> {
+        let Some(entries) = self.tools_for_mut(short) else {
+            return vec![];
+        };
+        let mut moved = vec![];
+        for entry in entries.iter_mut().filter(|entry| {
+            entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
+        }) {
+            if let Some(backend) = to(&entry.version) {
+                let had_platforms = entry.platforms.values().any(|p| !p.is_empty());
+                entry.backend = Some(backend.clone());
+                entry.platforms.clear();
+                // Dependency graphs are recorded per backend too.
+                entry.aube = None;
+                entry.uv = None;
+                moved.push((entry.version.clone(), backend, had_platforms));
+            }
+        }
+        moved
     }
 
     pub(crate) fn bind_request(
@@ -1275,22 +1190,6 @@ impl Lockfile {
             }
         }
 
-        // Parse pkgx-packages section: platform -> package@version -> PkgxPackageInfo
-        if let Some(pkgx_packages) = table.remove("pkgx-packages") {
-            let platforms: toml::Table = pkgx_packages.try_into()?;
-            for (platform, packages) in platforms {
-                let packages_table: toml::Table = packages.try_into()?;
-                for (id, info) in packages_table {
-                    let info: PkgxPackageInfo = info.try_into()?;
-                    lockfile
-                        .pkgx_packages
-                        .entry(platform.clone())
-                        .or_default()
-                        .insert(id, info);
-                }
-            }
-        }
-
         Ok(lockfile)
     }
 
@@ -1371,40 +1270,6 @@ impl Lockfile {
                 conda_packages.insert(platform.clone(), platform_table.into());
             }
             lockfile.insert("conda-packages".to_string(), conda_packages.into());
-        }
-
-        if !self.pkgx_packages.is_empty() {
-            let mut pkgx_packages = toml::Table::new();
-            for (platform, packages) in &self.pkgx_packages {
-                let mut platform_table = toml::Table::new();
-                for (id, info) in packages {
-                    let mut pkg_table = toml::Table::new();
-                    pkg_table.insert("url".to_string(), info.url.clone().into());
-                    if let Some(checksum) = &info.checksum {
-                        pkg_table.insert("checksum".to_string(), checksum.clone().into());
-                    }
-                    if let Some(provides) = &info.pkgx_provides {
-                        pkg_table.insert(
-                            "pkgx_provides".to_string(),
-                            provides
-                                .iter()
-                                .cloned()
-                                .map(toml::Value::String)
-                                .collect::<Vec<_>>()
-                                .into(),
-                        );
-                    }
-                    if let Some(runtime_env) = &info.pkgx_runtime_env {
-                        pkg_table.insert(
-                            "pkgx_runtime_env".to_string(),
-                            toml::Value::Table(toml_table_from_string_map(runtime_env.clone())),
-                        );
-                    }
-                    platform_table.insert(id.clone(), pkg_table.into());
-                }
-                pkgx_packages.insert(platform.clone(), platform_table.into());
-            }
-            lockfile.insert("pkgx-packages".to_string(), pkgx_packages.into());
         }
 
         // Write tools section
@@ -1533,17 +1398,6 @@ impl Lockfile {
         self.conda_packages.get(platform)?.get(basename)
     }
 
-    pub(crate) fn set_pkgx_package(&mut self, platform: &str, id: &str, info: PkgxPackageInfo) {
-        self.pkgx_packages
-            .entry(platform.to_string())
-            .or_default()
-            .insert(id.to_string(), info);
-    }
-
-    pub(crate) fn get_pkgx_package(&self, platform: &str, id: &str) -> Option<&PkgxPackageInfo> {
-        self.pkgx_packages.get(platform)?.get(id)
-    }
-
     /// Remove unreferenced conda packages from the shared section.
     /// A package is unreferenced if no tool's conda_deps references it.
     fn cleanup_unreferenced_conda_packages(&mut self) {
@@ -1576,36 +1430,6 @@ impl Lockfile {
 
         // Remove empty platform entries
         self.conda_packages
-            .retain(|_, packages| !packages.is_empty());
-    }
-
-    fn cleanup_unreferenced_pkgx_packages(&mut self) {
-        let mut referenced: HashMap<String, HashSet<String>> = HashMap::new();
-        for tools in self.tools.values() {
-            for tool in tools {
-                for (platform, info) in &tool.platforms {
-                    if let Some(deps) = &info.pkgx_deps {
-                        for dep in deps {
-                            referenced
-                                .entry(platform.clone())
-                                .or_default()
-                                .insert(dep.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        for (platform, packages) in &mut self.pkgx_packages {
-            let referenced_for_platform = referenced.get(platform);
-            packages.retain(|id, _| {
-                referenced_for_platform
-                    .map(|refs| refs.contains(id))
-                    .unwrap_or(false)
-            });
-        }
-
-        self.pkgx_packages
             .retain(|_, packages| !packages.is_empty());
     }
 
@@ -1671,7 +1495,6 @@ impl Lockfile {
             Self::should_keep_tool(short, versions, keep_shorts, keep_backends)
         });
         self.cleanup_unreferenced_conda_packages();
-        self.cleanup_unreferenced_pkgx_packages();
     }
 
     /// Remove entries for a tool whose version is not in the given set.
@@ -1686,7 +1509,6 @@ impl Lockfile {
             }
         }
         self.cleanup_unreferenced_conda_packages();
-        self.cleanup_unreferenced_pkgx_packages();
     }
 
     /// Return versions of a tool that would be removed by `retain_tool_versions`.
@@ -1823,9 +1645,6 @@ impl Lockfile {
                     // For dependency lists, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    pkgx_deps: platform_info.pkgx_deps,
-                    pkgx_provides: platform_info.pkgx_provides,
-                    pkgx_runtime_env: platform_info.pkgx_runtime_env,
                     provenance,
                     provenance_verified,
                     github_attestations: None,
@@ -2559,13 +2378,6 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
             root_packages.entry(basename).or_insert(info);
         }
     }
-
-    for (platform, packages) in other.pkgx_packages {
-        let root_packages = root.pkgx_packages.entry(platform).or_default();
-        for (id, info) in packages {
-            root_packages.entry(id).or_insert(info);
-        }
-    }
 }
 
 /// Groups the resolved toolset plus this session's newly installed versions by
@@ -2874,14 +2686,10 @@ pub(crate) fn update_lockfiles(
             for ((platform, basename), pkg_info) in &tv.conda_packages {
                 existing_lockfile.set_conda_package(platform, basename, pkg_info.clone());
             }
-            for ((platform, id), pkg_info) in &tv.pkgx_packages {
-                existing_lockfile.set_pkgx_package(platform, id, pkg_info.clone());
-            }
         }
 
         // Clean up any conda packages that are no longer referenced by any tool
         existing_lockfile.cleanup_unreferenced_conda_packages();
-        existing_lockfile.cleanup_unreferenced_pkgx_packages();
 
         // Merge-mode auto-lock publishes new sidecars but never deletes old ones.
         if let Some(prepared) = existing_lockfile.prepare_write(&lockfile_path)? {
@@ -3641,7 +3449,7 @@ fn deferred_provenance_resolution_error(
 /// Result type for lock resolution tasks (shared by `mise lock` and auto-lock).
 ///
 /// Fields: (short_name, version, backend_full, platform, info_or_error, options,
-/// conda_packages, pkgx_packages, error_is_fatal).
+/// conda_packages, error_is_fatal).
 /// The `info_or_error` field is `Ok(info)` on success or `Err(message)` on failure,
 /// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
 /// genuine conda solve failures from backends that use errors to skip unsupported targets.
@@ -3660,14 +3468,13 @@ pub(crate) type LockResolutionResult = (
     Result<PlatformInfo, String>,
     BTreeMap<String, String>,
     BTreeMap<String, CondaPackageInfo>,
-    BTreeMap<String, PkgxPackageInfo>,
     LockResolutionStatus,
 );
 
 /// Resolve lock info for a single tool/platform combination.
 ///
 /// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options,
-/// conda_packages, pkgx_packages, error_is_fatal).
+/// conda_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
 pub(crate) async fn resolve_tool_lock_info(
     ba: crate::cli::args::BackendArg,
@@ -3685,7 +3492,7 @@ pub(crate) async fn resolve_tool_lock_info(
         LockResolutionStatus::Optional
     };
 
-    let (info, options, conda_packages, pkgx_packages) = if let Some(backend) = backend {
+    let (info, options, conda_packages) = if let Some(backend) = backend {
         let options = match backend.resolve_lockfile_options(&tv.request, &target) {
             Ok(options) => options,
             Err(e) => {
@@ -3695,7 +3502,6 @@ pub(crate) async fn resolve_tool_lock_info(
                     ba.stored_full(),
                     platform,
                     Err(e.to_string()),
-                    BTreeMap::new(),
                     BTreeMap::new(),
                     BTreeMap::new(),
                     error_is_fatal,
@@ -3727,7 +3533,6 @@ pub(crate) async fn resolve_tool_lock_info(
                                 )),
                                 options,
                                 BTreeMap::new(),
-                                BTreeMap::new(),
                                 error_is_fatal,
                             );
                         }
@@ -3735,33 +3540,7 @@ pub(crate) async fn resolve_tool_lock_info(
                 } else {
                     BTreeMap::new()
                 };
-                let pkgx_packages = if backend.get_type() == BackendType::Pkgx {
-                    let pkgx_backend = PkgxBackend::from_arg(ba.clone());
-                    match pkgx_backend.resolve_pkgx_packages(&tv, &target).await {
-                        Ok(packages) => packages,
-                        Err(e) => {
-                            return (
-                                ba.short.clone(),
-                                tv.version.clone(),
-                                ba.stored_full(),
-                                platform,
-                                Err(format!(
-                                    "failed to resolve pkgx packages for {} on {}: {}",
-                                    ba.short,
-                                    target.to_key(),
-                                    e
-                                )),
-                                options,
-                                BTreeMap::new(),
-                                BTreeMap::new(),
-                                error_is_fatal,
-                            );
-                        }
-                    }
-                } else {
-                    BTreeMap::new()
-                };
-                (Ok(info), options, conda_packages, pkgx_packages)
+                (Ok(info), options, conda_packages)
             }
             Err(e)
                 if matches!(
@@ -3770,12 +3549,7 @@ pub(crate) async fn resolve_tool_lock_info(
                 ) =>
             {
                 error_is_fatal = LockResolutionStatus::Unsupported;
-                (
-                    Err(e.to_string()),
-                    options,
-                    BTreeMap::new(),
-                    BTreeMap::new(),
-                )
+                (Err(e.to_string()), options, BTreeMap::new())
             }
             Err(e) => (
                 Err(format!(
@@ -3786,13 +3560,11 @@ pub(crate) async fn resolve_tool_lock_info(
                 )),
                 options,
                 BTreeMap::new(),
-                BTreeMap::new(),
             ),
         }
     } else {
         (
             Err(format!("backend not found for {}", ba.short)),
-            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
         )
@@ -3806,7 +3578,6 @@ pub(crate) async fn resolve_tool_lock_info(
         info,
         options,
         conda_packages,
-        pkgx_packages,
         error_is_fatal,
     )
 }
@@ -3826,17 +3597,8 @@ pub(crate) fn apply_lock_result(
     lockfile: &mut Lockfile,
     result: LockResolutionResult,
 ) -> Result<bool> {
-    let (
-        short,
-        version,
-        backend,
-        platform,
-        info,
-        options,
-        conda_packages,
-        pkgx_packages,
-        _error_is_fatal,
-    ) = result;
+    let (short, version, backend, platform, info, options, conda_packages, _error_is_fatal) =
+        result;
     let platform_key = platform.to_key();
     let mut applied = false;
     if let Ok(ref info) = info {
@@ -3881,10 +3643,6 @@ pub(crate) fn apply_lock_result(
     for (basename, pkg_info) in conda_packages {
         applied = true;
         lockfile.set_conda_package(&platform_key, &basename, pkg_info);
-    }
-    for (id, pkg_info) in pkgx_packages {
-        applied = true;
-        lockfile.set_pkgx_package(&platform_key, &id, pkg_info);
     }
     Ok(applied)
 }
@@ -4113,27 +3871,29 @@ fn preserve_absent_tool_entries(
     });
 }
 
+fn derive_lockfile_discovery(config: &Config) -> LockfileDiscovery {
+    let monorepo_root = config.monorepo_lockfile_root();
+    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
+    let cache_key = config
+        .config_files
+        .keys()
+        .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
+        .chain(legacy_lockfiles.iter().cloned())
+        .unique()
+        .collect();
+    LockfileDiscovery {
+        cache_key,
+        monorepo_root,
+        legacy_lockfiles,
+    }
+}
+
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     // Derived once per config: this runs on every backend-identity lookup, and
     // walking each config path plus deduping the results dominated those calls.
     // The monorepo root and legacy paths ride along so the miss path below
     // reuses them instead of repeating the discovery.
-    let discovery = config.lockfile_discovery(|| {
-        let monorepo_root = config.monorepo_lockfile_root();
-        let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
-        let cache_key = config
-            .config_files
-            .keys()
-            .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
-            .chain(legacy_lockfiles.iter().cloned())
-            .unique()
-            .collect();
-        LockfileDiscovery {
-            cache_key,
-            monorepo_root,
-            legacy_lockfiles,
-        }
-    });
+    let discovery = config.lockfile_discovery(|| derive_lockfile_discovery(config));
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = ALL_LOCKFILES_CACHE
         .lock()
@@ -4149,6 +3909,9 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 
     let mut seen_roots: HashSet<PathBuf> = HashSet::new();
     let mut all: Vec<Lockfile> = Vec::new();
+    // Where each root's lockfiles start in `all`. Roots are read from the
+    // outermost config in, while each root's own lockfiles go highest first.
+    let mut root_starts: Vec<usize> = Vec::new();
 
     for (path, cf) in config.config_files.iter().rev() {
         if !cf.source().is_mise_toml() {
@@ -4161,6 +3924,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
             continue;
         }
         seen_roots.insert(root.clone());
+        root_starts.push(all.len());
 
         // Read lockfiles in priority order (highest first):
         // 1. mise.<env>.local.lock (explicit MISE_ENV, then auto platform envs)
@@ -4182,8 +3946,20 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         let main_path = root.join("mise.lock");
         push_existing_lockfile(&mut all, &main_path);
     }
+    let roots_end = all.len();
     for legacy_path in legacy_lockfiles {
         push_existing_lockfile(&mut all, legacy_path);
+    }
+    // Highest precedence first: the innermost root's lockfiles, each root in
+    // its own order, then the legacy lockfiles.
+    let mut by_precedence = Vec::with_capacity(all.len());
+    for (i, &start) in root_starts.iter().enumerate().rev() {
+        let end = root_starts.get(i + 1).copied().unwrap_or(roots_end);
+        by_precedence.extend_from_slice(&all[start..end]);
+    }
+    by_precedence.extend_from_slice(&all[roots_end..]);
+    if let Ok(mut cache) = LOCKFILES_BY_PRECEDENCE_CACHE.lock() {
+        cache.insert(discovery.cache_key.clone(), Arc::new(by_precedence));
     }
 
     let result = all.into_iter().fold(None, |acc: Option<Lockfile>, l| {
@@ -4199,6 +3975,36 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     let result = Arc::new(result);
     cache.insert(discovery.cache_key.clone(), Arc::clone(&result));
     result
+}
+
+/// The lockfiles [`read_all_lockfiles`] merges, highest precedence first.
+fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
+    let key = |config: &Config| {
+        config
+            .lockfile_discovery(|| derive_lockfile_discovery(config))
+            .cache_key
+            .clone()
+    };
+    let cached = |key: &Vec<PathBuf>| {
+        LOCKFILES_BY_PRECEDENCE_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(key)
+            .cloned()
+    };
+    // Derives the discovery and, on a cache miss, fills both caches.
+    read_all_lockfiles(config);
+    let key = key(config);
+    if let Some(lockfiles) = cached(&key) {
+        return lockfiles;
+    }
+    // The merged view was cached without this one; rebuild both.
+    ALL_LOCKFILES_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&key);
+    read_all_lockfiles(config);
+    cached(&key).unwrap_or_default()
 }
 
 fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
@@ -4827,26 +4633,65 @@ pub(crate) fn ensure_locked_url_matches_version(
 
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
-pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
+/// The backend `short`'s lock entries record for `version`; see
+/// [`locked_backend`].
+pub(crate) fn get_locked_backend_for_version(
+    config: &Config,
+    short: &str,
+    version: Option<&str>,
+) -> Option<String> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
         return None;
     }
 
-    let lockfile = read_all_lockfiles(config);
-
-    lockfile
-        .tools_for(short)
-        .into_iter()
-        .flatten()
-        .filter_map(|tool| tool.backend.as_ref())
-        .find(|&full| {
-            // Discovery includes parent lockfiles and runs before registry fallback.
-            // A recorded backend must not revive a disabled backend for a shorthand.
-            let ba = BackendArg::new(full.clone(), Some(full.clone()));
-            !backend::is_disabled_backend_type(&ba.backend_type())
+    // Discovery includes parent lockfiles and runs before registry fallback.
+    // A recorded backend must not revive a disabled backend for a shorthand,
+    // and one mise cannot construct must not hide a usable entry, the same
+    // test lockfile resolution applies to its candidates.
+    let usable = |tool: &&LockfileTool| {
+        tool.backend.as_ref().is_some_and(|full| {
+            backend::arg_to_backend(BackendArg::new(full.clone(), Some(full.clone())))
+                .is_some_and(|backend| !backend::is_disabled_backend_type(&backend.get_type()))
         })
-        .cloned()
+    };
+    // The lockfile with the highest precedence that locks the tool decides
+    // alone: a global or parent lockfile already on another backend must not
+    // override or split a project's entries.
+    let lockfiles = read_lockfiles_by_precedence(config);
+    let entries = lockfiles
+        .iter()
+        .map(|lockfile| {
+            lockfile
+                .tools_for(short)
+                .into_iter()
+                .flatten()
+                .filter(usable)
+                .collect::<Vec<_>>()
+        })
+        .find(|entries| !entries.is_empty())?;
+    locked_backend(&entries, version)
+}
+
+/// Which of a tool's lock entries decides its backend. Without a `version`,
+/// the first entry's. Otherwise the entry locked at `version`, or else the
+/// backend every entry shares: another version (a bump, say) inherits the
+/// locked backend only when the tool is locked under one backend, and entries
+/// that already split versions across backends leave the choice to the
+/// registry.
+fn locked_backend(entries: &[&LockfileTool], version: Option<&str>) -> Option<String> {
+    let Some(version) = version else {
+        return entries.first().and_then(|tool| tool.backend.clone());
+    };
+    if let Some(tool) = entries.iter().find(|tool| tool.version == version) {
+        return tool.backend.clone();
+    }
+    let backend = entries.first()?.backend.clone();
+    entries
+        .iter()
+        .all(|tool| tool.backend == backend)
+        .then_some(backend)
+        .flatten()
 }
 
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
@@ -5790,7 +5635,6 @@ lockfileVersion: '9.0'
             Ok(PlatformInfo::default()),
             BTreeMap::new(),
             BTreeMap::new(),
-            BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Optional,
         );
 
@@ -5818,7 +5662,6 @@ lockfileVersion: '9.0'
             "asdf:dummy".to_string(),
             Platform::parse("linux-x64").unwrap(),
             Ok(PlatformInfo::default()),
-            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Optional,
@@ -6766,6 +6609,102 @@ options = { exe = "rg" }
     }
 
     #[test]
+    fn locked_backend_inherits_only_an_unambiguous_backend() {
+        let entry = |version: &str, backend: &str| LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            specifiers: BTreeSet::new(),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::new(),
+            aube: None,
+            uv: None,
+        };
+        let aqua_old = entry("1.57.0", "aqua:jdx/hk");
+        let aqua_new = entry("1.58.1", "aqua:jdx/hk");
+        let packslip_new = entry("1.58.1", "packslip:github.com/jdx/hk");
+
+        let one_backend = [&aqua_old, &aqua_new];
+        assert_eq!(
+            locked_backend(&one_backend, Some("2.0.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+
+        let split = [&aqua_old, &packslip_new];
+        assert_eq!(
+            locked_backend(&split, Some("1.58.1")).as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert_eq!(
+            locked_backend(&split, Some("1.57.0")).as_deref(),
+            Some("aqua:jdx/hk")
+        );
+        assert_eq!(locked_backend(&split, Some("2.0.0")), None);
+        assert_eq!(locked_backend(&split, None).as_deref(), Some("aqua:jdx/hk"));
+    }
+
+    #[test]
+    fn switch_backend_moves_only_the_given_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        std::fs::write(
+            &path,
+            r#"lockfile_version = 2
+
+[[tools.hk]]
+version = "1.57.0"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+url = "https://example.com/hk-1.57.0"
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+checksum = "sha256:abc"
+url = "https://example.com/hk-1.58.1"
+
+[tools.hk."platforms.macos-arm64"]
+url = "https://example.com/hk-1.58.1-mac"
+"#,
+        )
+        .unwrap();
+        let mut lockfile = Lockfile::read(&path).unwrap();
+        let moved = lockfile.switch_backend(
+            "hk",
+            "aqua:jdx/hk",
+            &BTreeSet::from(["1.58.1".to_string()]),
+            |_| Some("packslip:github.com/jdx/hk".to_string()),
+        );
+        assert_eq!(
+            moved,
+            vec![(
+                "1.58.1".to_string(),
+                "packslip:github.com/jdx/hk".to_string(),
+                true
+            )]
+        );
+        assert!(!lockfile.has_platforms("hk", "1.58.1"));
+        assert!(lockfile.has_platforms("hk", "1.57.0"));
+        lockfile.save(&path).unwrap();
+
+        // The switched entry drops the old backend's artifacts; the version
+        // that was not asked for keeps its backend and artifacts.
+        let reread = Lockfile::read(&path).unwrap();
+        let entries = reread.tools_for("hk").unwrap();
+        let switched = entries.iter().find(|t| t.version == "1.58.1").unwrap();
+        assert_eq!(
+            switched.backend.as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert!(switched.platforms.is_empty());
+        let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
+        assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
+        assert!(reread.has_platforms("hk", "1.57.0"));
+    }
+
+    #[test]
     fn test_merge_tool_entries_does_not_copy_changed_options_data() {
         let old_options = BTreeMap::from([("flavor".to_string(), "old".to_string())]);
         let new_options = BTreeMap::from([("flavor".to_string(), "new".to_string())]);
@@ -7370,6 +7309,50 @@ backend = "conda:jq"
         );
 
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    /// Lockfiles written while the pkgx backend existed must still load, and
+    /// the next save drops what they recorded for it.
+    #[test]
+    fn test_legacy_pkgx_lockfile_sections_are_ignored() {
+        let legacy = r#"
+[[tools."pkgx:stedolan.github.io/jq"]]
+version = "1.7.1"
+backend = "pkgx:stedolan.github.io/jq"
+
+[tools."pkgx:stedolan.github.io/jq".platforms.linux-x64]
+url = "https://dist.pkgx.dev/stedolan.github.io/jq/linux/x86-64/v1.7.1.tar.xz"
+checksum = "sha256:abc123"
+pkgx_deps = ["github.com/kkos/oniguruma@6.9.9"]
+pkgx_provides = ["bin/jq"]
+pkgx_runtime_env = { JQ_HOME = "{{prefix}}" }
+
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+
+[pkgx-packages.linux-x64."github.com/kkos/oniguruma@6.9.9"]
+url = "https://dist.pkgx.dev/github.com/kkos/oniguruma/linux/x86-64/v6.9.9.tar.xz"
+checksum = "sha256:def456"
+pkgx_provides = ["bin/onig-config"]
+"#;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        std::fs::write(&path, legacy).unwrap();
+
+        let lockfile = Lockfile::read(&path).unwrap();
+        let entry = &lockfile.tools["pkgx:stedolan.github.io/jq"][0];
+        assert_eq!(entry.version, "1.7.1");
+        let platform = &entry.platforms["linux-x64"];
+        assert_eq!(platform.checksum.as_deref(), Some("sha256:abc123"));
+        assert_eq!(lockfile.tools["jq"][0].version, "1.7.1");
+
+        lockfile.save(&path).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains("pkgx-packages"), "{saved}");
+        assert!(!saved.contains("pkgx_"), "{saved}");
+        assert!(saved.contains("sha256:abc123"), "{saved}");
     }
 
     #[test]

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# initdb refuses to run as root, and CI runs e2e tests as root
+if [[ "$(id -u)" == 0 ]]; then
+  echo "skipping: postgres initdb cannot run as root" >&2
+  exit 0
+fi
 export MISE_EXPERIMENTAL=1
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
   mise install pitchfork@2.27.0 --minimum-release-age 0s
