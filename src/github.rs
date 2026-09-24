@@ -87,6 +87,12 @@ pub(crate) struct GithubAsset {
     /// `published_at` when the maintainer replaced it after publishing.
     #[serde(default)]
     pub updated_at: Option<String>,
+    /// mise-versions supplied this asset, so the asset ID in `url` must be
+    /// confirmed before use. Set by mise when it pins mirrored data (a value
+    /// in the mirror's own JSON is overwritten), and kept in release caches so
+    /// a later run still knows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_versions_host: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,10 +190,27 @@ pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Ve
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
-        .await?
-        .to_vec())
+    Ok(remember_mirrored_assets(
+        cache
+            .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
+            .await?
+            .to_vec(),
+    ))
+}
+
+/// Re-register assets mise-versions supplied, for releases that may have come
+/// out of an on-disk cache written by an earlier run.
+fn remember_mirrored_assets<R: std::borrow::Borrow<GithubRelease>, T: AsRef<[R]>>(
+    releases: T,
+) -> T {
+    for release in releases.as_ref() {
+        for asset in &release.borrow().assets {
+            if asset.from_versions_host {
+                crate::versions_host::remember_mirrored_asset_api_url(&asset.url);
+            }
+        }
+    }
+    releases
 }
 
 /// `require_assets` reaches the fetch loop from the caller's own filter: the
@@ -204,10 +227,12 @@ pub(crate) async fn list_releases_including_prereleases_from_url(
     let key = releases_cache_key(api_url, repo, require_assets);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
-        .await?
-        .to_vec())
+    Ok(remember_mirrored_assets(
+        cache
+            .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
+            .await?
+            .to_vec(),
+    ))
 }
 
 /// Cache key for one release listing.
@@ -498,12 +523,14 @@ pub(crate) async fn get_release_with_versions_host(
     let key = release_cache_key(API_URL, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cache
+    let release = cache
         .get_or_try_init_async_if(
             async || get_release_with_options(API_URL, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await
+        .await?;
+    remember_mirrored_assets([&release]);
+    Ok(release)
 }
 
 pub(crate) async fn get_release_for_url_with_versions_host(
@@ -515,17 +542,21 @@ pub(crate) async fn get_release_for_url_with_versions_host(
     let key = release_cache_key(api_url, repo, tag, use_versions_host);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
-    cache
+    let release = cache
         .get_or_try_init_async_if(
             async || get_release_with_options(api_url, repo, tag, use_versions_host).await,
             should_cache_release,
         )
-        .await
+        .await?;
+    remember_mirrored_assets([&release]);
+    Ok(release)
 }
 
 fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
+    // "hosted-2": entries from before assets recorded `from_versions_host`
+    // would pass mirrored asset IDs off as GitHub's, so they aren't reused.
     let source = if use_versions_host {
-        "hosted"
+        "hosted-2"
     } else {
         "direct"
     };
@@ -1383,6 +1414,7 @@ mod tests {
             created_at: "2026-09-23T01:40:00Z".to_string(),
             published_at: Some("2026-09-23T01:45:05Z".to_string()),
             assets: vec![GithubAsset {
+                from_versions_host: false,
                 name: "rumdl.tar.gz".to_string(),
                 browser_download_url: String::new(),
                 url: String::new(),
@@ -1445,6 +1477,30 @@ mod tests {
     // Not from mise-versions, so falling back to it skips the asset identity
     // check (see `checked_api_asset_url`), as for a private repo.
     const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
+
+    #[test]
+    fn test_mirrored_assets_survive_the_release_cache() {
+        let api_url = "https://api.github.com/repos/o/cached/releases/assets/7";
+        let release = GithubRelease {
+            assets: vec![GithubAsset {
+                from_versions_host: true,
+                url: api_url.to_string(),
+                ..make_asset("tool.tar.gz")
+            }],
+            ..make_release("v1.0.0")
+        };
+        // Written to and read back from a cache, as a later run would.
+        let cached: GithubRelease =
+            serde_json::from_str(&serde_json::to_string(&release).unwrap()).unwrap();
+        assert!(cached.assets[0].from_versions_host);
+        assert!(!crate::versions_host::is_mirrored_asset_api_url(api_url));
+        remember_mirrored_assets([&cached]);
+        assert!(crate::versions_host::is_mirrored_asset_api_url(api_url));
+
+        // GitHub's own data never carries the flag.
+        let direct = serde_json::to_string(&make_asset("tool.tar.gz")).unwrap();
+        assert!(!direct.contains("from_versions_host"), "{direct}");
+    }
 
     #[test]
     fn test_same_release_download() {
@@ -1991,6 +2047,7 @@ something_else = "value"
 
     fn asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://example.invalid/{name}"),
             url: format!("https://example.invalid/api/{name}"),
@@ -2162,6 +2219,7 @@ something_else = "value"
 
     fn make_asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://github.com/owner/repo/releases/download/{name}"),
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),

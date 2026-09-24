@@ -3460,6 +3460,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             assets: assets
                 .into_iter()
                 .map(|name| github::GithubAsset {
+                    from_versions_host: false,
                     name: name.into(),
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
