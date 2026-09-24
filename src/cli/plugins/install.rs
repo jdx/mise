@@ -118,7 +118,8 @@ impl PluginsInstall {
             let plugin_name = plugin.clone();
             spawn_plugin_task(&mut jset, &mut task_names, plugin_name, async move {
                 let _permit = semaphore.acquire_owned().await?;
-                miseprintln!("installing {plugin}");
+                // Progress only: a closed stdout must not skip the install.
+                let _ = miseprint!("installing {plugin}\n");
                 this.install_one(&config, plugin, None).await
             });
         }

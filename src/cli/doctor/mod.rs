@@ -311,12 +311,13 @@ impl Doctor {
         }
 
         let out = serde_json::to_string_pretty(&data)?;
-        miseprintln!("{out}");
+        let written = miseprint!("{out}\n");
 
+        // Diagnosed problems decide the exit status even when the reader has gone away.
         if !self.errors.is_empty() {
             return Err(crate::request_exit(1));
         }
-        Ok(())
+        Ok(written?)
     }
 
     async fn doctor(mut self) -> eyre::Result<()> {

@@ -322,6 +322,25 @@ impl HookAction {
 
 pub(crate) static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
 
+/// The first failed write of current-shell hook output. The hook runners cannot return an
+/// error, so `hook-env` takes it afterwards and fails (or exits quietly on a closed pipe)
+/// instead of exiting 0 with truncated shell code.
+static OUTPUT_ERROR: Mutex<Option<std::io::Error>> = Mutex::new(None);
+
+fn record_output_error(err: std::io::Error) {
+    if err.kind() != std::io::ErrorKind::BrokenPipe {
+        warn!("failed to write hook output: {err}");
+    }
+    OUTPUT_ERROR.lock().unwrap().get_or_insert(err);
+}
+
+pub(crate) fn take_output_error() -> std::io::Result<()> {
+    match OUTPUT_ERROR.lock().unwrap().take() {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn schedule_hook(hook: Hooks) {
     let mut mu = SCHEDULED_HOOKS.lock().unwrap();
     mu.insert(hook);
@@ -567,37 +586,33 @@ async fn run_matched_hook(
             }
         }
         HookAction::CurrentShell { script, .. } => {
-            // This function cannot return an error, so a closed stdout is ignored here and
-            // hook-env's own output reports it instead of panicking.
+            let mut out = String::new();
             if let Some(shell) = shell {
                 // Set hook environment variables so shell hooks can access them
-                let _ = calm_io::stdoutln!(
-                    "{}",
-                    shell.set_env("MISE_PROJECT_ROOT", &roots.project.to_string_lossy())
-                );
-                let _ = calm_io::stdoutln!(
-                    "{}",
-                    shell.set_env("MISE_CONFIG_ROOT", &roots.config.to_string_lossy())
-                );
+                out.push_str(&shell.set_env("MISE_PROJECT_ROOT", &roots.project.to_string_lossy()));
+                out.push('\n');
+                out.push_str(&shell.set_env("MISE_CONFIG_ROOT", &roots.config.to_string_lossy()));
+                out.push('\n');
                 if let Some(cwd) = dirs::CWD.as_ref() {
-                    let _ = calm_io::stdoutln!(
-                        "{}",
-                        shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy())
-                    );
+                    out.push_str(&shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy()));
+                    out.push('\n');
                 }
                 if let Some((Some(old), _new)) = hook_env::dir_change() {
-                    let _ = calm_io::stdoutln!(
-                        "{}",
-                        shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy())
-                    );
+                    out.push_str(&shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy()));
+                    out.push('\n');
                 }
                 if let Some(tools) = installed_tools
                     && let Ok(json) = serde_json::to_string(tools)
                 {
-                    let _ = calm_io::stdoutln!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
+                    out.push_str(&shell.set_env("MISE_INSTALLED_TOOLS", &json));
+                    out.push('\n');
                 }
             }
-            let _ = calm_io::stdoutln!("{script}");
+            out.push_str(script);
+            out.push('\n');
+            if let Err(err) = miseprint!("{out}") {
+                record_output_error(err);
+            }
         }
         HookAction::Run { .. } => {
             if let Err(e) = execute(
