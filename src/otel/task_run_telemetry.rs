@@ -93,7 +93,15 @@ impl TaskRunTelemetry {
 
     /// Start a span for a task, parented under its monorepo group span
     /// (created lazily) or directly under the root span.
-    pub(crate) fn start_task(&self, task: &Task, project_root: Option<&PathBuf>) -> TaskSpan {
+    ///
+    /// `args` are the task's arguments with the config's redactions applied;
+    /// they appear in the span name and attributes in place of `task.args`.
+    pub(crate) fn start_task(
+        &self,
+        task: &Task,
+        args: &[String],
+        project_root: Option<&PathBuf>,
+    ) -> TaskSpan {
         let parent_cx = match &task.config_root {
             // A task belongs to a monorepo group when its config root
             // differs from the project root.
@@ -102,7 +110,7 @@ impl TaskRunTelemetry {
         };
         self.inner
             .tracer
-            .start_with_context(task_span_name(task), &parent_cx)
+            .start_with_context(task_span_name(task, args), &parent_cx)
     }
 
     fn group_cx(&self, config_root: &Path, project_root: Option<&PathBuf>) -> Context {
@@ -141,11 +149,12 @@ impl TaskRunTelemetry {
         &self,
         mut span: TaskSpan,
         task: &Task,
+        args: &[String],
         end_time: SystemTime,
         result: &Result<TaskRunOutcome>,
         cancelled: bool,
     ) {
-        for attr in task_attributes(task) {
+        for attr in task_attributes(task, args) {
             span.set_attribute(attr);
         }
         match result {
@@ -219,16 +228,16 @@ impl Drop for Inner {
 }
 
 /// Human-readable span name for a task (display name + args).
-pub(crate) fn task_span_name(task: &Task) -> String {
+pub(crate) fn task_span_name(task: &Task, args: &[String]) -> String {
     let base = if task.display_name.is_empty() {
         task.name.clone()
     } else {
         task.display_name.clone()
     };
-    if task.args.is_empty() {
+    if args.is_empty() {
         base
     } else {
-        format!("{base} {}", task.args.join(" "))
+        format!("{base} {}", args.join(" "))
     }
 }
 
@@ -250,16 +259,15 @@ fn monorepo_group_display_name(config_root: &Path, project_root: Option<&PathBuf
 }
 
 /// Standard OpenTelemetry attributes attached to every task span.
-fn task_attributes(task: &Task) -> Vec<KeyValue> {
-    let display_name = task_span_name(task);
+fn task_attributes(task: &Task, args: &[String]) -> Vec<KeyValue> {
+    let display_name = task_span_name(task, args);
     let mut attrs = vec![
         KeyValue::new("mise.task.name", task.name.clone()),
         KeyValue::new("mise.task.display_name", display_name),
         KeyValue::new("mise.task.source", task.config_source.display().to_string()),
     ];
-    // Args are exported verbatim, no different from what's already visible in terminal output and process listings.
-    if !task.args.is_empty() {
-        attrs.push(KeyValue::new("mise.task.args", task.args.join(" ")));
+    if !args.is_empty() {
+        attrs.push(KeyValue::new("mise.task.args", args.join(" ")));
     }
     if let Some(ref cr) = task.config_root {
         attrs.push(KeyValue::new(
@@ -269,10 +277,10 @@ fn task_attributes(task: &Task) -> Vec<KeyValue> {
     }
     // CLI semantic conventions: full argv (executable + args) per
     // https://opentelemetry.io/docs/specs/semconv/cli/cli-spans
-    let mut argv: Vec<StringValue> = Vec::with_capacity(2 + task.args.len());
+    let mut argv: Vec<StringValue> = Vec::with_capacity(2 + args.len());
     argv.push(StringValue::from("mise"));
     argv.push(StringValue::from(task.name.clone()));
-    for a in &task.args {
+    for a in args {
         argv.push(StringValue::from(a.clone()));
     }
     attrs.push(KeyValue::new(
@@ -415,8 +423,15 @@ mod tests {
     fn end_one_task(result: Result<TaskRunOutcome>, cancelled: bool) -> SpanData {
         let (t, exporter) = test_telemetry("mise run build");
         let task = task_for("build", "", &[]);
-        let span = t.start_task(&task, None);
-        t.end_task(span, &task, SystemTime::now(), &result, cancelled);
+        let span = t.start_task(&task, &task.args, None);
+        t.end_task(
+            span,
+            &task,
+            &task.args,
+            SystemTime::now(),
+            &result,
+            cancelled,
+        );
         span_by_name(&exporter.finished_spans(), "build").clone()
     }
 
@@ -427,13 +442,27 @@ mod tests {
 
         // Direct task (config_root == project_root → child of root).
         let direct = task_in("lint", "/workspace");
-        let span = t.start_task(&direct, Some(&project_root));
-        t.end_task(span, &direct, SystemTime::now(), &ran(), false);
+        let span = t.start_task(&direct, &direct.args, Some(&project_root));
+        t.end_task(
+            span,
+            &direct,
+            &direct.args,
+            SystemTime::now(),
+            &ran(),
+            false,
+        );
 
         // Monorepo task (config_root != project_root → child of group span).
         let nested = task_in("build", "/workspace/packages/frontend");
-        let span = t.start_task(&nested, Some(&project_root));
-        t.end_task(span, &nested, SystemTime::now(), &ran(), false);
+        let span = t.start_task(&nested, &nested.args, Some(&project_root));
+        t.end_task(
+            span,
+            &nested,
+            &nested.args,
+            SystemTime::now(),
+            &ran(),
+            false,
+        );
 
         t.set_succeeded();
         t.finish();
@@ -470,8 +499,8 @@ mod tests {
         let project_root = PathBuf::from("/workspace");
         let task = task_in("build", "/workspace/packages/frontend");
 
-        let span = t.start_task(&task, Some(&project_root));
-        t.end_task(span, &task, SystemTime::now(), &ran(), false);
+        let span = t.start_task(&task, &task.args, Some(&project_root));
+        t.end_task(span, &task, &task.args, SystemTime::now(), &ran(), false);
         t.set_succeeded();
         t.finish();
 
@@ -493,8 +522,8 @@ mod tests {
         let project_root = PathBuf::from("/workspace");
         let task = task_in("build", "/workspace/packages/frontend");
 
-        let span = t.start_task(&task, Some(&project_root));
-        t.end_task(span, &task, SystemTime::now(), &ran(), false);
+        let span = t.start_task(&task, &task.args, Some(&project_root));
+        t.end_task(span, &task, &task.args, SystemTime::now(), &ran(), false);
 
         // Scheduler-level failure (e.g. ctrl-c) should mark root as
         // errored, but a group whose own tasks all succeeded stays OK.
@@ -515,10 +544,11 @@ mod tests {
         let project_root = PathBuf::from("/workspace");
         let task = task_in("build", "/workspace/packages/frontend");
 
-        let span = t.start_task(&task, Some(&project_root));
+        let span = t.start_task(&task, &task.args, Some(&project_root));
         t.end_task(
             span,
             &task,
+            &task.args,
             SystemTime::now(),
             &Err(eyre::eyre!("boom")),
             false,
@@ -538,8 +568,8 @@ mod tests {
     fn task_without_config_root_is_direct_child_of_root() {
         let (t, exporter) = test_telemetry("mise run");
         let task = task_for("lint", "", &[]);
-        let span = t.start_task(&task, None);
-        t.end_task(span, &task, SystemTime::now(), &ran(), false);
+        let span = t.start_task(&task, &task.args, None);
+        t.end_task(span, &task, &task.args, SystemTime::now(), &ran(), false);
         t.set_succeeded();
         t.finish();
 
@@ -563,8 +593,8 @@ mod tests {
         let project_root = PathBuf::from("/workspace");
         for name in ["build", "test"] {
             let task = task_in(name, "/workspace/packages/frontend");
-            let span = t.start_task(&task, Some(&project_root));
-            t.end_task(span, &task, SystemTime::now(), &ran(), false);
+            let span = t.start_task(&task, &task.args, Some(&project_root));
+            t.end_task(span, &task, &task.args, SystemTime::now(), &ran(), false);
         }
         t.set_succeeded();
         t.finish();
@@ -660,7 +690,7 @@ mod tests {
         let (t, exporter) = test_telemetry("mise run");
         let task = task_for("build", "", &[]);
         // Task future cancelled mid-flight: the span is dropped, not ended.
-        drop(t.start_task(&task, None));
+        drop(t.start_task(&task, &task.args, None));
         t.finish();
 
         // The SDK ends it on drop, so the trace still shows the task started.
@@ -714,12 +744,12 @@ mod tests {
     fn end_task_honours_the_supplied_end_time() {
         let (t, exporter) = test_telemetry("mise run");
         let task = task_for("build", "", &[]);
-        let span = t.start_task(&task, None);
+        let span = t.start_task(&task, &task.args, None);
         let end_time = SystemTime::now();
         // Error reporting and sibling teardown happen between the task
         // finishing and the span being ended; they must not inflate it.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        t.end_task(span, &task, end_time, &ran(), false);
+        t.end_task(span, &task, &task.args, end_time, &ran(), false);
 
         let build = span_by_name(&exporter.finished_spans(), "build").clone();
         assert_eq!(build.end_time, end_time);
@@ -728,21 +758,21 @@ mod tests {
     #[test]
     fn span_name_uses_display_name_with_args() {
         assert_eq!(
-            task_span_name(&task_for("build", "Build", &["--release"])),
+            task_span_name(&task_for("build", "Build", &[]), &["--release".to_string()]),
             "Build --release"
         );
     }
 
     #[test]
     fn span_name_falls_back_to_task_name() {
-        assert_eq!(task_span_name(&task_for("build", "", &[])), "build");
+        assert_eq!(task_span_name(&task_for("build", "", &[]), &[]), "build");
     }
 
     #[test]
     fn attributes_include_args_and_config_root() {
         let mut task = task_for("build", "Build", &["x", "y"]);
         task.config_root = Some(PathBuf::from("/workspace/packages/a"));
-        let attrs = task_attributes(&task);
+        let attrs = task_attributes(&task, &task.args);
         let find_str = |k: &str| {
             attrs.iter().find(|kv| kv.key.as_str() == k).map(|kv| {
                 if let Value::String(s) = &kv.value {
@@ -776,8 +806,25 @@ mod tests {
     }
 
     #[test]
+    fn span_uses_the_supplied_redacted_args() {
+        let (t, exporter) = test_telemetry("mise run deploy");
+        let task = task_for("deploy", "", &["--token=hunter2"]);
+        let args = vec!["--token=[redacted]".to_string()];
+        let span = t.start_task(&task, &args, None);
+        t.end_task(span, &task, &args, SystemTime::now(), &ran(), false);
+
+        let spans = exporter.finished_spans();
+        let span = span_by_name(&spans, "deploy --token=[redacted]");
+        assert_eq!(
+            attr(span, "mise.task.args"),
+            Some(&Value::from("--token=[redacted]"))
+        );
+        assert!(!format!("{:?}", span.attributes).contains("hunter2"));
+    }
+
+    #[test]
     fn attributes_omit_args_when_empty() {
-        let attrs = task_attributes(&task_for("build", "", &[]));
+        let attrs = task_attributes(&task_for("build", "", &[]), &[]);
         assert!(attrs.iter().all(|kv| kv.key.as_str() != "mise.task.args"));
         assert!(
             attrs
@@ -820,7 +867,7 @@ mod tests {
     #[test]
     fn inject_otel_context_round_trips_through_a_live_span() {
         let (t, _exporter) = test_telemetry("mise run");
-        let span = t.start_task(&task_for("build", "", &[]), None);
+        let span = t.start_task(&task_for("build", "", &[]), &[], None);
         let span_cx = span.span_context().clone();
 
         let mut env = BTreeMap::new();

@@ -875,17 +875,27 @@ impl Run {
             Settings::get().task_timeout_duration()
         };
 
-        if let Some(timeout) = timeout {
+        // Spawned tasks keep their own handles on the telemetry, so a run that
+        // times out or fails can't rely on drop to flush it in time. `finish`
+        // is idempotent and marks the root span as an error unless the run
+        // already succeeded.
+        let telemetry = self.telemetry.clone();
+        let result = if let Some(timeout) = timeout {
             tokio::time::timeout(
                 timeout,
                 self.parallelize_tasks(config, execution_tasks, previewed_tools),
             )
             .await
-            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))
+            .flatten()
         } else {
             self.parallelize_tasks(config, execution_tasks, previewed_tools)
-                .await?
+                .await
+        };
+        if let Some(t) = telemetry {
+            t.finish();
         }
+        result?;
 
         time!("run done");
         Ok(())
@@ -1119,10 +1129,15 @@ impl Run {
             };
             // The task's span stays live for as long as the task runs, so its
             // context is available for W3C propagation. Ended below.
+            // Args go through the same redactions as terminal output.
+            let otel_args: Vec<String> = match &this.telemetry {
+                Some(_) => task.args.iter().map(|a| ctx.config.redact(a)).collect(),
+                None => vec![],
+            };
             let otel_span = this
                 .telemetry
                 .as_ref()
-                .map(|t| t.start_task(&task, ctx.config.project_root.as_ref()));
+                .map(|t| t.start_task(&task, &otel_args, ctx.config.project_root.as_ref()));
             let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
@@ -1197,7 +1212,10 @@ impl Run {
                 } else {
                     let was_stopping =
                         this.add_failed_task(task.clone(), status) || this.is_interrupted();
-                    cancelled |= was_stopping && !this.continue_on_error;
+                    // A task that exited on its own failed even if another
+                    // failure came first; only one mise killed is cancelled.
+                    cancelled |=
+                        was_stopping && !this.continue_on_error && Error::is_killed_by_signal(err);
                     was_stopping
                 };
                 if !interrupted && !was_stopping && (panicked || status.is_none()) {
@@ -1228,7 +1246,7 @@ impl Run {
             }
             // Close the task's span with real timing and status.
             if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
-                t.end_task(span, &task, otel_end, &result, cancelled);
+                t.end_task(span, &task, &otel_args, otel_end, &result, cancelled);
             }
 
             if let Some(oh) = &this.output_handler

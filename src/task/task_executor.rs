@@ -2195,6 +2195,13 @@ impl TaskExecutor {
             // https://opentelemetry.io/docs/specs/otel/context/env-carriers/
             let mut carrier = BTreeMap::new();
             crate::otel::task_run_telemetry::inject_otel_context(&mut carrier, span_cx);
+            // A TRACESTATE inherited from an upstream trace belongs to that
+            // trace's span, not this one, so don't pass it on alongside the
+            // new TRACEPARENT.
+            if !carrier.contains_key("TRACESTATE") {
+                env.remove("TRACESTATE");
+                env_remove.insert("TRACESTATE".to_string());
+            }
             for (key, value) in carrier {
                 // Kept out of __MISE_DIFF so a nested `mise hook-env` doesn't
                 // treat them as mise-managed env and unset the trace context.

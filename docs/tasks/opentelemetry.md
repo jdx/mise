@@ -146,6 +146,14 @@ terminated by a signal and have no exit code of their own, cancelled tasks carry
 `process.exit.code`. The root span is still marked `Error`, since the run as a whole
 failed.
 
+A sibling that exits with its own non-zero status after the first failure is still an
+`Error`: only tasks mise ended with a signal count as cancelled. Windows reports a
+terminated process as an ordinary exit code, so there every task that ends after the
+first failure is recorded as cancelled.
+
+When `--timeout` expires, the root span is ended as an `Error` and flushed. Tasks still
+running at that point are not exported.
+
 ## Privacy and Trust Boundary
 
 Exporting traces ships information about your tasks to your OpenTelemetry
@@ -164,7 +172,8 @@ What trace export (`otel.enabled`) sends per task:
 
 - **Secrets in args.** If a secret appears in `mise.task.args` /
   `process.command_args` (for example `mise run deploy -- --token=hunter2`), trace
-  export will ship it to the collector. Prefer passing secrets via environment
+  export will ship it to the collector unless it matches one of your
+  [redactions](/environments/#redactions). Prefer passing secrets via environment
   variables, which are never exported.
 
 Task stdout/stderr is **not** exported by trace export — only the attributes listed
@@ -211,3 +220,11 @@ format). This means:
 - When `otel.enabled` is not set, mise does not create trace context or export any
   telemetry.
 - Export failures are logged at debug level and never break task execution.
+- Each export request times out after 3 seconds unless `OTEL_EXPORTER_OTLP_TIMEOUT` (or
+  `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT`) says otherwise, so an unreachable collector
+  delays the end of `mise run` by at most that much.
+- Offline mode (`--offline` / `MISE_OFFLINE=1`) turns export off.
+- Task args in span names and attributes go through the same
+  [redactions](/environments/#redactions) as terminal output.
+- `service.name` defaults to `mise` unless `OTEL_SERVICE_NAME` or
+  `service.name` in `OTEL_RESOURCE_ATTRIBUTES` sets it.
