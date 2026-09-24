@@ -1491,8 +1491,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn directory_entries_use_the_filtered_walk() -> Result<()> {
+    #[tokio::test]
+    async fn directory_entries_use_the_filtered_walk() -> Result<()> {
+        let config = Config::get().await?;
         let dir = tempfile::tempdir()?;
         let source = dir.path().join("src");
         file::create_dir_all(source.join("app"))?;
@@ -1528,19 +1529,27 @@ mod tests {
             relative: false,
             dot_prefix: false,
         };
-        let layer_paths = |req: &FileRequest| -> Result<(Vec<String>, Vec<String>)> {
-            let mut entries = DotfilesLayerEntries::default();
-            add_source_files(req, "root", &mut entries)?;
-            Ok((
-                entries.files.keys().cloned().collect(),
-                entries.dirs.iter().cloned().collect(),
-            ))
+        // every path in the layer build_dotfiles_layer produces, so the
+        // test covers which walk each mode is routed through
+        let layer_paths = |req: FileRequest| -> Result<Vec<String>> {
+            let blob = build_dotfiles_layer(&config, &[req], LayerOwner::default())?;
+            let mut archive =
+                jdx_tar::Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+            let mut paths = vec![];
+            for entry in archive.entries()? {
+                let path = entry?.path()?.to_string_lossy().into_owned();
+                paths.push(path.trim_end_matches('/').to_string());
+            }
+            paths.sort();
+            Ok(paths)
         };
 
         for mode in [FileMode::SymlinkEach, FileMode::Copy] {
-            let (files, dirs) = layer_paths(&request(mode, None))?;
-            assert_eq!(files, ["root/app/config.toml", "root/bashrc"], "{mode:?}");
-            assert_eq!(dirs, ["root", "root/app"], "{mode:?}");
+            assert_eq!(
+                layer_paths(request(mode, None))?,
+                ["root", "root/app", "root/app/config.toml", "root/bashrc"],
+                "{mode:?}"
+            );
         }
 
         // with a git manifest, a file git does not track stays out too
@@ -1557,12 +1566,11 @@ mod tests {
         git(&["init", "-q"])?;
         git(&["add", "app/config.toml", "debug.log", "cache/blob"])?;
         for mode in [FileMode::SymlinkEach, FileMode::Copy] {
-            let (files, dirs) = layer_paths(&request(
-                mode,
-                Some(crate::system::files::FileManifest::Git),
-            ))?;
-            assert_eq!(files, ["root/app/config.toml"], "{mode:?}");
-            assert_eq!(dirs, ["root", "root/app"], "{mode:?}");
+            assert_eq!(
+                layer_paths(request(mode, Some(crate::system::files::FileManifest::Git)))?,
+                ["root", "root/app", "root/app/config.toml"],
+                "{mode:?}"
+            );
         }
         Ok(())
     }
