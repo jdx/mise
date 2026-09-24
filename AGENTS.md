@@ -79,7 +79,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - `aqua.rs` — Aqua registry
 - `github.rs` — GitHub / GitLab / Forgejo releases
 - `http.rs`, `s3.rs` — HTTP and S3 backends
-- `cargo.rs`, `npm.rs` (plus embedded aube), `pipx.rs`, `gem.rs`, `go.rs`, `dotnet.rs`, `conda.rs`, `pkgx.rs`, `spm.rs`
+- `cargo.rs`, `npm.rs` (plus embedded aube), `pipx.rs`, `gem.rs`, `go.rs`, `dotnet.rs`, `conda.rs`, `spm.rs`
 - `asdf.rs`, `vfox.rs` — plugin compatibility layers
 - `ubi.rs` — deprecated; do not add new registry entries
 

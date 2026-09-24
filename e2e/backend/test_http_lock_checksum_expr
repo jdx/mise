@@ -38,23 +38,7 @@ UPPER_UPPER="69B59884AC4D802179D77DBCD43B3D475E2D0A4F82AFD0DC43F7B2301BA40259"
 ALGO512="f073412a6d4865a42afcfd465fa0d60d7fca7c37ef2d0c4f602e0411f0ba5c10dba925ffa1b6f67a5d696194a64eb04f739b33e4beb55c68c998e4dbda92529e"
 
 # Start a static file server on an ephemeral port
-PORT_FILE="$TMPDIR/mise_lock_expr_port"
-python3 - "$SRV" "$PORT_FILE" <<'PY' &
-import http.server, socketserver, sys, os
-srv, port_file = sys.argv[1], sys.argv[2]
-os.chdir(srv)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as f:
-        f.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "lock expr port file" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SRV"
 
 # === Test 1: platform-keyed object (claude shape) ===
 # manifest.platforms.<os-arch>.checksum, where os maps macos->darwin /
@@ -70,8 +54,8 @@ rm -f mise.lock
 cat >mise.toml <<EOF
 [tools."http:expr-platform-keyed"]
 version = "1.0.0"
-url = 'http://127.0.0.1:${PORT}/atool_{{ version }}_{{ os(macos="darwin") }}-{{ arch() }}.bin'
-checksum_url = "http://127.0.0.1:${PORT}/a_manifest.json"
+url = 'http://127.0.0.1:${HTTP_PORT}/atool_{{ version }}_{{ os(macos="darwin") }}-{{ arch() }}.bin'
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/a_manifest.json"
 checksum_expr = '"sha256:" + fromJSON(body).platforms[(os == "macos" ? "darwin" : (os == "windows" ? "win32" : "linux")) + "-" + arch].checksum'
 EOF
 mise lock --platform linux-x64,macos-x64
@@ -95,12 +79,12 @@ version = "1.0.0"
 checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256'
 
 [tools."http:expr-filename-filter".platforms.linux-x64]
-checksum_url = "http://127.0.0.1:${PORT}/b_linux.json"
-url = "http://127.0.0.1:${PORT}/btool_{{ version }}_linux.tar.xz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/b_linux.json"
+url = "http://127.0.0.1:${HTTP_PORT}/btool_{{ version }}_linux.tar.xz"
 
 [tools."http:expr-filename-filter".platforms.macos-x64]
-checksum_url = "http://127.0.0.1:${PORT}/b_macos.json"
-url = "http://127.0.0.1:${PORT}/btool_{{ version }}_macos.zip"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/b_macos.json"
+url = "http://127.0.0.1:${HTTP_PORT}/btool_{{ version }}_macos.zip"
 EOF
 mise lock --platform linux-x64,macos-x64
 assert_contains "cat mise.lock" "sha256:${B_LINUX}"
@@ -111,8 +95,8 @@ assert_contains "cat mise.lock" "sha256:${B_MACOS}"
 # selected by matching the `url` var, exercising both the version and url vars.
 cat >"$SRV/c_versions.json" <<JSON
 { "1.0.0": { "files": [
-    { "url": "http://127.0.0.1:${PORT}/ctool_1.0.0_linux-x64.tar.gz", "sha256": "${C_LINUX}" },
-    { "url": "http://127.0.0.1:${PORT}/ctool_1.0.0_macos-x64.tar.gz", "sha256": "${C_MACOS}" }
+    { "url": "http://127.0.0.1:${HTTP_PORT}/ctool_1.0.0_linux-x64.tar.gz", "sha256": "${C_LINUX}" },
+    { "url": "http://127.0.0.1:${HTTP_PORT}/ctool_1.0.0_macos-x64.tar.gz", "sha256": "${C_MACOS}" }
 ] } }
 JSON
 
@@ -120,8 +104,8 @@ rm -f mise.lock
 cat >mise.toml <<EOF
 [tools."http:expr-version-keyed"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/ctool_{{ version }}_{{ os() }}-{{ arch() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/c_versions.json"
+url = "http://127.0.0.1:${HTTP_PORT}/ctool_{{ version }}_{{ os() }}-{{ arch() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/c_versions.json"
 checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
 EOF
 mise lock --platform linux-x64,macos-x64
@@ -140,11 +124,11 @@ rm -f mise.lock
 cat >mise.toml <<EOF
 [tools."http:expr-bare-hash"]
 version = "1.0.0"
-checksum_url = "http://127.0.0.1:${PORT}/bare_manifest.json"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/bare_manifest.json"
 checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].checksum'
 
 [tools."http:expr-bare-hash".platforms.linux-x64]
-url = "http://127.0.0.1:${PORT}/baretool_{{ version }}_linux-x64.tar.gz"
+url = "http://127.0.0.1:${HTTP_PORT}/baretool_{{ version }}_linux-x64.tar.gz"
 EOF
 output="$(mise lock --platform linux-x64 2>&1)"
 # The artifact is still locked (URL present)...
@@ -164,11 +148,11 @@ rm -f mise.lock
 cat >mise.toml <<EOF
 [tools."http:expr-manifest-algo"]
 version = "1.0.0"
-checksum_url = "http://127.0.0.1:${PORT}/algo_manifest.json"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/algo_manifest.json"
 checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].algo + ":" + fromJSON(body).platforms[os + "-" + arch].hash'
 
 [tools."http:expr-manifest-algo".platforms.linux-x64]
-url = "http://127.0.0.1:${PORT}/algotool_{{ version }}_linux-x64.tar.gz"
+url = "http://127.0.0.1:${HTTP_PORT}/algotool_{{ version }}_linux-x64.tar.gz"
 EOF
 mise lock --platform linux-x64
 assert_contains "cat mise.lock" "sha512:${ALGO512}"
@@ -184,11 +168,11 @@ rm -f mise.lock
 cat >mise.toml <<EOF
 [tools."http:expr-uppercase-algo"]
 version = "1.0.0"
-checksum_url = "http://127.0.0.1:${PORT}/upper_manifest.json"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/upper_manifest.json"
 checksum_expr = 'fromJSON(body).platforms[os + "-" + arch].algo + ":" + fromJSON(body).platforms[os + "-" + arch].hash'
 
 [tools."http:expr-uppercase-algo".platforms.linux-x64]
-url = "http://127.0.0.1:${PORT}/uppertool_{{ version }}_linux-x64.tar.gz"
+url = "http://127.0.0.1:${HTTP_PORT}/uppertool_{{ version }}_linux-x64.tar.gz"
 EOF
 mise lock --platform linux-x64
 assert_contains "cat mise.lock" "sha256:${UPPER_LOWER}"

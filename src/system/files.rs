@@ -4974,7 +4974,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 // even an empty source dir must produce the target dir,
                 // or the entry would never converge
                 file::create_dir_all(&req.target)?;
-                // per-file instead of copy_dir_all so a symlink at a
+                // per-file instead of a directory copy so a symlink at a
                 // destination is replaced, not written through
                 for (source, target) in walk_source_files(req)? {
                     if let Some(parent) = target.parent() {

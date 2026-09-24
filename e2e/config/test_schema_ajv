@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+
+# JSON Schema checks that need a full draft 2020-12 validator: tombi does not
+# enforce `not` or several cross-field constraints, so these use ajv, the same
+# implementation repository lint runs. They share one file so node and ajv-cli
+# are installed once rather than once per schema area.
+
+mise use -g node@24 npm:ajv-cli@5.0.0
+ajv_validate="mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d"
+
+# --- daemons
+
+validate="$ajv_validate daemons.json"
+
+cat >daemons.json <<'JSON'
+{"daemons":{"api":{"task":"dev","args":[]}}}
+JSON
+assert_succeed "$validate"
+
+for declaration in \
+  '{"run":"exec api","args":[]}' \
+  '{"preset":"postgres","version":"18","args":[]}'; do
+  printf '{"daemons":{"api":%s}}\n' "$declaration" >daemons.json
+  assert_fail "$validate"
+done
+
+# --- doctor
+
+validate="$ajv_validate"
+cat >doctor-valid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"pg_isready --quiet","description":"Database accepts connections","hint":"Start the services","timeout":"5s","dir":"../database","shell":"bash -c","os":["linux","macos"]}}}}
+JSON
+assert_succeed "$validate doctor-valid.json"
+# Unknown container options stay valid, matching mise's forward compatibility.
+cat >doctor-forward.json <<'JSON'
+{"doctor":{"settings":{"future":true},"checks":{}}}
+JSON
+assert_succeed "$validate doctor-forward.json"
+# Each invalid root-level block used to pass because doctor was misplaced
+# inside task_dependency_item and was unvalidated at the root.
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"hint":"missing command"}}}}
+JSON
+assert_fail "$validate doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"true","timeuot":"5s"}}}}
+JSON
+assert_fail "$validate doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"doctor":{"checks":{"database":{"run":"true","os":[]}}}}
+JSON
+assert_fail "$validate doctor-invalid.json"
+cat >doctor-invalid.json <<'JSON'
+{"tasks":{"test":{"depends":[{"task":"setup","doctor":{"checks":{}}}]}}}
+JSON
+assert_fail "$validate doctor-invalid.json"
+
+# --- bootstrap file phases
+
+validate="$ajv_validate phases.json"
+cat >phases.json <<'JSON'
+{"bootstrap":{"files":{"/etc/vendor.sources":{"source":"vendor.sources","phase":"pre-packages"}},"directories":{"/etc/vendor":{"phase":"post-packages"}}}}
+JSON
+assert_succeed "$validate"
+cat >phases.json <<'JSON'
+{"bootstrap":{"files":{"/etc/vendor.sources":{"content":"repo","phase":"invalid"}}}}
+JSON
+assert_fail "$validate"
+cat >phases.json <<'JSON'
+{"bootstrap":{"directories":{"/etc/vendor":{"phase":"invalid"}}}}
+JSON
+assert_fail "$validate"
+
+# --- bootstrap file permissions only
+
+validate="$ajv_validate permissions-only.json"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{"mode":"0600"}}}}
+JSON
+assert_succeed "$validate"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{"owner":"root","group":"root","state":"present"}}}}
+JSON
+assert_succeed "$validate"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/obsolete.conf":{"state":"absent"}}}}
+JSON
+assert_succeed "$validate"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/example.conf":{"content":"x","template":true,"replace":true}}}}
+JSON
+assert_succeed "$validate"
+# A present file needs content or some permissions to manage.
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{}}}}
+JSON
+assert_fail "$validate"
+# Without content there is nothing to render, remove, or replace with.
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{"mode":"0600","template":true}}}}
+JSON
+assert_fail "$validate"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{"mode":"0600","template":true,"remove_empty":true}}}}
+JSON
+assert_fail "$validate"
+cat >permissions-only.json <<'JSON'
+{"bootstrap":{"files":{"/etc/ssh/sshd_config":{"mode":"0600","replace":true}}}}
+JSON
+assert_fail "$validate"
+
+# --- bootstrap file remove empty
+
+validate="$ajv_validate remove-empty.json"
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"content":"{{ vars.proxy }}","template":true,"remove_empty":true}}}}
+JSON
+assert_succeed "$validate"
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"content":"","template":true,"remove_empty":true,"state":"present"}}}}
+JSON
+assert_succeed "$validate"
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"content":"","remove_empty":false}}}}
+JSON
+assert_succeed "$validate"
+# remove_empty requires a template.
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"content":"","remove_empty":true}}}}
+JSON
+assert_fail "$validate"
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"content":"","template":false,"remove_empty":true}}}}
+JSON
+assert_fail "$validate"
+# remove_empty applies only to present files.
+cat >remove-empty.json <<'JSON'
+{"bootstrap":{"files":{"/etc/proxy.conf":{"template":true,"remove_empty":true,"state":"absent"}}}}
+JSON
+assert_fail "$validate"
+
+# --- bootstrap services (the tombi checks stay in test_schema_bootstrap_services)
+# Tombi does not enforce JSON Schema's `not`, so this cross-field constraint
+# lives here.
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch","command":"worker"}}}}\n' >services-invalid.json
+assert_fail "$ajv_validate services-invalid.json"
+printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch"}}}}\n' >services-valid.json
+assert_succeed "$ajv_validate services-valid.json"

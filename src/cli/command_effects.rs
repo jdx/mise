@@ -46,6 +46,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("activate", Read),
     ("backends", Read),
     ("backends ls", Read),
+    // Rewrites lock entries and reinstalls the same versions from another
+    // backend, like `upgrade`; nothing is left uninstalled.
+    ("backends switch", Write),
     ("bin-paths", Read),
     ("bootstrap", Destructive),
     ("bootstrap __apply-account-plan", Destructive),
