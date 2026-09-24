@@ -63,7 +63,6 @@
 - [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): The npm backend installs command-line packages from npm registries into separate tool directories. Keep your application's dependencies in package.json and use its package manager or mise deps to…
 - [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The Packslip backend installs tools using signed release manifests published by their maintainers. mise verifies the release, selects the build for your platform, and installs its executables.
 - [pypi](https://mise.jdx.dev/dev-tools/backends/pypi.html): The pypi backend installs Python command-line applications in isolated virtual environments. Each tool gets its own dependencies.
-- [pkgx](https://mise.jdx.dev/dev-tools/backends/pkgx.html): The pkgx backend installs packages from the pkgx pantry without shelling out to the pkgx CLI. mise resolves pantry metadata, downloads pkgx bottles from dist.pkgx.dev, verifies bottle checksums when…
 - [spm](https://mise.jdx.dev/dev-tools/backends/spm.html): You may install executables managed by Swift Package Manager directly from GitHub or GitLab releases.
 - [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html): The ubi backend is deprecated. Use the GitHub backend instead.
 - [vfox](https://mise.jdx.dev/dev-tools/backends/vfox.html): vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
@@ -177,6 +176,7 @@
 - [mise activate](https://mise.jdx.dev/cli/activate.html): Print the script to activate mise in an interactive shell
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
+- [mise backends switch](https://mise.jdx.dev/cli/backends/switch.html): Switch tools to the backend the registry now installs them from
 - [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
 - [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine from the current configuration
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
@@ -198,7 +198,7 @@
 - [mise bootstrap dotfiles history diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Capture paths matching a glob again
+- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
 - [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
@@ -279,6 +279,11 @@
 - [mise daemons](https://mise.jdx.dev/cli/daemons.html): [experimental] Manage project daemons with pitchfork
 - [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): List project daemons without starting a supervisor or registering configuration.
+- [mise daemons providers](https://mise.jdx.dev/cli/daemons/providers.html): Manage shared servers defined in global [daemon_providers].
+- [mise daemons providers ls](https://mise.jdx.dev/cli/daemons/providers/ls.html): List configured and previously managed shared servers.
+- [mise daemons providers restart](https://mise.jdx.dev/cli/daemons/providers/restart.html): Restart the named shared servers with their current configuration.
+- [mise daemons providers start](https://mise.jdx.dev/cli/daemons/providers/start.html): Start the named shared servers.
+- [mise daemons providers stop](https://mise.jdx.dev/cli/daemons/providers/stop.html): Stop the named shared servers without deleting their data.
 - [mise daemons prune](https://mise.jdx.dev/cli/daemons/prune.html): Remove daemon state left behind by deleted project directories.
 - [mise daemons register](https://mise.jdx.dev/cli/daemons/register.html): Prepare all project daemons for on-demand startup without starting them.
 - [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): Arguments passed to pitchfork; daemon names may be short or qualified.
@@ -308,7 +313,7 @@
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Capture paths matching a glob again
+- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies

@@ -9,7 +9,7 @@ use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dotfiles::{Dotfiles, DotfilesApply};
+use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -1342,7 +1342,21 @@ impl Bootstrap {
         (self.dry_run, self.yes)
     }
 
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        // Dotfiles subcommands handle their own notices; in particular,
+        // a background watcher must leave them for a foreground command.
+        let deliver_notices = self.command.is_none();
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        let result = self.run_with_notices().await;
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        result
+    }
+
+    async fn run_with_notices(mut self) -> Result<()> {
         normalize_adopt_alias(&mut self.adopt, self.from_git.take());
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
@@ -1690,36 +1704,23 @@ impl Bootstrap {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
             let files = system::files::files_from_config(&config)?;
+            // loaded before any file is written: this also refuses an edit on
+            // a file an absent entry removes
+            let edits = system::edits::edits_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfiles");
-                let opts = system::files::ApplyOpts {
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    force: self.force_dotfiles,
-                    force_hint: "use --force-dotfiles or run `mise dot apply --force`",
-                    yes: self.yes,
-                };
-                if !system::files::apply(&config, &files, &opts, &secrets, &mut vec![])? {
-                    return Ok(declined());
-                }
             }
-
-            let edits = system::edits::edits_from_config(&config)?;
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfile edits");
-                let opts = system::edits::ApplyOpts {
-                    part: "dotfiles",
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    yes: self.yes,
-                };
-                if !system::edits::apply(&config, &edits, &opts, &mut vec![])? {
-                    return Ok(declined());
-                }
+            }
+            // the same [history.reload] commands `mise dot apply` runs, for
+            // the targets this phase writes
+            if (!files.is_empty() || !edits.is_empty())
+                && !write_and_reload(self.dry_run, |written| {
+                    self.apply_dotfiles(&config, &files, &edits, &secrets, written)
+                })?
+            {
+                return Ok(declined());
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
@@ -2093,6 +2094,45 @@ impl Bootstrap {
         Ok(())
     }
 
+    /// The dotfiles phase's whole-file entries, then its edits, appending
+    /// each written target to `written`. Returns `false` when a prompt was
+    /// declined.
+    fn apply_dotfiles(
+        &self,
+        config: &Config,
+        files: &[system::files::FileRequest],
+        edits: &[system::edits::EditRequest],
+        secrets: &system::secrets::SecretValues,
+        written: &mut Vec<PathBuf>,
+    ) -> Result<bool> {
+        if !files.is_empty() {
+            info!("bootstrap: dotfiles");
+            let opts = system::files::ApplyOpts {
+                dry_run: self.dry_run,
+                verbose: false,
+                force: self.force_dotfiles,
+                force_hint: "use --force-dotfiles or run `mise dot apply --force`",
+                yes: self.yes,
+            };
+            if !system::files::apply(config, files, &opts, secrets, written)? {
+                return Ok(false);
+            }
+        }
+        if !edits.is_empty() {
+            info!("bootstrap: dotfile edits");
+            let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
+                dry_run: self.dry_run,
+                verbose: false,
+                yes: self.yes,
+            };
+            if !system::edits::apply(config, edits, &opts, written)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     async fn run_hooks(
         &self,
         config: &Config,
@@ -2367,9 +2407,16 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target)
-            || (file.mode != system::files::FileMode::Content && !file.source.is_file())
-        {
+        if !is_mise_config_target(&file.target) {
+            continue;
+        }
+        if file.mode == FileMode::Absent {
+            // removed by the apply; a later edit starts from an empty file
+            config_files.shift_remove(&file.target);
+            bodies.insert(file.target.clone(), String::new());
+            continue;
+        }
+        if file.mode != FileMode::Content && !file.source.is_file() {
             continue;
         }
         if file.mode == FileMode::Template {
@@ -3947,15 +3994,31 @@ impl BootstrapStatus {
         let files = system::files::files_from_config(config)?;
         system::files::validate_composed_file_footprints(&files)?;
         for req in files {
-            let state = match system::files::check(config, &req, secrets) {
-                Ok(state) => state,
-                Err(err) => system::files::FileState::Differs(format!("{err}")),
+            // an absent entry that cannot be checked (a directory at the
+            // target, say) is an error, not a pending removal
+            let (state, removable) = match system::files::check(config, &req, secrets) {
+                Ok(state) => (state, true),
+                Err(err) => (system::files::FileState::Differs(format!("{err}")), false),
             };
+            let absent = req.mode == FileMode::Absent && removable;
             let (state_str, state_json, missing) = match &state {
-                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Applied if absent => {
+                    ("absent".to_string(), "applied", false)
+                }
+                system::files::FileState::Applied => (
+                    match system::files::permissions_target_absent(&req) {
+                        Some(reason) => format!("applied ({reason})"),
+                        None => "applied".to_string(),
+                    },
+                    "applied",
+                    false,
+                ),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) if absent => {
+                    (format!("would remove ({reason})"), "differs", true)
                 }
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
@@ -3965,21 +4028,32 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                if req.mode == system::files::FileMode::Content {
-                    "content inline".to_string()
-                } else {
-                    format!("{} {}", req.mode.name(), req.source.display_user())
+                match req.mode {
+                    system::files::FileMode::Content => "content inline".to_string(),
+                    system::files::FileMode::Permissions => {
+                        format!("permissions {:04o}", req.permissions.unwrap_or_default())
+                    }
+                    system::files::FileMode::Absent => "absent".to_string(),
+                    _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
                 missing,
             );
-            json_files.push(json!({
+            let mut entry = json!({
                 "target": req.target_raw,
-                "source": (req.mode != system::files::FileMode::Content)
+                "source": req.mode.has_source()
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
-            }));
+            });
+            if let system::files::FileState::Differs(reason) = &state {
+                entry["reason"] = json!(if absent {
+                    format!("{reason}; will be removed")
+                } else {
+                    reason.clone()
+                });
+            }
+            json_files.push(entry);
         }
 
         let mut json_edits = vec![];

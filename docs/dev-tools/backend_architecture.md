@@ -55,7 +55,7 @@ separate from the internal Rust trait.
 | Forge releases               | `github:`, `gitlab:`, `forgejo:`                    | Matching release assets for the target platform                                |
 | Direct artifacts             | `http:`, `s3:`                                      | Artifact location, authentication, platform mapping, and integrity information |
 | Language packages            | `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `dotnet:` | Required runtime or toolchain and package-manager behavior                     |
-| Other package sources        | `conda:`, `pkgx:`, `spm:`                           | Backend-specific platform support and dependencies                             |
+| Other package sources        | `conda:`, `spm:`                                    | Backend-specific platform support and dependencies                             |
 | External plugins             | asdf, vfox tool plugins, backend plugins            | Plugin code, prerequisites, and supported platforms                            |
 
 The [backend reference](/dev-tools/backends/) lists available backends and their

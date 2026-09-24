@@ -479,6 +479,30 @@ fn extract_minor_version(version: &str) -> Option<String> {
     }
 }
 
+/// Search rubygems.org for gems matching `query`. The endpoint has a fixed
+/// page size, so results are truncated to `limit`.
+pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
+    #[derive(Deserialize)]
+    struct SearchGem {
+        name: String,
+        info: Option<String>,
+    }
+
+    let url = url::Url::parse_with_params(
+        "https://rubygems.org/api/v1/search.json",
+        &[("query", query)],
+    )?;
+    let res: Vec<SearchGem> = HTTP_FETCH.json(url).await?;
+    Ok(res
+        .into_iter()
+        .take(limit)
+        .map(|g| vfox::BackendTool {
+            name: g.name,
+            description: g.info,
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,10 +4,14 @@
 
 export NPM_CONFIG_FUND=false
 
+# Package metadata comes from e2e/fixtures/npm/server.py, not registry.npmjs.org.
+source "$ROOT/e2e/fixtures/npm/start.sh"
+
+# node provides npm for the MISE_NPM_SHELL_OUT cases.
 mise use node
 
 # Test: mise latest with minimum_release_age should resolve to an older version
-# prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-05-23
+# prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-04-23
 # Setting minimum_release_age to 2023-06-01 should give us 2.8.8 (not 3.x)
 # This must fall back after detecting NPMBackend::latest_stable_version is
 # newer than the cutoff, because npm dist-tags return the absolute latest.
@@ -66,3 +70,6 @@ cat <<EOF >mise.toml
 EOF
 assert_not_contains "mise latest npm:prettier" "2.8.8"
 assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
+
+assert_fake_npm_registry_used mise prettier aws-cdk request
+assert_fake_npm_registry_used npm aws-cdk request

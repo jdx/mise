@@ -117,6 +117,15 @@ before sharing them. They let bootstrap recreate tools and services and
 render templates on the next machine. Tracked files can still be restored
 when the repository contains no global mise configuration.
 
+Put machine setup that files alone do not cover, such as installing shell
+plugins or fixing permissions, in the shared configuration's
+[`[tasks.bootstrap]`](#what-goes-where). Adoption runs it from the restored
+configuration. Later, `mise dot pull` and the watcher restore shared changes
+without running setup; run `mise bootstrap` to apply them, which runs the task
+again. `[history.reload]` commands react to restored files, but mise reads them
+before the restore, so a reload table that arrives in the same update,
+including the first adoption, does not run for it.
+
 If an existing file differs, mise asks you to resolve the conflict before
 restoring files or running the remaining bootstrap steps. Use `--dry-run`
 to preview the plan. See [history](/history.html#sharing-across-machines)
@@ -323,7 +332,9 @@ want to check one part without installing anything.
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
 such as checking authentication or seeding local data. The task runs again on
-every bootstrap, so guard operations that should happen only once.
+every bootstrap, so guard operations that should happen only once. On machines
+that share a [setup repository](#shared-dotfile-history), the task runs when a
+machine adopts it and on each `mise bootstrap` after a shared update.
 
 ## Modules
 

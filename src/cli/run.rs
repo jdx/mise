@@ -1151,7 +1151,15 @@ impl Run {
                 } else {
                     Error::get_exit_status(err)
                 };
-                if !interrupted && !this.is_stopping() && (panicked || status.is_none()) {
+                // Record the failure before deciding whether to report it:
+                // checking `is_stopping` first and recording afterwards let two
+                // tasks failing together both report themselves as the cause.
+                let was_stopping = if interrupted {
+                    this.is_stopping()
+                } else {
+                    this.add_failed_task(task.clone(), status) || this.is_interrupted()
+                };
+                if !interrupted && !was_stopping && (panicked || status.is_none()) {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
@@ -1163,9 +1171,6 @@ impl Run {
                             current_err = e.source();
                         }
                     };
-                }
-                if !interrupted {
-                    this.add_failed_task(task.clone(), status);
                 }
                 // SIGTERM any still-running siblings so we exit promptly on
                 // failure instead of waiting for them to finish naturally.
@@ -1453,10 +1458,12 @@ impl Run {
             .await
     }
 
-    fn add_failed_task(&self, task: Task, status: Option<i32>) {
-        if let Some(executor) = &self.executor {
-            executor.add_failed_task(task, status);
-        }
+    /// Record a failed task, returning whether the run was already stopping
+    /// because of an earlier failure. See [`TaskExecutor::add_failed_task`].
+    fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
+        self.executor
+            .as_ref()
+            .is_some_and(|executor| executor.add_failed_task(task, status))
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {

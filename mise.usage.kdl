@@ -452,6 +452,31 @@ mise backends ls
 mise plugins ls
 """# help="Installed plugin availability and built-in backends are separate lists"
     }
+    cmd switch help="Switch tools to the backend the registry now installs them from" effect=write {
+        long_help #"""
+Switch tools to the backend the registry now installs them from
+
+When the registry moves a tool to another backend, mise keeps installing it
+from the backend recorded in mise.lock and warns that the registry has a
+newer one. This moves those lock entries to the registry's backend at the
+same versions, relocks them to record the new backend's checksums and URLs,
+and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `--global`.
+"""#
+        flag "-n --dry-run" help="Show what would switch without changing the lockfile or installs"
+        flag "-g --global" help="Switch tools in the global config's lockfile instead of the project's"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL@VERSION]…" help="Tools to switch" help_long=#"""
+Tools to switch
+
+Defaults to every configured tool whose locked backend the registry
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
+"""# required=#false var=#true
+        example "mise backends switch communique" help="Move communique to the registry's current backend"
+        example "mise backends switch --dry-run" help="List every locked tool the registry now installs from another backend"
+    }
 }
 cmd bin-paths help="List all the active runtime bin paths" effect=read {
     flag --bin-names help="Output executable names instead of bin directories"
@@ -791,10 +816,14 @@ mise dot edit --apply ~/.config/starship.toml
             long_help #"""
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
-logs, caches, databases, and constantly rewritten application state; a
-file that genuinely holds configuration but changes constantly is
-better tracked with `--no-autosave` and saved explicitly.
+Adds a glob to `[history] exclude` in the global configuration. The
+rule applies to all tracked paths. Quote the glob to prevent your shell
+from expanding it.
+
+Use exclusions for logs, caches, databases, and session state. For
+configuration you want to save manually, use `--no-autosave` instead.
+To scope selection to one directory, edit that `[dotfiles]` entry's
+`exclude` or `include` list.
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
@@ -882,14 +911,22 @@ With no reference, use the newest operation, ignoring later saves. With one refe
                 arg "[REF]" help="Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`" required=#false
             }
         }
-        cmd include help="Capture paths matching a glob again" effect=write {
+        cmd include help="Stop excluding paths matching a glob" effect=write {
             long_help #"""
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 
-Removes the glob from `[history] exclude` in the global config.
+Removes the specified glob from `[history] exclude` in the global
+configuration. Pass the same pattern used with `mise dot exclude`:
+
+    mise dot exclude '~/.codex/sessions/**'
+    mise dot include '~/.codex/sessions/**'
+
+Other matching exclusion rules still apply. This command does not edit
+a tracked directory's `include` list; change that field in `[dotfiles]`
+to select which files the directory saves.
 """#
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <GLOB> help="The glob as written by `exclude`"
+            arg <GLOB> help="The glob as written by `mise dot exclude`"
         }
         cmd origin help="Connect or disconnect the setup repository" effect=destructive {
             long_help #"""
@@ -1114,7 +1151,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
             flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
                 arg <OS>
             }
@@ -1124,6 +1161,7 @@ Linux box can share the same live path with different contents.
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag "-y --yes" help="Accept without prompting"
+            flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
         }
@@ -2137,6 +2175,7 @@ mise config get tools.python
 3.12
 """#
         complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
     }
     cmd ls help="List config files currently in use" effect=read {
         alias list
@@ -2211,6 +2250,7 @@ mise config set --remove env._.path ~/.local/bin
 """#
         example "mise config set settings.jobs 4" help="Type for `settings` is inferred"
         complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
     }
 }
 cmd current hide=#true help="Shows current active and installed runtime versions" effect=read {
@@ -2262,6 +2302,35 @@ With no subcommand, list configured and previously managed daemons.
 """#
     flag --json
     flag "-h --help" help="Print help" action=help builtin=#true
+    cmd providers help="Manage shared servers defined in global [daemon_providers]." effect=read {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd ls help="List configured and previously managed shared servers." effect=read {
+            flag --json
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd start help="Start the named shared servers." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+        cmd stop help="Stop the named shared servers without deleting their data." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+        cmd restart help="Restart the named shared servers with their current configuration." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+    }
+    cmd __provider-exec hide=#true {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <MANIFEST>
+        arg <COMMAND>
+    }
+    cmd __resource hide=#true help="A project-owned readiness process: it never starts or stops the server itself." {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PROVIDER>
+        arg <RESOURCE>
+    }
     cmd start help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
@@ -2514,10 +2583,14 @@ mise dot edit --apply ~/.config/starship.toml
         long_help #"""
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
-logs, caches, databases, and constantly rewritten application state; a
-file that genuinely holds configuration but changes constantly is
-better tracked with `--no-autosave` and saved explicitly.
+Adds a glob to `[history] exclude` in the global configuration. The
+rule applies to all tracked paths. Quote the glob to prevent your shell
+from expanding it.
+
+Use exclusions for logs, caches, databases, and session state. For
+configuration you want to save manually, use `--no-autosave` instead.
+To scope selection to one directory, edit that `[dotfiles]` entry's
+`exclude` or `include` list.
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
@@ -2605,14 +2678,22 @@ With no reference, use the newest operation, ignoring later saves. With one refe
             arg "[REF]" help="Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`" required=#false
         }
     }
-    cmd include help="Capture paths matching a glob again" effect=write {
+    cmd include help="Stop excluding paths matching a glob" effect=write {
         long_help #"""
-Capture paths matching a glob again
+Stop excluding paths matching a glob
 
-Removes the glob from `[history] exclude` in the global config.
+Removes the specified glob from `[history] exclude` in the global
+configuration. Pass the same pattern used with `mise dot exclude`:
+
+    mise dot exclude '~/.codex/sessions/**'
+    mise dot include '~/.codex/sessions/**'
+
+Other matching exclusion rules still apply. This command does not edit
+a tracked directory's `include` list; change that field in `[dotfiles]`
+to select which files the directory saves.
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <GLOB> help="The glob as written by `exclude`"
+        arg <GLOB> help="The glob as written by `mise dot exclude`"
     }
     cmd origin help="Connect or disconnect the setup repository" effect=destructive {
         long_help #"""
@@ -2837,7 +2918,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track --dry-run ~/.codex\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
         flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
             arg <OS>
         }
@@ -2847,6 +2928,7 @@ Linux box can share the same live path with different contents.
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag "-y --yes" help="Accept without prompting"
+        flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
     }
@@ -3472,7 +3554,14 @@ This reads an existing stub file and fills in any missing checksum/size fields b
         flag --http help="HTTP backend type to use" default=http {
             arg <HTTP>
         }
-        flag --lock help="Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls" {
+        flag --lock help="Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub" {
+            long_help #"""
+Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
+
+The data goes into the `mise.lock` of the nearest project config above the
+stub, and the stub keeps its version request. It is an error when no project
+config is found.
+"""#
             conflicts "--url" "--platform-url" "--bin" "--platform-bin" "--fetch" "--skip-download"
         }
         flag --platform-bin help="Platform-specific binary paths in the format platform:path" var=#true {
@@ -3516,7 +3605,7 @@ mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz -
 # Replace the URL with a real artifact before fetching metadata or executing it
 """# help="Create a draft for your own artifact without fetching the placeholder URL"
         example "mise generate tool-stub ./bin/node --fetch" help="Fill missing checksums and sizes in an existing stub"
-        example "mise generate tool-stub ./bin/registry-node --lock --version 22" help="For an existing registry-backed stub, resolve and embed version/platform lock data"
+        example "mise generate tool-stub ./bin/registry-node --lock --version 22" help="For an existing registry-backed stub, resolve and record version/platform lock data"
         complete output type=path
     }
 }
@@ -3920,6 +4009,8 @@ re-resolved against the latest matching remote versions, so the lockfile
 advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
+If the remote versions cannot be fetched, it fails rather than keep
+the locked version.
 """#
     }
     flag --json help="Output version changes as JSON" {
@@ -3988,9 +4079,25 @@ Lists the tools mise knows about: versions that are installed, and versions requ
 by a config file (active) whether or not they are installed.
 """#
     flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
+    flag "-b --backend" help="Only show tools from this backend, e.g. aqua, cargo, core, go" var=#true {
+        long_help #"""
+Only show tools from this backend, e.g. aqua, cargo, core, go
+
+Registry shorthands count as the backend they resolve to, so `jq` is listed
+under aqua. Repeat the flag to show several backends.
+"""#
+        arg <BACKEND>
+    }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
+    flag --grouped help="List tools in a separate section for each backend" conflicts=--json {
+        long_help #"""
+List tools in a separate section for each backend
+
+Cannot be combined with --json; use --backend to filter JSON output.
+"""#
+    }
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show tool versions currently specified in the local mise.toml" conflicts=--global
     flag "-m --missing" help="Display missing tool versions" conflicts=--installed
@@ -4026,6 +4133,8 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     example "mise ls --json" help="Machine-readable output: an object keyed by tool name"
     example "mise ls node --json" help="With a tool argument, JSON output is an array of its version records"
     example "mise ls --all-sources" help="Include references from every tracked configuration file"
+    example "mise ls --backend go --backend cargo" help="Show only tools from the go or cargo backends"
+    example "mise ls --grouped" help="List tools in a separate section for each backend"
 }
 cmd ls-remote help="List tool versions available to install" effect=read {
     alias list-all list-remote
@@ -5017,9 +5126,15 @@ Search for available tools
 
 Searches the registry and installed backend catalogs for tools matching NAME.
 
+Prefix NAME with a backend to also search that backend's package registry:
+`npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
+including all of those package registries. Otherwise, unprefixed searches do
+not query package registries.
+
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
 """#
+    flag "-a --all" help="Search every backend: the registry, aqua, installed backend plugins, and the npm, cargo, gem, and dotnet package registries"
     flag "-i --interactive" help="Show an interactive search menu" {
         conflicts "--match-type" "--no-header"
     }
@@ -5046,6 +5161,11 @@ jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
+"""#
+    example #"""
+mise search --match-type equal npm:typescript-language-server
+Tool                            Description
+npm:typescript-language-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver
 """#
     example #"""
 mise search --interactive
@@ -6009,9 +6129,10 @@ cmd tool help="Show information about a tool" effect=read {
     flag --installed help="Only show installed versions"
     flag --requested help="Only show requested versions"
     flag --tool-options help="Only show tool options"
+    flag --url help="Only show the project URL from the registry"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL> help="Tool name to get information about"
-    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
+    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options" "--url"
     example #"""
 mise tool node
 Backend:            core
@@ -6221,8 +6342,11 @@ Upgrade to the latest version available, bumping the version in mise.toml
 For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
 this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
-It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
-would change your config to `node = "22"`.
+With a bare tool, it keeps the same precision as what was there before, so if you instead had
+`node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
+provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
+For version selectors, `settings.pin` persists the resolved concrete version. Requests from non-writable
+sources are not persisted. For example, `mise upgrade node@latest --bump` writes `latest`.
 """#
     }
     flag "-i --interactive" help="Choose which tools to upgrade from a multiselect menu" conflicts=INSTALLED_TOOL@VERSION

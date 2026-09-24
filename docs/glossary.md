@@ -88,9 +88,6 @@ mise supports multiple backends for installing tools from different sources:
 **pipx**
 : Installs Python CLI tools in isolated environments using uv by default, or pipx when configured. See [pipx backend](/dev-tools/backends/pipx).
 
-**pkgx**
-: Installs packages through pkgx. See [pkgx backend](/dev-tools/backends/pkgx.html).
-
 **s3**
 : Downloads tool artifacts from S3 or compatible storage. See [S3 backend](/dev-tools/backends/s3.html).
 

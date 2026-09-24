@@ -1,6 +1,6 @@
-use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
+use crate::backend::{SecurityFeature, VersionInfo};
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
@@ -212,24 +212,15 @@ impl Backend for AquaBackend {
         count
     }
 
-    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
-        use crate::backend::SecurityFeature;
-
+    async fn security_info(&self) -> Vec<SecurityFeature> {
         // Keyed by aqua package name, same as `description` above.
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(_) => return vec![],
         };
 
-        let mut features = vec![];
-
-        // Check base package and all version overrides for security features
-        // This gives a complete picture of available security features across all versions
-        let all_pkgs: Vec<&AquaPackage> = std::iter::once(&pkg)
-            .chain(pkg.version_overrides.iter())
-            .collect();
-
-        // Fetch release assets to detect actual security features
+        // Release assets inform only the checksum entry: mise can verify the
+        // GitHub API digest even without checksum config.
         let release_assets = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
             let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
             github::list_releases(&repo)
@@ -242,108 +233,7 @@ impl Backend for AquaBackend {
             vec![]
         };
 
-        // Checksum - check registry config OR actual release assets
-        let has_checksum_config = all_pkgs.iter().any(|p| {
-            p.checksum
-                .as_ref()
-                .is_some_and(|checksum| checksum.enabled())
-        });
-        let has_checksum_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.contains("sha256")
-                || name.contains("checksum")
-                || name.ends_with(".sha256")
-                || name.ends_with(".sha512")
-        });
-        if has_checksum_config || has_checksum_assets {
-            let algorithm = all_pkgs
-                .iter()
-                .filter_map(|p| p.checksum.as_ref())
-                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
-                .or_else(|| {
-                    if has_checksum_assets {
-                        Some("sha256".to_string())
-                    } else {
-                        None
-                    }
-                });
-            features.push(SecurityFeature::Checksum { algorithm });
-        }
-
-        // GitHub Artifact Attestations require registry config so the badge
-        // matches lock/install provenance verification behavior.
-        if all_pkgs
-            .iter()
-            .any(|p| Self::has_github_attestations_config(p))
-        {
-            let signer_workflow = all_pkgs
-                .iter()
-                .filter_map(|p| {
-                    p.github_artifact_attestations
-                        .as_ref()
-                        .filter(|a| a.enabled != Some(false))
-                })
-                .chain(all_pkgs.iter().filter_map(|p| {
-                    Self::checksum_github_attestations_config(p)
-                        .map(|(_, attestations)| attestations)
-                }))
-                .find_map(|a| a.signer_workflow.clone());
-            features.push(SecurityFeature::GithubAttestations { signer_workflow });
-        }
-
-        // SLSA - check registry config OR actual release assets
-        let has_slsa_config = all_pkgs.iter().any(|p| {
-            p.slsa_provenance
-                .as_ref()
-                .is_some_and(|s| s.enabled.unwrap_or(true))
-        });
-        let has_slsa_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.contains(".intoto.jsonl")
-                || name.contains("provenance")
-                || name.ends_with(".attestation")
-        });
-        if has_slsa_config || has_slsa_assets {
-            features.push(SecurityFeature::Slsa { level: None });
-        }
-
-        // Cosign - check registry config OR actual release assets
-        let has_cosign_config = all_pkgs.iter().any(|p| {
-            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
-        });
-        let has_cosign_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.ends_with(".sig") || name.contains("cosign")
-        });
-        if has_cosign_config || has_cosign_assets {
-            features.push(SecurityFeature::Cosign);
-        }
-
-        // Minisign - check registry config OR actual release assets
-        let has_minisign_config = all_pkgs.iter().any(|p| {
-            p.minisign
-                .as_ref()
-                .is_some_and(|m| m.enabled.unwrap_or(true))
-                || Self::checksum_minisign_config(p).is_some()
-        });
-        let has_minisign_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.ends_with(".minisig")
-        });
-        if has_minisign_config || has_minisign_assets {
-            let public_key = all_pkgs
-                .iter()
-                .filter_map(|p| p.minisign.as_ref().filter(|m| m.enabled != Some(false)))
-                .chain(
-                    all_pkgs
-                        .iter()
-                        .filter_map(|p| Self::checksum_minisign_config(p).map(|(_, m)| m)),
-                )
-                .find_map(|m| m.public_key.clone());
-            features.push(SecurityFeature::Minisign { public_key });
-        }
-
-        features
+        Self::security_features(&pkg, &release_assets)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -1216,6 +1106,106 @@ impl AquaBackend {
             }
         }
         pkg.with_var_values(var_values)
+    }
+
+    /// Security checks mise performs when installing `pkg`, across the base
+    /// package and every version override.
+    ///
+    /// Provenance and signatures come from registry config only, because mise
+    /// verifies nothing else: a `.sig` or `.intoto.jsonl` release asset without
+    /// matching config is never checked.
+    fn security_features(
+        pkg: &AquaPackage,
+        release_assets: &[github::GithubAsset],
+    ) -> Vec<SecurityFeature> {
+        let mut features = vec![];
+        let all_pkgs: Vec<&AquaPackage> = std::iter::once(pkg)
+            .chain(pkg.version_overrides.iter())
+            .collect();
+
+        // Checksum - check registry config OR actual release assets
+        let has_checksum_config = all_pkgs.iter().any(|p| {
+            p.checksum
+                .as_ref()
+                .is_some_and(|checksum| checksum.enabled())
+        });
+        let has_checksum_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.contains("sha256")
+                || name.contains("checksum")
+                || name.ends_with(".sha256")
+                || name.ends_with(".sha512")
+        });
+        if has_checksum_config || has_checksum_assets {
+            let algorithm = all_pkgs
+                .iter()
+                .filter_map(|p| p.checksum.as_ref())
+                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
+                .or_else(|| {
+                    if has_checksum_assets {
+                        Some("sha256".to_string())
+                    } else {
+                        None
+                    }
+                });
+            features.push(SecurityFeature::Checksum { algorithm });
+        }
+
+        // GitHub Artifact Attestations require registry config so the badge
+        // matches lock/install provenance verification behavior.
+        if all_pkgs
+            .iter()
+            .any(|p| Self::has_github_attestations_config(p))
+        {
+            let signer_workflow = all_pkgs
+                .iter()
+                .filter_map(|p| {
+                    p.github_artifact_attestations
+                        .as_ref()
+                        .filter(|a| a.enabled != Some(false))
+                })
+                .chain(all_pkgs.iter().filter_map(|p| {
+                    Self::checksum_github_attestations_config(p)
+                        .map(|(_, attestations)| attestations)
+                }))
+                .find_map(|a| a.signer_workflow.clone());
+            features.push(SecurityFeature::GithubAttestations { signer_workflow });
+        }
+
+        if all_pkgs.iter().any(|p| {
+            p.slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.enabled.unwrap_or(true))
+        }) {
+            features.push(SecurityFeature::Slsa { level: None });
+        }
+
+        // Only a key or bundle is verified natively; Cosign `opts` are not run.
+        if all_pkgs.iter().any(|p| {
+            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
+        }) {
+            features.push(SecurityFeature::Cosign);
+        }
+
+        if all_pkgs.iter().any(|p| {
+            p.minisign
+                .as_ref()
+                .is_some_and(|m| m.enabled.unwrap_or(true))
+                || Self::checksum_minisign_config(p).is_some()
+        }) {
+            let public_key = all_pkgs
+                .iter()
+                .filter_map(|p| p.minisign.as_ref().filter(|m| m.enabled != Some(false)))
+                .chain(
+                    all_pkgs
+                        .iter()
+                        .filter_map(|p| Self::checksum_minisign_config(p).map(|(_, m)| m)),
+                )
+                .find_map(|m| m.public_key.clone());
+            features.push(SecurityFeature::Minisign { public_key });
+        }
+
+        features
     }
 
     fn has_native_cosign(cosign: &AquaCosign) -> bool {
@@ -2619,7 +2609,24 @@ impl AquaBackend {
         }
 
         let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &tarball_path) {
+            let url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|platform| platform.url.clone());
+            return Err(match url {
+                Some(url) => {
+                    github::with_checksum_mismatch_note(
+                        err,
+                        &url,
+                        &tarball_path,
+                        lockfile_has_checksum,
+                    )
+                    .await
+                }
+                None => err,
+            });
+        }
         Ok(())
     }
 
@@ -3335,11 +3342,10 @@ impl AquaBackend {
         arch: &str,
     ) -> Result<Option<AquaFileLink>> {
         let explicit_link = f.link.is_some();
-        let src = match f.src(pkg, version, os, arch)? {
-            Some(src) => src,
-            None if explicit_link => f.name.clone(),
-            None => return Ok(None),
-        };
+        // Like aqua, a file without `src` is found at its `name`.
+        let src = f
+            .src(pkg, version, os, arch)?
+            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
 
         let mut src = install_path.join(src);
@@ -4716,6 +4722,47 @@ packages:
     }
 
     #[test]
+    fn test_srcs_default_src_to_file_name() {
+        // mvdan/sh and (on Windows) astral-sh/uv list files by name only.
+        // `symlink_bins` builds `.mise-bins` from these links, so dropping
+        // them left the directory missing while PATH pointed at it.
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![
+            AquaFile {
+                name: "uv".to_string(),
+                ..Default::default()
+            },
+            AquaFile {
+                name: "uvx".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+                .unwrap();
+
+        let exe = |name: &str| PathBuf::from("install").join(format!("{name}.exe"));
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: exe("uv"),
+                    dst: exe("uv"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: exe("uvx"),
+                    dst: exe("uvx"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn test_candidate_bin_paths_independent_of_filesystem() {
         // A package whose binary lives in a subdir of the install dir.
         let mut pkg = AquaPackage::default();
@@ -5732,6 +5779,106 @@ version_overrides:
         pkg
     }
 
+    fn release_asset(name: &str) -> github::GithubAsset {
+        github::GithubAsset {
+            name: name.to_string(),
+            browser_download_url: String::new(),
+            url: String::new(),
+            digest: None,
+            updated_at: None,
+        }
+    }
+
+    #[test]
+    fn security_features_ignore_signature_assets_without_config() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+asset: tool.tar.gz
+"#,
+        );
+        let assets =
+            ["tool.tar.gz.sig", "multiple.intoto.jsonl", "tool.minisig"].map(release_asset);
+
+        assert_eq!(AquaBackend::security_features(&pkg, &assets), vec![]);
+    }
+
+    #[test]
+    fn security_features_count_cosign_only_with_a_key_or_bundle() {
+        // Keyless Cosign expressed as CLI `opts` is not run by mise's native verifier.
+        let opts_only = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+checksum:
+  type: github_release
+  asset: checksums.txt
+  algorithm: sha256
+  cosign:
+    opts:
+      - --certificate-identity
+      - https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main
+"#,
+        );
+        assert_eq!(
+            AquaBackend::security_features(&opts_only, &[]),
+            vec![SecurityFeature::Checksum {
+                algorithm: Some("sha256".to_string())
+            }]
+        );
+
+        let bundle = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+checksum:
+  type: github_release
+  asset: checksums.txt
+  algorithm: sha256
+  cosign:
+    bundle:
+      type: github_release
+      asset: checksums.txt.sigstore.json
+"#,
+        );
+        assert!(AquaBackend::security_features(&bundle, &[]).contains(&SecurityFeature::Cosign));
+    }
+
+    #[test]
+    fn security_features_include_config_from_version_overrides() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_constraint: "false"
+version_overrides:
+  - version_constraint: "true"
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    minisign:
+      type: github_release
+      asset: tool.minisig
+      public_key: RWQexample
+"#,
+        );
+
+        assert_eq!(
+            AquaBackend::security_features(&pkg, &[]),
+            vec![
+                SecurityFeature::Slsa { level: None },
+                SecurityFeature::Minisign {
+                    public_key: Some("RWQexample".to_string())
+                },
+            ]
+        );
+    }
+
     #[test]
     fn test_version_from_tag_rejects_version_filter_mismatch() {
         let pkg = pkg_from_yaml(
@@ -5908,6 +6055,7 @@ no_asset: true
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 

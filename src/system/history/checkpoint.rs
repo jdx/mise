@@ -241,7 +241,18 @@ impl Store {
                 })
         });
         let uuid = draft.uuid.clone().unwrap_or_else(store::new_uuid);
-        let (mut walk, walk_error) = match tracked.walk() {
+        // **The refusal lives here, where a checkpoint is about to be
+        // written, and nowhere earlier.** An `[history] exclude` rule the
+        // matcher cannot compile must not quietly broaden a stored — and
+        // publishable — snapshot to the paths it was written to leave out.
+        // Walking is not storing: `mise dot paths`, the previews, `mise
+        // dot status` and the watch set all still work and report the
+        // rule, so the command that diagnoses the problem is not the
+        // command it breaks.
+        let (mut walk, walk_error) = match tracked
+            .refuse_unusable_exclusions()
+            .and_then(|()| tracked.walk())
+        {
             Ok(walk) => (walk, None),
             Err(err) if draft.operation.is_some() => {
                 // Keep the operation journal even when its outcome cannot be
@@ -251,9 +262,13 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        for warning in &walk.warnings {
-            warn!("history: {warning}");
-        }
+        let scan_notices: Vec<_> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        self.deliver_capture_notices(&scan_notices, !draft.protective && heard(&draft));
+        report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
         let promoted: BTreeSet<String> = previous_tree
@@ -585,7 +600,37 @@ impl Store {
             changes,
             operation,
         };
-        let entry = self.commit_record_locked(checkpoint, index, reserved_id)?;
+        let mut messages: Vec<String> = walk
+            .capture_warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        if available
+            && snapshot.is_some()
+            && let Some(repo) = &self.repo
+        {
+            let previous_commit = previous_tree
+                .as_ref()
+                .and_then(|(checkpoint, _)| {
+                    index
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.uuid == checkpoint.uuid)
+                })
+                .map(|entry| entry.commit.as_str());
+            match narrowed_notices(repo, previous_commit, tracked) {
+                Ok(narrowed) => messages.extend(narrowed),
+                Err(err) => debug!("history: could not compare the previous selection: {err:#}"),
+            }
+        }
+        let entry = self.commit_record_locked(
+            checkpoint,
+            index,
+            reserved_id,
+            &messages,
+            !draft.protective && heard(&draft),
+        )?;
         if available
             && snapshot.is_some()
             && let Some(repo) = &self.repo
@@ -595,12 +640,28 @@ impl Store {
         Ok(Outcome::Created(entry))
     }
 
+    fn deliver_capture_notices(&self, messages: &[String], speak: bool) {
+        for message in messages {
+            if speak {
+                super::notices::say(message);
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
+                super::notices::say(message);
+                debug!("history: could not keep the notice: {err}");
+            }
+        }
+        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, messages) {
+            debug!("history: could not take back the said notices: {err}");
+        }
+    }
+
     /// Append one ordinary record while the store lock is held.
     fn commit_record_locked(
         &self,
         mut checkpoint: Checkpoint,
         mut index: Index,
         reserved_id: Option<u64>,
+        messages: &[String],
+        speak: bool,
     ) -> Result<Box<Entry>> {
         let id = reserved_id.unwrap_or_else(|| {
             let id = index.next_id.max(1);
@@ -608,13 +669,57 @@ impl Store {
             id
         });
         let commit = match &self.repo {
-            Some(repo) => repo
-                .write_checkpoint(checkpoint.tree.snapshot.as_deref(), &checkpoint)
-                .wrap_err("writing the checkpoint")?,
+            Some(repo) => {
+                let parent = repo.ref_oid(HistoryRepo::HISTORY_REF)?;
+                let commit = repo
+                    .write_checkpoint_commit(checkpoint.tree.snapshot.as_deref(), &checkpoint)
+                    .wrap_err("writing the checkpoint")?;
+                let advanced = repo.update_history_head(&commit, parent.as_deref());
+                // Updating the ref makes the snapshot durable. Even a later
+                // symbolic-HEAD, metadata-cache, index, or enrollment failure
+                // must not lose its warnings. A failed snapshot can still
+                // produce a journal record, but did not capture these files.
+                if checkpoint.tree.available
+                    && checkpoint.tree.snapshot.is_some()
+                    && (advanced.is_ok()
+                        || repo
+                            .ref_oid(HistoryRepo::HISTORY_REF)
+                            .ok()
+                            .flatten()
+                            .as_deref()
+                            == Some(commit.as_str()))
+                {
+                    self.deliver_capture_notices(messages, speak);
+                }
+                advanced.wrap_err("advancing the checkpoint")?;
+                commit
+            }
             None => String::new(),
         };
         if let Some(repo) = &self.repo {
+            // The record is read back from Git so every machine reads the
+            // same one. Skipped repositories are the exception: nothing is
+            // written to the tree for them, and the shared commit trailer
+            // is a format older clients parse with `deny_unknown_fields`,
+            // so adding a field for them would stop those clients reading
+            // this history at all. The list stays in this machine's own
+            // record, which is where a rollback here consults it.
+            let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
+            // derived before the record is replaced, while the coverage
+            // entries that decide a path's stream are still here
+            let skipped = skipped_as_rebuilt(&checkpoint, &nested);
             checkpoint = repo.read_meta(&commit)?;
+            // The trailer carried each of them as an ordinary omission,
+            // which is how another machine learns about the skip at all.
+            // On this one the better answer has just come back, so the
+            // generic copy goes: one skip, said once, with the reason
+            // that can be acted on.
+            checkpoint
+                .tree
+                .coverage
+                .omitted
+                .retain(|omitted| !skipped.contains(&omitted.path));
+            checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
         index.entries.push(IndexEntry {
@@ -660,11 +765,7 @@ impl Store {
         }
         let mut overlays = vec![];
         for held in &draft.held {
-            let Some(entry) = entries
-                .iter()
-                .filter(|entry| held.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count())
-            else {
+            let Some(entry) = super::tracked::owning_entry(entries, held) else {
                 continue;
             };
             let tree_path = entry.tree_path(held)?;
@@ -871,6 +972,69 @@ struct ManualPlan {
     promote: Vec<usize>,
 }
 
+/// Tells the user what the walk left out, so a credential store or a
+/// nested repository under a tracked directory never looks saved. A
+/// command the user ran (a save, a baseline, a bootstrap, rollback, or
+/// Each skipped repository as the rebuilt record will spell it.
+///
+/// **One writer, so the comparison can be exact.** The skips reach the
+/// trailer as tree paths, through `Checkpoint::portable_path`, and come
+/// back as display paths through `tree_path_to_display`. The walk's own
+/// display paths are written by `display_path`, which keeps the host's
+/// separator and, off unix, does not shorten `$HOME` to `~` — so on
+/// Windows the same skip is `C:\Users\me\.native\plugin` on one side
+/// and `~/.native/plugin` on the other. Matching those two spellings is
+/// not something a comparison can be taught: folding separators would
+/// still leave the home prefix, and on unix it would call
+/// `~/a/b` and a file genuinely named `a\b` the same path. So both sides
+/// are put through the same pair of conversions and compared with `==`.
+fn skipped_as_rebuilt(
+    checkpoint: &Checkpoint,
+    nested: &[super::store::PathReason],
+) -> BTreeSet<String> {
+    nested
+        .iter()
+        .filter_map(|skip| checkpoint.portable_path(&skip.path))
+        .map(|tree_path| tree_path_to_display(&tree_path))
+        .collect()
+}
+
+/// undo outcome) lists each path; the watcher's captures and the
+/// protective captures before an operation get one summary line, since
+/// they run on every edit or are followed by the outcome's full report. A
+/// baseline reports only the paths it enrolls, not those under entries
+/// tracked earlier.
+fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
+    let trigger = draft.trigger();
+    let explicit = trigger != Trigger::Edit && !draft.protective;
+    let roots: Vec<String> = if trigger == Trigger::Baseline {
+        draft.explicit_paths.iter().map(display_path).collect()
+    } else {
+        vec![]
+    };
+    let enrolled = |reported: &&store::PathReason| {
+        roots.is_empty()
+            || roots
+                .iter()
+                .any(|root| super::tracked::display_under(&reported.path, root))
+    };
+    let omitted: Vec<store::PathReason> = walk.omitted.iter().filter(enrolled).cloned().collect();
+    let nested: Vec<store::PathReason> = walk.nested.iter().filter(enrolled).cloned().collect();
+    if omitted.is_empty() && nested.is_empty() {
+        return;
+    }
+    if explicit {
+        for line in super::tracked::omission_report(&omitted, &nested) {
+            warn!("history: {line}");
+        }
+    } else {
+        info!(
+            "history: {}",
+            super::tracked::omission_summary(&omitted, &nested)
+        );
+    }
+}
+
 fn manual_plan(
     walk: &super::tracked::Walk,
     draft: &Draft,
@@ -903,6 +1067,89 @@ fn under_entry(path: &str, entry: &str) -> bool {
         || path
             .strip_prefix(entry)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Explicit capture triggers report inline. Other triggers may run in
+/// the background and queue notices; foreground dotfiles and bootstrap
+/// commands drain that queue on both success and failure.
+fn heard(draft: &Draft) -> bool {
+    matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Capture
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+                | store::Trigger::BootstrapBefore
+                | store::Trigger::Bootstrap
+        )
+    )
+}
+
+/// Says how much an entry's `include` list now leaves out of what an
+/// earlier checkpoint held.
+///
+/// Narrowing a list drops paths already in history from every checkpoint
+/// after it. That is what the user asked for, but it happens silently —
+/// nothing about the tree changed — so it is said at the point of change.
+///
+/// **There is exactly one opportunity to say it, and it is taken
+/// whatever caused the save.** The checkpoint that applies the narrowing
+/// is the last one whose parent still holds those paths; from the next
+/// one on there is nothing left to compare against and the drop can
+/// never be reported. Which command ran is not something the paths care
+/// about, and the watcher saving first is not a reason for the user to
+/// hear nothing — so a `mise dot save`, a `mise dot track` applying a
+/// hand-edited list, and the watcher's own save all report it. It cannot
+/// repeat: the narrowing changes the tree, so the checkpoint is written,
+/// and the next parent is the narrowed one.
+fn narrowed_notices(
+    repo: &HistoryRepo,
+    parent_commit: Option<&str>,
+    tracked: &TrackedSet,
+) -> Result<Vec<String>> {
+    let Some(parent) = parent_commit else {
+        return Ok(vec![]);
+    };
+    if tracked.entries.iter().all(|entry| entry.include.is_none()) {
+        return Ok(vec![]);
+    }
+    // **Nothing narrowed, nothing to scan.** The lists are recorded with
+    // the checkpoint, so the cheap question — are this save's enrollment
+    // and `include` values the ones the parent already holds? — is
+    // answered from the manifest, and only a difference pays for a walk
+    // of the parent tree. An entry added or removed counts as a
+    // difference, because either can change what an existing entry owns.
+    if let Some(previous) = super::manifest::Manifest::read(repo, parent)? {
+        let selection = |manifest: &super::manifest::Manifest| {
+            manifest
+                .enrollment
+                .iter()
+                .map(|entry| (entry.path.clone(), entry.include.clone()))
+                .collect::<Vec<_>>()
+        };
+        if selection(&previous) == selection(&tracked.manifest) {
+            return Ok(vec![]);
+        }
+    }
+    let roots = super::sync::layout::Roots::current();
+    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.include.is_none() || entry.is_included(path) {
+            continue;
+        }
+        *dropped.entry(entry.display()).or_default() += 1;
+    }
+    let previous = super::short(parent);
+    Ok(dropped.into_iter().map(|(entry, count)| format!(
+        "history: {entry}: its include list leaves out {count} path(s) held by checkpoint {previous}; they are no longer saved"
+    )).collect())
 }
 
 /// A failed observation is not evidence of deletion. Carry only saved objects
@@ -1184,6 +1431,148 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_notices_survive_a_metadata_cache_failure() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().expect("git is required for checkpoint tests");
+        let tree = repo.empty_object("tree")?;
+        let checkpoint = test_checkpoint("cache-failure", Some(&tree));
+        let cache = store::meta_cache_path_in(temp.path(), &checkpoint.uuid);
+        let cache_dir = cache.parent().unwrap();
+        if cache_dir.exists() {
+            std::fs::remove_dir_all(cache_dir)?;
+        }
+        std::fs::write(cache_dir, b"not a directory")?;
+        let notice = "history: synthetic credential saved in plaintext".to_string();
+        assert!(
+            store
+                .commit_record_locked(
+                    checkpoint,
+                    Index::default(),
+                    None,
+                    std::slice::from_ref(&notice),
+                    false
+                )
+                .is_err()
+        );
+        assert!(repo.ref_oid(HistoryRepo::HISTORY_REF)?.is_some());
+        let pending = std::fs::read_to_string(store::store_dir_in(temp.path()).join("notices"))?;
+        assert!(pending.contains(&notice));
+        Ok(())
+    }
+
+    #[test]
+    fn failed_snapshots_and_failed_commits_do_not_report_capture() -> Result<()> {
+        for fail_commit in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let store = Store::open_in(temp.path())?;
+            let repo = store.repo().expect("git is required for checkpoint tests");
+            let tree = repo.empty_object("tree")?;
+            let checkpoint =
+                test_checkpoint("failed-capture", fail_commit.then_some(tree.as_str()));
+            if fail_commit {
+                let lock = HistoryRepo::path_in(temp.path())
+                    .join(format!("{}.lock", HistoryRepo::HISTORY_REF));
+                std::fs::create_dir_all(lock.parent().unwrap())?;
+                std::fs::write(lock, b"locked")?;
+            }
+            let result = store.commit_record_locked(
+                checkpoint,
+                Index::default(),
+                None,
+                &["history: synthetic credential saved in plaintext".into()],
+                false,
+            );
+            assert_eq!(result.is_err(), fail_commit);
+            assert!(!store::store_dir_in(temp.path()).join("notices").exists());
+        }
+        Ok(())
+    }
+
+    /// The key the drop matches on is the string the rebuilt record will
+    /// hold, because both come from the tree path by the same route.
+    ///
+    /// This is the whole of the Windows case, checked from any host: the
+    /// trailer is written with `portable_path`, read back with
+    /// `tree_path_to_display`, and the skip is matched on the result of
+    /// exactly those two — never against `display_path`'s spelling, which
+    /// keeps the host separator and leaves `$HOME` expanded off unix.
+    #[test]
+    fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
+        let home = crate::dirs::HOME.join(".native");
+        let plugin = home.join("plugin");
+        let mut checkpoint = test_checkpoint("nested", None);
+        // built the way a capture builds it, so a coverage field added
+        // later cannot leave this test describing something else
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track),
+        ));
+        checkpoint.tree.coverage = tracked.coverage(&crate::system::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            ..Default::default()
+        });
+        let skip = store::PathReason {
+            path: crate::file::display_path(&plugin),
+            reason: crate::system::history::tracked::NESTED_REPOSITORY_REASON.into(),
+        };
+        checkpoint.tree.coverage.nested.push(skip.clone());
+
+        // what the trailer carries, and what a reader rebuilds from it
+        let record = checkpoint.for_commit();
+        let rebuilt: Vec<String> = record
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.native/plugin".to_string()]);
+
+        // the drop matches those exact strings and nothing else, so the
+        // skip is named once wherever the two display spellings differ
+        let skipped = skipped_as_rebuilt(&checkpoint, std::slice::from_ref(&skip));
+        assert_eq!(
+            skipped,
+            rebuilt.iter().cloned().collect::<BTreeSet<String>>(),
+            "the drop is not matching on what the rebuilt record holds"
+        );
+
+        // On Windows this is the whole bug: `display_path` keeps the host
+        // separator and leaves `$HOME` expanded, so the walked spelling is
+        // not the rebuilt one and matching against it left the skip in
+        // both lists. The key is derived from the tree path for that
+        // reason, and this asserts the reason rather than assuming it.
+        #[cfg(windows)]
+        {
+            assert_ne!(
+                skip.path, rebuilt[0],
+                "the two writers agree here, so the derivation is untested"
+            );
+            assert!(!skipped.contains(&skip.path));
+        }
+
+        // and nothing is folded, so a file genuinely named with a
+        // backslash is a different path from the one with a separator
+        let mut omitted = vec![
+            store::PathReason {
+                path: "~/.native/plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+            store::PathReason {
+                path: r"~/.native\plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+        ];
+        omitted.retain(|omitted| !skipped.contains(&omitted.path));
+        assert_eq!(
+            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
+            vec![r"~/.native\plugin"],
+            "a name containing a backslash was taken for a separated path"
+        );
+    }
 
     #[test]
     fn rebuild_reuses_commit_metadata_without_retaining_removed_annotations() -> Result<()> {
@@ -1481,6 +1870,8 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: None,
+                    include: None,
                 }],
                 ..Default::default()
             },
@@ -1546,6 +1937,8 @@ mod tests {
                     autosave: false,
                     encrypt: false,
                     variants: vec![],
+                    exclude: None,
+                    include: None,
                 }],
                 ..Default::default()
             },

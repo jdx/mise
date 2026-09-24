@@ -145,10 +145,10 @@ assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 # Existing symlink-each installations without ownership state are migrated by
 # the next real apply, even when every target is already converged. Once state
 # exists, status inspects managed paths instead of recursively walking a shared
-# target such as HOME.
+# target such as HOME. Template ownership records live one level down.
 rm -rf "$MISE_STATE_DIR/dotfiles"
 assert_succeed "mise dotfiles apply --yes"
-assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "1"
+assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f | wc -l | tr -d ' '" "1"
 mkdir ~/.local/mybin/private
 chmod 000 ~/.local/mybin/private
 assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"
@@ -427,13 +427,17 @@ assert "cat ~/.local/exclcopy/linked" "linked"
 assert_fail "test -e $HOME/.local/exclcopy/NOTES.md"
 assert_succeed "mise dotfiles status --missing"
 
-# an invalid pattern warns and is dropped instead of failing the entry
+# an invalid pattern warns and is dropped instead of failing the entry:
+# a deployment entry keeps working with the rest of its list, and the
+# rest of the list is still in force
 cat <<EOF >mise.toml
 [dotfiles]
-"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["[bad"] }
+"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["[bad", "NOTES.md"] }
 EOF
 assert_contains "mise dotfiles status 2>&1" "invalid exclude pattern"
 assert_succeed "mise dotfiles status"
+assert_succeed "mise dotfiles apply --yes"
+assert_fail "test -e $HOME/.local/excl/NOTES.md"
 
 # a config skipped for trust reasons says so instead of reporting the
 # [dotfiles] table as empty

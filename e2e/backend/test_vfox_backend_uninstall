@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/uninstall-backend"
+MARKER="$MISE_DATA_DIR/backend-uninstall-marker"
+INSTALLS="$MISE_DATA_DIR/installs/uninstall-backend-demo"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "uninstall-backend"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/uninstall-backend"
+PLUGIN.license = "MIT"
+PLUGIN.description = "backend uninstall test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+	return { versions = { "1.0.0", "2.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+	local file = io.open(ctx.install_path .. "/manifest", "w")
+	file:write(ctx.tool .. "@" .. ctx.version)
+	file:close()
+	return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+	return { env_vars = {} }
+end
+LUA
+
+# The hook reads a file from the install directory, so it also proves mise calls it before removal.
+cat >"$PLUGIN_DIR/hooks/backend_uninstall.lua" <<'LUA'
+function PLUGIN:BackendUninstall(ctx)
+	if ctx.options.fail then
+		error("uninstaller failed")
+	end
+	local manifest = io.open(ctx.install_path .. "/manifest"):read("*a")
+	local marker = io.open(os.getenv("MISE_DATA_DIR") .. "/backend-uninstall-marker", "a")
+	marker:write(manifest .. " flavor=" .. tostring(ctx.options.flavor) .. "\n")
+	marker:close()
+	return {}
+end
+LUA
+
+cat >mise.toml <<EOF
+[plugins]
+"vfox-backend:uninstall-backend" = "$PLUGIN_DIR"
+EOF
+
+mise install uninstall-backend:demo@1.0.0 uninstall-backend:demo@2.0.0
+
+mise uninstall uninstall-backend:demo@1.0.0 --dry-run
+if [[ -f $MARKER ]]; then
+  fail "BackendUninstall ran during dry-run"
+fi
+
+cat >>mise.toml <<'EOF'
+[tools]
+"uninstall-backend:demo" = { version = "2.0.0", flavor = "blue" }
+EOF
+mise uninstall uninstall-backend:demo@1.0.0
+assert "cat '$MARKER'" "demo@1.0.0 flavor=blue"
+assert_fail "test -e '$INSTALLS/1.0.0'"
+
+# A failing hook aborts the uninstall and keeps the install directory.
+cat >mise.toml <<EOF
+[plugins]
+"vfox-backend:uninstall-backend" = "$PLUGIN_DIR"
+[tools]
+"uninstall-backend:demo" = { version = "2.0.0", fail = true }
+EOF
+assert_fail "mise uninstall uninstall-backend:demo@2.0.0" "uninstaller failed"
+assert "cat '$INSTALLS/2.0.0/manifest'" "demo@2.0.0"
+
+# prune removes unused versions through the same hook.
+cat >mise.toml <<EOF
+[plugins]
+"vfox-backend:uninstall-backend" = "$PLUGIN_DIR"
+EOF
+mise prune --yes uninstall-backend:demo
+assert_contains "cat '$MARKER'" "demo@2.0.0 flavor=nil"
+assert_fail "test -e '$INSTALLS/2.0.0'"

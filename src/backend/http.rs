@@ -5,10 +5,11 @@ use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, ensure_safe_relative_bin_path,
-    eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, lookup_value_with_fallback, rename_binary_name, shasums_has_entries,
-    template_string, template_string_for_target, verify_artifact,
+    apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
+    ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file,
+    fetch_checksum_from_shasums, get_filename_from_url, lookup_value_with_fallback,
+    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
+    verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -435,29 +436,24 @@ impl HttpBackend {
         file_info: &FileInfo,
         opts: &HttpOptions<'_>,
     ) -> Result<String> {
-        // Check for explicit bin name first
-        if let Some(bin_name) = opts.bin() {
-            ensure_safe_relative_bin_path("bin", &bin_name)?;
-            return Ok(bin_name);
-        }
-        if let Some(rename_to) = opts.rename_exe() {
-            ensure_plain_bin_name("rename_exe", &rename_to)?;
-            let source_name = if file_info.is_compressed_binary {
-                file_info.decompressed_name()
-            } else {
-                file_path.file_name().unwrap().to_string_lossy().to_string()
-            };
-            return Ok(rename_binary_name(&source_name, &rename_to));
-        }
-
-        // Auto-clean the binary name
-        let raw_name = if file_info.is_compressed_binary {
+        let source_name = if file_info.is_compressed_binary {
             file_info.decompressed_name()
         } else {
             file_path.file_name().unwrap().to_string_lossy().to_string()
         };
 
-        Ok(clean_binary_name(&raw_name, Some(&self.ba.tool_name)))
+        // Check for explicit bin name first
+        if let Some(bin_name) = opts.bin() {
+            ensure_safe_relative_bin_path("bin", &bin_name)?;
+            return Ok(bin_name_for_download(&source_name, &bin_name));
+        }
+        if let Some(rename_to) = opts.rename_exe() {
+            ensure_plain_bin_name("rename_exe", &rename_to)?;
+            return Ok(rename_binary_name(&source_name, &rename_to));
+        }
+
+        // Auto-clean the binary name
+        Ok(clean_binary_name(&source_name, Some(&self.ba.tool_name)))
     }
 
     // -------------------------------------------------------------------------
@@ -1781,6 +1777,40 @@ mod tests {
             backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "code2prompt.exe"
         );
+    }
+
+    #[test]
+    fn dest_filename_keeps_windows_extension_for_bin() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-cloud-sql-proxy".to_string(),
+                Some("http:cloud-sql-proxy".to_string()),
+                "cloud-sql-proxy".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let raw_opts = crate::toolset::parse_tool_options("bin=cloud-sql-proxy");
+        let opts = HttpOptions::new(&raw_opts);
+        let expected = if cfg!(windows) {
+            "cloud-sql-proxy.exe"
+        } else {
+            "cloud-sql-proxy"
+        };
+
+        // Both a raw download and a compressed one are named from the executable inside.
+        for file_path in [
+            Path::new("cloud-sql-proxy.x64.exe"),
+            Path::new("cloud-sql-proxy.x64.exe.gz"),
+        ] {
+            let file_info = FileInfo::new(file_path, None, &opts);
+            assert_eq!(
+                backend.dest_filename(file_path, &file_info, &opts).unwrap(),
+                expected,
+                "{}",
+                file_path.display()
+            );
+        }
     }
 
     #[test]

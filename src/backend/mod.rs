@@ -76,7 +76,6 @@ pub(crate) mod npm_registry;
 pub(crate) mod options;
 pub(crate) mod packslip;
 pub(crate) mod pipx;
-pub(crate) mod pkgx;
 pub(crate) mod platform_target;
 mod platform_tokens;
 pub(crate) mod s3;
@@ -645,7 +644,6 @@ pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Packslip => Some(Arc::new(packslip::PackslipBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
-        BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -677,7 +675,6 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Packslip => packslip::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
-        BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
@@ -3673,7 +3670,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+        if ctx.locked && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms

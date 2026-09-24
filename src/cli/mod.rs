@@ -966,14 +966,17 @@ impl Cli {
         // usage-rs's generated `parse()` intercepts this, but mise never calls
         // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
         // Handle the hidden completion protocol here, before config or tools load.
+        // Record ARGS first: an error from this path (a closed stdout, an unreadable
+        // spec) still reaches `handle_err`, whose logger setup reads them.
+        crate::env::ARGS.write().unwrap().clone_from(args);
         let completion_argv: Vec<std::ffi::OsString> =
             args.iter().skip(1).map(std::ffi::OsString::from).collect();
         if let Some(answer) = completion::usage_spec_request(&completion_argv) {
-            print!("{}", answer?);
+            miseprint!("{}", answer?)?;
             return Ok(());
         }
         if let Some(answer) = completion::completion_request(&completion_argv) {
-            print!("{answer}");
+            miseprint!("{answer}")?;
             return Ok(());
         }
         if is_packages_where_query(args) {

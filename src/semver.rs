@@ -32,13 +32,16 @@ pub(crate) fn chunkify_version(v: &str) -> Vec<String> {
 
     /// Hang SemVer build metadata (`+k3s1`) off the end of a `Mess`.
     ///
-    /// `SemVer::to_mess` only emits the metadata when the version also has a
-    /// pre-release, and `Version::to_mess` drops it outright, so `1.36.4+k3s1`
-    /// comes back as a bare `1.36.4`. That made `--bump` rewrite a k3s pin to
-    /// `1.37.0`, a tag that does not exist — the release is `v1.37.0+k3s1`.
+    /// Before versions 8.0.1, `SemVer::to_mess` only emitted the metadata when
+    /// the version also had a pre-release, and `Version::to_mess` dropped it
+    /// outright, so `1.36.4+k3s1` came back as a bare `1.36.4`. That made
+    /// `--bump` rewrite a k3s pin to `1.37.0`, a tag that does not exist — the
+    /// release is `v1.37.0+k3s1`. Newer releases emit it themselves, so only
+    /// attach it when the `Mess` does not already end with it.
     fn attach_meta(m: &mut Mess, meta: &str) {
         // An epoch or a release already occupies `next`; the metadata goes last.
         match &mut m.next {
+            Some((Sep::Plus, next)) if next.next.is_none() && next.to_string() == meta => {}
             Some((_, next)) => attach_meta(next, meta),
             None => {
                 m.next = Some((

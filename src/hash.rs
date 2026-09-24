@@ -14,6 +14,18 @@ use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 use siphasher::sip::SipHasher;
 
+/// A downloaded file's hash differs from the expected checksum.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Checksum mismatch for file {path}:\nExpected: {algo}:{expected}\nActual:   {algo}:{actual}"
+)]
+pub(crate) struct ChecksumMismatch {
+    path: String,
+    algo: String,
+    expected: String,
+    actual: String,
+}
+
 pub(crate) fn hash_to_str<T: Hash>(t: &T) -> String {
     let mut s = SipHasher::new();
     t.hash(&mut s);
@@ -131,10 +143,13 @@ pub(crate) fn ensure_checksum(
     };
     let checksum = checksum.to_lowercase();
     if actual != checksum {
-        bail!(
-            "Checksum mismatch for file {}:\nExpected: {algo}:{checksum}\nActual:   {algo}:{actual}",
-            display_path(path)
-        );
+        return Err(ChecksumMismatch {
+            path: display_path(path),
+            algo: algo.to_string(),
+            expected: checksum,
+            actual,
+        }
+        .into());
     }
     Ok(())
 }

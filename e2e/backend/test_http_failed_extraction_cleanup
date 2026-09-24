@@ -12,7 +12,6 @@ set -euo pipefail
 # are not automatically reclaimed.
 
 FIXTURES="$TMPDIR/http-failed-extraction-fixtures"
-PORT_FILE="$TMPDIR/http-failed-extraction-port"
 TARBALLS="$MISE_DATA_DIR/http-tarballs"
 
 mkdir -p "$FIXTURES"
@@ -30,24 +29,7 @@ EOF
 chmod +x "$FIXTURES/good/bin/good-tool"
 tar czf "$FIXTURES/good.tar.gz" -C "$FIXTURES" good
 
-python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
-import functools
-import http.server
-import socketserver
-import sys
-from pathlib import Path
-
-root = sys.argv[1]
-port_file = Path(sys.argv[2])
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
-with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
-    port_file.write_text(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-wait_for_file "$PORT_FILE" "http failed extraction test server port file" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$FIXTURES"
 
 # Recursive so the shared-install case does not depend on the tool directory's
 # name, and harmless for the cache dir where the entries are one level down.
@@ -59,7 +41,7 @@ cat >mise.toml <<EOF
 [tools."http:broken"]
 version = "1.0.0"
 shared_extraction = true
-url = "http://127.0.0.1:$PORT/broken.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/broken.tar.gz"
 bin_path = "bin"
 EOF
 
@@ -85,7 +67,7 @@ cat >mise.toml <<EOF
 [tools."http:good"]
 version = "1.0.0"
 shared_extraction = true
-url = "http://127.0.0.1:$PORT/good.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/good.tar.gz"
 bin_path = "good/bin"
 EOF
 

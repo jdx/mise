@@ -15,6 +15,7 @@ pub(crate) mod enrollment;
 pub(crate) mod health;
 pub(crate) mod journal;
 pub(crate) mod manifest;
+pub(crate) mod notices;
 pub(crate) mod notify;
 pub(crate) mod recovery;
 pub(crate) mod replay;

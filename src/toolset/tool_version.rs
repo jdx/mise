@@ -16,7 +16,7 @@ use crate::install_before::{
     BeforeDateSource, format_hidden_release_details, minimum_release_age_label,
     resolve_before_date_for_tool_with_source,
 };
-use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
+use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
@@ -56,8 +56,6 @@ pub(crate) struct ToolVersion {
     pub(crate) install_path_is_explicit: bool,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
-    /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
-    pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
     /// Portable dependency graph used by embedded aube installs.
     pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
     pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
@@ -155,7 +153,6 @@ impl ToolVersion {
             install_path_is_exact: false,
             install_path_is_explicit: false,
             conda_packages: Default::default(),
-            pkgx_packages: Default::default(),
             aube_lock: None,
             uv_lock: None,
             uv_python: None,
@@ -321,6 +318,30 @@ impl ToolVersion {
         self.aube_install_path_version()
             .or_else(|| self.uv_install_path_version())
             .unwrap_or(&self.version)
+    }
+
+    /// Replace a version discovered by scanning install directories
+    /// (`<version>~aube~<digest>`, `<version>~uv~<digest>`) with the logical
+    /// version it stands for. Lockfiles and dependency resolvers must only
+    /// ever see the logical version; the digest is a private path identity.
+    pub(crate) fn strip_install_path_identity(&mut self) {
+        let version = if self.aube_lock.is_none() {
+            self.aube_install_path_version()
+                .or_else(|| self.legacy_aube_install_path_version())
+        } else {
+            None
+        }
+        .or_else(|| {
+            self.uv_lock
+                .is_none()
+                .then(|| self.uv_install_path_version())
+                .flatten()
+        });
+        if let Some(version) = version.map(str::to_string) {
+            // Keep pointing at the directory that was found.
+            self.install_path = Some(self.install_path());
+            self.version = version;
+        }
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
@@ -494,6 +515,7 @@ impl ToolVersion {
         // but we preserve before_date from base_opts to respect date-based filtering
         let opts = ResolveOptions {
             latest_versions: true,
+            latest_versions_for_all_requests: false,
             use_locked_version: false,
             resolve_rolling_channels: false,
             prefer_exact_version: false,
@@ -1111,6 +1133,12 @@ impl Hash for ToolVersion {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolveOptions {
     pub latest_versions: bool,
+    /// Apply `latest_versions` to every request in a toolset, not only
+    /// `latest` and rolling channels, so a selector such as `6` resolves to
+    /// the newest remote match instead of the newest installed one.
+    /// `mise lock --bump` needs this; `mise x node@20 npm@latest` must not
+    /// look up newer Node releases.
+    pub latest_versions_for_all_requests: bool,
     pub use_locked_version: bool,
     /// Resolve rolling channels to their current concrete version even when
     /// ordinary version requests may reuse installed versions.
@@ -1144,6 +1172,7 @@ impl Default for ResolveOptions {
     fn default() -> Self {
         Self {
             latest_versions: false,
+            latest_versions_for_all_requests: false,
             use_locked_version: true,
             resolve_rolling_channels: false,
             prefer_exact_version: false,
@@ -1258,6 +1287,9 @@ impl Display for ResolveOptions {
         if self.latest_versions {
             opts.push("latest_versions".to_string());
         }
+        if self.latest_versions_for_all_requests {
+            opts.push("latest_versions_for_all_requests".to_string());
+        }
         if self.use_locked_version {
             opts.push("use_locked_version".to_string());
         }
@@ -1351,6 +1383,25 @@ mod tests {
             ToolVersion::new(request, version.into()).display_version(),
             "release"
         );
+    }
+
+    #[test]
+    fn strip_install_path_identity_keeps_the_found_directory() {
+        let dir = "3.9.6~aube~de4f77e9115401ed";
+        let npm = Arc::new(BackendArg::from("npm:prettier"));
+        let request = ToolRequest::new(npm, "latest", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request, dir.into());
+        let install_path = tv.install_path();
+        tv.strip_install_path_identity();
+        assert_eq!(tv.version, "3.9.6");
+        assert_eq!(tv.install_path(), install_path);
+        assert!(install_path.ends_with(dir));
+
+        let github = Arc::new(BackendArg::from("github:owner/tool"));
+        let request = ToolRequest::new(github, "latest", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request, dir.into());
+        tv.strip_install_path_identity();
+        assert_eq!(tv.version, dir);
     }
 
     #[test]

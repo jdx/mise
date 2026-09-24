@@ -29,7 +29,6 @@ pub(crate) enum BackendType {
     Packslip,
     #[strum(to_string = "pypi", serialize = "pipx")]
     Pipx,
-    Pkgx,
     Spm,
     Http,
     S3,
@@ -76,7 +75,6 @@ impl BackendType {
             "npm" => BackendType::Npm,
             "packslip" => BackendType::Packslip,
             "pypi" | "pipx" => BackendType::Pipx,
-            "pkgx" => BackendType::Pkgx,
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
             "s3" => BackendType::S3,
@@ -88,11 +86,10 @@ impl BackendType {
 
     /// Returns true if this backend is still gated behind experimental mode.
     pub(crate) fn is_experimental(&self) -> bool {
-        use super::{dotnet, packslip, pkgx, s3, spm};
+        use super::{dotnet, packslip, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
             BackendType::Packslip => packslip::EXPERIMENTAL,
-            BackendType::Pkgx => pkgx::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,
             _ => false,

@@ -131,7 +131,7 @@ pub(crate) fn slot(root: &Path) -> u16 {
 /// a bounded number of slots, so two of them can land on the same one; what
 /// this guarantees is that a given root always lands on the same slot and
 /// never on slot 0, which belongs to the primary checkout.
-fn hashed_slot(root: &Path) -> u16 {
+pub(crate) fn hashed_slot(root: &Path) -> u16 {
     // hash_to_str renders a u64 siphash as hex; reuse it so the slot and the
     // state directory agree on how a root is identified. The root, not the
     // checkout, is hashed, so sibling projects in one worktree stay distinct.
@@ -149,6 +149,17 @@ pub(crate) fn resolve(
     preset_default: Option<u16>,
     persisted: Option<PortClaim>,
 ) -> Result<PortClaim> {
+    resolve_slot(name, slot(root), base, stride, preset_default, persisted)
+}
+
+pub(crate) fn resolve_slot(
+    name: &str,
+    slot: u16,
+    base: Option<u16>,
+    stride: u16,
+    preset_default: Option<u16>,
+    persisted: Option<PortClaim>,
+) -> Result<PortClaim> {
     let base = base.or(preset_default).ok_or_else(|| {
         eyre::eyre!(
             "[daemons.{name}].port = \"auto\" needs a base port; \
@@ -161,7 +172,7 @@ pub(crate) fn resolve(
     {
         return Ok(claim);
     }
-    let offset = slot(root).checked_mul(stride).ok_or_else(|| {
+    let offset = slot.checked_mul(stride).ok_or_else(|| {
         eyre::eyre!("[daemons.{name}].port stride {stride} overflows the port range")
     })?;
     let port = base.checked_add(offset).filter(|p| *p > 0).ok_or_else(|| {
