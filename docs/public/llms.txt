@@ -36,6 +36,7 @@
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): mise deps runs project dependency installers when tracked inputs change or outputs go missing. It compares source hashes with the last successful run, then invokes the configured package manager.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): A backend resolves a tool's versions, installs it, and supplies its executable paths and environment. The registry maps short names such as node and ripgrep to backends.
 - [Core tools](https://mise.jdx.dev/core-tools.html): Core tools have installation logic built into mise. They do not require a separately installed plugin.
+- [Bare](https://mise.jdx.dev/lang/bare.html): mise can install and manage multiple versions of the Bare JavaScript runtime on the same system.
 - [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
 - [Deno](https://mise.jdx.dev/lang/deno.html): mise can be used to install and manage multiple versions of deno on the same system.
 - [Elixir](https://mise.jdx.dev/lang/elixir.html): mise can be used to manage multiple elixir versions on the same system.
