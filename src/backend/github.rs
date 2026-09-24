@@ -3229,6 +3229,11 @@ mod tests {
             "github:example/unlisted",
             "9.9.9"
         ));
+        // GitHub repository names are case-insensitive.
+        assert!(crate::registry::requires_github_attestations(
+            "github:Aubepkg/Aube",
+            "2.3.0"
+        ));
     }
     use crate::cli::args::BackendArg;
 

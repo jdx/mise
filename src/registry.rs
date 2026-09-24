@@ -864,23 +864,28 @@ pub(crate) fn requires_github_attestations(full: &str, version: &str) -> bool {
     // changes which backend is chosen, not what the registry says about one.
     // Both registries count, so a floating registry can add requirements but
     // never drop one baked into this mise release.
-    static REQUIREMENTS: Lazy<HashMap<&'static str, Vec<&'static RegistryBackend>>> =
-        Lazy::new(|| {
-            let mut map: HashMap<&'static str, Vec<&'static RegistryBackend>> = HashMap::new();
-            for (_, tool) in BAKED_REGISTRY.iter().chain(REGISTRY.iter()) {
-                for backend in tool.backends {
-                    if backend.attestations_since.is_some() {
-                        map.entry(backend.full).or_default().push(backend);
-                    }
+    // Keyed case-insensitively: GitHub treats `Aubepkg/aube` and
+    // `aubepkg/aube` as the same repository.
+    static REQUIREMENTS: Lazy<HashMap<String, Vec<&'static RegistryBackend>>> = Lazy::new(|| {
+        let mut map: HashMap<String, Vec<&'static RegistryBackend>> = HashMap::new();
+        for (_, tool) in BAKED_REGISTRY.iter().chain(REGISTRY.iter()) {
+            for backend in tool.backends {
+                if backend.attestations_since.is_some() {
+                    map.entry(backend.full.to_ascii_lowercase())
+                        .or_default()
+                        .push(backend);
                 }
             }
-            map
-        });
-    REQUIREMENTS.get(full).is_some_and(|backends| {
-        backends
-            .iter()
-            .any(|backend| backend.requires_github_attestations(version))
-    })
+        }
+        map
+    });
+    REQUIREMENTS
+        .get(&full.to_ascii_lowercase())
+        .is_some_and(|backends| {
+            backends
+                .iter()
+                .any(|backend| backend.requires_github_attestations(version))
+        })
 }
 
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
