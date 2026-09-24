@@ -1935,7 +1935,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         BOOTSTRAP_CONFIG_ROOTS_WARN_AT,
         BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT,
         "bootstrap.config_roots",
-        "`[bootstrap].config_roots` in {} is deprecated. Split bootstrap configuration with conf.d fragments and environment modules instead, e.g. ~/.config/mise/conf.d/git.toml and ~/.config/mise/config.linux.toml selected with `env = [\"linux\"]` in miserc.toml. Relative sources and `{{{{ config_root }}}}` resolve from the new file's location, so update them when moving declarations. See https://mise.jdx.dev/bootstrap.html#modules for details.",
+        "`[bootstrap].config_roots` in {} is deprecated. Split bootstrap configuration with conf.d fragments and environment modules instead, e.g. ~/.config/mise/conf.d/git.toml and ~/.config/mise/config.linux.toml selected with `env = [\"linux\"]` in miserc.toml. Relative sources resolve from the new file's directory and `{{{{ config_root }}}}` becomes that file's config root ($HOME for global config), so update them when moving declarations. See https://mise.jdx.dev/bootstrap.html#modules for details.",
         display_path(declaring_config)
     );
     if patterns.is_empty() {
