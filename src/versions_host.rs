@@ -641,9 +641,27 @@ fn pin_github_release_assets(
             );
         }
         asset.browser_download_url = browser;
+        remember_mirrored_asset_api_url(&api);
         asset.url = api;
     }
     Ok(())
+}
+
+/// API asset URLs whose asset ID mise-versions chose. Only these need their
+/// identity confirmed before use (see `github::checked_api_asset_url`);
+/// GitHub's own release data, such as for private repos, is taken as given.
+static MIRRORED_ASSET_API_URLS: LazyLock<std::sync::Mutex<HashSet<String>>> =
+    LazyLock::new(Default::default);
+
+fn remember_mirrored_asset_api_url(url: &str) {
+    MIRRORED_ASSET_API_URLS
+        .lock()
+        .unwrap()
+        .insert(url.to_string());
+}
+
+pub(crate) fn is_mirrored_asset_api_url(url: &str) -> bool {
+    MIRRORED_ASSET_API_URLS.lock().unwrap().contains(url)
 }
 
 fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
@@ -1064,6 +1082,12 @@ mod tests {
             ok.releases[2].assets[0].url,
             "https://api.github.com/repos/jdx/mise/releases/assets/1"
         );
+        // Pinned API URLs are remembered as mirror-supplied, so their asset ID
+        // is confirmed before use; other API URLs are not.
+        assert!(is_mirrored_asset_api_url(&ok.releases[2].assets[0].url));
+        assert!(!is_mirrored_asset_api_url(
+            "https://api.github.com/repos/jdx/private-tool/releases/assets/1"
+        ));
 
         let mut draft = page(vec![release("v1.0.0", true, "jdx", "tool.tar.gz")]);
         assert_eq!(
