@@ -2443,7 +2443,12 @@ pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
 /// and a chain of `or_else` arms only holds that line for as long as every arm remembers to.
 /// See: <https://github.com/jdx/mise/discussions/5842>
 fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
-    let writable = || files.iter().filter(|p| !is_conf_d_file(p));
+    // conf.d fragments, including folder fragments, are never written to
+    let writable = || {
+        files
+            .iter()
+            .filter(|p| !is_conf_d_file(p) && !is_conf_d_folder_file(p))
+    };
     writable()
         .find(|p| !is_tool_versions_file(p))
         .or_else(|| writable().next())
@@ -2820,6 +2825,20 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             if env::env_conf_d() {
                 found.extend(conf_d_environment_files(dir, env_name, false));
                 found.extend(conf_d_environment_files(dir, env_name, true));
+            }
+            for local in ["", ".local"] {
+                found.extend(
+                    glob(
+                        dir,
+                        &format!(
+                            "conf.d/*/mise.{}{local}.toml",
+                            glob::Pattern::escape(env_name)
+                        ),
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|p| is_conf_d_folder_file(p)),
+                );
             }
             for filename in [
                 format!("config.{env_name}.toml"),

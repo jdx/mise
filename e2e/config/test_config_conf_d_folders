@@ -69,3 +69,13 @@ assert_contains "mise env -s bash" "DEV_GIT_ROOT=$MISE_CONFIG_DIR/conf.d/dev-git
 assert_contains "mise bootstrap --dry-run" "conf.d/dev-git/gitconfig"
 assert_not_contains "mise bootstrap --dry-run" "zshrc"
 assert_contains "MISE_ENV=dev mise bootstrap --dry-run" "shell-zsh/zshrc"
+
+# Folder fragments are never write targets, just like single-file fragments.
+mise set -g WRITE_TARGET=global
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "WRITE_TARGET"
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/dev-git/mise.toml" "WRITE_TARGET"
+mkdir -p only-folder/.mise/conf.d/tools
+echo '[env]' >only-folder/.mise/conf.d/tools/mise.toml
+mise use --path only-folder dummy@system
+assert_contains "cat only-folder/mise.toml" "dummy"
+assert_not_contains "cat only-folder/.mise/conf.d/tools/mise.toml" "dummy"
