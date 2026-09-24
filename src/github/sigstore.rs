@@ -209,12 +209,13 @@ async fn verify_attestation_uncached(
                     attestations.len()
                 );
                 if attestations.is_empty() {
-                    // Only GitHub may answer "none": whatever this call
-                    // concludes can be written to the lockfile, and a
-                    // lockfile without provenance never asks again.
-                    debug!(
-                        "mise-versions has no GitHub attestations for {owner}/{repo}; asking GitHub"
-                    );
+                    if !mirror_may_answer_none() {
+                        debug!(
+                            "mise-versions has no GitHub attestations for {owner}/{repo}; paranoid mode asks GitHub"
+                        );
+                    } else {
+                        return Err(AttestationError::NoAttestations);
+                    }
                 } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
                     debug!(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
@@ -380,22 +381,16 @@ pub(crate) async fn detect_attestations(
 ) -> Result<bool, DetectError> {
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
-            Ok(Some(attestations)) if !attestations.is_empty() => {
+            Ok(Some(attestations)) if !attestations.is_empty() || mirror_may_answer_none() => {
                 trace!(
                     "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
                     attestations.len()
                 );
-                return Ok(true);
+                return Ok(!attestations.is_empty());
             }
-            // This probe decides what the lockfile records, and a lockfile
-            // without provenance never asks for it again, so only GitHub may
-            // answer "none". A "yes" is safe to take: it only leads to
-            // verification.
-            Ok(Some(_)) => {
-                debug!(
-                    "mise-versions has no attestations for {owner}/{repo}@{digest}; asking GitHub"
-                )
-            }
+            Ok(Some(_)) => debug!(
+                "mise-versions has no attestations for {owner}/{repo}@{digest}; paranoid mode asks GitHub"
+            ),
             Ok(None) => {}
             Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
         }
@@ -446,6 +441,15 @@ pub(crate) async fn detect_attestations_with_predicate_type(
         .await
         .map_err(DetectError::Fetch)?;
     Ok(!attestations.is_empty())
+}
+
+/// Whether mise-versions saying an artifact has no attestations is taken as
+/// final. A wrong "none" skips verification, and a lockfile written after it
+/// records no provenance, so paranoid mode confirms it with GitHub instead,
+/// at the cost of one API call per unattested artifact. "Yes" needs no
+/// confirmation: it only leads to verification.
+fn mirror_may_answer_none() -> bool {
+    !crate::config::Settings::get().paranoid
 }
 
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
