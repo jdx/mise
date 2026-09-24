@@ -8,8 +8,6 @@ HEADERS_LOG_DIR="$TMPDIR/github_api_replacement_logs"
 mkdir -p "$HEADERS_LOG_DIR"
 start_http_server --headers-log "$HEADERS_LOG_DIR"
 
-rm -rf "$MISE_CACHE_DIR/github"
-
 cat <<EOF >mise.toml
 [settings]
 url_replacements = { "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }

@@ -192,7 +192,7 @@ pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Ve
     let key = format!(
         "{}-{}",
         repo.to_kebab_case(),
-        crate::hash::hash_to_str(&(repo, RELEASE_LIST_CACHE_VERSION))
+        crate::hash::hash_to_str(&(repo, RELEASE_LIST_CACHE_VERSION, mirror_source(repo)))
     );
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -253,7 +253,13 @@ fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String
     format!(
         "{}-{}",
         format!("{api_url}-{repo}").to_kebab_case(),
-        crate::hash::hash_to_str(&(api_url, repo, require_assets, RELEASE_LIST_CACHE_VERSION))
+        crate::hash::hash_to_str(&(
+            api_url,
+            repo,
+            require_assets,
+            RELEASE_LIST_CACHE_VERSION,
+            mirror_source(repo)
+        ))
     )
 }
 
@@ -261,6 +267,13 @@ fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String
 /// "2" since assets record `from_versions_host`, so a list cached before that
 /// could pass mirrored asset IDs off as GitHub's.
 const RELEASE_LIST_CACHE_VERSION: &str = "2";
+
+/// Part of every release cache key: whether mise-versions may answer for
+/// `repo`. Adding a `url_replacements` rule for GitHub then starts from a
+/// fresh cache instead of serving mirror data cached before it.
+fn mirror_source(repo: &str) -> bool {
+    !crate::versions_host::github_is_url_replaced(Some(repo))
+}
 
 /// Whether the bounded prerelease fallback has found what it went looking for:
 /// a stable release the caller will actually keep.
@@ -566,7 +579,7 @@ pub(crate) async fn get_release_for_url_with_versions_host(
 fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bool) -> String {
     // "hosted-2": entries from before assets recorded `from_versions_host`
     // would pass mirrored asset IDs off as GitHub's, so they aren't reused.
-    let source = if use_versions_host {
+    let source = if use_versions_host && mirror_source(repo) {
         "hosted-2"
     } else {
         "direct"

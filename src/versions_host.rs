@@ -342,7 +342,7 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
 /// This endpoint is intentionally shaped like GitHub's release object so the
 /// normal backend asset-selection code remains authoritative on the client.
 pub(crate) async fn github_release(repo: &str, tag: &str) -> eyre::Result<Option<GithubRelease>> {
-    if !enabled_for_github_metadata() {
+    if !enabled_for_github_repo(repo) {
         return Ok(None);
     }
 
@@ -394,7 +394,7 @@ pub(crate) async fn github_releases(
     repo: &str,
     page: u32,
 ) -> eyre::Result<Option<GithubReleasesPage>> {
-    if !enabled_for_github_metadata() {
+    if !enabled_for_github_repo(repo) {
         return Ok(None);
     }
 
@@ -454,7 +454,7 @@ pub(crate) async fn github_attestations(
     repo: &str,
     digest: &str,
 ) -> eyre::Result<Option<Vec<Attestation>>> {
-    if !enabled_for_github_metadata() {
+    if !enabled_for_github_repo(repo) {
         return Ok(None);
     }
 
@@ -573,25 +573,43 @@ fn versions_host_error_message(status: u16, body: &str) -> String {
 
 pub(crate) fn enabled_for_github_metadata() -> bool {
     let settings = Settings::get();
-    !settings.prefer_offline() && settings.use_versions_host && !github_is_url_replaced()
+    !settings.prefer_offline() && settings.use_versions_host && !github_is_url_replaced(None)
 }
 
-/// Whether `url_replacements` sends GitHub somewhere else (a proxy, a mirror,
-/// a test fixture). mise-versions answers for github.com itself, so when
-/// GitHub is rerouted the replacement is the only source of GitHub data.
-fn github_is_url_replaced() -> bool {
+/// [`enabled_for_github_metadata`] for one repository (`owner/repo`), which
+/// also catches `url_replacements` rules that only match its paths.
+pub(crate) fn enabled_for_github_repo(repo: &str) -> bool {
+    enabled_for_github_metadata() && !github_is_url_replaced(Some(repo))
+}
+
+/// Whether `url_replacements` sends GitHub's API, or this repository's
+/// release and attestation endpoints, somewhere else (a proxy, a mirror, a
+/// test fixture). mise-versions answers for api.github.com itself, so when
+/// that is rerouted the replacement is the only source of GitHub metadata.
+/// Rules that only reroute downloads (github.com release assets) don't
+/// count: mise-versions' download URLs go through them like GitHub's do.
+pub(crate) fn github_is_url_replaced(repo: Option<&str>) -> bool {
     static LOGGED: AtomicBool = AtomicBool::new(false);
     if Settings::get().url_replacements.is_none() {
         return false;
     }
-    let replaced = ["https://api.github.com/", "https://github.com/"]
-        .iter()
-        .any(|original| {
-            let original = url::Url::parse(original).expect("valid GitHub URL");
-            let mut replaced = original.clone();
-            http::apply_url_replacements(&mut replaced);
-            replaced != original
-        });
+    let mut urls = vec!["https://api.github.com/".to_string()];
+    if let Some(repo) = repo {
+        urls.extend([
+            format!("https://api.github.com/repos/{repo}/releases"),
+            format!("https://api.github.com/repos/{repo}/releases/latest"),
+            format!("https://api.github.com/repos/{repo}/releases/tags/v1.0.0"),
+            format!("https://api.github.com/repos/{repo}/attestations/sha256:0"),
+        ]);
+    }
+    let replaced = urls.iter().any(|original| {
+        let Ok(original) = url::Url::parse(original) else {
+            return false;
+        };
+        let mut replaced = original.clone();
+        http::apply_url_replacements(&mut replaced);
+        replaced != original
+    });
     if replaced && !LOGGED.swap(true, Ordering::Relaxed) {
         debug!("url_replacements reroutes GitHub; not using mise-versions for GitHub metadata");
     }
