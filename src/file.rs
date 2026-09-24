@@ -1970,15 +1970,13 @@ pub(crate) fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The largest zstd window the platform can decode. libzstd refuses frames
+/// The largest zstd window mise decodes: 2^30 (1 GiB). libzstd refuses frames
 /// with a window above 2^27 (128 MiB) unless the caller raises the limit, the
 /// same limit the `zstd` CLI lifts with `--long`. Large release archives such
-/// as LLVM's are compressed with a 1 GiB window.
-const ZSTD_WINDOW_LOG_MAX: u32 = if cfg!(target_pointer_width = "64") {
-    31
-} else {
-    30
-};
+/// as LLVM's are compressed with a 1 GiB window. Going no higher bounds the
+/// memory an archive can make the decoder allocate, and 2^30 is also the most
+/// libzstd supports on 32-bit platforms.
+const ZSTD_WINDOW_LOG_MAX: u32 = 30;
 
 fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R>>> {
     let mut dec = zstd::Decoder::new(reader)?;
