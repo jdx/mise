@@ -1251,6 +1251,10 @@ impl Config {
     }
 
     pub(crate) async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+        config_file::with_global_ignored_config_paths(self.load_tracked_config_files()).await
+    }
+
+    async fn load_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         let mut idiomatic_settings_by_root =
             BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();

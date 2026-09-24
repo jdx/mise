@@ -1594,6 +1594,12 @@ Relative paths in `.miserc.toml` are resolved from the directory containing that
 file. Relative paths from the environment or CLI are resolved from the directory
 where mise was invoked. Glob patterns are supported, including recursive `**`
 patterns. Paths without glob metacharacters retain directory-prefix matching.
+
+Commands that act on every tracked config (`mise prune`, `mise ls --prunable`,
+and the stale-version check in `mise upgrade`) honor only the environment
+variable and the global/system `miserc.toml` files. A project's own
+`.miserc.toml` ignores do not hide other projects' configs from them, so those
+commands give the same result from any directory.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
