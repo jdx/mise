@@ -843,6 +843,38 @@ mod tests {
     }
 
     #[test]
+    fn test_path_specific_url_replacements_are_detected_per_repository() {
+        // A rule that only reroutes one repository's releases leaves the bare
+        // GitHub URLs alone, but still takes that repository off mise-versions.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/tool/".to_string()
+                => "https://github-proxy.example.com/repos/acme/tool/".to_string(),
+        }));
+
+        assert!(!crate::versions_host::github_is_url_replaced(None));
+        assert!(crate::versions_host::github_is_url_replaced(Some(
+            "acme/tool"
+        )));
+        assert!(!crate::versions_host::github_is_url_replaced(Some(
+            "acme/other"
+        )));
+    }
+
+    #[test]
+    fn test_download_only_url_replacements_keep_mise_versions() {
+        // Mirroring release downloads (the documented Artifactory example)
+        // doesn't change where release metadata comes from.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            r"regex:^https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)".to_string()
+                => "https://hub.example.com/artifactory/github/$1/$2/$3".to_string(),
+        }));
+
+        assert!(!crate::versions_host::github_is_url_replaced(Some(
+            "acme/tool"
+        )));
+    }
+
+    #[test]
     fn test_use_versions_host_for_attestations_respects_caller_gate() {
         let _settings = SettingsGuard::with_versions_host(None, Some(true));
 
