@@ -285,23 +285,25 @@ pub(crate) static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-/// PEP 440 separator-less pre-release segment, grounded in the canonical
-/// public version grammar:
+/// PEP 440 pre-release and developmental-release segments, grounded in the
+/// canonical public version grammar:
 ///
 /// > `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
 ///
-/// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
-/// the regex requires a leading digit. `c` is included as PEP 440's recognized
-/// alternate spelling for `rc`. Developmental releases (`.devN`) are also
-/// pre-releases per PEP 440 and are excluded by pip/uv unless requested; the
-/// optional `[-_.]` separator and number cover the spellings PEP 440
-/// normalizes to `.devN`. The trailing boundary `(?:$|[^a-z0-9])` keeps it
-/// from matching inside hex hashes or other identifiers.
+/// The segment must follow the release segment, so the regex requires a
+/// leading digit. It also accepts the spellings PEP 440 normalizes to that
+/// form: an optional `-`/`_`/`.` separator on either side, the long names
+/// `alpha`, `beta`, `c`, `pre` and `preview`, and an omitted number
+/// (`1.0a` is `1.0a0`, `1.0.dev` is `1.0.dev0`). pip and uv exclude all of
+/// these unless pre-releases are requested. The trailing boundary
+/// `(?:$|[^a-z0-9])` keeps it from matching inside hex hashes or other
+/// identifiers.
 ///
 /// Only consulted by Python-flavored backends (currently `pipx`); other
 /// backends would false-positive on hex hashes like `f149714c1d54`.
 pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)[0-9](?:(?:a|b|c|rc)[0-9]+|[-_.]?dev[0-9]*)(?:$|[^a-z0-9])").unwrap()
+    Regex::new(r"(?i)[0-9][-_.]?(?:alpha|beta|preview|pre|rc|a|b|c|dev)[-_.]?[0-9]*(?:$|[^a-z0-9])")
+        .unwrap()
 });
 
 /// The public part of a PEP 440 version, without its local label
@@ -1026,6 +1028,19 @@ mod tests {
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0dev"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1.dev2"));
         assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-devtools"));
+
+        // Omitted numbers and long/separated spellings normalize to the
+        // canonical pre-release forms.
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0a"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0b"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0rc"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.alpha.1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0-beta2"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0_preview3"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0pre"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0-alpine"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-post1"));
 
         // Local version labels are ignored.
         assert!(is_python_prerelease("1.0.0c1+build"));

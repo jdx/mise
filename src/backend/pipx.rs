@@ -1467,9 +1467,16 @@ mod tests {
 
     #[test]
     fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
-        let versions = ["1.0", "1.1+gpu.dev0", "1.2.dev0", "1.3b1", "1.4-rc1"]
-            .map(String::from)
-            .to_vec();
+        let versions = [
+            "1.0",
+            "1.1+gpu.dev0",
+            "1.2.dev0",
+            "1.3b1",
+            "1.4-rc1",
+            "1.5a",
+        ]
+        .map(String::from)
+        .to_vec();
         assert_eq!(
             PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
             Some("1.1+gpu.dev0")
