@@ -1122,7 +1122,17 @@ impl Client {
                 )
                 .await?;
             let response_filename = download_filename_hint(resp.url());
-            progress.served_by(resp.url());
+            // A relayed response comes from the local adapter (`localhost`);
+            // the upstream GitHub host is the one actually sending the bytes.
+            #[cfg(unix)]
+            let served_by = if github_relay_socket(&url).is_some() {
+                &url
+            } else {
+                resp.url()
+            };
+            #[cfg(not(unix))]
+            let served_by = resp.url();
+            progress.served_by(served_by);
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp
@@ -1442,9 +1452,7 @@ impl Client {
         let original_url = url.clone();
         crate::ui::resolve_progress::fetching(&url);
         #[cfg(unix)]
-        if matches!(url.host_str(), Some("github.com" | "api.github.com"))
-            && let Some(socket) = std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
-        {
+        if let Some(socket) = github_relay_socket(&url) {
             let response = crate::github_relay::unix::request(
                 std::path::Path::new(&socket),
                 method,
@@ -2087,6 +2095,17 @@ pub(crate) fn resolve_pagination_url(current: &str, next: &str) -> Result<String
 
 /// Apply URL replacements based on settings configuration
 /// Supports both simple string replacement and regex patterns (prefixed with "regex:")
+/// The GitHub relay socket to send `url` through instead of the network,
+/// when mise runs behind a relay adapter.
+#[cfg(unix)]
+fn github_relay_socket(url: &Url) -> Option<std::ffi::OsString> {
+    if matches!(url.host_str(), Some("github.com" | "api.github.com")) {
+        std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
+    } else {
+        None
+    }
+}
+
 pub(crate) fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
@@ -2355,7 +2374,8 @@ const SLOW_DOWNLOAD_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 struct DownloadProgress {
     attempt: AtomicU64,
     earlier_attempts: AtomicU64,
-    /// Host of the latest response, after `url_replacements` and redirects.
+    /// Host of the latest response, after `url_replacements` and redirects
+    /// (the upstream GitHub host for relayed responses).
     host: Mutex<Option<String>>,
 }
 
