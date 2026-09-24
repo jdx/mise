@@ -4599,6 +4599,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 if let Some(context) = context {
                     cm = cm.with_cache_key(context.to_string());
                 }
+                // A list fetched from the versions host lags new releases, so
+                // turning the host off must not reuse it. Only the off state
+                // adds a key, which keeps existing cache entries valid.
+                if !Settings::get().use_versions_host {
+                    cm = cm.with_cache_key("direct".to_string());
+                }
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
                     cm = cm
                         .with_fresh_file(plugin_path.clone())

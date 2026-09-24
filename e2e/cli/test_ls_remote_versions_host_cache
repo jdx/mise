@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# The remote-versions cache must not be shared between runs with and without
+# the versions host: a list the host served lags new releases, and
+# MISE_USE_VERSIONS_HOST=0 is how users go straight to the source (#13604).
+
+# Warm the cache with the versions host enabled (the e2e default).
+assert "mise ls-remote dummy" "1.0.0
+1.1.0
+2.0.0"
+
+# With the host off, the cached list is not reused: list-all runs again.
+assert_fail "RTX_FAILURE=1 MISE_USE_VERSIONS_HOST=0 mise ls-remote dummy"
+
+# The host-off run keeps a cache of its own.
+assert "MISE_USE_VERSIONS_HOST=0 mise ls-remote dummy" "1.0.0
+1.1.0
+2.0.0"
+assert "RTX_FAILURE=1 MISE_USE_VERSIONS_HOST=0 mise ls-remote dummy" "1.0.0
+1.1.0
+2.0.0"
+
+# The host-on entry is still there.
+assert "RTX_FAILURE=1 mise ls-remote dummy" "1.0.0
+1.1.0
+2.0.0"
