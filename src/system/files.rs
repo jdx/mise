@@ -3449,14 +3449,14 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     Ok(files)
 }
 
-/// Checks a `dot_prefix` entry outside apply, which validates it with the
-/// rest of the composed footprint: the source must be a directory, and no
-/// two of its paths may deploy to the same place.
-pub(crate) fn validate_dot_prefix(req: &FileRequest) -> Result<()> {
+/// Every (source file, target path) pair of a `dot_prefix` entry, for builds
+/// that skip apply's footprint validation: the source must be a directory,
+/// and no two of its paths may deploy to the same place.
+pub(crate) fn dot_prefix_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     if !req.source.is_dir() {
         return Err(dot_prefix_file_source(req));
     }
-    walk_source_files(req).map(|_| ())
+    walk_source_files(req)
 }
 
 /// `dot_prefix` renames paths inside a directory; a single file keeps the
@@ -7962,7 +7962,7 @@ source = "oldrc""#,
         let err = walk_source_files(&req).unwrap_err().to_string();
         assert!(err.contains("to be a directory"), "{err}");
         // builds that skip apply's footprint validation still check it
-        assert!(validate_dot_prefix(&req).is_err());
+        assert!(dot_prefix_files(&req).is_err());
         Ok(())
     }
 
@@ -7980,7 +7980,7 @@ source = "oldrc""#,
             err.contains("dot_prefix requires the source to be a directory"),
             "{err}"
         );
-        assert!(validate_dot_prefix(&req).is_err());
+        assert!(dot_prefix_files(&req).is_err());
         Ok(())
     }
 

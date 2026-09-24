@@ -998,7 +998,8 @@ fn build_dotfiles_layer(
         }
 
         if req.dot_prefix {
-            crate::system::files::validate_dot_prefix(req)?;
+            add_dot_prefix_files(req, &oci_target_path(req)?, &mut entries)?;
+            continue;
         }
 
         match req.mode {
@@ -1019,7 +1020,7 @@ fn build_dotfiles_layer(
                     )?;
                 }
                 None => {
-                    collect_source_as_files(req, &oci_target_path(req)?, &mut entries)
+                    collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                         .wrap_err_with(|| {
                             format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
                         })?;
@@ -1041,10 +1042,7 @@ fn build_dotfiles_layer(
                     if !(ft.is_file() || ft.is_symlink()) {
                         continue;
                     }
-                    let rel = crate::system::files::target_rel(
-                        req,
-                        entry.path().strip_prefix(&req.source)?,
-                    );
+                    let rel = entry.path().strip_prefix(&req.source)?;
                     let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
                     entries.add_file(
                         path,
@@ -1089,18 +1087,46 @@ fn build_dotfiles_layer(
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
 }
 
-fn collect_source_as_files(
+/// A `dot_prefix` entry goes through the same filtered, collision-checked
+/// walk apply uses, so `exclude` and `manifest` decide which names reach the
+/// image and two sources never claim one path.
+fn add_dot_prefix_files(
     req: &FileRequest,
     target: &str,
     entries: &mut DotfilesLayerEntries,
 ) -> Result<()> {
-    let source = &req.source;
+    entries.add_dir(target.to_string())?;
+    for (source, deployed) in crate::system::files::dot_prefix_files(req)? {
+        let rel = deployed.strip_prefix(&req.target)?;
+        for dir in rel.ancestors().skip(1) {
+            if !dir.as_os_str().is_empty() {
+                entries.add_dir(oci_join(target, dir))?;
+            }
+        }
+        entries.add_file(
+            oci_join(target, rel),
+            file::read(&source)?,
+            source_mode(&source)?,
+        )?;
+    }
+    Ok(())
+}
+
+fn oci_join(target: &str, rel: &std::path::Path) -> String {
+    format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"))
+}
+
+fn collect_source_as_files(
+    source: &std::path::Path,
+    target: &str,
+    entries: &mut DotfilesLayerEntries,
+) -> Result<()> {
     if source.is_dir() {
         entries.add_dir(target.to_string())?;
         for entry in walkdir::WalkDir::new(source).sort_by_file_name() {
             let entry = entry?;
             if entry.file_type().is_dir() {
-                let rel = crate::system::files::target_rel(req, entry.path().strip_prefix(source)?);
+                let rel = entry.path().strip_prefix(source)?;
                 if !rel.as_os_str().is_empty() {
                     entries.add_dir(format!(
                         "{target}/{}",
@@ -1117,7 +1143,7 @@ fn collect_source_as_files(
                 );
                 continue;
             }
-            let rel = crate::system::files::target_rel(req, entry.path().strip_prefix(source)?);
+            let rel = entry.path().strip_prefix(source)?;
             let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
             entries.add_file(path, file::read(entry.path())?, source_mode(entry.path())?)?;
         }
@@ -1461,6 +1487,63 @@ mod tests {
         }
         assert_eq!(whiteout, Some((jdx_tar::EntryType::File, 0)), "{paths:?}");
         assert!(!paths.iter().any(|p| p == "root/.config/app/work.toml"));
+        Ok(())
+    }
+
+    #[test]
+    fn dot_prefix_entries_use_the_filtered_walk() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        file::create_dir_all(source.join("dot-config/app"))?;
+        file::write(source.join("dot-bashrc"), "dotted")?;
+        file::write(source.join("dot-config/app/config.toml"), "config")?;
+        // excluded, so it neither collides with dot-bashrc nor ships
+        file::write(source.join(".bashrc"), "plain")?;
+        let mut req = FileRequest {
+            target_raw: "~".into(),
+            target: dir.path().join("home"),
+            source: source.clone(),
+            content: None,
+            mode: FileMode::SymlinkEach,
+            exclude: vec![glob::Pattern::new(".bashrc")?],
+            include: None,
+            manifest: None,
+            permissions: None,
+            base: dir.path().to_path_buf(),
+            origin: crate::system::resources::ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: Some(source.clone()),
+            },
+            policy: crate::system::files::FilePolicy::for_mode(FileMode::SymlinkEach),
+            variants: vec![],
+            enabled: true,
+            remove_empty: false,
+            relative: false,
+            dot_prefix: true,
+        };
+        let mut entries = DotfilesLayerEntries::default();
+        add_dot_prefix_files(&req, "root", &mut entries)?;
+        let files = entries
+            .files
+            .iter()
+            .map(|(path, (contents, _))| (path.as_str(), contents.as_slice()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files,
+            vec![
+                ("root/.bashrc", b"dotted".as_slice()),
+                ("root/.config/app/config.toml", b"config".as_slice()),
+            ]
+        );
+        assert!(entries.dirs.contains("root/.config/app"));
+
+        req.exclude.clear();
+        let err = add_dot_prefix_files(&req, "root", &mut DotfilesLayerEntries::default())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("both deploy to"), "{err}");
         Ok(())
     }
 
