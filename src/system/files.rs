@@ -1244,7 +1244,6 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
-                || table.contains_key("dot_prefix")
                 || ((table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions")
@@ -7906,6 +7905,22 @@ source = "oldrc""#,
         ] {
             assert!(validate(entry).is_err(), "{entry} should be rejected");
         }
+        // an edit that also says dot_prefix is not a whole-file entry whose
+        // block would be dropped, and preflight names the stray key
+        let err = validate(r#"{ block = "x", dot_prefix = true }"#)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("dot_prefix applies to whole-file entries"),
+            "{err}"
+        );
+        assert!(
+            file_entry_from_toml(
+                "~/.dot-prefix-test/edit",
+                toml::from_str("block = \"x\"\ndot_prefix = true")?,
+            )
+            .is_none()
+        );
 
         let origin = ResourceOrigin {
             config: PathBuf::from("/mise.toml"),

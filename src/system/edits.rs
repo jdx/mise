@@ -237,7 +237,6 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             let is_whole_file_table = table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("remove_empty")
-                || table.contains_key("dot_prefix")
                 || (table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions")
