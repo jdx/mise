@@ -412,6 +412,10 @@ pub(crate) enum FileTomlEntry {
         /// template only: remove the target when the template renders empty
         #[serde(default)]
         remove_empty: Option<bool>,
+        /// directory-walking modes only: deploy a source name like
+        /// `dot-bashrc` as `.bashrc`
+        #[serde(default)]
+        dot_prefix: Option<bool>,
     },
 }
 
@@ -495,6 +499,9 @@ pub(crate) struct FileRequest {
     /// template only: an empty (whitespace-only) render removes the target
     /// instead of writing an empty file
     pub remove_empty: bool,
+    /// directory-walking modes only: each source path component named
+    /// `dot-<name>` is deployed as `.<name>`, like GNU Stow's `--dotfiles`
+    pub dot_prefix: bool,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -796,6 +803,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.mode == second.mode
         && first.manifest == second.manifest
         && first.remove_empty == second.remove_empty
+        && first.dot_prefix == second.dot_prefix
         && first.permissions == second.permissions
         // a track entry's list is a policy a later layer may change, like
         // autosave; a deployment entry's list is part of what it deploys
@@ -868,6 +876,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "variants"
                             | "enabled"
                             | "remove_empty"
+                            | "dot_prefix"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -890,6 +899,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 permissions,
                 variants,
                 remove_empty,
+                dot_prefix,
                 ..
             } = entry
             {
@@ -976,6 +986,13 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     && (content.is_some() || permissions_only || mode != FileMode::Template)
                 {
                     bail!("dotfile {target}: remove_empty requires mode = \"template\"");
+                }
+                if dot_prefix == Some(true)
+                    && (content.is_some()
+                        || permissions_only
+                        || !matches!(mode, FileMode::Copy | FileMode::SymlinkEach))
+                {
+                    bail!("dotfile {target}: dot_prefix requires mode copy or symlink-each");
                 }
                 if !matches!(mode, FileMode::Track | FileMode::Absent)
                     && !permissions_only
@@ -1203,6 +1220,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
+                || table.contains_key("dot_prefix")
                 || ((table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions"))
@@ -1246,9 +1264,11 @@ fn merge_file_entry(
         variants,
         enabled,
         remove_empty,
+        dot_prefix,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1274,6 +1294,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            dot_prefix,
         } => (
             source,
             content,
@@ -1287,6 +1308,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            dot_prefix,
         ),
     };
     // `{ permissions = "0600" }` alone manages only an existing target's
@@ -1301,6 +1323,7 @@ fn merge_file_entry(
         }
     };
     let remove_empty = remove_empty.unwrap_or(false);
+    let dot_prefix = dot_prefix.unwrap_or(false);
     if encrypt == Some(true) && content.is_some() {
         record_invalid(
             &target_raw,
@@ -1352,11 +1375,12 @@ fn merge_file_entry(
         return;
     }
     if mode.as_deref() == Some("track") {
-        if source.is_some() || content.is_some() || manifest.is_some() || remove_empty {
+        if source.is_some() || content.is_some() || manifest.is_some() || remove_empty || dot_prefix
+        {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, or remove_empty",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, or dot_prefix",
             );
             return;
         }
@@ -1428,6 +1452,7 @@ fn merge_file_entry(
             variants: selectors,
             enabled,
             remove_empty: false,
+            dot_prefix: false,
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -1484,6 +1509,12 @@ fn merge_file_entry(
             );
             return;
         }
+        if dot_prefix {
+            warn!(
+                "[dotfiles].\"{target_raw}\": dot_prefix requires mode copy or symlink-each, ignoring entry"
+            );
+            return;
+        }
         let target = resolve_target_arg(&target_raw);
         if target.is_relative() {
             warn!(
@@ -1516,6 +1547,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                dot_prefix: false,
             },
         );
         return;
@@ -1600,6 +1632,16 @@ fn merge_file_entry(
         );
         return;
     }
+    if dot_prefix
+        && (content.is_some()
+            || permissions_only
+            || !matches!(mode, FileMode::Copy | FileMode::SymlinkEach))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": dot_prefix requires mode copy or symlink-each, ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -1632,6 +1674,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                dot_prefix: false,
             },
         );
         return;
@@ -1655,6 +1698,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                dot_prefix: false,
             },
         );
         return;
@@ -1698,6 +1742,7 @@ fn merge_file_entry(
         variants: vec![],
         enabled,
         remove_empty,
+        dot_prefix,
     }) {
         merged.insert((req.target.clone(), false), req);
     }
@@ -1809,6 +1854,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         policy,
         enabled,
         remove_empty,
+        dot_prefix,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -1828,6 +1874,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            dot_prefix,
         }];
     }
 
@@ -1882,6 +1929,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            dot_prefix,
         }];
     }
 
@@ -1921,6 +1969,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 variants: vec![],
                 enabled,
                 remove_empty,
+                dot_prefix,
             })
         })
         .collect()
@@ -3138,6 +3187,25 @@ fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> 
         .collect()
 }
 
+/// The source-relative path a symlink found at `rel` under an entry's target
+/// would have been deployed from. Without `dot_prefix` the two are the same
+/// path. With it, `.bashrc` could come from `dot-bashrc` or `.bashrc`, so the
+/// link's own destination decides, and a link into neither is not the entry's.
+fn linked_source_rel(req: &FileRequest, link: &Path, rel: &Path, dest: &Path) -> Option<PathBuf> {
+    if !req.dot_prefix {
+        return Some(rel.to_path_buf());
+    }
+    let dest = match link.parent() {
+        Some(parent) if dest.is_relative() => parent.join(dest),
+        _ => dest.to_path_buf(),
+    };
+    let source_rel = lexical_normalize(&dest)
+        .strip_prefix(lexical_normalize(&req.source))
+        .ok()?
+        .to_path_buf();
+    (target_rel(req, &source_rel) == rel).then_some(source_rel)
+}
+
 /// Legacy ownership discovery for installations that predate persistent
 /// symlink-each state. A successful apply records the exact links it owns, so
 /// this unbounded target walk happens at most once per target.
@@ -3169,10 +3237,13 @@ fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         let Ok(rel) = entry.path().strip_prefix(&req.target) else {
             continue;
         };
-        let expected = req.source.join(rel);
+        let Some(source_rel) = linked_source_rel(req, entry.path(), rel, &dest) else {
+            continue;
+        };
+        let expected = req.source.join(&source_rel);
         // `dest` is compared as a path, so the `.` in a source like
         // `/dotfiles/.` doesn't have to match character for character
-        if dest == expected && (!expected.exists() || is_excluded(rel, &req.exclude)) {
+        if dest == expected && (!expected.exists() || is_excluded(&source_rel, &req.exclude)) {
             out.push(entry.path().to_path_buf());
         }
     }
@@ -3253,6 +3324,73 @@ pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
 /// every (source file, target path) pair of a directory-walking entry —
 /// `symlink-each`, and `copy` with a directory source
 fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let files = walk_source_files_unchecked(req)?;
+    if req.dot_prefix {
+        check_dot_prefix_collisions(req, &files)?;
+    }
+    Ok(files)
+}
+
+/// The path under an entry's target that a source-relative path deploys to.
+pub(crate) fn target_rel(req: &FileRequest, rel: &Path) -> PathBuf {
+    if !req.dot_prefix {
+        return rel.to_path_buf();
+    }
+    rel.components()
+        .map(|component| match component {
+            std::path::Component::Normal(name) => {
+                match name.to_str().and_then(|name| name.strip_prefix("dot-")) {
+                    // `dot-` and `dot-.` would name `.` and `..`
+                    Some(rest) if !rest.is_empty() && rest != "." => {
+                        std::ffi::OsString::from(format!(".{rest}"))
+                    }
+                    _ => name.to_os_string(),
+                }
+            }
+            other => other.as_os_str().to_os_string(),
+        })
+        .collect()
+}
+
+/// With `dot_prefix`, `dot-bashrc` and `.bashrc` in one source both deploy
+/// to `.bashrc`, and a `dot-config/` directory beside a `.config` file puts
+/// a directory where a file goes. Neither has a right answer to pick.
+fn check_dot_prefix_collisions(req: &FileRequest, files: &[(PathBuf, PathBuf)]) -> Result<()> {
+    let by_target: HashMap<&Path, &Path> = files
+        .iter()
+        .map(|(source, target)| (target.as_path(), source.as_path()))
+        .collect();
+    for (source, target) in files {
+        if let Some(other) = by_target.get(target.as_path())
+            && *other != source.as_path()
+        {
+            bail!(
+                "[dotfiles].\"{}\": {} and {} both deploy to {} with dot_prefix",
+                req.target_raw,
+                source.display_user(),
+                other.display_user(),
+                target.display_user()
+            );
+        }
+        for ancestor in target.ancestors().skip(1) {
+            if !ancestor.starts_with(&req.target) {
+                break;
+            }
+            if let Some(other) = by_target.get(ancestor) {
+                bail!(
+                    "[dotfiles].\"{}\": {} deploys to {}, but {} needs it to be a directory with dot_prefix",
+                    req.target_raw,
+                    other.display_user(),
+                    ancestor.display_user(),
+                    source.display_user()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn walk_source_files_unchecked(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     if req.manifest == Some(FileManifest::Git) {
         return git_tracked_paths(&req.source)?.into_iter().try_fold(
             vec![],
@@ -3263,7 +3401,7 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
                 let source = req.source.join(&entry.path);
                 match std::fs::symlink_metadata(&source) {
                     Ok(metadata) if !metadata.file_type().is_dir() => {
-                        out.push((source, req.target.join(entry.path)));
+                        out.push((source, req.target.join(target_rel(req, &entry.path))));
                     }
                     Ok(_) => {}
                     Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -3291,7 +3429,10 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
         if entry.file_type().is_dir() {
             continue;
         }
-        out.push((entry.path().to_path_buf(), req.target.join(rel)));
+        out.push((
+            entry.path().to_path_buf(),
+            req.target.join(target_rel(req, rel)),
+        ));
     }
     Ok(out)
 }
@@ -3406,7 +3547,7 @@ pub(crate) fn capture_git_manifest(req: &FileRequest) -> Result<()> {
         if entry.is_gitlink || entry.is_symlink || is_excluded(&entry.path, &req.exclude) {
             continue;
         }
-        let from = req.target.join(&entry.path);
+        let from = req.target.join(target_rel(req, &entry.path));
         let to = req.source.join(entry.path);
         if from.exists() || from.is_symlink() {
             if !file::same_file(&from, &to) {
@@ -4322,11 +4463,6 @@ fn legacy_owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         let Ok(rel) = entry.path().strip_prefix(&req.target) else {
             continue;
         };
-        // Excluded paths are outside this entry's managed footprint. Even an
-        // exact source-shaped link there may have been created by the user.
-        if is_excluded(rel, &req.exclude) {
-            continue;
-        }
         let dest = match std::fs::read_link(entry.path()) {
             Ok(dest) => dest,
             Err(err) => {
@@ -4334,7 +4470,15 @@ fn legacy_owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 continue;
             }
         };
-        let expected = req.source.join(rel);
+        let Some(source_rel) = linked_source_rel(req, entry.path(), rel, &dest) else {
+            continue;
+        };
+        // Excluded paths are outside this entry's managed footprint. Even an
+        // exact source-shaped link there may have been created by the user.
+        if is_excluded(&source_rel, &req.exclude) {
+            continue;
+        }
+        let expected = req.source.join(&source_rel);
         if dest == expected || points_at_same_file(entry.path(), &expected) {
             out.push(entry.path().to_path_buf());
         }
@@ -5563,6 +5707,7 @@ variants = [{{ {field} = "linux" }}]"#
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            dot_prefix: false,
         }
     }
 
@@ -6002,6 +6147,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            dot_prefix: false,
         };
         let mut first = request(vec!["sessions"], true);
         first.override_from(request(vec!["cache"], true));
@@ -6119,6 +6265,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            dot_prefix: false,
         }
     }
 
@@ -7321,6 +7468,116 @@ source = "oldrc""#,
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
         assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
         assert!(merge("mode = \"absent\"\nremove_empty = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn dot_prefix_is_rejected_outside_directory_walking_modes() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let validate = |entry: &str| -> Result<()> {
+            let body = format!("[dotfiles]\n\"~/.dot-prefix-test\" = {entry}\n");
+            let mut configs = ConfigMap::new();
+            configs.insert(
+                path.clone(),
+                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+            );
+            validate_incoming_files(&configs)
+        };
+        validate(r#"{ source = "a", mode = "symlink-each", dot_prefix = true }"#)?;
+        validate(r#"{ source = "a", mode = "copy", dot_prefix = true }"#)?;
+        validate(r#"{ source = "a", mode = "symlink", dot_prefix = false }"#)?;
+        for entry in [
+            r#"{ source = "a", mode = "symlink", dot_prefix = true }"#,
+            r#"{ source = "a", mode = "template", dot_prefix = true }"#,
+            r#"{ content = "x", dot_prefix = true }"#,
+            r#"{ permissions = "0600", dot_prefix = true }"#,
+            r#"{ mode = "absent", dot_prefix = true }"#,
+            r#"{ mode = "track", dot_prefix = true }"#,
+        ] {
+            assert!(validate(entry).is_err(), "{entry} should be rejected");
+        }
+
+        let origin = ResourceOrigin {
+            config: PathBuf::from("/mise.toml"),
+            config_root: PathBuf::from("/"),
+            environment: vec![],
+            source: None,
+        };
+        let merge = |entry: &str| {
+            let entry: FileTomlEntry = toml::from_str(entry).unwrap();
+            let mut merged = IndexMap::new();
+            merge_file_entry(
+                "~/.dot-prefix-test".into(),
+                entry,
+                Path::new("/"),
+                &origin,
+                &mut merged,
+            );
+            merged.into_values().collect::<Vec<_>>()
+        };
+        let accepted = merge("source = \"a\"\nmode = \"symlink-each\"\ndot_prefix = true");
+        assert!(accepted[0].dot_prefix);
+        assert!(merge("source = \"a\"\nmode = \"symlink\"\ndot_prefix = true").is_empty());
+        assert!(merge("content = \"x\"\ndot_prefix = true").is_empty());
+        assert!(merge("mode = \"absent\"\ndot_prefix = true").is_empty());
+        assert!(merge("mode = \"track\"\ndot_prefix = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn dot_prefix_maps_each_dot_component() {
+        let mut req = link_req(Path::new("/src"), Path::new("/home"), FileMode::SymlinkEach);
+        let rel = Path::new("dot-config/foo/dot-rc");
+        assert_eq!(target_rel(&req, rel), rel);
+        req.dot_prefix = true;
+        for (source, target) in [
+            ("dot-bashrc", ".bashrc"),
+            ("dot-config/foo/config.toml", ".config/foo/config.toml"),
+            ("dot-config/foo/dot-rc", ".config/foo/.rc"),
+            (".already", ".already"),
+            ("plain/dot-", "plain/dot-"),
+            ("dot-.", "dot-."),
+            ("my-dot-file", "my-dot-file"),
+        ] {
+            assert_eq!(target_rel(&req, Path::new(source)), Path::new(target));
+        }
+    }
+
+    #[test]
+    fn dot_prefix_walks_and_rejects_colliding_names() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        let target = dir.path().join("home");
+        file::create_dir_all(source.join("dot-config/app"))?;
+        file::write(source.join("dot-bashrc"), "")?;
+        file::write(source.join("dot-config/app/config.toml"), "")?;
+        file::write(source.join("dot-git.md"), "")?;
+        let mut req = link_req(&source, &target, FileMode::SymlinkEach);
+        req.dot_prefix = true;
+        // exclude still matches source names
+        req.exclude = vec![glob::Pattern::new("dot-git.md")?];
+        assert_eq!(
+            walk_source_files(&req)?,
+            vec![
+                (source.join("dot-bashrc"), target.join(".bashrc")),
+                (
+                    source.join("dot-config/app/config.toml"),
+                    target.join(".config/app/config.toml")
+                ),
+            ]
+        );
+
+        file::write(source.join(".bashrc"), "")?;
+        let err = walk_source_files(&req).unwrap_err().to_string();
+        assert!(err.contains("both deploy to"), "{err}");
+        std::fs::remove_file(source.join(".bashrc"))?;
+
+        file::write(source.join(".config"), "")?;
+        let err = walk_source_files(&req).unwrap_err().to_string();
+        assert!(err.contains("to be a directory"), "{err}");
         Ok(())
     }
 

@@ -4381,6 +4381,11 @@
                 "default": false,
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
               },
+              "dot_prefix": {
+                "type": "boolean",
+                "default": false,
+                "description": "symlink-each and copy modes only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -4508,6 +4513,9 @@
                     "manifest": false,
                     "permissions": false,
                     "remove_empty": false,
+                    "dot_prefix": {
+                      "const": false
+                    },
                     "encrypt": {
                       "const": false
                     },
@@ -4544,6 +4552,41 @@
                     }
                   }
                 ]
+              },
+              {
+                "if": {
+                  "required": ["dot_prefix"],
+                  "properties": {
+                    "dot_prefix": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "content": false,
+                    "mode": {
+                      "enum": ["copy", "symlink-each"]
+                    },
+                    "block": false,
+                    "line": false,
+                    "template": false,
+                    "comment": false
+                  },
+                  "anyOf": [
+                    {
+                      "required": ["source"]
+                    },
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "properties": {
+                        "permissions": false
+                      }
+                    }
+                  ]
+                }
               },
               {
                 "oneOf": [

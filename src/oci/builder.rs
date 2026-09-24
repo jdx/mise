@@ -1009,7 +1009,7 @@ fn build_dotfiles_layer(
                     )?;
                 }
                 None => {
-                    collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
+                    collect_source_as_files(req, &oci_target_path(req)?, &mut entries)
                         .wrap_err_with(|| {
                             format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
                         })?;
@@ -1031,7 +1031,10 @@ fn build_dotfiles_layer(
                     if !(ft.is_file() || ft.is_symlink()) {
                         continue;
                     }
-                    let rel = entry.path().strip_prefix(&req.source)?;
+                    let rel = crate::system::files::target_rel(
+                        req,
+                        entry.path().strip_prefix(&req.source)?,
+                    );
                     let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
                     entries.add_file(
                         path,
@@ -1077,16 +1080,17 @@ fn build_dotfiles_layer(
 }
 
 fn collect_source_as_files(
-    source: &std::path::Path,
+    req: &FileRequest,
     target: &str,
     entries: &mut DotfilesLayerEntries,
 ) -> Result<()> {
+    let source = &req.source;
     if source.is_dir() {
         entries.add_dir(target.to_string())?;
         for entry in walkdir::WalkDir::new(source).sort_by_file_name() {
             let entry = entry?;
             if entry.file_type().is_dir() {
-                let rel = entry.path().strip_prefix(source)?;
+                let rel = crate::system::files::target_rel(req, entry.path().strip_prefix(source)?);
                 if !rel.as_os_str().is_empty() {
                     entries.add_dir(format!(
                         "{target}/{}",
@@ -1103,7 +1107,7 @@ fn collect_source_as_files(
                 );
                 continue;
             }
-            let rel = entry.path().strip_prefix(source)?;
+            let rel = crate::system::files::target_rel(req, entry.path().strip_prefix(source)?);
             let path = format!("{target}/{}", rel.to_string_lossy().replace('\\', "/"));
             entries.add_file(path, file::read(entry.path())?, source_mode(entry.path())?)?;
         }

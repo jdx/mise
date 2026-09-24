@@ -208,6 +208,17 @@ impl DotfilesAdd {
                     req.origin.config.display_user()
                 );
             }
+            // capturing copies the target tree into the source verbatim,
+            // which would store `.bashrc` where the entry reads `dot-bashrc`
+            if let Some(req) = existing
+                && req.dot_prefix
+            {
+                bail!(
+                    "{target_raw}: declared with dot_prefix in {}; edit its source {} directly",
+                    req.origin.config.display_user(),
+                    req.source.display_user()
+                );
+            }
             let source = if let Some(req) = existing {
                 req.source.clone()
             } else if let Some(source) = &self.source {
@@ -576,6 +587,7 @@ impl PlannedAdd {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            dot_prefix: false,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),
