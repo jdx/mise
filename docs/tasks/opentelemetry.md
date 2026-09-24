@@ -1,3 +1,7 @@
+---
+description: "Export OpenTelemetry traces for mise run to Jaeger, Tempo, or any OTLP backend."
+---
+
 # OpenTelemetry <Badge type="warning" text="experimental" />
 
 mise can export traces for `mise run` to any
