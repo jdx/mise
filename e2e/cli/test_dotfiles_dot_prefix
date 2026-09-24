@@ -34,7 +34,6 @@ assert_fail "test -L $HOME/.bashrc"
 echo "plain" >dots/.bashrc
 echo "again" >dots/dot-bashrc
 assert_fail_contains "mise bootstrap dotfiles apply --yes" "both deploy to"
-rm dots/.bashrc
 
 # The option is only meaningful for modes that walk a directory.
 cat <<EOF >mise.toml
