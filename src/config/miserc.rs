@@ -158,11 +158,12 @@ fn render_miserc_template(
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", config_root);
-    match std::env::current_dir() {
-        Ok(dir) => context.insert("cwd", &dir),
-        Err(e) => {
-            debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}")
-        }
+    // Use the invocation directory, not the current one: the global ignore list
+    // is rendered lazily, possibly after `-C` changed directory, and must match
+    // what startup rendered.
+    match invocation_cwd() {
+        Some(dir) => context.insert("cwd", dir),
+        None => debug!("miserc template: could not determine cwd, `cwd` will be unavailable"),
     };
     context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
