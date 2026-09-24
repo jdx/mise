@@ -267,16 +267,18 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
 /// Real install directories a rebuild must never replace with a selector
 /// link. An interrupted install is not eligible for links, but its directory
 /// still holds whatever the installer got to: a `1.1` that never finished must
-/// not be wiped and turned into a link to a complete `1.1.0`.
+/// not be wiped and turned into a link to a complete `1.1.0`. The marker alone
+/// is enough: a directory mise was installing into is protected whatever its
+/// name, even one in a selector slot like `latest`.
 fn concrete_installs_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> HashSet<String> {
     installed_versions_in_dir(backend, installs_dir)
         .into_iter()
+        .filter(|v| is_concrete_install(v))
         .chain(
             real_installs_in_dir(installs_dir)
                 .into_iter()
                 .filter(|v| install_state::is_install_incomplete(installs_dir, v)),
         )
-        .filter(|v| is_concrete_install(v))
         .collect()
 }
 
@@ -643,7 +645,9 @@ mod tests {
         let installs_dir = unique_installs_dir(&temp_dir, "dummy");
         fs::create_dir_all(installs_dir.join("1.1.0"))?;
         fs::create_dir_all(installs_dir.join("1.1"))?;
+        fs::create_dir_all(installs_dir.join("latest"))?;
         let _interrupted = interrupted_install(&installs_dir, "1.1")?;
+        let _interrupted_latest = interrupted_install(&installs_dir, "latest")?;
 
         let backend = npm_test_backend();
         assert_eq!(
@@ -652,7 +656,7 @@ mod tests {
         );
         assert_eq!(
             concrete_installs_in_dir(&backend, &installs_dir),
-            HashSet::from(["1.1".to_string(), "1.1.0".to_string()])
+            HashSet::from(["1.1", "1.1.0", "latest"].map(String::from))
         );
         Ok(())
     }
