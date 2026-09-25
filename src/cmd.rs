@@ -30,6 +30,7 @@ macro_rules! cmd {
 
 pub(crate) use mise_util::cmd::*;
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use crate::config::Config;

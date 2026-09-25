@@ -748,7 +748,6 @@ pub(crate) trait SettingsExt: Sized {
 
     fn system_installs_dir(&self) -> &Path;
 
-    fn system_shims_dir(&self) -> PathBuf;
 
     fn env_files(&self) -> Vec<PathBuf>;
 
@@ -1122,9 +1121,6 @@ impl SettingsExt for Settings {
         dirs::system_installs_dir(self)
     }
 
-    fn system_shims_dir(&self) -> PathBuf {
-        dirs::system_shims_dir(self)
-    }
 
     fn env_files(&self) -> Vec<PathBuf> {
         let mut files = vec![];
