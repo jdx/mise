@@ -179,21 +179,17 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
     };
 
     // A URL's userinfo ("git+ssh://git@github.com/...") is part of the tool
-    // name, so only an '@' after the authority can start a version.
-    if let Some(scheme_end) = left.find("://") {
-        let authority_start = scheme_end + 3;
-        if !left[authority_start..].contains('/') {
-            let authority_end = s[authority_start..]
-                .find('/')
-                .map_or(s.len(), |i| authority_start + i);
-            return match s[authority_end..].split_once('@') {
-                Some((path, version)) => (
-                    &s[..authority_end + path.len()],
-                    (!version.is_empty()).then_some(version),
-                ),
-                None => (s, None),
-            };
-        }
+    // name, so the next '@' after it starts the version.
+    if let Some(scheme_end) = left.find("://")
+        && !left[scheme_end + 3..].contains('/')
+    {
+        return match right.split_once('@') {
+            Some((url_rest, version)) => (
+                &s[..left.len() + 1 + url_rest.len()],
+                (!version.is_empty()).then_some(version),
+            ),
+            None => (s, None),
+        };
     }
 
     if left.is_empty() {
@@ -328,6 +324,11 @@ mod tests {
             "pipx:git+ssh://git@example.com",
             "pipx:git+ssh://git@example.com",
             None,
+        );
+        t(
+            "pipx:git+ssh://git@example.com@v1",
+            "pipx:git+ssh://git@example.com",
+            Some("v1"),
         );
         t(
             "pypi:git+https://github.com/psf/black.git@24.2.0",
