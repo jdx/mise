@@ -583,7 +583,9 @@ fully own, such as the one holding `mise.toml` itself:
 A pattern without `/` matches any single path component, so `"mise.toml"`
 skips that file wherever it appears in the tree and `"*.md"` skips every
 markdown file. A pattern containing `/` is anchored to the source root:
-`"nvim/spell"` skips only that path. Either kind matching a directory skips
+`"nvim/spell"` skips only that path. A leading `/` anchors a pattern as it
+does in `.gitignore`, and there `*` does not cross a `/`: `"/*.md"` skips
+only the markdown files at the root. Either kind matching a directory skips
 everything under it.
 
 For `symlink-each`, excluding a previously managed file removes its recorded link on the
@@ -946,7 +948,9 @@ Use per-entry exclusions to omit files beneath one directory:
 
 The patterns are relative to `~/.codex`. `sessions` excludes directories
 with that name and their contents; `*.log` excludes matching files at any
-depth. Patterns containing `/` are anchored to the tracked directory.
+depth. Patterns containing `/` are anchored to the tracked directory, and
+a leading `/` selects from its top level only: `/*.log` matches `~/.codex/a.log`
+but not `~/.codex/logs/b.log`.
 Global `[history] exclude` rules also apply and cannot override the entry's
 exclusions with `!glob`.
 

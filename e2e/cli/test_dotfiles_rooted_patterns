@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# A leading `/` anchors a tracked directory's `include` and `exclude`
+# patterns to the entry root, as in `.gitignore`: `/*.ps1` names only the
+# scripts at the top, and `/completions` only that directory.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+
+mkdir -p ~/ps/completions ~/ps/sub/completions
+echo a >~/ps/a.ps1
+echo b >~/ps/b.ps1
+echo x >~/ps/x.txt
+echo c >~/ps/completions/c.ps1
+echo d >~/ps/sub/completions/d.ps1
+
+captured="git --git-dir=$repo ls-tree -r --name-only HEAD home/ps | sed 's|^home/ps/||' | sort | tr '\\n' ' '"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/ps" = { mode = "track", include = ["/*.ps1"] }
+TOML
+assert_succeed 'mise dot track ~/ps'
+assert "$captured" "a.ps1 b.ps1 "
+assert_contains 'mise dot paths' '~/ps: 2 files (include list)'
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/ps" = { mode = "track", include = ["/completions/*.ps1"] }
+TOML
+assert_succeed 'mise dot track ~/ps'
+assert "$captured" "completions/c.ps1 "
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/ps" = { mode = "track", include = ["*.ps1"], exclude = ["/completions"] }
+TOML
+assert_succeed 'mise dot track ~/ps'
+assert "$captured" "a.ps1 b.ps1 sub/completions/d.ps1 "

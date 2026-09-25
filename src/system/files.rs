@@ -3446,12 +3446,28 @@ fn compile_patterns(
 /// entry's `exclude` patterns. A pattern without `/` matches any single
 /// path component, so `exclude = ["mise.toml"]` drops that file wherever
 /// it sits in the tree and `["*.md"]` drops every markdown file; a pattern
-/// containing `/` is anchored to the source root. Either kind matching a
-/// directory takes everything under it, which is why ancestors are tested
-/// too. Track entries use the same rules relative to the tracked path.
+/// containing `/` is anchored to the source root. A leading `/` anchors
+/// too, as in `.gitignore`, and there `*` stops at a separator, so
+/// `"/*.md"` names only the markdown files at the root. Either kind
+/// matching a directory takes everything under it, which is why ancestors
+/// are tested too. Track entries use the same rules relative to the
+/// tracked path.
 pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    const ROOTED: glob::MatchOptions = glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
     patterns.iter().any(|pattern| {
-        if pattern.as_str().contains('/') {
+        if pattern.as_str().starts_with('/') {
+            // `rel` has no root to match the leading `/` against, so give
+            // it one. The empty ancestor is the root itself, which no
+            // pattern selects: `/*` would otherwise match it and take
+            // the whole tree.
+            rel.ancestors()
+                .filter(|a| !a.as_os_str().is_empty())
+                .any(|a| pattern.matches_path_with(&Path::new("/").join(a), ROOTED))
+        } else if pattern.as_str().contains('/') {
             rel.ancestors().any(|a| pattern.matches_path(a))
         } else {
             rel.components()
@@ -6309,6 +6325,27 @@ source = "oldrc""#,
         // but the same name elsewhere in the tree is untouched
         assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
         assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_leading_slash_pattern_is_anchored_to_the_root() {
+        let pats = patterns(&["/*.ps1"]);
+        assert!(is_excluded(Path::new("a.ps1"), &pats));
+        // `*` stops at a separator, so nothing below the root matches
+        assert!(!is_excluded(Path::new("completions/c.ps1"), &pats));
+        assert!(!is_excluded(Path::new("x.txt"), &pats));
+
+        let pats = patterns(&["/completions"]);
+        assert!(is_excluded(Path::new("completions"), &pats));
+        assert!(is_excluded(Path::new("completions/c.ps1"), &pats));
+        assert!(!is_excluded(Path::new("sub/completions/d.ps1"), &pats));
+
+        let pats = patterns(&["/completions/*.ps1"]);
+        assert!(is_excluded(Path::new("completions/c.ps1"), &pats));
+        assert!(!is_excluded(Path::new("sub/completions/d.ps1"), &pats));
+
+        // the root itself is not one of the paths a pattern names
+        assert!(!is_excluded(Path::new(""), &patterns(&["/*"])));
     }
 
     #[test]
