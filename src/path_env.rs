@@ -1,5 +1,6 @@
 pub(crate) use mise_util::path_env::*;
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
