@@ -143,6 +143,33 @@ pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool
         .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
 }
 
+/// Whether the versions host may serve this backend type's remote version list.
+///
+/// Only a subset of backends benefit from the versions host cache — those
+/// whose upstream listing is rate-limited (github API) or not otherwise
+/// available. Package-registry backends (npm, pipx, cargo, gem, go, conda,
+/// dotnet, spm) and http/s3 with an explicit version_list_url already have
+/// canonical, always-fresh sources, so the cache would only add latency and
+/// staleness risk. Note: this asymmetrically overrides
+/// `settings.use_versions_host = true` — the setting can still disable the
+/// host globally, but cannot re-enable it for backends that are not on this
+/// allowlist.
+fn versions_host_applies(backend_type: &BackendType, has_version_list_url: bool) -> bool {
+    match backend_type {
+        BackendType::Github
+        | BackendType::Gitlab
+        | BackendType::Forgejo
+        | BackendType::Ubi
+        | BackendType::Aqua
+        | BackendType::Core
+        | BackendType::Asdf
+        | BackendType::Vfox
+        | BackendType::VfoxBackend(_) => true,
+        BackendType::Http | BackendType::S3 => !has_version_list_url,
+        _ => false,
+    }
+}
+
 pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
     let tvl = ts
         .versions
@@ -2458,36 +2485,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
-        // Only a subset of backends benefit from the versions host cache —
-        // those whose upstream listing is rate-limited (github API) or not
-        // otherwise available. Package-registry backends (npm, pipx, cargo,
-        // gem, go, conda, dotnet, spm) and http/s3 with an explicit
-        // version_list_url already have canonical, always-fresh sources, so
-        // the cache would only add latency and staleness risk. Note: this
-        // asymmetrically overrides `settings.use_versions_host = true` — the
-        // setting can still disable the host globally, but cannot re-enable
-        // it for backends that are not on this allowlist.
         let backend_type = self.get_type();
-        let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
-            listing_opts.contains_key("version_list_url")
-        } else {
-            false
-        };
-        let versions_host_applies = match backend_type {
-            BackendType::Github
-            | BackendType::Gitlab
-            | BackendType::Forgejo
-            | BackendType::Ubi
-            | BackendType::Aqua
-            | BackendType::Core
-            | BackendType::Asdf
-            | BackendType::Vfox
-            | BackendType::VfoxBackend(_) => true,
-            BackendType::Http | BackendType::S3 => !has_version_list_url,
-            _ => false,
-        };
+        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
+            && listing_opts.contains_key("version_list_url");
 
-        let use_versions_host = if !versions_host_applies {
+        let use_versions_host = if !versions_host_applies(&backend_type, has_version_list_url) {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
@@ -4601,8 +4603,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
                 // A list fetched from the versions host lags new releases, so
                 // turning the host off must not reuse it. Only the off state
-                // adds a key, which keeps existing cache entries valid.
-                if !Settings::get().use_versions_host {
+                // adds a key, which keeps existing cache entries valid, and
+                // only for backends the host can serve: the others always
+                // list directly, so their one entry is already correct.
+                if !Settings::get().use_versions_host
+                    && versions_host_applies(&self.get_type(), false)
+                {
                     cm = cm.with_cache_key("direct".to_string());
                 }
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
