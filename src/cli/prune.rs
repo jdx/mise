@@ -2,19 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
-use crate::toolset::{
-    NeededVersions, ToolVersion, ToolsetBuilder, get_versions_needed_by_tracked_configs,
-    get_versions_needed_by_tracked_stubs,
-};
+use crate::toolset::{NeededVersions, ToolVersion, prunable_tools, prunable_tools_with_sources};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt::{self, Confirmation};
-use crate::{backend::Backend, config, env, exit};
+use crate::{backend::Backend, config, exit};
 use console::style;
 use eyre::Result;
 
@@ -126,53 +123,6 @@ impl Prune {
         }
         Ok(())
     }
-}
-
-pub(crate) async fn prunable_tools(
-    config: &Arc<Config>,
-    tools: Vec<&BackendArg>,
-) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools).await?.0)
-}
-
-/// Like [`prunable_tools`], but also returns what the tracked configs and stubs
-/// still need. Pruning removes what none of them named, so the versions that
-/// were kept — and the files that kept them — are the only evidence available
-/// for explaining a removal.
-async fn prunable_tools_with_sources(
-    config: &Arc<Config>,
-    tools: Vec<&BackendArg>,
-) -> Result<(Vec<(Arc<dyn Backend>, ToolVersion)>, NeededVersions)> {
-    let ts = ToolsetBuilder::new().build(config).await?;
-    let mut to_delete = ts
-        .list_installed_versions(config)
-        .await?
-        .into_iter()
-        // System and shared installs are read-only fallback locations. Prune only
-        // manages versions in the user's primary install directory.
-        .filter(|(_, tv)| {
-            env::install_path_category(&tv.install_path()) == env::InstallPathCategory::Local
-        })
-        .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
-        .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
-
-    if !tools.is_empty() {
-        to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
-    }
-
-    // Remove versions that are still needed by tracked configs
-    let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
-
-    // Remove versions that are still needed by tracked tool stubs
-    for (key, sources) in get_versions_needed_by_tracked_stubs(config).await? {
-        needed.entry(key).or_default().extend(sources);
-    }
-
-    for key in needed.keys() {
-        to_delete.remove(key);
-    }
-
-    Ok((to_delete.into_values().collect(), needed))
 }
 
 pub(super) async fn prune(

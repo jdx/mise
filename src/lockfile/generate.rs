@@ -203,11 +203,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
     Ok(())
 }
 
-fn resolution_key(
-    ba: &crate::cli::args::BackendArg,
-    tv: &ToolVersion,
-    platform: &Platform,
-) -> String {
+fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Platform) -> String {
     let mut options = tv.request.options().clone();
     options.opts.values.sort_keys();
     options.core.install_env.sort_keys();
@@ -224,7 +220,7 @@ fn resolution_key(
 }
 
 async fn resolve(
-    ba: crate::cli::args::BackendArg,
+    ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
 ) -> Result<LockResolutionResult> {
@@ -245,7 +241,7 @@ async fn resolve(
         .clone())
 }
 
-pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
+pub(crate) type Tool = (crate::args::BackendArg, ToolVersion);
 
 /// A conservative check for a complete, unfiltered warm install. Compare the
 /// resolved inputs, not file timestamps: environment-dependent options and
@@ -821,7 +817,7 @@ fn provenance_is_downgrade(
 }
 
 fn validate_provenance_settings(
-    ba: &crate::cli::args::BackendArg,
+    ba: &crate::args::BackendArg,
     tv: &ToolVersion,
     platform: &str,
     info: &PlatformInfo,
@@ -957,7 +953,7 @@ fn preserve_legacy_metadata(old: &PlatformInfo, new: &mut PlatformInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::ToolRequest;
 
     fn tool() -> Tool {

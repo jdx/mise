@@ -8,7 +8,7 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;

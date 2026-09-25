@@ -1,10 +1,10 @@
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::{
     Backend, VersionCacheManager, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::settings::SettingsNodeExt;

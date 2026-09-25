@@ -2671,9 +2671,6 @@ mod tests {
         );
     }
 
-    // Mutex to ensure tests don't interfere with each other when modifying global settings
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     struct FailingDnsResolver;
 
     impl Resolve for FailingDnsResolver {
@@ -2698,7 +2695,7 @@ mod tests {
         // for the next test whenever this one panics -- previously the lock's poison flag hid
         // that by failing every later test outright.
         let _guard = SettingsGuard {
-            _lock: crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK),
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
         };
 
         // Create settings with custom URL replacements
@@ -2747,7 +2744,7 @@ mod tests {
         let replacement = server.url();
         let original = replacement.replacen("http://", "https://", 1);
         let _guard = {
-            let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
             let mut settings = mise_settings::SettingsPartial::empty();
             settings.url_replacements = Some(indexmap::indexmap! {
                 original.clone() => replacement,
@@ -2783,7 +2780,7 @@ mod tests {
             .await;
         let replacement = server.url();
         let _guard = {
-            let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
             let mut settings = mise_settings::SettingsPartial::empty();
             settings.url_replacements = Some(indexmap::indexmap! {
                 "https://secure.example.com".to_string() => replacement,
@@ -2935,14 +2932,14 @@ mod tests {
         }
     }
     fn set_test_http_retries(retries: i64) -> SettingsGuard {
-        let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
         settings.http_retries = Some(retries);
         crate::testing::reset_settings(Some(settings));
         SettingsGuard { _lock: lock }
     }
     fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
-        let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
         settings.prefer_offline = Some(true);
         settings.http_retries = Some(http_retries);
@@ -2950,7 +2947,7 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
     fn set_test_offline() -> SettingsGuard {
-        let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
         settings.offline = Some(true);
         crate::testing::reset_settings(Some(settings));
@@ -2959,7 +2956,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_generation_shares_concurrent_artifact_downloads() {
-        let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
         settings.lockfile_mode = Some("generate".into());
         crate::testing::reset_settings(Some(settings));
@@ -3083,7 +3080,7 @@ mod tests {
     }
 
     fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
-        let settings_lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let settings_lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let github_env_lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let vars = vec![
             ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
@@ -5241,7 +5238,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     #[test]
     fn test_no_settings_configured() {
         // Test the real apply_url_replacements function with no settings override
-        let _guard = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let _guard = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         crate::testing::reset_settings(None);
 
         let mut url = Url::parse("https://github.com/owner/repo").unwrap();

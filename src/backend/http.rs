@@ -1,3 +1,4 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -12,7 +13,6 @@ use crate::backend::static_helpers::{
     verify_artifact,
 };
 use crate::backend::version_list;
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{DownloadFileMetadata, HTTP};
@@ -1422,7 +1422,7 @@ fn rename_cache_token(rename: &toml::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
 
     #[test]

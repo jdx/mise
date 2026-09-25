@@ -1,6 +1,6 @@
 use super::ports::PortClaim;
 use super::{DaemonSet, DaemonSettings, state_dir};
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::env_diff::EnvMap;
@@ -816,7 +816,7 @@ pub(crate) async fn validate_tools(
         if cfg!(windows) {
             bail!("daemon presets are not supported on Windows yet");
         }
-        let ba: crate::cli::args::BackendArg = tool.as_str().into();
+        let ba: crate::args::BackendArg = tool.as_str().into();
         let Some(versions) = ts.versions.get(&ba) else {
             bail!("daemon {} requires {tool}@{version}", daemon.name);
         };

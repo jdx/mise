@@ -23,6 +23,7 @@ use packslip::model::{
 };
 use packslip::sigstore::{Policy, Trust};
 
+use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{ArchiveLayout, install_artifact};
@@ -30,7 +31,6 @@ use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
     runtime_path_for_install_path,
 };
-use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::github;

@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::Result;
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file::{ExtractOptions, ExtractionFormat};

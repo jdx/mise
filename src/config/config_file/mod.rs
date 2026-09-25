@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;

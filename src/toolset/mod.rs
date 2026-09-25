@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
@@ -22,7 +22,7 @@ pub(crate) use outdated_info::is_outdated_version;
 use petgraph::Direction;
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -410,8 +410,8 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-        filter_tools: Option<&[crate::cli::args::ToolArg]>,
-        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+        filter_tools: Option<&[crate::args::ToolArg]>,
+        exclude_tools: Option<&[crate::args::ToolArg]>,
     ) -> Vec<OutdatedInfo> {
         self.list_outdated_versions_with_progress(
             config,
@@ -429,8 +429,8 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-        filter_tools: Option<&[crate::cli::args::ToolArg]>,
-        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+        filter_tools: Option<&[crate::args::ToolArg]>,
+        exclude_tools: Option<&[crate::args::ToolArg]>,
         show_progress: bool,
     ) -> Vec<OutdatedInfo> {
         let list_versions = if opts.inactive {
@@ -940,7 +940,7 @@ pub(crate) async fn get_versions_needed_by_tracked_stubs(
     for path in Tracker::list_all_stubs()? {
         // A stub that no longer parses protects nothing, but shouldn't fail
         // the whole prune either — it may simply have been repurposed.
-        let stub = match crate::cli::tool_stub::ToolStubFile::from_file(&path) {
+        let stub = match crate::tool_stub::ToolStubFile::from_file(&path) {
             Ok(stub) => stub,
             Err(err) => {
                 warn!(
@@ -972,6 +972,54 @@ pub(crate) async fn get_versions_needed_by_tracked_stubs(
         collect_needed_versions(&ts, true, &path, &mut needed);
     }
     Ok(needed)
+}
+
+pub(crate) async fn prunable_tools(
+    config: &Arc<Config>,
+    tools: Vec<&BackendArg>,
+) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
+    Ok(prunable_tools_with_sources(config, tools).await?.0)
+}
+
+/// Like [`prunable_tools`], but also returns what the tracked configs and stubs
+/// still need. Pruning removes what none of them named, so the versions that
+/// were kept — and the files that kept them — are the only evidence available
+/// for explaining a removal.
+pub(crate) async fn prunable_tools_with_sources(
+    config: &Arc<Config>,
+    tools: Vec<&BackendArg>,
+) -> Result<(Vec<(Arc<dyn Backend>, ToolVersion)>, NeededVersions)> {
+    let ts = ToolsetBuilder::new().build(config).await?;
+    let mut to_delete = ts
+        .list_installed_versions(config)
+        .await?
+        .into_iter()
+        // System and shared installs are read-only fallback locations. Prune only
+        // manages versions in the user's primary install directory.
+        .filter(|(_, tv)| {
+            crate::env::install_path_category(&tv.install_path())
+                == crate::env::InstallPathCategory::Local
+        })
+        .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
+        .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
+
+    if !tools.is_empty() {
+        to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
+    }
+
+    // Remove versions that are still needed by tracked configs
+    let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
+
+    // Remove versions that are still needed by tracked tool stubs
+    for (key, sources) in get_versions_needed_by_tracked_stubs(config).await? {
+        needed.entry(key).or_default().extend(sources);
+    }
+
+    for key in needed.keys() {
+        to_delete.remove(key);
+    }
+
+    Ok((to_delete.into_values().collect(), needed))
 }
 
 fn collect_needed_versions(
@@ -1008,8 +1056,8 @@ fn collect_needed_versions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
-    use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 
     #[tokio::test]

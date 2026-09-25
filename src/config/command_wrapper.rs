@@ -50,8 +50,8 @@ pub(crate) fn add_rust_wrapper<'a>(
     wrappers: &mut IndexMap<String, CommandWrapper>,
     tools: impl IntoIterator<Item = &'a crate::toolset::ToolRequest>,
 ) -> eyre::Result<()> {
+    use crate::args::BackendArg;
     use crate::backend::options::BackendOptions;
-    use crate::cli::args::BackendArg;
 
     if wrappers
         .keys()

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;

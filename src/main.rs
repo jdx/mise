@@ -44,6 +44,7 @@ mod inline_command;
 
 mod agecrypt;
 mod aqua;
+pub(crate) mod args;
 mod backend;
 pub(crate) mod build_time;
 mod cache;
@@ -63,6 +64,7 @@ mod exit;
 mod fake_asdf;
 mod file;
 pub(crate) mod forgejo;
+mod frontend;
 mod fuzzy;
 mod git;
 pub(crate) mod github;
@@ -115,8 +117,10 @@ mod tokens;
 mod toml;
 mod tool_catalog;
 mod tool_purgatory;
+mod tool_stub;
 mod toolset;
 mod ui;
+mod upgrade_hint;
 mod uv;
 mod version;
 mod versions_host;
@@ -135,6 +139,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// build identity, version and config-layer lookups) before anything uses them.
 /// Runs first in `main` and in the test harness constructor.
 pub(crate) fn register_util_hooks() {
+    cli::register_frontend();
     config::settings::register_loader();
     cache::register_base_cache_keys();
     let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
@@ -144,6 +149,7 @@ pub(crate) fn register_util_hooks() {
             .to_string(),
     );
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
+    mise_util::env::set_mise_env(|| env::MISE_ENV.as_slice());
     mise_util::shells::set_implicit_inline_shell(|| {
         config::Settings::get().implicit_inline_shell()
     });

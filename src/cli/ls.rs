@@ -10,10 +10,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
+use crate::args::{BackendArg, TruncateOptions};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::{BackendArg, TruncateOptions};
-use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
 use crate::env;
@@ -364,7 +363,7 @@ impl Ls {
 
     /// Deliberately does *not* widen the tool filter the way the other listings do.
     ///
-    /// `--prunable` previews `mise prune`, and both share `prune::prunable_tools`, which
+    /// `--prunable` previews `mise prune`, and both share `toolset::prunable_tools`, which
     /// matches on `BackendArg` equality. Accepting a name from another backend here would
     /// either disagree with what `mise prune <name>` then deletes, or — if the widening
     /// were pushed down into `prunable_tools` — make a destructive command act on an
@@ -373,7 +372,7 @@ impl Ls {
     async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
         Ok(
-            prune::prunable_tools(config, installed_tool.iter().collect())
+            crate::toolset::prunable_tools(config, installed_tool.iter().collect())
                 .await?
                 .into_iter()
                 .map(|(p, tv)| (self, p, tv, ToolSource::Unknown))

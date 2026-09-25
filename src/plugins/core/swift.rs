@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::{HTTP, HTTP_FETCH};

@@ -1008,7 +1008,7 @@ mod tests {
 
     #[tokio::test]
     async fn registry_min_version_keeps_backend_instances_separate() {
-        use crate::cli::args::ToolArg;
+        use crate::args::ToolArg;
         let _config = Config::get().await.unwrap();
         // Exercise both orders: a cache hit for the shorthand must not replace
         // the backend selected for a different version in the same process.

@@ -8,6 +8,7 @@ homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
+age = { version = "0.12", features = ["ssh", "plugin"] }
 aho-corasick = "1"
 axum = { version = "0.8", default-features = false, features = [
   "http1",
@@ -24,6 +25,7 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 ci_info = "0.14"
 console = "0.16"
+demand = "2"
 digest = "0.11"
 duct = "1"
 dunce = "1"
@@ -60,9 +62,12 @@ mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features =
 netrc-rs = "0.1"
 nodejs-semver = "5"
 nucleo-matcher = "0.3"
+num_cpus = "1"
 once_cell = "1"
+packslip = { version = "1.0", default-features = false }
 path-absolutize = "4"
 petgraph = "0.8"
+pgp = "0.20"
 rand = "0.10"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -90,6 +95,19 @@ signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
+tera = "2"
+tera-contrib = { version = "0.3", features = [
+  "base64",
+  "date",
+  "filesize_format",
+  "format",
+  "json",
+  "rand",
+  "regex",
+  "slug",
+  "urlencode",
+] }
+tera1 = { package = "tera", version = "1" }
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }

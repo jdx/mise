@@ -453,6 +453,16 @@ if [[ $cur_version != "$latest_version" ]]; then
 	exit 0
 fi
 
+# Prep stages every workspace manifest (see the `git add` below), so an edit
+# already sitting in one would ride along into the release commit. Refuse to
+# start rather than guess which hunks belong to this run.
+preexisting_manifest_changes="$(git status --porcelain -- Cargo.toml 'crates/*/Cargo.toml')"
+if [[ -n $preexisting_manifest_changes ]]; then
+	echo "Workspace manifests have uncommitted changes before release prep:" >&2
+	echo "$preexisting_manifest_changes" >&2
+	exit 1
+fi
+
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
@@ -497,7 +507,7 @@ EOF
 fi
 
 # fetch-gpg-keys must run before render (which includes build) since it
-# recreates src/assets/gpg/ which is read at compile time via include_str!
+# recreates crates/mise-util/src/assets/gpg/ which is read at compile time via include_str!
 mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
@@ -627,7 +637,7 @@ git add \
 	completions \
 	mise.lock \
 	man/ \
-	src/assets/gpg/
+	crates/mise-util/src/assets/gpg/
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"

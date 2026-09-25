@@ -480,7 +480,7 @@ mod tests {
     use test_log::test;
 
     use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 

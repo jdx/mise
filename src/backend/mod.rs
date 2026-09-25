@@ -12,7 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::cli::args::{BackendArg, ToolVersionType};
+use crate::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings, SettingsExt, global_config_path};
@@ -927,7 +927,7 @@ pub(crate) async fn configured_toolset_or_path_which(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
     use std::fs;
     use std::sync::Arc;
@@ -4921,7 +4921,7 @@ fn latest_stable_candidate_allowed_by_before_date(
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
     use crate::toolset::{ResolvedToolOptions, ToolSource};
     use confique::Layer;

@@ -42,6 +42,7 @@ macro_rules! warn_once {
 
 #[macro_use]
 pub mod cmd;
+pub mod agecrypt;
 pub mod args;
 pub mod cache;
 pub mod cancel;
@@ -61,6 +62,7 @@ pub mod git;
 pub mod github;
 pub mod github_relay;
 pub mod gitlab;
+pub mod gpg;
 pub mod hash;
 pub mod http;
 pub mod inline_command;
@@ -69,6 +71,7 @@ pub mod lock_file;
 pub mod netrc;
 pub mod network;
 pub mod packslip_pins;
+pub mod packslip_requirements;
 pub mod parallel;
 pub mod path;
 pub mod path_env;
@@ -76,12 +79,14 @@ pub mod platform;
 pub mod progress;
 pub mod rand;
 pub mod redactions;
+pub mod remote_source;
 pub mod resolve_progress;
 pub mod sandbox;
 pub mod semver;
 pub mod shells;
 pub mod style;
 pub mod sysconfig;
+pub mod tera;
 pub mod testing;
 pub mod time;
 pub mod timeout;

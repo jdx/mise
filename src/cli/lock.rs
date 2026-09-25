@@ -22,7 +22,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
-type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+type LockTool = (crate::args::BackendArg, crate::toolset::ToolVersion);
 
 /// Without its version list a request can only resolve to itself, and that
 /// string is not known to be a version: `4` would be locked as a release that
@@ -1472,7 +1472,7 @@ impl Lock {
 
     fn configured_tool_selectors(
         &self,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
+        tools: &[(crate::args::BackendArg, crate::toolset::ToolVersion)],
     ) -> ToolSelectors {
         let configured_tools: BTreeSet<String> =
             tools.iter().map(|(ba, _)| ba.short.clone()).collect();
@@ -2213,7 +2213,7 @@ impl Lock {
 
         // Collect all platform variants for each tool/platform combination
         let mut all_tasks: Vec<(
-            crate::cli::args::BackendArg,
+            crate::args::BackendArg,
             crate::toolset::ToolVersion,
             Platform,
         )> = Vec::new();
@@ -2319,7 +2319,7 @@ mod tests {
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
         restore_lockfile_snapshots,
     };
-    use crate::cli::args::{BackendArg, ToolArg};
+    use crate::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
     use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
@@ -2528,11 +2528,8 @@ mod tests {
         lockfile
     }
 
-    fn configured_tool(
-        backend: &str,
-        version: &str,
-    ) -> (crate::cli::args::BackendArg, ToolVersion) {
-        let ba = crate::cli::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
+    fn configured_tool(backend: &str, version: &str) -> (crate::args::BackendArg, ToolVersion) {
+        let ba = crate::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
         let request =
             ToolRequest::new(Arc::new(ba.clone()), version, ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, version.to_string());
