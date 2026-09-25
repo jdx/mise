@@ -7,8 +7,9 @@ name: release-window
 # The half-hourly schedule flips the status to success once the window opens,
 # and an armed auto-merge then completes on its own. It also goes pending up to
 # 45 minutes before quiet hours so a delayed run cannot leave a gap at 18:00.
-# The status is keyed by commit, so any PR whose head is the `release` branch
-# commit gets the release verdict; every other PR gets success.
+# The status is keyed by commit, so only the release PR's own events and the
+# schedule write the `release` branch commit's status; other PRs never touch
+# it, and every other commit gets success.
 #
 # To release now anyway, add the `release-now` label to the release PR.
 
@@ -45,6 +46,8 @@ jobs:
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           set -euo pipefail
 
@@ -84,17 +87,26 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request_target" ]; then
             sha="$HEAD_SHA"
+            if [ "$HEAD_REF" != "release" ] || [ "$HEAD_REPO" != "$REPO" ]; then
+              # Runs for other PRs are not serialized with the release runs, so
+              # they must never write the release commit's status.
+              if [ "$sha" = "$release_sha" ]; then
+                echo "Head is the release commit; its status belongs to the release PR"
+              else
+                set_status "$sha" success "Not a release PR"
+              fi
+              exit 0
+            fi
+            if [ "$sha" != "$release_sha" ]; then
+              echo "Release branch has moved past $sha; a newer run will set its status"
+              exit 0
+            fi
           else
             sha="$release_sha"
             if [ -z "$sha" ]; then
               echo "No release branch"
               exit 0
             fi
-          fi
-
-          if [ "$sha" != "$release_sha" ]; then
-            set_status "$sha" success "Not a release PR"
-            exit 0
           fi
 
           # The `owner:release` head filter only matches this repository's branch.
