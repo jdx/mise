@@ -22,8 +22,10 @@ on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no 
 
 permissions: {}
 
+# Every run that can write the release PR's status shares one group, so the
+# newest run (which reads the latest labels and time) always posts last.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref == 'release' && 'release' || github.event.pull_request.number || 'release' }}
   cancel-in-progress: true
 
 jobs:
