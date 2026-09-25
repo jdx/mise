@@ -433,6 +433,7 @@ impl SystemPackageManager for ScoopManager {
             .map(|pkg| PackageStatus {
                 request: pkg.clone(),
                 state: package_state(pkg, &export),
+                display_name: None,
             })
             .collect())
     }

@@ -323,6 +323,7 @@ impl SystemPackageManager for NixManager {
                 PackageStatus {
                     request: request.clone(),
                     state,
+                    display_name: None,
                 }
             })
             .collect())

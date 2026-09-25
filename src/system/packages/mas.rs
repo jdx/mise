@@ -43,6 +43,7 @@ impl MasManager {
 struct InstalledApp {
     adam_id: Option<String>,
     bundle_id: Option<String>,
+    name: Option<String>,
     version: String,
 }
 
@@ -74,6 +75,7 @@ fn parse_mas_json_value(value: &Value) -> Option<InstalledApp> {
             "bundle_identifier",
         ],
     );
+    let name = value_string(value, &["name", "displayName"]);
     let version = value_string(
         value,
         &[
@@ -86,6 +88,7 @@ fn parse_mas_json_value(value: &Value) -> Option<InstalledApp> {
     Some(InstalledApp {
         adam_id,
         bundle_id,
+        name,
         version,
     })
 }
@@ -126,17 +129,15 @@ fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
             if !adam_id.chars().all(|c| c.is_ascii_digit()) {
                 return None;
             }
-            let version = rest
-                .rsplit_once('(')
-                .and_then(|(_, v)| v.strip_suffix(')'))
-                .unwrap_or("")
-                .trim();
+            let (name, version) = rest.trim_end().rsplit_once('(')?;
+            let (name, version) = (name.trim(), version.strip_suffix(')')?.trim());
             if version.is_empty() {
                 return None;
             }
             Some(InstalledApp {
                 adam_id: Some(adam_id.to_string()),
                 bundle_id: None,
+                name: (!name.is_empty()).then(|| name.to_string()),
                 version: version.to_string(),
             })
         })
@@ -144,19 +145,20 @@ fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
 }
 
 fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec<PackageStatus> {
-    let mut installed: HashMap<String, String> = HashMap::new();
+    let mut installed: HashMap<&str, &InstalledApp> = HashMap::new();
     for app in apps {
         if let Some(adam_id) = &app.adam_id {
-            installed.insert(adam_id.clone(), app.version.clone());
+            installed.insert(adam_id, app);
         }
         if let Some(bundle_id) = &app.bundle_id {
-            installed.insert(bundle_id.clone(), app.version.clone());
+            installed.insert(bundle_id, app);
         }
     }
     requests
         .iter()
         .map(|req| {
-            let state = match installed.get(&req.name) {
+            let app = installed.get(req.name.as_str());
+            let state = match app.map(|app| &app.version) {
                 Some(version) => match &req.version {
                     Some(requested) if version != requested => PackageState::VersionMismatch {
                         installed: version.clone(),
@@ -170,6 +172,7 @@ fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec
             PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: app.and_then(|app| app.name.clone()),
             }
         })
         .collect()
@@ -322,7 +325,7 @@ mod tests {
     #[test]
     fn test_parse_mas_json_lines() {
         let apps = parse_mas_json(
-            r#"{"adamID":497799835,"bundleID":"com.apple.dt.Xcode","version":"16.2"}
+            r#"{"adamID":497799835,"bundleID":"com.apple.dt.Xcode","name":"Xcode","version":"16.2"}
 {"adamID":"409203825","bundleID":"com.apple.Numbers","version":"14.4"}"#,
         )
         .unwrap();
@@ -348,7 +351,10 @@ mod tests {
                 version: "14.4".to_string()
             }
         );
+        assert_eq!(statuses[0].display_name.as_deref(), Some("Xcode"));
+        assert_eq!(statuses[1].display_name, None);
         assert_eq!(statuses[2].state, PackageState::Missing);
+        assert_eq!(statuses[2].display_name, None);
         assert_eq!(
             statuses[3].state,
             PackageState::VersionMismatch {
@@ -360,7 +366,7 @@ mod tests {
     #[test]
     fn test_parse_mas_json_array() {
         let apps = parse_mas_json(
-            r#"[{"id":497799835,"bundleIdentifier":"com.apple.dt.Xcode","version":"16.2"}]"#,
+            r#"[{"id":497799835,"bundleIdentifier":"com.apple.dt.Xcode","displayName":"Xcode","version":"16.2"}]"#,
         )
         .unwrap();
         assert_eq!(
@@ -368,6 +374,7 @@ mod tests {
             vec![InstalledApp {
                 adam_id: Some("497799835".to_string()),
                 bundle_id: Some("com.apple.dt.Xcode".to_string()),
+                name: Some("Xcode".to_string()),
                 version: "16.2".to_string()
             }]
         );
@@ -375,14 +382,31 @@ mod tests {
 
     #[test]
     fn test_parse_mas_text() {
-        let apps = parse_mas_text("497799835 Xcode (16.2)\n409203825 Numbers (14.4)\n");
+        let apps = parse_mas_text(
+            "1056643111  Clocker     (26.17)\n 775737590  iA Writer   (8.0.8)\n409203825 (14.4)\n",
+        );
         assert_eq!(
-            apps[0],
-            InstalledApp {
-                adam_id: Some("497799835".to_string()),
-                bundle_id: None,
-                version: "16.2".to_string()
-            }
+            apps,
+            vec![
+                InstalledApp {
+                    adam_id: Some("1056643111".to_string()),
+                    bundle_id: None,
+                    name: Some("Clocker".to_string()),
+                    version: "26.17".to_string()
+                },
+                InstalledApp {
+                    adam_id: Some("775737590".to_string()),
+                    bundle_id: None,
+                    name: Some("iA Writer".to_string()),
+                    version: "8.0.8".to_string()
+                },
+                InstalledApp {
+                    adam_id: Some("409203825".to_string()),
+                    bundle_id: None,
+                    name: None,
+                    version: "14.4".to_string()
+                },
+            ]
         );
     }
 

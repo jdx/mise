@@ -1274,6 +1274,7 @@ impl SystemPackageManager for BrewCaskManager {
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
+                display_name: None,
             });
         }
         Ok(statuses)
