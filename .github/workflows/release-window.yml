@@ -1,6 +1,6 @@
 name: release-window
 
-# Holds the release PR during quiet hours (22:00-04:00 America/Chicago) by
+# Holds the release PR during quiet hours (18:00-03:00 America/Chicago) by
 # posting a pending `release-window` commit status, which is a required check
 # on main. Merging the release PR is what publishes crates and pushes the tag
 # (see xtasks/release-plz), so this is the only safe place to gate a release.
@@ -49,8 +49,8 @@ jobs:
 
           release_state() {
             hour=$(TZ=America/Chicago date +%-H)
-            if [ "$hour" -ge 22 ] || [ "$hour" -lt 4 ]; then
-              echo pending "Quiet hours (22:00-04:00 Central); merges after 04:00"
+            if [ "$hour" -ge 18 ] || [ "$hour" -lt 3 ]; then
+              echo pending "Quiet hours (18:00-03:00 Central); merges after 03:00"
             else
               echo success "Inside the release window"
             fi
