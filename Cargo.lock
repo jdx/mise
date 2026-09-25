@@ -6599,7 +6599,6 @@ dependencies = [
  "globwalk",
  "heck",
  "hex",
- "homedir",
  "http 1.5.0",
  "ignore",
  "indenter",
@@ -6616,11 +6615,11 @@ dependencies = [
  "md-5 0.11.0",
  "miette",
  "minisign-verify",
- "mise-agent-env",
  "mise-cache-core",
  "mise-interactive-config",
  "mise-settings",
  "mise-sigstore",
+ "mise-util",
  "mockito",
  "netrc-rs",
  "nix 0.31.3",
@@ -6679,7 +6678,6 @@ dependencies = [
  "tera 1.20.1",
  "tera 2.4.0",
  "tera-contrib",
- "terminal_size",
  "test-log",
  "thiserror 2.0.20",
  "tokio",
@@ -6790,6 +6788,16 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "x509-cert 0.3.0",
+]
+
+[[package]]
+name = "mise-util"
+version = "2026.9.0"
+dependencies = [
+ "homedir",
+ "log",
+ "mise-agent-env",
+ "terminal_size",
 ]
 
 [[package]]

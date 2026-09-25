@@ -113,7 +113,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
