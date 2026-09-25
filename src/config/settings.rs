@@ -6,6 +6,7 @@ use crate::{dirs, env, file};
 use confique::{Config, Layer};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
+use mise_util::network;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -1167,52 +1168,39 @@ impl SettingsExt for Settings {
     }
 
     fn fetch_remote_versions_timeout(&self) -> Duration {
-        let timeout = self.configured_fetch_remote_versions_timeout();
-        if self.bound_remote_version_lookups() {
-            timeout.min(Duration::from_secs(3))
-        } else {
-            timeout
-        }
+        network::fetch_remote_versions_timeout(self)
     }
 
     fn configured_fetch_remote_versions_timeout(&self) -> Duration {
-        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+        network::configured_fetch_remote_versions_timeout(self)
     }
 
     fn bound_remote_version_lookups(&self) -> bool {
-        self.prefer_offline() && !env::REMOTE_FETCH_COMMAND.load(Ordering::Relaxed)
+        network::bound_remote_version_lookups(self)
     }
 
     fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if self.prefer_offline() {
-            None
-        } else {
-            Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
-        }
+        network::fetch_remote_versions_cache(self)
     }
 
     fn http_timeout(&self) -> Duration {
-        duration::parse_duration(&self.http_timeout).unwrap()
+        network::http_timeout(self)
     }
 
     fn http_download_timeout(&self) -> Duration {
-        duration::parse_duration(&self.http_download_timeout).unwrap()
+        network::http_download_timeout(self)
     }
 
     fn http_retries(&self) -> i64 {
-        if self.bound_remote_version_lookups() {
-            0
-        } else {
-            self.http_retries
-        }
+        network::http_retries(self)
     }
 
     fn offline(&self) -> bool {
-        self.offline || *env::OFFLINE
+        network::offline(self)
     }
 
     fn prefer_offline(&self) -> bool {
-        self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
+        network::prefer_offline(self)
     }
 
     fn env_cache_ttl(&self) -> Duration {

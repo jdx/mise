@@ -12,6 +12,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::LazyLock as Lazy;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, RwLock};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
@@ -1063,6 +1064,81 @@ pub fn find_in_shared_installs(
     primary_path
 }
 
+pub static PREFER_OFFLINE: Lazy<AtomicBool> =
+    Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
+
+/// Commands whose explicit purpose is to enumerate remote versions/tags. Under
+/// `prefer_offline`, remote-version lookups are otherwise capped to a single
+/// ~3s attempt with no retries so fast/interactive commands (shims, activation)
+/// never stall. These commands opt out of that cap so they honor the full
+/// configured `fetch_remote_versions_timeout` even when `prefer_offline` is set
+/// (https://github.com/jdx/mise/discussions/11185).
+pub static REMOTE_FETCH_COMMAND: Lazy<AtomicBool> =
+    Lazy::new(|| remote_fetch_command(&ARGS.read().unwrap()).into());
+
+/// returns true if new runtime versions should not be fetched
+fn prefer_offline(args: &[String]) -> bool {
+    // First check if MISE_PREFER_OFFLINE is set
+    if var_is_true("MISE_PREFER_OFFLINE") {
+        return true;
+    }
+
+    let settings_args_end = first_non_global_arg_idx(args).unwrap_or(args.len());
+    if args[..settings_args_end]
+        .iter()
+        .any(|arg| arg == "--prefer-offline")
+    {
+        return true;
+    }
+
+    prefer_offline_command(args)
+}
+
+/// Commands that should not fetch remote versions.
+const PREFER_OFFLINE_COMMANDS: &[&str] = &[
+    "activate", "current", "direnv", "env", "exec", "hook-env", "ls", "where", "which", "x",
+];
+
+/// Commands whose whole purpose is to enumerate remote versions. See
+/// [`REMOTE_FETCH_COMMAND`].
+const REMOTE_FETCH_COMMANDS: &[&str] = &[
+    "lock",
+    "ls-remote",
+    "list-all",
+    "list-remote",
+    "outdated",
+    "upgrade",
+    "up",
+];
+
+fn first_non_global_arg_idx(args: &[String]) -> Option<usize> {
+    // Uses the cached global-flag list rather than building a fresh clap tree.
+    // This runs from `Lazy` statics during startup, so on essentially every
+    // invocation; building the tree here cost ~6.3M instructions per run.
+    crate::args::first_non_global_arg_idx_cached(args)
+}
+
+/// Whether the subcommand at `command_idx` is one of `names`.
+fn is_command(args: &[String], command_idx: Option<usize>, names: &[&str]) -> bool {
+    command_idx
+        .and_then(|idx| args.get(idx))
+        .map(|a| names.contains(&a.as_str()))
+        .unwrap_or_default()
+}
+
+fn prefer_offline_command(args: &[String]) -> bool {
+    is_command(
+        args,
+        first_non_global_arg_idx(args),
+        PREFER_OFFLINE_COMMANDS,
+    )
+}
+
+/// See [`REMOTE_FETCH_COMMAND`].
+fn remote_fetch_command(args: &[String]) -> bool {
+    is_command(args, first_non_global_arg_idx(args), REMOTE_FETCH_COMMANDS)
+}
+
 /// Deliberately not `#[cfg(windows)]`: the code under test is pure string handling, and the whole
 /// point of writing the splitter out rather than calling `CommandLineToArgvW` was that it can be
 /// checked on every platform CI runs.
@@ -1410,5 +1486,59 @@ mod tests {
             ]
             .into()
         );
+    }
+
+    #[test]
+    fn test_remote_fetch_command_skips_global_option_values() {
+        let args = |args: &[&str]| {
+            args.iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        assert!(remote_fetch_command(&args(&[
+            "mise", "--cd", "/tmp", "lock"
+        ])));
+        assert!(remote_fetch_command(&args(&[
+            "mise",
+            "--profile",
+            "development",
+            "ls-remote",
+        ])));
+        assert!(remote_fetch_command(&args(&[
+            "mise",
+            "--cd=/tmp",
+            "--profile=development",
+            "outdated",
+        ])));
+    }
+    #[test]
+    fn test_prefer_offline_command_skips_global_option_values() {
+        let args = |args: &[&str]| {
+            args.iter()
+                .map(|arg| (*arg).to_string())
+                .collect::<Vec<_>>()
+        };
+
+        assert!(prefer_offline_command(&args(&[
+            "mise", "--cd", "/tmp", "activate"
+        ])));
+        assert!(prefer_offline_command(&args(&[
+            "mise",
+            "--profile",
+            "development",
+            "hook-env",
+        ])));
+        assert!(prefer_offline_command(&args(&["mise", "-C/tmp", "env",])));
+        assert!(!prefer_offline_command(&args(&[
+            "mise", "--cd", "/tmp", "lock"
+        ])));
+        assert!(prefer_offline(&args(&[
+            "mise",
+            "--cd",
+            "/tmp",
+            "--prefer-offline",
+            "lock",
+        ])));
     }
 }

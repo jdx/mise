@@ -9,6 +9,9 @@ extern crate log;
 
 #[macro_use]
 pub mod cmd;
+pub mod args;
+pub mod cache;
+pub mod cancel;
 pub mod deps_graph;
 pub mod dirs;
 pub mod duration;
@@ -16,6 +19,7 @@ pub mod env;
 pub mod env_diff;
 pub mod env_value;
 pub mod errors;
+pub mod exit;
 pub mod file;
 pub mod fuzzy;
 pub mod git;
@@ -24,6 +28,7 @@ pub mod inline_command;
 pub mod jobs;
 pub mod lock_file;
 pub mod netrc;
+pub mod network;
 pub mod packslip_pins;
 pub mod path;
 pub mod path_env;
