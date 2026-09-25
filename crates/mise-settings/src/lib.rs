@@ -654,8 +654,13 @@ mod tests {
     /// precedence as `build.rs`.
     fn settings_toml_path() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir.join("../../settings.toml");
-        if workspace.exists() {
+        let root = manifest_dir.join("../..");
+        let in_workspace = std::fs::canonicalize(root.join("crates/mise-settings"))
+            .ok()
+            .zip(std::fs::canonicalize(&manifest_dir).ok())
+            .is_some_and(|(a, b)| a == b);
+        let workspace = root.join("settings.toml");
+        if in_workspace && workspace.exists() {
             workspace
         } else {
             manifest_dir.join("settings.toml")
