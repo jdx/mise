@@ -100,3 +100,11 @@ pub fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
+
+/// This crate's own unit tests have no mise config system to load settings
+/// from, so they read the `settings.toml` defaults.
+#[cfg(test)]
+#[ctor::ctor(unsafe)]
+fn register_default_settings() {
+    mise_settings::set_loader(mise_settings::load_defaults);
+}
