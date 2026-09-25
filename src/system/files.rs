@@ -478,7 +478,7 @@ pub(crate) struct FileRequest {
     /// directory-walking mode should skip (see [`is_excluded`])
     pub exclude: Vec<glob::Pattern>,
     /// history: the only paths of a tracked directory that are captured,
-    /// relative to it and matched like `exclude` (see [`is_excluded`]).
+    /// relative to it and matched like `exclude` (see [`is_selected`]).
     ///
     /// `None` means no list was declared and the whole tree is captured.
     /// `Some` means one was, and only what it names is — including
@@ -3449,10 +3449,53 @@ fn compile_patterns(
 /// containing `/` is anchored to the source root. Either kind matching a
 /// directory takes everything under it, which is why ancestors are tested
 /// too. Track entries use the same rules relative to the tracked path.
+///
+/// In a pattern with `/`, `*` is meant to stop at a separator, as it does
+/// for `include` lists (see [`is_selected`]). Exclusions used to let it
+/// cross one, and **narrowing an exclusion captures files the user asked
+/// to leave out**, so a path only that older reading drops is still
+/// dropped, with a warning to write `**` instead. When this is removed,
+/// bump `history::tracked::MATCHER_VERSION`: exclusions then match less.
 pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    if is_selected(rel, patterns) {
+        return true;
+    }
+    let Some(pattern) = patterns.iter().find(|pattern| {
+        pattern.as_str().contains('/') && rel.ancestors().any(|a| pattern.matches_path(a))
+    }) else {
+        return false;
+    };
+    deprecated_at!(
+        "2026.9.13",
+        "2027.9.13",
+        "dotfiles-exclude-star-crosses-separator",
+        "[dotfiles] exclude pattern '{}' matches '{}' only because `*` crosses `/`; use `**` where a pattern should match across directories, as in include lists.",
+        pattern.as_str(),
+        rel.display()
+    );
+    true
+}
+
+/// Whether a source-relative (or entry-relative) path is named by a
+/// tracked entry's `include` patterns, with the rules of [`is_excluded`]
+/// except that **in a pattern with `/`, `*` stops at a separator and only
+/// `**` crosses one**, as in gitignore and the global `[history] exclude`
+/// list. The capture walk prunes directories an `include` list cannot
+/// reach into by matching one component at a time
+/// (`tracked::reaches_into`), which can only agree with this matcher if a
+/// wildcard never spans two components here either — and a replay that
+/// thinks a path was selected when the walk never looked would call it
+/// absent and delete it.
+pub(crate) fn is_selected(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    const PATH_PATTERN: glob::MatchOptions = glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
     patterns.iter().any(|pattern| {
         if pattern.as_str().contains('/') {
-            rel.ancestors().any(|a| pattern.matches_path(a))
+            rel.ancestors()
+                .any(|a| pattern.matches_path_with(a, PATH_PATTERN))
         } else {
             rel.components()
                 .any(|c| pattern.matches(&c.as_os_str().to_string_lossy()))
@@ -6309,6 +6352,40 @@ source = "oldrc""#,
         // but the same name elsewhere in the tree is untouched
         assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
         assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    #[test]
+    fn test_include_slash_pattern_star_stops_at_separator() {
+        // gitignore semantics: in a pattern with `/`, `*` and `?` match
+        // within one component and only `**` crosses separators
+        let pats = patterns(&["rules/*.md"]);
+        assert!(is_selected(Path::new("rules/one.md"), &pats));
+        assert!(!is_selected(Path::new("rules/deep/two.md"), &pats));
+        let pats = patterns(&["*/cache"]);
+        assert!(is_selected(Path::new("app/cache"), &pats));
+        assert!(is_selected(Path::new("app/cache/index"), &pats));
+        assert!(!is_selected(Path::new("app/sub/cache"), &pats));
+        let pats = patterns(&["rules/**/*.md"]);
+        assert!(is_selected(Path::new("rules/one.md"), &pats));
+        assert!(is_selected(Path::new("rules/deep/two.md"), &pats));
+        // a wildcard naming a directory still takes everything under it
+        let pats = patterns(&["rules/*"]);
+        assert!(is_selected(Path::new("rules/deep/two.md"), &pats));
+        // a separator-free pattern still matches a name at any depth
+        let pats = patterns(&["*.md"]);
+        assert!(is_selected(Path::new("rules/deep/two.md"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_slash_pattern_star_still_crosses_separator() {
+        // an exclusion never narrows under a user: what the older reading
+        // dropped stays dropped (with a deprecation warning)
+        let pats = patterns(&["rules/*.md"]);
+        assert!(is_excluded(Path::new("rules/one.md"), &pats));
+        assert!(is_excluded(Path::new("rules/deep/two.md"), &pats));
+        assert!(!is_excluded(Path::new("rules/deep/two.txt"), &pats));
+        let pats = patterns(&["*/cache"]);
+        assert!(is_excluded(Path::new("app/sub/cache"), &pats));
     }
 
     #[test]
