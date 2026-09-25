@@ -540,7 +540,6 @@ mod tests {
     use super::*;
     use crate::env as mise_env;
     use confique::Layer;
-    use std::sync::Mutex;
 
     const TOKEN_ENV_VARS: &[&str] = &[
         "MISE_GITHUB_TOKEN",
@@ -548,7 +547,6 @@ mod tests {
         "GITHUB_TOKEN",
         "MISE_GITHUB_ENTERPRISE_TOKEN",
     ];
-    static TEST_SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
     struct SettingsGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -563,7 +561,7 @@ mod tests {
             replacements: Option<indexmap::IndexMap<String, String>>,
             use_versions_host: Option<bool>,
         ) -> Self {
-            let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
             let mut settings = mise_settings::SettingsPartial::empty();
             settings.url_replacements = replacements;
             settings.use_versions_host = use_versions_host;
