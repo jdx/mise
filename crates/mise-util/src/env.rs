@@ -5,6 +5,7 @@ use crate::file::replace_path;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use log::LevelFilter;
+use mise_settings::Settings;
 use std::collections::{HashMap, HashSet};
 pub use std::env::*;
 use std::ffi::OsStr;
@@ -990,6 +991,76 @@ fn windows_env_key_eq(left: &str, right: &str) -> bool {
     unsafe {
         CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
     }
+}
+
+/// Returns the list of shared install directories to search.
+/// Includes the system installs dir (`MISE_SYSTEM_DATA_DIR/installs`) plus any
+/// user-configured dirs from Settings (config files) or the environment variable.
+/// The user's primary install dir is NOT included here — it is checked separately.
+pub fn shared_install_dirs() -> Vec<PathBuf> {
+    let user_dirs = if let std::result::Result::Ok(settings) = Settings::try_get()
+        && let Some(ref dirs) = settings.shared_install_dirs
+        && !dirs.is_empty()
+    {
+        dirs.clone()
+    } else {
+        MISE_SHARED_INSTALL_DIRS_ENV.clone()
+    };
+    let system = Settings::try_get()
+        .map(|settings| crate::dirs::system_installs_dir(&settings).to_path_buf())
+        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
+    // System dir first (if it exists and isn't the user's own install dir),
+    // then user-configured dirs.
+    let mut result = Vec::new();
+    if system.is_dir() && system != *MISE_INSTALLS_DIR {
+        result.push(system);
+    }
+    result.extend(user_dirs);
+    result
+}
+
+/// Categorize an install path as system, shared, or local.
+pub fn install_path_category(path: &Path) -> InstallPathCategory {
+    let system_installs = Settings::try_get()
+        .map(|settings| crate::dirs::system_installs_dir(&settings).to_path_buf())
+        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
+    if system_installs != *MISE_INSTALLS_DIR && path.starts_with(system_installs) {
+        InstallPathCategory::System
+    } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
+        InstallPathCategory::Shared
+    } else {
+        InstallPathCategory::Local
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallPathCategory {
+    /// Primary user install dir
+    Local,
+    /// System-level (/usr/local/share/mise/installs)
+    System,
+    /// User-configured shared dir
+    Shared,
+}
+
+/// Look up a tool version in shared install directories.
+/// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
+/// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
+/// or `primary_path` if not found in any shared directory.
+pub fn find_in_shared_installs(
+    primary_path: PathBuf,
+    tool_dir_name: &str,
+    pathname: &str,
+) -> PathBuf {
+    if !primary_path.exists() {
+        for shared_dir in shared_install_dirs() {
+            let shared_path = shared_dir.join(tool_dir_name).join(pathname);
+            if shared_path.exists() {
+                return shared_path;
+            }
+        }
+    }
+    primary_path
 }
 
 /// Deliberately not `#[cfg(windows)]`: the code under test is pure string handling, and the whole

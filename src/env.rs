@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::env_directive::EnvValue;
-use crate::config::{SettingsExt, miserc};
+use crate::config::miserc;
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
@@ -74,77 +74,6 @@ fn detect_shell(
 // paths and directories
 
 // data subdirs
-
-/// Returns the list of shared install directories to search.
-/// Includes the system installs dir (`MISE_SYSTEM_DATA_DIR/installs`) plus any
-/// user-configured dirs from Settings (config files) or the environment variable.
-/// The user's primary install dir is NOT included here — it is checked separately.
-pub(crate) fn shared_install_dirs() -> Vec<PathBuf> {
-    use crate::config::Settings;
-    let user_dirs = if let std::result::Result::Ok(settings) = Settings::try_get()
-        && let Some(ref dirs) = settings.shared_install_dirs
-        && !dirs.is_empty()
-    {
-        dirs.clone()
-    } else {
-        MISE_SHARED_INSTALL_DIRS_ENV.clone()
-    };
-    let system = Settings::try_get()
-        .map(|settings| settings.system_installs_dir().to_path_buf())
-        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
-    // System dir first (if it exists and isn't the user's own install dir),
-    // then user-configured dirs.
-    let mut result = Vec::new();
-    if system.is_dir() && system != *MISE_INSTALLS_DIR {
-        result.push(system);
-    }
-    result.extend(user_dirs);
-    result
-}
-
-/// Categorize an install path as system, shared, or local.
-pub(crate) fn install_path_category(path: &Path) -> InstallPathCategory {
-    let system_installs = crate::config::Settings::try_get()
-        .map(|settings| settings.system_installs_dir().to_path_buf())
-        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
-    if system_installs != *MISE_INSTALLS_DIR && path.starts_with(system_installs) {
-        InstallPathCategory::System
-    } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
-        InstallPathCategory::Shared
-    } else {
-        InstallPathCategory::Local
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum InstallPathCategory {
-    /// Primary user install dir
-    Local,
-    /// System-level (/usr/local/share/mise/installs)
-    System,
-    /// User-configured shared dir
-    Shared,
-}
-
-/// Look up a tool version in shared install directories.
-/// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
-/// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
-/// or `primary_path` if not found in any shared directory.
-pub(crate) fn find_in_shared_installs(
-    primary_path: PathBuf,
-    tool_dir_name: &str,
-    pathname: &str,
-) -> PathBuf {
-    if !primary_path.exists() {
-        for shared_dir in shared_install_dirs() {
-            let shared_path = shared_dir.join(tool_dir_name).join(pathname);
-            if shared_path.exists() {
-                return shared_path;
-            }
-        }
-    }
-    primary_path
-}
 
 pub(crate) static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")

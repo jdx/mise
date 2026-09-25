@@ -15,7 +15,7 @@ mod seccomp;
 /// `allow_*` fields imply their corresponding `deny_*` (e.g., `allow_write` implies `deny_write`
 /// for everything not in the allow list).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SandboxConfig {
+pub struct SandboxConfig {
     pub deny_read: bool,
     pub deny_write: bool,
     pub deny_net: bool,
@@ -107,8 +107,8 @@ fn env_pattern_matches(pattern: &str, key: &str) -> bool {
 
 impl SandboxConfig {
     /// Build sandbox configuration by combining persistent deny settings with CLI options.
-    pub(crate) fn from_settings_and_cli(
-        settings: &crate::config::settings::SettingsSandbox,
+    pub fn from_settings_and_cli(
+        settings: &mise_settings::SettingsSandbox,
         cli_deny_all: bool,
         mut cli: Self,
     ) -> Self {
@@ -120,7 +120,7 @@ impl SandboxConfig {
     }
 
     /// Returns true if any sandbox restriction is configured.
-    pub(crate) fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         self.deny_read
             || self.deny_write
             || self.deny_net
@@ -134,7 +134,7 @@ impl SandboxConfig {
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
-    pub(crate) fn resolve_paths(&mut self) {
+    pub fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
         // Keep the spelling a canonicalization replaces. It is the one a caller
         // inside the sandbox will use, and macOS has to let a walk take that
@@ -162,21 +162,21 @@ impl SandboxConfig {
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
     #[cfg_attr(windows, allow(dead_code))]
-    pub(crate) fn effective_deny_read(&self) -> bool {
+    pub fn effective_deny_read(&self) -> bool {
         self.deny_read || !self.allow_read.is_empty()
     }
 
     #[cfg_attr(windows, allow(dead_code))]
-    pub(crate) fn effective_deny_write(&self) -> bool {
+    pub fn effective_deny_write(&self) -> bool {
         self.deny_write || !self.allow_write.is_empty()
     }
 
     #[cfg_attr(windows, allow(dead_code))]
-    pub(crate) fn effective_deny_net(&self) -> bool {
+    pub fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
     }
 
-    pub(crate) fn effective_deny_env(&self) -> bool {
+    pub fn effective_deny_env(&self) -> bool {
         self.deny_env || !self.allow_env.is_empty()
     }
 
@@ -189,7 +189,7 @@ impl SandboxConfig {
     /// this is only a set of existence checks, and keeping it portable keeps it
     /// testable on any host.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    pub(crate) fn missing_allow_paths(&self) -> Vec<&std::path::Path> {
+    pub fn missing_allow_paths(&self) -> Vec<&std::path::Path> {
         let mut seen = std::collections::HashSet::new();
         self.allow_read
             .iter()
@@ -210,7 +210,7 @@ impl SandboxConfig {
     /// inside `pre_exec` — after fork, where the logger is not available and
     /// the same path warns once per allow-list it appears in.
     #[cfg(target_os = "linux")]
-    pub(crate) fn warn_missing_allow_paths(&self) {
+    pub fn warn_missing_allow_paths(&self) {
         for path in self.missing_allow_paths() {
             let workaround = match nearest_existing_ancestor(path) {
                 Some(dir) => format!(
@@ -235,7 +235,7 @@ impl SandboxConfig {
     /// When deny_env is active, starts with the mise-computed env (tool paths etc.),
     /// keeps only essential vars + allow_env entries, and also pulls in allow_env
     /// vars from the parent process environment if not already present.
-    pub(crate) fn filter_env(
+    pub fn filter_env(
         &self,
         env: &std::collections::BTreeMap<String, String>,
     ) -> std::collections::BTreeMap<String, String> {
@@ -292,10 +292,8 @@ impl SandboxConfig {
     ///
     /// On Linux: applies Landlock rules and seccomp filters in-process (inherited across exec).
     /// On macOS: returns a modified command that wraps through sandbox-exec.
-    #[cfg(not(test))]
-    #[cfg_attr(windows, allow(dead_code))]
     #[allow(unused_variables)]
-    pub(crate) async fn apply(
+    pub async fn apply(
         &self,
         program: &str,
         args: &[String],
@@ -323,7 +321,7 @@ impl SandboxConfig {
         }
     }
 
-    #[cfg(all(not(test), target_os = "linux"))]
+    #[cfg(target_os = "linux")]
     fn apply_linux(&self, program: &str) -> eyre::Result<()> {
         if self.effective_deny_read() || self.effective_deny_write() || self.deny_process {
             landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
@@ -340,7 +338,7 @@ impl SandboxConfig {
         Ok(())
     }
 
-    #[cfg(all(not(test), target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     async fn apply_macos(
         &self,
         program: &str,
@@ -363,10 +361,8 @@ impl SandboxConfig {
 }
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
-#[cfg(not(test))]
-#[cfg_attr(windows, allow(dead_code))]
 #[derive(Debug)]
-pub(crate) struct SandboxedCommand {
+pub struct SandboxedCommand {
     pub program: String,
     pub args: Vec<String>,
 }
@@ -375,7 +371,7 @@ pub(crate) struct SandboxedCommand {
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn landlock_apply(
+pub fn landlock_apply(
     config: &SandboxConfig,
     initial_program: &std::path::Path,
 ) -> eyre::Result<()> {
@@ -384,23 +380,20 @@ pub(crate) fn landlock_apply(
 
 /// Apply seccomp network/process filter (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
+pub fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
     seccomp::apply_seccomp_filter(deny_net, deny_process)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub(crate) async fn macos_generate_profile(
-    config: &SandboxConfig,
-    program: &std::path::Path,
-) -> String {
+pub async fn macos_generate_profile(config: &SandboxConfig, program: &std::path::Path) -> String {
     macos::generate_seatbelt_profile(config, Some(program)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::SettingsSandbox;
+    use mise_settings::SettingsSandbox;
     use std::collections::BTreeMap;
 
     /// Fixture paths that cannot collide with a previous run or a concurrent one.
@@ -609,7 +602,7 @@ mod tests {
             ..Default::default()
         };
         // restores the environment on drop, even if the assertion below fails
-        let mut guard = crate::test::EnvVarGuard::new();
+        let mut guard = crate::testing::EnvVarGuard::new();
         guard.set(key, OsString::from_vec(vec![0xff]));
 
         let filtered = config.filter_env(&BTreeMap::new());

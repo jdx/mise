@@ -26,6 +26,15 @@ pub static TOOL_PURGATORY: Lazy<PathBuf> = Lazy::new(|| STATE.join("tool-purgato
 pub static TRUSTED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("trusted-configs"));
 pub static IGNORED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("ignored-configs"));
 
+/// The system installs directory: the `system_installs_dir` setting, or
+/// `MISE_SYSTEM_INSTALLS_DIR`.
+pub fn system_installs_dir(settings: &Settings) -> &Path {
+    settings
+        .system_installs_dir
+        .as_deref()
+        .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
+}
+
 /// The user shims directory: the `shims_dir` setting, or `MISE_SHIMS_DIR`.
 pub fn shims_dir(settings: &Settings) -> &Path {
     settings
