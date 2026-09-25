@@ -4023,19 +4023,30 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(!is_https_downgrade(&[http], &other_https));
     }
 
-    #[test]
-    fn test_checksum_pinned_download_removes_mismatched_file() {
+    /// Goes through `download_file_checksum_pinned` itself, so it covers the
+    /// client wiring and the verification. The downgrade redirect it allows
+    /// cannot be served here for the reason given on the test above.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_checksum_pinned_download_keeps_match_and_removes_mismatch() {
+        let _guard = set_test_http_retries(0);
+        let (port, count) =
+            spawn_canned_server(vec![full_download_response(), full_download_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("hello.tar.gz");
-        std::fs::write(&path, b"hello").unwrap();
-        let hello_sha256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+        let helloworld_sha256 = "936a185caaa266bb9cbe981e9e05cb78cd732b0b3280eb944412bb6f8f8f07af";
 
-        verify_sha256_or_remove(&path, hello_sha256, None).unwrap();
-        assert!(path.exists());
+        let matching = dir.path().join("matching");
+        download_file_checksum_pinned(&url, &matching, helloworld_sha256, None)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&matching).unwrap(), b"helloworld");
 
-        let other_sha256 = "0".repeat(64);
-        assert!(verify_sha256_or_remove(&path, &other_sha256, None).is_err());
-        assert!(!path.exists());
+        let mismatched = dir.path().join("mismatched");
+        download_file_checksum_pinned(&url, &mismatched, &"0".repeat(64), None)
+            .await
+            .unwrap_err();
+        assert!(!mismatched.exists());
+        assert_eq!(count.load(Ordering::SeqCst), 2);
     }
 
     #[test]
