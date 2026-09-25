@@ -10,11 +10,11 @@ use itertools::Itertools;
 use serde::Deserialize;
 use versions::Versioning;
 
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};

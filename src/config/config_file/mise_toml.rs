@@ -17,8 +17,8 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
+use crate::args::BackendArg;
 use crate::backend::unalias_backend;
-use crate::cli::args::BackendArg;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
 };

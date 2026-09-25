@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Settings;
 use crate::config::{Config, SettingsExt};
 use crate::errors::split_install_result;
@@ -810,7 +810,7 @@ fn extend_toolset(toolset: &mut Toolset, additional: &[ToolRequest]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     fn request(version: &str, options: &str, source: ToolSource) -> ToolRequest {

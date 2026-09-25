@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::pipx::PIPXBackend;
-use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::errors::split_install_result;
 use crate::file::display_path;
@@ -1404,7 +1404,7 @@ mod tests {
         backend_args_match, current_version_satisfies_hidden_release,
         explicit_bump_matches_successful,
     };
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::outdated_info::OutdatedInfo;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
     use std::sync::Arc;

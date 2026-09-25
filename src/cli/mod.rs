@@ -25,7 +25,7 @@ fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<boo
 }
 
 mod activate;
-pub(crate) mod args;
+pub(crate) use crate::args;
 mod asdf;
 pub(crate) mod backends;
 mod bin_paths;

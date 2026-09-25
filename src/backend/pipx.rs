@@ -1,11 +1,11 @@
 mod lock;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::parse_into_timestamp;

@@ -903,7 +903,7 @@ fn task_hook_args(root: &Path, hook: Hooks, task_name: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource};
     use serde::Deserialize;
 

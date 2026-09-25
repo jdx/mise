@@ -5,8 +5,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 
+use crate::args::{BackendArg, BackendResolution};
 use crate::backend::{Backend, BackendMap};
-use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::{Settings, SettingsExt};
 use crate::env;
 use crate::path_env::PathEnv;

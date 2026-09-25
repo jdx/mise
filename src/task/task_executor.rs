@@ -1,4 +1,4 @@
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt, env_directive::EnvDirective};
 use crate::duration;

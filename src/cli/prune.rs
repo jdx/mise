@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;

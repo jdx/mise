@@ -10,9 +10,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
+use crate::args::{BackendArg, TruncateOptions};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::{BackendArg, TruncateOptions};
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;

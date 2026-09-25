@@ -172,7 +172,7 @@ impl ToolStubFile {
 
     // Create a ToolRequest directly using ToolVersionOptions
     pub(crate) fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
-        use crate::cli::args::BackendArg;
+        use crate::args::BackendArg;
 
         let mut backend_arg = BackendArg::from(&self.tool_name);
         let source = ToolSource::ToolStub(stub_path.to_path_buf());

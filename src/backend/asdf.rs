@@ -6,12 +6,12 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::normalize_idiomatic_contents;
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::config::env_directive::EnvResults;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};

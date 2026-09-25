@@ -1461,7 +1461,7 @@ impl DaemonSet {
             let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
                 continue;
             };
-            let ba = crate::cli::args::BackendArg::from(tool.as_str());
+            let ba = crate::args::BackendArg::from(tool.as_str());
             if let Some(existing) = trs.tools.get(&ba) {
                 // Explicit declarations are validated against backend resolution before starting.
                 if existing.iter().all(|tr| tr.source().is_mise_toml_daemon())

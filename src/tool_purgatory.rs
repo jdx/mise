@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::toolset::{ToolVersion, ToolsetBuilder};

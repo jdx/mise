@@ -1058,7 +1058,7 @@ fn transitive_dependency_before_date(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     #[cfg(windows)]

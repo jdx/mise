@@ -5,8 +5,8 @@ use std::path::{Component, Path, PathBuf};
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
+use crate::args::BackendArg;
 use crate::backend::{ABackend, VersionInfo};
-use crate::cli::args::BackendArg;
 use crate::config::env_directive::EnvValue;
 use crate::config::{Config, Settings, SettingsExt};
 #[cfg(windows)]
@@ -1322,7 +1322,7 @@ impl Display for ResolveOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 

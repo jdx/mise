@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
@@ -410,8 +410,8 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-        filter_tools: Option<&[crate::cli::args::ToolArg]>,
-        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+        filter_tools: Option<&[crate::args::ToolArg]>,
+        exclude_tools: Option<&[crate::args::ToolArg]>,
     ) -> Vec<OutdatedInfo> {
         self.list_outdated_versions_with_progress(
             config,
@@ -429,8 +429,8 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-        filter_tools: Option<&[crate::cli::args::ToolArg]>,
-        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+        filter_tools: Option<&[crate::args::ToolArg]>,
+        exclude_tools: Option<&[crate::args::ToolArg]>,
         show_progress: bool,
     ) -> Vec<OutdatedInfo> {
         let list_versions = if opts.inactive {
@@ -1008,8 +1008,8 @@ fn collect_needed_versions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
-    use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 
     #[tokio::test]

@@ -4,11 +4,11 @@ mod graph;
 pub(crate) use graph::sidecar_root;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, Backend};
-use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env;
 use crate::file;
@@ -3480,7 +3480,7 @@ pub(crate) type LockResolutionResult = (
 /// conda_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
 pub(crate) async fn resolve_tool_lock_info(
-    ba: crate::cli::args::BackendArg,
+    ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
     backend: Option<crate::backend::ABackend>,
@@ -5500,12 +5500,12 @@ lockfileVersion: '9.0'
             })
             .to_string();
         let short = tool_name.clone();
-        let backend = Arc::new(crate::cli::args::BackendArg::new_raw(
+        let backend = Arc::new(crate::args::BackendArg::new_raw(
             short,
             Some(backend.to_string()),
             tool_name,
             None,
-            crate::cli::args::BackendResolution::new(true),
+            crate::args::BackendResolution::new(true),
         ));
         let request =
             crate::toolset::ToolRequest::new(backend, version, ToolSource::Unknown).unwrap();

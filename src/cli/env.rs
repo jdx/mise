@@ -1,7 +1,7 @@
 use eyre::Result;
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::env_diff::EnvMap;
 use crate::shell::{ShellType, get_shell};

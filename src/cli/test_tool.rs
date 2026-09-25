@@ -1,4 +1,4 @@
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;

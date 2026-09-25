@@ -9,7 +9,7 @@ use eyre::{Result, bail};
 use eyre::{Result, eyre};
 use itertools::Itertools;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::{Config, Settings};

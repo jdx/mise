@@ -196,7 +196,7 @@ pub(super) async fn build(
 /// return the path to its `ruby` executable.
 pub(crate) async fn ruby_bin() -> Result<PathBuf> {
     let mut config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let mut ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
@@ -219,7 +219,7 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
 
 pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
     let config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
