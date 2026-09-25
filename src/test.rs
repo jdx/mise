@@ -65,9 +65,9 @@ fn init() {
     // A test that re-runs this binary as a child (to get fresh process-wide
     // statics) inherits this variable. The child must reuse the fixture tree
     // rather than reset it: remove_all() would unlink the directory the parent
-    // is still in, and every later test that touches the cwd would fail.
+    // is still in, and every later test that touches the cwd would fail. It
+    // also keeps the cwd it inherited, which is the one the parent chose.
     if env::var_os(FIXTURES_READY_ENV).is_some() {
-        env::set_current_dir(env::HOME.join("cwd")).unwrap();
         return;
     }
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
@@ -187,5 +187,30 @@ mod tests {
 
         // The property: a later test still gets the lock rather than inheriting the failure.
         let _guard = lock_ignoring_poison(&LOCK);
+    }
+
+    #[test]
+    fn a_child_test_process_leaves_the_parent_cwd_intact() {
+        const CHILD_ENV: &str = "MISE_TEST_HARNESS_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            return;
+        }
+
+        let cwd = std::env::current_dir().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "test::tests::a_child_test_process_leaves_the_parent_cwd_intact",
+            ])
+            .env(CHILD_ENV, "1")
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "child test failed");
+
+        // Had the child reset the fixture tree, this process would be left in an
+        // unlinked directory: getcwd fails and relative fixture paths vanish.
+        assert_eq!(std::env::current_dir().unwrap(), cwd);
+        assert!(std::path::Path::new(".mise/tasks/filetask").is_file());
     }
 }
