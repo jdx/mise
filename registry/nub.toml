@@ -1,9 +1,10 @@
 backends = [
+  { full = "github:nubjs/nub", min_version = "0.9.5" },
   { full = "npm:@nubjs/nub", options = { allow_builds = [
     "@nubjs/nub",
   ] } },
 ]
-bins = ["nub", "nubx"]
+bins = ["nub", "nubx", "nubr"]
 description = "A Rust CLI that augments Node.js - a fast script runner, a TypeScript-just-works runtime, and a pnpm-compatible package manager"
 test = { cmd = "nub --version", expected = "{{version}}" }
 version_order = "semver"
