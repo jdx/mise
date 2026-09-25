@@ -151,7 +151,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
     }
 
     let config = Config::get().await?;
-    let prunable = crate::cli::prune::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
+    let prunable = crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
     let prunable_by_path = prunable
         .into_iter()
         .map(|(backend, tv)| (tv.install_path(), (backend, tv)))

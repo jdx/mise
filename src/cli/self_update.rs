@@ -13,10 +13,10 @@ use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
 use crate::platform::{ARCH, OS};
-use std::collections::BTreeMap;
 use std::ffi::OsStr;
+#[cfg(windows)]
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -48,64 +48,7 @@ fn release_archive_asset(assets: &[ReleaseAsset], archive_name: &str) -> Option<
         .cloned()
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
-struct InstructionsToml {
-    message: Option<String>,
-    #[serde(flatten)]
-    commands: BTreeMap<String, String>,
-}
-
-fn read_instructions_file(path: &PathBuf) -> Option<String> {
-    let body = fs::read_to_string(path).ok()?;
-    let parsed: InstructionsToml = toml::from_str(&body).ok()?;
-    if let Some(msg) = parsed.message {
-        return Some(msg);
-    }
-    if let Some((_k, v)) = parsed.commands.into_iter().next() {
-        return Some(v);
-    }
-    None
-}
-
-pub(crate) fn upgrade_instructions_text() -> Option<String> {
-    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
-        && let Some(msg) = read_instructions_file(path)
-    {
-        return Some(msg);
-    }
-    None
-}
-
-/// Shown when mise cannot update itself and the packager shipped no instructions
-/// file. Without it, telling the user their mise is out of date is a dead end on
-/// every install that disables self-update: a marker file (Homebrew, the AUR
-/// `mise-bin` package), a build without the `self_update` feature (Arch), or
-/// `MISE_SELF_UPDATE_AVAILABLE=false`. The wording stays neutral about which of
-/// those applies — being unable to self-update is not by itself proof that a
-/// package manager owns the install.
-pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
-    "self-update is disabled for this install, update mise the same way you installed it";
-
-/// How to update mise when `mise self-update` is not available: the packager's
-/// instructions when they shipped some, otherwise the generic hint.
-pub(crate) fn upgrade_instructions_or_hint() -> String {
-    upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
-}
-
-/// Appends self-update guidance and packaging instructions (if any) to a message.
-pub(crate) fn append_self_update_instructions(mut message: String) -> String {
-    if SelfUpdate::is_available() {
-        message.push_str("\nRun `mise self-update` to update mise");
-    }
-    if let Some(instructions) = upgrade_instructions_text() {
-        message.push('\n');
-        message.push_str(&instructions);
-    } else if !SelfUpdate::is_available() {
-        message.push('\n');
-        message.push_str(SELF_UPDATE_DISABLED_HINT);
-    }
-    message
-}
+pub(crate) use crate::upgrade_hint::{upgrade_instructions_or_hint, upgrade_instructions_text};
 
 /// Checks for and installs an update before an eligible interactive command.
 /// Failures are deliberately non-fatal so the requested command still runs.
@@ -868,12 +811,7 @@ impl SelfUpdate {
     }
 
     pub(crate) fn is_available() -> bool {
-        if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
-            return b;
-        }
-        let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
-        let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
-        !(has_disable || has_instructions)
+        crate::upgrade_hint::self_update_available()
     }
 
     #[cfg(target_os = "macos")]
