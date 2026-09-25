@@ -402,6 +402,15 @@ pub fn clear() {
     *CURRENT.write().unwrap() = None;
 }
 
+/// A [`Loader`] that ignores config files and the environment: every setting
+/// takes its `settings.toml` default. For the unit tests of crates below mise,
+/// which have no config system to load from.
+pub fn load_defaults() -> Result<Arc<Settings>> {
+    let settings = Arc::new(Settings::builder().load()?);
+    store(settings.clone());
+    Ok(settings)
+}
+
 impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()

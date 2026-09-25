@@ -745,11 +745,7 @@ pub(crate) trait SettingsExt: Sized {
 
     fn global_tools_file(&self) -> PathBuf;
 
-    fn shims_dir(&self) -> &Path;
-
     fn system_installs_dir(&self) -> &Path;
-
-    fn system_shims_dir(&self) -> PathBuf;
 
     fn env_files(&self) -> Vec<PathBuf>;
 
@@ -1119,20 +1115,10 @@ impl SettingsExt for Settings {
             })
     }
 
-    fn shims_dir(&self) -> &Path {
-        self.shims_dir.as_deref().unwrap_or(&env::MISE_SHIMS_DIR)
-    }
-
     fn system_installs_dir(&self) -> &Path {
         self.system_installs_dir
             .as_deref()
             .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
-    }
-
-    fn system_shims_dir(&self) -> PathBuf {
-        self.system_shims_dir
-            .clone()
-            .unwrap_or_else(|| env::MISE_SYSTEM_DATA_DIR.join("shims"))
     }
 
     fn env_files(&self) -> Vec<PathBuf> {

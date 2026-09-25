@@ -1,6 +1,6 @@
 mod bounded;
 use std::collections::{HashSet, VecDeque};
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -18,7 +18,6 @@ use std::os::unix::process::CommandExt;
 
 use crate::redactions::Redactor;
 use color_eyre::Result;
-use duct::{Expression, IntoExecutablePath};
 use eyre::{Context, bail};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
@@ -69,44 +68,7 @@ macro_rules! cmd {
     };
 }
 
-/// Create a command with any number of of positional arguments, which may be
-/// different types (anything that implements
-/// [`Into<OsString>`](https://doc.rust-lang.org/std/convert/trait.From.html)).
-/// See also the [`cmd`](fn.cmd.html) function, which takes a collection of
-/// arguments.
-///
-/// # Example
-///
-/// ```
-///     use std::path::Path;
-///     use mise::cmd;
-///
-///     let arg1 = "foo";
-///     let arg2 = "bar".to_owned();
-///     let arg3 = Path::new("baz");
-///
-///     let output = cmd!("echo", arg1, arg2, arg3).read();
-///
-///     assert_eq!("foo bar baz", output.unwrap());
-/// ```
-pub(crate) fn cmd<T, U>(program: T, args: U) -> Expression
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-{
-    let program = program.to_executable();
-    let args: Vec<OsString> = args.into_iter().map(Into::<OsString>::into).collect();
-
-    let display_command = std::iter::once(&program)
-        .chain(&args)
-        .map(|s| shell_escape::escape(s.to_string_lossy()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    debug!("$ {display_command}");
-
-    duct::cmd(program, args)
-}
+pub(crate) use mise_util::cmd::cmd;
 
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 

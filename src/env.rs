@@ -1,15 +1,13 @@
 use crate::Result;
 use crate::config::env_directive::EnvValue;
 use crate::config::{SettingsExt, miserc};
-use crate::env_diff::{EnvDiff, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
 use indexmap::{IndexMap, IndexSet};
-use itertools::Itertools;
 pub(crate) use mise_util::env::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{path::Path, string::ToString};
@@ -330,7 +328,6 @@ pub(crate) static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::
 
 // true if the current process is running as a shim (not direct mise invocation)
 
-pub(crate) static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub(crate) static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub(crate) static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
@@ -342,14 +339,6 @@ pub(crate) static PREFER_OFFLINE: Lazy<AtomicBool> =
 /// (https://github.com/jdx/mise/discussions/11185).
 pub(crate) static REMOTE_FETCH_COMMAND: Lazy<AtomicBool> =
     Lazy::new(|| remote_fetch_command(&ARGS.read().unwrap()).into());
-/// essentially, this is whether we show spinners or build output on runtime install
-pub(crate) static PRISTINE_ENV: Lazy<EnvMap> =
-    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
-
-pub(crate) static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
-    Some(path) => split_paths(path).collect(),
-    None => vec![],
-});
 
 /// Whether terminal-width presentation output should be truncated.
 pub(crate) fn should_truncate() -> bool {
@@ -357,117 +346,6 @@ pub(crate) fn should_truncate() -> bool {
 }
 
 // python
-
-fn get_env_diff() -> EnvDiff {
-    let env = vars_safe().collect::<HashMap<_, _>>();
-    match env.get("__MISE_DIFF") {
-        Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
-            warn!("Failed to deserialize __MISE_DIFF: {:#}", err);
-            EnvDiff::default()
-        }),
-        None => EnvDiff::default(),
-    }
-}
-
-/// this returns the environment as if __MISE_DIFF was reversed.
-/// putting the shell back into a state before hook-env was run
-fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
-    let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
-
-    // get the current path as a vector
-    let path = match env.get(&*PATH_KEY) {
-        Some(path) => split_paths(path).collect(),
-        None => vec![],
-    };
-    // get the paths that were removed by mise as a hashset
-    let mut to_remove = mise_diff.path.iter().collect::<HashSet<_>>();
-
-    // remove those paths that were added by mise, but only once (the first time)
-    let path = path
-        .into_iter()
-        .filter(|p| !to_remove.remove(p))
-        .collect_vec();
-
-    // put the pristine PATH back into the environment
-    env.insert(
-        PATH_KEY.to_string(),
-        join_paths(path).unwrap().to_string_lossy().to_string(),
-    );
-    env
-}
-
-/// Reverse values that are still in the state mise recorded, while preserving
-/// values changed or removed by the caller after mise applied the environment.
-fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> EnvMap {
-    for (key, old_value) in &mise_diff.old {
-        match env_diff_get(&mise_diff.new, key) {
-            Some(new_value) if env_map_get(&env, key) == Some(new_value) => {
-                let key = env_map_key(&env, key)
-                    .cloned()
-                    .unwrap_or_else(|| key.clone());
-                env.insert(key, old_value.clone());
-            }
-            None if env_map_get(&env, key).is_none() => {
-                env.insert(key.clone(), old_value.clone());
-            }
-            _ => {}
-        }
-    }
-
-    for (key, new_value) in &mise_diff.new {
-        if env_diff_get(&mise_diff.old, key).is_none()
-            && env_map_get(&env, key) == Some(new_value)
-            && let Some(key) = env_map_key(&env, key).cloned()
-        {
-            env.remove(&key);
-        }
-    }
-
-    env
-}
-
-#[cfg(not(windows))]
-fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
-    env.get_key_value(key).map(|(key, _)| key)
-}
-
-#[cfg(windows)]
-fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
-    env.keys()
-        .find(|candidate| windows_env_key_eq(candidate, key))
-}
-
-fn env_map_get<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
-    env_map_key(env, key).and_then(|key| env.get(key))
-}
-
-#[cfg(not(windows))]
-fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
-    env.get(key)
-}
-
-#[cfg(windows)]
-fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
-    env.iter()
-        .find(|(candidate, _)| windows_env_key_eq(candidate, key))
-        .map(|(_, value)| value)
-}
-
-#[cfg(windows)]
-fn windows_env_key_eq(left: &str, right: &str) -> bool {
-    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
-
-    let left = left.encode_utf16().collect::<Vec<_>>();
-    let right = right.encode_utf16().collect::<Vec<_>>();
-    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
-    else {
-        return false;
-    };
-
-    unsafe {
-        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
-    }
-}
 
 /// returns true if new runtime versions should not be fetched
 fn prefer_offline(args: &[String]) -> bool {
@@ -633,127 +511,9 @@ pub(crate) fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
-
-    use crate::config::Config;
-
     use super::*;
-
-    #[test]
-    fn test_reverse_diff_preserves_runtime_overrides() {
-        let diff = EnvDiff {
-            old: [
-                ("CHANGED".into(), "before".into()),
-                ("REMOVED".into(), "before".into()),
-            ]
-            .into(),
-            new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
-            ]
-            .into(),
-            ..Default::default()
-        };
-        let current = [
-            ("ADDED".into(), "override".into()),
-            ("CHANGED".into(), "override".into()),
-            ("REMOVED".into(), "override".into()),
-        ]
-        .into();
-
-        assert_eq!(
-            reverse_diff_preserving_overrides(&diff, current),
-            [
-                ("ADDED".into(), "override".into()),
-                ("CHANGED".into(), "override".into()),
-                ("REMOVED".into(), "override".into()),
-            ]
-            .into()
-        );
-    }
-
-    #[test]
-    fn test_reverse_diff_restores_unchanged_managed_values() {
-        let diff = EnvDiff {
-            old: [
-                ("CHANGED".into(), "before".into()),
-                ("REMOVED".into(), "before".into()),
-            ]
-            .into(),
-            new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
-            ]
-            .into(),
-            ..Default::default()
-        };
-        let current = [
-            ("ADDED".into(), "managed".into()),
-            ("CHANGED".into(), "managed".into()),
-        ]
-        .into();
-
-        assert_eq!(
-            reverse_diff_preserving_overrides(&diff, current),
-            [
-                ("CHANGED".into(), "before".into()),
-                ("REMOVED".into(), "before".into()),
-            ]
-            .into()
-        );
-    }
-
-    #[test]
-    fn test_reverse_diff_preserves_runtime_removals() {
-        let diff = EnvDiff {
-            old: [("CHANGED".into(), "before".into())].into(),
-            new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
-            ]
-            .into(),
-            ..Default::default()
-        };
-
-        assert_eq!(
-            reverse_diff_preserving_overrides(&diff, EnvMap::new()),
-            EnvMap::new()
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn test_reverse_diff_matches_environment_keys_case_insensitively_on_windows() {
-        let diff = EnvDiff {
-            old: [
-                ("Changed".into(), "before".into()),
-                ("MÎSE_FOO".into(), "before-unicode".into()),
-            ]
-            .into(),
-            new: [
-                ("Added".into(), "managed".into()),
-                ("Changed".into(), "managed".into()),
-                ("MÎSE_FOO".into(), "managed-unicode".into()),
-            ]
-            .into(),
-            ..Default::default()
-        };
-        let current = [
-            ("ADDED".into(), "managed".into()),
-            ("CHANGED".into(), "managed".into()),
-            ("mîse_foo".into(), "managed-unicode".into()),
-        ]
-        .into();
-
-        assert_eq!(
-            reverse_diff_preserving_overrides(&diff, current),
-            [
-                ("CHANGED".into(), "before".into()),
-                ("mîse_foo".into(), "before-unicode".into()),
-            ]
-            .into()
-        );
-    }
+    use crate::config::Config;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_var_path() {
