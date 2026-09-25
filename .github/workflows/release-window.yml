@@ -9,11 +9,13 @@ name: release-window
 # 45 minutes before quiet hours so a delayed run cannot leave a gap at 18:00.
 # The status is keyed by commit, so any PR whose head is the `release` branch
 # commit gets the release verdict; every other PR gets success.
+#
+# To release now anyway, add the `release-now` label to the release PR.
 
 on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
   pull_request_target:
     branches: ["main"]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   schedule:
     - cron: "7,37 * * * *"
   workflow_dispatch:
@@ -31,6 +33,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
       statuses: write
     steps:
       - name: Set release-window status
@@ -58,7 +61,7 @@ jobs:
             read -r hour minute < <(TZ=America/Chicago date '+%-H %-M')
             local now=$((hour * 60 + minute))
             if is_quiet "$now" || is_quiet $((now + 45)); then
-              echo pending "Quiet hours (18:00-03:00 Central); merges after 03:00"
+              echo pending "Waiting for 03:00 Central; label release-now to release immediately"
             else
               echo success "Inside the release window"
             fi
@@ -88,6 +91,14 @@ jobs:
 
           if [ "$sha" != "$release_sha" ]; then
             set_status "$sha" success "Not a release PR"
+            exit 0
+          fi
+
+          # The `owner:release` head filter only matches this repository's branch.
+          labels=$(gh api "repos/$REPO/pulls?head=${REPO%%/*}:release&base=main&state=open" \
+            --jq '.[0].labels // [] | map(.name) | join(",")')
+          if [[ ",$labels," == *",release-now,"* ]]; then
+            set_status "$sha" success "Overridden by the release-now label"
             exit 0
           fi
 
