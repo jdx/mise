@@ -178,6 +178,24 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
         return (s, None);
     };
 
+    // A URL's userinfo ("git+ssh://git@github.com/...") is part of the tool
+    // name, so only an '@' after the authority can start a version.
+    if let Some(scheme_end) = left.find("://") {
+        let authority_start = scheme_end + 3;
+        if !left[authority_start..].contains('/') {
+            let authority_end = s[authority_start..]
+                .find('/')
+                .map_or(s.len(), |i| authority_start + i);
+            return match s[authority_end..].split_once('@') {
+                Some((path, version)) => (
+                    &s[..authority_end + path.len()],
+                    (!version.is_empty()).then_some(version),
+                ),
+                None => (s, None),
+            };
+        }
+    }
+
     if left.is_empty() {
         // Scoped package name starting with '@' (e.g., "@anthropic-ai/claude-code")
         // The first '@' is part of the name, not a version separator
@@ -296,6 +314,27 @@ mod tests {
         t("npm:", "npm:", None);
         t("npm:prettier", "npm:prettier", None);
         t("npm:prettier@1.0.0", "npm:prettier", Some("1.0.0"));
+        // URL userinfo is part of the name, not a version separator
+        let ssh = "pypi:git+ssh://git@github.com/psf/black.git";
+        t(ssh, ssh, None);
+        t(&format!("{ssh}@"), ssh, None);
+        t(&format!("{ssh}@24.2.0"), ssh, Some("24.2.0"));
+        t(
+            &format!("{ssh}@ref:branch@name"),
+            ssh,
+            Some("ref:branch@name"),
+        );
+        t(
+            "pipx:git+ssh://git@example.com",
+            "pipx:git+ssh://git@example.com",
+            None,
+        );
+        t(
+            "pypi:git+https://github.com/psf/black.git@24.2.0",
+            "pypi:git+https://github.com/psf/black.git",
+            Some("24.2.0"),
+        );
+        t("node@path:///tmp/node", "node", Some("path:///tmp/node"));
         t(
             "ubi:BurntSushi/ripgrep[exe=rg]",
             "ubi:BurntSushi/ripgrep[exe=rg]",
