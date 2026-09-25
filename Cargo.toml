@@ -166,7 +166,6 @@ log = "0.4"
 minisign-verify = "0.2"
 miette = { version = "7", features = ["fancy"] }
 nodejs-semver = "5"
-nucleo-matcher = "0.3"
 notify = { version = "8", default-features = false, features = [
   "macos_fsevent",
 ] }
