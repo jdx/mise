@@ -131,7 +131,7 @@ static DEFAULT_VARIABLE_UPDATES: LazyLock<BTreeMap<String, ReplacementEntry>> =
     });
 
 /// Update the `sysconfig` data in a Python installation.
-pub(crate) fn update_sysconfig(
+pub fn update_sysconfig(
     install_root: &Path,
     major: u8,
     minor: u8,
@@ -284,7 +284,7 @@ fn patch_sysconfigdata(mut data: SysconfigData, real_prefix: &Path) -> Sysconfig
 }
 
 #[derive(thiserror::Error, Debug)]
-pub(crate) enum Error {
+pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Python installation is missing a `lib` directory")]

@@ -3930,7 +3930,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
         let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
-        let reporter = crate::ui::resolve_progress::tests::RecordingReport::default();
+        let reporter = mise_util::testing::RecordingReport::default();
         let resp = crate::ui::resolve_progress::scope(
             Some(Box::new(reporter.clone())),
             client.get_async(url),

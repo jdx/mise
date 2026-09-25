@@ -101,6 +101,17 @@ pub fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// A [`SingleReport`](crate::progress::SingleReport) that records every
+/// message, for tests that assert what a reporter was told.
+#[derive(Clone, Debug, Default)]
+pub struct RecordingReport(pub std::sync::Arc<Mutex<Vec<String>>>);
+
+impl crate::progress::SingleReport for RecordingReport {
+    fn set_message(&self, message: String) {
+        self.0.lock().unwrap().push(message);
+    }
+}
+
 /// This crate's own unit tests have no mise config system to load settings
 /// from, so they read the `settings.toml` defaults.
 #[cfg(test)]

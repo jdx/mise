@@ -248,7 +248,7 @@ const fn is_python_whitespace(c: char) -> bool {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("Missing opening brace")]
     MissingOpenBrace,
     #[error("Unexpected character: {0}")]
