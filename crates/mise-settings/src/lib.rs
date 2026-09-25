@@ -650,14 +650,15 @@ mod tests {
         assert_eq!(result, [a, b].into_iter().collect());
     }
 
-    /// The workspace-root settings.toml, or the copy a published package carries.
+    /// The workspace-root settings.toml, or the copy a published package carries. Same
+    /// precedence as `build.rs`.
     fn settings_toml_path() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let packaged = manifest_dir.join("settings.toml");
-        if packaged.exists() {
-            packaged
+        let workspace = manifest_dir.join("../../settings.toml");
+        if workspace.exists() {
+            workspace
         } else {
-            manifest_dir.join("../../settings.toml")
+            manifest_dir.join("settings.toml")
         }
     }
 
