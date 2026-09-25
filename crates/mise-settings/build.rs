@@ -12,20 +12,26 @@ fn main() {
 /// `settings.toml` lives at the workspace root, where docs and schema tooling
 /// read it too. The release copies it into this crate so the published package
 /// can build on its own.
+///
+/// The workspace file wins whenever it exists, so a copy left behind by a local
+/// release run can never shadow edits to it. Both paths are watched for the same
+/// reason.
 fn settings_toml_path() -> PathBuf {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let packaged = manifest_dir.join("settings.toml");
-    if packaged.exists() {
-        return packaged;
-    }
     let workspace = manifest_dir.join("../../settings.toml");
+    let packaged = manifest_dir.join("settings.toml");
+    println!("cargo:rerun-if-changed={}", workspace.display());
+    println!("cargo:rerun-if-changed={}", packaged.display());
+    if workspace.exists() {
+        return workspace;
+    }
     assert!(
-        workspace.exists(),
+        packaged.exists(),
         "settings.toml not found. Outside the mise workspace, copy its settings.toml into {} \
          before packaging (xtasks/release-plz does this when publishing).",
         manifest_dir.display()
     );
-    workspace
+    packaged
 }
 
 /// Generate a raw string literal that safely contains the given content.
@@ -69,7 +75,6 @@ pub struct Settings {"#
     ];
 
     let settings_path = settings_toml_path();
-    println!("cargo:rerun-if-changed={}", settings_path.display());
     let settings_toml = fs::read_to_string(&settings_path).expect("Failed to read settings.toml");
     let settings: toml::Table =
         toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
