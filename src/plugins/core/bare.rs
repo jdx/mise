@@ -116,7 +116,13 @@ impl BarePlugin {
             (asset_filename(&tv.version, &target)?, url, None)
         } else {
             let asset = self.release_asset(tv, &target).await?;
-            (asset.name, asset.browser_download_url, asset.digest)
+            let digest = asset.digest.ok_or_else(|| {
+                eyre!(
+                    "Bare release asset {} has no SHA-256 digest; refusing to install without integrity check",
+                    asset.name
+                )
+            })?;
+            (asset.name, asset.browser_download_url, Some(digest))
         };
         let tarball_path = tv.download_path().join(&name);
         pr.set_message(format!("download {name}"));
@@ -219,15 +225,23 @@ impl Backend for BarePlugin {
     }
 
     /// Resolves lockfile information for a specific version and platform.
-    /// Fetches the GitHub release asset and returns its checksum (if available) and download URL.
+    /// Fetches the GitHub release asset and returns its checksum and download URL.
+    /// Returns an error if the release asset lacks a SHA-256 digest.
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let asset = self.release_asset(tv, target).await?;
+        let checksum = asset.digest.ok_or_else(|| {
+            eyre!(
+                "Bare {} has no SHA-256 digest for {}",
+                tv.version,
+                target.to_key()
+            )
+        })?;
         Ok(PlatformInfo {
-            checksum: asset.digest,
+            checksum: Some(checksum),
             url: Some(asset.browser_download_url),
             ..Default::default()
         })
