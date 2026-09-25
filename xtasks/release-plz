@@ -385,20 +385,25 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_SETTINGS_VERSION=""
 	MISE_UTIL_VERSION=""
 
+	# Publish in dependency order: mise-settings needs mise-cache-core, and
+	# mise-util needs mise-agent-env, mise-cache-core and mise-settings.
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
 	cargo add -p mise-util "mise-agent-env@$MISE_AGENT_ENV_VERSION"
 
-	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
-	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
-
 	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
 	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+	cargo add -p mise-settings "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+	cargo add -p mise-util "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 
 	# Copy settings.toml into the crate directory so the published package includes it.
 	cp settings.toml crates/mise-settings/settings.toml
 	bump_and_publish_subcrate "mise-settings" "crates/mise-settings" "MISE_SETTINGS_VERSION"
 	rm -f crates/mise-settings/settings.toml
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
+
+	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
+	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
