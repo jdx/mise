@@ -1,5 +1,5 @@
 backends = ["aqua:spotDL/spotify-downloader"]
-bins = ["spotdl"]
+bins = ["spotify-downloader"]
 description = "Download your Spotify playlists and songs along with album art and metadata (from YouTube if a match is found)"
-test = { cmd = "spotdl --help", expected = "spotdl" }
+test = { cmd = "spotify-downloader --help", expected = "Download your Spotify playlists and songs" }
 version_order = "semver"
