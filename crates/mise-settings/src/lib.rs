@@ -658,7 +658,17 @@ mod tests {
         let in_workspace = std::fs::canonicalize(root.join("crates/mise-settings"))
             .ok()
             .zip(std::fs::canonicalize(&manifest_dir).ok())
-            .is_some_and(|(a, b)| a == b);
+            .is_some_and(|(a, b)| a == b)
+            && std::fs::read_to_string(root.join("Cargo.toml"))
+                .ok()
+                .and_then(|manifest| manifest.parse::<toml::Table>().ok())
+                .is_some_and(|manifest| {
+                    manifest
+                        .get("package")
+                        .and_then(|package| package.get("name"))
+                        .and_then(toml::Value::as_str)
+                        == Some("mise")
+                });
         let workspace = root.join("settings.toml");
         if in_workspace && workspace.exists() {
             workspace

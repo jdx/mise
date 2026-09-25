@@ -37,12 +37,38 @@ fn settings_toml_path() -> PathBuf {
 
 /// The workspace-root `settings.toml`, when this crate is the mise workspace's
 /// `crates/mise-settings`.
+///
+/// Both the path and the root package are checked: another project could vendor
+/// this crate at its own `crates/mise-settings`.
 fn workspace_settings_toml(manifest_dir: &Path) -> Option<PathBuf> {
     let root = manifest_dir.join("../..");
     let in_workspace = fs::canonicalize(root.join("crates/mise-settings")).ok()?
         == fs::canonicalize(manifest_dir).ok()?;
+    let root_is_mise = fs::read_to_string(root.join("Cargo.toml"))
+        .is_ok_and(|manifest| is_mise_manifest(&manifest));
     let settings = root.join("settings.toml");
-    (in_workspace && settings.exists()).then_some(settings)
+    (in_workspace && root_is_mise && settings.exists()).then_some(settings)
+}
+
+/// Whether `manifest` is the root manifest of the mise workspace.
+fn is_mise_manifest(manifest: &str) -> bool {
+    let Ok(manifest) = manifest.parse::<toml::Table>() else {
+        return false;
+    };
+    let package_name = manifest
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str);
+    let members = manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("members"))
+        .and_then(toml::Value::as_array);
+    package_name == Some("mise")
+        && members.is_some_and(|members| {
+            members
+                .iter()
+                .any(|member| member.as_str() == Some("crates/mise-settings"))
+        })
 }
 
 /// Generate a raw string literal that safely contains the given content.
