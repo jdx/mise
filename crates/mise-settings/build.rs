@@ -16,10 +16,16 @@ fn settings_toml_path() -> PathBuf {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let packaged = manifest_dir.join("settings.toml");
     if packaged.exists() {
-        packaged
-    } else {
-        manifest_dir.join("../../settings.toml")
+        return packaged;
     }
+    let workspace = manifest_dir.join("../../settings.toml");
+    assert!(
+        workspace.exists(),
+        "settings.toml not found. Outside the mise workspace, copy its settings.toml into {} \
+         before packaging (xtasks/release-plz does this when publishing).",
+        manifest_dir.display()
+    );
+    workspace
 }
 
 /// Generate a raw string literal that safely contains the given content.

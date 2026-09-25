@@ -24,3 +24,8 @@ toml = { version = "1", features = ["parse", "preserve_order"] }
 heck = "0.5"
 indexmap = "2"
 toml = "1"
+
+# heck is used only by build.rs; mise-cache-core only by the code build.rs
+# generates, which cargo-machete does not scan.
+[package.metadata.cargo-machete]
+ignored = ["heck", "mise-cache-core"]
