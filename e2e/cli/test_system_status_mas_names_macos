@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+# mas reports installed apps by numeric ID; status shows the app name mas lists.
+mkdir -p mas-tool/bin
+cat <<'SCRIPT' >mas-tool/bin/mas
+#!/bin/sh
+if [ "$1 $2" = "list --json" ]; then
+  printf '{"adamID":497799835,"bundleID":"com.apple.dt.Xcode","name":"Xcode","version":"16.2"}\n'
+  exit 0
+fi
+exit 1
+SCRIPT
+chmod +x mas-tool/bin/mas
+cat <<TOML >mise.toml
+[tools]
+mas = "path:./mas-tool"
+
+[bootstrap.packages]
+"mas:497799835" = "latest"
+"mas:409203825" = "latest"
+TOML
+
+assert_contains "mise bootstrap packages status" "497799835 (Xcode)"
+assert_not_contains "mise bootstrap packages status" "409203825 ("
+assert \
+  "mise bootstrap packages status --json | jq -r '.mas.packages[] | select(.package == \"497799835\") | .name'" \
+  "Xcode"
+assert \
+  "mise bootstrap packages status --json | jq -r '.mas.packages[] | select(.package == \"409203825\") | has(\"name\")'" \
+  "false"
