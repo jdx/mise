@@ -1,7 +1,7 @@
-use crate::config::Settings;
 use crate::env;
 use crate::env_diff::EnvMap;
 use eyre::{Result, bail, eyre};
+use mise_settings::Settings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -15,7 +15,7 @@ const REUSE_BUFFER_SECS: i64 = 300;
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug, Clone)]
-pub(crate) struct TokenRequest {
+pub struct TokenRequest {
     pub host: String,
     /// Whether the device-code authorization flow may be triggered when no
     /// reusable cached or refreshed token is available. When false, an
@@ -88,10 +88,10 @@ struct TokenCache {
     tokens: HashMap<String, CachedToken>,
 }
 
-#[cfg(test)]
-static TEST_CACHE_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+#[doc(hidden)]
+pub static TEST_CACHE_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
-pub(crate) fn resolve_token(host: &str) -> Option<String> {
+pub fn resolve_token(host: &str) -> Option<String> {
     let settings = Settings::get();
     if settings.github.oauth_client_id.trim().is_empty()
         || !host_matches_settings(host, &settings.github.oauth_api_url)
@@ -108,7 +108,7 @@ pub(crate) fn resolve_token(host: &str) -> Option<String> {
     .ok()
 }
 
-pub(crate) fn cached_access_token_for_host(host: &str) -> Option<String> {
+pub fn cached_access_token_for_host(host: &str) -> Option<String> {
     let settings = Settings::get();
     let client_id = settings.github.oauth_client_id.trim();
     if client_id.is_empty() || !host_matches_settings(host, &settings.github.oauth_api_url) {
@@ -132,7 +132,7 @@ pub(crate) fn cached_access_token_for_host(host: &str) -> Option<String> {
 /// inject it into the env map under the configured variable name. Never
 /// triggers the device-code flow, so this is safe to call from shell hook
 /// paths like `mise hook-env`, `mise env`, and `mise exec`.
-pub(crate) fn inject_token_env(env: &mut EnvMap) {
+pub fn inject_token_env(env: &mut EnvMap) {
     let settings = Settings::get();
     let var_name = settings.github.oauth_export_env.trim();
     if var_name.is_empty() || settings.github.oauth_client_id.trim().is_empty() {
@@ -153,11 +153,11 @@ pub(crate) fn inject_token_env(env: &mut EnvMap) {
     }
 }
 
-pub(crate) fn token(req: TokenRequest) -> Result<String> {
+pub fn token(req: TokenRequest) -> Result<String> {
     block_on(token_async(req))
 }
 
-pub(crate) async fn refresh_cached_token_for_host(
+pub async fn refresh_cached_token_for_host(
     host: &str,
     stale_access_token: &str,
 ) -> Result<Option<String>> {
@@ -478,8 +478,9 @@ fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
 }
 
 fn cache_path() -> PathBuf {
-    #[cfg(test)]
-    if let Some(path) = TEST_CACHE_PATH.read().unwrap().clone() {
+    if crate::testing::in_tests()
+        && let Some(path) = TEST_CACHE_PATH.read().unwrap().clone()
+    {
         return path;
     }
     env::MISE_STATE_DIR.join("github-oauth-tokens.toml")
@@ -571,7 +572,7 @@ fn lock_cache(path: &Path) -> Result<fslock::LockFile> {
         .lock()
 }
 
-pub(crate) fn log_refresh_error(err: &eyre::Report) {
+pub fn log_refresh_error(err: &eyre::Report) {
     if err.downcast_ref::<RefreshRejected>().is_some() {
         warn_once!("{err}");
     } else {
@@ -648,19 +649,19 @@ where
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support {
+#[doc(hidden)]
+pub mod test_support {
     use super::*;
 
-    pub(crate) fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
+    pub fn cache_key(host: &str, client_id: &str, scopes: &str) -> String {
         super::cache_key(host, client_id, scopes)
     }
 
-    pub(crate) fn set_cache_path(path: PathBuf) {
+    pub fn set_cache_path(path: PathBuf) {
         *TEST_CACHE_PATH.write().unwrap() = Some(path);
     }
 
-    pub(crate) fn clear_cache_path() {
+    pub fn clear_cache_path() {
         *TEST_CACHE_PATH.write().unwrap() = None;
     }
 }
@@ -668,7 +669,6 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::SettingsExt;
 
     struct OAuthEnvGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -677,7 +677,7 @@ mod tests {
 
     impl OAuthEnvGuard {
         fn new(auth_url: String, cache_path: PathBuf) -> Self {
-            let lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+            let lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
             let vars = vec![
                 (
                     "MISE_GITHUB_OAUTH_CLIENT_ID",
@@ -703,7 +703,7 @@ mod tests {
             crate::env::remove_var("MISE_GITHUB_OAUTH_SCOPES");
             crate::env::set_var("MISE_EXPERIMENTAL", "1");
             test_support::set_cache_path(cache_path);
-            Settings::reset(None);
+            crate::testing::reset_settings(None);
             Self { _lock: lock, vars }
         }
     }
@@ -718,7 +718,7 @@ mod tests {
                 }
             }
             test_support::clear_cache_path();
-            Settings::reset(None);
+            crate::testing::reset_settings(None);
         }
     }
 

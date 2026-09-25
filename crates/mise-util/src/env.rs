@@ -1,6 +1,7 @@
 //! Environment variables mise reads, and the directories derived from them.
 
 use crate::env_diff::{EnvDiff, EnvMap};
+use crate::env_value::EnvValue;
 use crate::file::replace_path;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -1137,6 +1138,30 @@ fn prefer_offline_command(args: &[String]) -> bool {
 /// See [`REMOTE_FETCH_COMMAND`].
 fn remote_fetch_command(args: &[String]) -> bool {
     is_command(args, first_non_global_arg_idx(args), REMOTE_FETCH_COMMANDS)
+}
+
+tokio::task_local! {
+    static INSTALL_ENV: IndexMap<String, EnvValue>;
+}
+
+/// Overlays a tool's `install_env` on the process env for the duration of `future`,
+/// so anything it does reads that tool's values through [`scoped_var`].
+pub async fn with_install_env<T>(
+    env: IndexMap<String, EnvValue>,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    INSTALL_ENV.scope(env, future).await
+}
+
+/// Reads an env var through the active [`with_install_env`] overlay, falling back to the
+/// process env. Blank reads as unset, as does an `install_env` entry set to `false`.
+pub fn scoped_var(key: &str) -> Option<String> {
+    match INSTALL_ENV.try_with(|env| env.get(key).cloned()) {
+        Ok(Some(value)) => value.into_string(),
+        _ => std::env::var(key).ok(),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
 }
 
 /// Deliberately not `#[cfg(windows)]`: the code under test is pure string handling, and the whole

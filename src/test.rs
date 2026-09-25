@@ -26,8 +26,7 @@ fn init() {
         return;
     }
     mise_util::testing::enable(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
-    crate::config::settings::register_loader();
-    crate::cache::register_base_cache_keys();
+    crate::register_util_hooks();
     // Tests must start from the environment nextest gives their process, not
     // from an activation diff inherited from the process that launched it.
     // This has to happen before the first access to env::HOME initializes

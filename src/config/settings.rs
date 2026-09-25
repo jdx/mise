@@ -658,11 +658,6 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     Ok(())
 }
 
-const UNIX_DEFAULT_FILE_SHELL_ARGS: &str = "sh";
-const UNIX_DEFAULT_INLINE_SHELL_ARGS: &str = "sh -o errexit -c";
-const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &str = "cmd /c";
-const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &str = "cmd /c";
-
 /// mise behavior layered on the generated [`Settings`] type, which lives in the
 /// `mise-settings` crate.
 pub(crate) trait SettingsExt: Sized {
@@ -760,19 +755,6 @@ pub(crate) trait SettingsExt: Sized {
     fn auto_update_check_duration(&self) -> eyre::Result<Duration>;
 
     fn fetch_remote_versions_timeout(&self) -> Duration;
-
-    fn configured_fetch_remote_versions_timeout(&self) -> Duration;
-
-    /// Whether remote-version lookups should use the aggressive fast-path budget
-    /// (a single ~3s attempt with no retries). This is on under `prefer_offline`
-    /// so shims and shell activation never stall — but NOT for commands whose
-    /// whole job is to enumerate remote versions/tags (`mise lock`, `ls-remote`,
-    /// `outdated`, `upgrade`), which must honor the full configured
-    /// `fetch_remote_versions_timeout` and retry budget even when
-    /// `prefer_offline` is set.
-    ///
-    /// See <https://github.com/jdx/mise/discussions/11185>.
-    fn bound_remote_version_lookups(&self) -> bool;
 
     /// duration that remote version cache is kept for
     /// for "fast" commands (represented by PREFER_OFFLINE), these are always
@@ -1165,14 +1147,6 @@ impl SettingsExt for Settings {
         network::fetch_remote_versions_timeout(self)
     }
 
-    fn configured_fetch_remote_versions_timeout(&self) -> Duration {
-        network::configured_fetch_remote_versions_timeout(self)
-    }
-
-    fn bound_remote_version_lookups(&self) -> bool {
-        network::bound_remote_version_lookups(self)
-    }
-
     fn fetch_remote_versions_cache(&self) -> Option<Duration> {
         network::fetch_remote_versions_cache(self)
     }
@@ -1228,20 +1202,7 @@ impl SettingsExt for Settings {
     }
 
     fn default_inline_shell(&self) -> Result<Vec<String>> {
-        let (sa, fallback) = if cfg!(windows) {
-            (
-                &self.windows_default_inline_shell_args,
-                WINDOWS_DEFAULT_INLINE_SHELL_ARGS,
-            )
-        } else {
-            (
-                &self.unix_default_inline_shell_args,
-                UNIX_DEFAULT_INLINE_SHELL_ARGS,
-            )
-        };
-        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
-        self.maybe_no_profile(&mut shell);
-        Ok(shell)
+        mise_util::shells::default_inline_shell(self)
     }
 
     fn implicit_inline_shell(&self) -> bool {
@@ -1263,26 +1224,11 @@ impl SettingsExt for Settings {
     }
 
     fn default_file_shell(&self) -> Result<Vec<String>> {
-        let (sa, fallback) = if cfg!(windows) {
-            (
-                &self.windows_default_file_shell_args,
-                WINDOWS_DEFAULT_FILE_SHELL_ARGS,
-            )
-        } else {
-            (
-                &self.unix_default_file_shell_args,
-                UNIX_DEFAULT_FILE_SHELL_ARGS,
-            )
-        };
-        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
-        self.maybe_no_profile(&mut shell);
-        Ok(shell)
+        mise_util::shells::default_file_shell(self)
     }
 
     fn maybe_no_profile(&self, shell: &mut Vec<String>) {
-        if self.windows_powershell_no_profile {
-            crate::path::inject_powershell_no_profile(shell);
-        }
+        mise_util::shells::maybe_no_profile(self, shell)
     }
 
     fn no_config() -> bool {
@@ -1846,15 +1792,6 @@ impl SettingsNodeExt for SettingsNode {
     }
 }
 
-fn split_default_shell_or_fallback(sa: &str, fallback: &str) -> Result<Vec<String>> {
-    let shell = crate::path::split_shell_command(sa)?;
-    if shell.is_empty() {
-        crate::path::split_shell_command(fallback)
-    } else {
-        Ok(shell)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2175,27 +2112,6 @@ mod tests {
 
     fn sv(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn test_split_default_shell_or_fallback_uses_fallback_for_empty_shell() {
-        assert_eq!(
-            split_default_shell_or_fallback("   ", "cmd /c").unwrap(),
-            sv(&["cmd", "/c"])
-        );
-    }
-
-    #[test]
-    fn test_split_default_shell_or_fallback_preserves_custom_shell() {
-        assert_eq!(
-            split_default_shell_or_fallback("pwsh -Command", "cmd /c").unwrap(),
-            sv(&["pwsh", "-Command"])
-        );
-    }
-
-    #[test]
-    fn test_split_default_shell_or_fallback_reports_parse_errors() {
-        assert!(split_default_shell_or_fallback("\"unterminated", "cmd /c").is_err());
     }
 
     /// The shape #5791 reported: the setting is accepted into the file, so without this it

@@ -160,6 +160,22 @@ set_path_dependency_version() {
 	' "$manifest"
 }
 
+# Point every versioned workspace path dependency on $dependency at $new_version.
+# Subcrates depend on each other (mise-util on mise-settings, mise-settings on
+# mise-cache-core, ...), and a requirement left behind stops matching once a
+# bump crosses it: a calver crate entering a new year, or a 0.x minor bump.
+set_workspace_path_dependency_versions() {
+	local dependency="$1"
+	local new_version="$2"
+	local manifest
+	for manifest in Cargo.toml crates/*/Cargo.toml; do
+		if grep -E "^$dependency = \{" "$manifest" | grep -q 'path = "' &&
+			grep -E "^$dependency = \{" "$manifest" | grep -q 'version = "'; then
+			set_path_dependency_version "$manifest" "$dependency" "$new_version"
+		fi
+	done
+}
+
 set_package_version() {
 	local crate_name="$1"
 	local manifest="$2"
@@ -179,23 +195,7 @@ set_package_version() {
 	rm -f "$manifest.bak"
 
 	# Keep workspace path dependencies compatible before Cargo resolves the bump.
-	case "$crate_name" in
-	mise-agent-env)
-		set_path_dependency_version crates/mise-util/Cargo.toml mise-agent-env "$new_version"
-		;;
-	mise-cache-core)
-		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
-		;;
-	mise-interactive-config)
-		set_path_dependency_version Cargo.toml mise-interactive-config "$new_version"
-		;;
-	mise-settings)
-		set_path_dependency_version Cargo.toml mise-settings "$new_version"
-		;;
-	mise-util)
-		set_path_dependency_version Cargo.toml mise-util "$new_version"
-		;;
-	esac
+	set_workspace_path_dependency_versions "$crate_name" "$new_version"
 
 	cargo update --offline -p "$crate_name" --precise "$new_version"
 }
@@ -386,7 +386,8 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_UTIL_VERSION=""
 
 	# Publish in dependency order: mise-settings needs mise-cache-core, and
-	# mise-util needs mise-agent-env, mise-cache-core and mise-settings.
+	# mise-util needs mise-agent-env, mise-cache-core, mise-settings and
+	# mise-sigstore.
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
 	cargo add -p mise-util "mise-agent-env@$MISE_AGENT_ENV_VERSION"
 
@@ -402,12 +403,12 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
 
+	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
+	cargo add -p mise-util "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+
 	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
 	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
-
-	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
-	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
-	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
@@ -608,17 +609,16 @@ bump_subcrate_if_changed "mise-sigstore" "crates/mise-sigstore"
 
 git status
 # cargo update
+# Every subcrate manifest: a bump also rewrites the version requirement in each
+# workspace crate that path-depends on the bumped one (mise-util on mise-sigstore, …).
 git add \
 	Cargo.lock \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
 	vendor/aqua-registry \
-	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
-	crates/vfox/Cargo.toml \
-	crates/mise-interactive-config/Cargo.toml \
-	crates/mise-sigstore/Cargo.toml \
+	crates/*/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
