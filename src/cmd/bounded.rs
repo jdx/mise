@@ -101,16 +101,29 @@ async fn capture(
         if n == 0 {
             return Ok(output);
         }
-        let spend = |left: usize| left.checked_sub(n);
-        if budget
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, spend)
-            .is_err()
-        {
+        if !spend(budget, n) {
             return Err(std::io::Error::other(format!(
                 "command output exceeded {limit} bytes"
             )));
         }
         output.extend_from_slice(&buf[..n]);
+    }
+}
+
+/// Take `n` bytes from the shared `budget`, or return false when fewer than
+/// `n` remain. Spelled out as a compare-exchange loop because the one-call
+/// form is `fetch_update` on stable Rust but deprecated as `try_update` on
+/// newer toolchains.
+fn spend(budget: &AtomicUsize, n: usize) -> bool {
+    let mut left = budget.load(Ordering::Relaxed);
+    loop {
+        let Some(next) = left.checked_sub(n) else {
+            return false;
+        };
+        match budget.compare_exchange_weak(left, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(actual) => left = actual,
+        }
     }
 }
 
