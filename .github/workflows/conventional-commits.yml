@@ -17,11 +17,13 @@ jobs:
       - name: Check pull request title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+        # The description starts lowercase, or with an acronym of two or more
+        # capitals such as PGO or CLI. A capitalized word like "Add" is rejected.
         run: |
-          pattern='^(chore|ci|docs|feat|fix|perf|refactor|registry|revert|security|style|test)(\([[:alnum:]][[:alnum:]./_-]*(, ?[[:alnum:]][[:alnum:]./_-]*)*\))?!?: [[:lower:]](.*[[:graph:]])?$'
+          pattern='^(chore|ci|docs|feat|fix|perf|refactor|registry|revert|security|style|test)(\([[:alnum:]][[:alnum:]./_-]*(, ?[[:alnum:]][[:alnum:]./_-]*)*\))?!?: ([[:lower:]]|[[:upper:]][[:upper:][:digit:]]+([^[:alpha:]]|$))(.*[[:graph:]])?$'
           if [[ ! "$PR_TITLE" =~ $pattern || "$PR_TITLE" =~ ^registry\( ]]; then
             echo "::error title=Invalid pull request title::The title does not match the required format."
             printf 'Received title: %q\n' "$PR_TITLE"
-            echo "Use: <type>[optional scope][optional !]: <description starting lowercase>"
+            echo "Use: <type>[optional scope][optional !]: <description starting lowercase or with an acronym>"
             exit 1
           fi

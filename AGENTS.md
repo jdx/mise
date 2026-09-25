@@ -146,7 +146,7 @@ SHOULD use the same format:
 - Use `task` (not `run`) for task-related changes, even if the code lives in `src/cli/run.rs` or `src/cmd.rs`
 
 **Description Style:**
-- Start the description with a lowercase character
+- Start the description with a lowercase character, or with an acronym such as `PGO` or `CLI`
 - Use imperative mood ("add feature" not "added feature")
 - Keep it concise but descriptive
 
@@ -162,7 +162,7 @@ SHOULD use the same format:
 
 CI validates the pull request title and re-runs when it is edited. Intermediate
 commit subjects are not checked because pull requests are squash-merged. CI
-mechanically checks the allowed type, syntax, and lowercase-leading description;
+mechanically checks the allowed type, syntax, and lowercase- or acronym-leading description;
 imperative mood and breaking-change details remain review rules.
 
 ### PR titles and descriptions are release-note inputs
