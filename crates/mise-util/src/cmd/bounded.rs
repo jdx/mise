@@ -8,7 +8,7 @@ use tokio::io::AsyncRead;
 impl CmdLineRunner<'_> {
     /// Capture a finite response, with one deadline for the process and pipes.
     /// This command owns its child tree even when mise itself is nested.
-    pub(crate) async fn read_isolated(self, limit: usize) -> Result<String> {
+    pub async fn read_isolated(self, limit: usize) -> Result<String> {
         let output = self.output_isolated(limit).await?;
         if !output.status.success() {
             bail!("command exited with non-zero status: {}", output.status);
@@ -17,7 +17,7 @@ impl CmdLineRunner<'_> {
     }
 
     /// Return the exit status and bounded output without replaying command output.
-    pub(crate) async fn output_isolated(mut self, limit: usize) -> Result<std::process::Output> {
+    pub async fn output_isolated(mut self, limit: usize) -> Result<std::process::Output> {
         let _read_lock = super::raw_read_lock().await;
         let timeout = self.timeout.unwrap_or(Duration::from_secs(5));
         self.cmd.kill_on_drop(true);

@@ -1116,9 +1116,7 @@ impl SettingsExt for Settings {
     }
 
     fn system_installs_dir(&self) -> &Path {
-        self.system_installs_dir
-            .as_deref()
-            .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
+        dirs::system_installs_dir(self)
     }
 
     fn env_files(&self) -> Vec<PathBuf> {

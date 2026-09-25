@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use eyre::bail;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
-use crate::errors::Error;
+use crate::errors::ProcessError;
 use crate::result::Result;
 use crate::system::sudo;
 
@@ -40,8 +40,8 @@ fn run(args: &[String], opts: &InstallOpts) -> Result<()> {
                 // These are successful transactions with an informational status.
                 // Do not swallow missing packages (104), skipped repositories (106),
                 // or failed RPM scripts (107).
-                match err.downcast_ref::<Error>() {
-                    Some(Error::ScriptFailed(_, Some(status), _)) => match status.code() {
+                match err.downcast_ref::<ProcessError>() {
+                    Some(ProcessError::ScriptFailed(_, Some(status), _)) => match status.code() {
                         Some(102) => warn!("zypper: a system reboot is required"),
                         Some(103) if retries < 2 => {
                             retries += 1;

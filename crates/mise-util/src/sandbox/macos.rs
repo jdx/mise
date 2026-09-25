@@ -89,7 +89,7 @@ fn walk_metadata(configured: &Path, target: &Path) -> BTreeSet<PathBuf> {
 }
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
-pub(crate) async fn generate_seatbelt_profile(
+pub async fn generate_seatbelt_profile(
     config: &SandboxConfig,
     initial_program: Option<&std::path::Path>,
 ) -> String {

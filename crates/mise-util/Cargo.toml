@@ -8,6 +8,7 @@ homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
+aho-corasick = "1"
 base64 = "0.23"
 blake3 = "1"
 bzip2 = "0.6"
@@ -19,6 +20,15 @@ eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
 fslock = "0.2"
+gix = { version = "<1", default-features = false, features = [
+  "max-performance-safe",
+  "worktree-mutation",
+  "sha1",
+  "sha256",
+  "interrupt",
+  "auto-chain-error",
+] }
+globset = "0.4"
 hex = "0.4"
 homedir = "0.3"
 indexmap = { version = "2", features = ["serde"] }
@@ -30,6 +40,8 @@ log = "0.4"
 md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
 mise-settings = { path = "../mise-settings", version = "2026" }
+netrc-rs = "0.1"
+once_cell = "1"
 path-absolutize = "4"
 rmp-serde = "1"
 same-file = "1"
@@ -39,11 +51,14 @@ sha1 = "0.11"
 sha2 = "0.11"
 shell-escape = "0.1"
 shell-words = "1"
+signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
 terminal_size = "0.4"
 thiserror = "2"
+toml = { version = "1", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", features = ["parse"] }
 tokio = { version = "1", features = ["full"] }
 walkdir = "2"
 which = "8"
@@ -55,13 +70,27 @@ zstd = "0.14"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
   "Win32_Globalization",
+  "Win32_Security",
   "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
   "Win32_System_SystemServices",
+  "Win32_System_Threading",
 ] }
 
 [dev-dependencies]
 ctor = "1"
 pretty_assertions = "1"
+
+[features]
+default = ["native-tls"]
+native-tls = ["gix/blocking-http-transport-reqwest-native-tls"]
+rustls = ["gix/blocking-http-transport-reqwest-rust-tls"]
+rustls-native-roots = ["gix/blocking-http-transport-reqwest-rust-tls"]

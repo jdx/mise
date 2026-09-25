@@ -400,7 +400,7 @@ impl TaskExecutor {
 
     fn check_interruption(allow_during_interruption: bool) -> Result<()> {
         if !allow_during_interruption && crate::ui::ctrlc::is_cancelled() {
-            return Err(crate::errors::Error::TaskInterrupted.into());
+            return Err(crate::errors::ProcessError::TaskInterrupted.into());
         }
         Ok(())
     }
