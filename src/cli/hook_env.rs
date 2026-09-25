@@ -18,12 +18,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
-#[usage(rename_all = "lowercase")]
-pub(crate) enum HookReason {
-    Precmd,
-    Chpwd,
-}
+pub(crate) use crate::hook_env::HookReason;
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, usage_rs::Args)]

@@ -1,4 +1,3 @@
-use crate::cli::Cli;
 use crate::duration;
 use crate::file::FindUp;
 use crate::platform::Platform;
@@ -701,7 +700,7 @@ pub(crate) trait SettingsExt: Sized {
     fn is_package_query() -> bool;
 
     /// Apply CLI overrides and validate environment settings after query isolation is selected.
-    fn init_package_query(cli: &crate::cli::Cli) -> Result<()>;
+    fn init_package_query(cli: SettingsPartial) -> Result<()>;
 
     fn flush_pending_warnings();
 
@@ -712,9 +711,8 @@ pub(crate) trait SettingsExt: Sized {
     /// never flushed is worse than one printed a moment early.
     fn flush_pending_warnings_before_exit();
 
-    fn add_cli_matches(cli: &Cli);
-
-    fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>);
+    /// Install the settings layer the command-line flags set (see `Cli::settings_layer`).
+    fn add_cli_matches(cli: SettingsPartial);
 
     fn parse_settings_file(path: &Path) -> Result<SettingsPartial>;
 
@@ -918,7 +916,7 @@ impl SettingsExt for Settings {
         PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
     }
 
-    fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
+    fn init_package_query(cli: SettingsPartial) -> Result<()> {
         Self::add_cli_matches(cli);
         Self::try_get()?;
         Ok(())
@@ -935,65 +933,13 @@ impl SettingsExt for Settings {
         Self::flush_pending_warnings_now();
     }
 
-    fn add_cli_matches(cli: &Cli) {
-        Self::add_cli_matches_with(cli, None);
-    }
-
-    fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>) {
-        let mut s = SettingsPartial::empty();
-
+    fn add_cli_matches(cli: SettingsPartial) {
         // Don't process mise-specific flags when running as a shim
         if *crate::env::IS_RUNNING_AS_SHIM {
-            Self::reset(Some(s));
+            Self::reset(Some(SettingsPartial::empty()));
             return;
         }
-
-        if cli.raw {
-            s.raw = Some(true);
-        }
-        if let Some(truncate) = truncate {
-            s.truncate = Some(truncate);
-        }
-        if cli.locked {
-            s.locked = Some(true);
-        }
-        if let Some(cd) = &cli.cd {
-            s.cd = Some(cd.clone());
-        }
-        if let Some(jobs) = cli.jobs {
-            s.jobs = Some(jobs);
-        }
-        if cli.profile.is_some() {
-            s.env = cli.profile.clone();
-        }
-        if cli.env.is_some() {
-            s.env = cli.env.clone();
-        }
-        if cli.yes {
-            s.yes = Some(true);
-        }
-        if cli.quiet || cli.silent {
-            s.quiet = Some(true);
-        }
-        if cli.silent {
-            s.silent = Some(true);
-        }
-        if cli.trace {
-            s.log_level = Some("trace".to_string());
-        }
-        if cli.debug {
-            s.log_level = Some("debug".to_string());
-        }
-        if let Some(log_level) = &cli.log_level {
-            s.log_level = Some(log_level.to_string());
-        }
-        if cli.verbose > 0 {
-            s.verbose = Some(true);
-        }
-        if cli.verbose > 1 {
-            s.log_level = Some("trace".to_string());
-        }
-        Self::reset(Some(s));
+        Self::reset(Some(cli));
     }
 
     fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {

@@ -47,6 +47,7 @@ pub(crate) mod accounts;
 pub(crate) mod compose;
 pub(crate) mod defaults;
 pub(crate) mod deps;
+pub(crate) mod driver;
 pub(crate) mod edits;
 pub(crate) mod files;
 #[cfg(target_os = "linux")]
