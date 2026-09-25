@@ -154,7 +154,7 @@ pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool
 /// `settings.use_versions_host = true` — the setting can still disable the
 /// host globally, but cannot re-enable it for backends that are not on this
 /// allowlist.
-fn versions_host_applies(backend_type: &BackendType, has_version_list_url: bool) -> bool {
+fn versions_host_applies(backend_type: &BackendType, listing_opts: &ToolVersionOptions) -> bool {
     match backend_type {
         BackendType::Github
         | BackendType::Gitlab
@@ -165,7 +165,7 @@ fn versions_host_applies(backend_type: &BackendType, has_version_list_url: bool)
         | BackendType::Asdf
         | BackendType::Vfox
         | BackendType::VfoxBackend(_) => true,
-        BackendType::Http | BackendType::S3 => !has_version_list_url,
+        BackendType::Http | BackendType::S3 => !listing_opts.contains_key("version_list_url"),
         _ => false,
     }
 }
@@ -2486,13 +2486,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let id = self.id();
 
         let backend_type = self.get_type();
-        let has_version_list_url = matches!(backend_type, BackendType::Http | BackendType::S3)
-            && listing_opts.contains_key("version_list_url");
-
-        let use_versions_host = if !versions_host_applies(&backend_type, has_version_list_url) {
+        let use_versions_host = if !versions_host_applies(&backend_type, listing_opts) {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
+            );
+            false
+        } else if !Settings::get().use_versions_host {
+            // Checked before the context, which the setting also changes.
+            trace!(
+                "Skipping versions host for {} because use_versions_host is off",
+                ba.short
             );
             false
         } else if has_local_version_listing_override {
@@ -4535,18 +4539,30 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let opt_context = has_local_version_listing_override.then(|| {
             listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
         });
-        Ok(
-            match (
-                self.remote_version_cache_context(config).await?,
-                opt_context,
-            ) {
-                (Some(backend_context), Some(opt_context)) => {
-                    Some(hash::hash_to_str(&(backend_context, opt_context)))
-                }
-                (Some(context), None) | (None, Some(context)) => Some(context),
-                (None, None) => None,
-            },
-        )
+        let context = match (
+            self.remote_version_cache_context(config).await?,
+            opt_context,
+        ) {
+            (Some(backend_context), Some(opt_context)) => {
+                Some(hash::hash_to_str(&(backend_context, opt_context)))
+            }
+            (Some(context), None) | (None, Some(context)) => Some(context),
+            (None, None) => None,
+        };
+        // A list fetched from the versions host lags new releases, so turning
+        // the host off must not reuse it. Only the off state changes the key,
+        // which keeps existing cache entries valid, and only for listings the
+        // host can serve: the others always list directly, so their one entry
+        // is already correct.
+        if Settings::get().use_versions_host
+            || !versions_host_applies(&self.get_type(), listing_opts)
+        {
+            return Ok(context);
+        }
+        Ok(Some(match context {
+            Some(context) => hash::hash_to_str(&(context, "direct")),
+            None => "direct".to_string(),
+        }))
     }
 
     /// The remote-version cache entry these listing options select. A backend
@@ -4600,16 +4616,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(context) = context {
                     cm = cm.with_cache_key(context.to_string());
-                }
-                // A list fetched from the versions host lags new releases, so
-                // turning the host off must not reuse it. Only the off state
-                // adds a key, which keeps existing cache entries valid, and
-                // only for backends the host can serve: the others always
-                // list directly, so their one entry is already correct.
-                if !Settings::get().use_versions_host
-                    && versions_host_applies(&self.get_type(), false)
-                {
-                    cm = cm.with_cache_key("direct".to_string());
                 }
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
                     cm = cm
