@@ -310,7 +310,7 @@ fn escape_dotenv_double_quoted(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Settings;
+    use crate::config::{Settings, SettingsExt};
     use rops::{
         cryptography::{cipher::AES256GCM, hasher::SHA512},
         file::builder::RopsFileBuilder,

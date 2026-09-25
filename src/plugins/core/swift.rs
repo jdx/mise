@@ -1222,6 +1222,7 @@ mod platform_selection_tests {
 #[cfg(test)]
 mod lockfile_tests {
     use super::*;
+    use crate::config::SettingsExt;
     use crate::config::settings::SettingsPartial;
     use crate::platform::Platform;
     use crate::toolset::ToolSource;

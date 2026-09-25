@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::{

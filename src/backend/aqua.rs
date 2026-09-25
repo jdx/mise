@@ -5,7 +5,7 @@ use crate::backend::{SecurityFeature, VersionInfo};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;

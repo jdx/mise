@@ -5,7 +5,7 @@ use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;

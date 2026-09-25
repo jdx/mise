@@ -6543,7 +6543,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.9.13"
+version = "2026.9.14"
 dependencies = [
  "age 0.12.1",
  "aho-corasick",
@@ -6599,7 +6599,6 @@ dependencies = [
  "globwalk",
  "heck",
  "hex",
- "homedir",
  "http 1.5.0",
  "ignore",
  "indenter",
@@ -6616,10 +6615,11 @@ dependencies = [
  "md-5 0.11.0",
  "miette",
  "minisign-verify",
- "mise-agent-env",
  "mise-cache-core",
  "mise-interactive-config",
+ "mise-settings",
  "mise-sigstore",
+ "mise-util",
  "mockito",
  "netrc-rs",
  "nix 0.31.3",
@@ -6678,7 +6678,6 @@ dependencies = [
  "tera 1.20.1",
  "tera 2.4.0",
  "tera-contrib",
- "terminal_size",
  "test-log",
  "thiserror 2.0.20",
  "tokio",
@@ -6751,6 +6750,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mise-settings"
+version = "2026.9.0"
+dependencies = [
+ "confique",
+ "eyre",
+ "heck",
+ "indexmap 2.14.2",
+ "itertools 0.15.0",
+ "log",
+ "mise-cache-core",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
 name = "mise-shim"
 version = "2026.2.5"
 
@@ -6772,6 +6788,16 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "x509-cert 0.3.0",
+]
+
+[[package]]
+name = "mise-util"
+version = "2026.9.0"
+dependencies = [
+ "homedir",
+ "log",
+ "mise-agent-env",
+ "terminal_size",
 ]
 
 [[package]]

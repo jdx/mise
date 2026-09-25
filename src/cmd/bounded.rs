@@ -103,7 +103,7 @@ async fn capture(
         }
         let spend = |left: usize| left.checked_sub(n);
         if budget
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, spend)
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, spend)
             .is_err()
         {
             return Err(std::io::Error::other(format!(

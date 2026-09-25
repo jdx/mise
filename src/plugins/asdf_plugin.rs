@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::display_path;
 use crate::git::Git;

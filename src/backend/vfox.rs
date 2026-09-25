@@ -17,7 +17,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, runtime_path_for_install_path};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;

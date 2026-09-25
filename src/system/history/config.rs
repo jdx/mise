@@ -9,8 +9,8 @@ use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::config::Settings;
 use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
 
 /// `[history]` as parsed from a single mise.toml.

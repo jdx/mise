@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use crate::cli::local::local;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::{
     cli::args::{BackendArg, ToolArg},
     config::Config,

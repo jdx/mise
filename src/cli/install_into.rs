@@ -1,5 +1,5 @@
 use crate::cli::args::ToolArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolsetBuilder;

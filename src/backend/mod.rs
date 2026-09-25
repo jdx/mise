@@ -15,7 +15,7 @@ use jiff::Timestamp;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
-use crate::config::{Config, Settings, global_config_path};
+use crate::config::{Config, Settings, SettingsExt, global_config_path};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, entry_exists, remove_all_with_progress,

@@ -148,6 +148,7 @@ fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageSta
             PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: None,
             }
         })
         .collect()

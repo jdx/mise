@@ -1,5 +1,5 @@
 use crate::backend::VersionInfo;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::github::GithubRelease;
 use crate::http;
 use crate::http::HTTP_FETCH;

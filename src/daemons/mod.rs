@@ -11,7 +11,7 @@ pub(crate) mod urls;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{Config, ConfigMap, Settings};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 use eyre::{Result, bail};
 use indexmap::IndexMap;

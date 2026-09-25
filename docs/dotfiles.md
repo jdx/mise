@@ -586,7 +586,17 @@ markdown file. A pattern containing `/` is anchored to the source root:
 `"nvim/spell"` skips only that path. A leading `/` anchors a pattern the
 same way, as in `.gitignore`, so `"/cache"` skips only a top-level `cache`
 and `"/nvim/spell"` is the same as `"nvim/spell"`. Either kind matching a
-directory skips everything under it.
+directory skips everything under it. Use `**` to match across directories:
+`"nvim/**/*.bak"` skips `nvim/init.bak` and `nvim/after/init.bak`.
+
+::: warning Deprecated: `*` crossing `/` in exclusions
+In an exclusion containing `/`, `*` still matches across directories, so
+`"nvim/*.bak"` also skips `nvim/after/init.bak`. mise warns when a pattern
+skips a path only for that reason. Write `**` instead: `*` will stop at `/`
+in exclusions, as it already does in `.gitignore`,
+[include lists](#select-files-within-a-tracked-directory), and patterns
+with a leading `/`.
+:::
 
 For `symlink-each`, excluding a previously managed file removes its recorded link on the
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
@@ -950,7 +960,10 @@ The patterns are relative to `~/.codex`. `sessions` excludes directories
 with that name and their contents; `*.log` excludes matching files at any
 depth. Patterns containing `/` are anchored to the tracked directory, and
 a leading `/` anchors any pattern to it: `/cache` excludes only
-`~/.codex/cache`, not a `cache` directory deeper down. Global `[history] exclude` rules also apply and cannot override the entry's
+`~/.codex/cache`, not a `cache` directory deeper down. Use `**` to match
+across directories, as in `logs/**/*.log`; a `*` that matches across `/`
+is [deprecated](#excluding-files).
+Global `[history] exclude` rules also apply and cannot override the entry's
 exclusions with `!glob`.
 
 If you only want a few files, use an include list instead:
@@ -960,10 +973,13 @@ If you only want a few files, use an include list instead:
 "~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
 ```
 
-Include patterns are anchored the same way, so `/rules/*.md` and
-`rules/*.md` select the same files. No `include` field considers the whole
-directory; `include = []` selects nothing. Explicit exclusions always win. Includes also select credential-
-named files, so use `encrypt = true` for private contents. See
+Includes follow the same pattern rules, except that `*` never crosses a
+`/`, as in `.gitignore`: `rules/*.md` selects the markdown files directly in
+`rules`, and `rules/**/*.md` also selects those in its subdirectories. A
+leading `/` is optional, so `/rules/*.md` selects the same files. No
+`include` field considers the whole directory; `include = []` selects
+nothing. Explicit exclusions always win. Includes also select
+credential-named files, so use `encrypt = true` for private contents. See
 [choosing files](/history.html#choose-which-files-a-directory-saves) for
 matching rules, previews, and compatibility requirements.
 

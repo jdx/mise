@@ -6,7 +6,7 @@
 //! ready.
 
 use super::{DaemonSet, runtime};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};

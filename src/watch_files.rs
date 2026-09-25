@@ -1,5 +1,5 @@
 use crate::cmd::cmd;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::toolset::Toolset;
 use eyre::Result;

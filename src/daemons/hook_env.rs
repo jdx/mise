@@ -1,6 +1,6 @@
 //! Register changed definitions and emit non-blocking pitchfork session commands.
 use super::runtime::{self, Runtime};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::shell::Shell;
 use crate::toolset::Toolset;

@@ -1,5 +1,5 @@
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env;
 use eyre::{Result, eyre};
 use reqwest::header::HeaderValue;

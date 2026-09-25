@@ -7,7 +7,7 @@ use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::parse_into_timestamp;
 #[cfg(unix)]
 use crate::env;

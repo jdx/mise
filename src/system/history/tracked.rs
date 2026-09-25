@@ -66,7 +66,8 @@ pub(crate) struct TrackedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
     /// The entry's own `include` globs, relative to its path and matched
-    /// like `exclude`.
+    /// like `exclude`, except that `*` never crosses `/` (see
+    /// [`crate::system::files::is_selected`]).
     ///
     /// `None` means no list was declared and the whole tree is captured.
     /// `Some` means one was, and only what it names is — including
@@ -167,7 +168,7 @@ impl TrackedEntry {
         };
         match path.strip_prefix(&self.path) {
             Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+                crate::system::files::is_selected(&pattern_relative(rel), &patterns)
             }
             _ => false,
         }
@@ -1011,7 +1012,7 @@ fn walk_entry(
             *walk.considered.entry(index).or_default() += 1;
             match path.strip_prefix(&entry.path) {
                 Ok(rel)
-                    if !crate::system::files::is_excluded(
+                    if !crate::system::files::is_selected(
                         &pattern_relative(rel),
                         entry_include,
                     ) =>
@@ -1181,7 +1182,7 @@ pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &P
         .collect();
     match path.strip_prefix(entry_path) {
         Ok(rel) if !rel.as_os_str().is_empty() => {
-            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+            crate::system::files::is_selected(&pattern_relative(rel), &patterns)
         }
         _ => false,
     }
@@ -1805,13 +1806,6 @@ fn path_components(rel: &Path) -> Vec<String> {
 /// separator matches a name at any depth. A prefix comparison sees only
 /// the first of those, and the user is then told their pattern selects
 /// nothing without being told which pattern.
-///
-/// **A wildcard stops the comparison, and the answer is "reaches in".**
-/// The per-entry matcher ([`crate::system::files::is_excluded`]) lets
-/// `*`, `?` and a bracket class match `/`, so a component holding one can
-/// span any number of directories: `rules/*.md` selects
-/// `rules/sub/one.md`, and `*/x.md` selects `a/b/x.md`. Only the literal
-/// components before the first wildcard can rule a directory out.
 fn reaches_into(pattern: &str, components: &[String]) -> bool {
     // **Pruning is an optimization and must never change what is
     // selected, so it reads a pattern exactly as the matcher reads it.**
@@ -1837,10 +1831,8 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
     let mut rest = components;
     loop {
         match (parts.first(), rest.first()) {
-            // a wildcard (`**` among them) may match across separators,
-            // so what it and the parts after it cover cannot be read
-            // component by component
-            (Some(part), _) if part.contains(['*', '?', '[']) => return true,
+            // `**` descends as far as it likes
+            (Some(&"**"), _) => return true,
             // One side ran out with everything so far matching, and all
             // three ways that happens reach in: the pattern names
             // something inside the directory, or the directory itself,
@@ -1848,8 +1840,13 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
             // takes everything under it.
             (Some(_), None) | (None, _) => return true,
             (Some(part), Some(component)) => {
-                // with no wildcard, a part matches only itself
-                if part != component {
+                // a component pattern that cannot be read is not a
+                // mismatch: this answer decides whether a directory is
+                // walked at all, so "cannot tell" descends
+                let matches = glob::Pattern::new(part)
+                    .map(|glob| glob.matches(component))
+                    .unwrap_or(true);
+                if !matches {
                     return false;
                 }
                 parts = &parts[1..];
@@ -3192,29 +3189,30 @@ mod tests {
         std::fs::write(root.join("rules/one.md"), "keep").unwrap();
         std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
 
-        // every one of these matches the directory `rules/deep` or an
+        // the first three match the directory `rules/deep` or an
         // ancestor of it, and **a pattern matching a directory takes
-        // everything under it** — so all three select the file, and none
-        // of them may prune the directory
+        // everything under it** — so they select the file, and none of
+        // them may prune the directory. In a pattern with `/`, `*` stops
+        // at a separator, so `rules/*.md` names only files directly in
+        // `rules` and the walk may skip `rules/deep`.
         for (pattern, selects_deep) in [
             ("rules", true),
             ("rules/**", true),
             ("rules/*", true),
+            ("rules/*/two.md", true),
+            ("rules/**/*.md", true),
+            ("rules/*.md", false),
+            ("*/two.md", false),
             ("sessions/**", false),
             // a leading `/` is the entry root, not a path that never
             // matches: selection and pruning agree on it either way
             ("/rules", true),
             ("/rules/**", true),
+            ("/rules/*/two.md", true),
             ("/rules/deep/*.md", true),
+            ("/rules/*.md", false),
             ("/sessions/**", false),
             ("/deep", false),
-            // a wildcard matches across `/`, so the directory it spans
-            // must be walked
-            ("rules/*.md", true),
-            ("/rules/*.md", true),
-            ("*/two.md", true),
-            ("rules/d?ep/two.md", true),
-            ("sessions/*.md", false),
         ] {
             let mut tracked = entry(&root);
             tracked.include = Some(vec![pattern.to_string()]);

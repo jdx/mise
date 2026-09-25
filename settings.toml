@@ -3368,7 +3368,7 @@ OIDC claims.
 """
 enum = ["read-write", "read-only", "write-only"]
 env = "MISE_TASK_CACHE_REMOTE_MODE"
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache.remote_namespace]
@@ -3485,7 +3485,7 @@ description = "Compatibility alias for task.cache.remote_mode."
 enum = ["read-write", "read-only", "write-only"]
 hide = true
 optional = true
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache_remote_namespace]
@@ -3651,7 +3651,7 @@ enum = [
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task.quiet]
@@ -3744,7 +3744,7 @@ deprecated_warn_at = "2026.8.0"
 description = "Change output style when executing tasks."
 hide = true
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task_remote_no_cache]

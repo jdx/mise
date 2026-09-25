@@ -1,6 +1,6 @@
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, env_directive::EnvDirective};
+use crate::config::{Config, Settings, SettingsExt, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};

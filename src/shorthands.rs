@@ -66,7 +66,7 @@ mod tests {
     #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
 
-    use crate::config::Config;
+    use crate::config::{Config, SettingsExt};
 
     use super::*;
 

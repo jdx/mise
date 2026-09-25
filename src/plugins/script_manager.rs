@@ -10,7 +10,7 @@ use indexmap::indexmap;
 use std::sync::LazyLock as Lazy;
 
 use crate::cmd::{CmdLineRunner, cmd};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;

@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::task::monorepo_scope;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;

@@ -11,7 +11,7 @@ use std::{
 use crate::backend::Backend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::exec::Exec;
-use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
+use crate::config::{CommandWrapper, Config, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};

@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};

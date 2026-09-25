@@ -322,6 +322,7 @@ mod tests {
             state: PackageState::Unavailable {
                 reason: "unsupported on this platform".to_string(),
             },
+            display_name: None,
         }];
 
         assert!(!unavailable_manager_is_error(&explicit_opts));
