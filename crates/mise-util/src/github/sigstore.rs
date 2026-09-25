@@ -26,13 +26,12 @@
 //! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
 //! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
 
-use crate::config::SettingsExt;
 use std::path::Path;
 
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub(crate) use mise_sigstore::{AttestationError, SlsaArtifact};
+pub use mise_sigstore::{AttestationError, SlsaArtifact};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -46,7 +45,7 @@ async fn shared_verification(
     key: String,
     verification: impl std::future::Future<Output = AttestationResult<bool>>,
 ) -> AttestationResult<bool> {
-    let settings = crate::config::Settings::get();
+    let settings = mise_settings::Settings::get();
     if !settings.generate_lockfiles() || settings.force_provenance_verify() {
         return verification.await;
     }
@@ -125,10 +124,10 @@ fn routed_tuf_url() -> Option<String> {
 /// retry and time out exactly like the rest of mise's HTTP traffic rather than
 /// using a policy hardcoded in the `mise-sigstore` crate.
 fn mise_retry_config() -> RetryConfig {
-    let settings = crate::config::Settings::get();
+    let settings = mise_settings::Settings::get();
     RetryConfig {
-        timeout: settings.http_timeout(),
-        retries: settings.http_retries().max(0) as usize,
+        timeout: crate::network::http_timeout(&settings),
+        retries: crate::network::http_retries(&settings).max(0) as usize,
         ..RetryConfig::default()
     }
 }
@@ -149,7 +148,7 @@ fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
 ///
 /// Applies configured URL replacements to the API base URL before dispatching to
 /// [`mise_sigstore::verify_github_attestation_with_base_url`].
-pub(crate) async fn verify_attestation(
+pub async fn verify_attestation(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
@@ -157,7 +156,7 @@ pub(crate) async fn verify_attestation(
     api_url: Option<&str>,
     use_versions_host: bool,
 ) -> AttestationResult<bool> {
-    if !crate::config::Settings::get().generate_lockfiles() {
+    if !mise_settings::Settings::get().generate_lockfiles() {
         return verify_attestation_uncached(
             artifact_path,
             owner,
@@ -295,7 +294,7 @@ async fn verify_attestation_uncached(
 ///
 /// The versions-host cache is keyed by digest only, so predicate-filtered
 /// requests go directly to the GitHub attestations API.
-pub(crate) async fn verify_attestation_with_predicate_type(
+pub async fn verify_attestation_with_predicate_type(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
@@ -343,7 +342,7 @@ pub(crate) async fn verify_attestation_with_predicate_type(
 /// pre-wrapper code at `src/backend/github.rs` emitted different messages for each; the
 /// wrapper keeps that signal instead of flattening both into one error string.
 #[derive(Debug)]
-pub(crate) enum DetectError {
+pub enum DetectError {
     /// Attestation source/client construction rejected the base URL.
     SourceCreation(AttestationError),
     /// The attestations endpoint returned an error (403 rate-limit, 5xx, network failure).
@@ -373,7 +372,7 @@ impl std::error::Error for DetectError {
 /// Returns `Ok(true)` if any attestations exist for the digest. Used at lock time to decide
 /// whether `ProvenanceType::GithubAttestations` should be recorded before committing to a
 /// full download + verify.
-pub(crate) async fn detect_attestations(
+pub async fn detect_attestations(
     owner: &str,
     repo: &str,
     api_url: &str,
@@ -413,7 +412,7 @@ pub(crate) async fn detect_attestations(
 ///
 /// The versions-host cache is keyed by digest only, so predicate-filtered
 /// requests go directly to the GitHub attestations API.
-pub(crate) async fn detect_attestations_with_predicate_type(
+pub async fn detect_attestations_with_predicate_type(
     owner: &str,
     repo: &str,
     api_url: &str,
@@ -450,7 +449,7 @@ pub(crate) async fn detect_attestations_with_predicate_type(
 /// at the cost of one API call per unattested artifact. "Yes" needs no
 /// confirmation: it only leads to verification.
 fn mirror_may_answer_none() -> bool {
-    !crate::config::Settings::get().paranoid
+    !mise_settings::Settings::get().paranoid
 }
 
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
@@ -465,13 +464,13 @@ fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: 
 }
 
 /// Verify SLSA provenance for an already-downloaded artifact. Passthrough — no token needed.
-pub(crate) async fn verify_slsa_provenance(
+pub async fn verify_slsa_provenance(
     artifact_path: &Path,
     provenance_path: &Path,
     min_level: u8,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    if !crate::config::Settings::get().generate_lockfiles() {
+    if !mise_settings::Settings::get().generate_lockfiles() {
         return mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level)
             .await;
     }
@@ -485,7 +484,7 @@ pub(crate) async fn verify_slsa_provenance(
     .await
 }
 
-pub(crate) async fn verify_slsa_provenance_artifacts(
+pub async fn verify_slsa_provenance_artifacts(
     provenance_path: &Path,
     artifacts: &[SlsaArtifact],
     min_level: u8,
@@ -494,21 +493,21 @@ pub(crate) async fn verify_slsa_provenance_artifacts(
     mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level).await
 }
 
-pub(crate) fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
+pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
     mise_sigstore::is_slsa_subject_mismatch(error)
 }
 
-pub(crate) fn is_api_failure(error: &AttestationError) -> bool {
+pub fn is_api_failure(error: &AttestationError) -> bool {
     matches!(error, AttestationError::Api(_) | AttestationError::Http(_))
 }
 
 /// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
-pub(crate) async fn verify_cosign_signature(
+pub async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    if !crate::config::Settings::get().generate_lockfiles() {
+    if !mise_settings::Settings::get().generate_lockfiles() {
         return mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
@@ -522,7 +521,7 @@ pub(crate) async fn verify_cosign_signature(
 }
 
 /// Verify a Cosign signature against a public key. Passthrough — no token needed.
-pub(crate) async fn verify_cosign_signature_with_key(
+pub async fn verify_cosign_signature_with_key(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
     public_key_path: &Path,
@@ -564,18 +563,18 @@ mod tests {
             replacements: Option<indexmap::IndexMap<String, String>>,
             use_versions_host: Option<bool>,
         ) -> Self {
-            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-            let mut settings = crate::config::settings::SettingsPartial::empty();
+            let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = mise_settings::SettingsPartial::empty();
             settings.url_replacements = replacements;
             settings.use_versions_host = use_versions_host;
-            crate::config::Settings::reset(Some(settings));
+            crate::testing::reset_settings(Some(settings));
             Self { _lock: lock }
         }
     }
 
     impl Drop for SettingsGuard {
         fn drop(&mut self) {
-            crate::config::Settings::reset(None);
+            crate::testing::reset_settings(None);
         }
     }
 
@@ -611,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_default_url() {
-        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+        let _lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_wrapper_default");
 
@@ -625,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_explicit_api_url() {
-        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+        let _lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("MISE_GITHUB_TOKEN", "ghp_explicit_api");
 
@@ -639,7 +638,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_respects_enterprise_api_url() {
-        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+        let _lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_public_only");
         mise_env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghp_enterprise_only");
@@ -691,7 +690,7 @@ mod tests {
         // non-env-var sources — here, the `github_tokens.toml` path (source #4). Without
         // this, a future regression could short-circuit on env vars and silently pass all
         // prior tests.
-        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
+        let _lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         let _tokens_file = TokensFileOverrideGuard::set("github.com", "ghp_from_tokens_file");
 
