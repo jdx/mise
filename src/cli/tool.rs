@@ -4,7 +4,7 @@ use eyre::Result;
 use itertools::Itertools;
 use serde::Serialize;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;

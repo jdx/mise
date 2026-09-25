@@ -1,3 +1,4 @@
+use crate::args::{BackendArg, ToolVersionType};
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
@@ -9,7 +10,6 @@ use crate::backend::static_helpers::{
     verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
-use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
@@ -3235,7 +3235,7 @@ mod tests {
             "2.3.0"
         ));
     }
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(

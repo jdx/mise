@@ -1,7 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
-use crate::cli::args::TruncateOptions;
+use crate::args::TruncateOptions;
 use crate::config::Config;
 use crate::path::PathExt;
 use crate::system;

@@ -9,8 +9,8 @@ use std::{
 use eyre::{Result, bail, eyre};
 use xx::file;
 
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::config::config_file::config_root;
 use crate::dirs;
 use crate::env;
@@ -940,7 +940,7 @@ mod tests {
     use super::{
         LockfileScope, ToolRequest, validate_ref_string, validate_version_string, version_sub,
     };
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;

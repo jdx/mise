@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -8,7 +9,6 @@ use crate::backend::platform_target::PlatformTarget;
 #[cfg(windows)]
 use crate::backend::runtime_path_for_install_path;
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings, SettingsExt};
@@ -2264,7 +2264,7 @@ pub(crate) fn test_backend(
         Some(tool.to_string()),
         tool.to_string(),
         opts,
-        crate::cli::args::BackendResolution::new(true),
+        crate::args::BackendResolution::new(true),
     );
     if let Some(installs_path) = installs_path {
         ba.installs_path = installs_path;
@@ -2275,7 +2275,7 @@ pub(crate) fn test_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
 
     #[derive(Debug, Default)]
     struct RecordingReport(std::sync::Mutex<Vec<String>>);

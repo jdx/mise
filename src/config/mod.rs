@@ -14,8 +14,8 @@ use std::time::{Duration, SystemTime};
 use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
+use crate::args::{BackendArg, split_bracketed_opts};
 use crate::backend::ABackend;
-use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig, Tasks};
@@ -8137,7 +8137,7 @@ mod tests {
             Some(crate::toolset::parse_tool_options(
                 "api_url=https://inline.example/api/v3",
             )),
-            crate::cli::args::BackendResolution::new(true),
+            crate::args::BackendResolution::new(true),
         ));
 
         let opts = config.get_tool_opts_with_overrides(&ba).await?;

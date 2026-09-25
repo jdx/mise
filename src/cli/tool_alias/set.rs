@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 

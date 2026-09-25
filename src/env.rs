@@ -2,7 +2,7 @@ use crate::Result;
 use crate::config::miserc;
 use crate::file::replace_path;
 use crate::shell::ShellType;
-use crate::{cli::args::ToolArg, file::display_path};
+use crate::{args::ToolArg, file::display_path};
 use eyre::Context;
 use indexmap::IndexSet;
 pub(crate) use mise_util::env::*;

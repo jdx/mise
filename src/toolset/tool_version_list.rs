@@ -4,7 +4,7 @@ use crate::errors::Error;
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion};
-use crate::{cli::args::BackendArg, config::Config};
+use crate::{args::BackendArg, config::Config};
 
 /// represents several versions of a tool for a particular plugin
 #[derive(Debug, Clone)]

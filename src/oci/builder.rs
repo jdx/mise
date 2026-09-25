@@ -1707,7 +1707,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let backend =
-            crate::cli::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
+            crate::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
         let request =
             ToolRequest::new_version_for_test(backend.into(), &version, ToolSource::Unknown);
         let mut tv = ToolVersion::new(request, version);
@@ -1751,8 +1751,7 @@ mod tests {
 
     #[test]
     fn recognizes_an_alias_resolved_to_core_python() {
-        let alias =
-            crate::cli::args::BackendArg::new("py".to_string(), Some("core:python".to_string()));
+        let alias = crate::args::BackendArg::new("py".to_string(), Some("core:python".to_string()));
         let backend = crate::backend::arg_to_backend(alias).unwrap();
         assert!(is_python_backend(backend.as_ref()));
     }

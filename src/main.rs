@@ -44,6 +44,7 @@ mod inline_command;
 
 mod agecrypt;
 mod aqua;
+pub(crate) mod args;
 mod backend;
 pub(crate) mod build_time;
 mod cache;

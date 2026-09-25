@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cli::prune::prune;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};

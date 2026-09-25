@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::options::BackendOptions;
 use crate::backend::{Backend, IdiomaticVersion, platform_target::PlatformTarget};
 use crate::build_time::TARGET;
-use crate::cli::args::BackendArg;
 use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::http::{HTTP, HTTP_FETCH};

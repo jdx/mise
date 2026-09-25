@@ -5,7 +5,7 @@ use indexmap::IndexSet;
 use jiff::Timestamp;
 use tokio::sync::OnceCell;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::ui::progress_report::SingleReport;
 use crate::{
     config::Config,

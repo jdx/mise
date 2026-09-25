@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::lock_file::LockFile;
@@ -311,7 +311,7 @@ fn scan_tool_dir(
         // Backward compat: if opts is empty but full contains [...], extract opts
         if opts.is_empty()
             && let Some(ref f) = full
-            && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
+            && let Some((stripped_str, opts_str)) = crate::args::split_bracketed_opts(f)
         {
             let stripped = stripped_str.to_string();
             let parsed = parse_tool_options(opts_str);

@@ -1,10 +1,10 @@
+use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 use crate::file::{ExtractOptions, ExtractionFormat, display_path};

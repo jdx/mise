@@ -4,12 +4,12 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
 use crate::backend::{
     Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::file::{ExtractOptions, ExtractionFormat};

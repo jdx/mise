@@ -11,12 +11,12 @@ use tokio::sync::RwLock;
 use url::Url;
 use walkdir::WalkDir;
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, runtime_path_for_install_path};
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;

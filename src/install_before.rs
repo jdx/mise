@@ -4,9 +4,9 @@ use eyre::Result;
 use jiff::civil::date;
 use jiff::{Span, Timestamp};
 
+use crate::args::{BackendArg, split_bracketed_opts};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
 
@@ -324,7 +324,7 @@ mod tests {
         resolve_before_date, resolve_before_date_for_tool,
         resolve_before_date_for_tool_with_source,
     };
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::config::SettingsExt;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;

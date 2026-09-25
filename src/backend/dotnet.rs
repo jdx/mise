@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::HTTP_FETCH;

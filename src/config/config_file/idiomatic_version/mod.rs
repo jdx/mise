@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, eyre};
 
+use crate::args::{BackendArg, BackendResolution};
 use crate::backend::BackendList;
-use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::plugins;
@@ -177,8 +177,8 @@ impl ConfigFile for IdiomaticVersionFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::{BackendArg, BackendResolution};
     use crate::backend::{Backend, VersionInfo};
-    use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::install_context::InstallContext;
     use crate::toolset::ToolVersion;

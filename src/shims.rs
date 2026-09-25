@@ -8,8 +8,8 @@ use std::{
     sync::atomic::Ordering,
 };
 
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
-use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::exec::Exec;
 use crate::config::{CommandWrapper, Config, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
@@ -2093,7 +2093,7 @@ pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
 
     #[test]
