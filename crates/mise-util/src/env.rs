@@ -1164,6 +1164,22 @@ pub fn scoped_var(key: &str) -> Option<String> {
     .filter(|value| !value.is_empty())
 }
 
+static MISE_ENV: std::sync::OnceLock<fn() -> &'static [String]> = std::sync::OnceLock::new();
+
+/// Register how to read the active `MISE_ENV` environments. They come from
+/// command-line flags, the environment and `.miserc.toml`, which mise resolves.
+pub fn set_mise_env(f: fn() -> &'static [String]) {
+    let _ = MISE_ENV.set(f);
+}
+
+/// The active `MISE_ENV` environments. See [`set_mise_env`].
+pub fn mise_env() -> &'static [String] {
+    let f = MISE_ENV
+        .get()
+        .expect("mise_util::env::set_mise_env must be called first");
+    f()
+}
+
 /// Deliberately not `#[cfg(windows)]`: the code under test is pure string handling, and the whole
 /// point of writing the splitter out rather than calling `CommandLineToArgvW` was that it can be
 /// checked on every platform CI runs.

@@ -144,6 +144,7 @@ pub(crate) fn register_util_hooks() {
             .to_string(),
     );
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
+    mise_util::env::set_mise_env(|| env::MISE_ENV.as_slice());
     mise_util::shells::set_implicit_inline_shell(|| {
         config::Settings::get().implicit_inline_shell()
     });

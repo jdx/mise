@@ -143,5 +143,6 @@ fn register_default_settings() {
     crate::cache::set_base_cache_keys(vec!["mise-util-tests".to_string()]);
     crate::user_agent::set("mise-util-tests".to_string());
     crate::deprecation::set_version("0.0.0");
+    crate::env::set_mise_env(|| &[]);
     crate::shells::set_implicit_inline_shell(|| true);
 }
