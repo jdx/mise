@@ -62,6 +62,14 @@ fn init() {
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_USE_TOML", "0");
     env::set_var("MISE_YES", "1");
+    // A test that re-runs this binary as a child (to get fresh process-wide
+    // statics) inherits this variable. The child must reuse the fixture tree
+    // rather than reset it: remove_all() would unlink the directory the parent
+    // is still in, and every later test that touches the cwd would fail.
+    if env::var_os(FIXTURES_READY_ENV).is_some() {
+        env::set_current_dir(env::HOME.join("cwd")).unwrap();
+        return;
+    }
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd").join(".mise").join("tasks")).unwrap();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();
@@ -125,7 +133,11 @@ fn init() {
     )
     .unwrap();
     file::make_executable(".mise/tasks/filetask").unwrap();
+    env::set_var(FIXTURES_READY_ENV, "1");
 }
+
+/// Set once the harness has written the fixture tree; see [`init`].
+const FIXTURES_READY_ENV: &str = "__MISE_TEST_FIXTURES_READY";
 
 pub(crate) use mise_util::testing::{EnvVarGuard, lock_ignoring_poison};
 
