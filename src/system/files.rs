@@ -3479,7 +3479,9 @@ pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
             // `/rules/one.md` is matching `rules/*.md` against
             // `rules/one.md`, without recompiling the glob per path. The
             // empty ancestor is the entry itself, which its own list
-            // never names — and a bare `/` would otherwise match it.
+            // never names — and a bare `/` would otherwise match it. On
+            // Windows a walked path keeps its `\`, which the glob matcher
+            // already treats as the `/` in the pattern.
             rel.ancestors()
                 .filter(|a| !a.as_os_str().is_empty())
                 .filter_map(|a| a.to_str())
@@ -6367,6 +6369,22 @@ source = "oldrc""#,
             let pats = patterns(&[pattern]);
             assert!(!is_excluded(Path::new("cache"), &pats), "{pattern}");
             assert!(!is_excluded(Path::new("cache/blob"), &pats), "{pattern}");
+        }
+    }
+
+    /// A directory walk on Windows yields `\`-separated paths, and a
+    /// rooted pattern matches them as the glob matcher equates the two
+    /// separators there — as an unrooted `nvim/spell` already does.
+    #[cfg(windows)]
+    #[test]
+    fn test_exclude_leading_slash_matches_backslash_paths() {
+        for pattern in ["/rules/*.md", "\\rules\\*.md"] {
+            let pats = patterns(&[pattern]);
+            assert!(is_excluded(Path::new("rules\\one.md"), &pats), "{pattern}");
+            assert!(
+                !is_excluded(Path::new("app\\rules\\one.md"), &pats),
+                "{pattern}"
+            );
         }
     }
 
