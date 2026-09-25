@@ -386,7 +386,8 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_UTIL_VERSION=""
 
 	# Publish in dependency order: mise-settings needs mise-cache-core, and
-	# mise-util needs mise-agent-env, mise-cache-core and mise-settings.
+	# mise-util needs mise-agent-env, mise-cache-core, mise-settings and
+	# mise-sigstore.
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
 	cargo add -p mise-util "mise-agent-env@$MISE_AGENT_ENV_VERSION"
 
@@ -402,12 +403,12 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
 
+	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
+	cargo add -p mise-util "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
+
 	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
 	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
-
-	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
-	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
-	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
