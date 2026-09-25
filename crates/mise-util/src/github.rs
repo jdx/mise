@@ -1396,7 +1396,7 @@ struct GhHostEntry {
     oauth_token: Option<String>,
 }
 
-/// Serializes env-var mutations across every `#[cfg(test)]` module that touches GitHub token
+/// Serializes env-var mutations across every test module that touches GitHub token
 /// environment variables. `github::tests` and `github::sigstore::tests` both mutate the same
 /// four tokens (`MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_TOKEN`,
 /// `MISE_GITHUB_ENTERPRISE_TOKEN`); sharing a single lock prevents parallel test runs from
@@ -1407,8 +1407,9 @@ pub static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[doc(hidden)]
 pub mod test_support {
     //! Test-only hooks that let sibling modules seed non-env-var token sources without
-    //! spinning up global configuration infrastructure. Only consulted from `resolve_token`
-    //! under `#[cfg(test)]`; production builds never see these statics.
+    //! spinning up global configuration infrastructure. Compiled into every build, but
+    //! `resolve_token` only consults them while [`crate::testing::in_tests`] is true, which
+    //! never holds in a release binary.
 
     use std::collections::HashMap;
     use std::sync::RwLock;
