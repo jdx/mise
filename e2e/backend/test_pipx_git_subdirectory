@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# pip/uv VCS URL fragments (`#subdirectory=`) select a package inside a monorepo.
+require_cmd python3
+
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+
+ref=f05b7ddaa9725baddf7e0833502795b66f9d7dd7
+ltui="pipx:git+https://github.com/runpantheon/ltui#subdirectory=ltui"
+jtui="pipx:runpantheon/ltui#subdirectory=jtui"
+
+cat >mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.12.10"
+"$ltui" = "$ref"
+"$jtui" = "$ref"
+EOF
+
+mise install
+
+# The fragment is part of the tool name, so the install path has no `#`,
+# which would break the interpreter path uv writes into launcher shebangs.
+ltui_path="$(mise where "$ltui")"
+jtui_path="$(mise where "$jtui")"
+assert_not_contains "echo '$ltui_path'" "#"
+assert_not_contains "echo '$jtui_path'" "#"
+assert_fail "test '$ltui_path' = '$jtui_path'"
+
+assert_contains "mise x -- ltui --version" "ltui 0.16.1"
+assert_contains "$MISE_DATA_DIR/shims/ltui --version" "ltui 0.16.1"

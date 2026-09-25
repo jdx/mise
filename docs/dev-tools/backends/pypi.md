@@ -40,19 +40,43 @@ See [Using pipx](#using-pipx) to select that installer explicitly.
 Use `pypi:black` for the PyPI distribution or `pypi:psf/black` for its GitHub
 source. Their releases and installation requirements can differ.
 
-| Source                   | Example                                          |
-| ------------------------ | ------------------------------------------------ |
-| PyPI, latest version     | `pypi:black`                                     |
-| PyPI, specific version   | `pypi:black@24.3.0`                              |
-| GitHub, default branch   | `pypi:psf/black`                                 |
-| GitHub, specific release | `pypi:psf/black@24.3.0`                          |
-| Git repository           | `pypi:git+https://github.com/psf/black.git`      |
-| Git branch               | `pypi:git+https://github.com/psf/black.git@main` |
+| Source                   | Example                                               |
+| ------------------------ | ----------------------------------------------------- |
+| PyPI, latest version     | `pypi:black`                                          |
+| PyPI, specific version   | `pypi:black@24.3.0`                                   |
+| GitHub, default branch   | `pypi:psf/black`                                      |
+| GitHub, specific release | `pypi:psf/black@24.3.0`                               |
+| Git repository           | `pypi:git+https://github.com/psf/black.git`           |
+| Git branch               | `pypi:git+https://github.com/psf/black.git@main`      |
+| Git subdirectory         | `pypi:git+https://github.com/o/repo#subdirectory=cli` |
 
-For GitHub sources, `latest` installs from the unpinned default branch; it does
-not select the latest published release. Use an explicit version to select a
-release. For other Git URLs, `latest` resolves default-branch HEAD to a concrete
-commit. Remote tags are also available for explicit version requests.
+For GitHub sources, `latest` selects the newest GitHub release and installs from
+the default branch only when the repository has no releases. For other Git URLs,
+`latest` resolves default-branch HEAD to a concrete commit. Any branch, tag, or
+commit can be requested explicitly, and remote tags are also available for
+explicit version requests.
+
+### Monorepo subdirectories {#git-subdirectory}
+
+For a package that lives in a subdirectory of a Git repository, add the same
+`#subdirectory=` fragment that pip and uv accept. The `.git` suffix is optional,
+and the fragment also works with GitHub shorthand:
+
+```sh
+mise use 'pypi:git+https://github.com/runpantheon/ltui#subdirectory=ltui@main'
+mise use 'pypi:runpantheon/ltui#subdirectory=jtui@main'
+```
+
+Quote the argument so the shell does not treat `#` specially. The fragment is
+part of the tool name, so each subdirectory is a separate tool, and the version
+still goes after `@`. mise places the ref before the fragment in the request it
+sends to the installer. Other fragment keys pass through unchanged.
+
+Versions come from the repository as a whole, so `latest` selects the newest
+release even if the subdirectory did not exist at that tag. Pin a branch or
+commit when a repository's releases predate the subdirectory. When you use
+[`extras`](#extras), mise guesses the distribution name from the subdirectory;
+set `package_name` if the name differs.
 
 Direct HTTPS archive URLs are unsupported. Other source syntax may work but is
 unsupported and untested.
