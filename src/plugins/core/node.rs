@@ -1238,18 +1238,6 @@ mod tests {
     use crate::toolset::ToolSource;
     use confique::Layer;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct SettingsResetGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl Drop for SettingsResetGuard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
-    }
-
     struct NodeEnvResetGuard {
         vars: BTreeMap<String, String>,
     }
@@ -1284,8 +1272,7 @@ mod tests {
     fn resolve_node_lockfile_options(
         configure_settings: impl FnOnce(&mut SettingsPartial),
     ) -> BTreeMap<String, String> {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-        let _guard = SettingsResetGuard { _lock: lock };
+        let _guard = crate::test::SettingsGuard::lock();
         let _env_guard = NodeEnvResetGuard::clear();
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
@@ -1383,8 +1370,7 @@ mod tests {
 
     #[test]
     fn test_node_flavor_not_found_message_is_flavor_specific() {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-        let _guard = SettingsResetGuard { _lock: lock };
+        let _guard = crate::test::SettingsGuard::lock();
         let mut settings = SettingsPartial::empty();
         settings.node.flavor = Some("glibc-217".to_string());
         Settings::reset(Some(settings));
@@ -1539,8 +1525,7 @@ mod tests {
 
     #[test]
     fn test_node_lockfile_options_include_legacy_source_build_env() {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-        let _guard = SettingsResetGuard { _lock: lock };
+        let _guard = crate::test::SettingsGuard::lock();
         let _env_guard = NodeEnvResetGuard::clear();
         env::set_var("NODE_CONFIGURE_OPTS", "--openssl-no-asm");
         env::set_var("NODE_MAKE_OPTS", "-s");

@@ -1747,24 +1747,10 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_str_eq;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct SettingsGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl SettingsGuard {
-        fn tera_v1() -> Self {
-            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-            Settings::override_with(|settings| settings.tera_v1 = Some(true));
-            Self { _lock: lock }
-        }
-    }
-
-    impl Drop for SettingsGuard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
+    fn tera_v1() -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| settings.tera_v1 = Some(true));
+        guard
     }
 
     #[tokio::test]
@@ -2223,13 +2209,13 @@ mod tests {
 
     #[test]
     fn test_tera_v1_setting_selects_v1_engine() {
-        let _guard = SettingsGuard::tera_v1();
+        let _guard = tera_v1();
         assert!(matches!(get_tera(None), TeraEngine::V1(_)));
     }
 
     #[test]
     fn test_miserc_tera_ignores_tera_v1_setting() {
-        let _guard = SettingsGuard::tera_v1();
+        let _guard = tera_v1();
         assert!(matches!(get_miserc_tera(), TeraEngine::V2(_)));
     }
 

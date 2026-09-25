@@ -36,6 +36,7 @@ mod tests {
     /// not shallow, for the checkout to find the object).
     #[test]
     fn clone_by_sha_does_not_panic() {
+        let _settings = crate::test::SettingsGuard::lock();
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
@@ -97,7 +98,6 @@ mod tests {
 
         // gix path — the panic site. Settings::gix defaults to true, but make
         // it explicit so the test is robust to future default changes.
-        let backups = (Settings::get().gix, Settings::get().libgit2);
         Settings::override_with(|s| {
             s.gix = Some(true);
             s.libgit2 = Some(false);
@@ -136,11 +136,5 @@ mod tests {
             .expect("CLI clone with SHA must succeed");
         let head = git_in(&dst_cli, &["rev-parse", "HEAD"]);
         assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
-
-        // Restore so we don't leak settings into other tests.
-        Settings::override_with(|s| {
-            s.gix = Some(backups.0);
-            s.libgit2 = Some(backups.1);
-        });
     }
 }

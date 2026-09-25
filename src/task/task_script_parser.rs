@@ -1091,24 +1091,10 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct TeraV1Guard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl TeraV1Guard {
-        fn new() -> Self {
-            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-            Settings::override_with(|settings| settings.tera_v1 = Some(true));
-            Self { _lock: lock }
-        }
-    }
-
-    impl Drop for TeraV1Guard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
+    fn tera_v1() -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| settings.tera_v1 = Some(true));
+        guard
     }
 
     #[tokio::test]
@@ -1429,7 +1415,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_template_uses_tera_v1_when_enabled() {
         let config = Config::get().await.unwrap();
-        let _guard = TeraV1Guard::new();
+        let _guard = tera_v1();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec![
