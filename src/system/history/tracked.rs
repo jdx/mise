@@ -66,7 +66,8 @@ pub(crate) struct TrackedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
     /// The entry's own `include` globs, relative to its path and matched
-    /// like `exclude`.
+    /// like `exclude`, except that `*` never crosses `/` (see
+    /// [`crate::system::files::is_selected`]).
     ///
     /// `None` means no list was declared and the whole tree is captured.
     /// `Some` means one was, and only what it names is — including
@@ -167,7 +168,7 @@ impl TrackedEntry {
         };
         match path.strip_prefix(&self.path) {
             Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+                crate::system::files::is_selected(&pattern_relative(rel), &patterns)
             }
             _ => false,
         }
@@ -1011,7 +1012,7 @@ fn walk_entry(
             *walk.considered.entry(index).or_default() += 1;
             match path.strip_prefix(&entry.path) {
                 Ok(rel)
-                    if !crate::system::files::is_excluded(
+                    if !crate::system::files::is_selected(
                         &pattern_relative(rel),
                         entry_include,
                     ) =>
@@ -1181,7 +1182,7 @@ pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &P
         .collect();
     match path.strip_prefix(entry_path) {
         Ok(rel) if !rel.as_os_str().is_empty() => {
-            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+            crate::system::files::is_selected(&pattern_relative(rel), &patterns)
         }
         _ => false,
     }
@@ -2115,10 +2116,7 @@ fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
 /// when a change could make a pattern match *less* than it used to, so a
 /// replay of an older checkpoint does not conclude a path was absent
 /// when the older matcher would have called it excluded.
-///
-/// 2: in an entry's own `include` and `exclude` patterns containing `/`,
-/// `*` stopped crossing separators.
-pub(crate) const MATCHER_VERSION: u32 = 2;
+pub(crate) const MATCHER_VERSION: u32 = 1;
 
 /// Directories mise owns that are never captured.
 pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
