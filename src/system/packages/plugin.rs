@@ -575,6 +575,7 @@ impl SystemPackageManager for PackagePluginManager {
                 Ok(PackageStatus {
                     request: request.clone(),
                     state,
+                    display_name: None,
                 })
             })
             .collect()
@@ -784,6 +785,7 @@ mod tests {
                 state: PackageState::Installed {
                     version: "nightly-2026.08".to_string(),
                 },
+                display_name: None,
             },
             PackageStatus {
                 request: PackageRequest {
@@ -795,6 +797,7 @@ mod tests {
                 state: PackageState::Installed {
                     version: "release:edge".to_string(),
                 },
+                display_name: None,
             },
         ];
 
@@ -822,6 +825,7 @@ mod tests {
                 state: PackageState::Installed {
                     version: "nightly-2026.07".to_string(),
                 },
+                display_name: None,
             },
             PackageStatus {
                 request: PackageRequest {
@@ -831,6 +835,7 @@ mod tests {
                     desired: crate::system::packages::PackageDesiredState::Present,
                 },
                 state: PackageState::Missing,
+                display_name: None,
             },
         ];
 
