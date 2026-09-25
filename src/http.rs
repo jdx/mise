@@ -43,7 +43,8 @@ pub(crate) static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
 /// unless they match a checksum the caller already holds; the transport then
 /// adds nothing to the integrity of the result. Mirror redirectors need this:
 /// `ftpmirror.gnu.org`, the URL of every GNU formula, sends some regions to
-/// plain-HTTP mirrors.
+/// plain-HTTP mirrors. Unix-only, like its one caller, brew source builds.
+#[cfg(unix)]
 static HTTP_CHECKSUM_PINNED: Lazy<Client> = Lazy::new(|| {
     Client::new_shared_with(
         Settings::get().http_timeout(),
@@ -581,6 +582,7 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
 /// Download `url` to `path` and verify it against `sha256`, following a
 /// redirect from HTTPS to HTTP if a mirror sends one. On a mismatch the file is
 /// removed so no caller can pick up unverified bytes.
+#[cfg(unix)]
 pub(crate) async fn download_file_checksum_pinned<U: IntoUrl>(
     url: U,
     path: &Path,
@@ -591,6 +593,7 @@ pub(crate) async fn download_file_checksum_pinned<U: IntoUrl>(
     verify_sha256_or_remove(path, sha256, pr)
 }
 
+#[cfg(unix)]
 fn verify_sha256_or_remove(path: &Path, sha256: &str, pr: Option<&dyn SingleReport>) -> Result<()> {
     if let Err(err) = crate::hash::ensure_checksum(path, sha256, pr, "sha256") {
         let _ = file::remove_file(path);
@@ -603,7 +606,8 @@ fn verify_sha256_or_remove(path: &Path, sha256: &str, pr: Option<&dyn SingleRepo
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Downgrade {
     Refuse,
-    /// Only for [`HTTP_CHECKSUM_PINNED`].
+    /// Only for `HTTP_CHECKSUM_PINNED`.
+    #[cfg(unix)]
     FollowChecksumPinned,
 }
 
@@ -689,6 +693,7 @@ impl Client {
         // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
         let policy = match downgrade {
             Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
+            #[cfg(unix)]
             Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
         };
         let builder = builder.redirect(policy);
@@ -4026,6 +4031,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     /// Goes through `download_file_checksum_pinned` itself, so it covers the
     /// client wiring and the verification. The downgrade redirect it allows
     /// cannot be served here for the reason given on the test above.
+    #[cfg(unix)]
     #[tokio::test(flavor = "current_thread")]
     async fn test_checksum_pinned_download_keeps_match_and_removes_mismatch() {
         let _guard = set_test_http_retries(0);
