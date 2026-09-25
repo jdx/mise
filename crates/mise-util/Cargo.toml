@@ -1,0 +1,14 @@
+[package]
+name = "mise-util"
+version = "2026.9.0"
+edition = "2024"
+license = "MIT"
+description = "Environment, directory, and filesystem helpers shared by mise's crates"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+homedir = "0.3"
+log = "0.4"
+mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
+terminal_size = "0.4"

@@ -113,7 +113,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
@@ -233,7 +233,7 @@ If you think you need to pick "the newest installed version" at a new call site,
 - Plugin metadata is defined in `mise.plugin.toml` files
 
 ### Configuration Parsing
-The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`.
+The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`. The `Settings` types are generated from `settings.toml` in `crates/mise-settings`; loading them (config discovery, trust, CLI flags) stays in `src/config/settings.rs`, whose `SettingsExt` trait holds the methods that need the rest of mise.
 
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)

@@ -77,6 +77,7 @@ fn parse_foreign_packages(
                 status: PackageStatus {
                     request: request.clone(),
                     state,
+                    display_name: None,
                 },
             }
         })

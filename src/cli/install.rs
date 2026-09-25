@@ -3,8 +3,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::cli::args::ToolArg;
-use crate::config::Config;
 use crate::config::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::split_install_result;
 use crate::hooks::Hooks;
 use crate::install_before::resolve_cli_minimum_release_age;

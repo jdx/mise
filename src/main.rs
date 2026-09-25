@@ -3,6 +3,7 @@
 // eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
 #![allow(semicolon_in_expressions_from_macros)]
 
+use crate::config::SettingsExt;
 use std::{
     panic,
     process::ExitCode,
@@ -132,6 +133,7 @@ pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> ExitCode {
+    config::settings::register_loader();
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
     // name to finish an update, and when its own init hook does not intercept that, mise would run
     // its shim path and report the generated name as a broken shim. There is nothing for `main` to

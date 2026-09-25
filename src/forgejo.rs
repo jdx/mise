@@ -1,5 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::tokens;
 use crate::{dirs, env};
 use eyre::Result;

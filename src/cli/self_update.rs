@@ -8,7 +8,7 @@ use self_update::update::ReleaseAsset;
 use self_update::{VersionStatus, cargo_crate_version};
 
 use crate::cli::version::SelfUpdateSource;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;

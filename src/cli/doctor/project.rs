@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::doctor::DoctorCheck;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
 

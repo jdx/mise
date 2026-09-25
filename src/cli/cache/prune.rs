@@ -1,6 +1,6 @@
 use crate::cache;
 use crate::cache::{PruneOptions, PruneResults};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::dirs::CACHE;
 use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;

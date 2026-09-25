@@ -136,6 +136,9 @@ impl PackageState {
 pub(crate) struct PackageStatus {
     pub request: PackageRequest,
     pub state: PackageState,
+    /// human-readable name for a package whose identifier is opaque, such as
+    /// a Mac App Store ID
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Default)]

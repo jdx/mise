@@ -17,7 +17,7 @@ use versions::{Requirement, Versioning};
 
 use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::file::strip_shims_from_path;
 use crate::{dirs, duration, env, hash};

@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use std::path::PathBuf;
 
 use crate::config::settings::Settings;

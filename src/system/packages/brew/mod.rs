@@ -433,6 +433,7 @@ impl SystemPackageManager for BrewManager {
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: None,
             });
         }
         Ok(statuses)

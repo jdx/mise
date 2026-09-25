@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use crate::config::config_file::trust_check;
 use crate::dirs;
 use crate::env;

@@ -1,4 +1,4 @@
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::tokens;
 use eyre::Result;
 use heck::ToKebabCase;

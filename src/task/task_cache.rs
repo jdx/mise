@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};

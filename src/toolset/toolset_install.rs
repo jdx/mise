@@ -10,8 +10,8 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::config::Config;
 use crate::config::settings::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::{InstallContext, install_dependency_declarations};

@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{
