@@ -172,7 +172,6 @@ openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 pathdiff = "0.2"
 petgraph = "0.8"
-pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.49", default-features = false }

@@ -62,6 +62,7 @@ pub mod git;
 pub mod github;
 pub mod github_relay;
 pub mod gitlab;
+pub mod gpg;
 pub mod hash;
 pub mod http;
 pub mod inline_command;
