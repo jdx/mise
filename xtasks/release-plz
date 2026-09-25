@@ -453,6 +453,16 @@ if [[ $cur_version != "$latest_version" ]]; then
 	exit 0
 fi
 
+# Prep stages every workspace manifest (see the `git add` below), so an edit
+# already sitting in one would ride along into the release commit. Refuse to
+# start rather than guess which hunks belong to this run.
+preexisting_manifest_changes="$(git status --porcelain -- Cargo.toml 'crates/*/Cargo.toml')"
+if [[ -n $preexisting_manifest_changes ]]; then
+	echo "Workspace manifests have uncommitted changes before release prep:" >&2
+	echo "$preexisting_manifest_changes" >&2
+	exit 1
+fi
+
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
