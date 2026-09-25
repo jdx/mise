@@ -38,6 +38,20 @@ pub(crate) static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     )
 });
 
+/// Follows HTTPS-to-HTTP redirects, which [`HTTP`] refuses. Private so the only
+/// way to use it is [`download_file_checksum_pinned`], which rejects the bytes
+/// unless they match a checksum the caller already holds; the transport then
+/// adds nothing to the integrity of the result. Mirror redirectors need this:
+/// `ftpmirror.gnu.org`, the URL of every GNU formula, sends some regions to
+/// plain-HTTP mirrors.
+static HTTP_CHECKSUM_PINNED: Lazy<Client> = Lazy::new(|| {
+    Client::new_shared_with(
+        Settings::get().http_timeout(),
+        ClientKind::Http,
+        Downgrade::FollowChecksumPinned,
+    )
+});
+
 /// In-memory cache for HTTP text responses, useful for requests that are repeated
 /// during a single operation (e.g., fetching SHASUMS256.txt for multiple platforms).
 /// Each URL gets its own OnceCell to ensure concurrent requests for the same URL
@@ -564,6 +578,35 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
     Some(ParsedContentRange::Bytes { start, end, total })
 }
 
+/// Download `url` to `path` and verify it against `sha256`, following a
+/// redirect from HTTPS to HTTP if a mirror sends one. On a mismatch the file is
+/// removed so no caller can pick up unverified bytes.
+pub(crate) async fn download_file_checksum_pinned<U: IntoUrl>(
+    url: U,
+    path: &Path,
+    sha256: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    HTTP_CHECKSUM_PINNED.download_file(url, path, pr).await?;
+    verify_sha256_or_remove(path, sha256, pr)
+}
+
+fn verify_sha256_or_remove(path: &Path, sha256: &str, pr: Option<&dyn SingleReport>) -> Result<()> {
+    if let Err(err) = crate::hash::ensure_checksum(path, sha256, pr, "sha256") {
+        let _ = file::remove_file(path);
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// Whether a client may follow a redirect from HTTPS to HTTP.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Downgrade {
+    Refuse,
+    /// Only for [`HTTP_CHECKSUM_PINNED`].
+    FollowChecksumPinned,
+}
+
 /// Follow redirects as reqwest normally would, but refuse to step down from
 /// HTTPS to HTTP part-way through.
 ///
@@ -617,29 +660,38 @@ impl Client {
     #[cfg(test)]
     fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
-            reqwest: Ok(Self::build(timeout, kind)?),
+            reqwest: Ok(Self::build(timeout, kind, Downgrade::Refuse)?),
             timeout,
             kind,
         })
     }
 
     fn new_shared(timeout: Duration, kind: ClientKind) -> Self {
+        Self::new_shared_with(timeout, kind, Downgrade::Refuse)
+    }
+
+    fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
         Self {
-            reqwest: Self::build(timeout, kind).map_err(|err| format!("{err:#}")),
+            reqwest: Self::build(timeout, kind, downgrade).map_err(|err| format!("{err:#}")),
             timeout,
             kind,
         }
     }
 
-    fn build(timeout: Duration, kind: ClientKind) -> Result<reqwest::Client> {
+    fn build(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Result<reqwest::Client> {
         let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
         // Applied to every kind rather than per match arm, so no client can be
         // added — or edited back — into existence without it. Downloads are
         // checksum-verified where a checksum is known, but not every caller has
         // one, and a silent downgrade is worth refusing on its own. Redirects
         // are otherwise unchanged: the policy defers to the default for
-        // anything that is not a downgrade.
-        let builder = builder.redirect(https_downgrade_policy(kind.redirect_subject()));
+        // anything that is not a downgrade. The one exception is
+        // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
+        let policy = match downgrade {
+            Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
+            Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
+        };
+        let builder = builder.redirect(policy);
         Ok(builder.build()?)
     }
 
@@ -3969,6 +4021,21 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             &other_https
         ));
         assert!(!is_https_downgrade(&[http], &other_https));
+    }
+
+    #[test]
+    fn test_checksum_pinned_download_removes_mismatched_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hello.tar.gz");
+        std::fs::write(&path, b"hello").unwrap();
+        let hello_sha256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+        verify_sha256_or_remove(&path, hello_sha256, None).unwrap();
+        assert!(path.exists());
+
+        let other_sha256 = "0".repeat(64);
+        assert!(verify_sha256_or_remove(&path, &other_sha256, None).is_err());
+        assert!(!path.exists());
     }
 
     #[test]
