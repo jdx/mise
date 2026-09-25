@@ -6348,6 +6348,19 @@ source = "oldrc""#,
         assert!(!is_excluded(Path::new(""), &patterns(&["/*"])));
     }
 
+    /// A deployment walk hands over native paths, so on Windows the
+    /// separator is `\`. glob compares `/` and `\` as equal there and
+    /// stops `*` at either, so a rooted pattern needs no rewriting.
+    #[cfg(windows)]
+    #[test]
+    fn test_exclude_leading_slash_pattern_matches_native_windows_paths() {
+        let pats = patterns(&["/completions/*.ps1"]);
+        assert!(is_excluded(Path::new(r"completions\c.ps1"), &pats));
+        assert!(!is_excluded(Path::new(r"sub\completions\d.ps1"), &pats));
+        let pats = patterns(&["/*.ps1"]);
+        assert!(!is_excluded(Path::new(r"completions\c.ps1"), &pats));
+    }
+
     #[test]
     fn test_exclude_directory_component_takes_children() {
         let pats = patterns(&[".git"]);
