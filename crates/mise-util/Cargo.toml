@@ -63,5 +63,5 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-insta = { version = "1", features = ["filters", "json"] }
+ctor = "1"
 pretty_assertions = "1"
