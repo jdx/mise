@@ -82,7 +82,6 @@ pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
 mod minisign;
-mod netrc;
 mod oci;
 mod packslip;
 mod packslip_pins;
@@ -132,9 +131,26 @@ pub(crate) use crate::exit::request as request_exit;
 pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-fn main() -> ExitCode {
+/// Register what mise's lower crates need from mise itself (its settings loader,
+/// build identity, version and config-layer lookups) before anything uses them.
+/// Runs first in `main` and in the test harness constructor.
+pub(crate) fn register_util_hooks() {
     config::settings::register_loader();
     cache::register_base_cache_keys();
+    let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
+    mise_util::user_agent::set(
+        format!("mise/{} {shell}", *version::VERSION)
+            .trim()
+            .to_string(),
+    );
+    mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
+    mise_util::shells::set_implicit_inline_shell(|| {
+        config::Settings::get().implicit_inline_shell()
+    });
+}
+
+fn main() -> ExitCode {
+    register_util_hooks();
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
     // name to finish an update, and when its own init hook does not intercept that, mise would run
     // its shim path and report the generated name as a broken shim. There is nothing for `main` to

@@ -26,6 +26,13 @@ pub fn active() -> bool {
     HOME.get().is_some()
 }
 
+/// Whether unit tests are running: this crate's own (`cfg(test)`) or mise's,
+/// once its harness has called [`enable`]. Test-only overrides check this so
+/// they work from either crate's tests.
+pub fn in_tests() -> bool {
+    cfg!(test) || active()
+}
+
 /// The home directory the test harness chose, if it is running.
 pub fn home() -> Option<&'static Path> {
     HOME.get().map(PathBuf::as_path)
@@ -112,6 +119,20 @@ impl crate::progress::SingleReport for RecordingReport {
     }
 }
 
+/// Replace the loaded settings with `overrides` layered over the `MISE_*`
+/// environment and the `settings.toml` defaults, or with just those two when
+/// `overrides` is `None`. The equivalent, for this crate's tests, of mise's
+/// `Settings::reset`, minus config files.
+#[cfg(test)]
+pub(crate) fn reset_settings(overrides: Option<mise_settings::SettingsPartial>) {
+    use confique::Config;
+    let mut builder = mise_settings::Settings::builder().env();
+    if let Some(overrides) = overrides {
+        builder = builder.preloaded(overrides);
+    }
+    mise_settings::store(std::sync::Arc::new(builder.load().unwrap()));
+}
+
 /// This crate's own unit tests have no mise config system to load settings
 /// from, so they read the `settings.toml` defaults, and no mise build to key
 /// caches on.
@@ -120,4 +141,7 @@ impl crate::progress::SingleReport for RecordingReport {
 fn register_default_settings() {
     mise_settings::set_loader(mise_settings::load_defaults);
     crate::cache::set_base_cache_keys(vec!["mise-util-tests".to_string()]);
+    crate::user_agent::set("mise-util-tests".to_string());
+    crate::deprecation::set_version("0.0.0");
+    crate::shells::set_implicit_inline_shell(|| true);
 }
