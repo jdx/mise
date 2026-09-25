@@ -127,6 +127,9 @@ impl SystemStatus {
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
                     });
+                    if let Some(display_name) = &s.display_name {
+                        package["name"] = json!(display_name);
+                    }
                     if let Some(reason) = reason {
                         package["reason"] = json!(reason);
                     }
@@ -137,7 +140,10 @@ impl SystemStatus {
                 } else {
                     rows.push(vec![
                         name.to_string(),
-                        s.request.to_string(),
+                        match &s.display_name {
+                            Some(display_name) => format!("{} ({display_name})", s.request),
+                            None => s.request.to_string(),
+                        },
                         installed_version,
                         if auto_updates {
                             format!("{state} (auto-updates)")
