@@ -27,6 +27,13 @@ static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Load operator-owned environment selection without discovering project files.
 pub(crate) fn init_global_only() {
+    let _ = MISERC.set(load_global_miserc_settings());
+    let _ = take_tera_accessed_files();
+}
+
+/// Merge the system and global miserc files, skipping project files found
+/// from the working directory.
+fn load_global_miserc_settings() -> MisercSettings {
     let mut settings = MisercSettings::default();
     // A broken file must not block credentials or discard another valid layer.
     for path in [
@@ -37,8 +44,7 @@ pub(crate) fn init_global_only() {
             merge_settings(&mut settings, layer);
         }
     }
-    let _ = MISERC.set(settings);
-    let _ = take_tera_accessed_files();
+    settings
 }
 
 /// Initialize miserc settings by loading shared and local miserc files.
@@ -103,6 +109,20 @@ pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ignored_config_paths.as_ref()
 }
 
+/// Get the ignored_config_paths value from the system and global miserc files
+/// only. Unlike [`get_ignored_config_paths`], this does not depend on the
+/// directory mise runs from, so machine-wide operations such as `mise prune`
+/// reach the same verdict everywhere.
+pub(crate) fn get_global_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+    static GLOBAL: std::sync::LazyLock<Option<BTreeSet<PathBuf>>> =
+        std::sync::LazyLock::new(|| {
+            let settings = load_global_miserc_settings();
+            let _ = take_tera_accessed_files();
+            settings.ignored_config_paths
+        });
+    GLOBAL.as_ref()
+}
+
 /// Get the override_config_filenames value from miserc, if set.
 pub(crate) fn get_override_config_filenames() -> Option<&'static Vec<String>> {
     get().override_config_filenames.as_ref()
@@ -138,11 +158,12 @@ fn render_miserc_template(
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", config_root);
-    match std::env::current_dir() {
-        Ok(dir) => context.insert("cwd", &dir),
-        Err(e) => {
-            debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}")
-        }
+    // Use the invocation directory, not the current one: the global ignore list
+    // is rendered lazily, possibly after `-C` changed directory, and must match
+    // what startup rendered.
+    match invocation_cwd() {
+        Some(dir) => context.insert("cwd", dir),
+        None => debug!("miserc template: could not determine cwd, `cwd` will be unavailable"),
     };
     context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);

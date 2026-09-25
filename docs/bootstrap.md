@@ -406,6 +406,18 @@ If setup should always load, use the base config or a
 [`conf.d`](/configuration/environments.html#conf-d-environments) fragment
 without an environment suffix, such as `conf.d/ssh.toml`.
 
+To keep a piece of setup together with its source files, use a
+[`conf.d` folder](/configuration.html#conf-d-folders). Relative dotfile
+sources resolve inside the folder, and `mise.<env>.toml` files in it load only
+for that environment:
+
+```text
+~/.config/mise/conf.d/ssh/
+├── mise.toml          # always loaded; "~/.ssh/config" = "ssh_config"
+├── mise.linux.toml    # when the linux environment is active
+└── ssh_config
+```
+
 ### Remove a module's resources
 
 Removing a module from `env` stops loading its declarations but leaves its

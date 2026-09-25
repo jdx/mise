@@ -849,6 +849,11 @@
               "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
               "type": "string"
             },
+            "relative_symlinks": {
+              "default": false,
+              "description": "Create dotfile symlinks with relative targets instead of absolute ones.",
+              "type": "boolean"
+            },
             "root": {
               "default": "~/.dotfiles",
               "description": "Root directory used for implied dotfile sources.",
@@ -4397,6 +4402,15 @@
                 "default": false,
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
               },
+              "dot_prefix": {
+                "type": "boolean",
+                "default": false,
+                "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
+              },
+              "relative": {
+                "type": "boolean",
+                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -4479,6 +4493,34 @@
                 "anyOf": [
                   {
                     "properties": {
+                      "relative": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "required": ["mode"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["symlink", "symlink-each"]
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": false,
+                      "content": false,
+                      "permissions": false,
+                      "block": false,
+                      "line": false
+                    }
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "properties": {
                       "remove_empty": {
                         "const": false
                       }
@@ -4524,6 +4566,9 @@
                     "manifest": false,
                     "permissions": false,
                     "remove_empty": false,
+                    "dot_prefix": {
+                      "const": false
+                    },
                     "encrypt": {
                       "const": false
                     },
@@ -4560,6 +4605,41 @@
                     }
                   }
                 ]
+              },
+              {
+                "if": {
+                  "required": ["dot_prefix"],
+                  "properties": {
+                    "dot_prefix": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "content": false,
+                    "mode": {
+                      "enum": ["copy", "symlink-each"]
+                    },
+                    "block": false,
+                    "line": false,
+                    "template": false,
+                    "comment": false
+                  },
+                  "anyOf": [
+                    {
+                      "required": ["source"]
+                    },
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "properties": {
+                        "permissions": false
+                      }
+                    }
+                  ]
+                }
               },
               {
                 "oneOf": [
@@ -4833,7 +4913,7 @@
         "config_roots": {
           "deprecated": true,
           "type": "array",
-          "description": "deprecated; bootstrap composition across independent config roots needs more design and will be removed in mise 2027.3.3",
+          "description": "deprecated and will be removed in mise 2027.3.3; move each selected root into a conf.d folder instead (https://mise.jdx.dev/configuration.html#conf-d-folders)",
           "items": {
             "type": "string"
           }

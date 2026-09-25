@@ -7,4 +7,5 @@ bins = ["databricks"]
 full = "aqua:databricks/cli"
 
 [[backends]]
+attestations_since = "1.0.0"
 full = "github:databricks/cli"

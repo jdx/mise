@@ -17,7 +17,7 @@ use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -241,10 +241,6 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
-    fn mark_prereleases_from_version_pattern(&self) -> bool {
-        true
-    }
-
     /// PyPI versions follow PEP 440, so the shared filter alone (which only
     /// knows about `-rc1`/`-dev` separators) would let `3.12.0a1`-style
     /// versions slip through. See `fuzzy_match_versions_pep440`.
@@ -334,18 +330,9 @@ impl Backend for PIPXBackend {
                             let url = registry_url.replace("{}", &package);
                             let html = HTTP_FETCH.get_html(url).await?;
 
-                            let version = Self::versions_from_simple_index(&package, &html)
-                                .into_iter()
-                                .filter(|v| {
-                                    !v.contains("dev")
-                                        && !v.contains("a")
-                                        && !v.contains("b")
-                                        && !v.contains("rc")
-                                })
-                                .sorted_by_cached_key(|v| Versioning::new(v))
-                                .next_back();
-
-                            Ok(version)
+                            Ok(Self::latest_stable_from_simple_index(
+                                Self::versions_from_simple_index(&package, &html),
+                            ))
                         }
                     })
                     .await
@@ -896,8 +883,16 @@ impl PIPXBackend {
         Self::versions_from_pypi_package(data)
             .into_iter()
             .rev()
-            .find(|v| !PEP440_PRERELEASE_REGEX.is_match(&v.version))
+            .find(|v| !is_python_prerelease(&v.version))
             .map(|v| v.version)
+    }
+
+    fn latest_stable_from_simple_index(versions: Vec<String>) -> Option<String> {
+        versions
+            .into_iter()
+            .filter(|v| !is_python_prerelease(v))
+            .sorted_by_cached_key(|v| Versioning::new(v))
+            .next_back()
     }
 
     fn versions_from_github_releases(releases: Vec<GithubRelease>) -> Vec<VersionInfo> {
@@ -1429,11 +1424,13 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
-/// ecosystems (e.g. Go pseudo-versions) would false-positive. Only fills in
-/// unknowns: an authoritative flag from a GitHub release (either value) wins
-/// over pattern detection.
+/// ecosystems (e.g. Go pseudo-versions) would false-positive. This replaces
+/// the generic `mark_prerelease`, so the shared channel tags are checked here
+/// too, against the public version only (`1.1+gpu.dev0` is stable). Only
+/// fills in unknowns: an authoritative flag from a GitHub release (either
+/// value) wins over pattern detection.
 fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if version.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&version.version) {
+    if version.prerelease.is_none() && is_python_prerelease(&version.version) {
         version.prerelease = Some(true);
     }
     version
@@ -1465,6 +1462,24 @@ mod tests {
         assert_eq!(
             PIPXBackend::versions_from_simple_index("demo-pkg", html),
             vec!["1.0.0", "2.0.0", "2.1.0", "3.0.0rc1"]
+        );
+    }
+
+    #[test]
+    fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
+        let versions = [
+            "1.0",
+            "1.1+gpu.dev0",
+            "1.2.dev0",
+            "1.3b1",
+            "1.4-rc1",
+            "1.5a",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
+            Some("1.1+gpu.dev0")
         );
     }
 
@@ -2048,9 +2063,62 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 "2.0.0a1",
                 vec![pypi_release(Some("2024-04-01T00:00:00Z"), false)],
             ),
+            (
+                "2024.5.1.123456.dev0",
+                vec![pypi_release(Some("2024-05-01T00:00:00Z"), false)],
+            ),
+            (
+                "2.0-rc1",
+                vec![pypi_release(Some("2024-06-01T00:00:00Z"), false)],
+            ),
         ]));
 
         assert_eq!(version.as_deref(), Some("1.1.0"));
+    }
+
+    #[test]
+    fn test_pep440_local_label_does_not_mark_prerelease() {
+        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+            (
+                "1.0.0",
+                vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
+            ),
+            (
+                "1.1+build1dev0",
+                vec![pypi_release(Some("2024-02-01T00:00:00Z"), false)],
+            ),
+        ]));
+        assert_eq!(version.as_deref(), Some("1.1+build1dev0"));
+
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+build1dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
+
+        // `.dev` inside the local label matches the shared channel-tag regex,
+        // which must not apply to the local label either.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+gpu.dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
+
+        // The shared channel tags still apply to the public version.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1-rc1".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, Some(true));
+    }
+
+    #[test]
+    fn test_pipx_stamps_prereleases_itself() {
+        // The generic `mark_prerelease` would flag `1.1+gpu.dev0` from the
+        // local label; pipx stamps with the PEP 440-aware rule instead.
+        assert!(
+            !PIPXBackend::from_arg("pipx:black".into()).mark_prereleases_from_version_pattern()
+        );
     }
 
     #[test]

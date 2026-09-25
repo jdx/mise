@@ -7,7 +7,7 @@ use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
-use crate::toolset::{ToolRequest, Toolset};
+use crate::toolset::{ToolRequest, Toolset, install_state};
 use crate::{backend, env, file};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
@@ -90,10 +90,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
-        .into_iter()
-        .filter(|v| is_concrete_install(v))
-        .collect::<HashSet<_>>();
+    let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
     let default_alias = Alias::default();
     let aliases = &config
@@ -180,10 +177,7 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
-        .into_iter()
-        .filter(|v| is_concrete_install(v))
-        .collect::<HashSet<_>>();
+    let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, None, backend, installs_dir);
     for (from, to) in symlinks {
         let from_name = from.clone();
@@ -264,9 +258,34 @@ fn list_symlinks_for_dir(
 fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
-        .filter(|v| !installs_dir.join(v).join("incomplete").exists())
+        .filter(|v| !is_install_incomplete(backend, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+        .collect()
+}
+
+/// Whether version dir `v` belongs to an install that never finished. The
+/// marker is keyed by the tool's name, not by the install dir's basename, which
+/// install state can map to a differently named directory.
+fn is_install_incomplete(backend: &Arc<dyn Backend>, v: &str) -> bool {
+    install_state::incomplete_file_path(&backend.ba().short, v).exists()
+}
+
+/// Real install directories a rebuild must never replace with a selector
+/// link. An interrupted install is not eligible for links, but its directory
+/// still holds whatever the installer got to: a `1.1` that never finished must
+/// not be wiped and turned into a link to a complete `1.1.0`. The marker alone
+/// is enough: a directory mise was installing into is protected whatever its
+/// name, even one in a selector slot like `latest`.
+fn concrete_installs_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> HashSet<String> {
+    installed_versions_in_dir(backend, installs_dir)
+        .into_iter()
+        .filter(|v| is_concrete_install(v))
+        .chain(
+            real_installs_in_dir(installs_dir)
+                .into_iter()
+                .filter(|v| is_install_incomplete(backend, v)),
+        )
         .collect()
 }
 
@@ -492,6 +511,38 @@ mod tests {
         Arc::new(crate::backend::npm::test_backend("happy", None, None))
     }
 
+    /// A backend whose name no other test shares. The incomplete marker lives
+    /// in the cache dir every test process shares, keyed by the tool's name, so
+    /// a fixed name would leak one test's marker into another.
+    fn unique_backend(temp_dir: &tempfile::TempDir) -> Arc<dyn Backend> {
+        let suffix = temp_dir.path().file_name().unwrap().to_string_lossy();
+        Arc::new(crate::backend::npm::test_backend(
+            &format!("happy{suffix}"),
+            None,
+            None,
+        ))
+    }
+
+    /// Removes the markers [`interrupted_install`] wrote when the test ends.
+    struct InterruptedInstall(PathBuf);
+
+    impl Drop for InterruptedInstall {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Leaves version `v` of `backend` the way an interrupted install does:
+    /// the incomplete marker is still in the cache.
+    fn interrupted_install(backend: &Arc<dyn Backend>, v: &str) -> Result<InterruptedInstall> {
+        let marker = install_state::incomplete_file_path(&backend.ba().short, v);
+        fs::create_dir_all(marker.parent().unwrap())?;
+        fs::write(&marker, "")?;
+        Ok(InterruptedInstall(
+            marker.parent().unwrap().parent().unwrap().to_path_buf(),
+        ))
+    }
+
     #[test]
     fn run_all_rebuilds_attempts_every_item() {
         let mut attempted = vec![];
@@ -573,24 +624,44 @@ mod tests {
     fn prune_stale_generated_symlinks_removes_links_into_ineligible_installs() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2.1"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(
-            &npm_test_backend(),
-            &installs_dir,
-            &IndexMap::new(),
-            &HashSet::new(),
-        )?;
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
 
         assert!(fs::symlink_metadata(installs_dir.join("2")).is_err());
         assert!(fs::symlink_metadata(installs_dir.join("2.1")).is_err());
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         // the install itself is never touched
         assert!(installs_dir.join("2.1.0").is_dir());
+        Ok(())
+    }
+
+    /// An interrupted `1.1` sits in the slot a complete `1.1.0` generates a
+    /// `1.1` link for; it is no longer eligible, but it must stay protected.
+    #[test]
+    fn concrete_installs_in_dir_protects_interrupted_installs() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
+        fs::create_dir_all(installs_dir.join("1.1.0"))?;
+        fs::create_dir_all(installs_dir.join("1.1"))?;
+        fs::create_dir_all(installs_dir.join("latest"))?;
+        let _interrupted = interrupted_install(&backend, "1.1")?;
+        let _interrupted_latest = interrupted_install(&backend, "latest")?;
+
+        assert_eq!(
+            installed_versions_in_dir(&backend, &installs_dir),
+            ["1.1.0"]
+        );
+        assert_eq!(
+            concrete_installs_in_dir(&backend, &installs_dir),
+            HashSet::from(["1.1", "1.1.0", "latest"].map(String::from))
+        );
         Ok(())
     }
 
@@ -648,17 +719,13 @@ mod tests {
     fn prune_stale_generated_symlinks_keeps_names_it_does_not_generate() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("next"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(
-            &npm_test_backend(),
-            &installs_dir,
-            &IndexMap::new(),
-            &HashSet::new(),
-        )?;
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
 
         assert!(is_runtime_symlink(&installs_dir.join("next")));
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
@@ -669,17 +736,13 @@ mod tests {
     fn prune_stale_generated_symlinks_keeps_names_this_rebuild_asked_for() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
         let desired = IndexMap::from([("latest".to_string(), PathBuf::from("./2.1.0"))]);
 
-        prune_stale_generated_symlinks(
-            &npm_test_backend(),
-            &installs_dir,
-            &desired,
-            &HashSet::new(),
-        )?;
+        prune_stale_generated_symlinks(&backend, &installs_dir, &desired, &HashSet::new())?;
 
         assert!(is_runtime_symlink(&installs_dir.join("latest")));
         Ok(())
@@ -690,13 +753,14 @@ mod tests {
     fn prune_stale_generated_symlinks_keeps_configured_aliases() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2"))?;
         let aliases = IndexMap::from([("2".to_string(), "2.1.0".to_string())]);
 
         prune_stale_generated_symlinks(
-            &npm_test_backend(),
+            &backend,
             &installs_dir,
             &IndexMap::new(),
             &configured_alias_names(&aliases, &installs_dir),
@@ -727,12 +791,13 @@ mod tests {
     fn generated_symlink_namespace_covers_ineligible_installs() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
 
         let namespace = generated_symlink_namespace(&installs_dir);
 
-        assert!(installed_versions_in_dir(&npm_test_backend(), &installs_dir).is_empty());
+        assert!(installed_versions_in_dir(&backend, &installs_dir).is_empty());
         assert!(namespace.contains("2"));
         assert!(namespace.contains("2.1"));
         assert!(namespace.contains("latest"));
@@ -747,8 +812,9 @@ mod tests {
     fn prune_stale_generated_symlinks_claims_generated_names_whoever_wrote_them() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("2.1.0"))?;
-        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "2.1.0")?;
         // hand-made, but occupying a name mise generates
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
         // hand-made, name mise never generates
@@ -756,12 +822,7 @@ mod tests {
         // generated name, but not a `./` link, so not mise's to touch
         make_symlink_or_file(&temp_dir.path().join("elsewhere"), &installs_dir.join("2"))?;
 
-        prune_stale_generated_symlinks(
-            &npm_test_backend(),
-            &installs_dir,
-            &IndexMap::new(),
-            &HashSet::new(),
-        )?;
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
 
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         assert!(is_runtime_symlink(&installs_dir.join("mine")));
@@ -777,18 +838,14 @@ mod tests {
     fn prune_stale_generated_symlinks_keeps_sub_request_pins() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
         fs::create_dir_all(installs_dir.join("19.0.0"))?;
-        fs::write(installs_dir.join("19.0.0").join("incomplete"), "")?;
+        let _interrupted = interrupted_install(&backend, "19.0.0")?;
         // `node@sub-1:20` resolving to 19.0.0, pinned from some other directory
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("sub-1-20"))?;
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(
-            &npm_test_backend(),
-            &installs_dir,
-            &IndexMap::new(),
-            &HashSet::new(),
-        )?;
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
 
         assert!(is_runtime_symlink(&installs_dir.join("sub-1-20")));
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());

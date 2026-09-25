@@ -128,10 +128,26 @@
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
                 "description": "Inclusive minimum tool version supported by this backend. Requires version_order = semver; older versions use the next eligible backend."
+              },
+              "attestations_since": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+                "description": "First version whose release assets carry GitHub attestations. From it on, installing without a verified attestation fails instead of skipping verification. Versions that are not semantic versions are never required. github: backends only."
               }
             },
             "required": ["full"],
-            "unevaluatedProperties": false
+            "unevaluatedProperties": false,
+            "if": {
+              "required": ["attestations_since"]
+            },
+            "then": {
+              "properties": {
+                "full": {
+                  "type": "string",
+                  "pattern": "^github:"
+                }
+              }
+            }
           }
         ]
       },

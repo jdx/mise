@@ -60,16 +60,17 @@ async fn shared_verification(
 
 #[derive(Debug)]
 enum CachedAttestationVerification {
-    Verified,
+    /// These repositories (`owner/repo`) made attestations that verified.
+    Verified(Vec<String>),
     Retry(Option<AttestationError>),
 }
 
 fn classify_cached_attestation_verification(
-    result: AttestationResult<bool>,
+    result: AttestationResult<Vec<String>>,
 ) -> CachedAttestationVerification {
     match result {
-        Ok(true) => CachedAttestationVerification::Verified,
-        Ok(false) => CachedAttestationVerification::Retry(None),
+        Ok(sources) if !sources.is_empty() => CachedAttestationVerification::Verified(sources),
+        Ok(_) => CachedAttestationVerification::Retry(None),
         Err(err) => CachedAttestationVerification::Retry(Some(err)),
     }
 }
@@ -208,7 +209,13 @@ async fn verify_attestation_uncached(
                     attestations.len()
                 );
                 if attestations.is_empty() {
-                    return Err(AttestationError::NoAttestations);
+                    if !mirror_may_answer_none() {
+                        debug!(
+                            "mise-versions has no GitHub attestations for {owner}/{repo}; paranoid mode asks GitHub"
+                        );
+                    } else {
+                        return Err(AttestationError::NoAttestations);
+                    }
                 } else if attestations.iter().any(|a| !a.has_inline_bundle()) {
                     debug!(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
@@ -218,14 +225,26 @@ async fn verify_attestation_uncached(
                     // caches it. Treat only a successful verification as authoritative so an
                     // incomplete cached set can still be refreshed from GitHub directly.
                     match classify_cached_attestation_verification(
-                        mise_sigstore::verify_github_attestation_with_attestations(
+                        mise_sigstore::verify_github_attestation_sources(
                             artifact_path,
                             &attestations,
                             expected_workflow,
                         )
                         .await,
                     ) {
-                        CachedAttestationVerification::Verified => return Ok(true),
+                        // Anyone can attest any digest from their own
+                        // repository; GitHub's API only lists the requested
+                        // repository's, but a mirror could list anyone's.
+                        CachedAttestationVerification::Verified(sources)
+                            if crate::github::attested_by_repository(owner, repo, &sources)
+                                .await =>
+                        {
+                            return Ok(true);
+                        }
+                        CachedAttestationVerification::Verified(sources) => warn!(
+                            "mise-versions returned attestations for {owner}/{repo} made by {}; verifying with GitHub instead",
+                            sources.join(", ")
+                        ),
                         CachedAttestationVerification::Retry(None) => debug!(
                             "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
                         ),
@@ -362,13 +381,16 @@ pub(crate) async fn detect_attestations(
 ) -> Result<bool, DetectError> {
     if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
         match crate::versions_host::github_attestations(&format!("{owner}/{repo}"), digest).await {
-            Ok(Some(attestations)) => {
+            Ok(Some(attestations)) if !attestations.is_empty() || mirror_may_answer_none() => {
                 trace!(
                     "got {} GitHub attestation probes for {owner}/{repo}@{digest} from mise-versions",
                     attestations.len()
                 );
                 return Ok(!attestations.is_empty());
             }
+            Ok(Some(_)) => debug!(
+                "mise-versions has no attestations for {owner}/{repo}@{digest}; paranoid mode asks GitHub"
+            ),
             Ok(None) => {}
             Err(err) => debug!("mise-versions GitHub attestation probe failed: {err:#}"),
         }
@@ -421,9 +443,17 @@ pub(crate) async fn detect_attestations_with_predicate_type(
     Ok(!attestations.is_empty())
 }
 
+/// Whether mise-versions saying an artifact has no attestations is taken as
+/// final. A wrong "none" skips verification, and a lockfile written after it
+/// records no provenance, so paranoid mode confirms it with GitHub instead,
+/// at the cost of one API call per unattested artifact. "Yes" needs no
+/// confirmation: it only leads to verification.
+fn mirror_may_answer_none() -> bool {
+    !crate::config::Settings::get().paranoid
+}
+
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
-    let settings = crate::config::Settings::get();
-    if !use_versions_host || settings.prefer_offline() || !settings.use_versions_host {
+    if !use_versions_host || !crate::versions_host::enabled_for_github_metadata() {
         return false;
     }
 
@@ -685,11 +715,11 @@ mod tests {
     #[test]
     fn test_cached_attestation_verification_accepts_only_success() {
         assert!(matches!(
-            classify_cached_attestation_verification(Ok(true)),
-            CachedAttestationVerification::Verified
+            classify_cached_attestation_verification(Ok(vec!["jdx/mise".to_string()])),
+            CachedAttestationVerification::Verified(sources) if sources == ["jdx/mise"]
         ));
         assert!(matches!(
-            classify_cached_attestation_verification(Ok(false)),
+            classify_cached_attestation_verification(Ok(vec![])),
             CachedAttestationVerification::Retry(None)
         ));
 
@@ -799,7 +829,78 @@ mod tests {
     }
 
     #[test]
-    fn test_use_versions_host_for_attestations_respects_registry_gate() {
+    fn test_use_versions_host_for_attestations_defers_to_url_replacements() {
+        // GitHub routed elsewhere (a proxy, a mirror, a fixture): the
+        // replacement is the only source of GitHub data.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
+        }));
+
+        assert!(!use_versions_host_for_attestations(
+            Some(crate::github::API_URL),
+            true
+        ));
+    }
+
+    #[test]
+    fn test_path_specific_url_replacements_are_detected_per_repository() {
+        // A rule that only reroutes one repository's releases leaves the bare
+        // GitHub URLs alone, but still takes that repository off mise-versions.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/tool/".to_string()
+                => "https://github-proxy.example.com/repos/acme/tool/".to_string(),
+        }));
+
+        assert!(!crate::versions_host::github_is_url_replaced(None));
+        assert!(crate::versions_host::github_is_url_replaced(Some(
+            "acme/tool"
+        )));
+        assert!(!crate::versions_host::github_is_url_replaced(Some(
+            "acme/other"
+        )));
+    }
+
+    #[test]
+    fn test_exact_release_url_replacements_are_honored() {
+        // A rule for one release's API URL takes that release off mise-versions
+        // and out of the mirrored cache entry, and leaves other tags alone.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com/repos/acme/tool/releases/tags/v2.0.0".to_string()
+                => "https://github-proxy.example.com/acme/tool/v2.0.0".to_string(),
+        }));
+
+        assert!(crate::versions_host::github_release_is_url_replaced(
+            "acme/tool",
+            "v2.0.0"
+        ));
+        assert!(!crate::versions_host::github_release_is_url_replaced(
+            "acme/tool",
+            "v1.0.0"
+        ));
+        assert!(
+            crate::github::release_cache_key_for_test("acme/tool", "v2.0.0").ends_with("direct")
+        );
+        assert!(
+            crate::github::release_cache_key_for_test("acme/tool", "v1.0.0").ends_with("hosted-2")
+        );
+    }
+
+    #[test]
+    fn test_download_only_url_replacements_keep_mise_versions() {
+        // Mirroring release downloads (the documented Artifactory example)
+        // doesn't change where release metadata comes from.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            r"regex:^https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)".to_string()
+                => "https://hub.example.com/artifactory/github/$1/$2/$3".to_string(),
+        }));
+
+        assert!(!crate::versions_host::github_is_url_replaced(Some(
+            "acme/tool"
+        )));
+    }
+
+    #[test]
+    fn test_use_versions_host_for_attestations_respects_caller_gate() {
         let _settings = SettingsGuard::with_versions_host(None, Some(true));
 
         assert!(!use_versions_host_for_attestations(

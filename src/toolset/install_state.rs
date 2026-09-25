@@ -240,7 +240,10 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// make an incomplete scan look like a complete one, and shim rebuilding
 /// deletes every shim it cannot account for. Callers that are explicitly
 /// best-effort (read-only shared dirs) downgrade this to a warning.
-fn scan_versions(dir: &Path) -> Result<Vec<String>> {
+///
+/// `tool_dir_name` keys the incomplete markers. Install writes them under the
+/// tool's short name, which a manifest can map to a differently named dir.
+fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
     // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its target is
     // moved or deleted, and dropping it here is what made the version invisible to `mise ls` and
     // unreachable to `mise uninstall` — occupying a name nothing would admit to. It is listed, not
@@ -249,7 +252,7 @@ fn scan_versions(dir: &Path) -> Result<Vec<String>> {
         .into_iter()
         .filter(|v| !v.starts_with('.'))
         .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-        .filter(|v| !dir.join(v).join("incomplete").exists())
+        .filter(|v| !incomplete_marker(tool_dir_name, v).exists())
         .sorted_by_cached_key(|v| {
             let normalized = normalize_version_for_sort(v);
             (Versioning::new(normalized), v.to_string())
@@ -259,8 +262,8 @@ fn scan_versions(dir: &Path) -> Result<Vec<String>> {
 
 /// [`scan_versions`] for read-only shared install dirs, where a unreadable
 /// entry is reported and skipped rather than failing the whole scan.
-fn scan_versions_best_effort(dir: &Path) -> Vec<String> {
-    scan_versions(dir).unwrap_or_else(|err| {
+fn scan_versions_best_effort(dir: &Path, tool_dir_name: &str) -> Vec<String> {
+    scan_versions(dir, tool_dir_name).unwrap_or_else(|err| {
         warn!("reading versions in {} failed: {err:?}", display_path(dir));
         Default::default()
     })
@@ -292,7 +295,11 @@ fn scan_tool_dir(
     } else {
         None
     };
-    let versions = scan_versions(dir)?;
+    let marker_short = manifest_tool
+        .map(|mt| mt.short.as_str())
+        .or(legacy_meta.as_ref().map(|(short, ..)| short.as_str()))
+        .unwrap_or(dir_name);
+    let versions = scan_versions(dir, &crate::backend::tool_directory_name(marker_short))?;
     if versions.is_empty() {
         return Ok(None);
     }
@@ -358,7 +365,9 @@ fn merge_shared_tool(
     let manifest_tool = tool_manifest
         .as_ref()
         .or_else(|| shared_manifest.get(dir_name));
-    let versions = scan_versions_best_effort(dir);
+    let marker_short = manifest_tool.map_or(dir_name, |mt| mt.short.as_str());
+    let versions =
+        scan_versions_best_effort(dir, &crate::backend::tool_directory_name(marker_short));
     if versions.is_empty() {
         return;
     }
@@ -926,14 +935,15 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
 }
 
 pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
-    dirs::CACHE
-        .join(crate::backend::tool_directory_name(short))
-        .join(v)
-        .join("incomplete")
+    incomplete_marker(crate::backend::tool_directory_name(short), v)
+}
+
+fn incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
+    dirs::CACHE.join(tool_dir_name).join(v).join("incomplete")
 }
 
 fn tool_version_lock(short: &str, v: &str) -> LockFile {
-    LockFile::new(&incomplete_file_path(short, v))
+    LockFile::new(&incomplete_file_path(short, v)).with_pid()
 }
 
 /// Acquires the transaction lock for one logical tool version.
@@ -943,15 +953,18 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
 pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
-    lock_tool_version_with_notice(short, v, &|| {})
+    lock_tool_version_with_notice(short, v, &|_| {})
 }
 
 /// [`lock_tool_version`] that also tells the caller when it is actually
 /// waiting, so an install can report the pause instead of looking hung.
+/// `on_wait` receives the PID of the process holding the lock when known:
+/// that process is usually a shim, whose command line looks like the tool
+/// it is installing rather than mise.
 pub(crate) fn lock_tool_version_with_notice(
     short: &str,
     v: &str,
-    on_wait: &dyn Fn(),
+    on_wait: &dyn Fn(Option<u32>),
 ) -> Result<fslock::LockFile> {
     tool_version_lock(short, v)
         .with_callback(|lock| {
@@ -1055,8 +1068,8 @@ pub(crate) fn reset_tools() {
 #[cfg(test)]
 mod tests {
     use super::{
-        InstallStateTool, lock_tool_version, merge_plugin_tools, normalize_version_for_sort,
-        read_tool_manifest_from, tool_version_lock,
+        InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
+        normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
     };
     use crate::plugins::PluginType;
     use itertools::Itertools;
@@ -1132,7 +1145,7 @@ mod tests {
         // Uncontended: no notice.
         let first = {
             let noticed = noticed.clone();
-            super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+            super::lock_tool_version_with_notice(&short, "1.0.0", &|_| {
                 noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             })
             .unwrap()
@@ -1146,18 +1159,23 @@ mod tests {
             let short = short.clone();
             let noticed = noticed.clone();
             std::thread::spawn(move || {
-                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|pid| {
                     noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    noticed_tx.send(()).unwrap();
+                    noticed_tx.send(pid).unwrap();
                 })
                 .unwrap();
                 acquired_tx.send(()).unwrap();
                 drop(lock);
             })
         };
-        noticed_rx
+        let holder = noticed_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("the waiter should have reported the wait");
+        // Windows may refuse to read a locked file, so only Unix must name the holder.
+        #[cfg(unix)]
+        assert_eq!(holder, Some(std::process::id()));
+        #[cfg(windows)]
+        let _ = holder;
         assert_eq!(count(), 1);
         assert!(
             acquired_rx.try_recv().is_err(),
@@ -1392,5 +1410,27 @@ explicit_backend = true
         assert_eq!(tool.versions, ["24.10.0"]);
         assert!(dir.join("24.10.0").is_dir());
         assert!(!temp.path().join("pypi-black").exists());
+    }
+
+    /// A manifest can map a tool to a dir named differently from its short;
+    /// the scan must find the marker install wrote under the short's name.
+    #[test]
+    fn scan_versions_honors_markers_keyed_by_tool_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("renamed-dir");
+        std::fs::create_dir_all(dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(dir.join("2.0.0")).unwrap();
+        let tool_dir_name = format!(
+            "scan-marker{}",
+            temp.path().file_name().unwrap().to_string_lossy()
+        );
+        let marker = incomplete_marker(&tool_dir_name, "2.0.0");
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "").unwrap();
+
+        let versions = scan_versions(&dir, &tool_dir_name).unwrap();
+        let _ = std::fs::remove_dir_all(marker.parent().unwrap().parent().unwrap());
+
+        assert_eq!(versions, ["1.0.0"]);
     }
 }

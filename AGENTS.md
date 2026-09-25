@@ -290,18 +290,19 @@ When referencing mise documentation URLs, use the correct path structure based o
 
 Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
 
-## Cursor Cloud specific instructions
+## Cloud agent instructions (Cursor Cloud and Claude Code on the web)
 
-Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/install.sh`. Draft environment builds often run as `ubuntu` rather than `root`; the script handles both (passwordless sudo, cargo/rustup permissions, world-writable `/tmp/fslock`).
+Cursor Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/install.sh`. Claude Code on the web runs the same script from the SessionStart hook in `.claude/settings.json` (`.claude/hooks/session-start.sh`), which runs on session `startup`/`resume`/`fork` (not `/clear` or compaction) with a 30-minute timeout, exits immediately unless `CLAUDE_CODE_REMOTE=true`, sends the bootstrap output to stderr, and adds the mise shims and `/usr/local/bin` to `PATH` through `CLAUDE_ENV_FILE`. The hook runs synchronously, so the session starts after the build finishes. Claude cloud containers do not provide a GitHub token by default; add `GITHUB_TOKEN` as an environment secret to avoid GitHub API rate limits during `mise install` and e2e tests. Use a fine-grained token with public-repository read-only access and no other permissions: any branch a session checks out (its hook, build scripts, tests, and tasks) can read the session environment. Draft environment builds often run as `ubuntu` rather than `root`; the script handles both (passwordless sudo, cargo/rustup permissions, world-writable `/tmp/fslock`).
 
 The install script:
 
 - cds to the repository root derived from the script path before reading `Cargo.toml` or building
 - installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, direnv, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`. `apt-get` is invoked as `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get …` so the frontend reaches apt when elevation is required
-- selects the Rust toolchain from the root `Cargo.toml` `rust-version`, including `rustfmt` and `clippy` (do not hardcode the MSRV)
-- builds `target/debug/mise` and symlinks it to `/usr/local/bin/mise`
+- installs and defaults to the latest stable Rust toolchain (not the `Cargo.toml` `rust-version` MSRV), including `rustfmt` and `clippy`, and updates it on reruns
+- gets a bootstrap `mise` and symlinks it to `/usr/local/bin/mise`: an existing `target/debug/mise` refreshes itself with `mise run build`; if it cannot run this checkout's config, a plain `cargo build` goes to `target/bootstrap` (the `mbx` wrapper leaves read-only outputs in `target/`); with no `target/` yet, a plain `cargo build` goes to `target/`
 - keeps `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, and `GH_TOKEN` in sync via one `sync_github_tokens` helper (prefer any already-set token; fall back to `gh auth token` only when all three are empty)
 - runs `MISE_SAFE=1 /usr/local/bin/mise install` with the just-built binary so checkout-controlled hooks/templates/`[env]` and tool-level `postinstall` / `install_env` cannot run with those tokens, then `mise trust` for later agent commands
+- runs `mise run build` so `target/` is warm for the `mbx`-wrapped cargo (`[wrappers.cargo]` in `mise.toml`) that agents build with, then points `/usr/local/bin/mise` at `target/debug/mise`. Every build runs with `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_API_TOKEN` unset
 - runs `hk install --mise` (`hk.pkl` has no git hook, so this may report that nothing is installed)
 - persists mise shims and token sync in one `/etc/profile.d/mise-dev-env.sh` (shims first, then `sync_github_tokens`) and rewrites the Cloud Agent block in `/etc/bash.bashrc` so non-login interactive bash picks it up after a snapshot. Fish/zsh only get this from login shells (`profile.d`), not from bashrc
 - exposes the mise-installed `node` / `npm` / `npx` / `hk` / `gh` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims). Links freeze the version from install time — re-run `.cursor/install.sh` after upgrading those tools

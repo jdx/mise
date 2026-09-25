@@ -234,6 +234,29 @@ or remove previously created links.
 Directory copies keep existing target files when you delete or exclude their
 sources. Review and remove those leftover copies yourself.
 
+### Relative symlinks {#relative}
+
+By default, links point at their source by an absolute path. Set
+[`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks)
+to link by a path relative to the link's directory instead, as GNU Stow does.
+Relative links keep working when the home directory is mounted at a different
+path on another machine, for example over NFS, or when the whole tree moves:
+
+```toml
+[settings]
+dotfiles.relative_symlinks = true
+
+[dotfiles]
+"~/.config/foo" = { source = "~/dotfiles/foo", mode = "symlink" } # ~/.config/foo -> ../dotfiles/foo
+"~/.bashrc" = { source = "~/dotfiles/bashrc", relative = false }  # stays absolute
+```
+
+An entry's `relative` key overrides the setting. `relative = true` requires
+`symlink` or `symlink-each`. When relative links are on, the next apply
+re-points absolute links to the same source. Turning them off leaves relative
+links that already reach the source in place. Windows ignores the option,
+because directory links there are junctions, which cannot be relative.
+
 ### Removing files {#absent}
 
 Use `mode = "absent"` to remove a file you no longer want on your
@@ -257,7 +280,7 @@ created when an earlier entry wrote this target: once the file is gone and
 the directory is empty, it goes too, as [for templates](#remove-empty).
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
-`permissions`, `encrypt`, `remove_empty`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
+`permissions`, `encrypt`, `remove_empty`, `relative`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
 and an edit entry cannot change the file it removes.
 
 An `absent` target names exactly one path, so it cannot contain `*`, `?`,
@@ -590,6 +613,32 @@ the previous source. This makes `mise bootstrap -E home` and
 `mise bootstrap -E work` usable as profile switches: links unique to the old
 profile are removed, shared paths are repointed, and unmanaged neighbors are
 preserved.
+
+## Visible source names {#dot-prefix}
+
+Set `dot_prefix = true` on a directory-walking entry to keep the files in
+your dotfiles repository visible. Like GNU Stow's `--dotfiles` option, every
+path component named `dot-<name>` deploys as `.<name>`, and other names deploy
+unchanged:
+
+```toml
+[dotfiles]
+"~" = { source = "home", mode = "symlink-each", dot_prefix = true, exclude = ["README.md"] }
+```
+
+| Source                            | Target                      |
+| --------------------------------- | --------------------------- |
+| `home/dot-bashrc`                 | `~/.bashrc`                 |
+| `home/dot-config/foo/config.toml` | `~/.config/foo/config.toml` |
+| `home/bin/dot-helper`             | `~/bin/.helper`             |
+| `home/.editorconfig`              | `~/.editorconfig`           |
+
+`exclude` and `manifest = "git"` still work with source names, such as
+`dot-bashrc`. If two source paths deploy to the same target, such as
+`dot-bashrc` and `.bashrc`, apply fails and reports both paths. `dot_prefix`
+requires a directory source and `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
+a `dot_prefix` entry because it would copy target names into the source; edit
+the source directly instead.
 
 ## Edit entries
 

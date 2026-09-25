@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+mkdir -p dots/dot-config/app copied/dot-local
+echo "bashrc" >dots/dot-bashrc
+echo "config" >dots/dot-config/app/config.toml
+echo "nested" >dots/dot-config/app/dot-rc
+echo "readme" >dots/README.md
+echo "copied" >copied/dot-local/state
+
+cat <<EOF >mise.toml
+[dotfiles]
+"~" = { source = "dots", mode = "symlink-each", dot_prefix = true, exclude = ["README.md"] }
+"~/copy-root" = { source = "copied", mode = "copy", dot_prefix = true }
+EOF
+
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert_succeed "test -L $HOME/.bashrc"
+assert "readlink $HOME/.bashrc" "$PWD/dots/dot-bashrc"
+assert_succeed "test -d $HOME/.config/app && ! test -L $HOME/.config"
+assert "cat $HOME/.config/app/config.toml" "config"
+assert "cat $HOME/.config/app/.rc" "nested"
+assert_fail "test -e $HOME/dot-bashrc"
+assert_fail "test -e $HOME/README.md"
+assert "cat $HOME/copy-root/.local/state" "copied"
+assert_fail "test -L $HOME/copy-root/.local/state"
+assert_not_contains "mise bootstrap dotfiles status" "differs"
+
+# A source file that goes away takes its dotted link with it.
+rm dots/dot-bashrc
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert_fail "test -L $HOME/.bashrc"
+
+# Two source names for one dotted target have no right answer.
+echo "plain" >dots/.bashrc
+echo "again" >dots/dot-bashrc
+assert_fail_contains "mise bootstrap dotfiles apply --yes" "both deploy to"
+
+# The option is only meaningful for modes that walk a directory.
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.one" = { source = "dots/dot-bashrc", mode = "symlink", dot_prefix = true }
+EOF
+assert_contains "mise bootstrap dotfiles apply --yes 2>&1" "dot_prefix requires mode copy or symlink-each"
+assert_fail "test -e $HOME/.one"

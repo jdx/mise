@@ -4,6 +4,7 @@ version_order = "source"
 
 bins = ["gam"]
 [[backends]]
+attestations_since = "7.34.10"
 full = "github:GAM-team/GAM"
 
 [[backends]]

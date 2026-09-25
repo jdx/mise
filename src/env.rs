@@ -444,20 +444,31 @@ pub(crate) static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
 pub(crate) static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub(crate) static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    env_ignored_config_paths()
+        .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
+        .unwrap_or_default()
+});
+/// `ignored_config_paths` without project `.miserc.toml` files, for operations
+/// over every tracked config whose result must not depend on the working directory.
+pub(crate) static MISE_GLOBAL_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    env_ignored_config_paths()
+        .or_else(|| {
+            miserc::get_global_ignored_config_paths().map(|paths| paths.iter().cloned().collect())
+        })
+        .unwrap_or_default()
+});
+fn env_ignored_config_paths() -> Option<Vec<PathBuf>> {
     let invocation_cwd = miserc::invocation_cwd()
         .map(Path::to_path_buf)
         .or_else(|| current_dir().ok())
         .unwrap_or_default();
-    var_os("MISE_IGNORED_CONFIG_PATHS")
-        .map(|v| {
-            split_paths(&v)
-                .filter(|p| !p.as_os_str().is_empty())
-                .map(|p| miserc::resolve_ignored_config_path(p, &invocation_cwd))
-                .collect()
-        })
-        .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
-        .unwrap_or_default()
-});
+    var_os("MISE_IGNORED_CONFIG_PATHS").map(|v| {
+        split_paths(&v)
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| miserc::resolve_ignored_config_path(p, &invocation_cwd))
+            .collect()
+    })
+}
 pub(crate) static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
     var_os("MISE_CEILING_PATHS")
         .map(|v| {
