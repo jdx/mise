@@ -16,7 +16,7 @@ use serde::de::DeserializeOwned;
 use std::sync::LazyLock as Lazy;
 
 use crate::build_time::built_info;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
 use crate::platform::Platform;

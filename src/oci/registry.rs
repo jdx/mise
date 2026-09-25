@@ -8,6 +8,7 @@
 //! and podman use (see `crate::oci::auth`); anonymous access is used when no
 //! credentials are found (e.g. a local `registry:2`).
 
+use crate::config::SettingsExt;
 use std::path::Path;
 use std::sync::Arc;
 

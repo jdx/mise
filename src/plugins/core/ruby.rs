@@ -12,7 +12,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{CompilePurpose, Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};

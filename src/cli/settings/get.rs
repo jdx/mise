@@ -1,6 +1,6 @@
 use crate::config;
-use crate::config::Settings;
 use crate::config::settings::SETTINGS_META;
+use crate::config::{Settings, SettingsExt};
 use eyre::bail;
 
 /// Show the effective value of a setting

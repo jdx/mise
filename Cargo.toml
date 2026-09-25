@@ -8,6 +8,7 @@ members = [
   "crates/mise-interactive-config",
   "crates/mise-shim",
   "crates/mise-sigstore",
+  "crates/mise-settings",
 ]
 
 [package]
@@ -36,7 +37,6 @@ include = [
   "/registry/*.toml",
   "/registry/daemon-presets/*.toml",
   "/schema/mise.json",
-  "/settings.toml",
   "/zipsign.pub",
   "/src/**/*.rs",
   "/src/system/history/notify/macos.m",
@@ -135,6 +135,7 @@ futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
+mise-settings = { path = "crates/mise-settings", version = "2026" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -350,8 +351,6 @@ built = { version = "0.8", features = ["chrono"] }
 cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
-heck = "0.5"
-indexmap = "2"
 phf_codegen = "0.14"
 regex = "1"
 semver = "1"

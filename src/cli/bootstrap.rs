@@ -16,7 +16,7 @@ use super::plugins::install::install_plugin;
 use super::run;
 use super::system::driver::{self, Action, DriverOpts};
 use super::system::{export, import, install, prune, status, upgrade, r#use};
-use crate::config::{self, Config};
+use crate::config::{self, Config, SettingsExt};
 use crate::dirs;
 use crate::path::PathExt;
 use crate::system;

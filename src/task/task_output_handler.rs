@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::config::Settings;
 use crate::task::task_helpers::{task_gets_keep_order_slot, task_needs_permit};
 use crate::task::task_output::TaskOutput;
-use crate::task::{Task, TaskCacheOutput};
+use crate::task::{Task, TaskCacheOutput, TaskOutputExt};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::style;

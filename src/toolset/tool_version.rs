@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::env_directive::EnvValue;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;

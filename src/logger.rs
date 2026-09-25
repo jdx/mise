@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use clx::progress;
 use eyre::Result;
 use std::collections::HashSet;

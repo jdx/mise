@@ -6619,6 +6619,7 @@ dependencies = [
  "mise-agent-env",
  "mise-cache-core",
  "mise-interactive-config",
+ "mise-settings",
  "mise-sigstore",
  "mockito",
  "netrc-rs",
@@ -6748,6 +6749,23 @@ dependencies = [
  "toml_edit 0.25.15+spec-1.1.0",
  "unicode-width 0.2.2",
  "xx",
+]
+
+[[package]]
+name = "mise-settings"
+version = "2026.9.0"
+dependencies = [
+ "confique",
+ "eyre",
+ "heck",
+ "indexmap 2.14.2",
+ "itertools 0.15.0",
+ "log",
+ "mise-cache-core",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "toml 1.1.6+spec-1.1.0",
 ]
 
 [[package]]

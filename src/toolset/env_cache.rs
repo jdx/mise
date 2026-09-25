@@ -13,7 +13,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file;
 

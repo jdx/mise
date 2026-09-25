@@ -1,4 +1,4 @@
-use crate::config::{self, Config};
+use crate::config::{self, Config, SettingsExt};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,

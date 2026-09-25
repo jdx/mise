@@ -5,6 +5,7 @@
 //! determines which environment-specific config files (e.g., mise.development.toml)
 //! to load.
 
+use crate::config::SettingsExt;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;

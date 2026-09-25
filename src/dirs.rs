@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use std::path::{Path, PathBuf};
 
 use std::sync::LazyLock as Lazy;

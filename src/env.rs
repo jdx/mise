@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::env_directive::EnvValue;
-use crate::config::miserc;
+use crate::config::{SettingsExt, miserc};
 use crate::env_diff::{EnvDiff, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;

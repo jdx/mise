@@ -1,4 +1,5 @@
 //! Publish relocatable tool installations without running a backend as root.
+use crate::config::SettingsExt;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink};

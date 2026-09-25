@@ -1,7 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::VersionOrder;
 use crate::cli::args::BackendArg;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
 use crate::toolset::{RawBackendOptions, ToolVersionOptions};
 use crate::ui::multi_progress_report::MultiProgressReport;

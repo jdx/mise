@@ -325,6 +325,7 @@ mod tests {
         resolve_before_date_for_tool_with_source,
     };
     use crate::cli::args::BackendArg;
+    use crate::config::SettingsExt;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;
     use jiff::Timestamp;

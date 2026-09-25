@@ -1,32 +1,15 @@
 use crate::config::Settings;
 use crate::env;
 
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub(crate) enum TaskOutput {
-    Interleave,
-    KeepOrder,
-    #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
+pub(crate) use mise_settings::TaskOutput;
+
+/// How the task runner resolves a configured [`TaskOutput`] into a stream style.
+pub(crate) trait TaskOutputExt {
+    fn style_only(self) -> TaskOutput;
+    fn style_with_raw(self, raw: bool) -> TaskOutput;
 }
 
-impl TaskOutput {
+impl TaskOutputExt for TaskOutput {
     /// Reduce a (possibly verbosity-carrying) output value to a STYLE-only value.
     ///
     /// `Quiet` historically meant "interleaved streams + suppressed mise output".
@@ -34,7 +17,7 @@ impl TaskOutput {
     /// applied separately via the `quiet()` predicate at mise's own metadata
     /// print sites. `Silent` is resolved before this is ever called (see
     /// `OutputHandler::output`), so it passes through unchanged.
-    pub(crate) fn style_only(self) -> TaskOutput {
+    fn style_only(self) -> TaskOutput {
         match self {
             TaskOutput::Quiet => {
                 deprecated_at!(
@@ -53,7 +36,7 @@ impl TaskOutput {
     /// non-suppression style to `Interleave` (raw needs inherited stdio for
     /// stdin passthrough). Mirrors the pre-existing `raw` handling for the
     /// global `task.output` setting.
-    pub(crate) fn style_with_raw(self, raw: bool) -> TaskOutput {
+    fn style_with_raw(self, raw: bool) -> TaskOutput {
         let style = self.style_only();
         // `raw` needs inherited stdio, but must never un-silence a `Silent` task.
         if raw && !matches!(style, TaskOutput::Silent) {

@@ -1,5 +1,6 @@
 use super::ports::PortClaim;
 use super::{Daemon, state_dir};
+use crate::config::SettingsExt;
 use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;

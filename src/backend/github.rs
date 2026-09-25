@@ -10,7 +10,7 @@ use crate::backend::static_helpers::{
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
