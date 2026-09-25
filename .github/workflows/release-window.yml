@@ -4,15 +4,18 @@ name: release-window
 # posting a pending `release-window` commit status, which is a required check
 # on main. Merging the release PR is what publishes crates and pushes the tag
 # (see xtasks/release-plz), so this is the only safe place to gate a release.
-# The hourly schedule flips the status to success once the window opens, and an
-# armed auto-merge then completes on its own. Every other PR gets success.
+# The half-hourly schedule flips the status to success once the window opens,
+# and an armed auto-merge then completes on its own. It also goes pending up to
+# 45 minutes before quiet hours so a delayed run cannot leave a gap at 18:00.
+# The status is keyed by commit, so any PR whose head is the `release` branch
+# commit gets the release verdict; every other PR gets success.
 
 on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
   pull_request_target:
     branches: ["main"]
     types: [opened, synchronize, reopened]
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -27,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      pull-requests: read
+      contents: read
       statuses: write
     steps:
       - name: Set release-window status
@@ -35,8 +38,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
@@ -47,28 +48,39 @@ jobs:
             echo "$1: $2 ($3)"
           }
 
+          # Minutes since local midnight fall in 18:00-03:00 Central.
+          is_quiet() {
+            local m=$(($1 % 1440))
+            [ "$m" -ge $((18 * 60)) ] || [ "$m" -lt $((3 * 60)) ]
+          }
+
           release_state() {
-            hour=$(TZ=America/Chicago date +%-H)
-            if [ "$hour" -ge 18 ] || [ "$hour" -lt 3 ]; then
+            read -r hour minute < <(TZ=America/Chicago date '+%-H %-M')
+            local now=$((hour * 60 + minute))
+            if is_quiet "$now" || is_quiet $((now + 45)); then
               echo pending "Quiet hours (18:00-03:00 Central); merges after 03:00"
             else
               echo success "Inside the release window"
             fi
           }
 
+          # Only this repository's `release` branch, never a fork's branch of the
+          # same name, identifies the release PR.
+          release_sha=$(gh api "repos/$REPO/branches/release" --jq .commit.sha 2>/dev/null || true)
+
           if [ "$EVENT_NAME" = "pull_request_target" ]; then
-            if [ "$HEAD_REF" != "release" ] || [ "$HEAD_REPO" != "$REPO" ]; then
-              set_status "$HEAD_SHA" success "Not a release PR"
-              exit 0
-            fi
             sha="$HEAD_SHA"
           else
-            sha=$(gh pr list -R "$REPO" --base main --head release --state open \
-              --json headRefOid --jq '.[0].headRefOid // empty')
+            sha="$release_sha"
             if [ -z "$sha" ]; then
-              echo "No open release PR"
+              echo "No release branch"
               exit 0
             fi
+          fi
+
+          if [ "$sha" != "$release_sha" ]; then
+            set_status "$sha" success "Not a release PR"
+            exit 0
           fi
 
           read -r state description < <(release_state)
