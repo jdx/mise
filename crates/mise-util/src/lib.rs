@@ -7,7 +7,15 @@
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+pub mod cmd;
 pub mod dirs;
 pub mod env;
+pub mod env_diff;
 pub mod file;
+pub mod hash;
+pub mod lock_file;
+pub mod path;
+pub mod progress;
+pub mod style;
 pub mod testing;

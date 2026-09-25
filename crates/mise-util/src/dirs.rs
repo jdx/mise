@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 
 use crate::env;
+use mise_settings::Settings;
 
 pub static HOME: Lazy<&Path> = Lazy::new(|| &env::HOME);
 pub static CWD: Lazy<Option<PathBuf>> = Lazy::new(|| env::current_dir().ok());
@@ -24,3 +25,35 @@ pub static TRACKED_STUBS: Lazy<PathBuf> = Lazy::new(|| STATE.join("tracked-stubs
 pub static TOOL_PURGATORY: Lazy<PathBuf> = Lazy::new(|| STATE.join("tool-purgatory.json"));
 pub static TRUSTED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("trusted-configs"));
 pub static IGNORED_CONFIGS: Lazy<PathBuf> = Lazy::new(|| STATE.join("ignored-configs"));
+
+/// The user shims directory: the `shims_dir` setting, or `MISE_SHIMS_DIR`.
+pub fn shims_dir(settings: &Settings) -> &Path {
+    settings
+        .shims_dir
+        .as_deref()
+        .unwrap_or(&env::MISE_SHIMS_DIR)
+}
+
+/// The system shims directory: the `system_shims_dir` setting, or the `shims`
+/// directory under `MISE_SYSTEM_DATA_DIR`.
+pub fn system_shims_dir(settings: &Settings) -> PathBuf {
+    settings
+        .system_shims_dir
+        .clone()
+        .unwrap_or_else(|| env::MISE_SYSTEM_DATA_DIR.join("shims"))
+}
+
+/// [`shims_dir`] from the loaded settings, or `MISE_SHIMS_DIR` when settings cannot load.
+pub fn shims() -> PathBuf {
+    Settings::try_get()
+        .map(|settings| shims_dir(&settings).to_path_buf())
+        .unwrap_or_else(|_| env::MISE_SHIMS_DIR.clone())
+}
+
+/// [`system_shims_dir`] from the loaded settings, with the same fallback when settings cannot
+/// load.
+pub fn system_shims() -> PathBuf {
+    Settings::try_get()
+        .map(|settings| system_shims_dir(&settings))
+        .unwrap_or_else(|_| env::MISE_SYSTEM_DATA_DIR.join("shims"))
+}
