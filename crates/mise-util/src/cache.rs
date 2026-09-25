@@ -72,7 +72,8 @@ static BASE_CACHE_KEYS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::
 
 /// Register the keys every cache file name is derived from, so a different mise
 /// build (version, profile, target or features) never reads another's caches.
-/// mise calls this at startup; without it the keys are empty.
+/// mise calls this at startup; building a cache before it panics, so a cache
+/// can never be written under a name that ignores the build.
 pub fn set_base_cache_keys(keys: Vec<String>) {
     let _ = BASE_CACHE_KEYS.set(keys);
 }
@@ -80,7 +81,10 @@ pub fn set_base_cache_keys(keys: Vec<String>) {
 impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
         let settings = Settings::get();
-        let mut cache_keys = BASE_CACHE_KEYS.get().cloned().unwrap_or_default();
+        let mut cache_keys = BASE_CACHE_KEYS
+            .get()
+            .expect("mise_util::cache::set_base_cache_keys must be called before building a cache")
+            .clone();
         cache_keys.extend([
             settings.os().to_string(),
             settings.arch().to_string(),
