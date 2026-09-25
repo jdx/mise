@@ -8,7 +8,60 @@ homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
+base64 = "0.23"
+blake3 = "1"
+bzip2 = "0.6"
+console = "0.16"
+digest = "0.11"
+duct = "1"
+dunce = "1"
+eyre = "0.6"
+filetime = "0.2"
+flate2 = "1"
+fslock = "0.2"
+hex = "0.4"
 homedir = "0.3"
+indexmap = { version = "2", features = ["serde"] }
+indoc = "2"
+itertools = "0.15"
+jdx-tar = "1"
+junction = "2"
 log = "0.4"
+md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
+mise-settings = { path = "../mise-settings", version = "2026" }
+path-absolutize = "4"
+rmp-serde = "1"
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+sevenz-rust2 = "0.22"
+sha1 = "0.11"
+sha2 = "0.11"
+shell-escape = "0.1"
+shell-words = "1"
+siphasher = "1"
+strum = { version = "0.28", features = ["derive"] }
+tempfile = "3"
 terminal_size = "0.4"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+walkdir = "2"
+which = "8"
+xx = { version = "2", default-features = false, features = ["glob"] }
+xz2 = "0.1"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+zstd = "0.14"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Globalization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_SystemServices",
+] }
+
+[dev-dependencies]
+insta = { version = "1", features = ["filters", "json"] }
+pretty_assertions = "1"

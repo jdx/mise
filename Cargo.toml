@@ -97,7 +97,6 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
 ] }
 base64 = "0.23"
 bytesize = "2"
-bzip2 = "0.6"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = [
   "std",
@@ -122,7 +121,6 @@ contracts = "0.6"
 dashmap = "6"
 demand = "2"
 diffy = "0.5"
-digest = "0.11"
 dotenvy = "0.15"
 duct = "1"
 dunce = "1"
@@ -167,7 +165,6 @@ jiff = "0.2"
 junction = "2"
 log = "0.4"
 minisign-verify = "0.2"
-md-5 = "0.11"
 miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 nodejs-semver = "5"
@@ -232,15 +229,12 @@ serde_ignored = "0.1"
 serde_json = "1"
 serde_yaml = "0.9"
 semver = "1"
-sevenz-rust2 = "0.22"
-sha1 = "0.11"
 sha2 = "0.11"
 blake3 = "1"
 chacha20poly1305 = "0.11"
 shell-escape = "0.1"
 shell-words = "1"
 signal-hook = "0.4"
-siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 tabled = { version = "0.22", features = ["ansi"] }
@@ -278,7 +272,6 @@ mise-interactive-config = { path = "crates/mise-interactive-config", version = "
 walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
-xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 opentelemetry = { version = "0.33", default-features = false, features = [
