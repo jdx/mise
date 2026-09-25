@@ -36,6 +36,11 @@ static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Whether the versions host publishes a version list for `tool`.
+pub(crate) fn lists_versions_for(tool: &str) -> bool {
+    PLUGINS_USE_VERSION_HOST.contains(tool)
+}
+
 /// Tools that should have downloads tracked
 /// (all core plugins and registry tools, including java/python)
 static PLUGINS_TRACK_DOWNLOADS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
@@ -250,10 +255,7 @@ fn log_versions_host_warn(ctx: VersionsHostLogContext<'_>, outcome: &str, extra:
 pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>> {
     let ctx = VersionsHostLogContext::version_list(tool);
     let settings = Settings::get();
-    if settings.prefer_offline()
-        || !settings.use_versions_host
-        || !PLUGINS_USE_VERSION_HOST.contains(tool)
-    {
+    if settings.prefer_offline() || !settings.use_versions_host || !lists_versions_for(tool) {
         log_versions_host_trace(ctx, "disabled", "fallback=true");
         return Ok(None);
     }

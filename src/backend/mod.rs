@@ -2485,15 +2485,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
-        let backend_type = self.get_type();
-        let use_versions_host = if !versions_host_applies(&backend_type, listing_opts) {
-            trace!(
-                "Skipping versions host for {} because {} backend has a direct source",
-                ba.short, backend_type
-            );
-            false
-        } else if !Settings::get().use_versions_host {
-            // Checked before the context, which the setting also changes.
+        let use_versions_host = if !Settings::get().use_versions_host {
             trace!(
                 "Skipping versions host for {} because use_versions_host is off",
                 ba.short
@@ -2513,48 +2505,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 ba.short,
             );
             false
-        } else if let Some(plugin) = self.plugin()
-            && let Ok(Some(remote_url)) = plugin.get_remote_url()
-        {
-            // Check if remote matches the registry default
-            let normalized_remote =
-                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
-            let shorthand_remote = REGISTRY
-                .get(plugin.name())
-                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
-                .unwrap_or_default();
-            let matches =
-                normalized_remote == normalize_remote(&shorthand_remote).unwrap_or_default();
-            if !matches {
-                trace!(
-                    "Skipping versions host for {} because it has a non-default remote",
-                    ba.short
-                );
-            }
-            matches
+        } else if let Some(reason) = self.versions_host_skip_reason(listing_opts) {
+            trace!("Skipping versions host for {} because {reason}", ba.short);
+            false
         } else {
-            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
-            // registry's preferred one. When a user aliases a tool to a different backend
-            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
-            // older request to a later backend, the versions host would return the
-            // preferred backend's versions, which do not describe the resolved backend.
-            if REGISTRY.contains_key(ba.short.as_str()) {
-                let is_preferred = backend_arg_is_preferred_registry_backend(&ba);
-                if !is_preferred {
-                    trace!(
-                        "Skipping versions host for {} because backend {} is not the registry default",
-                        ba.short,
-                        ba.full()
-                    );
-                }
-                is_preferred
-            } else {
-                trace!(
-                    "Skipping versions host for {} because it is not in the registry",
-                    ba.short
-                );
-                false
-            }
+            true
         };
 
         // Read-time filter: cache stores the pre-release superset for backends
@@ -4525,6 +4480,44 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(VersionOrder::Source)
     }
 
+    /// Why the versions host cannot serve this backend's remote version list,
+    /// or `None` when it can. Ignores `use_versions_host` and cache contexts,
+    /// which callers check themselves.
+    fn versions_host_skip_reason(&self, listing_opts: &ToolVersionOptions) -> Option<String> {
+        let ba = self.ba();
+        let backend_type = self.get_type();
+        if !versions_host_applies(&backend_type, listing_opts) {
+            return Some(format!("{backend_type} backend has a direct source"));
+        }
+        if let Some(plugin) = self.plugin()
+            && let Ok(Some(remote_url)) = plugin.get_remote_url()
+        {
+            // Check if remote matches the registry default
+            let normalized_remote =
+                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
+            let shorthand_remote = REGISTRY
+                .get(plugin.name())
+                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
+                .unwrap_or_default();
+            if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
+                return Some("it has a non-default remote".to_string());
+            }
+        } else if !REGISTRY.contains_key(ba.short.as_str()) {
+            return Some("it is not in the registry".to_string());
+        } else if !backend_arg_is_preferred_registry_backend(ba) {
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
+            // registry's preferred one. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
+            // older request to a later backend, the versions host would return the
+            // preferred backend's versions, which do not describe the resolved backend.
+            return Some(format!("backend {} is not the registry default", ba.full()));
+        }
+        if !versions_host::lists_versions_for(&ba.short) {
+            return Some("the versions host does not list it".to_string());
+        }
+        None
+    }
+
     /// The key of the remote-version cache entry these listing options select.
     async fn remote_version_cache_context_for(
         &self,
@@ -4552,17 +4545,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // A list fetched from the versions host lags new releases, so turning
         // the host off must not reuse it. Only the off state changes the key,
         // which keeps existing cache entries valid, and only for listings the
-        // host can serve: the others always list directly, so their one entry
-        // is already correct.
-        if Settings::get().use_versions_host
-            || !versions_host_applies(&self.get_type(), listing_opts)
+        // host would otherwise serve: a context already bypasses the host, and
+        // the other listings are always direct, so their one entry is correct.
+        if context.is_none()
+            && !Settings::get().use_versions_host
+            && self.versions_host_skip_reason(listing_opts).is_none()
         {
-            return Ok(context);
+            return Ok(Some("direct".to_string()));
         }
-        Ok(Some(match context {
-            Some(context) => hash::hash_to_str(&(context, "direct")),
-            None => "direct".to_string(),
-        }))
+        Ok(context)
     }
 
     /// The remote-version cache entry these listing options select. A backend
