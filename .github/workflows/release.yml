@@ -286,11 +286,10 @@ jobs:
     # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
     # with fat LTO and panic=unwind ran past the 150-minute timeout.
     runs-on: ${{matrix.runner}}
-    # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
-    # link this job now does is the long pole and its cost varies a lot with
-    # available memory — locally the same relink took ~20 minutes with RAM to spare
-    # and ~180 minutes when it did not. If this proves too tight on a runner,
-    # thin LTO for Windows is the fallback.
+    # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
+    # past this timeout on windows-latest depending on memory pressure, so
+    # scripts/build-tarball.ps1 builds Windows with thin LTO until these jobs
+    # move to a runner with more RAM.
     timeout-minutes: 150
     strategy:
       fail-fast: false
