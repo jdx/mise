@@ -892,7 +892,7 @@ across different installation systems.
    - Add it to the backend registry/factory function
    - Add the `BackendType` enum variant
 
-4. **Add CLI argument parsing** in `src/cli/args/backend_arg.rs` if needed
+4. **Add CLI argument parsing** in `src/args/backend_arg.rs` if needed
 
 5. **Update the registry** in `registry/` if it should be available as a
    shorthand

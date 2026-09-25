@@ -76,7 +76,7 @@ name such as `node` also depends on configuration and local state:
 
 Use `mise tool <name>` to inspect the effective backend instead of inferring it
 from the tool's short name. The
-[resolution implementation](https://github.com/jdx/mise/blob/main/src/cli/args/backend_arg.rs)
+[resolution implementation](https://github.com/jdx/mise/blob/main/src/args/backend_arg.rs)
 contains the detailed precedence rules.
 
 ### Environment Variable Overrides
