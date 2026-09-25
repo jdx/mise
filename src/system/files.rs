@@ -3448,11 +3448,25 @@ fn compile_patterns(
 /// it sits in the tree and `["*.md"]` drops every markdown file; a pattern
 /// containing `/` is anchored to the source root. Either kind matching a
 /// directory takes everything under it, which is why ancestors are tested
-/// too. Track entries use the same rules relative to the tracked path.
+/// too. Track entries use the same rules relative to the tracked path, for
+/// `include` lists as well as `exclude`.
+///
+/// **In a pattern with `/`, `*` stops at a separator and only `**`
+/// crosses one**, as in gitignore and the global `[history] exclude`
+/// list. The capture walk prunes directories an `include` list cannot
+/// reach into by matching one component at a time
+/// (`tracked::reaches_into`), which can only agree with this matcher if
+/// a wildcard never spans two components here either.
 pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    const PATH_PATTERN: glob::MatchOptions = glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
     patterns.iter().any(|pattern| {
         if pattern.as_str().contains('/') {
-            rel.ancestors().any(|a| pattern.matches_path(a))
+            rel.ancestors()
+                .any(|a| pattern.matches_path_with(a, PATH_PATTERN))
         } else {
             rel.components()
                 .any(|c| pattern.matches(&c.as_os_str().to_string_lossy()))
@@ -6309,6 +6323,28 @@ source = "oldrc""#,
         // but the same name elsewhere in the tree is untouched
         assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
         assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_slash_pattern_star_stops_at_separator() {
+        // gitignore semantics: in a pattern with `/`, `*` and `?` match
+        // within one component and only `**` crosses separators
+        let pats = patterns(&["rules/*.md"]);
+        assert!(is_excluded(Path::new("rules/one.md"), &pats));
+        assert!(!is_excluded(Path::new("rules/deep/two.md"), &pats));
+        let pats = patterns(&["*/cache"]);
+        assert!(is_excluded(Path::new("app/cache"), &pats));
+        assert!(is_excluded(Path::new("app/cache/index"), &pats));
+        assert!(!is_excluded(Path::new("app/sub/cache"), &pats));
+        let pats = patterns(&["rules/**/*.md"]);
+        assert!(is_excluded(Path::new("rules/one.md"), &pats));
+        assert!(is_excluded(Path::new("rules/deep/two.md"), &pats));
+        // a wildcard naming a directory still takes everything under it
+        let pats = patterns(&["rules/*"]);
+        assert!(is_excluded(Path::new("rules/deep/two.md"), &pats));
+        // a separator-free pattern still matches a name at any depth
+        let pats = patterns(&["*.md"]);
+        assert!(is_excluded(Path::new("rules/deep/two.md"), &pats));
     }
 
     #[test]

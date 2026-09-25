@@ -583,8 +583,10 @@ fully own, such as the one holding `mise.toml` itself:
 A pattern without `/` matches any single path component, so `"mise.toml"`
 skips that file wherever it appears in the tree and `"*.md"` skips every
 markdown file. A pattern containing `/` is anchored to the source root:
-`"nvim/spell"` skips only that path. Either kind matching a directory skips
-everything under it.
+`"nvim/spell"` skips only that path. In such a pattern, `*` stops at a `/`
+and `**` crosses directories, as in `.gitignore`: `"nvim/*.bak"` skips
+`nvim/init.bak` but not `nvim/after/init.bak`, and `"nvim/**/*.bak"` skips
+both. Either kind matching a directory skips everything under it.
 
 For `symlink-each`, excluding a previously managed file removes its recorded link on the
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
@@ -946,7 +948,9 @@ Use per-entry exclusions to omit files beneath one directory:
 
 The patterns are relative to `~/.codex`. `sessions` excludes directories
 with that name and their contents; `*.log` excludes matching files at any
-depth. Patterns containing `/` are anchored to the tracked directory.
+depth. Patterns containing `/` are anchored to the tracked directory, and
+in them `*` stops at a `/` while `**` crosses directories: `logs/*.log`
+excludes `logs/today.log` but not `logs/old/today.log`.
 Global `[history] exclude` rules also apply and cannot override the entry's
 exclusions with `!glob`.
 
@@ -957,9 +961,12 @@ If you only want a few files, use an include list instead:
 "~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
 ```
 
-No `include` field considers the whole directory; `include = []` selects
-nothing. Explicit exclusions always win. Includes also select credential-
-named files, so use `encrypt = true` for private contents. See
+Includes follow the same pattern rules, so `rules/*.md` selects the
+markdown files directly in `rules` and `rules/**/*.md` also selects those in
+its subdirectories. No `include` field considers the whole directory;
+`include = []` selects nothing. Explicit exclusions always win. Includes
+also select credential-named files, so use `encrypt = true` for private
+contents. See
 [choosing files](/history.html#choose-which-files-a-directory-saves) for
 matching rules, previews, and compatibility requirements.
 

@@ -2115,7 +2115,10 @@ fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
 /// when a change could make a pattern match *less* than it used to, so a
 /// replay of an older checkpoint does not conclude a path was absent
 /// when the older matcher would have called it excluded.
-pub(crate) const MATCHER_VERSION: u32 = 1;
+///
+/// 2: in an entry's own `include` and `exclude` patterns containing `/`,
+/// `*` stopped crossing separators.
+pub(crate) const MATCHER_VERSION: u32 = 2;
 
 /// Directories mise owns that are never captured.
 pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
@@ -3110,14 +3113,20 @@ mod tests {
         std::fs::write(root.join("rules/one.md"), "keep").unwrap();
         std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
 
-        // every one of these matches the directory `rules/deep` or an
+        // the first three match the directory `rules/deep` or an
         // ancestor of it, and **a pattern matching a directory takes
-        // everything under it** — so all three select the file, and none
-        // of them may prune the directory
+        // everything under it** — so they select the file, and none of
+        // them may prune the directory. In a pattern with `/`, `*` stops
+        // at a separator, so `rules/*.md` names only files directly in
+        // `rules` and the walk may skip `rules/deep`.
         for (pattern, selects_deep) in [
             ("rules", true),
             ("rules/**", true),
             ("rules/*", true),
+            ("rules/*/two.md", true),
+            ("rules/**/*.md", true),
+            ("rules/*.md", false),
+            ("*/two.md", false),
             ("sessions/**", false),
         ] {
             let mut tracked = entry(&root);

@@ -710,7 +710,9 @@ Patterns are relative to the tracked directory:
 - Without `/`, a pattern matches any path component. `sessions` excludes
   directories with that name at any depth and everything inside them.
 - With `/`, a pattern is anchored to the tracked directory. `sessions/**`
-  excludes its top-level sessions directory's contents.
+  excludes its top-level sessions directory's contents. In these patterns
+  `*` stops at a separator and `**` crosses separators, so `logs/*.log`
+  does not exclude `logs/old/today.log`.
 - A matching directory excludes its entire subtree.
 
 Both the entry's list and the global `[history] exclude` list apply. A
