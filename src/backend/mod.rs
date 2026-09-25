@@ -27,7 +27,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
+use crate::plugins::{PluginType, VERSION_REGEX, is_python_prerelease};
 use crate::registry::{
     REGISTRY, RegistryIdiomaticFile, full_to_url, normalize_remote, tool_enabled,
 };
@@ -1755,6 +1755,31 @@ mod tests {
         assert_eq!(
             fuzzy_match_versions_pep440(versions.clone(), "latest", false),
             versions
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_pep440_ignores_local_label() {
+        let versions = vec![
+            "1.0".to_string(),
+            "1.1+gpu.dev0".to_string(),
+            "1.2.dev0".to_string(),
+            "1.2-rc1+gpu".to_string(),
+        ];
+        // `.dev` in a local label does not make `1.1+gpu.dev0` a prerelease,
+        // but the channel tags still apply to the public version.
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "latest", true),
+            vec!["1.0".to_string(), "1.1+gpu.dev0".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "1.1", true),
+            vec!["1.1+gpu.dev0".to_string()]
+        );
+        // Other backends keep the shared filter on the full string.
+        assert_eq!(
+            fuzzy_match_versions(versions, "latest", true),
+            vec!["1.0".to_string()]
         );
     }
 
@@ -6098,28 +6123,20 @@ fn tool_option_bool(value: &toml::Value) -> bool {
     crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
-/// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection
-/// applied on top of the shared filter. Used by Python-flavored backends
-/// (`pipx`, the `python` core plugin) so `3.15.0a8`-style versions are dropped
-/// from `latest` resolution and partial-prefix queries when the user hasn't
-/// opted in to prereleases.
+/// Fuzzy-match `versions` against `query` with Python pre-release detection
+/// ([`is_python_prerelease`]) in place of the shared filter. Used by
+/// Python-flavored backends (`pipx`, the `python` core plugin) so
+/// `3.15.0a8`-style versions are dropped from `latest` resolution and
+/// partial-prefix queries when the user hasn't opted in to prereleases, while
+/// a local label such as `1.1+gpu.dev0` does not make a release a prerelease.
 pub(crate) fn fuzzy_match_versions_pep440(
     versions: Vec<String>,
     query: &str,
     filter_prereleases: bool,
 ) -> Vec<String> {
-    let versions = if filter_prereleases {
-        // Mirror the exact-match bypass in `fuzzy_match_versions` so an
-        // explicit prerelease request (`python@3.14.0a1`) still resolves even
-        // when filter_prereleases is on.
-        versions
-            .into_iter()
-            .filter(|v| query == v || !PEP440_PRERELEASE_REGEX.is_match(v))
-            .collect()
-    } else {
-        versions
-    };
-    fuzzy_match_versions(versions, query, filter_prereleases)
+    fuzzy_match_versions_by(versions, query, |v| {
+        filter_prereleases && is_python_prerelease(v)
+    })
 }
 
 /// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
@@ -6130,6 +6147,19 @@ pub(crate) fn fuzzy_match_versions(
     versions: Vec<String>,
     query: &str,
     filter_prereleases: bool,
+) -> Vec<String> {
+    fuzzy_match_versions_by(versions, query, |v| {
+        filter_prereleases && VERSION_REGEX.is_match(v)
+    })
+}
+
+/// Fuzzy-match `versions` against `query`, dropping versions for which
+/// `is_filtered_prerelease` returns true unless they equal `query` exactly, so
+/// an explicit prerelease request (`python@3.14.0a1`) still resolves.
+fn fuzzy_match_versions_by(
+    versions: Vec<String>,
+    query: &str,
+    is_filtered_prerelease: impl Fn(&str) -> bool,
 ) -> Vec<String> {
     let escaped_query = regex::escape(query);
     let query_pattern = if query == "latest" {
@@ -6182,7 +6212,7 @@ pub(crate) fn fuzzy_match_versions(
             if query == v {
                 return true;
             }
-            if filter_prereleases && VERSION_REGEX.is_match(v) {
+            if is_filtered_prerelease(v) {
                 return false;
             }
             if query_regex.is_match(v) {
