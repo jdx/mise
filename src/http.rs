@@ -4042,7 +4042,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert_eq!(std::fs::read(&matching).unwrap(), b"helloworld");
 
         let mismatched = dir.path().join("mismatched");
-        download_file_checksum_pinned(&url, &mismatched, &"0".repeat(64), None)
+        let _err = download_file_checksum_pinned(&url, &mismatched, &"0".repeat(64), None)
             .await
             .unwrap_err();
         assert!(!mismatched.exists());
