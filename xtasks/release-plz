@@ -181,7 +181,7 @@ set_package_version() {
 	# Keep workspace path dependencies compatible before Cargo resolves the bump.
 	case "$crate_name" in
 	mise-agent-env)
-		set_path_dependency_version Cargo.toml mise-agent-env "$new_version"
+		set_path_dependency_version crates/mise-util/Cargo.toml mise-agent-env "$new_version"
 		;;
 	mise-cache-core)
 		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
@@ -191,6 +191,9 @@ set_package_version() {
 		;;
 	mise-settings)
 		set_path_dependency_version Cargo.toml mise-settings "$new_version"
+		;;
+	mise-util)
+		set_path_dependency_version Cargo.toml mise-util "$new_version"
 		;;
 	esac
 
@@ -380,9 +383,13 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_CACHE_CORE_VERSION=""
 	MISE_AGENT_ENV_VERSION=""
 	MISE_SETTINGS_VERSION=""
+	MISE_UTIL_VERSION=""
 
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
-	cargo add -p mise "mise-agent-env@$MISE_AGENT_ENV_VERSION"
+	cargo add -p mise-util "mise-agent-env@$MISE_AGENT_ENV_VERSION"
+
+	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
+	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
 
 	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
 	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features

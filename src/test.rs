@@ -26,6 +26,7 @@ fn init() {
     if std::env::args_os().any(|a| a == "--list") {
         return;
     }
+    mise_util::testing::enable(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
     crate::config::settings::register_loader();
     // Tests must start from the environment nextest gives their process, not
     // from an activation diff inherited from the process that launched it.

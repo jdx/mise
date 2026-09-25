@@ -9,6 +9,7 @@ members = [
   "crates/mise-shim",
   "crates/mise-sigstore",
   "crates/mise-settings",
+  "crates/mise-util",
 ]
 
 [package]
@@ -125,7 +126,6 @@ digest = "0.11"
 dotenvy = "0.15"
 duct = "1"
 dunce = "1"
-homedir = "0.3"
 expr-lang = "2"
 eyre = "0.6"
 file-id = "0.2"
@@ -134,8 +134,8 @@ flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
-mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-util = { path = "crates/mise-util", version = "2026" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -259,7 +259,6 @@ tera-contrib = { version = "0.3", features = [
   "slug",
   "urlencode",
 ] }
-terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "rt"] }
