@@ -1,0 +1,4 @@
+backends = ["aqua:nklmilojevic/sofka"]
+description = "A Kubernetes TUI, reimagined in Rust - built on kube-rs and ratatui, async-first from the ground up"
+test = { cmd = "sofka --version", expected = "sofka {{version}}" }
+version_order = "semver"
