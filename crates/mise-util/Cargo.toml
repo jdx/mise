@@ -41,6 +41,7 @@ junction = "2"
 log = "0.4"
 md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
+mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "../mise-settings", version = "2026" }
 netrc-rs = "0.1"
 nodejs-semver = "5"

@@ -6811,6 +6811,7 @@ dependencies = [
  "log",
  "md-5 0.11.0",
  "mise-agent-env",
+ "mise-cache-core",
  "mise-settings",
  "netrc-rs",
  "nix 0.31.3",

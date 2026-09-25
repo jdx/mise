@@ -26,7 +26,6 @@ use crate::cmd::CmdLineRunner;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
-static CANCELLED: AtomicBool = AtomicBool::new(false);
 static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 /// Woken by the console control handler, which runs on a thread of its own and
@@ -44,7 +43,7 @@ unsafe extern "system" fn handler(ctrl_type: u32) -> BOOL {
         CTRL_C_EVENT | CTRL_BREAK_EVENT => {
             // Recorded before anything is torn down so a child's exit is
             // reported as cancellation rather than as a task failure.
-            if EXIT.load(Ordering::Relaxed) || CANCELLED.swap(true, Ordering::Relaxed) {
+            if EXIT.load(Ordering::Relaxed) || mise_util::cancel::mark() {
                 SHOULD_EXIT.store(true, Ordering::Relaxed);
             }
             INTERRUPTED.notify_one();
@@ -102,13 +101,13 @@ pub(crate) async fn exit_signal() -> i32 {
 
 pub(crate) fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
-    CANCELLED.store(false, Ordering::Relaxed);
+    mise_util::cancel::reset();
     install_handler();
 }
 
 /// Returns true if ctrl-c has been received
 pub(crate) fn is_cancelled() -> bool {
-    CANCELLED.load(Ordering::Relaxed)
+    mise_util::cancel::is_cancelled()
 }
 
 /// ensures cursor is displayed on ctrl-c

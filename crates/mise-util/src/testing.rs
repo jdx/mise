@@ -113,9 +113,11 @@ impl crate::progress::SingleReport for RecordingReport {
 }
 
 /// This crate's own unit tests have no mise config system to load settings
-/// from, so they read the `settings.toml` defaults.
+/// from, so they read the `settings.toml` defaults, and no mise build to key
+/// caches on.
 #[cfg(test)]
 #[ctor::ctor(unsafe)]
 fn register_default_settings() {
     mise_settings::set_loader(mise_settings::load_defaults);
+    crate::cache::set_base_cache_keys(vec!["mise-util-tests".to_string()]);
 }
