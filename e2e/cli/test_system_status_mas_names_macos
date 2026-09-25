@@ -15,10 +15,8 @@ fi
 exit 1
 SCRIPT
 chmod +x mas-tool/bin/mas
+export PATH="$PWD/mas-tool/bin:$PATH"
 cat <<TOML >mise.toml
-[tools]
-mas = "path:./mas-tool"
-
 [bootstrap.packages]
 "mas:497799835" = "latest"
 "mas:409203825" = "latest"
