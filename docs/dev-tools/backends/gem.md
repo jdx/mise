@@ -71,3 +71,73 @@ native extensions, `MAKEFLAGS` controls parallel make jobs:
 [tools]
 "gem:rubocop" = { version = "latest", install_env = { MAKEFLAGS = "-j4" } }
 ```
+
+### `source`
+
+Install one gem from a specific registry instead of the configured default:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "2.2.0", source = "https://gems.example.com/acme" }
+```
+
+Without this, the only way to install from a private registry is to make it the
+machine's primary `gem sources` entry, which redirects every other `gem install`
+on that machine as well.
+
+The source applies to version resolution as well as installation, so `latest`
+resolves against the same registry the gem is installed from.
+
+### Authenticating
+
+A private registry authenticates with basic-auth credentials on the source URL
+itself. RubyGems reads the userinfo from the source it is fetching from; the
+API key `gem signin` writes to `~/.gem/credentials` is for publishing commands
+such as `gem push` and does not authenticate a download.
+
+Keep the token out of the file by taking it from the environment, since tool
+options are templated:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "latest", source = "https://{{ env.GEM_TOKEN }}@gems.example.com" }
+```
+
+Some registries expect the token in the user position with no password, which
+is what the example above does. Others want `user:token@host`. Follow whichever
+your registry documents.
+
+A source carrying a credential must use `https`, since basic auth over plain
+`http` puts the token on the wire. Plain `http` is accepted for a registry on
+`localhost`, where nothing crosses a network, and for any source with no
+credential in it.
+
+mise registers the credential for redaction, so it is replaced with
+`[redacted]` wherever mise renders the source: log output, `MISE_LOG_FILE`, the
+`gem install` command line, error messages, and the gem command's own output.
+Credentials are also stripped from the URL before it is recorded in mise's
+install metadata, so no token is written under the data directory. Even so,
+prefer a token scoped to reading that registry, since the rendered value does
+exist in the process environment and in whatever supplies it.
+
+This holds under `raw` mode too. Raw mode normally hands the child mise's own
+stdout and stderr, which would bypass redaction entirely, so a `gem install`
+whose source carries a credential is refused raw mode and has its output
+captured instead. Only that one command is affected, and only when there is a
+credential to protect.
+
+Dependencies are still resolved from the other configured sources, so a private
+gem whose dependencies live on rubygems.org installs normally. `source` is added
+to the source list rather than replacing it, which is what makes that work.
+
+That cuts both ways, and it is worth being plain about the consequence. mise
+pins the version it resolved from your registry, but `--source` appends, so
+rubygems.org is still in RubyGems' source list and a public gem of the same
+name and version can satisfy the install. Whoever holds that name publicly can
+therefore influence what a private `latest` installs, and if the name is
+already taken you cannot fix it by choosing a different one.
+
+**Prefer a registry that proxies rubygems.org.** Point `source` at the proxy so
+the private gem and its dependencies both resolve from one place, and no other
+source is in play. Where that is not possible, use a private gem name unlikely
+to be claimed publicly, and pin an exact version rather than `latest`.

@@ -130,6 +130,8 @@ pub(crate) struct CmdLineRunner<'a> {
     stdin: Option<String>,
     redactor: Redactor,
     raw: bool,
+    /// Refuse raw mode for this one command, however it was requested.
+    never_raw: bool,
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
@@ -584,6 +586,7 @@ impl<'a> CmdLineRunner<'a> {
             stdin: None,
             redactor: Default::default(),
             raw: false,
+            never_raw: false,
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
@@ -892,6 +895,22 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Never run this command in raw mode, even when the setting asks for it.
+    ///
+    /// Raw mode hands the child mise's own stdout and stderr, which is the
+    /// point of it, and also means nothing passes through the redactor. For a
+    /// command whose arguments carry a credential that is not a trade the
+    /// `raw` setting can reasonably be making on the user's behalf: they asked
+    /// for unfiltered output, not for a token in their scrollback.
+    ///
+    /// Deliberately per-command rather than "any runner with redactions".
+    /// Tasks register redactions too, and silently moving an interactive task
+    /// off raw mode would change what it can do.
+    pub(crate) fn never_raw(mut self) -> Self {
+        self.never_raw = true;
+        self
+    }
+
     pub(crate) fn with_pass_signals(&mut self) -> &mut Self {
         self.pass_signals = true;
         self
@@ -911,7 +930,7 @@ impl<'a> CmdLineRunner<'a> {
     pub(crate) fn execute(mut self) -> Result<()> {
         let read_lock = raw_read_lock_blocking();
         debug!("$ {self}");
-        if Settings::get().raw || self.raw {
+        if (Settings::get().raw || self.raw) && !self.never_raw {
             drop(read_lock);
             let _write_lock = raw_write_lock_blocking();
             return self.execute_raw();
@@ -2085,17 +2104,28 @@ pub(crate) fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static
     }
 }
 
+/// A command line with registered secrets removed.
+///
+/// This rendering is not only for logs. `execute` debug-logs it, but it is also
+/// formatted into `failed to execute command: {self}`, and that error is
+/// printed by the top-level handler, which applies no redaction of its own. An
+/// argument can legitimately carry a credential (a gem `source` authenticates
+/// as basic-auth userinfo on the URL), so redacting where the string is built
+/// covers every consumer instead of asking each one to remember.
+fn display_command(runner: &CmdLineRunner<'_>) -> String {
+    let args = runner.get_args().join(" ");
+    crate::config::redact_global(&format!("{} {args}", runner.get_program()))
+}
+
 impl Display for CmdLineRunner<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let args = self.get_args().join(" ");
-        write!(f, "{} {args}", self.get_program())
+        write!(f, "{}", display_command(self))
     }
 }
 
 impl Debug for CmdLineRunner<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let args = self.get_args().join(" ");
-        write!(f, "{} {args}", self.get_program())
+        write!(f, "{}", display_command(self))
     }
 }
 
@@ -2942,6 +2972,32 @@ mod tests {
             assert!(super::RUNNING_PIDS.lock().unwrap().contains(&pid));
         }
         assert!(!super::RUNNING_PIDS.lock().unwrap().contains(&pid));
+    }
+
+    /// Raw mode hands the child mise's own stdout, which is why nothing passes
+    /// through the redactor there. `never_raw` is how a command carrying a
+    /// credential in its arguments opts out, so the observable contract is that
+    /// output is captured even with `raw` requested: in raw mode `on_stdout`
+    /// never fires at all.
+    #[test]
+    fn never_raw_keeps_output_captured_even_when_raw_is_requested() {
+        use std::sync::{Arc, Mutex};
+
+        let seen: Arc<Mutex<Vec<String>>> = Default::default();
+        let sink = seen.clone();
+        super::CmdLineRunner::new("echo")
+            .arg("captured")
+            .raw(true)
+            .never_raw()
+            .with_on_stdout(move |line| sink.lock().unwrap().push(line))
+            .execute()
+            .expect("echo should run");
+
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &["captured".to_string()],
+            "raw mode was not refused, so nothing could be redacted"
+        );
     }
 
     #[test]
