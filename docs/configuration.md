@@ -56,7 +56,46 @@ Notes:
 
 - Paths that start with `mise` can be dotfiles, e.g. `.mise.toml` or `.mise/config.toml`.
 - This list doesn't include [Configuration Environments](/configuration/environments), which allow environment-specific config files like `mise.development.toml`—selected with `MISE_ENV=development`. Platform-specific environments like `mise.windows.toml` or `mise.macos-arm64.toml` can be enabled automatically with the [`auto_env` setting](/configuration/environments.html#platform-environments).
+- A folder inside any `conf.d` directory is also a fragment. See [conf.d folders](/configuration.html#conf-d-folders).
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
+
+## conf.d folders
+
+A folder inside a `conf.d` directory is a fragment that keeps its config next to the files it
+uses. This works in the global (`~/.config/mise/conf.d`), system (`/etc/mise/conf.d`), and project
+`conf.d` directories:
+
+```text
+~/.config/mise/conf.d/
+├── git.toml                  # single-file fragment
+└── git-tools/                # folder fragment
+    ├── mise.toml             # always loaded
+    ├── mise.local.toml       # always loaded, usually gitignored
+    ├── mise.linux.toml       # loaded when the linux environment is active
+    ├── mise.linux.local.toml
+    └── gitconfig
+```
+
+The folder is the config root for its files. Relative paths, such as a
+[dotfile](/dotfiles.html) source of `"gitconfig"`, resolve inside the folder, and
+<code v-pre>{{ config_root }}</code> is the folder's path. Tasks defined in the folder run
+there by default. The folder can be a symlink, so a dotfiles checkout can keep its own layout:
+
+```sh
+ln -s ~/src/dotfiles/git ~/.config/mise/conf.d/git-tools
+```
+
+Only `mise.toml`, `mise.local.toml`, `mise.<env>.toml`, and `mise.<env>.local.toml` are read from a
+folder, and folders are not searched recursively. Folders whose names start with `.` are ignored.
+`mise.<env>.toml` files load for explicit [config environments](/configuration/environments.html)
+and [platform environments](/configuration/environments.html#platform-environments); they are not
+affected by the `env_conf_d` migration.
+
+Folder fragments load after single-file fragments in the same `conf.d` directory, in alphabetical
+order by folder name, and before the directory's regular config such as `config.toml`. Their
+environment and local files take the same place as `conf.d/<name>.<env>.toml` and
+`conf.d/<name>.local.toml` would. Tools declared in a project folder fragment share the project's
+lockfile.
 
 ## Configuration Hierarchy
 

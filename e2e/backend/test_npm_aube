@@ -67,7 +67,7 @@ node = "20.11.1"
 EOF
 MISE_LOCKFILE=1 mise -C auto-lock install
 assert_succeed "find '$MISE_DATA_DIR/installs/npm-inflight' -maxdepth 1 -name '1.0.6~aube~*' | grep -q ."
-assert_succeed "test ! -e '$MISE_DATA_DIR/installs/npm-inflight/1.0.6/incomplete'"
+assert_succeed "test ! -e '$MISE_CACHE_DIR/npm-inflight/1.0.6/incomplete'"
 
 # Generate-mode upgrades fill graphs after changing the lockfile revision.
 mkdir upgrade-lock
