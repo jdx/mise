@@ -1,9 +1,10 @@
 use std::env::join_paths;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use indoc::indoc;
 
+use crate::config::{Settings, SettingsExt};
 use crate::{env, file};
 
 // ctor puts the constructor body in `__TEXT,__text_startup` on Apple targets, a
@@ -128,6 +129,33 @@ fn init() {
 }
 
 pub(crate) use mise_util::testing::{EnvVarGuard, lock_ignoring_poison};
+
+/// Held by every test that replaces the process-wide settings, and by every test that reads a
+/// setting it needs to stay put. One lock for the whole crate: with a lock per module, a reset in
+/// one module's tests silently undid another module's override mid-test. Take it before any
+/// environment lock (such as `env_directive::file`'s `ENV_MUTEX`) when a test needs both.
+pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+
+/// Holds [`SETTINGS_LOCK`] and puts the settings back with `Settings::reset(None)` when dropped,
+/// including when the test panics, so an override can never leak into a later test.
+pub(crate) struct SettingsGuard {
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl SettingsGuard {
+    pub(crate) fn lock() -> Self {
+        Self {
+            _lock: lock_ignoring_poison(&SETTINGS_LOCK),
+        }
+    }
+}
+
+impl Drop for SettingsGuard {
+    fn drop(&mut self) {
+        // Runs before `_lock` is released, so the next test starts from clean settings.
+        Settings::reset(None);
+    }
+}
 
 pub(crate) fn replace_path(input: &str) -> String {
     let path = join_paths(&*env::PATH)

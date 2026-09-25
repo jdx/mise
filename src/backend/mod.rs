@@ -2014,6 +2014,7 @@ mod tests {
         use crate::toolset::ToolVersionOptions;
         use confique::Layer;
 
+        let _settings = crate::test::SettingsGuard::lock();
         let backend = TestBackend::default();
         let opts = ToolVersionOptions::default();
         // Sanity: with no per-tool opt and no setting, prereleases stay filtered.
@@ -5395,6 +5396,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_prerelease_selection_skips_latest_stable_fast_path() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let config = Config::get().await.unwrap();
         let mut backend =
@@ -5644,6 +5646,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_remote_versions_use_cache_without_fetching() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-cache");
         let cache = backend.get_remote_version_cache();
@@ -5675,6 +5678,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_rolling_check_does_not_fetch_missing_checksum() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-rolling-check");
         backend
@@ -5848,6 +5852,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_latest_uses_fast_path_when_available() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-latest-cache");
 
@@ -5864,6 +5869,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-offline-latest-cache-fallback").with_stable_result(None);
@@ -5897,6 +5903,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-fast-path-none").with_stable_result(None);

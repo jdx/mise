@@ -2092,13 +2092,11 @@ mod tests {
         path
     }
 
-    /// Every test that imports takes this lock. The paranoid-mode test changes a
-    /// global setting, and under `paranoid` a fixture's directory-level trust no
-    /// longer covers its config file, so an overlapping import would fail.
-    static IMPORT_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn import_lock() -> std::sync::MutexGuard<'static, ()> {
-        crate::test::lock_ignoring_poison(&IMPORT_TESTS)
+    /// Every test that imports takes the settings lock. The paranoid-mode test
+    /// changes a global setting, and under `paranoid` a fixture's directory-level
+    /// trust no longer covers its config file, so an overlapping import would fail.
+    fn import_lock() -> crate::test::SettingsGuard {
+        crate::test::SettingsGuard::lock()
     }
 
     /// The recorded failure for an import, by the name the project gave it.
@@ -2772,7 +2770,7 @@ mod tests {
 
     #[test]
     fn an_untrusted_referenced_project_is_not_imported() {
-        let _serial = import_lock();
+        let serial = import_lock();
         // This exercises the real trust gate. `mise x`, `mise run` and
         // `mise daemons start` mark the active config implicitly trusted, and
         // reading a sibling through that branch would grant it durable trust
@@ -2790,7 +2788,7 @@ mod tests {
         // `is_trusted` trusts everything under `cfg!(test)`, except in paranoid
         // mode, where trust is bound to file contents and checked first. That is
         // the only way to exercise this gate without the bypass.
-        let _paranoid = Paranoid::on();
+        paranoid_on(&serial);
         let set = load(&config).unwrap();
         assert!(set.find("worker").is_none());
         let err = &failure(&set, "worker");
@@ -2815,24 +2813,14 @@ mod tests {
         assert_eq!(set.find("worker").map(|d| d.imported), Some(true));
     }
 
-    /// Turns on `paranoid` for one test and restores the settings on drop, even
-    /// if the test panics.
-    struct Paranoid;
-
-    impl Paranoid {
-        fn on() -> Self {
-            use confique::Layer;
-            let mut settings = crate::config::settings::SettingsPartial::empty();
-            settings.paranoid = Some(true);
-            crate::config::Settings::reset(Some(settings));
-            Self
-        }
-    }
-
-    impl Drop for Paranoid {
-        fn drop(&mut self) {
-            crate::config::Settings::reset(None);
-        }
+    /// Turns on `paranoid` for the rest of the test. Taking the guard proves the
+    /// caller holds the settings lock, and the guard restores the settings on drop,
+    /// even if the test panics.
+    fn paranoid_on(_held: &crate::test::SettingsGuard) {
+        use confique::Layer;
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(true);
+        crate::config::Settings::reset(Some(settings));
     }
 
     #[test]

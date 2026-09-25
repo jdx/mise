@@ -2642,6 +2642,7 @@ mod tests {
 
     #[test]
     fn test_offline_default_is_false() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let settings = Settings::get();
         // When neither setting nor env var is set, offline should be false
@@ -2652,6 +2653,7 @@ mod tests {
 
     #[test]
     fn test_prefer_offline_default_is_false() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let settings = Settings::get();
         assert!(!settings.prefer_offline);
@@ -2684,16 +2686,17 @@ mod tests {
 
     #[test]
     fn test_offline_setting_enables_offline() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert!(settings.offline());
-        Settings::reset(None);
     }
 
     #[test]
     fn test_reload_preserves_cli_settings() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
         Settings::reset(Some(partial));
@@ -2701,21 +2704,21 @@ mod tests {
 
         Settings::reload();
         assert!(Settings::get().offline());
-        Settings::reset(None);
     }
 
     #[test]
     fn test_offline_implies_prefer_offline() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert!(settings.prefer_offline());
-        Settings::reset(None);
     }
 
     #[test]
     fn test_prefer_offline_setting() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.prefer_offline = Some(true);
         Settings::reset(Some(partial));
@@ -2723,28 +2726,27 @@ mod tests {
         assert!(settings.prefer_offline());
         // prefer_offline does NOT imply offline
         assert!(!settings.offline);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_install_before_hidden_alias_sets_minimum_release_age() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.install_before = Some("7d".to_string());
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("7d"));
-        Settings::reset(None);
     }
 
     #[test]
     fn test_minimum_release_age_hidden_alias_wins_over_install_before() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.install_before = Some("7d".to_string());
         partial.minimum_release_age = Some("3d".to_string());
         Settings::reset(Some(partial));
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("3d"));
-        Settings::reset(None);
     }
 
     #[test]

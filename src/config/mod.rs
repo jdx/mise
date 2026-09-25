@@ -6598,6 +6598,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_reloads_settings() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let before = Settings::get();
 
@@ -6605,7 +6606,6 @@ mod tests {
         let after = Settings::get();
 
         assert!(!Arc::ptr_eq(&before, &after));
-        Settings::reset(None);
     }
 
     #[test]
