@@ -3442,16 +3442,49 @@ fn compile_patterns(
     Ok(Some(compiled))
 }
 
+/// The body of a per-entry `include`/`exclude` pattern that starts at the
+/// entry root, or `None` if it does not.
+///
+/// **A leading `/` anchors a pattern to the root, as in gitignore, and
+/// the root is not part of the relative path it is matched against.**
+/// `/rules/*.md` means `rules/*.md` and `/cache` means `cache` at the top
+/// only. Left as written, the root can never match, so `exclude =
+/// ["/cache"]` excludes nothing while the walk still descends into
+/// `cache`. [`is_excluded`] and the walk's pruner both read patterns
+/// through this, so the two cannot disagree about it; compilation keeps
+/// the pattern as written, because it is recorded and shared that way.
+///
+/// On Windows a backslash separates too, as it does for the glob matcher.
+pub(crate) fn rooted_pattern(pattern: &str) -> Option<&str> {
+    let mut chars = pattern.chars();
+    chars
+        .next()
+        .filter(|c| std::path::is_separator(*c))
+        .map(|_| chars.as_str())
+}
+
 /// Whether a source-relative (or entry-relative) path is dropped by the
 /// entry's `exclude` patterns. A pattern without `/` matches any single
 /// path component, so `exclude = ["mise.toml"]` drops that file wherever
 /// it sits in the tree and `["*.md"]` drops every markdown file; a pattern
-/// containing `/` is anchored to the source root. Either kind matching a
+/// containing `/` is anchored to the source root, and a leading `/` only
+/// says so explicitly (see [`rooted_pattern`]). Either kind matching a
 /// directory takes everything under it, which is why ancestors are tested
 /// too. Track entries use the same rules relative to the tracked path.
 pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
     patterns.iter().any(|pattern| {
-        if pattern.as_str().contains('/') {
+        if rooted_pattern(pattern.as_str()).is_some() {
+            // the path gets the same root the pattern starts with, and
+            // the two cancel: matching `/rules/*.md` against
+            // `/rules/one.md` is matching `rules/*.md` against
+            // `rules/one.md`, without recompiling the glob per path. The
+            // empty ancestor is the entry itself, which its own list
+            // never names — and a bare `/` would otherwise match it.
+            rel.ancestors()
+                .filter(|a| !a.as_os_str().is_empty())
+                .filter_map(|a| a.to_str())
+                .any(|a| pattern.matches(&format!("/{a}")))
+        } else if pattern.as_str().contains('/') {
             rel.ancestors().any(|a| pattern.matches_path(a))
         } else {
             rel.components()
@@ -6309,6 +6342,32 @@ source = "oldrc""#,
         // but the same name elsewhere in the tree is untouched
         assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
         assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    /// A leading `/` anchors to the root as in gitignore; left as written
+    /// it could never match a relative path, and the exclusion silently
+    /// did nothing.
+    #[test]
+    fn test_exclude_leading_slash_is_the_root() {
+        let pats = patterns(&["/rules/*.md"]);
+        assert!(is_excluded(Path::new("rules/one.md"), &pats));
+        assert!(!is_excluded(Path::new("other/rules/one.md"), &pats));
+
+        // a name with a leading `/` is anchored too, unlike a bare name
+        let pats = patterns(&["/cache"]);
+        assert!(is_excluded(Path::new("cache"), &pats));
+        assert!(is_excluded(Path::new("cache/blob"), &pats));
+        assert!(!is_excluded(Path::new("app/cache"), &pats));
+        assert!(!is_excluded(Path::new("app/cache/blob"), &pats));
+        assert!(!is_excluded(Path::new("cached"), &pats));
+
+        // only one `/` is the root, and the root alone names the entry
+        // itself, which its own list never does
+        for pattern in ["/", "//cache"] {
+            let pats = patterns(&[pattern]);
+            assert!(!is_excluded(Path::new("cache"), &pats), "{pattern}");
+            assert!(!is_excluded(Path::new("cache/blob"), &pats), "{pattern}");
+        }
     }
 
     #[test]

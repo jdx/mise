@@ -1401,10 +1401,10 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     let root = file::replace_path(Path::new(&owner.path));
     // Recompile saved exclusions against the current filesystem. If a
     // symlink now expands a rule into an unusable glob, coverage is unknown.
-    // A checkpoint written by another matcher read its exclusions
-    // differently — an older one matched more for some patterns, and a
-    // newer one is simply unknown here. Either way, where it has
-    // exclusions, what it covered cannot be reconstructed.
+    // A checkpoint written by another matcher read its lists
+    // differently — an older one excluded more or selected less for some
+    // patterns, and a newer one is simply unknown here. Either way, where
+    // those patterns apply, what it covered cannot be reconstructed.
     // Only the owning entry's lists can affect this path.
     let has_patterns = !coverage.exclude.is_empty()
         || owner
@@ -1415,7 +1415,8 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
             .include
             .as_ref()
             .is_some_and(|patterns| !patterns.is_empty());
-    let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
+    let legacy = !super::tracked::matcher_reads_alike(coverage.matcher, owner.include.as_deref())
+        && has_patterns;
     let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
         .ok()
         .filter(|exclude| exclude.unusable().is_empty());

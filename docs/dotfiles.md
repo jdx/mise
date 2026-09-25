@@ -583,8 +583,10 @@ fully own, such as the one holding `mise.toml` itself:
 A pattern without `/` matches any single path component, so `"mise.toml"`
 skips that file wherever it appears in the tree and `"*.md"` skips every
 markdown file. A pattern containing `/` is anchored to the source root:
-`"nvim/spell"` skips only that path. Either kind matching a directory skips
-everything under it.
+`"nvim/spell"` skips only that path. A leading `/` anchors a pattern the
+same way, as in `.gitignore`, so `"/cache"` skips only a top-level `cache`
+and `"/nvim/spell"` is the same as `"nvim/spell"`. Either kind matching a
+directory skips everything under it.
 
 For `symlink-each`, excluding a previously managed file removes its recorded link on the
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
@@ -946,8 +948,9 @@ Use per-entry exclusions to omit files beneath one directory:
 
 The patterns are relative to `~/.codex`. `sessions` excludes directories
 with that name and their contents; `*.log` excludes matching files at any
-depth. Patterns containing `/` are anchored to the tracked directory.
-Global `[history] exclude` rules also apply and cannot override the entry's
+depth. Patterns containing `/` are anchored to the tracked directory, and
+a leading `/` anchors any pattern to it: `/cache` excludes only
+`~/.codex/cache`, not a `cache` directory deeper down. Global `[history] exclude` rules also apply and cannot override the entry's
 exclusions with `!glob`.
 
 If you only want a few files, use an include list instead:
@@ -957,8 +960,9 @@ If you only want a few files, use an include list instead:
 "~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
 ```
 
-No `include` field considers the whole directory; `include = []` selects
-nothing. Explicit exclusions always win. Includes also select credential-
+Include patterns are anchored the same way, so `/rules/*.md` and
+`rules/*.md` select the same files. No `include` field considers the whole
+directory; `include = []` selects nothing. Explicit exclusions always win. Includes also select credential-
 named files, so use `encrypt = true` for private contents. See
 [choosing files](/history.html#choose-which-files-a-directory-saves) for
 matching rules, previews, and compatibility requirements.
