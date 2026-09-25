@@ -65,8 +65,16 @@ jobs:
           }
 
           # Only this repository's `release` branch, never a fork's branch of the
-          # same name, identifies the release PR.
-          release_sha=$(gh api "repos/$REPO/branches/release" --jq .commit.sha 2>/dev/null || true)
+          # same name, identifies the release PR. Only a 404 means there is no
+          # release branch; any other failure must not fall through to success.
+          if ! release_sha=$(gh api "repos/$REPO/branches/release" --jq .commit.sha 2>lookup.err); then
+            cat lookup.err >&2
+            if ! grep -q "HTTP 404" lookup.err; then
+              echo "::error::Could not look up the release branch; leaving release-window unset"
+              exit 1
+            fi
+            release_sha=""
+          fi
 
           if [ "$EVENT_NAME" = "pull_request_target" ]; then
             sha="$HEAD_SHA"
