@@ -4,9 +4,9 @@ name: release-window
 # posting a pending `release-window` commit status, which is a required check
 # on main. Merging the release PR is what publishes crates and pushes the tag
 # (see xtasks/release-plz), so this is the only safe place to gate a release.
-# The half-hourly schedule flips the status to success once the window opens,
-# and an armed auto-merge then completes on its own. It also goes pending up to
-# 45 minutes before quiet hours so a delayed run cannot leave a gap at 18:00.
+# A few scheduled runs flip the status at the two edges: it goes pending when
+# quiet hours start within the hour (~17:07 Central), and back to success after
+# 03:00, when an armed auto-merge completes on its own.
 # The status is keyed by commit, so only the release PR's own events and the
 # schedule write the `release` branch commit's status; other PRs never touch
 # it, and every other commit gets success.
@@ -18,7 +18,11 @@ on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no 
     branches: ["main"]
     types: [opened, synchronize, reopened, labeled, unlabeled]
   schedule:
-    - cron: "7,37 * * * *"
+    # UTC times covering both CDT and CST. Evening: 17:07/18:07/19:07 CDT,
+    # 16:07/17:07/18:07 CST. Morning: 03:07/04:07/05:07 CDT, 02:07/03:07/04:07
+    # CST. Each edge gets a follow-up run in case one is delayed or dropped.
+    - cron: "7 22,23,0 * * *"
+    - cron: "7 8,9,10 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -66,7 +70,7 @@ jobs:
           release_state() {
             read -r hour minute < <(TZ=America/Chicago date '+%-H %-M')
             local now=$((hour * 60 + minute))
-            if is_quiet "$now" || is_quiet $((now + 45)); then
+            if is_quiet "$now" || is_quiet $((now + 60)); then
               echo pending "Waiting for 03:00 Central; label release-now to release immediately"
             else
               echo success "Inside the release window"
