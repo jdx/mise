@@ -1935,7 +1935,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         BOOTSTRAP_CONFIG_ROOTS_WARN_AT,
         BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT,
         "bootstrap.config_roots",
-        "`[bootstrap].config_roots` in {} is deprecated. Move each selected root into a conf.d folder instead, e.g. bundles/git to mise/conf.d/git (or symlink it). A conf.d folder is the config root for its mise.toml and mise.<env>.toml files, so relative paths and `{{{{ config_root }}}}` still resolve inside it. See https://mise.jdx.dev/configuration.html#conf-d-folders for details.",
+        "`[bootstrap].config_roots` in {} is deprecated. Move each selected root into a conf.d folder instead (or symlink it): bundles/git becomes mise/conf.d/git in the same project, or ~/.config/mise/conf.d/git when config_roots is set in global config. A conf.d folder is the config root for its mise.toml and mise.<env>.toml files, so relative paths and `{{{{ config_root }}}}` still resolve inside it. See https://mise.jdx.dev/configuration.html#conf-d-folders for details.",
         display_path(declaring_config)
     );
     if patterns.is_empty() {
