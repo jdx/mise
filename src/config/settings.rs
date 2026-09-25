@@ -748,7 +748,6 @@ pub(crate) trait SettingsExt: Sized {
 
     fn system_installs_dir(&self) -> &Path;
 
-
     fn env_files(&self) -> Vec<PathBuf>;
 
     fn as_dict(&self) -> eyre::Result<toml::Table>;
@@ -1120,7 +1119,6 @@ impl SettingsExt for Settings {
     fn system_installs_dir(&self) -> &Path {
         dirs::system_installs_dir(self)
     }
-
 
     fn env_files(&self) -> Vec<PathBuf> {
         let mut files = vec![];
