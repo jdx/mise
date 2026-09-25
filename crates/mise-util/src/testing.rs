@@ -119,6 +119,13 @@ impl crate::progress::SingleReport for RecordingReport {
     }
 }
 
+/// Held by every test that replaces the process-wide settings, and by every test that reads a
+/// setting it needs to stay put. One lock for the whole crate: with a lock per module, a reset in
+/// one module's tests silently undid another module's override mid-test. Take it before
+/// `github::TEST_ENV_LOCK` when a test needs both.
+#[cfg(test)]
+pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+
 /// Replace the loaded settings with `overrides` layered over the `MISE_*`
 /// environment and the `settings.toml` defaults, or with just those two when
 /// `overrides` is `None`. The equivalent, for this crate's tests, of mise's

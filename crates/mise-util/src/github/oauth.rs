@@ -671,12 +671,16 @@ mod tests {
     use super::*;
 
     struct OAuthEnvGuard {
+        _settings_lock: std::sync::MutexGuard<'static, ()>,
         _lock: std::sync::MutexGuard<'static, ()>,
         vars: Vec<(&'static str, Option<String>)>,
     }
 
     impl OAuthEnvGuard {
         fn new(auth_url: String, cache_path: PathBuf) -> Self {
+            // The settings are reloaded below, so hold still any test that overrides them.
+            let settings_lock =
+                crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
             let lock = crate::testing::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
             let vars = vec![
                 (
@@ -704,7 +708,11 @@ mod tests {
             crate::env::set_var("MISE_EXPERIMENTAL", "1");
             test_support::set_cache_path(cache_path);
             crate::testing::reset_settings(None);
-            Self { _lock: lock, vars }
+            Self {
+                _settings_lock: settings_lock,
+                _lock: lock,
+                vars,
+            }
         }
     }
 

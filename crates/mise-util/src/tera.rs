@@ -1741,15 +1741,13 @@ mod tests {
     use confique::Layer;
     use pretty_assertions::assert_str_eq;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     struct SettingsGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl SettingsGuard {
         fn tera_v1() -> Self {
-            let lock = crate::testing::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
             let mut settings = mise_settings::SettingsPartial::empty();
             settings.tera_v1 = Some(true);
             crate::testing::reset_settings(Some(settings));
@@ -1832,19 +1830,34 @@ mod tests {
         assert!(!contains_template_syntax("plain text"));
     }
 
+    /// `get_tera` under the settings lock. The engine is picked from the
+    /// `tera_v1` setting when the `Tera` is built, so holding the lock for
+    /// the build keeps a concurrent `SettingsGuard::tera_v1()` from handing a
+    /// v2 test the v1 engine.
+    fn locked_tera(dir: Option<&Path>) -> TeraEngine {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera(dir)
+    }
+
+    /// The `get_tera_for_target` counterpart of [`locked_tera`].
+    fn locked_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        get_tera_for_target(dir, os, arch)
+    }
+
     fn render(s: &str) -> String {
         let config_root = Path::new("/");
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &config_root);
         tera_ctx.insert("cwd", "/");
-        let mut tera = get_tera(Option::from(config_root));
+        let mut tera = locked_tera(Option::from(config_root));
         render_str(&mut tera, s, &tera_ctx).unwrap()
     }
 
     fn render_for_target(s: &str, os: &str, arch: &str) -> String {
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("cwd", "/");
-        let mut tera = get_tera_for_target(None, os, arch);
+        let mut tera = locked_tera_for_target(None, os, arch);
         render_str(&mut tera, s, &tera_ctx).unwrap()
     }
 
@@ -2305,7 +2318,7 @@ mod tests {
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &temp_dir.path().to_str().unwrap());
         tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
-        let mut tera = get_tera(Some(temp_dir.path()));
+        let mut tera = locked_tera(Some(temp_dir.path()));
 
         let s = render_str(&mut tera, r#"{{ read_file(path="test.txt") }}"#, &tera_ctx).unwrap();
         assert_eq!(s, "test content\nwith multiple lines");
@@ -2364,10 +2377,13 @@ mod tests {
         // re-renders correctly for a target platform.
         let mut ctx = BASE_CONTEXT.clone();
         ctx.insert("cwd", "/");
-        let mut deferred = get_tera_preserving_os_arch(None);
+        let mut deferred = {
+            let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+            get_tera_preserving_os_arch(None)
+        };
         let preserved = render_str(&mut deferred, r#"{{ os(macos="darwin") }}"#, &ctx).unwrap();
         assert_eq!(preserved, r#"{{ os(macos="darwin") }}"#);
-        let mut tera = get_tera_for_target(None, "macos", "arm64");
+        let mut tera = locked_tera_for_target(None, "macos", "arm64");
         assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "darwin");
     }
     #[tokio::test]
@@ -2377,10 +2393,13 @@ mod tests {
         // a unix host would get "unix" baked in.
         let mut ctx = BASE_CONTEXT.clone();
         ctx.insert("cwd", "/");
-        let mut deferred = get_tera_preserving_os_arch(None);
+        let mut deferred = {
+            let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+            get_tera_preserving_os_arch(None)
+        };
         let preserved = render_str(&mut deferred, r#"{{ os_family() }}"#, &ctx).unwrap();
         assert_eq!(preserved, r#"{{ os_family() }}"#);
-        let mut tera = get_tera_for_target(None, "windows", "x64");
+        let mut tera = locked_tera_for_target(None, "windows", "x64");
         assert_eq!(render_str(&mut tera, &preserved, &ctx).unwrap(), "windows");
     }
 }
