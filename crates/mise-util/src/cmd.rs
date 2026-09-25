@@ -2241,6 +2241,34 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
+    // `cmd.stream` takes the exclusive side of RAW_LOCK while `os.execute` takes the
+    // shared side. Because both poll rather than await, a steady stream of readers
+    // starved the writer: a trivial `cmd.stream` child waited 8s behind three
+    // plugins looping on `os.execute`. Readers must yield to a pending writer. (#13254)
+    #[test]
+    fn raw_read_lock_yields_to_a_waiting_writer() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let waiting = super::RawWriterWaiting::new();
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let reader = std::thread::spawn(move || {
+            let _guard = super::raw_read_lock_blocking();
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "reader acquired the shared lock while a writer was waiting"
+        );
+
+        drop(waiting);
+        reader.join().unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
+    }
+
     // The counter must govern the async path too: mise's own installs acquire the
     // shared side with `RAW_LOCK.read().await`, which queues behind an async writer
     // but cannot see a sync one polling `try_write`. (#13254)
@@ -2930,33 +2958,5 @@ mod windows_tests {
             r.get_args(),
             vec!["-Command".to_string(), r#"echo "a b""#.to_string()]
         );
-    }
-
-    // `cmd.stream` takes the exclusive side of RAW_LOCK while `os.execute` takes the
-    // shared side. Because both poll rather than await, a steady stream of readers
-    // starved the writer: a trivial `cmd.stream` child waited 8s behind three
-    // plugins looping on `os.execute`. Readers must yield to a pending writer. (#13254)
-    #[test]
-    fn raw_read_lock_yields_to_a_waiting_writer() {
-        use std::sync::atomic::AtomicBool;
-        use std::time::Duration;
-
-        let waiting = super::RawWriterWaiting::new();
-        let acquired = Arc::new(AtomicBool::new(false));
-        let flag = acquired.clone();
-        let reader = std::thread::spawn(move || {
-            let _guard = super::raw_read_lock_blocking();
-            flag.store(true, Ordering::SeqCst);
-        });
-
-        std::thread::sleep(Duration::from_millis(200));
-        assert!(
-            !acquired.load(Ordering::SeqCst),
-            "reader acquired the shared lock while a writer was waiting"
-        );
-
-        drop(waiting);
-        reader.join().unwrap();
-        assert!(acquired.load(Ordering::SeqCst));
     }
 }
