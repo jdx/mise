@@ -1,41 +1,16 @@
 use crate::Result;
-use crate::config::env_directive::EnvValue;
 use crate::config::miserc;
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexSet;
 pub(crate) use mise_util::env::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{path::Path, string::ToString};
-
-tokio::task_local! {
-    static INSTALL_ENV: IndexMap<String, EnvValue>;
-}
-
-/// Overlays a tool's `install_env` on the process env for the duration of `future`,
-/// so anything it does reads that tool's values through [`scoped_var`].
-pub(crate) async fn with_install_env<T>(
-    env: IndexMap<String, EnvValue>,
-    future: impl std::future::Future<Output = T>,
-) -> T {
-    INSTALL_ENV.scope(env, future).await
-}
-
-/// Reads an env var through the active [`with_install_env`] overlay, falling back to the
-/// process env. Blank reads as unset, as does an `install_env` entry set to `false`.
-pub(crate) fn scoped_var(key: &str) -> Option<String> {
-    match INSTALL_ENV.try_with(|env| env.get(key).cloned()) {
-        Ok(Some(value)) => value.into_string(),
-        _ => std::env::var(key).ok(),
-    }
-    .map(|value| value.trim().to_string())
-    .filter(|value| !value.is_empty())
-}
 
 pub(crate) static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
 pub(crate) static MISE_SHELL: Lazy<Option<ShellType>> =

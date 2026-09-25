@@ -129,7 +129,6 @@ file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
-mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
@@ -149,10 +148,6 @@ ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
 http = "1"
-axum = { version = "0.8", default-features = false, features = [
-  "http1",
-  "tokio",
-] }
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }
@@ -360,7 +355,6 @@ native-tls = [
   "reqwest/native-tls",
   "rattler/native-tls",
   "rattler_repodata_gateway/native-tls",
-  "mise-sigstore/native-tls",
   "mise-cache-core/native-tls",
   "mise-util/native-tls",
   "ubi/native-tls",
@@ -373,7 +367,6 @@ rustls = [
   "reqwest/rustls",
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
-  "mise-sigstore/rustls",
   "mise-cache-core/rustls",
   "mise-util/rustls",
   "ubi/rustls-tls",
@@ -386,7 +379,6 @@ rustls-native-roots = [
   "reqwest/rustls",
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
-  "mise-sigstore/rustls",
   "mise-cache-core/rustls-native-roots",
   "mise-util/rustls-native-roots",
   "ubi/rustls-tls",

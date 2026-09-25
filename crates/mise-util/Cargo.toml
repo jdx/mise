@@ -9,9 +9,20 @@ repository = "https://github.com/jdx/mise"
 
 [dependencies]
 aho-corasick = "1"
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "tokio",
+] }
 base64 = "0.23"
 blake3 = "1"
+bytesize = "2"
 bzip2 = "0.6"
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+  "serde",
+] }
+ci_info = "0.14"
 console = "0.16"
 digest = "0.11"
 duct = "1"
@@ -30,8 +41,10 @@ gix = { version = "<1", default-features = false, features = [
   "auto-chain-error",
 ] }
 globset = "0.4"
+heck = "0.5"
 hex = "0.4"
 homedir = "0.3"
+http = "1"
 indexmap = { version = "2", features = ["serde"] }
 indoc = "2"
 itertools = "0.15"
@@ -43,6 +56,7 @@ md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
 mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "../mise-settings", version = "2026" }
+mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features = false }
 netrc-rs = "0.1"
 nodejs-semver = "5"
 nucleo-matcher = "0.3"
@@ -50,10 +64,23 @@ once_cell = "1"
 path-absolutize = "4"
 petgraph = "0.8"
 rand = "0.10"
+regex = "1"
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "form",
+  "gzip",
+  "zstd",
+  "charset",
+  "http2",
+  "socks",
+  "stream",
+  "system-proxy",
+] }
 rmp-serde = "1"
 same-file = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 sevenz-rust2 = "0.22"
 sha1 = "0.11"
 sha2 = "0.11"
@@ -66,9 +93,11 @@ tempfile = "3"
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 url = "2"
+urlencoding = "2"
 versions = { version = "8", features = ["serde"] }
 walkdir = "2"
 which = "8"
@@ -99,12 +128,26 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+confique = { version = "0.4", default-features = false }
 ctor = "1"
+mockito = "1"
 insta = { version = "1", features = ["filters", "json"] }
 pretty_assertions = "1"
 
 [features]
 default = ["native-tls"]
-native-tls = ["gix/blocking-http-transport-reqwest-native-tls"]
-rustls = ["gix/blocking-http-transport-reqwest-rust-tls"]
-rustls-native-roots = ["gix/blocking-http-transport-reqwest-rust-tls"]
+native-tls = [
+  "gix/blocking-http-transport-reqwest-native-tls",
+  "mise-sigstore/native-tls",
+  "reqwest/native-tls",
+]
+rustls = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "mise-sigstore/rustls",
+  "reqwest/rustls",
+]
+rustls-native-roots = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "mise-sigstore/rustls",
+  "reqwest/rustls",
+]
