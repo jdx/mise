@@ -4913,7 +4913,7 @@
         "config_roots": {
           "deprecated": true,
           "type": "array",
-          "description": "deprecated and will be removed in mise 2027.3.3; split bootstrap configuration with conf.d fragments and environment modules instead (https://mise.jdx.dev/bootstrap.html#modules)",
+          "description": "deprecated and will be removed in mise 2027.3.3; move each selected root into a conf.d folder instead (https://mise.jdx.dev/configuration.html#conf-d-folders)",
           "items": {
             "type": "string"
           }
