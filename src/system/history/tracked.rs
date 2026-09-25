@@ -1815,12 +1815,18 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
     // directory whose files the list still selects. Same rule as
     // `pattern_relative` and `display_separators`, not a third one.
     let pattern = display_separators(pattern);
+    // a leading `/` anchors the rest to the entry root, exactly as the
+    // matcher reads it — even `/cache`, which has no other separator
+    let (anchored, body) = match crate::system::files::rooted_pattern(&pattern) {
+        Some(body) => (true, body),
+        None => (pattern.contains('/'), pattern.as_str()),
+    };
     // a name matches a component at any depth, so it can name a file
     // inside any directory
-    if !pattern.contains('/') {
+    if !anchored {
         return true;
     }
-    let parts: Vec<&str> = pattern.split('/').filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = body.split('/').filter(|part| !part.is_empty()).collect();
     let mut parts = parts.as_slice();
     let mut rest = components;
     loop {
@@ -2112,15 +2118,39 @@ fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
     ))
 }
 
-/// The matcher a checkpoint's `exclude` and `include` lists were read
-/// with. Bumped when a change could make an exclusion match *less*, or an
-/// include list select *more*, than it used to, so a replay of an older
-/// checkpoint does not conclude a path was absent when the older matcher
-/// would have called it excluded or unselected.
+/// The matcher a checkpoint's `exclude` list was read with. Bumped when
+/// a change could make an `exclude` pattern match *less*, or an entry's
+/// `include` pattern match *more*, than it used to: either way a replay
+/// of an older checkpoint could conclude a path was covered and absent
+/// when the older matcher never covered it, and delete the live file.
 ///
-/// 2: a leading `/` anchors a pattern to the entry root; before, such a
-/// pattern matched nothing.
+/// Version 2 reads a per-entry pattern with a leading `/` as anchored to
+/// the entry root (see [`crate::system::files::rooted_pattern`]); version
+/// 1 read it as matching nothing.
 pub(crate) const MATCHER_VERSION: u32 = 2;
+
+/// Whether a checkpoint written by `matcher` read an entry with this
+/// `include` list the way this matcher reads it.
+///
+/// **Only an older matcher that selected less is a reason to distrust a
+/// record.** Version 1 differs from version 2 only in rooted per-entry
+/// patterns, which it read as matching nothing. A rooted `exclude` that
+/// matches now reads the path as outside coverage, which never deletes,
+/// so it changes nothing that matters here; a rooted `include` that
+/// selects now would read files version 1 never captured as absent. So a
+/// version 1 record is read as current unless its entry's `include`
+/// list has a rooted pattern — rather than every checkpoint with a list
+/// becoming unevaluable over a spelling almost none of them use.
+pub(crate) fn matcher_reads_alike(matcher: Option<u32>, include: Option<&[String]>) -> bool {
+    match matcher {
+        Some(MATCHER_VERSION) => true,
+        Some(1) => !include
+            .into_iter()
+            .flatten()
+            .any(|pattern| crate::system::files::rooted_pattern(pattern).is_some()),
+        _ => false,
+    }
+}
 
 /// Directories mise owns that are never captured.
 pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
@@ -2648,6 +2678,50 @@ mod tests {
         ));
     }
 
+    /// **Matcher 1 read a rooted pattern as matching nothing.** A rooted
+    /// `include` in a record it wrote selected nothing, so the files it
+    /// names now were never captured, and reading them as absent would
+    /// delete them. Every other list reads as it did.
+    #[test]
+    fn replay_distrusts_a_rooted_include_from_matcher_one() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".into()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let mut coverage = set.coverage(&set.walk().unwrap());
+        coverage.matcher = Some(1);
+        let display = display_path(root.join("rules/one.md"));
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+
+        coverage.entries[0].include = Some(vec!["/rules/**".into()]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Unevaluable(_)
+        ));
+        coverage.matcher = Some(MATCHER_VERSION);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+
+        // a rooted exclude that matches now only reads more as outside
+        // coverage, which never deletes
+        coverage.matcher = Some(1);
+        coverage.entries[0].include = Some(vec!["rules/**".into()]);
+        coverage.entries[0].exclude = Some(vec!["/rules/one.md".into()]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Uncovered
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn replay_skips_exclusions_made_unusable_by_a_changed_symlink() {
@@ -3130,6 +3204,15 @@ mod tests {
             ("rules/*.md", false),
             ("*/two.md", false),
             ("sessions/**", false),
+            // a leading `/` is the entry root, not a path that never
+            // matches: selection and pruning agree on it either way
+            ("/rules", true),
+            ("/rules/**", true),
+            ("/rules/*/two.md", true),
+            ("/rules/deep/*.md", true),
+            ("/rules/*.md", false),
+            ("/sessions/**", false),
+            ("/deep", false),
         ] {
             let mut tracked = entry(&root);
             tracked.include = Some(vec![pattern.to_string()]);

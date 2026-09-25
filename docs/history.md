@@ -713,6 +713,9 @@ Patterns are relative to the tracked directory:
   excludes its top-level sessions directory's contents. Use `**` to match
   across directories. A `*` that matches across `/` still excludes, with a
   deprecation warning; in include lists `*` never crosses `/`.
+- A leading `/` anchors a pattern to the tracked directory, as in
+  `.gitignore`: `/sessions` excludes only the top-level `sessions`
+  directory. Unlike the global list below, it is not an absolute path.
 - A matching directory excludes its entire subtree.
 
 Both the entry's list and the global `[history] exclude` list apply. A
