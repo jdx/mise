@@ -1,6 +1,8 @@
 backends = ["github:ReagentX/imessage-exporter"]
 bins = ["imessage-exporter"]
 description = "Export iMessage data + run iMessage Diagnostics"
+# Upstream supports macOS, Linux, and Windows (https://github.com/ReagentX/imessage-exporter);
+# prebuilt GitHub release assets cover macOS and Windows, Linux via `cargo install imessage-exporter`.
 os = ["macos", "windows"]
 test = { cmd = "imessage-exporter --help", expected = "exports iMessage data" }
 version_order = "semver"
