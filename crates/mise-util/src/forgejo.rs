@@ -237,8 +237,9 @@ impl fmt::Display for TokenSource {
 #[doc(hidden)]
 pub mod test_support {
     //! Test-only hook that lets tests seed a token without mutating the environment.
-    //! Only consulted from [`super::resolve_token`] under `#[cfg(test)]`; production builds
-    //! never see it. Deliberately checked *before* the env-var branch so a developer's
+    //! Compiled into every build, but [`super::resolve_token`] only consults it while
+    //! [`crate::testing::in_tests`] is true, which never holds in a release binary.
+    //! Deliberately checked *before* the env-var branch so a developer's
     //! ambient `FORGEJO_TOKEN` / `MISE_FORGEJO_ENTERPRISE_TOKEN` cannot change the outcome.
     //! Mirrors the equivalent in [`crate::github`].
 
