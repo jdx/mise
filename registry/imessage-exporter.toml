@@ -1,0 +1,6 @@
+backends = ["github:ReagentX/imessage-exporter"]
+bins = ["imessage-exporter"]
+description = "Export iMessage data + run iMessage Diagnostics"
+os = ["macos", "windows"]
+test = { cmd = "imessage-exporter --help", expected = "exports iMessage data" }
+version_order = "semver"
