@@ -1,0 +1,75 @@
+name: release-window
+
+# Holds the release PR during quiet hours (22:00-04:00 America/Chicago) by
+# posting a pending `release-window` commit status, which is a required check
+# on main. Merging the release PR is what publishes crates and pushes the tag
+# (see xtasks/release-plz), so this is the only safe place to gate a release.
+# The hourly schedule flips the status to success once the window opens, and an
+# armed auto-merge then completes on its own. Every other PR gets success.
+
+on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
+  pull_request_target:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  status:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Set release-window status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          set_status() {
+            gh api "repos/$REPO/statuses/$1" \
+              -f context=release-window -f state="$2" -f description="$3" >/dev/null
+            echo "$1: $2 ($3)"
+          }
+
+          release_state() {
+            hour=$(TZ=America/Chicago date +%-H)
+            if [ "$hour" -ge 22 ] || [ "$hour" -lt 4 ]; then
+              echo pending "Quiet hours (22:00-04:00 Central); merges after 04:00"
+            else
+              echo success "Inside the release window"
+            fi
+          }
+
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            if [ "$HEAD_REF" != "release" ] || [ "$HEAD_REPO" != "$REPO" ]; then
+              set_status "$HEAD_SHA" success "Not a release PR"
+              exit 0
+            fi
+            sha="$HEAD_SHA"
+          else
+            sha=$(gh pr list -R "$REPO" --base main --head release --state open \
+              --json headRefOid --jq '.[0].headRefOid // empty')
+            if [ -z "$sha" ]; then
+              echo "No open release PR"
+              exit 0
+            fi
+          fi
+
+          read -r state description < <(release_state)
+          set_status "$sha" "$state" "$description"
