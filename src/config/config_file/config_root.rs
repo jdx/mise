@@ -5,7 +5,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use path_absolutize::Absolutize;
 use xx::regex;
 
-use crate::config::is_global_config;
+use crate::config::{is_conf_d_folder_file, is_global_config};
 use crate::env;
 
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -59,6 +59,13 @@ pub(crate) fn config_root(path: &Path) -> PathBuf {
         .unwrap_or_else(|_| path.to_path_buf());
     if let Some(cached) = CONFIG_ROOT_CACHE.lock().unwrap().get(&path).cloned() {
         return cached;
+    }
+    // A folder fragment is its own root even in global config, so relative
+    // paths and `{{ config_root }}` keep pointing inside the folder.
+    if is_conf_d_folder_file(&path) {
+        let root = path.parent().unwrap().to_path_buf();
+        CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
+        return root;
     }
     if is_global_config(&path) {
         let root = env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
@@ -192,6 +199,44 @@ mod tests {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
         }
+    }
+
+    #[test]
+    fn test_config_root_conf_d_folder() {
+        for (p, root) in [
+            (
+                "/foo/bar/.mise/conf.d/git/mise.toml",
+                "/foo/bar/.mise/conf.d/git",
+            ),
+            (
+                "/foo/bar/mise/conf.d/git/mise.linux.toml",
+                "/foo/bar/mise/conf.d/git",
+            ),
+            (
+                "/foo/bar/.config/mise/conf.d/git/mise.local.toml",
+                "/foo/bar/.config/mise/conf.d/git",
+            ),
+            // only mise.*.toml inside a visible folder is a folder fragment
+            (
+                "/foo/bar/.mise/conf.d/.git/mise.toml",
+                "/foo/bar/.mise/conf.d/.git",
+            ),
+        ] {
+            assert_eq!(config_root(Path::new(p)), PathBuf::from(root), "{p}");
+        }
+        assert!(crate::config::is_conf_d_folder_file(Path::new(
+            "/foo/bar/.mise/conf.d/git/mise.linux.toml"
+        )));
+        assert!(!crate::config::is_conf_d_folder_file(Path::new(
+            "/foo/bar/.mise/conf.d/.git/mise.toml"
+        )));
+        assert!(!crate::config::is_conf_d_folder_file(Path::new(
+            "/foo/bar/.mise/conf.d/git/config.toml"
+        )));
+        // a project that happens to live under some other conf.d
+        assert!(!crate::config::is_conf_d_folder_file(Path::new(
+            "/etc/nginx/conf.d/site/mise.toml"
+        )));
     }
 
     #[test]

@@ -515,13 +515,21 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
             for subdir in &config_subdirs {
-                let check_dir = if subdir.is_empty() {
-                    dir.clone()
+                // `conf.d/*` names the folder fragments: a file added to one
+                // changes that folder's mtime, not conf.d's.
+                let check_dirs = if subdir.contains('*') {
+                    glob::glob(&dir.join(subdir).to_string_lossy())
+                        .map(|paths| paths.flatten().collect())
+                        .unwrap_or_default()
+                } else if subdir.is_empty() {
+                    vec![dir.clone()]
                 } else {
-                    dir.join(subdir)
+                    vec![dir.join(subdir)]
                 };
-                if let Ok(Ok(modified)) = check_dir.metadata().map(|m| m.modified()) {
-                    mtimes.push(modified);
+                for check_dir in check_dirs {
+                    if let Ok(Ok(modified)) = check_dir.metadata().map(|m| m.modified()) {
+                        mtimes.push(modified);
+                    }
                 }
             }
         }
