@@ -1,5 +1,5 @@
 use crate::cmd::cmd;
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::shell::Shell;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolVersion, Toolset};

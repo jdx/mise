@@ -668,6 +668,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SettingsExt;
 
     struct OAuthEnvGuard {
         _lock: std::sync::MutexGuard<'static, ()>,

@@ -6,7 +6,7 @@ pub(crate) use log_claim::{LOG_CLAIM_ENV, LogClaim, LogClaimWatcher};
 pub(crate) use task_output_forwarder::{ExportStreams, TaskOutputForwarder};
 pub(crate) use task_run_telemetry::TaskRunTelemetry;
 
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;

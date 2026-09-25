@@ -2,7 +2,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::{EnvList, ParsedToolMap, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
-use crate::config::{self, Config};
+use crate::config::{self, Config, SettingsExt};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::TaskScriptParser;
 use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
@@ -76,7 +76,7 @@ pub(crate) use task_load_context::monorepo_scope;
 pub(crate) use task_load_context::{
     TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task,
 };
-pub(crate) use task_output::TaskOutput;
+pub(crate) use task_output::{TaskOutput, TaskOutputExt};
 pub(crate) use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub(crate) use task_template::TaskTemplate;
 

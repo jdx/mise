@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::args::ToolArg;
 use crate::cli::{render_subcommand_help, unescape_task_args};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;

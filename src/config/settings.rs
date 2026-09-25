@@ -3,48 +3,23 @@ use crate::duration;
 use crate::file::FindUp;
 use crate::platform::Platform;
 use crate::{dirs, env, file};
-#[allow(unused_imports)]
-use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Layer};
 use eyre::{Result, bail, eyre};
-use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
-use serde::Serialize;
-use serde::ser::Error;
-use serde::{Deserialize, Deserializer, Serializer};
-use std::env::consts::{ARCH, OS};
-use std::fmt::{Debug, Display, Formatter};
+use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::BTreeSet,
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use super::{TOML_CONFIG_FILENAMES, load_config_paths, load_config_paths_from};
 use url::Url;
-
-// settings are generated from settings.toml in the project root
-// make sure you run `mise run render` after updating settings.toml
-include!(concat!(env!("OUT_DIR"), "/settings.rs"));
-
-pub(crate) enum SettingsType {
-    Bool,
-    String,
-    Integer,
-    Duration,
-    Path,
-    Url,
-    ListString,
-    ListPath,
-    SetString,
-    IndexMap,
-    BoolOrString,
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum CompilePurpose {
@@ -52,194 +27,7 @@ pub(crate) enum CompilePurpose {
     Inspect,
 }
 
-pub(crate) struct SettingsMeta {
-    // pub key: String,
-    pub type_: SettingsType,
-    pub description: &'static str,
-    pub env: Option<&'static str>,
-    pub deprecated: Option<&'static str>,
-    pub deprecated_warn_at: Option<&'static str>,
-    pub deprecated_remove_at: Option<&'static str>,
-    pub global_only: bool,
-    /// Consumed before config files are read, so a value in one can never apply.
-    pub env_only: bool,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub(crate) enum SettingsStatusMissingTools {
-    /// never show the warning
-    Never,
-    /// hide this warning if the user hasn't installed at least 1 version of the tool before
-    #[default]
-    IfOtherVersionsInstalled,
-    /// always show the warning if tools are missing
-    Always,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub(crate) enum NpmPackageManager {
-    #[default]
-    Auto,
-    Npm,
-    Aube,
-    AubeCli,
-    Bun,
-    Pnpm,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub(crate) enum SystemDepsMode {
-    /// prompt to install missing plugin system dependencies (falls back to `warn` non-interactively)
-    #[default]
-    Prompt,
-    /// install missing plugin system dependencies without prompting
-    Auto,
-    /// print missing plugin system dependencies and continue
-    Warn,
-    /// skip the plugin system dependency check
-    Ignore,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum PythonUvVenvAuto {
-    #[default]
-    Off,
-    Source,
-    CreateSource,
-    LegacyTrue,
-}
-
-impl PythonUvVenvAuto {
-    pub(crate) fn should_source(self) -> bool {
-        matches!(self, Self::Source | Self::CreateSource | Self::LegacyTrue)
-    }
-
-    pub(crate) fn should_create(self) -> bool {
-        matches!(self, Self::CreateSource | Self::LegacyTrue)
-    }
-
-    pub(crate) fn is_legacy_true(self) -> bool {
-        matches!(self, Self::LegacyTrue)
-    }
-}
-
-impl<'de> Deserialize<'de> for PythonUvVenvAuto {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use serde::de::{self, Visitor};
-        use std::fmt;
-
-        struct PythonUvVenvAutoVisitor;
-
-        impl<'de> Visitor<'de> for PythonUvVenvAutoVisitor {
-            type Value = PythonUvVenvAuto;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a boolean, \"source\", or \"create|source\"")
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<PythonUvVenvAuto, E>
-            where
-                E: de::Error,
-            {
-                if value {
-                    deprecated_at!(
-                        "2026.7.0",
-                        "2027.7.0",
-                        "python.uv_venv_auto.true",
-                        "python.uv_venv_auto=true is deprecated. Use python.uv_venv_auto=\"create|source\" or \"source\" instead."
-                    );
-                }
-                Ok(if value {
-                    PythonUvVenvAuto::LegacyTrue
-                } else {
-                    PythonUvVenvAuto::Off
-                })
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<PythonUvVenvAuto, E>
-            where
-                E: de::Error,
-            {
-                let normalized = value.trim().to_ascii_lowercase();
-                match normalized.as_str() {
-                    "source" => Ok(PythonUvVenvAuto::Source),
-                    "create|source" => Ok(PythonUvVenvAuto::CreateSource),
-                    "true" | "yes" | "1" => self.visit_bool(true),
-                    "false" | "no" | "0" => self.visit_bool(false),
-                    _ => Err(E::invalid_value(de::Unexpected::Str(value), &self)),
-                }
-            }
-
-            fn visit_string<E>(self, value: String) -> Result<PythonUvVenvAuto, E>
-            where
-                E: de::Error,
-            {
-                self.visit_str(&value)
-            }
-        }
-
-        deserializer.deserialize_any(PythonUvVenvAutoVisitor)
-    }
-}
-
-impl serde::Serialize for PythonUvVenvAuto {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            PythonUvVenvAuto::Off => serializer.serialize_bool(false),
-            PythonUvVenvAuto::LegacyTrue => serializer.serialize_bool(true),
-            PythonUvVenvAuto::Source => serializer.serialize_str("source"),
-            PythonUvVenvAuto::CreateSource => serializer.serialize_str("create|source"),
-        }
-    }
-}
-
-pub(crate) type SettingsPartial = <Settings as Config>::Layer;
-
+pub(crate) use mise_settings::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SettingsSourcePolicy {
     EnvironmentOnly,
@@ -302,7 +90,6 @@ impl IdiomaticVersionFileSettings {
     }
 }
 
-static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
 /// Caches the resolved `safe` value from the most recent settings load so
 /// `safe_mode()` answers correctly during the config parse pass that runs before
@@ -396,10 +183,6 @@ static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
     s
 });
-
-pub(crate) fn is_loaded() -> bool {
-    BASE_SETTINGS.read().unwrap().is_some()
-}
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SettingsFile {
@@ -874,29 +657,200 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     Ok(())
 }
 
-impl Settings {
-    /// Reads explicit confirmation only from the CLI settings layer.
-    fn cli_yes_from(settings: Option<&SettingsPartial>) -> bool {
-        settings.and_then(|settings| settings.yes).unwrap_or(false)
-    }
+const UNIX_DEFAULT_FILE_SHELL_ARGS: &str = "sh";
+const UNIX_DEFAULT_INLINE_SHELL_ARGS: &str = "sh -o errexit -c";
+const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &str = "cmd /c";
+const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &str = "cmd /c";
 
+/// mise behavior layered on the generated [`Settings`] type, which lives in the
+/// `mise-settings` crate.
+pub(crate) trait SettingsExt: Sized {
     /// Returns true only when `--yes` was explicitly supplied on this command
     /// line, excluding implicit confirmation from CI mode or configuration.
-    pub(crate) fn cli_yes() -> bool {
+    fn cli_yes() -> bool;
+
+    fn warn_default_package_file_deprecated(id: &'static str, package_type: &str);
+
+    fn all_compile(&self) -> bool;
+
+    fn node_compile(&self, purpose: CompilePurpose) -> Option<bool>;
+
+    fn python_compile(&self, purpose: CompilePurpose) -> Option<bool>;
+
+    fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool>;
+
+    #[cfg(not(windows))]
+    fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool>;
+
+    /// The log level the parsed CLI flags ask for, without a full settings build.
+    ///
+    /// [`Self::try_get`] can keep failing once the CLI flags are part of it — `--cd` naming a
+    /// directory that `validate_cd_path` accepts but the `chdir` refuses is the case `Cli::run`
+    /// propagates — and from then on no build succeeds. A caller that only knows how to give up
+    /// would be left holding the level from before the flags were parsed, and anything printed
+    /// from there on ignores `--quiet`.
+    ///
+    /// `None` when the flags said nothing about verbosity: the level already in force came from a
+    /// build that worked, and that build could see the config files this cannot. Only when the CLI
+    /// does speak is it worth answering, and then it outranks them anyway.
+    fn cli_log_level() -> Option<log::LevelFilter>;
+
+    /// Initialize a Git credential subprocess without reading project settings.
+    fn init_git_credential() -> Result<()>;
+
+    /// Select process-wide query isolation before parsing can trigger lazy settings or miserc reads.
+    fn select_package_query_sources();
+
+    /// Report whether this invocation requires environment-only settings and local diagnostics.
+    fn is_package_query() -> bool;
+
+    /// Apply CLI overrides and validate environment settings after query isolation is selected.
+    fn init_package_query(cli: &crate::cli::Cli) -> Result<()>;
+
+    fn flush_pending_warnings();
+
+    /// Flush without waiting for CLI settings, for a path that is about to leave.
+    ///
+    /// Startup queues warnings before the logger exists and only flushes them once CLI flags are
+    /// known — but several steps in between can fail first, and a diagnostic that was queued and
+    /// never flushed is worse than one printed a moment early.
+    fn flush_pending_warnings_before_exit();
+
+    fn add_cli_matches(cli: &Cli);
+
+    fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>);
+
+    fn parse_settings_file(path: &Path) -> Result<SettingsPartial>;
+
+    fn reset(cli_settings: Option<SettingsPartial>);
+
+    /// Invalidate settings loaded from config files without discarding CLI overrides.
+    fn reload();
+
+    /// Merge an override into the CLI-level settings partial.
+    ///
+    /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
+    /// installed earlier in startup (`--offline`, `--quiet`, etc.). This
+    /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
+    /// --prerelease`) can layer on top of those without losing them. Clears
+    /// the cached settings so the next `Settings::get()` rebuilds with the override
+    /// applied.
+    fn override_with(updater: impl FnOnce(&mut SettingsPartial));
+
+    /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
+    /// Errors on invalid platform strings (same validation as `mise lock --platform`).
+    fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>>;
+
+    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_;
+
+    fn global_tools_file(&self) -> PathBuf;
+
+    fn shims_dir(&self) -> &Path;
+
+    fn system_installs_dir(&self) -> &Path;
+
+    fn system_shims_dir(&self) -> PathBuf;
+
+    fn env_files(&self) -> Vec<PathBuf>;
+
+    fn as_dict(&self) -> eyre::Result<toml::Table>;
+
+    fn cache_prune_age_duration(&self) -> Option<Duration>;
+
+    fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration>;
+
+    #[cfg(feature = "self_update")]
+    fn auto_update_check_duration(&self) -> eyre::Result<Duration>;
+
+    fn fetch_remote_versions_timeout(&self) -> Duration;
+
+    fn configured_fetch_remote_versions_timeout(&self) -> Duration;
+
+    /// Whether remote-version lookups should use the aggressive fast-path budget
+    /// (a single ~3s attempt with no retries). This is on under `prefer_offline`
+    /// so shims and shell activation never stall — but NOT for commands whose
+    /// whole job is to enumerate remote versions/tags (`mise lock`, `ls-remote`,
+    /// `outdated`, `upgrade`), which must honor the full configured
+    /// `fetch_remote_versions_timeout` and retry budget even when
+    /// `prefer_offline` is set.
+    ///
+    /// See <https://github.com/jdx/mise/discussions/11185>.
+    fn bound_remote_version_lookups(&self) -> bool;
+
+    /// duration that remote version cache is kept for
+    /// for "fast" commands (represented by PREFER_OFFLINE), these are always
+    /// cached. For "slow" commands like `mise ls-remote` or `mise install`:
+    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
+    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
+    fn fetch_remote_versions_cache(&self) -> Option<Duration>;
+
+    fn http_timeout(&self) -> Duration;
+
+    fn http_download_timeout(&self) -> Duration;
+
+    /// Fast-path commands should make at most one network attempt before falling
+    /// back to cached/local behavior. In particular, shims must not multiply a
+    /// stalled resolver timeout by the configured retry count.
+    fn http_retries(&self) -> i64;
+
+    /// Returns true if offline mode is enabled via setting or CLI flag/env var.
+    fn offline(&self) -> bool;
+
+    /// Returns true if prefer-offline mode is enabled via setting, env var, or
+    /// because the current command is a "fast" command (hook-env, activate, etc.).
+    /// Also returns true if offline mode is enabled (offline implies prefer-offline).
+    fn prefer_offline(&self) -> bool;
+
+    fn env_cache_ttl(&self) -> Duration;
+
+    fn aqua_registry_cache_ttl(&self) -> Duration;
+
+    fn registry_cache_ttl(&self) -> Duration;
+
+    fn task_timeout_duration(&self) -> Option<Duration>;
+
+    fn default_inline_shell(&self) -> Result<Vec<String>>;
+
+    /// Explicitly selecting even the default value expresses intent to run a
+    /// shell. Cache provenance separately from the resolved string value.
+    fn implicit_inline_shell(&self) -> bool;
+
+    fn default_file_shell(&self) -> Result<Vec<String>>;
+
+    /// Inject `-NoProfile` into a PowerShell shell command when
+    /// `windows_powershell_no_profile` is enabled. No-op for other shells.
+    fn maybe_no_profile(&self, shell: &mut Vec<String>);
+
+    fn no_config() -> bool;
+
+    fn no_env() -> bool;
+
+    fn no_hooks() -> bool;
+
+    /// Whether safe mode (`MISE_SAFE=1` or the `safe` setting) is active.
+    ///
+    /// Safe to call during the config parse pass: it reads the loaded setting
+    /// when settings are available, otherwise falls back to the `MISE_SAFE`
+    /// environment variable. This avoids triggering a recursive settings load
+    /// from `trust_check` (which runs while config files are being parsed,
+    /// before settings are loaded, e.g. after `Config::reset`). `safe` is
+    /// global-only, so it can only come from the environment or global config;
+    /// the env fallback covers the common `MISE_SAFE=1` case in that window.
+    fn safe_mode() -> bool;
+
+    /// Errors when safe mode (`MISE_SAFE=1`) is enabled. Call this before any
+    /// operation that would execute code controlled by project configuration.
+    /// Safe mode is a security boundary: blocked operations must fail loudly,
+    /// never silently fall back to something that executes.
+    fn ensure_not_safe(operation: &str) -> Result<()>;
+}
+
+impl SettingsExt for Settings {
+    fn cli_yes() -> bool {
         Self::cli_yes_from(CLI_SETTINGS.lock().unwrap().as_ref())
     }
 
-    const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
-    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -o errexit -c";
-    const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
-    const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &'static str = "cmd /c";
-
-    pub(crate) fn parse_default_package_line(package: &str) -> Option<String> {
-        let package = package.split('#').next().unwrap_or_default().trim();
-        (!package.is_empty()).then(|| package.to_string())
-    }
-
-    pub(crate) fn warn_default_package_file_deprecated(id: &'static str, package_type: &str) {
+    fn warn_default_package_file_deprecated(id: &'static str, package_type: &str) {
         if SETTINGS_META
             .get(id)
             .is_some_and(|m| m.deprecated.is_some())
@@ -912,62 +866,31 @@ impl Settings {
         );
     }
 
-    pub(crate) fn get() -> Arc<Self> {
-        Self::try_get().unwrap()
-    }
-
-    pub(crate) fn all_compile(&self) -> bool {
+    fn all_compile(&self) -> bool {
         self.all_compile.unwrap_or_else(|| {
             !cfg!(test)
                 && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
         })
     }
 
-    fn compile_setting(
-        &self,
-        purpose: CompilePurpose,
-        tool: &str,
-        compile: Option<bool>,
-    ) -> Option<bool> {
-        if matches!(purpose, CompilePurpose::Install) {
-            warn_implicit_all_compile_default_deprecated(tool, self.all_compile, compile);
-        }
-        effective_compile_setting(self.all_compile(), compile)
-    }
-
-    pub(crate) fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+    fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "node", self.node.compile)
     }
 
-    pub(crate) fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+    fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "python", self.python.compile)
     }
 
-    pub(crate) fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+    fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
     #[cfg(not(windows))]
-    pub(crate) fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+    fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
 
-    fn cli_settings_layer() -> SettingsPartial {
-        normalize_hidden_config_aliases(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-    }
-
-    /// The log level the parsed CLI flags ask for, without a full settings build.
-    ///
-    /// [`Self::try_get`] can keep failing once the CLI flags are part of it — `--cd` naming a
-    /// directory that `validate_cd_path` accepts but the `chdir` refuses is the case `Cli::run`
-    /// propagates — and from then on no build succeeds. A caller that only knows how to give up
-    /// would be left holding the level from before the flags were parsed, and anything printed
-    /// from there on ignores `--quiet`.
-    ///
-    /// `None` when the flags said nothing about verbosity: the level already in force came from a
-    /// build that worked, and that build could see the config files this cannot. Only when the CLI
-    /// does speak is it worth answering, and then it outranks them anyway.
-    pub(crate) fn cli_log_level() -> Option<log::LevelFilter> {
+    fn cli_log_level() -> Option<log::LevelFilter> {
         let cli = CLI_SETTINGS.lock().unwrap().clone()?;
         // `add_cli_matches` folds `--trace`/`--debug`/`-vv` into `log_level`, and `--silent` into
         // `quiet`, so these four cover every flag that moves the level.
@@ -987,12 +910,524 @@ impl Settings {
         Some(settings.log_level())
     }
 
+    fn init_git_credential() -> Result<()> {
+        super::miserc::init_global_only();
+        let mut builder = Self::builder().env();
+        // Reuse operator-owned authentication settings, including the OAuth
+        // client ID needed to locate cached tokens. Never discover project files.
+        let paths = super::global_config_files()
+            .into_iter()
+            .rev()
+            .chain(super::system_config_files().into_iter().rev());
+        for path in paths {
+            if let Ok(settings) = Self::parse_settings_file(&path) {
+                let mut layer = SettingsPartial::empty();
+                layer.github = settings.github;
+                builder = builder.preloaded(layer);
+            }
+        }
+        let settings = builder.load()?;
+        mise_settings::store(Arc::new(settings));
+        Ok(())
+    }
+
+    fn select_package_query_sources() {
+        PACKAGE_QUERY_SETTINGS.store(true, Ordering::Relaxed);
+    }
+
+    fn is_package_query() -> bool {
+        PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
+    }
+
+    fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
+        Self::add_cli_matches(cli);
+        Self::try_get()?;
+        Ok(())
+    }
+
+    fn flush_pending_warnings() {
+        if CLI_SETTINGS.lock().unwrap().is_none() {
+            return;
+        }
+        Self::flush_pending_warnings_now();
+    }
+
+    fn flush_pending_warnings_before_exit() {
+        Self::flush_pending_warnings_now();
+    }
+
+    fn add_cli_matches(cli: &Cli) {
+        Self::add_cli_matches_with(cli, None);
+    }
+
+    fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>) {
+        let mut s = SettingsPartial::empty();
+
+        // Don't process mise-specific flags when running as a shim
+        if *crate::env::IS_RUNNING_AS_SHIM {
+            Self::reset(Some(s));
+            return;
+        }
+
+        if cli.raw {
+            s.raw = Some(true);
+        }
+        if let Some(truncate) = truncate {
+            s.truncate = Some(truncate);
+        }
+        if cli.locked {
+            s.locked = Some(true);
+        }
+        if let Some(cd) = &cli.cd {
+            s.cd = Some(cd.clone());
+        }
+        if let Some(jobs) = cli.jobs {
+            s.jobs = Some(jobs);
+        }
+        if cli.profile.is_some() {
+            s.env = cli.profile.clone();
+        }
+        if cli.env.is_some() {
+            s.env = cli.env.clone();
+        }
+        if cli.yes {
+            s.yes = Some(true);
+        }
+        if cli.quiet || cli.silent {
+            s.quiet = Some(true);
+        }
+        if cli.silent {
+            s.silent = Some(true);
+        }
+        if cli.trace {
+            s.log_level = Some("trace".to_string());
+        }
+        if cli.debug {
+            s.log_level = Some("debug".to_string());
+        }
+        if let Some(log_level) = &cli.log_level {
+            s.log_level = Some(log_level.to_string());
+        }
+        if cli.verbose > 0 {
+            s.verbose = Some(true);
+        }
+        if cli.verbose > 1 {
+            s.log_level = Some("trace".to_string());
+        }
+        Self::reset(Some(s));
+    }
+
+    fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
+        let raw = file::read_to_string(path)?;
+        let mut raw: toml::Value = toml::from_str(&raw)?;
+        let tera_v1_from_env = tera_v1_from_env_config(&raw);
+        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
+            strip_local_only_settings(settings, path, crate::config::is_global_config(path));
+            strip_env_only_settings(settings, path);
+            // After the strips, so a setting that will not survive them is
+            // never rewritten.
+            resolve_aqua_registry_paths(settings, path);
+            resolve_age_paths(settings, path)?;
+            resolve_task_disable_paths(settings, path);
+        }
+        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
+            for leaf in ["uvx", "registry_url"] {
+                let legacy = settings
+                    .get("pipx")
+                    .and_then(|value| value.get(leaf))
+                    .cloned();
+                if let Some(legacy) = legacy {
+                    let preferred = settings
+                        .entry("pypi")
+                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                    if let Some(preferred) = preferred.as_table_mut() {
+                        if preferred.get(leaf).is_some_and(|value| value != &legacy) {
+                            continue;
+                        }
+                        preferred.insert(leaf.to_owned(), legacy);
+                        if let Some(legacy) =
+                            settings.get_mut("pipx").and_then(toml::Value::as_table_mut)
+                        {
+                            legacy.remove(leaf);
+                        }
+                    }
+                }
+            }
+        }
+        let deprecated = deprecated_settings_in_toml_config(&raw);
+        let settings_file: SettingsFile = raw.try_into()?;
+        queue_deprecated_settings(deprecated);
+        let mut settings = normalize_hidden_config_aliases(settings_file.settings);
+        if settings.tera_v1.is_none() {
+            settings.tera_v1 = tera_v1_from_env;
+        }
+        Ok(settings)
+    }
+
+    fn reset(cli_settings: Option<SettingsPartial>) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
+        *CLI_SETTINGS.lock().unwrap() = cli_settings;
+        mise_settings::clear();
+        // Clear caches that depend on settings and environment
+        crate::config::config_file::config_root::reset();
+        crate::toolset::install_state::reset_tools();
+    }
+
+    fn reload() {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
+        mise_settings::clear();
+        crate::config::config_file::config_root::reset();
+        crate::toolset::install_state::reset_tools();
+    }
+
+    fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
+        let mut lock = CLI_SETTINGS.lock().unwrap();
+        let partial = lock.get_or_insert_with(SettingsPartial::empty);
+        updater(partial);
+        drop(lock);
+        mise_settings::clear();
+        crate::toolset::install_state::reset_tools();
+    }
+
+    fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
+        match &self.lockfile_platforms {
+            Some(platforms) if !platforms.is_empty() => {
+                Ok(Some(Platform::parse_multiple(platforms)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.trusted_config_paths
+            .iter()
+            .filter(|p| !p.to_string_lossy().is_empty())
+            .map(file::replace_path)
+            .filter_map(|p| file::canonicalize_cached(&p))
+    }
+
+    fn global_tools_file(&self) -> PathBuf {
+        env::var_path("MISE_GLOBAL_CONFIG_FILE")
+            .or_else(|| env::var_path("MISE_CONFIG_FILE"))
+            .unwrap_or_else(|| {
+                if self.asdf_compat {
+                    env::HOME.join(&*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME)
+                } else {
+                    dirs::CONFIG.join("config.toml")
+                }
+            })
+    }
+
+    fn shims_dir(&self) -> &Path {
+        self.shims_dir.as_deref().unwrap_or(&env::MISE_SHIMS_DIR)
+    }
+
+    fn system_installs_dir(&self) -> &Path {
+        self.system_installs_dir
+            .as_deref()
+            .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
+    }
+
+    fn system_shims_dir(&self) -> PathBuf {
+        self.system_shims_dir
+            .clone()
+            .unwrap_or_else(|| env::MISE_SYSTEM_DATA_DIR.join("shims"))
+    }
+
+    fn env_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![];
+        if let Some(cwd) = &*dirs::CWD
+            && let Some(env_file) = &self.env_file
+        {
+            let env_file = env_file.to_string_lossy().to_string();
+            for p in FindUp::new(cwd, &[env_file]) {
+                files.push(p);
+            }
+        }
+        files.into_iter().rev().collect()
+    }
+
+    fn as_dict(&self) -> eyre::Result<toml::Table> {
+        let s = toml::to_string(self)?;
+        let mut table: toml::Table = toml::from_str(&s)?;
+        table.insert(
+            "all_compile".to_string(),
+            toml::Value::Boolean(self.all_compile()),
+        );
+        redact_settings_table(&mut table);
+        Ok(table)
+    }
+
+    fn cache_prune_age_duration(&self) -> Option<Duration> {
+        let age = duration::parse_duration(&self.cache_prune_age).unwrap();
+        // Exactly `0s` is the documented way to keep cache files indefinitely.
+        // Truncating to whole seconds would give a sub-second age that meaning
+        // instead of the aggressive prune it asks for.
+        if age.is_zero() { None } else { Some(age) }
+    }
+
+    fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.upgrade.prune_after)
+    }
+
+    #[cfg(feature = "self_update")]
+    fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.auto_update_check_duration)
+    }
+
+    fn fetch_remote_versions_timeout(&self) -> Duration {
+        let timeout = self.configured_fetch_remote_versions_timeout();
+        if self.bound_remote_version_lookups() {
+            timeout.min(Duration::from_secs(3))
+        } else {
+            timeout
+        }
+    }
+
+    fn configured_fetch_remote_versions_timeout(&self) -> Duration {
+        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+    }
+
+    fn bound_remote_version_lookups(&self) -> bool {
+        self.prefer_offline() && !env::REMOTE_FETCH_COMMAND.load(Ordering::Relaxed)
+    }
+
+    fn fetch_remote_versions_cache(&self) -> Option<Duration> {
+        if self.prefer_offline() {
+            None
+        } else {
+            Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
+        }
+    }
+
+    fn http_timeout(&self) -> Duration {
+        duration::parse_duration(&self.http_timeout).unwrap()
+    }
+
+    fn http_download_timeout(&self) -> Duration {
+        duration::parse_duration(&self.http_download_timeout).unwrap()
+    }
+
+    fn http_retries(&self) -> i64 {
+        if self.bound_remote_version_lookups() {
+            0
+        } else {
+            self.http_retries
+        }
+    }
+
+    fn offline(&self) -> bool {
+        self.offline || *env::OFFLINE
+    }
+
+    fn prefer_offline(&self) -> bool {
+        self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
+    }
+
+    fn env_cache_ttl(&self) -> Duration {
+        duration::parse_duration(&self.env_cache_ttl).unwrap()
+    }
+
+    fn aqua_registry_cache_ttl(&self) -> Duration {
+        self.aqua
+            .registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
+    }
+
+    fn registry_cache_ttl(&self) -> Duration {
+        self.registry_cache_ttl
+            .as_deref()
+            .map(duration::parse_duration)
+            .transpose()
+            .unwrap()
+            .unwrap_or(duration::HOURLY)
+    }
+
+    fn task_timeout_duration(&self) -> Option<Duration> {
+        self.task
+            .timeout
+            .as_ref()
+            .and_then(|s| duration::parse_duration(s).ok())
+    }
+
+    fn default_inline_shell(&self) -> Result<Vec<String>> {
+        let (sa, fallback) = if cfg!(windows) {
+            (
+                &self.windows_default_inline_shell_args,
+                WINDOWS_DEFAULT_INLINE_SHELL_ARGS,
+            )
+        } else {
+            (
+                &self.unix_default_inline_shell_args,
+                UNIX_DEFAULT_INLINE_SHELL_ARGS,
+            )
+        };
+        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
+        self.maybe_no_profile(&mut shell);
+        Ok(shell)
+    }
+
+    fn implicit_inline_shell(&self) -> bool {
+        if cfg!(windows) {
+            return false;
+        }
+        if let Some(explicit) = *EXPLICIT_INLINE_SHELL.read().unwrap() {
+            return !explicit;
+        }
+        let explicit = std::env::var_os("MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS").is_some()
+            || Self::cli_settings_layer()
+                .unix_default_inline_shell_args
+                .is_some()
+            || Self::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered)
+                .iter()
+                .any(|layer| layer.unix_default_inline_shell_args.is_some());
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = Some(explicit);
+        !explicit
+    }
+
+    fn default_file_shell(&self) -> Result<Vec<String>> {
+        let (sa, fallback) = if cfg!(windows) {
+            (
+                &self.windows_default_file_shell_args,
+                WINDOWS_DEFAULT_FILE_SHELL_ARGS,
+            )
+        } else {
+            (
+                &self.unix_default_file_shell_args,
+                UNIX_DEFAULT_FILE_SHELL_ARGS,
+            )
+        };
+        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
+        self.maybe_no_profile(&mut shell);
+        Ok(shell)
+    }
+
+    fn maybe_no_profile(&self, shell: &mut Vec<String>) {
+        if self.windows_powershell_no_profile {
+            crate::path::inject_powershell_no_profile(shell);
+        }
+    }
+
+    fn no_config() -> bool {
+        *env::MISE_NO_CONFIG
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-config")
+    }
+
+    fn no_env() -> bool {
+        *env::MISE_NO_ENV
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-env")
+    }
+
+    fn no_hooks() -> bool {
+        *env::MISE_NO_HOOKS
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-hooks")
+    }
+
+    fn safe_mode() -> bool {
+        if is_loaded() {
+            return Settings::get().safe;
+        }
+        // Settings not loaded (e.g. the config parse pass after Config::reset).
+        // Use the value cached from the last full load, which captures `safe`
+        // set via global config; before any load, fall back to the env var.
+        match LAST_SAFE.load(Ordering::Relaxed) {
+            0 => false,
+            1 => true,
+            _ => crate::env::var_is_true("MISE_SAFE"),
+        }
+    }
+
+    fn ensure_not_safe(operation: &str) -> Result<()> {
+        if Settings::safe_mode() {
+            bail!(
+                "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.jdx.dev/configuration/settings.html#safe"
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Loading steps shared by the methods of [`SettingsExt`] and [`load`].
+trait SettingsInternal: Sized {
+    /// Reads explicit confirmation only from the CLI settings layer.
+    fn cli_yes_from(settings: Option<&SettingsPartial>) -> bool;
+
+    fn compile_setting(
+        &self,
+        purpose: CompilePurpose,
+        tool: &str,
+        compile: Option<bool>,
+    ) -> Option<bool>;
+
+    fn cli_settings_layer() -> SettingsPartial;
+
     /// Load settings sources for an explicit root, or the current directory when `root` is `None`.
     ///
     /// This shares source ordering and file parsing with the normal settings load. It deliberately
     /// does not update process-global settings state or apply the post-load process side effects in
     /// [`Self::try_get`]. Root-specific callers can require trusted project files without
     /// reproducing config discovery or precedence rules.
+    fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self>;
+
+    /// Load eligible config-file settings layers in precedence order and combine settings whose
+    /// semantics are additive across files.
+    fn settings_layers_from(
+        root: Option<&Path>,
+        trust_policy: SettingsTrustPolicy,
+    ) -> Vec<SettingsPartial>;
+
+    fn flush_pending_warnings_now();
+
+    fn normalize_pypi_aliases(&mut self) -> Result<()>;
+
+    /// Sets deprecated settings to new names
+    fn set_hidden_configs(&mut self);
+}
+
+impl SettingsInternal for Settings {
+    fn cli_yes_from(settings: Option<&SettingsPartial>) -> bool {
+        settings.and_then(|settings| settings.yes).unwrap_or(false)
+    }
+
+    fn compile_setting(
+        &self,
+        purpose: CompilePurpose,
+        tool: &str,
+        compile: Option<bool>,
+    ) -> Option<bool> {
+        if matches!(purpose, CompilePurpose::Install) {
+            warn_implicit_all_compile_default_deprecated(tool, self.all_compile, compile);
+        }
+        effective_compile_setting(self.all_compile(), compile)
+    }
+
+    fn cli_settings_layer() -> SettingsPartial {
+        normalize_hidden_config_aliases(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+    }
+
     fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self> {
         let policy = if PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed) {
             SettingsLoadPolicy::ENVIRONMENT_ONLY
@@ -1050,8 +1485,6 @@ impl Settings {
         Ok(settings)
     }
 
-    /// Load eligible config-file settings layers in precedence order and combine settings whose
-    /// semantics are additive across files.
     fn settings_layers_from(
         root: Option<&Path>,
         trust_policy: SettingsTrustPolicy,
@@ -1091,130 +1524,6 @@ impl Settings {
             .collect::<Vec<_>>();
         merge_settings_file_layers(&mut layers);
         layers
-    }
-
-    /// Initialize a Git credential subprocess without reading project settings.
-    pub(crate) fn init_git_credential() -> Result<()> {
-        super::miserc::init_global_only();
-        let mut builder = Self::builder().env();
-        // Reuse operator-owned authentication settings, including the OAuth
-        // client ID needed to locate cached tokens. Never discover project files.
-        let paths = super::global_config_files()
-            .into_iter()
-            .rev()
-            .chain(super::system_config_files().into_iter().rev());
-        for path in paths {
-            if let Ok(settings) = Self::parse_settings_file(&path) {
-                let mut layer = SettingsPartial::empty();
-                layer.github = settings.github;
-                builder = builder.preloaded(layer);
-            }
-        }
-        let settings = builder.load()?;
-        *BASE_SETTINGS.write().unwrap() = Some(Arc::new(settings));
-        Ok(())
-    }
-
-    /// Select process-wide query isolation before parsing can trigger lazy settings or miserc reads.
-    pub(crate) fn select_package_query_sources() {
-        PACKAGE_QUERY_SETTINGS.store(true, Ordering::Relaxed);
-    }
-
-    /// Report whether this invocation requires environment-only settings and local diagnostics.
-    pub(crate) fn is_package_query() -> bool {
-        PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
-    }
-
-    /// Apply CLI overrides and validate environment settings after query isolation is selected.
-    pub(crate) fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
-        Self::add_cli_matches(cli);
-        Self::try_get()?;
-        Ok(())
-    }
-
-    pub(crate) fn try_get() -> Result<Arc<Self>> {
-        if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
-            return Ok(settings.clone());
-        }
-        time!("try_get");
-
-        // Initial pass to obtain cd option
-        let mut settings = Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
-        time!("try_get load1");
-        if let Some(mut cd) = settings.cd {
-            static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
-            if cd.is_relative() {
-                cd = ORIG_PATH.as_ref()?.join(cd);
-            }
-            env::set_current_dir(cd)?;
-        }
-
-        // Reload settings after current directory option processed
-        settings = Self::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
-        time!("try_get load2");
-        if !settings.legacy_version_file {
-            settings.idiomatic_version_file = Some(false);
-        }
-        if settings.raw {
-            settings.jobs = 1;
-        } else {
-            settings.jobs = crate::jobs::normalize(settings.jobs);
-        }
-        // Handle NO_COLOR environment variable
-        if *env::NO_COLOR {
-            settings.color = false;
-        }
-        normalize_verbosity(&mut settings);
-        if !settings.color {
-            console::set_colors_enabled(false);
-            console::set_colors_enabled_stderr(false);
-        } else if *env::CLICOLOR_FORCE == Some(true) {
-            console::set_colors_enabled(true);
-            console::set_colors_enabled_stderr(true);
-        } else if *env::CLICOLOR == Some(false) {
-            console::set_colors_enabled(false);
-            console::set_colors_enabled_stderr(false);
-        } else if ci_info::is_ci() && !cfg!(test) {
-            console::set_colors_enabled_stderr(true);
-        }
-        if settings.ci {
-            settings.yes = true;
-        }
-        if settings.gpg_verify.is_some() {
-            settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
-            settings.swift.gpg_verify = settings.swift.gpg_verify.or(settings.gpg_verify);
-        }
-        settings.set_hidden_configs();
-        if cfg!(test) {
-            settings.experimental = true;
-        }
-        trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
-        let settings = Arc::new(settings);
-        let system_installs_changed =
-            settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
-        LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
-        *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
-        if system_installs_changed {
-            crate::toolset::install_state::reset_tools();
-        }
-        time!("try_get done");
-        Ok(settings)
-    }
-
-    pub(crate) fn flush_pending_warnings() {
-        if CLI_SETTINGS.lock().unwrap().is_none() {
-            return;
-        }
-        Self::flush_pending_warnings_now();
-    }
-
-    /// Flush without waiting for CLI settings, for a path that is about to leave.
-    ///
-    /// Startup queues warnings before the logger exists and only flushes them once CLI flags are
-    /// known — but several steps in between can fail first, and a diagnostic that was queued and
-    /// never flushed is worse than one printed a moment early.
-    pub(crate) fn flush_pending_warnings_before_exit() {
-        Self::flush_pending_warnings_now();
     }
 
     fn flush_pending_warnings_now() {
@@ -1269,7 +1578,6 @@ impl Settings {
         Ok(())
     }
 
-    /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
         if let Some(v) = self.install_before.take() {
             warn_deprecated("install_before");
@@ -1357,560 +1665,87 @@ impl Settings {
             }
         }
     }
+}
 
-    pub(crate) fn add_cli_matches(cli: &Cli) {
-        Self::add_cli_matches_with(cli, None);
+/// Point [`Settings::try_get`] at [`load`]. Runs first thing in `main` and in the test
+/// harness's constructor, before anything reads settings.
+pub(crate) fn register_loader() {
+    mise_settings::set_loader(load);
+}
+
+/// Build settings from every source and cache them. Registered with
+/// [`mise_settings::set_loader`], so [`Settings::try_get`] runs this when nothing is cached.
+fn load() -> Result<Arc<Settings>> {
+    time!("try_get");
+
+    // Initial pass to obtain cd option
+    let mut settings = Settings::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
+    time!("try_get load1");
+    if let Some(mut cd) = settings.cd {
+        static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
+        if cd.is_relative() {
+            cd = ORIG_PATH.as_ref()?.join(cd);
+        }
+        env::set_current_dir(cd)?;
     }
 
-    pub(crate) fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>) {
-        let mut s = SettingsPartial::empty();
-
-        // Don't process mise-specific flags when running as a shim
-        if *crate::env::IS_RUNNING_AS_SHIM {
-            Self::reset(Some(s));
-            return;
-        }
-
-        if cli.raw {
-            s.raw = Some(true);
-        }
-        if let Some(truncate) = truncate {
-            s.truncate = Some(truncate);
-        }
-        if cli.locked {
-            s.locked = Some(true);
-        }
-        if let Some(cd) = &cli.cd {
-            s.cd = Some(cd.clone());
-        }
-        if let Some(jobs) = cli.jobs {
-            s.jobs = Some(jobs);
-        }
-        if cli.profile.is_some() {
-            s.env = cli.profile.clone();
-        }
-        if cli.env.is_some() {
-            s.env = cli.env.clone();
-        }
-        if cli.yes {
-            s.yes = Some(true);
-        }
-        if cli.quiet || cli.silent {
-            s.quiet = Some(true);
-        }
-        if cli.silent {
-            s.silent = Some(true);
-        }
-        if cli.trace {
-            s.log_level = Some("trace".to_string());
-        }
-        if cli.debug {
-            s.log_level = Some("debug".to_string());
-        }
-        if let Some(log_level) = &cli.log_level {
-            s.log_level = Some(log_level.to_string());
-        }
-        if cli.verbose > 0 {
-            s.verbose = Some(true);
-        }
-        if cli.verbose > 1 {
-            s.log_level = Some("trace".to_string());
-        }
-        Self::reset(Some(s));
+    // Reload settings after current directory option processed
+    settings = Settings::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
+    time!("try_get load2");
+    if !settings.legacy_version_file {
+        settings.idiomatic_version_file = Some(false);
     }
-
-    pub(crate) fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
-        let raw = file::read_to_string(path)?;
-        let mut raw: toml::Value = toml::from_str(&raw)?;
-        let tera_v1_from_env = tera_v1_from_env_config(&raw);
-        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
-            strip_local_only_settings(settings, path, crate::config::is_global_config(path));
-            strip_env_only_settings(settings, path);
-            // After the strips, so a setting that will not survive them is
-            // never rewritten.
-            resolve_aqua_registry_paths(settings, path);
-            resolve_age_paths(settings, path)?;
-            resolve_task_disable_paths(settings, path);
-        }
-        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
-            for leaf in ["uvx", "registry_url"] {
-                let legacy = settings
-                    .get("pipx")
-                    .and_then(|value| value.get(leaf))
-                    .cloned();
-                if let Some(legacy) = legacy {
-                    let preferred = settings
-                        .entry("pypi")
-                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                    if let Some(preferred) = preferred.as_table_mut() {
-                        if preferred.get(leaf).is_some_and(|value| value != &legacy) {
-                            continue;
-                        }
-                        preferred.insert(leaf.to_owned(), legacy);
-                        if let Some(legacy) =
-                            settings.get_mut("pipx").and_then(toml::Value::as_table_mut)
-                        {
-                            legacy.remove(leaf);
-                        }
-                    }
-                }
-            }
-        }
-        let deprecated = deprecated_settings_in_toml_config(&raw);
-        let settings_file: SettingsFile = raw.try_into()?;
-        queue_deprecated_settings(deprecated);
-        let mut settings = normalize_hidden_config_aliases(settings_file.settings);
-        if settings.tera_v1.is_none() {
-            settings.tera_v1 = tera_v1_from_env;
-        }
-        Ok(settings)
+    if settings.raw {
+        settings.jobs = 1;
+    } else {
+        settings.jobs = crate::jobs::normalize(settings.jobs);
     }
-
-    pub(crate) fn hidden_configs() -> &'static HashSet<&'static str> {
-        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
-            [
-                "ci",
-                "cd",
-                "debug",
-                "env_file",
-                "install_before",
-                "trace",
-                "log_level",
-            ]
-            .into()
-        });
-        &HIDDEN_CONFIGS
+    // Handle NO_COLOR environment variable
+    if *env::NO_COLOR {
+        settings.color = false;
     }
-
-    pub(crate) fn reset(cli_settings: Option<SettingsPartial>) {
-        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
-        *CLI_SETTINGS.lock().unwrap() = cli_settings;
-        *BASE_SETTINGS.write().unwrap() = None;
-        // Clear caches that depend on settings and environment
-        crate::config::config_file::config_root::reset();
-        crate::toolset::install_state::reset_tools();
-    }
-
-    /// Invalidate settings loaded from config files without discarding CLI overrides.
-    pub(crate) fn reload() {
-        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
-        *BASE_SETTINGS.write().unwrap() = None;
-        crate::config::config_file::config_root::reset();
-        crate::toolset::install_state::reset_tools();
-    }
-
-    /// Merge an override into the CLI-level settings partial.
-    ///
-    /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
-    /// installed earlier in startup (`--offline`, `--quiet`, etc.). This
-    /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
-    /// --prerelease`) can layer on top of those without losing them. Clears
-    /// BASE_SETTINGS so the next `Settings::get()` rebuilds with the override
-    /// applied.
-    pub(crate) fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
-        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
-        let mut lock = CLI_SETTINGS.lock().unwrap();
-        let partial = lock.get_or_insert_with(SettingsPartial::empty);
-        updater(partial);
-        drop(lock);
-        *BASE_SETTINGS.write().unwrap() = None;
-        crate::toolset::install_state::reset_tools();
-    }
-
-    pub(crate) fn lockfile_enabled(&self) -> bool {
-        self.lockfile.unwrap_or(true)
-    }
-
-    pub(crate) fn generate_lockfiles(&self) -> bool {
-        self.lockfile_mode.as_deref() == Some("generate")
-    }
-
-    fn validate_lockfile_mode(&self) -> Result<()> {
-        validate_setting_enum_values(
-            "lockfile_mode",
-            self.lockfile_mode.as_deref(),
-            &["merge", "generate"],
-        )
-    }
-
-    pub(crate) fn lockfile_creation_enabled(&self) -> bool {
-        self.lockfile == Some(true)
-    }
-
-    /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
-    /// Errors on invalid platform strings (same validation as `mise lock --platform`).
-    pub(crate) fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
-        match &self.lockfile_platforms {
-            Some(platforms) if !platforms.is_empty() => {
-                Ok(Some(Platform::parse_multiple(platforms)?))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    pub(crate) fn force_provenance_verify(&self) -> bool {
-        self.locked_verify_provenance || self.paranoid
-    }
-
-    pub(crate) fn ensure_experimental(&self, what: &str) -> Result<()> {
-        if !self.experimental {
-            bail!("{what} is experimental. Enable it with `mise settings experimental=true`");
-        }
-        Ok(())
-    }
-
-    pub(crate) fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        self.trusted_config_paths
-            .iter()
-            .filter(|p| !p.to_string_lossy().is_empty())
-            .map(file::replace_path)
-            .filter_map(|p| file::canonicalize_cached(&p))
-    }
-
-    pub(crate) fn global_tools_file(&self) -> PathBuf {
-        env::var_path("MISE_GLOBAL_CONFIG_FILE")
-            .or_else(|| env::var_path("MISE_CONFIG_FILE"))
-            .unwrap_or_else(|| {
-                if self.asdf_compat {
-                    env::HOME.join(&*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME)
-                } else {
-                    dirs::CONFIG.join("config.toml")
-                }
-            })
-    }
-
-    pub(crate) fn shims_dir(&self) -> &Path {
-        self.shims_dir.as_deref().unwrap_or(&env::MISE_SHIMS_DIR)
-    }
-
-    pub(crate) fn system_installs_dir(&self) -> &Path {
-        self.system_installs_dir
-            .as_deref()
-            .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
-    }
-
-    pub(crate) fn system_shims_dir(&self) -> PathBuf {
-        self.system_shims_dir
-            .clone()
-            .unwrap_or_else(|| env::MISE_SYSTEM_DATA_DIR.join("shims"))
-    }
-
-    pub(crate) fn env_files(&self) -> Vec<PathBuf> {
-        let mut files = vec![];
-        if let Some(cwd) = &*dirs::CWD
-            && let Some(env_file) = &self.env_file
-        {
-            let env_file = env_file.to_string_lossy().to_string();
-            for p in FindUp::new(cwd, &[env_file]) {
-                files.push(p);
-            }
-        }
-        files.into_iter().rev().collect()
-    }
-
-    pub(crate) fn as_dict(&self) -> eyre::Result<toml::Table> {
-        let s = toml::to_string(self)?;
-        let mut table: toml::Table = toml::from_str(&s)?;
-        table.insert(
-            "all_compile".to_string(),
-            toml::Value::Boolean(self.all_compile()),
+    normalize_verbosity(&mut settings);
+    if settings.python.uv_venv_auto.is_legacy_true() {
+        deprecated_at!(
+            "2026.7.0",
+            "2027.7.0",
+            "python.uv_venv_auto.true",
+            "python.uv_venv_auto=true is deprecated. Use python.uv_venv_auto=\"create|source\" or \"source\" instead."
         );
-        redact_settings_table(&mut table);
-        Ok(table)
     }
-
-    pub(crate) fn cache_prune_age_duration(&self) -> Option<Duration> {
-        let age = duration::parse_duration(&self.cache_prune_age).unwrap();
-        // Exactly `0s` is the documented way to keep cache files indefinitely.
-        // Truncating to whole seconds would give a sub-second age that meaning
-        // instead of the aggressive prune it asks for.
-        if age.is_zero() { None } else { Some(age) }
+    if !settings.color {
+        console::set_colors_enabled(false);
+        console::set_colors_enabled_stderr(false);
+    } else if *env::CLICOLOR_FORCE == Some(true) {
+        console::set_colors_enabled(true);
+        console::set_colors_enabled_stderr(true);
+    } else if *env::CLICOLOR == Some(false) {
+        console::set_colors_enabled(false);
+        console::set_colors_enabled_stderr(false);
+    } else if ci_info::is_ci() && !cfg!(test) {
+        console::set_colors_enabled_stderr(true);
     }
-
-    pub(crate) fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
-        duration::parse_duration(&self.upgrade.prune_after)
+    if settings.ci {
+        settings.yes = true;
     }
-
-    #[cfg(feature = "self_update")]
-    pub(crate) fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
-        duration::parse_duration(&self.auto_update_check_duration)
+    if settings.gpg_verify.is_some() {
+        settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
+        settings.swift.gpg_verify = settings.swift.gpg_verify.or(settings.gpg_verify);
     }
-
-    pub(crate) fn fetch_remote_versions_timeout(&self) -> Duration {
-        let timeout = self.configured_fetch_remote_versions_timeout();
-        if self.bound_remote_version_lookups() {
-            timeout.min(Duration::from_secs(3))
-        } else {
-            timeout
-        }
+    settings.set_hidden_configs();
+    if cfg!(test) {
+        settings.experimental = true;
     }
-
-    pub(crate) fn configured_fetch_remote_versions_timeout(&self) -> Duration {
-        duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
+    trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
+    let settings = Arc::new(settings);
+    let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
+    LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
+    mise_settings::store(settings.clone());
+    if system_installs_changed {
+        crate::toolset::install_state::reset_tools();
     }
-
-    /// Whether remote-version lookups should use the aggressive fast-path budget
-    /// (a single ~3s attempt with no retries). This is on under `prefer_offline`
-    /// so shims and shell activation never stall — but NOT for commands whose
-    /// whole job is to enumerate remote versions/tags (`mise lock`, `ls-remote`,
-    /// `outdated`, `upgrade`), which must honor the full configured
-    /// `fetch_remote_versions_timeout` and retry budget even when
-    /// `prefer_offline` is set.
-    ///
-    /// See <https://github.com/jdx/mise/discussions/11185>.
-    pub(crate) fn bound_remote_version_lookups(&self) -> bool {
-        self.prefer_offline() && !env::REMOTE_FETCH_COMMAND.load(Ordering::Relaxed)
-    }
-
-    /// duration that remote version cache is kept for
-    /// for "fast" commands (represented by PREFER_OFFLINE), these are always
-    /// cached. For "slow" commands like `mise ls-remote` or `mise install`:
-    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
-    /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
-    pub(crate) fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if self.prefer_offline() {
-            None
-        } else {
-            Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
-        }
-    }
-
-    pub(crate) fn http_timeout(&self) -> Duration {
-        duration::parse_duration(&self.http_timeout).unwrap()
-    }
-
-    pub(crate) fn http_download_timeout(&self) -> Duration {
-        duration::parse_duration(&self.http_download_timeout).unwrap()
-    }
-
-    /// Fast-path commands should make at most one network attempt before falling
-    /// back to cached/local behavior. In particular, shims must not multiply a
-    /// stalled resolver timeout by the configured retry count.
-    pub(crate) fn http_retries(&self) -> i64 {
-        if self.bound_remote_version_lookups() {
-            0
-        } else {
-            self.http_retries
-        }
-    }
-
-    /// Returns true if offline mode is enabled via setting or CLI flag/env var.
-    pub(crate) fn offline(&self) -> bool {
-        self.offline || *env::OFFLINE
-    }
-
-    /// Returns true if prefer-offline mode is enabled via setting, env var, or
-    /// because the current command is a "fast" command (hook-env, activate, etc.).
-    /// Also returns true if offline mode is enabled (offline implies prefer-offline).
-    pub(crate) fn prefer_offline(&self) -> bool {
-        self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
-    }
-
-    pub(crate) fn env_cache_ttl(&self) -> Duration {
-        duration::parse_duration(&self.env_cache_ttl).unwrap()
-    }
-
-    pub(crate) fn aqua_registry_cache_ttl(&self) -> Duration {
-        self.aqua
-            .registry_cache_ttl
-            .as_deref()
-            .map(duration::parse_duration)
-            .transpose()
-            .unwrap()
-            .unwrap_or(crate::aqua::aqua_registry_wrapper::DEFAULT_AQUA_REGISTRY_CACHE_TTL)
-    }
-
-    pub(crate) fn registry_cache_ttl(&self) -> Duration {
-        self.registry_cache_ttl
-            .as_deref()
-            .map(duration::parse_duration)
-            .transpose()
-            .unwrap()
-            .unwrap_or(duration::HOURLY)
-    }
-
-    pub(crate) fn task_timeout_duration(&self) -> Option<Duration> {
-        self.task
-            .timeout
-            .as_ref()
-            .and_then(|s| duration::parse_duration(s).ok())
-    }
-
-    pub(crate) fn log_level(&self) -> log::LevelFilter {
-        self.log_level.parse().unwrap_or(log::LevelFilter::Info)
-    }
-
-    pub(crate) fn disable_tools(&self) -> BTreeSet<String> {
-        normalize_tool_names(&self.disable_tools)
-    }
-
-    pub(crate) fn enable_tools(&self) -> Option<BTreeSet<String>> {
-        self.enable_tools.as_ref().map(normalize_tool_names)
-    }
-
-    pub(crate) fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
-        let s = toml::to_string(partial)?;
-        let mut table = toml::from_str(&s)?;
-        remove_empty_nested_settings(&mut table, "");
-        redact_settings_table(&mut table);
-        Ok(table)
-    }
-
-    pub(crate) fn default_inline_shell(&self) -> Result<Vec<String>> {
-        let (sa, fallback) = if cfg!(windows) {
-            (
-                &self.windows_default_inline_shell_args,
-                Self::WINDOWS_DEFAULT_INLINE_SHELL_ARGS,
-            )
-        } else {
-            (
-                &self.unix_default_inline_shell_args,
-                Self::UNIX_DEFAULT_INLINE_SHELL_ARGS,
-            )
-        };
-        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
-        self.maybe_no_profile(&mut shell);
-        Ok(shell)
-    }
-
-    /// Explicitly selecting even the default value expresses intent to run a
-    /// shell. Cache provenance separately from the resolved string value.
-    pub(crate) fn implicit_inline_shell(&self) -> bool {
-        if cfg!(windows) {
-            return false;
-        }
-        if let Some(explicit) = *EXPLICIT_INLINE_SHELL.read().unwrap() {
-            return !explicit;
-        }
-        let explicit = std::env::var_os("MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS").is_some()
-            || Self::cli_settings_layer()
-                .unix_default_inline_shell_args
-                .is_some()
-            || Self::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered)
-                .iter()
-                .any(|layer| layer.unix_default_inline_shell_args.is_some());
-        *EXPLICIT_INLINE_SHELL.write().unwrap() = Some(explicit);
-        !explicit
-    }
-
-    pub(crate) fn default_file_shell(&self) -> Result<Vec<String>> {
-        let (sa, fallback) = if cfg!(windows) {
-            (
-                &self.windows_default_file_shell_args,
-                Self::WINDOWS_DEFAULT_FILE_SHELL_ARGS,
-            )
-        } else {
-            (
-                &self.unix_default_file_shell_args,
-                Self::UNIX_DEFAULT_FILE_SHELL_ARGS,
-            )
-        };
-        let mut shell = split_default_shell_or_fallback(sa, fallback)?;
-        self.maybe_no_profile(&mut shell);
-        Ok(shell)
-    }
-
-    /// Inject `-NoProfile` into a PowerShell shell command when
-    /// `windows_powershell_no_profile` is enabled. No-op for other shells.
-    pub(crate) fn maybe_no_profile(&self, shell: &mut Vec<String>) {
-        if self.windows_powershell_no_profile {
-            crate::path::inject_powershell_no_profile(shell);
-        }
-    }
-
-    pub(crate) fn os(&self) -> &str {
-        match self.os.as_deref().unwrap_or(OS) {
-            "darwin" | "macos" => "macos",
-            "linux" => "linux",
-            "windows" => "windows",
-            other => other,
-        }
-    }
-
-    pub(crate) fn arch(&self) -> &str {
-        match self.arch.as_deref().unwrap_or(ARCH) {
-            "x86_64" | "amd64" => "x64",
-            "aarch64" | "arm64" => "arm64",
-            other => other,
-        }
-    }
-
-    pub(crate) fn libc(&self) -> Option<&str> {
-        match self.libc.as_deref()?.to_ascii_lowercase().as_str() {
-            "glibc" | "gnu" => Some("gnu"),
-            "musl" => Some("musl"),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn no_config() -> bool {
-        *env::MISE_NO_CONFIG
-            || !*crate::env::IS_RUNNING_AS_SHIM
-                && env::ARGS
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .take_while(|a| *a != "--")
-                    .any(|a| a == "--no-config")
-    }
-
-    pub(crate) fn no_env() -> bool {
-        *env::MISE_NO_ENV
-            || !*crate::env::IS_RUNNING_AS_SHIM
-                && env::ARGS
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .take_while(|a| *a != "--")
-                    .any(|a| a == "--no-env")
-    }
-
-    pub(crate) fn no_hooks() -> bool {
-        *env::MISE_NO_HOOKS
-            || !*crate::env::IS_RUNNING_AS_SHIM
-                && env::ARGS
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .take_while(|a| *a != "--")
-                    .any(|a| a == "--no-hooks")
-    }
-
-    /// Whether safe mode (`MISE_SAFE=1` or the `safe` setting) is active.
-    ///
-    /// Safe to call during the config parse pass: it reads the loaded setting
-    /// when settings are available, otherwise falls back to the `MISE_SAFE`
-    /// environment variable. This avoids triggering a recursive settings load
-    /// from `trust_check` (which runs while config files are being parsed,
-    /// before settings are loaded, e.g. after `Config::reset`). `safe` is
-    /// global-only, so it can only come from the environment or global config;
-    /// the env fallback covers the common `MISE_SAFE=1` case in that window.
-    pub(crate) fn safe_mode() -> bool {
-        if is_loaded() {
-            return Settings::get().safe;
-        }
-        // Settings not loaded (e.g. the config parse pass after Config::reset).
-        // Use the value cached from the last full load, which captures `safe`
-        // set via global config; before any load, fall back to the env var.
-        match LAST_SAFE.load(Ordering::Relaxed) {
-            0 => false,
-            1 => true,
-            _ => crate::env::var_is_true("MISE_SAFE"),
-        }
-    }
-
-    /// Errors when safe mode (`MISE_SAFE=1`) is enabled. Call this before any
-    /// operation that would execute code controlled by project configuration.
-    /// Safe mode is a security boundary: blocked operations must fail loudly,
-    /// never silently fall back to something that executes.
-    pub(crate) fn ensure_not_safe(operation: &str) -> Result<()> {
-        if Settings::safe_mode() {
-            bail!(
-                "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.jdx.dev/configuration/settings.html#safe"
-            );
-        }
-        Ok(())
-    }
+    time!("try_get done");
+    Ok(settings)
 }
 
 fn redacted_settings_for_debug(settings: &Settings) -> Settings {
@@ -1921,51 +1756,25 @@ fn redacted_settings_for_debug(settings: &Settings) -> Settings {
     debug_settings
 }
 
-fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
-    table.retain(|key, value| {
-        let path = if prefix.is_empty() {
-            key.to_string()
-        } else {
-            format!("{prefix}.{key}")
-        };
-        let Some(child) = value.as_table_mut() else {
-            return true;
-        };
-        remove_empty_nested_settings(child, &path);
-        !child.is_empty() || SETTINGS_META.contains_key(path.as_str())
-    });
-}
-
-fn redact_settings_table(table: &mut toml::Table) {
-    let Some(cache) = table
-        .get_mut("task")
-        .and_then(toml::Value::as_table_mut)
-        .and_then(|task| task.get_mut("cache"))
-        .and_then(toml::Value::as_table_mut)
-    else {
-        return;
-    };
-    if cache.contains_key("remote_token") {
-        cache.insert(
-            "remote_token".to_string(),
-            toml::Value::String("[redacted]".to_string()),
-        );
-    }
-}
-
-impl Display for Settings {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match toml::to_string_pretty(self) {
-            Ok(s) => write!(f, "{s}"),
-            Err(e) => Err(std::fmt::Error::custom(e)),
-        }
-    }
-}
-
 pub(crate) const DEFAULT_NODE_MIRROR_URL: &str = "https://nodejs.org/dist/";
 
-impl SettingsNode {
-    pub(crate) fn mirror_url(&self) -> Url {
+/// Node build settings that fall back to the environment variables node-build reads.
+pub(crate) trait SettingsNodeExt {
+    fn mirror_url(&self) -> Url;
+    fn ninja(&self) -> bool;
+    fn concurrency(&self) -> Option<usize>;
+    fn default_packages_file(&self) -> PathBuf;
+    fn cflags(&self) -> Option<String>;
+    fn configure_opts(&self) -> Option<String>;
+    fn make_opts(&self) -> Option<String>;
+    fn make_install_opts(&self) -> Option<String>;
+    fn configure_cmd(&self, install_path: &Path) -> String;
+    fn make_cmd(&self) -> String;
+    fn make_install_cmd(&self) -> String;
+}
+
+impl SettingsNodeExt for SettingsNode {
+    fn mirror_url(&self) -> Url {
         let s = self
             .mirror_url
             .clone()
@@ -1974,11 +1783,11 @@ impl SettingsNode {
         Url::parse(&s).unwrap()
     }
 
-    pub(crate) fn ninja(&self) -> bool {
+    fn ninja(&self) -> bool {
         self.ninja.unwrap_or_else(|| which::which("ninja").is_ok())
     }
 
-    pub(crate) fn concurrency(&self) -> Option<usize> {
+    fn concurrency(&self) -> Option<usize> {
         self.concurrency
             .map(|c| std::cmp::max(c, 1) as usize)
             .or_else(|| {
@@ -1990,7 +1799,7 @@ impl SettingsNode {
             })
     }
 
-    pub(crate) fn default_packages_file(&self) -> PathBuf {
+    fn default_packages_file(&self) -> PathBuf {
         self.default_packages_file
             .clone()
             .or_else(|| {
@@ -2011,29 +1820,29 @@ impl SettingsNode {
             })
     }
 
-    pub(crate) fn cflags(&self) -> Option<String> {
+    fn cflags(&self) -> Option<String> {
         self.cflags.clone().or_else(|| env::var("NODE_CFLAGS").ok())
     }
 
-    pub(crate) fn configure_opts(&self) -> Option<String> {
+    fn configure_opts(&self) -> Option<String> {
         self.configure_opts
             .clone()
             .or_else(|| env::var("NODE_CONFIGURE_OPTS").ok())
     }
 
-    pub(crate) fn make_opts(&self) -> Option<String> {
+    fn make_opts(&self) -> Option<String> {
         self.make_opts
             .clone()
             .or_else(|| env::var("NODE_MAKE_OPTS").ok())
     }
 
-    pub(crate) fn make_install_opts(&self) -> Option<String> {
+    fn make_install_opts(&self) -> Option<String> {
         self.make_install_opts
             .clone()
             .or_else(|| env::var("NODE_MAKE_INSTALL_OPTS").ok())
     }
 
-    pub(crate) fn configure_cmd(&self, install_path: &Path) -> String {
+    fn configure_cmd(&self, install_path: &Path) -> String {
         let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
         if self.ninja() {
             configure_cmd.push_str(" --ninja");
@@ -2044,7 +1853,7 @@ impl SettingsNode {
         configure_cmd
     }
 
-    pub(crate) fn make_cmd(&self) -> String {
+    fn make_cmd(&self) -> String {
         let mut make_cmd = self.make.clone().unwrap_or_else(|| "make".into());
         if let Some(concurrency) = self.concurrency() {
             make_cmd.push_str(&format!(" -j{concurrency}"));
@@ -2055,7 +1864,7 @@ impl SettingsNode {
         make_cmd
     }
 
-    pub(crate) fn make_install_cmd(&self) -> String {
+    fn make_install_cmd(&self) -> String {
         let make = self.make.clone().unwrap_or_else(|| "make".into());
         let mut make_install_cmd = format!("{} install", make);
         if let Some(opts) = self.make_install_opts() {
@@ -2065,69 +1874,6 @@ impl SettingsNode {
     }
 }
 
-impl SettingsStatus {
-    pub(crate) fn missing_tools(&self) -> SettingsStatusMissingTools {
-        SettingsStatusMissingTools::from_str(&self.missing_tools).unwrap()
-    }
-}
-
-/// Deserialize a string to a boolean, accepting "false", "no", "0"
-/// and their case-insensitive variants as `false`. Any other value (incl. "") is considered `true`.
-fn bool_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    match s.to_lowercase().as_str() {
-        "false" | "no" | "0" => Ok(false),
-        _ => Ok(true),
-    }
-}
-
-fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>
-where
-    T: FromStr + Eq + Ord,
-    C: FromIterator<T>,
-{
-    input
-        .split(',')
-        // Filter out empty strings
-        .filter_map(|s| {
-            let trimmed = s.trim();
-            if !trimmed.is_empty() {
-                Some(T::from_str(trimmed))
-            } else {
-                None
-            }
-        })
-        // collect into BTreeSet to remove duplicates
-        .collect::<Result<BTreeSet<_>, _>>()
-        .map(|set| set.into_iter().collect())
-}
-
-fn validate_setting_enum_values<'a>(
-    name: &str,
-    values: impl IntoIterator<Item = &'a str>,
-    allowed: &[&str],
-) -> Result<()> {
-    if let Some(invalid) = values.into_iter().find(|value| !allowed.contains(value)) {
-        bail!(
-            "invalid {name} value {invalid:?}; expected one of: {}",
-            allowed.join(", ")
-        );
-    }
-    Ok(())
-}
-
-fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
-    tools
-        .iter()
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 fn split_default_shell_or_fallback(sa: &str, fallback: &str) -> Result<Vec<String>> {
     let shell = crate::path::split_shell_command(sa)?;
     if shell.is_empty() {
@@ -2135,26 +1881,6 @@ fn split_default_shell_or_fallback(sa: &str, fallback: &str) -> Result<Vec<Strin
     } else {
         Ok(shell)
     }
-}
-
-/// Parse URL replacements from JSON string format
-/// Expected format: {"source_domain": "replacement_domain", ...}
-pub(crate) fn parse_url_replacements(
-    input: &str,
-) -> Result<IndexMap<String, String>, serde_json::Error> {
-    serde_json::from_str(input)
-}
-
-/// Parse a path list from an environment variable using the OS-native path
-/// separator (`:` on Unix, `;` on Windows). This correctly handles Windows
-/// absolute paths whose drive letters contain `:` (e.g. `C:\foo`).
-fn list_by_os_path_separator<C>(input: &str) -> Result<C, std::convert::Infallible>
-where
-    C: FromIterator<PathBuf>,
-{
-    Ok(std::env::split_paths(input)
-        .filter(|p| !p.as_os_str().is_empty())
-        .collect())
 }
 
 #[cfg(test)]
@@ -3069,75 +2795,6 @@ mod tests {
     }
 
     #[test]
-    fn test_set_by_comma_empty_string() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), BTreeSet::new());
-    }
-
-    #[test]
-    fn test_set_by_comma_whitespace_only() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("  ");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), BTreeSet::new());
-    }
-
-    #[test]
-    fn test_set_by_comma_single_value() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string()].into_iter().collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_set_by_comma_multiple_values() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,baz");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string(), "baz".to_string()]
-            .into_iter()
-            .collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_set_by_comma_with_whitespace() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo, bar, baz");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string(), "baz".to_string()]
-            .into_iter()
-            .collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_set_by_comma_trailing_comma() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> =
-            ["foo".to_string(), "bar".to_string()].into_iter().collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_set_by_comma_duplicate_values() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,foo");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> =
-            ["foo".to_string(), "bar".to_string()].into_iter().collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_set_by_comma_empty_elements() {
-        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,,bar");
-        assert!(result.is_ok());
-        let expected: BTreeSet<String> =
-            ["foo".to_string(), "bar".to_string()].into_iter().collect();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
     fn test_generated_collection_enum_validation() {
         let mut settings = Settings::builder().load().unwrap();
         settings.locked_scopes = BTreeSet::from(["projct".to_string()]);
@@ -3147,18 +2804,6 @@ mod tests {
                 .to_string(),
             "invalid locked_scopes value \"projct\"; expected one of: project, global, system"
         );
-    }
-
-    #[test]
-    fn test_normalize_tool_names() {
-        let tools = BTreeSet::from([
-            " node ".to_string(),
-            "  ".to_string(),
-            "ruby".to_string(),
-            "".to_string(),
-        ]);
-        let expected = BTreeSet::from(["node".to_string(), "ruby".to_string()]);
-        assert_eq!(normalize_tool_names(&tools), expected);
     }
 
     #[test]
@@ -3477,6 +3122,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_settings_node_build_cmds() {
+        let node = SettingsNode::default();
+        let path = Path::new("/tmp/install");
+
+        // Defaults
+        assert!(
+            node.configure_cmd(path)
+                .starts_with("./configure --prefix=/tmp/install")
+        );
+        assert!(node.make_cmd().starts_with("make"));
+        assert_eq!(node.make_install_cmd(), "make install");
+    }
+
+    #[test]
+    fn test_settings_node_build_cmds_with_opts() {
+        let node = SettingsNode {
+            configure_opts: Some("--verbose".to_string()),
+            make_opts: Some("-s".to_string()),
+            make_install_opts: Some("--no-strip".to_string()),
+            make: Some("gmake".to_string()),
+            concurrency: Some(4),
+            ..Default::default()
+        };
+
+        let path = Path::new("/tmp/install");
+        assert!(node.configure_cmd(path).contains("--verbose"));
+        assert!(node.make_cmd().starts_with("gmake -j4 -s"));
+        assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
+    }
+    #[test]
+    fn pypi_settings_aliases_merge_and_reject_conflicts() {
+        let mut settings = Settings::default();
+        settings.pipx.uvx = Some(false);
+        settings.normalize_pypi_aliases().unwrap();
+        assert_eq!(settings.pypi.uvx, Some(false));
+        assert_eq!(settings.pipx.uvx, None);
+        settings.pipx.uvx = Some(true);
+        assert!(settings.normalize_pypi_aliases().is_err());
+    }
+
     /// The guard above only earns its place if it catches every collection type, not just `List*`.
     /// settings.toml also carries `SetString` and `IndexMap<String, String>`, which fail the same
     /// way, so a violation of each is checked against a fixture here rather than waiting for one
@@ -3530,96 +3216,5 @@ mod tests {
             missing,
             vec!["bad_list", "bad_map", "bad_set", "group.bad_nested"]
         );
-    }
-
-    #[test]
-    fn test_settings_node_build_cmds() {
-        let node = SettingsNode::default();
-        let path = Path::new("/tmp/install");
-
-        // Defaults
-        assert!(
-            node.configure_cmd(path)
-                .starts_with("./configure --prefix=/tmp/install")
-        );
-        assert!(node.make_cmd().starts_with("make"));
-        assert_eq!(node.make_install_cmd(), "make install");
-    }
-
-    #[test]
-    fn test_settings_node_build_cmds_with_opts() {
-        let node = SettingsNode {
-            configure_opts: Some("--verbose".to_string()),
-            make_opts: Some("-s".to_string()),
-            make_install_opts: Some("--no-strip".to_string()),
-            make: Some("gmake".to_string()),
-            concurrency: Some(4),
-            ..Default::default()
-        };
-
-        let path = Path::new("/tmp/install");
-        assert!(node.configure_cmd(path).contains("--verbose"));
-        assert!(node.make_cmd().starts_with("gmake -j4 -s"));
-        assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
-    }
-
-    #[test]
-    fn test_list_by_os_path_separator_empty() {
-        let result: Result<Vec<PathBuf>, _> = list_by_os_path_separator("");
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_list_by_os_path_separator_single() {
-        #[cfg(not(windows))]
-        let (input, expected) = ("/foo/bar", PathBuf::from("/foo/bar"));
-        #[cfg(windows)]
-        let (input, expected) = (r"C:\foo\bar", PathBuf::from(r"C:\foo\bar"));
-        let result: Vec<PathBuf> = list_by_os_path_separator(input).unwrap();
-        assert_eq!(result, vec![expected]);
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_list_by_os_path_separator_multiple_unix() {
-        let result: Vec<PathBuf> = list_by_os_path_separator("/foo:/bar").unwrap();
-        assert_eq!(result, vec![PathBuf::from("/foo"), PathBuf::from("/bar")]);
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_list_by_os_path_separator_multiple_windows() {
-        let result: Vec<PathBuf> = list_by_os_path_separator(r"C:\foo;D:\bar").unwrap();
-        assert_eq!(
-            result,
-            vec![PathBuf::from(r"C:\foo"), PathBuf::from(r"D:\bar")]
-        );
-    }
-
-    #[test]
-    fn test_list_by_os_path_separator_as_btreeset() {
-        // Verify the function works with BTreeSet as the collection type,
-        // matching the field types used in Settings (e.g. trusted_config_paths).
-        #[cfg(not(windows))]
-        let (input, a, b) = ("/foo:/bar", PathBuf::from("/foo"), PathBuf::from("/bar"));
-        #[cfg(windows)]
-        let (input, a, b) = (
-            r"C:\foo;D:\bar",
-            PathBuf::from(r"C:\foo"),
-            PathBuf::from(r"D:\bar"),
-        );
-        let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
-        assert_eq!(result, [a, b].into_iter().collect());
-    }
-    #[test]
-    fn pypi_settings_aliases_merge_and_reject_conflicts() {
-        let mut settings = Settings::default();
-        settings.pipx.uvx = Some(false);
-        settings.normalize_pypi_aliases().unwrap();
-        assert_eq!(settings.pypi.uvx, Some(false));
-        assert_eq!(settings.pipx.uvx, None);
-        settings.pipx.uvx = Some(true);
-        assert!(settings.normalize_pypi_aliases().is_err());
     }
 }

@@ -1268,7 +1268,7 @@ impl<'a> CloneOptions<'a> {
 mod tests {
     use super::{CloneOptions, Git, looks_like_sha, sanitize_git_cmd_runner, sanitize_git_env};
     use crate::cmd::CmdLineRunner;
-    use crate::config::Settings;
+    use crate::config::{Settings, SettingsExt};
     use std::process::Command;
 
     #[test]

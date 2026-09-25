@@ -26,6 +26,7 @@
 //! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
 //! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
 
+use crate::config::SettingsExt;
 use std::path::Path;
 
 use mise_sigstore::sources::github::GitHubSource;

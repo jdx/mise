@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
 
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
 use crate::netrc;
 use crate::ui::progress_report::SingleReport;

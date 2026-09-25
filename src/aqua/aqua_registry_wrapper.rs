@@ -1,4 +1,4 @@
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, duration};

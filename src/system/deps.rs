@@ -20,7 +20,7 @@ use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use versions::Versioning;
 
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::system::packages::{self, PackageRequest, SystemPackageManager};
 
 /// A single capability a plugin requires before it can install.

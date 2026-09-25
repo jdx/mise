@@ -9,7 +9,7 @@ use crate::backend::conda::CondaBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{self, Backend};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env;
 use crate::file;
 use crate::file::display_path;

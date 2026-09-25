@@ -1,0 +1,26 @@
+[package]
+name = "mise-settings"
+version = "2026.9.0"
+edition = "2024"
+license = "MIT"
+description = "Settings types and the process-wide settings cache for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+include = ["src/**/*", "build.rs", "settings.toml"]
+
+[dependencies]
+confique = { version = "0.4", default-features = false }
+eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.15"
+log = "0.4"
+mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+strum = { version = "0.28", features = ["derive"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+
+[build-dependencies]
+heck = "0.5"
+indexmap = "2"
+toml = "1"

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::backend::backend_type::BackendType;
 use crate::backend::{cargo, dotnet, gem, npm_registry};
 use crate::cache::CacheManagerBuilder;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::plugins::PluginType;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::registry::{REGISTRY, RegistryTool, tool_enabled};

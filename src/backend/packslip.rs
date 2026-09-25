@@ -31,7 +31,7 @@ use crate::backend::{
     runtime_path_for_install_path,
 };
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;

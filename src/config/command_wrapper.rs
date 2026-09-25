@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use indexmap::IndexMap;
 use serde::Deserialize;
 

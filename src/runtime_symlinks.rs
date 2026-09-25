@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::Backend;
-use crate::config::{Alias, Config};
+use crate::config::{Alias, Config, SettingsExt};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
