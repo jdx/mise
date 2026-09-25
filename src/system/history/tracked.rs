@@ -1805,6 +1805,13 @@ fn path_components(rel: &Path) -> Vec<String> {
 /// separator matches a name at any depth. A prefix comparison sees only
 /// the first of those, and the user is then told their pattern selects
 /// nothing without being told which pattern.
+///
+/// **A wildcard stops the comparison, and the answer is "reaches in".**
+/// The per-entry matcher ([`crate::system::files::is_excluded`]) lets
+/// `*`, `?` and a bracket class match `/`, so a component holding one can
+/// span any number of directories: `rules/*.md` selects
+/// `rules/sub/one.md`, and `*/x.md` selects `a/b/x.md`. Only the literal
+/// components before the first wildcard can rule a directory out.
 fn reaches_into(pattern: &str, components: &[String]) -> bool {
     // **Pruning is an optimization and must never change what is
     // selected, so it reads a pattern exactly as the matcher reads it.**
@@ -1830,8 +1837,10 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
     let mut rest = components;
     loop {
         match (parts.first(), rest.first()) {
-            // `**` descends as far as it likes
-            (Some(&"**"), _) => return true,
+            // a wildcard (`**` among them) may match across separators,
+            // so what it and the parts after it cover cannot be read
+            // component by component
+            (Some(part), _) if part.contains(['*', '?', '[']) => return true,
             // One side ran out with everything so far matching, and all
             // three ways that happens reach in: the pattern names
             // something inside the directory, or the directory itself,
@@ -1839,13 +1848,8 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
             // takes everything under it.
             (Some(_), None) | (None, _) => return true,
             (Some(part), Some(component)) => {
-                // a component pattern that cannot be read is not a
-                // mismatch: this answer decides whether a directory is
-                // walked at all, so "cannot tell" descends
-                let matches = glob::Pattern::new(part)
-                    .map(|glob| glob.matches(component))
-                    .unwrap_or(true);
-                if !matches {
+                // with no wildcard, a part matches only itself
+                if part != component {
                     return false;
                 }
                 parts = &parts[1..];
@@ -3204,6 +3208,13 @@ mod tests {
             ("/rules/deep/*.md", true),
             ("/sessions/**", false),
             ("/deep", false),
+            // a wildcard matches across `/`, so the directory it spans
+            // must be walked
+            ("rules/*.md", true),
+            ("/rules/*.md", true),
+            ("*/two.md", true),
+            ("rules/d?ep/two.md", true),
+            ("sessions/*.md", false),
         ] {
             let mut tracked = entry(&root);
             tracked.include = Some(vec![pattern.to_string()]);
