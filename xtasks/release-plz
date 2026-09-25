@@ -609,17 +609,16 @@ bump_subcrate_if_changed "mise-sigstore" "crates/mise-sigstore"
 
 git status
 # cargo update
+# Every subcrate manifest: a bump also rewrites the version requirement in each
+# workspace crate that path-depends on the bumped one (mise-util on mise-sigstore, …).
 git add \
 	Cargo.lock \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
 	vendor/aqua-registry \
-	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
-	crates/vfox/Cargo.toml \
-	crates/mise-interactive-config/Cargo.toml \
-	crates/mise-sigstore/Cargo.toml \
+	crates/*/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
