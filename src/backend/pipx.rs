@@ -297,7 +297,7 @@ impl Backend for PIPXBackend {
                     let data = github::list_releases(&repo).await?;
                     Self::versions_from_github_releases(data)
                 }
-                None => Self::versions_from_git_tags(&source.repo).await?,
+                None => Self::versions_from_git_tags(&source.remote()).await?,
             },
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
@@ -310,7 +310,7 @@ impl Backend for PIPXBackend {
                 return if PipxRequest::github_repo(&source.repo).is_some() {
                     Ok(None)
                 } else {
-                    Self::git_head(&source.repo).await.map(Some)
+                    Self::git_head(&source.remote()).await.map(Some)
                 };
             }
         };
@@ -366,7 +366,7 @@ impl Backend for PIPXBackend {
             return Ok(None);
         }
         match self.tool_name().parse()? {
-            PipxRequest::Git(source) => Self::git_head(&source.repo).await.map(Some),
+            PipxRequest::Git(source) => Self::git_head(&source.remote()).await.map(Some),
             PipxRequest::Pypi(_) => Ok(None),
         }
     }
@@ -691,8 +691,7 @@ impl Backend for PIPXBackend {
 
         // Fix venv Python symlink to use minor version path
         // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
-        let pkg_name = self.tool_name();
-        fix_venv_python_symlink(&tv.install_path(), &pkg_name)?;
+        fix_venv_python_symlink(&tv.install_path())?;
 
         Ok(tv)
     }
@@ -723,13 +722,12 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 
 impl PIPXBackend {
     /// Resolves a Git remote's default-branch HEAD to a concrete commit SHA.
-    async fn git_head(url: &str) -> Result<String> {
-        let remote = format!("{url}.git");
+    async fn git_head(remote: &str) -> Result<String> {
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    &["ls-remote", &remote, "HEAD"],
+                    &["ls-remote", remote, "HEAD"],
                     std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
                 .await?;
@@ -750,13 +748,12 @@ impl PIPXBackend {
     }
 
     /// Lists tags from a Git remote while preserving Git's source ordering.
-    async fn versions_from_git_tags(url: &str) -> Result<Vec<VersionInfo>> {
-        let remote = format!("{url}.git");
+    async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    &["ls-remote", "--tags", "--refs", &remote],
+                    &["ls-remote", "--tags", "--refs", remote],
                     std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
                 .await?;
@@ -1173,14 +1170,19 @@ enum PipxRequest {
 struct GitSource {
     /// Repository URL without `git+`, a trailing `.git`, or the fragment.
     repo: String,
+    /// Whether the remote is spelled with `.git`. Kept as written because not
+    /// every remote accepts both spellings (e.g. `git+file:///path/to/repo`).
+    git_suffix: bool,
     /// Fragment items (`key=value`) in their original order and spelling.
     fragment: Vec<String>,
 }
 
 impl GitSource {
     fn new(repo: &str, fragment: Option<&str>) -> Self {
+        let stripped = repo.strip_suffix(".git");
         Self {
-            repo: repo.strip_suffix(".git").unwrap_or(repo).to_string(),
+            repo: stripped.unwrap_or(repo).to_string(),
+            git_suffix: stripped.is_some(),
             fragment: fragment
                 .into_iter()
                 .flat_map(|f| f.split('&'))
@@ -1202,10 +1204,19 @@ impl GitSource {
         })
     }
 
+    /// The remote as written, for `git ls-remote` and install requests.
+    fn remote(&self) -> String {
+        if self.git_suffix {
+            format!("{}.git", self.repo)
+        } else {
+            self.repo.clone()
+        }
+    }
+
     /// pip and uv expect the ref before the fragment:
-    /// `git+<repo>.git@<ref>#<fragment>`.
+    /// `git+<remote>@<ref>#<fragment>`.
     fn url(&self, v: &str, fragment: &[String]) -> String {
-        let mut url = format!("git+{}.git", self.repo);
+        let mut url = format!("git+{}", self.remote());
         if v != "latest" {
             url.push('@');
             url.push_str(v);
@@ -1344,8 +1355,10 @@ impl FromStr for PipxRequest {
         {
             Ok(PipxRequest::Git(GitSource::new(url, fragment)))
         } else if source.contains('/') {
+            // Shorthand has always been requested with a `.git` suffix.
+            let repo = source.strip_suffix(".git").unwrap_or(source);
             Ok(PipxRequest::Git(GitSource::new(
-                &format!("https://github.com/{source}"),
+                &format!("https://github.com/{repo}.git"),
                 fragment,
             )))
         } else {
@@ -1430,16 +1443,17 @@ fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
 ///
 /// We need to fix the absolute symlink to use minor version path (3.12 instead of 3.12.1)
 #[cfg(unix)]
-fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
-    // For Git-based packages like "psf/black", the venv directory is just "black"
-    // Extract the actual package name (last component after any '/')
-    let actual_pkg_name = pkg_name.rsplit('/').next().unwrap_or(pkg_name);
-
-    // Check both possible venv locations: {pkg}/ for uvx, venvs/{pkg}/ for pipx
-    let venv_dirs = [
-        install_path.join(actual_pkg_name),
-        install_path.join("venvs").join(actual_pkg_name),
-    ];
+fn fix_venv_python_symlink(install_path: &Path) -> Result<()> {
+    // uv and pipx name the venv after the Python distribution, which the tool
+    // name doesn't reliably give (`o/repo#subdirectory=cli` builds `cli-dist`).
+    // Each install path holds one tool, so check every venv under it:
+    // {dist}/ for uvx, venvs/{dist}/ for pipx.
+    let mut venv_dirs = vec![];
+    for base in [install_path.to_path_buf(), install_path.join("venvs")] {
+        for name in file::dir_subdirs(&base)? {
+            venv_dirs.push(base.join(name));
+        }
+    }
 
     trace!(
         "fix_venv_python_symlink: checking venv dirs: {:?}",
@@ -1495,7 +1509,7 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
 
 /// No-op on non-Unix platforms
 #[cfg(not(unix))]
-fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> {
+fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -2010,32 +2024,54 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     #[test]
     fn test_git_sources_parse_optional_suffix_and_fragment() {
         let ltui = "https://github.com/runpantheon/ltui";
-        for (tool, repo, fragment) in [
-            ("git+https://github.com/runpantheon/ltui", ltui, vec![]),
-            ("git+https://github.com/runpantheon/ltui.git", ltui, vec![]),
+        for (tool, repo, git_suffix, fragment) in [
+            (
+                "git+https://github.com/runpantheon/ltui",
+                ltui,
+                false,
+                vec![],
+            ),
+            (
+                "git+https://github.com/runpantheon/ltui.git",
+                ltui,
+                true,
+                vec![],
+            ),
             (
                 "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
                 ltui,
+                false,
                 vec!["subdirectory=ltui"],
             ),
             (
                 "git+https://github.com/runpantheon/ltui.git#subdirectory=ltui",
                 ltui,
+                true,
                 vec!["subdirectory=ltui"],
             ),
             (
                 "runpantheon/ltui#subdirectory=ltui",
                 ltui,
+                true,
                 vec!["subdirectory=ltui"],
             ),
+            ("runpantheon/ltui.git", ltui, true, vec![]),
             (
                 "git+ssh://git@github.com/psf/black.git",
                 "ssh://git@github.com/psf/black",
+                true,
+                vec![],
+            ),
+            (
+                "git+file:///tmp/project",
+                "file:///tmp/project",
+                false,
                 vec![],
             ),
             (
                 "git+https://github.com/o/r#subdirectory=pkg&foo=bar",
                 "https://github.com/o/r",
+                false,
                 vec!["subdirectory=pkg", "foo=bar"],
             ),
         ] {
@@ -2043,6 +2079,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 tool.parse::<PipxRequest>().unwrap(),
                 PipxRequest::Git(GitSource {
                     repo: repo.to_string(),
+                    git_suffix,
                     fragment: fragment.into_iter().map(str::to_string).collect(),
                 }),
                 "{tool}"
@@ -2063,7 +2100,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             (
                 "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
                 "main",
-                "git+https://github.com/runpantheon/ltui.git@main#subdirectory=ltui".to_string(),
+                "git+https://github.com/runpantheon/ltui@main#subdirectory=ltui".to_string(),
             ),
             (
                 "runpantheon/ltui#subdirectory=ltui",
@@ -2073,12 +2110,17 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             (
                 "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
                 "latest",
-                "git+https://github.com/runpantheon/ltui.git#subdirectory=ltui".to_string(),
+                "git+https://github.com/runpantheon/ltui#subdirectory=ltui".to_string(),
             ),
             (
                 "git+https://github.com/o/r#subdirectory=pkg&foo=bar",
                 "v1",
-                "git+https://github.com/o/r.git@v1#subdirectory=pkg&foo=bar".to_string(),
+                "git+https://github.com/o/r@v1#subdirectory=pkg&foo=bar".to_string(),
+            ),
+            (
+                "git+file:///tmp/project#subdirectory=pkg",
+                "v1",
+                "git+file:///tmp/project@v1#subdirectory=pkg".to_string(),
             ),
         ] {
             let request: PipxRequest = tool.parse().unwrap();
@@ -2105,11 +2147,11 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             .unwrap();
         assert_eq!(
             request.uvx_request("v1", &opts),
-            "mypkg[cli] @ git+https://github.com/o/r.git@v1#subdirectory=pkg"
+            "mypkg[cli] @ git+https://github.com/o/r@v1#subdirectory=pkg"
         );
         assert_eq!(
             request.pipx_request("v1", &opts),
-            "git+https://github.com/o/r.git@v1#subdirectory=pkg&egg=mypkg[cli]"
+            "git+https://github.com/o/r@v1#subdirectory=pkg&egg=mypkg[cli]"
         );
 
         let request: PipxRequest = "git+https://github.com/o/r#egg=old&subdirectory=pkg"
@@ -2117,7 +2159,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             .unwrap();
         assert_eq!(
             request.pipx_request("v1", &opts),
-            "git+https://github.com/o/r.git@v1#egg=mypkg[cli]&subdirectory=pkg"
+            "git+https://github.com/o/r@v1#egg=mypkg[cli]&subdirectory=pkg"
         );
     }
 
@@ -2170,10 +2212,13 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             PipxRequest::github_repo(&with_fragment.repo).as_deref(),
             Some("runpantheon/ltui")
         );
-        assert!(
-            !source("git+https://gitlab.example.com/sre/mytool.git#subdirectory=x")
-                .repo
-                .contains('#')
+        assert_eq!(
+            source("git+https://gitlab.example.com/sre/mytool.git#subdirectory=x").remote(),
+            "https://gitlab.example.com/sre/mytool.git"
+        );
+        assert_eq!(
+            source("git+file:///tmp/project#subdirectory=x").remote(),
+            "file:///tmp/project"
         );
 
         for (bare, fragment) in [
@@ -2208,7 +2253,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
         let inferred_opts = PipxOptions::new(&inferred_opts);
         let inferred_request =
-            PipxRequest::Git(GitSource::new("https://github.com/psf/black", None));
+            PipxRequest::Git(GitSource::new("https://github.com/psf/black.git", None));
         assert_eq!(
             inferred_request.uvx_request("latest", &inferred_opts),
             "black[jupyter] @ git+https://github.com/psf/black.git"
@@ -2229,7 +2274,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
         let named_opts = PipxOptions::new(&named_opts);
         let request = PipxRequest::Git(GitSource::new(
-            "https://github.com/psf/black-repository",
+            "https://github.com/psf/black-repository.git",
             None,
         ));
 

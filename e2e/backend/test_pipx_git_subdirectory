@@ -29,3 +29,10 @@ assert_fail "test '$ltui_path' = '$jtui_path'"
 
 assert_contains "mise x -- ltui --version" "ltui 0.16.1"
 assert_contains "$MISE_DATA_DIR/shims/ltui --version" "ltui 0.16.1"
+assert_contains "$MISE_DATA_DIR/shims/jtui --version" "jtui 0.3.0"
+assert_contains "mise x -- jtui --version" "jtui 0.3.0"
+
+# The venv is named after the distribution (ltui-linear), not the tool name, and
+# its Python link must use the minor-version path so patch upgrades keep working.
+assert_contains "readlink '$ltui_path/ltui-linear/bin/python' '$ltui_path/ltui-linear/bin/python3'" "/installs/python/3.12/"
+assert_not_contains "readlink '$ltui_path/ltui-linear/bin/python' '$ltui_path/ltui-linear/bin/python3'" "/installs/python/3.12.3/"

@@ -44,7 +44,7 @@ source. Their releases and installation requirements can differ.
 | ------------------------ | ----------------------------------------------------- |
 | PyPI, latest version     | `pypi:black`                                          |
 | PyPI, specific version   | `pypi:black@24.3.0`                                   |
-| GitHub, default branch   | `pypi:psf/black`                                      |
+| GitHub, latest release   | `pypi:psf/black`                                      |
 | GitHub, specific release | `pypi:psf/black@24.3.0`                               |
 | Git repository           | `pypi:git+https://github.com/psf/black.git`           |
 | Git branch               | `pypi:git+https://github.com/psf/black.git@main`      |
@@ -70,7 +70,9 @@ mise use 'pypi:runpantheon/ltui#subdirectory=jtui@main'
 Quote the argument so the shell does not treat `#` specially. The fragment is
 part of the tool name, so each subdirectory is a separate tool, and the version
 still goes after `@`. mise places the ref before the fragment in the request it
-sends to the installer. Other fragment keys pass through unchanged.
+sends to the installer. Other fragment keys pass through unchanged, except
+that mise reads `[...]` in a tool name as [tool options](/dev-tools/#tool-options);
+use the [`extras`](#extras) option instead of `#egg=pkg[extra]`.
 
 Versions come from the repository as a whole, so `latest` selects the newest
 release even if the subdirectory did not exist at that tag. Pin a branch or
