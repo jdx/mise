@@ -13,25 +13,36 @@ fn main() {
 /// read it too. The release copies it into this crate so the published package
 /// can build on its own.
 ///
-/// The workspace file wins whenever it exists, so a copy left behind by a local
-/// release run can never shadow edits to it. Both paths are watched for the same
-/// reason.
+/// Inside the mise workspace the root file always wins, so a copy left behind by
+/// a local release run can never shadow edits to it. The root only counts when
+/// this crate really is its `crates/mise-settings`: a vendored copy sits under
+/// some other project whose own `settings.toml` must not be picked up.
 fn settings_toml_path() -> PathBuf {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let workspace = manifest_dir.join("../../settings.toml");
-    let packaged = manifest_dir.join("settings.toml");
-    println!("cargo:rerun-if-changed={}", workspace.display());
-    println!("cargo:rerun-if-changed={}", packaged.display());
-    if workspace.exists() {
-        return workspace;
-    }
-    assert!(
-        packaged.exists(),
-        "settings.toml not found. Outside the mise workspace, copy its settings.toml into {} \
-         before packaging (xtasks/release-plz does this when publishing).",
-        manifest_dir.display()
-    );
-    packaged
+    // Watch only the file that is read: Cargo treats a missing watched path as
+    // always changed and would rerun this script on every build.
+    let path = workspace_settings_toml(&manifest_dir).unwrap_or_else(|| {
+        let packaged = manifest_dir.join("settings.toml");
+        assert!(
+            packaged.exists(),
+            "settings.toml not found. Outside the mise workspace, copy its settings.toml into {} \
+             before packaging (xtasks/release-plz does this when publishing).",
+            manifest_dir.display()
+        );
+        packaged
+    });
+    println!("cargo:rerun-if-changed={}", path.display());
+    path
+}
+
+/// The workspace-root `settings.toml`, when this crate is the mise workspace's
+/// `crates/mise-settings`.
+fn workspace_settings_toml(manifest_dir: &Path) -> Option<PathBuf> {
+    let root = manifest_dir.join("../..");
+    let in_workspace = fs::canonicalize(root.join("crates/mise-settings")).ok()?
+        == fs::canonicalize(manifest_dir).ok()?;
+    let settings = root.join("settings.toml");
+    (in_workspace && settings.exists()).then_some(settings)
 }
 
 /// Generate a raw string literal that safely contains the given content.
