@@ -6664,7 +6664,6 @@ dependencies = [
  "tempfile",
  "tera 1.20.1",
  "tera 2.4.0",
- "tera-contrib",
  "test-log",
  "thiserror 2.0.20",
  "tokio",
@@ -6780,6 +6779,7 @@ dependencies = [
 name = "mise-util"
 version = "2026.9.0"
 dependencies = [
+ "age 0.12.1",
  "aho-corasick",
  "axum",
  "base64 0.23.1",
@@ -6791,6 +6791,7 @@ dependencies = [
  "confique",
  "console",
  "ctor",
+ "demand",
  "digest 0.11.3",
  "duct",
  "dunce",
@@ -6824,7 +6825,9 @@ dependencies = [
  "nix 0.31.3",
  "nodejs-semver",
  "nucleo-matcher",
+ "num_cpus",
  "once_cell",
+ "packslip",
  "path-absolutize",
  "petgraph",
  "pretty_assertions",
@@ -6846,6 +6849,9 @@ dependencies = [
  "siphasher",
  "strum 0.28.0",
  "tempfile",
+ "tera 1.20.1",
+ "tera 2.4.0",
+ "tera-contrib",
  "terminal_size",
  "thiserror 2.0.20",
  "tokio",
