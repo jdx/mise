@@ -27,6 +27,22 @@ impl AptManager {
         })
     }
 
+    /// Whether any request has no install candidate in the current lists.
+    ///
+    /// Lists can exist yet not cover the configured sources — an offline ISO
+    /// install indexes only the install media — and one unknown name fails the
+    /// whole `apt-get install`. A query failure is not a reason to refresh.
+    async fn lacks_candidate(&self, pkgs: &[PackageRequest]) -> bool {
+        let names: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
+        match self.available(&names).await {
+            Ok(available) => available.contains(&false),
+            Err(err) => {
+                debug!("could not check apt install candidates: {err:#}");
+                false
+            }
+        }
+    }
+
     /// Names in `args` that `apt-cache policy` reports with an install
     /// candidate. Keyed by the bare name apt heads each stanza with, so callers
     /// holding an arch-qualified name must query it alone.
@@ -227,7 +243,7 @@ impl SystemPackageManager for AptManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if opts.update || self.lists_missing() {
+        if opts.update || self.lists_missing() || self.lacks_candidate(pkgs).await {
             self.update(opts)?;
         }
         // `--` keeps package operands from ever being parsed as apt-get
@@ -312,6 +328,13 @@ mod tests {
         let names = vec!["bash:mise-not-an-arch".to_string(), "bash".to_string()];
         let available = mgr.available(&names).await.unwrap();
         assert_eq!(available, vec![false, true]);
+
+        // install refreshes the lists when any request lacks a candidate
+        assert!(!mgr.lacks_candidate(&[req("bash", None)]).await);
+        assert!(
+            mgr.lacks_candidate(&[req("bash", None), req("mise-nonexistent-pkg-xyz", None)])
+                .await
+        );
     }
 
     #[test]
