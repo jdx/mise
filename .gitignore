@@ -33,7 +33,9 @@ megalinter-reports/
 
 .vscode/
 testResults.xml
-.mise/
+.mise/*
+# mise lock writes npm dependency graphs here; mise.lock references them.
+!.mise/locks/
 comment.md
 
 .claude/settings.local.json

@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::cli::render_subcommand_help;
 use crate::cmd;
 use crate::config::Config;
@@ -81,11 +81,11 @@ impl Watch {
     pub(crate) async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {
-                print!("{}", render_subcommand_help("watch", false));
+                miseprint!("{}", render_subcommand_help("watch", false))?;
                 return Ok(());
             }
             if task == "--help" {
-                print!("{}", render_subcommand_help("watch", true));
+                miseprint!("{}", render_subcommand_help("watch", true))?;
                 return Ok(());
             }
         }

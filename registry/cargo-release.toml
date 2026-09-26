@@ -1,4 +1,6 @@
-backends = ["github:crate-ci/cargo-release"]
+backends = [
+  { full = "github:crate-ci/cargo-release", attestations_since = "1.1.5" },
+]
 description = "Cargo subcommand for releasing crates"
 version_order = "semver"
 # Temporarily disabled because the GitHub "latest" release has no Linux asset.

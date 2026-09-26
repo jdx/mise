@@ -1,6 +1,6 @@
 use crate::config;
 use crate::config::settings::{SETTINGS_META, SettingsPartial, SettingsType};
-use crate::config::{ALL_TOML_CONFIG_FILES, Settings};
+use crate::config::{ALL_TOML_CONFIG_FILES, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::ui::table;
 use eyre::Result;
@@ -121,7 +121,7 @@ impl SettingsLs {
 
     fn complete(&self) -> Result<()> {
         for (k, sm) in SETTINGS_META.iter() {
-            println!("{k}:{}", sm.description.replace(":", "\\:"));
+            miseprintln!("{k}:{}", sm.description.replace(":", "\\:"));
         }
         Ok(())
     }

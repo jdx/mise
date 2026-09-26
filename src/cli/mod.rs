@@ -1,10 +1,12 @@
-use crate::config::{Config, Settings, config_file};
+use crate::config::settings::SettingsPartial;
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
-use crate::{hook_env as hook_env_module, logger, migrate, shims};
+use crate::{hook_env as hook_env_module, logger, migrate};
 use eyre::{Report, bail};
+use futures_util::future::LocalBoxFuture;
 use std::path::PathBuf;
 use usage_rs::config::{Layers, PropMeta, Registry as SettingsRegistry, Ty, Value};
 
@@ -24,7 +26,7 @@ fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<boo
 }
 
 mod activate;
-pub(crate) mod args;
+pub(crate) use crate::args;
 mod asdf;
 pub(crate) mod backends;
 mod bin_paths;
@@ -50,7 +52,6 @@ mod hook_env;
 mod hook_not_found;
 mod tool_alias;
 
-pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
@@ -84,6 +85,7 @@ mod set;
 mod settings;
 mod shell;
 mod shell_alias;
+mod shim;
 mod skills;
 mod sponsors;
 mod ssh;
@@ -120,6 +122,11 @@ pub(crate) enum LevelFilter {
 #[derive(usage_rs::Cli)]
 #[usage(
     name = "mise", about, long_about = LONG_ABOUT, settings,
+    // The chef's toque and the wink, in block characters. In a file rather than in this
+    // attribute because art is edited by looking at it, and a raw string indented to match
+    // this list would not be what prints.
+    logo = include_str!("../assets/logo.txt"),
+    logo_style = "green",
     example("mise install node@20.0.0", help = "Install a specific node version"),
     example("mise install node@20", help = "Install a version matching a prefix"),
     example("mise install node", help = "Install the node version defined in config"),
@@ -245,6 +252,45 @@ Shorthand for `mise tasks run <TASK>`."#
     pub trace: bool,
 }
 
+/// Whether a help page mise prints should carry colour.
+///
+/// mise's own policy, not the renderer's: `Settings` folds `color`, `MISE_COLOR`, `CLICOLOR`,
+/// `CLICOLOR_FORCE`, `NO_COLOR` and CI detection into `console`, so a user who turned colour
+/// off has said so in one place. `Style::auto()` would ask the terminal directly and miss all
+/// of it. This is the rule `render_task_help` already follows.
+fn help_style() -> usage_rs::help::Style {
+    help_style_for(console::colors_enabled())
+}
+
+/// The same question for a page going to stderr, which `console` tracks separately.
+fn help_style_stderr() -> usage_rs::help::Style {
+    help_style_for(console::colors_enabled_stderr())
+}
+
+/// The answer, given what `console` decided. Split out so it can be tested: the test binary
+/// disables colour and sets `NO_COLOR` for every test in it, which makes a rendered page plain
+/// whichever policy produced it, so only the mapping itself can be pinned.
+fn help_style_for(coloured: bool) -> usage_rs::help::Style {
+    if coloured {
+        usage_rs::help::Style::COLOURED
+    } else {
+        usage_rs::help::Style::PLAIN
+    }
+}
+
+/// A help page as this process should print it.
+///
+/// `usage_rs::help::render` is the plain form, for a page going into a document. mise
+/// dispatches `Error::Help` itself rather than letting `parse()` exit, so the colour policy
+/// `parse()` would have applied has to be applied here.
+fn render_page(
+    spec: &usage_rs::spec::Spec<'static>,
+    cmd: &usage_rs::Command<'_>,
+    long: bool,
+) -> Option<String> {
+    usage_rs::help::render_styled(spec, cmd, long, help_style())
+}
+
 fn render_subcommand_help(name: &str, long: bool) -> String {
     let spec = Cli::spec();
     let command = spec
@@ -253,7 +299,7 @@ fn render_subcommand_help(name: &str, long: bool) -> String {
         .iter()
         .find(|command| command.cmd.name == name)
         .unwrap_or_else(|| panic!("missing generated {name} command"));
-    usage_rs::help::render(spec, command.cmd, long)
+    usage_rs::help::render_styled(spec, command.cmd, long, help_style())
         .unwrap_or_else(|| panic!("generated {name} command is outside the usage spec"))
 }
 
@@ -357,6 +403,20 @@ impl Commands {
         }
     }
 
+    /// Commands that run as a service, with no terminal reading their output.
+    ///
+    /// Windows gives a Scheduled Task's console program a console of its own,
+    /// and the watcher would run behind that window until it was hidden. This
+    /// is asked for right after parsing, ahead of the auto-update that could
+    /// otherwise leave the window on screen for a download's worth of time.
+    fn runs_unattended(&self) -> bool {
+        match self {
+            Self::Dotfiles(cmd) => cmd.is_watch(),
+            Self::Bootstrap(cmd) => cmd.runs_unattended(),
+            _ => false,
+        }
+    }
+
     /// Whether this parsed command may trigger a pre-command automatic update.
     ///
     /// This operates on clap's canonical command variant so aliases such as
@@ -404,83 +464,90 @@ impl Commands {
             )
     }
 
-    pub(crate) async fn run(self) -> Result<()> {
+    /// Builds the subcommand's future on the heap instead of awaiting it
+    /// here. An unoptimized build gives every arm's future its own slot in an
+    /// `async fn`'s poll frame, and that frame stays on the stack for the
+    /// whole command: as an `async fn` this dispatcher alone took ~1.8 MB of
+    /// a debug build's main stack. Building the futures in a plain `fn` frees
+    /// that frame before the command is polled. The other dispatchers
+    /// underneath (`bootstrap`, `dotfiles`) follow this pattern too.
+    pub(crate) fn run(self) -> LocalBoxFuture<'static, Result<()>> {
         match self {
-            Self::Activate(cmd) => cmd.run(),
-            Self::ToolAlias(cmd) => cmd.run().await,
-            Self::Asdf(cmd) => cmd.run().await,
-            Self::Backends(cmd) => cmd.run().await,
-            Self::BinPaths(cmd) => cmd.run().await,
-            Self::Bootstrap(cmd) => cmd.run().await,
-            Self::Cache(cmd) => cmd.run().await,
-            Self::Completion(cmd) => cmd.run().await,
-            Self::Config(cmd) => cmd.run().await,
-            Self::Current(cmd) => cmd.run().await,
-            Self::Deactivate(cmd) => cmd.run(),
-            Self::Daemons(cmd) => cmd.run().await,
-            Self::Direnv(cmd) => cmd.run().await,
-            Self::Dotfiles(cmd) => cmd.run().await,
-            Self::Doctor(cmd) => cmd.run().await,
-            Self::En(cmd) => cmd.run().await,
-            Self::Env(cmd) => cmd.run().await,
-            Self::Exec(cmd) => cmd.run().await,
-            Self::Fmt(cmd) => cmd.run(),
-            Self::Generate(cmd) => cmd.run().await,
-            Self::Github(cmd) => cmd.run().await,
-            Self::Global(cmd) => cmd.run().await,
-            Self::HookEnv(cmd) => cmd.run().await,
-            Self::HookNotFound(cmd) => cmd.run().await,
-            Self::Implode(cmd) => cmd.run(),
-            Self::Edit(cmd) => cmd.run().await,
-            Self::Install(cmd) => cmd.run().await,
-            Self::InstallInto(cmd) => cmd.run().await,
-            Self::Latest(cmd) => cmd.run().await,
-            Self::Link(cmd) => cmd.run().await,
-            Self::Local(cmd) => cmd.run().await,
-            Self::Lock(cmd) => cmd.run().await,
-            Self::Ls(cmd) => cmd.run().await,
-            Self::LsRemote(cmd) => cmd.run().await,
-            Self::Mcp(cmd) => cmd.run().await,
-            Self::Oci(cmd) => cmd.run().await,
-            Self::Packslip(cmd) => cmd.run().await,
-            Self::Outdated(cmd) => cmd.run().await,
-            Self::Patrons(cmd) => cmd.run().await,
-            Self::Plugins(cmd) => cmd.run().await,
-            Self::Deps(cmd) => cmd.run().await,
-            Self::Prune(cmd) => cmd.run().await,
-            Self::PublishSystemInstall(cmd) => cmd.run(),
-            Self::Registry(cmd) => cmd.run().await,
+            Self::Activate(cmd) => Box::pin(async move { cmd.run() }),
+            Self::ToolAlias(cmd) => Box::pin(cmd.run()),
+            Self::Asdf(cmd) => Box::pin(cmd.run()),
+            Self::Backends(cmd) => Box::pin(cmd.run()),
+            Self::BinPaths(cmd) => Box::pin(cmd.run()),
+            Self::Bootstrap(cmd) => Box::pin(cmd.run()),
+            Self::Cache(cmd) => Box::pin(cmd.run()),
+            Self::Completion(cmd) => Box::pin(cmd.run()),
+            Self::Config(cmd) => Box::pin(cmd.run()),
+            Self::Current(cmd) => Box::pin(cmd.run()),
+            Self::Deactivate(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Daemons(cmd) => Box::pin(cmd.run()),
+            Self::Direnv(cmd) => Box::pin(cmd.run()),
+            Self::Dotfiles(cmd) => Box::pin(cmd.run()),
+            Self::Doctor(cmd) => Box::pin(cmd.run()),
+            Self::En(cmd) => Box::pin(cmd.run()),
+            Self::Env(cmd) => Box::pin(cmd.run()),
+            Self::Exec(cmd) => Box::pin(cmd.run()),
+            Self::Fmt(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Generate(cmd) => Box::pin(cmd.run()),
+            Self::Github(cmd) => Box::pin(cmd.run()),
+            Self::Global(cmd) => Box::pin(cmd.run()),
+            Self::HookEnv(cmd) => Box::pin(cmd.run()),
+            Self::HookNotFound(cmd) => Box::pin(cmd.run()),
+            Self::Implode(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Edit(cmd) => Box::pin(cmd.run()),
+            Self::Install(cmd) => Box::pin(cmd.run()),
+            Self::InstallInto(cmd) => Box::pin(cmd.run()),
+            Self::Latest(cmd) => Box::pin(cmd.run()),
+            Self::Link(cmd) => Box::pin(cmd.run()),
+            Self::Local(cmd) => Box::pin(cmd.run()),
+            Self::Lock(cmd) => Box::pin(cmd.run()),
+            Self::Ls(cmd) => Box::pin(cmd.run()),
+            Self::LsRemote(cmd) => Box::pin(cmd.run()),
+            Self::Mcp(cmd) => Box::pin(cmd.run()),
+            Self::Oci(cmd) => Box::pin(cmd.run()),
+            Self::Packslip(cmd) => Box::pin(cmd.run()),
+            Self::Outdated(cmd) => Box::pin(cmd.run()),
+            Self::Patrons(cmd) => Box::pin(cmd.run()),
+            Self::Plugins(cmd) => Box::pin(cmd.run()),
+            Self::Deps(cmd) => Box::pin(cmd.run()),
+            Self::Prune(cmd) => Box::pin(cmd.run()),
+            Self::PublishSystemInstall(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Registry(cmd) => Box::pin(cmd.run()),
             #[cfg(debug_assertions)]
-            Self::RenderHelp(cmd) => cmd.run(),
-            Self::Reshim(cmd) => cmd.run().await,
-            Self::Run(cmd) => (*cmd).run().await,
-            Self::Search(cmd) => cmd.run().await,
-            Self::SelfUpdate(cmd) => cmd.run().await,
-            Self::Set(cmd) => cmd.run().await,
-            Self::Settings(cmd) => cmd.run().await,
-            Self::Shell(cmd) => cmd.run().await,
-            Self::Ssh(cmd) => cmd.run().await,
-            Self::ShellAlias(cmd) => cmd.run().await,
-            Self::Skills(cmd) => cmd.run().await,
-            Self::Sponsors(cmd) => cmd.run(),
-            Self::Sync(cmd) => cmd.run().await,
-            Self::Tasks(cmd) => cmd.run().await,
-            Self::TestTool(cmd) => cmd.run().await,
-            Self::Token(cmd) => cmd.run().await,
-            Self::Tool(cmd) => cmd.run().await,
-            Self::ToolStub(cmd) => cmd.run().await,
-            Self::Trust(cmd) => cmd.run().await,
-            Self::Uninstall(cmd) => cmd.run().await,
-            Self::Unset(cmd) => cmd.run().await,
-            Self::Untrust(cmd) => cmd.run(),
-            Self::Unuse(cmd) => cmd.run().await,
-            Self::Upgrade(cmd) => cmd.run().await,
-            Self::Usage(cmd) => cmd.run(),
-            Self::Use(cmd) => cmd.run().await,
-            Self::Version(cmd) => cmd.run().await,
-            Self::Watch(cmd) => cmd.run().await,
-            Self::Where(cmd) => cmd.run().await,
-            Self::Which(cmd) => cmd.run().await,
+            Self::RenderHelp(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Reshim(cmd) => Box::pin(cmd.run()),
+            Self::Run(cmd) => Box::pin((*cmd).run()),
+            Self::Search(cmd) => Box::pin(cmd.run()),
+            Self::SelfUpdate(cmd) => Box::pin(cmd.run()),
+            Self::Set(cmd) => Box::pin(cmd.run()),
+            Self::Settings(cmd) => Box::pin(cmd.run()),
+            Self::Shell(cmd) => Box::pin(cmd.run()),
+            Self::Ssh(cmd) => Box::pin(cmd.run()),
+            Self::ShellAlias(cmd) => Box::pin(cmd.run()),
+            Self::Skills(cmd) => Box::pin(cmd.run()),
+            Self::Sponsors(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Sync(cmd) => Box::pin(cmd.run()),
+            Self::Tasks(cmd) => Box::pin(cmd.run()),
+            Self::TestTool(cmd) => Box::pin(cmd.run()),
+            Self::Token(cmd) => Box::pin(cmd.run()),
+            Self::Tool(cmd) => Box::pin(cmd.run()),
+            Self::ToolStub(cmd) => Box::pin(cmd.run()),
+            Self::Trust(cmd) => Box::pin(cmd.run()),
+            Self::Uninstall(cmd) => Box::pin(cmd.run()),
+            Self::Unset(cmd) => Box::pin(cmd.run()),
+            Self::Untrust(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Unuse(cmd) => Box::pin(cmd.run()),
+            Self::Upgrade(cmd) => Box::pin(cmd.run()),
+            Self::Usage(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Use(cmd) => Box::pin(cmd.run()),
+            Self::Version(cmd) => Box::pin(cmd.run()),
+            Self::Watch(cmd) => Box::pin(cmd.run()),
+            Self::Where(cmd) => Box::pin(cmd.run()),
+            Self::Which(cmd) => Box::pin(cmd.run()),
         }
     }
 }
@@ -583,32 +650,7 @@ fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<Str
     result
 }
 
-/// Long and short forms of the top-level flags that consume a following argument.
-///
-/// Hardcoded rather than derived because `env.rs` needs it from `Lazy` statics
-/// during startup — before anything has parsed arguments — and deriving it means
-/// building the entire clap tree, which costs ~3.1M instructions. Doing that
-/// there is what made every mise command ~6.3M instructions more expensive.
-///
-/// `test_global_flags_with_values_matches_clap` asserts this equals what clap
-/// reports, so adding a value-taking flag to [`Cli`] without updating this list
-/// fails CI rather than silently mis-parsing arguments.
-pub(crate) const GLOBAL_FLAGS_WITH_VALUES: &[&str] = &[
-    "--cd",
-    "-C",
-    "--env",
-    "-E",
-    "--jobs",
-    "-j",
-    "--profile",
-    "-P",
-    "--shell",
-    "-s",
-    "--tool",
-    "-t",
-    "--log-level",
-    "--output",
-];
+use mise_util::args::first_non_global_arg_idx_with;
 
 /// Index of the first argument that is not a global flag or one of its values.
 ///
@@ -621,57 +663,6 @@ pub(crate) fn first_non_global_arg_idx(
 ) -> Option<usize> {
     let flags = get_global_flags(cmd).0;
     first_non_global_arg_idx_with(|f| flags.iter().any(|x| x == f), args)
-}
-
-/// As [`first_non_global_arg_idx`], against [`GLOBAL_FLAGS_WITH_VALUES`].
-///
-/// For callers with no `Command` to hand, which would otherwise build the whole
-/// tree just to read its top-level arguments.
-pub(crate) fn first_non_global_arg_idx_cached(args: &[String]) -> Option<usize> {
-    first_non_global_arg_idx_with(|f| GLOBAL_FLAGS_WITH_VALUES.contains(&f), args)
-}
-
-fn first_non_global_arg_idx_with(
-    takes_value: impl Fn(&str) -> bool,
-    args: &[String],
-) -> Option<usize> {
-    let mut i = 1;
-    while i < args.len() {
-        let arg = &args[i];
-
-        if arg == "--" {
-            return None;
-        }
-
-        if !arg.starts_with('-') {
-            return Some(i);
-        }
-
-        let flag_takes_separate_value = if arg.starts_with("--") {
-            if arg.contains('=') {
-                false
-            } else {
-                let flag_name = arg.split('=').next().unwrap();
-                takes_value(flag_name)
-            }
-        } else if let Some(flag_name) = arg.get(..2) {
-            // `arg.get(..2)` (not `&arg[..2]`) avoids panicking when the arg is
-            // not valid UTF-8 in the first place: args are read lossily, so a
-            // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
-            // be a char boundary. A short flag is always ASCII, so a non-ASCII
-            // prefix simply matches no value-taking flag.
-            arg.len() == 2 && takes_value(flag_name)
-        } else {
-            false
-        };
-
-        if flag_takes_separate_value && i + 1 < args.len() {
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-    None
 }
 
 fn is_known_subcommand(cmd: &usage_rs::Command<'_>, arg: &str) -> bool {
@@ -892,7 +883,75 @@ fn is_packages_where_query(args: &[String]) -> bool {
     false
 }
 
+/// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).
+pub(crate) fn register_frontend() {
+    crate::frontend::register(crate::frontend::Frontend {
+        lockfiles_after_install: |config, installed| {
+            Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
+        },
+        subcommand_names: || {
+            Cli::command()
+                .subcommands
+                .iter()
+                .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
+                .map(str::to_string)
+                .collect()
+        },
+    });
+}
+
 impl Cli {
+    /// The settings layer the global flags set, for `Settings::add_cli_matches`.
+    fn settings_layer(&self, truncate: Option<bool>) -> SettingsPartial {
+        let mut s = <SettingsPartial as confique::Layer>::empty();
+        if self.raw {
+            s.raw = Some(true);
+        }
+        if let Some(truncate) = truncate {
+            s.truncate = Some(truncate);
+        }
+        if self.locked {
+            s.locked = Some(true);
+        }
+        if let Some(cd) = &self.cd {
+            s.cd = Some(cd.clone());
+        }
+        if let Some(jobs) = self.jobs {
+            s.jobs = Some(jobs);
+        }
+        if self.profile.is_some() {
+            s.env = self.profile.clone();
+        }
+        if self.env.is_some() {
+            s.env = self.env.clone();
+        }
+        if self.yes {
+            s.yes = Some(true);
+        }
+        if self.quiet || self.silent {
+            s.quiet = Some(true);
+        }
+        if self.silent {
+            s.silent = Some(true);
+        }
+        if self.trace {
+            s.log_level = Some("trace".to_string());
+        }
+        if self.debug {
+            s.log_level = Some("debug".to_string());
+        }
+        if let Some(log_level) = &self.log_level {
+            s.log_level = Some(log_level.to_string());
+        }
+        if self.verbose > 0 {
+            s.verbose = Some(true);
+        }
+        if self.verbose > 1 {
+            s.log_level = Some("trace".to_string());
+        }
+        s
+    }
+
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
@@ -908,14 +967,17 @@ impl Cli {
         // usage-rs's generated `parse()` intercepts this, but mise never calls
         // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
         // Handle the hidden completion protocol here, before config or tools load.
+        // Record ARGS first: an error from this path (a closed stdout, an unreadable
+        // spec) still reaches `handle_err`, whose logger setup reads them.
+        crate::env::ARGS.write().unwrap().clone_from(args);
         let completion_argv: Vec<std::ffi::OsString> =
             args.iter().skip(1).map(std::ffi::OsString::from).collect();
         if let Some(answer) = completion::usage_spec_request(&completion_argv) {
-            print!("{}", answer?);
+            miseprint!("{}", answer?)?;
             return Ok(());
         }
         if let Some(answer) = completion::completion_request(&completion_argv) {
-            print!("{answer}");
+            miseprint!("{answer}")?;
             return Ok(());
         }
         if is_packages_where_query(args) {
@@ -927,7 +989,7 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(&cli)?;
+            Settings::init_package_query(cli.settings_layer(None))?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
@@ -951,7 +1013,7 @@ impl Cli {
         }
         measure!("logger", { logger::init() });
         check_working_directory();
-        measure!("handle_shim", { shims::handle_shim().await })?;
+        measure!("handle_shim", { shim::handle_shim().await })?;
         let print_version = version::print_version_if_requested(args)?;
         // Clap's tool argument parsers consult installed plugin/tool metadata while
         // resolving registry options. Initialize that filesystem-only state before
@@ -990,7 +1052,7 @@ impl Cli {
         validate_cd_path(&cli.cd)?;
         let cli_truncate = cli_truncate_setting(&cli_settings)?;
         measure!("add_cli_matches", {
-            Settings::add_cli_matches_with(&cli, cli_truncate)
+            Settings::add_cli_matches(cli.settings_layer(cli_truncate))
         });
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
             // These file-only edits must remain available when alias values conflict.
@@ -1025,6 +1087,13 @@ impl Cli {
         // in the invoking user's directories.
         if let Some(Commands::PublishSystemInstall(cmd)) = &cli.command {
             return cmd.run();
+        }
+        // After everything that can still refuse this invocation — a bad
+        // `--cd`, unbuildable settings, an untrusted config — so their errors
+        // land in a console somebody can still read, and before the
+        // auto-update that could otherwise leave the window up for a download.
+        if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
+            crate::windows_console::hide_if_unattended();
         }
         let auto_update_command_eligible = !print_version
             && cli
@@ -1093,8 +1162,8 @@ impl Cli {
             if let Some(task) = self.task {
                 // Handle special case: "help", "-h", or "--help" as task should print help
                 if task == "help" || task == "-h" || task == "--help" {
-                    if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
-                        print!("{page}");
+                    if let Some(page) = render_page(Cli::spec(), Cli::command(), false) {
+                        miseprint!("{page}")?;
                     }
                     return Err(request_exit(0));
                 }
@@ -1141,6 +1210,7 @@ impl Cli {
                         output_handler: None,
                         context_builder: Default::default(),
                         executor: None,
+                        telemetry: None,
                         no_cache: Default::default(),
                         task_cache: crate::task::TaskCacheMode::from_env()?,
                         task_cache_explain: false,
@@ -1174,8 +1244,8 @@ impl Cli {
                     return Err(request_exit(0));
                 }
             }
-            if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
-                print!("{page}");
+            if let Some(page) = render_page(Cli::spec(), Cli::command(), false) {
+                miseprint!("{page}")?;
             }
             Err(request_exit(1))
         }
@@ -1196,20 +1266,26 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
     let spec = Cli::spec();
     match err {
         usage_rs::Error::Help { cmd, long } => {
-            if let Some(page) = usage_rs::help::render(spec, cmd, long) {
-                print!("{page}");
+            if let Some(page) = render_page(spec, cmd, long)
+                && let Err(err) = miseprint!("{page}")
+            {
+                return err.into();
             }
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
-            if let Some(page) = usage_rs::help::render_all(spec, cmd) {
-                print!("{page}");
+            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style())
+                && let Err(err) = miseprint!("{page}")
+            {
+                return err.into();
             }
             request_exit(0)
         }
         usage_rs::Error::MissingArgsHelp { cmd } => {
-            if let Some(page) = usage_rs::help::render(spec, cmd, false) {
-                eprint!("{page}");
+            // stderr, which `console` tracks separately from stdout.
+            if let Some(page) = usage_rs::help::render_styled(spec, cmd, false, help_style_stderr())
+            {
+                let _ = calm_io::stderr!("{page}");
             }
             request_exit(2)
         }
@@ -1220,11 +1296,13 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
                 spec.version
             }
             .unwrap_or_default();
-            println!("{} {version}", spec.name);
+            if let Err(err) = miseprint!("{} {version}\n", spec.name) {
+                return err.into();
+            }
             request_exit(0)
         }
         err => {
-            eprint!("{}", usage_rs::render_failure(spec, argv, &err));
+            let _ = calm_io::stderr!("{}", usage_rs::render_failure(spec, argv, &err));
             request_exit(2)
         }
     }
@@ -1272,6 +1350,18 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
+
+    #[test]
+    /// A help page follows mise's colour decision, not the terminal's.
+    ///
+    /// `Style::auto()` asks the terminal and so ignored `color`, `MISE_COLOR` and `CLICOLOR`,
+    /// which `Settings` folds into `console` — a user who turned colour off still got a
+    /// coloured help page. This pins the mapping the fix put in its place.
+    fn help_colour_follows_mise_rather_than_the_terminal() {
+        assert_eq!(help_style_for(true), usage_rs::help::Style::COLOURED);
+        assert_eq!(help_style_for(false), usage_rs::help::Style::PLAIN);
+    }
 
     #[test]
     /// Keep early recognition consistent with the full parser across inherited flag placements.
@@ -1563,6 +1653,61 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    /// Only a command that is really about to run unattended hides its
+    /// console: it happens before the command runs, and a hidden window
+    /// cannot be handed back to print an error in. See jdx/mise#13426.
+    #[test]
+    fn only_a_starting_watcher_runs_unattended() {
+        fn unattended(args: &[&str]) -> bool {
+            parse_cli(args)
+                .unwrap()
+                .command
+                .as_ref()
+                .is_some_and(Commands::runs_unattended)
+        }
+
+        assert!(unattended(&["mise", "dot", "watch"]));
+        assert!(unattended(&["mise", "dotfiles", "watch"]));
+        assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
+
+        // the launcher a Windows user service's task starts is handed a
+        // console the same way, and its window has to go before settings,
+        // config, or an auto-update can hold it on screen
+        assert!(unattended(&[
+            "mise",
+            "bootstrap",
+            "__service-exec",
+            "--launch",
+            "C:\\state\\mise-history.launches/abc.json",
+            "--digest",
+            "abc",
+            "--",
+            "mise-history",
+        ]));
+
+        // every other dotfiles command has a terminal reading it
+        assert!(!unattended(&["mise", "dot", "status"]));
+        assert!(!unattended(&["mise", "bootstrap", "dotfiles", "status"]));
+        assert!(!unattended(&["mise", "bootstrap"]));
+        assert!(!unattended(&["mise", "run", "build"]));
+
+        // `run` rejects a setup source alongside a subcommand, so these never
+        // reach the watcher and must keep a console to say so
+        for source in ["--from", "--adopt", "--from-git"] {
+            assert!(
+                !unattended(&[
+                    "mise",
+                    "bootstrap",
+                    source,
+                    "https://example.com/setup.git",
+                    "dotfiles",
+                    "watch",
+                ]),
+                "{source} names a setup repository, not a watcher"
+            );
+        }
     }
 
     fn parse_truncate(args: &[&str]) -> Option<bool> {

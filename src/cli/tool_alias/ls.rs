@@ -2,7 +2,7 @@ use eyre::Result;
 use itertools::Itertools;
 use tabled::Tabled;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 use crate::ui::table;
 

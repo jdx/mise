@@ -9,13 +9,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::provenance::ConfigProvenance;
 use crate::config::settings::IdiomaticVersionFileSettings;
-use crate::config::{AliasMap, CommandWrapper, Settings, settings};
+use crate::config::{AliasMap, CommandWrapper, Settings, SettingsExt, settings};
 use crate::deps::DepsConfig;
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
@@ -149,6 +149,9 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         IndexMap::new()
     }
 
+    fn daemon_providers(&self) -> IndexMap<String, ::toml::Table> {
+        Default::default()
+    }
     fn daemon_settings(&self) -> Option<crate::daemons::DaemonSettings> {
         None
     }
@@ -762,6 +765,22 @@ impl IgnoredConfigPathMatcher {
 
 static IGNORED_CONFIG_PATH_MATCHER: Lazy<IgnoredConfigPathMatcher> =
     Lazy::new(|| IgnoredConfigPathMatcher::new(&env::MISE_IGNORED_CONFIG_PATHS));
+static GLOBAL_IGNORED_CONFIG_PATH_MATCHER: Lazy<IgnoredConfigPathMatcher> =
+    Lazy::new(|| IgnoredConfigPathMatcher::new(&env::MISE_GLOBAL_IGNORED_CONFIG_PATHS));
+
+tokio::task_local! {
+    static GLOBAL_IGNORE_SCOPE: ();
+}
+
+/// Runs `future` with `ignored_config_paths` limited to the env var and the
+/// system/global miserc files. Tracked configs belong to other projects, so an
+/// ignore from the invoking directory's `.miserc.toml` must not hide them from
+/// `mise prune` or `mise upgrade` (which would drop versions they still pin).
+pub(crate) async fn with_global_ignored_config_paths<T>(
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    GLOBAL_IGNORE_SCOPE.scope((), future).await
+}
 
 /// Whether `path` is under an explicitly-configured `ignored_config_paths`
 /// (`MISE_IGNORED_CONFIG_PATHS`) entry.
@@ -769,7 +788,11 @@ static IGNORED_CONFIG_PATH_MATCHER: Lazy<IgnoredConfigPathMatcher> =
 /// This is an explicit "never load this config" instruction and is a hard
 /// block: it takes precedence over `trusted_config_paths`.
 pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
-    IGNORED_CONFIG_PATH_MATCHER.is_match(path)
+    if GLOBAL_IGNORE_SCOPE.try_with(|_| ()).is_ok() {
+        GLOBAL_IGNORED_CONFIG_PATH_MATCHER.is_match(path)
+    } else {
+        IGNORED_CONFIG_PATH_MATCHER.is_match(path)
+    }
 }
 
 /// The config path an ignore-list entry records.

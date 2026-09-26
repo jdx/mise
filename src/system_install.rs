@@ -1,4 +1,5 @@
 //! Publish relocatable tool installations without running a backend as root.
+use crate::config::SettingsExt;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink};
@@ -327,7 +328,7 @@ fn apply(input: impl BufRead) -> Result<()> {
     let settings = crate::config::Settings::get();
     let roots = [
         settings.system_installs_dir().to_path_buf(),
-        settings.system_shims_dir(),
+        crate::dirs::system_shims_dir(&settings),
     ];
     apply_for_owner(input, 0, &roots)
 }

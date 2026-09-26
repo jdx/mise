@@ -10,7 +10,7 @@ use super::shadow::{HistoryRepo, Overlay};
 
 pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
@@ -18,6 +18,19 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
+    /// The entry's own `exclude` globs, relative to its path. Written
+    /// only when the declaration states one, so a setup without them
+    /// stays readable by older clients — and a declared but empty list,
+    /// which clears what another machine published, is not mistaken for
+    /// no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` globs, relative to its path. Written
+    /// only when the entry declares a list, so a setup without one stays
+    /// readable by older clients — and a declared but empty list, which
+    /// selects nothing, is not mistaken for no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,20 +73,73 @@ impl Manifest {
         };
         Some(self.permissions.get(path).copied().unwrap_or(default))
     }
-    fn owns_stream(&self, path: &str) -> bool {
+    /// Whether a permission path belongs to an enrolled stream: the enrolled
+    /// path or one below it, or (without a variant) a directory strictly
+    /// between the root and an enrolled path of any stream. A containing
+    /// directory is one filesystem object, so it is recorded once, whatever
+    /// streams the paths inside it belong to. The root itself is never owned.
+    pub(crate) fn owns_stream(&self, path: &str) -> bool {
         let (stem, relative) = path.split_once('/').unwrap_or((path, ""));
-        let (root, variant) = stem
+        let (_, variant) = stem
             .split_once('@')
             .map_or((stem, None), |(root, variant)| (root, Some(variant)));
-        let portable = if relative.is_empty() {
-            root.to_string()
-        } else {
-            format!("{root}/{relative}")
-        };
-        self.owner(&portable).is_some_and(|entry| match variant {
-            Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
-            None => entry.variants.is_empty(),
-        })
+        self.enrolls_stream(path)
+            || (variant.is_none()
+                && !relative.is_empty()
+                && self
+                    .enrollment
+                    .iter()
+                    .any(|entry| strictly_below(&entry.path, &plain(path))))
+    }
+
+    /// The enrolled paths this machine selects from this manifest, each with
+    /// its selected variant: an enrollment with no matching variant here is
+    /// left out. Like [`Self::tracking`], but a pure view for a manifest
+    /// that is not being enrolled (a saved one, read to decide baselines).
+    pub(crate) fn selected_entries(&self) -> Vec<super::tracked::TrackedEntry> {
+        let roots = super::sync::layout::Roots::current();
+        let environments = super::select::active_environments();
+        self.enrollment
+            .iter()
+            .filter_map(|enrollment| {
+                let variant = match super::select::select(&enrollment.variants, &environments) {
+                    super::select::Selection::Single => None,
+                    super::select::Selection::Variant(variant) => Some(variant.name()),
+                    super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => {
+                        return None;
+                    }
+                };
+                let local = roots.locate(&enrollment.path).path()?.to_path_buf();
+                let mut policy = crate::system::files::FilePolicy::for_mode(
+                    crate::system::files::FileMode::Track,
+                );
+                policy.autosave = enrollment.autosave;
+                policy.encrypt = enrollment.encrypt;
+                let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
+                entry.variant = variant;
+                Some(entry)
+            })
+            .collect()
+    }
+
+    /// Whether a permission path is the enrolled path of its stream or below
+    /// one: some enrollment at or above it exposes that stream. A nested
+    /// enrollment for other platforms does not hide the enclosing one, whose
+    /// stream the path belongs to on machines where the nested one is not
+    /// selected; this is decided without knowing which machine reads it.
+    fn enrolls_stream(&self, path: &str) -> bool {
+        let (stem, _) = path.split_once('/').unwrap_or((path, ""));
+        let (_, variant) = stem
+            .split_once('@')
+            .map_or((stem, None), |(root, variant)| (root, Some(variant)));
+        let portable = plain(path);
+        self.enrollment
+            .iter()
+            .filter(|entry| portable == entry.path || strictly_below(&portable, &entry.path))
+            .any(|entry| match variant {
+                Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
+                None => entry.variants.is_empty(),
+            })
     }
 
     pub(crate) fn remove_unenrolled_permissions(&mut self) {
@@ -101,26 +167,35 @@ impl Manifest {
             .iter()
             .map(|entry| entry.tree_path(&entry.path))
             .collect::<Result<_>>()?;
+        // an active entry replaces its own path, everything below it, and
+        // (in the variant-less stream) the directories between it and the root
         self.permissions.retain(|path, _| {
             !active.iter().any(|prefix| {
                 path == prefix
-                    || path
-                        .strip_prefix(prefix)
-                        .is_some_and(|rest| rest.starts_with('/'))
+                    || strictly_below(path, prefix)
+                    || (plain(path) == *path && strictly_below(&plain(prefix), path))
             })
         });
         for (display, bits) in modes {
             let path = crate::file::replace_path(display);
-            if let Some(entry) = entries
+            let owner = super::tracked::owning_entry(entries, &path);
+            let contains_entries = entries
                 .iter()
-                .filter(|entry| path.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count())
-            {
-                let portable = roots
+                .any(|entry| entry.path.starts_with(&path) && entry.path != path);
+            let portable = match owner {
+                Some(entry) => roots
                     .branch_path(&path, entry.variant.as_deref())
-                    .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?;
-                self.permissions.insert(portable, *bits);
-            }
+                    .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?,
+                // a directory containing entries is one filesystem object:
+                // recorded once, without a variant; one outside every root,
+                // or the root itself, is never recorded
+                None if contains_entries => match roots.branch_path(&path, None) {
+                    Some(portable) if portable.contains('/') => portable,
+                    _ => continue,
+                },
+                None => continue,
+            };
+            self.permissions.insert(portable, *bits);
         }
         self.remove_unenrolled_permissions();
         Ok(())
@@ -192,6 +267,18 @@ impl Manifest {
                         &ours.variants,
                         &theirs.variants,
                         &format!("{path}: variants"),
+                    )?,
+                    exclude: choose(
+                        &before.exclude,
+                        &ours.exclude,
+                        &theirs.exclude,
+                        &format!("{path}: exclude"),
+                    )?,
+                    include: choose(
+                        &before.include,
+                        &ours.include,
+                        &theirs.include,
+                        &format!("{path}: include"),
                     )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
@@ -265,6 +352,8 @@ impl Manifest {
             policy.encrypt = enrollment.encrypt;
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
+            entry.exclude = enrollment.exclude.clone();
+            entry.include = enrollment.include.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -291,16 +380,14 @@ impl Manifest {
         paths
     }
 
+    /// The enrollment that owns a portable path: the most specific one,
+    /// by component count, as [`crate::system::history::tracked::owning_entry`]
+    /// decides for live paths. Byte length is not the same rule.
     fn owner(&self, path: &str) -> Option<&Enrollment> {
         self.enrollment
             .iter()
-            .filter(|entry| {
-                path == entry.path
-                    || path
-                        .strip_prefix(&entry.path)
-                        .is_some_and(|rest| rest.starts_with('/'))
-            })
-            .max_by_key(|entry| entry.path.len())
+            .filter(|entry| path == entry.path || strictly_below(path, &entry.path))
+            .max_by_key(|entry| portable_components(&entry.path))
     }
 
     /// Carry inactive streams and repository-owned files from the same parent
@@ -369,6 +456,21 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            // both lists are validated, and either may be absent: a
+            // declaration that states none is not a declaration that
+            // states an empty one
+            let exclude: &[String] = entry.exclude.as_deref().unwrap_or_default();
+            let include: &[String] = entry.include.as_deref().unwrap_or_default();
+            for (key, patterns) in [("exclude", exclude), ("include", include)] {
+                for pattern in patterns {
+                    if let Err(err) = glob::Pattern::new(pattern) {
+                        bail!(
+                            "invalid {key} pattern {pattern:?} for {}: {err}",
+                            entry.path
+                        );
+                    }
+                }
+            }
             for variant in &entry.variants {
                 let name = variant.name();
                 if name.contains('@')
@@ -449,9 +551,147 @@ impl Manifest {
     }
 }
 
+/// How many components a portable path has.
+///
+/// **The most-specific-owner rule is one rule, so it is one call.** Live
+/// ownership ranks with `Path::components`, which skips an empty segment
+/// and a `.`. Counting a portable path with `split('/')` did not: a
+/// trailing or a doubled slash inflated it, and a manifest written
+/// elsewhere or edited by hand could then rank `home/.config/` above
+/// `home/.config/mise` and name the wrong enrollment's stream — the
+/// defect that ranking by byte length was, arriving from the other side.
+/// Rather than a second implementation that agrees today, this is the
+/// same call: a portable path is `/`-separated, and `/` is a separator
+/// on every host mise runs on.
+fn portable_components(path: &str) -> usize {
+    std::path::Path::new(path).components().count()
+}
+
+/// Whether a portable path is inside the directory `prefix` (not `prefix`
+/// itself).
+fn strictly_below(path: &str, prefix: &str) -> bool {
+    path.strip_prefix(prefix)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// A portable path without its variant: `home@linux/.zshrc` is `home/.zshrc`.
+fn plain(path: &str) -> String {
+    let (stem, relative) = path.split_once('/').unwrap_or((path, ""));
+    let root = stem.split('@').next().unwrap_or(stem);
+    if relative.is_empty() {
+        root.to_string()
+    } else {
+        format!("{root}/{relative}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A reader that cannot see an entry's lists must refuse the
+    /// manifest, not ignore them.** An older mise that skipped an
+    /// unknown `include` would read the entry as covering its whole
+    /// tree, and a rollback would then delete the files the list never
+    /// selected — the checkpoint "did not hold" them because they were
+    /// never selected, which is not the same as their being absent.
+    /// `deny_unknown_fields` is what makes that impossible, so it is
+    /// asserted here rather than assumed.
+    #[test]
+    fn a_reader_without_the_lists_refuses_the_manifest() {
+        /// `Enrollment` exactly as a released mise declares it.
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ReleasedEnrollment {
+            path: String,
+            autosave: bool,
+            encrypt: bool,
+            variants: Vec<crate::system::history::select::Variant>,
+        }
+
+        let plain = Enrollment {
+            path: "home/.codex".into(),
+            autosave: true,
+            encrypt: false,
+            variants: vec![],
+            exclude: None,
+            include: None,
+        };
+        let json = serde_json::to_string(&plain).unwrap();
+        let read: ReleasedEnrollment = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.path, "home/.codex");
+        assert!(read.autosave);
+        assert!(!read.encrypt);
+        assert!(read.variants.is_empty());
+
+        for entry in [
+            Enrollment {
+                include: Some(vec!["config.toml".into()]),
+                ..plain.clone()
+            },
+            Enrollment {
+                include: Some(vec![]),
+                ..plain.clone()
+            },
+            Enrollment {
+                exclude: Some(vec!["cache/**".into()]),
+                ..plain.clone()
+            },
+        ] {
+            let json = serde_json::to_string(&entry).unwrap();
+            let error = serde_json::from_str::<ReleasedEnrollment>(&json)
+                .expect_err("a released mise must refuse an entry it cannot fully read");
+            assert!(
+                error.to_string().contains("unknown field"),
+                "unexpected refusal: {error}"
+            );
+        }
+    }
+
+    /// A portable path is counted the way a live one is, so the
+    /// most-specific-owner rule cannot mean two things. A trailing or a
+    /// doubled slash is not a component; counting it as one would rank
+    /// `home/.config/` above `home/.config/mise`.
+    #[test]
+    fn a_portable_path_is_counted_the_way_a_live_path_is() {
+        for path in [
+            "home/.config/",
+            "home//.config",
+            "home/./.config",
+            "home/.config",
+            "home/.config/mise",
+            "config/settings.toml",
+            "home@linux/.zshrc",
+        ] {
+            assert_eq!(
+                portable_components(path),
+                std::path::Path::new(path).components().count(),
+                "{path} is counted differently from the live path it names"
+            );
+        }
+        assert_eq!(portable_components("home/.config/"), 2);
+        assert_eq!(portable_components("home//.config"), 2);
+        assert_eq!(portable_components("home/./.config"), 2);
+        assert_eq!(portable_components("home/.config/mise"), 3);
+
+        // and the deeper enrollment owns the path, whichever way the
+        // shallower one is spelled
+        let enroll = |path: &str| Enrollment {
+            path: path.to_string(),
+            autosave: true,
+            ..Default::default()
+        };
+        let manifest = Manifest {
+            enrollment: vec![enroll("home/.config"), enroll("home/.config/mise")],
+            ..Default::default()
+        };
+        assert_eq!(
+            manifest
+                .owner("home/.config/mise/config.toml")
+                .map(|entry| entry.path.as_str()),
+            Some("home/.config/mise")
+        );
+    }
 
     #[test]
     fn future_format_is_reported_before_unknown_fields() -> Result<()> {
@@ -544,6 +784,206 @@ mod tests {
         assert!(manifest.permissions.is_empty());
         manifest.permissions.insert("home/configs/a".into(), 0o4600);
         assert!(manifest.validate().is_err());
+        // a directory between the root and an enrolled path is owned; the
+        // root itself, a sibling, and another stream are not
+        manifest.permissions.clear();
+        manifest.enrollment = vec![enrollment("home/.claude/settings.json")];
+        manifest.permissions.insert("home/.claude".into(), 0o700);
+        manifest.validate().unwrap();
+        for path in ["home", "home/.claudia", "home@linux/.claude"] {
+            manifest.permissions.insert(path.into(), 0o700);
+            assert!(manifest.validate().is_err(), "{path}");
+            manifest.remove_unenrolled_permissions();
+            assert_eq!(
+                manifest.permissions,
+                BTreeMap::from([("home/.claude".into(), 0o700)]),
+                "{path}"
+            );
+        }
+    }
+
+    /// Tracking one file inside a private directory records that
+    /// directory's mode, never home's.
+    #[cfg(unix)]
+    #[test]
+    fn permission_capture_records_the_parents_of_a_tracked_file() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let mut manifest = Manifest {
+            enrollment: vec![
+                enrollment("home/.claude/settings.json"),
+                enrollment("home/.claude/projects/notes"),
+            ],
+            ..Default::default()
+        };
+        let home = &*crate::dirs::HOME;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entries = vec![
+            TrackedEntry::new(home.join(".claude/settings.json"), "track", policy),
+            TrackedEntry::new(home.join(".claude/projects/notes"), "track", policy),
+        ];
+        let modes = BTreeMap::from([
+            (crate::file::display_path(home), 0o700),
+            (crate::file::display_path(home.join(".claude")), 0o700),
+            (
+                crate::file::display_path(home.join(".claude/settings.json")),
+                0o600,
+            ),
+        ]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([
+                ("home/.claude".into(), 0o700),
+                ("home/.claude/settings.json".into(), 0o600),
+            ])
+        );
+        manifest.validate().unwrap();
+        // the parent went back to the default: its record goes away
+        let modes = BTreeMap::from([(
+            crate::file::display_path(home.join(".claude/settings.json")),
+            0o600,
+        )]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([("home/.claude/settings.json".into(), 0o600)])
+        );
+    }
+
+    /// A stream marker lives only in the first component: a directory whose
+    /// own name contains `@` is an ordinary containing directory, and its
+    /// record is replaced on save like any other.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_with_an_at_sign_returns_to_default() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let mut manifest = Manifest {
+            enrollment: vec![enrollment("home/.private@work/settings.json")],
+            ..Default::default()
+        };
+        let home = &*crate::dirs::HOME;
+        let entries = vec![TrackedEntry::new(
+            home.join(".private@work/settings.json"),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        )];
+        let modes =
+            BTreeMap::from([(crate::file::display_path(home.join(".private@work")), 0o700)]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([("home/.private@work".into(), 0o700)])
+        );
+        manifest.validate().unwrap();
+        manifest
+            .capture_permissions(&entries, &BTreeMap::new())
+            .unwrap();
+        assert!(manifest.permissions.is_empty());
+    }
+
+    /// A directory containing files of several streams is one filesystem
+    /// object: it is recorded once, without a variant, and every stream
+    /// replaces that record on save.
+    #[cfg(unix)]
+    #[test]
+    fn a_containing_directory_is_recorded_once_across_streams() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let linux = Variant {
+            os: vec!["linux".into()],
+            ..Default::default()
+        };
+        let mut manifest = Manifest {
+            enrollment: vec![
+                enrollment("home/.claude/settings.json"),
+                Enrollment {
+                    variants: vec![linux],
+                    ..enrollment("home/.claude/notes")
+                },
+            ],
+            permissions: BTreeMap::from([("home@linux/.claude".into(), 0o700)]),
+            ..Default::default()
+        };
+        // a per-stream record for a containing directory is not owned
+        assert!(manifest.validate().is_err());
+        manifest.remove_unenrolled_permissions();
+        assert!(manifest.permissions.is_empty());
+        let home = &*crate::dirs::HOME;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut notes = TrackedEntry::new(home.join(".claude/notes"), "track", policy);
+        notes.variant = Some("linux".into());
+        let entries = vec![
+            TrackedEntry::new(home.join(".claude/settings.json"), "track", policy),
+            notes,
+        ];
+        let modes = BTreeMap::from([(crate::file::display_path(home.join(".claude")), 0o700)]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([("home/.claude".into(), 0o700)])
+        );
+        manifest.validate().unwrap();
+        // saving only the variant stream still replaces the shared record
+        manifest
+            .capture_permissions(&entries[1..], &BTreeMap::new())
+            .unwrap();
+        assert!(manifest.permissions.is_empty());
+    }
+
+    /// An inactive directory enrollment for another platform does not hide
+    /// the record of that directory as the parent of an active file.
+    #[cfg(unix)]
+    #[test]
+    fn an_inactive_directory_enrollment_keeps_the_parent_record() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let variant = |os: &str| Variant {
+            os: vec![os.into()],
+            ..Default::default()
+        };
+        let mut manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    variants: vec![variant("macos")],
+                    ..enrollment("home/.claude")
+                },
+                Enrollment {
+                    variants: vec![variant("linux")],
+                    ..enrollment("home/.claude/settings.json")
+                },
+            ],
+            permissions: BTreeMap::from([
+                ("home@macos/.claude".into(), 0o750),
+                ("home/.claude".into(), 0o700),
+            ]),
+            ..Default::default()
+        };
+        manifest.validate().unwrap();
+        manifest.remove_unenrolled_permissions();
+        assert_eq!(manifest.permissions.len(), 2);
+        // on Linux only the file is active: its parent is recorded in the
+        // shared record and the macOS directory stream is left alone
+        let home = &*crate::dirs::HOME;
+        let mut entry = TrackedEntry::new(
+            home.join(".claude/settings.json"),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        entry.variant = Some("linux".into());
+        let modes = BTreeMap::from([(crate::file::display_path(home.join(".claude")), 0o700)]);
+        manifest
+            .capture_permissions(std::slice::from_ref(&entry), &modes)
+            .unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([
+                ("home@macos/.claude".into(), 0o750),
+                ("home/.claude".into(), 0o700),
+            ])
+        );
+        manifest.validate().unwrap();
     }
 
     #[cfg(unix)]
@@ -598,6 +1038,8 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
+            include: None,
         }
     }
 
@@ -670,6 +1112,8 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -723,6 +1167,8 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -793,6 +1239,8 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
+            include: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -811,5 +1259,24 @@ mod tests {
             manifest.enrollment[0].path = path.into();
             assert!(manifest.validate().is_err());
         }
+    }
+    #[test]
+    fn an_unparsable_enrollment_exclude_pattern_is_rejected() {
+        let mut manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: Some(vec!["sessions".into()]),
+                include: None,
+            }],
+            ..Default::default()
+        };
+        assert!(manifest.validate().is_ok());
+        manifest.enrollment[0].exclude = Some(vec!["[".into()]);
+        let error = manifest.validate().unwrap_err().to_string();
+        assert!(error.contains("invalid exclude pattern"), "{error}");
+        assert!(error.contains("home/.codex"), "{error}");
     }
 }

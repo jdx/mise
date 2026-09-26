@@ -283,12 +283,13 @@ jobs:
     needs: [gate]
     if: needs.gate.outputs.build == 'true'
     name: build-tarball-windows-${{matrix.arch}}
-    runs-on: windows-latest
-    # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
-    # link this job now does is the long pole and its cost varies a lot with
-    # available memory — locally the same relink took ~20 minutes with RAM to spare
-    # and ~180 minutes when it did not. If this proves too tight on a runner,
-    # thin LTO for Windows is the fallback.
+    # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
+    # with fat LTO and panic=unwind ran past the 150-minute timeout.
+    runs-on: ${{matrix.runner}}
+    # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
+    # past this timeout on windows-latest depending on memory pressure, so
+    # scripts/build-tarball.ps1 builds Windows with thin LTO until these jobs
+    # move to a runner with more RAM.
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -296,8 +297,10 @@ jobs:
         include:
           - arch: arm64
             target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
           - arch: x64
             target: x86_64-pc-windows-msvc
+            runner: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: rustup target add ${{matrix.target}}
@@ -305,6 +308,8 @@ jobs:
         env:
           OS: windows
           ARCH: ${{matrix.arch}}
+      - name: Smoke-test vfox Lua errors
+        run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tarball-${{matrix.target}}
@@ -358,7 +363,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:04e53714ee9a995bd0a985368eca65951051ef2d60d1673c4257e6617aaa8da1
+    container: ghcr.io/jdx/mise:rpm@sha256:6277132f97b5ee25b5dbcd3905ef614547c59511ac7769916c1a805bf3bbc8e0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -382,7 +387,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:855570fc47c8a97e07190676a4c3a1178a7ed7e9363a6822132b49e5faaa812e
+    container: ghcr.io/jdx/mise:deb@sha256:19d55778730e3c7b285900b8b7a7a5b32ec7530ccdc7c1933bee3f1500d26fa7
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -677,7 +682,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1
+      - uses: jdx/packslip@74c75db7d611b36dd5a157999ec16cf823ccf80c # v1.2.0
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -847,7 +852,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@a0d434ad57571c62dbd0ab5095b4eff607a71fd3 # v1.1.1
+      - uses: jdx/packslip@74c75db7d611b36dd5a157999ec16cf823ccf80c # v1.2.0
         with:
           artifacts: release-assets/mise-*
           bin: mise

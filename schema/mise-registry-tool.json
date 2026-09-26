@@ -7,7 +7,7 @@
   "$defs": {
     "backendFull": {
       "type": "string",
-      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|packslip|pipx|pkgx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|packslip|pipx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
     "optionValue": {
       "description": "Backend option value.",
@@ -128,10 +128,26 @@
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
                 "description": "Inclusive minimum tool version supported by this backend. Requires version_order = semver; older versions use the next eligible backend."
+              },
+              "attestations_since": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+                "description": "First version whose release assets carry GitHub attestations. From it on, installing without a verified attestation fails instead of skipping verification. Versions that are not semantic versions are never required. github: backends only."
               }
             },
             "required": ["full"],
-            "unevaluatedProperties": false
+            "unevaluatedProperties": false,
+            "if": {
+              "required": ["attestations_since"]
+            },
+            "then": {
+              "properties": {
+                "full": {
+                  "type": "string",
+                  "pattern": "^github:"
+                }
+              }
+            }
           }
         ]
       },
@@ -232,6 +248,11 @@
       "required": ["cmd", "expected"],
       "unevaluatedProperties": false,
       "description": "Command to test the tool installation"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https?://[^{}\\s]+$",
+      "description": "Project homepage or repository, shown by `mise tool` and linked from the registry page. Set it when the URL inferred from the first backend is missing or wrong"
     },
     "version_order": {
       "type": "string",

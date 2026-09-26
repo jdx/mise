@@ -17,8 +17,8 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
+use crate::args::BackendArg;
 use crate::backend::unalias_backend;
-use crate::cli::args::BackendArg;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
 };
@@ -409,6 +409,8 @@ pub(crate) struct MiseToml {
     #[serde(default)]
     daemons_settings: Option<crate::daemons::DaemonSettings>,
     #[serde(default)]
+    daemon_providers: IndexMap<String, toml::Table>,
+    #[serde(default)]
     daemon_groups: IndexMap<String, crate::daemons::GroupDeclaration>,
     #[serde(default)]
     wrappers: IndexMap<String, CommandWrapper>,
@@ -583,6 +585,18 @@ impl MiseToml {
     pub(crate) fn for_history_preflight(body: &str, path: &Path) -> eyre::Result<Self> {
         let mut parsed: Self = toml::from_str(body)?;
         parsed.path = path.to_path_buf();
+        Ok(parsed)
+    }
+
+    /// Decode only the static monorepo declarations of a config, without
+    /// trusting or evaluating it, applying the same legacy
+    /// `experimental_monorepo_root` alias as normal loading. The deprecation
+    /// warning is left to normal loading.
+    pub(crate) fn for_monorepo_inspection(body: &str, path: &Path) -> eyre::Result<Self> {
+        let mut parsed = Self::for_history_preflight(body, path)?;
+        if let Some(legacy_monorepo_root) = parsed.experimental_monorepo_root.take() {
+            parsed.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
         Ok(parsed)
     }
 
@@ -1264,6 +1278,10 @@ impl ConfigFile for MiseToml {
 
     fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
         self.daemons.clone()
+    }
+
+    fn daemon_providers(&self) -> IndexMap<String, toml::Table> {
+        self.daemon_providers.clone()
     }
 
     fn daemon_settings(&self) -> Option<crate::daemons::DaemonSettings> {
@@ -1976,6 +1994,7 @@ impl Clone for MiseToml {
             shell_alias: self.shell_alias.clone(),
             daemons: self.daemons.clone(),
             daemons_settings: self.daemons_settings.clone(),
+            daemon_providers: self.daemon_providers.clone(),
             daemon_groups: self.daemon_groups.clone(),
             wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),

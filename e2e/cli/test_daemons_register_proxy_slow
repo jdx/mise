@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  echo "Skipping: set MISE_TEST_PITCHFORK to a build with dependency-aware proxy startup"
+  exit 0
+fi
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_INTERVAL=500ms
+export PITCHFORK_PROXY_ENABLE=true
+export PITCHFORK_PROXY_HTTPS=false
+export PITCHFORK_PROXY_DNS=false
+export PITCHFORK_PROXY_SYNC_HOSTS=false
+export PITCHFORK_PROXY_AUTO_TRUST=false
+export PITCHFORK_PROXY_TLD=localhost
+PITCHFORK_PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+export PITCHFORK_PROXY_PORT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+PITCHFORK_MISE_BIN="$(command -v mise)" pitchfork supervisor start
+
+mkdir project
+cd project
+git init -q
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "proxy-test"
+[daemons.prepare]
+run = "echo ready > dependency-ready; exec sleep 600"
+ready_cmd = "test -f dependency-ready"
+[daemons.api]
+run = "test -f dependency-ready && sleep 2 && exec python3 -m http.server $API_PORT --bind 127.0.0.1"
+port = { auto = true, base = 35000 }
+ready_cmd = "curl -fsS http://127.0.0.1:$PORT/proof"
+depends = ["prepare"]
+TOML
+git add mise.toml
+git -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+git worktree add -qb other ../other
+
+# Register a fresh checkout without ever starting it. A proxy request must
+# discover the generated config and start its dependency graph.
+for checkout in "$PWD" "$PWD/../other"; do
+  (
+    cd "$checkout"
+    basename "$checkout" >proof
+    mise daemons register
+    assert "test ! -f dependency-ready"
+    assert "mise daemons ls --json | jq -e 'all(.[]; .status != \"running\")'"
+    url=$(mise env --json | jq -r .API_URL)
+    hostport=${url#http://}
+    assert_contains "curl --noproxy '*' -fsS --max-time 30 --resolve '$hostport:127.0.0.1' '$url/proof'" "$(basename "$checkout")"
+    assert "test -f dependency-ready"
+    assert_contains "mise daemons ls --json" '"status": "running"'
+  )
+done
+
+# Both worktree URLs still resolve to their own process after the second starts.
+first_url=$(mise env --json | jq -r .API_URL)
+second_url=$(cd ../other && mise env --json | jq -r .API_URL)
+assert "test '$first_url' != '$second_url'"
+assert_contains "curl --noproxy '*' -fsS --resolve '${first_url#http://}:127.0.0.1' '$first_url/proof'" project
+assert_contains "curl --noproxy '*' -fsS --resolve '${second_url#http://}:127.0.0.1' '$second_url/proof'" other

@@ -1,10 +1,10 @@
 use std::env::join_paths;
-use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 use indoc::indoc;
 
+use crate::config::{Settings, SettingsExt};
 use crate::{env, file};
 
 // ctor puts the constructor body in `__TEXT,__text_startup` on Apple targets, a
@@ -19,6 +19,15 @@ use crate::{env, file};
 )]
 #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
 fn init() {
+    // Invocations that only list tests (`--list`, which nextest runs twice per
+    // binary, concurrently) must not reset the shared fixture tree: one
+    // process's remove_all() unlinks the directory another just chdir'd into,
+    // and that process then aborts on its next current_dir() call.
+    if std::env::args_os().any(|a| a == "--list") {
+        return;
+    }
+    mise_util::testing::enable(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
+    crate::register_util_hooks();
     // Tests must start from the environment nextest gives their process, not
     // from an activation diff inherited from the process that launched it.
     // This has to happen before the first access to env::HOME initializes
@@ -119,68 +128,33 @@ fn init() {
     file::make_executable(".mise/tasks/filetask").unwrap();
 }
 
-/// Sets process environment variables for the duration of a test and restores
-/// the previous state when dropped — including on an early panic, so a failing
-/// assertion can never leak a variable into the rest of the test process.
-///
-/// Unit tests run single-threaded (`RUST_TEST_THREADS=1` in `.cargo/config.toml`
-/// and in the `test:unit` task), so a guarded set/read/restore sequence is not
-/// observed by other tests.
-pub(crate) struct EnvVarGuard {
-    prev: Vec<(OsString, Option<OsString>)>,
+pub(crate) use mise_util::testing::{EnvVarGuard, lock_ignoring_poison};
+
+/// Held by every test that replaces the process-wide settings, and by every test that reads a
+/// setting it needs to stay put. One lock for the whole crate: with a lock per module, a reset in
+/// one module's tests silently undid another module's override mid-test. Take it before any
+/// environment lock (such as `env_directive::file`'s `ENV_MUTEX`) when a test needs both.
+pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+
+/// Holds [`SETTINGS_LOCK`] and puts the settings back with `Settings::reset(None)` when dropped,
+/// including when the test panics, so an override can never leak into a later test.
+pub(crate) struct SettingsGuard {
+    _lock: MutexGuard<'static, ()>,
 }
 
-impl EnvVarGuard {
-    pub(crate) fn new() -> Self {
-        Self { prev: vec![] }
-    }
-
-    pub(crate) fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, value: V) -> &mut Self {
-        let key = key.as_ref().to_os_string();
-        self.prev.push((key.clone(), env::var_os(&key)));
-        env::set_var(&key, value);
-        self
-    }
-
-    /// Removes an environment variable for the duration of the guard,
-    /// restoring any previous value on drop. Useful for asserting default
-    /// behavior even when the variable happens to be set in the caller's
-    /// environment.
-    pub(crate) fn remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
-        let key = key.as_ref().to_os_string();
-        self.prev.push((key.clone(), env::var_os(&key)));
-        env::remove_var(&key);
-        self
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        // restore in reverse so repeated sets of the same key unwind correctly
-        for (key, prev) in self.prev.drain(..).rev() {
-            match prev {
-                Some(value) => env::set_var(&key, value),
-                None => env::remove_var(&key),
-            }
+impl SettingsGuard {
+    pub(crate) fn lock() -> Self {
+        Self {
+            _lock: lock_ignoring_poison(&SETTINGS_LOCK),
         }
     }
 }
 
-/// Take a test-only global lock, ignoring poisoning.
-///
-/// These locks are `Mutex<()>`: they guard no data, only the order in which tests reach
-/// process-wide state such as `Settings` or environment variables. Restoring that state is the
-/// job of each guard's `Drop`, and `Drop` runs while unwinding, so by the time a panicking test
-/// releases the lock the state is already back. The poison flag left behind therefore records
-/// nothing about correctness — all it does is fail every later test that wanted the same lock.
-///
-/// Measured once: a single failed assertion in `http::tests` was reported as **29** failures,
-/// 28 of them `PoisonError` from tests that had nothing to do with it. Triage cost more than the
-/// bug did.
-pub(crate) fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+impl Drop for SettingsGuard {
+    fn drop(&mut self) {
+        // Runs before `_lock` is released, so the next test starts from clean settings.
+        Settings::reset(None);
+    }
 }
 
 pub(crate) fn replace_path(input: &str) -> String {

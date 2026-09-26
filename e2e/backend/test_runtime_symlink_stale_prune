@@ -28,7 +28,8 @@ mise install stalelink@1.1.0
 assert "readlink $INSTALLS/1.1" "./1.1.0"
 
 # an install interrupted partway through
-touch "$INSTALLS/1.1.0/incomplete"
+mkdir -p "$MISE_CACHE_DIR/stalelink/1.1.0"
+touch "$MISE_CACHE_DIR/stalelink/1.1.0/incomplete"
 
 mise install stalelink@1.0.0
 

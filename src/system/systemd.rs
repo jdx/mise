@@ -24,13 +24,27 @@ pub(crate) struct SystemdTomlConfig {
     #[serde(default)]
     pub requires: Vec<String>,
     #[serde(default)]
+    pub before: Vec<String>,
+    #[serde(default)]
+    pub binds_to: Vec<String>,
+    #[serde(default)]
+    pub part_of: Vec<String>,
+    #[serde(default)]
+    pub conflicts: Vec<String>,
+    #[serde(default)]
+    pub exec_start_pre: Vec<String>,
+    #[serde(default)]
     pub exec_start: Option<String>,
+    #[serde(default)]
+    pub exec_start_post: Vec<String>,
     #[serde(default, rename = "type")]
     pub service_type: Option<String>,
     #[serde(default)]
     pub remain_after_exit: Option<bool>,
     #[serde(default)]
     pub exec_stop: Option<String>,
+    #[serde(default)]
+    pub exec_stop_post: Vec<String>,
     #[serde(default)]
     pub timeout_start_sec: Option<String>,
     #[serde(default)]
@@ -94,13 +108,20 @@ pub(crate) struct SystemdRequest {
     pub after: Vec<String>,
     pub wants: Vec<String>,
     pub requires: Vec<String>,
+    pub before: Vec<String>,
+    pub binds_to: Vec<String>,
+    pub part_of: Vec<String>,
+    pub conflicts: Vec<String>,
     /// Internal restart budget for mise-owned builtins; ordinary declarations
     /// retain the service manager's defaults.
     pub start_limit: Option<(u32, u32)>,
+    pub exec_start_pre: Vec<String>,
     pub exec_start: Option<String>,
+    pub exec_start_post: Vec<String>,
     pub service_type: Option<String>,
     pub remain_after_exit: Option<bool>,
     pub exec_stop: Option<String>,
+    pub exec_stop_post: Vec<String>,
     pub timeout_start_sec: Option<String>,
     pub timeout_stop_sec: Option<String>,
     pub no_new_privileges: Option<bool>,
@@ -175,12 +196,24 @@ impl SystemdRequest {
         if kind == SystemdUnitKind::Service && exec_start.as_deref().is_none_or(str::is_empty) {
             bail!("service unit '{name}' must set a non-empty `exec_start`");
         }
+        for (field, commands) in [
+            ("exec_start_pre", &config.exec_start_pre),
+            ("exec_start_post", &config.exec_start_post),
+            ("exec_stop_post", &config.exec_stop_post),
+        ] {
+            if commands.iter().any(|command| command.trim().is_empty()) {
+                bail!("unit '{name}' has an empty `{field}` entry");
+            }
+        }
         if kind == SystemdUnitKind::Timer {
             let service_only_fields = [
+                (!config.exec_start_pre.is_empty(), "exec_start_pre"),
                 (exec_start.is_some(), "exec_start"),
+                (!config.exec_start_post.is_empty(), "exec_start_post"),
                 (config.service_type.is_some(), "type"),
                 (config.remain_after_exit.is_some(), "remain_after_exit"),
                 (config.exec_stop.is_some(), "exec_stop"),
+                (!config.exec_stop_post.is_empty(), "exec_stop_post"),
                 (config.timeout_start_sec.is_some(), "timeout_start_sec"),
                 (config.timeout_stop_sec.is_some(), "timeout_stop_sec"),
                 (config.no_new_privileges.is_some(), "no_new_privileges"),
@@ -245,11 +278,18 @@ impl SystemdRequest {
             after: config.after,
             wants: config.wants,
             requires: config.requires,
+            before: config.before,
+            binds_to: config.binds_to,
+            part_of: config.part_of,
+            conflicts: config.conflicts,
             start_limit: None,
+            exec_start_pre: trim_all(config.exec_start_pre),
             exec_start,
+            exec_start_post: trim_all(config.exec_start_post),
             service_type: config.service_type,
             remain_after_exit: config.remain_after_exit,
             exec_stop: config.exec_stop,
+            exec_stop_post: trim_all(config.exec_stop_post),
             timeout_start_sec: config.timeout_start_sec,
             timeout_stop_sec: config.timeout_stop_sec,
             no_new_privileges: config.no_new_privileges,
@@ -537,14 +577,18 @@ pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     if let Some(description) = &request.description {
         out.push_str(&format!("Description={description}\n"));
     }
-    if !request.after.is_empty() {
-        out.push_str(&format!("After={}\n", request.after.join(" ")));
-    }
-    if !request.wants.is_empty() {
-        out.push_str(&format!("Wants={}\n", request.wants.join(" ")));
-    }
-    if !request.requires.is_empty() {
-        out.push_str(&format!("Requires={}\n", request.requires.join(" ")));
+    for (key, units) in [
+        ("After", &request.after),
+        ("Before", &request.before),
+        ("Wants", &request.wants),
+        ("Requires", &request.requires),
+        ("BindsTo", &request.binds_to),
+        ("PartOf", &request.part_of),
+        ("Conflicts", &request.conflicts),
+    ] {
+        if !units.is_empty() {
+            out.push_str(&format!("{key}={}\n", units.join(" ")));
+        }
     }
     if let Some((seconds, burst)) = request.start_limit {
         out.push_str(&format!(
@@ -567,14 +611,32 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
     if let Some(service_type) = &request.service_type {
         out.push_str(&format!("Type={service_type}\n"));
     }
+    for exec_start_pre in &request.exec_start_pre {
+        out.push_str(&format!(
+            "ExecStartPre={}\n",
+            expand_exec_string(exec_start_pre)
+        ));
+    }
     if let Some(exec_start) = &request.exec_start {
         out.push_str(&format!("ExecStart={}\n", expand_exec_string(exec_start)));
+    }
+    for exec_start_post in &request.exec_start_post {
+        out.push_str(&format!(
+            "ExecStartPost={}\n",
+            expand_exec_string(exec_start_post)
+        ));
     }
     if let Some(remain_after_exit) = request.remain_after_exit {
         out.push_str(&format!("RemainAfterExit={}\n", yes_no(remain_after_exit)));
     }
     if let Some(exec_stop) = &request.exec_stop {
         out.push_str(&format!("ExecStop={}\n", expand_exec_string(exec_stop)));
+    }
+    for exec_stop_post in &request.exec_stop_post {
+        out.push_str(&format!(
+            "ExecStopPost={}\n",
+            expand_exec_string(exec_stop_post)
+        ));
     }
     if let Some(timeout_start_sec) = &request.timeout_start_sec {
         out.push_str(&format!("TimeoutStartSec={timeout_start_sec}\n"));
@@ -677,6 +739,10 @@ fn resolve_timer_unit(unit: &str) -> String {
     }
 }
 
+fn trim_all(values: Vec<String>) -> Vec<String> {
+    values.into_iter().map(|v| v.trim().to_string()).collect()
+}
+
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
@@ -718,9 +784,19 @@ fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
     user_units_dir().join(sibling_unit(request))
 }
 
+/// Characters systemd accepts before an `Exec*=` executable path, such as the
+/// `-` that ignores a failing exit status. They may be combined (`-+`, `!!`).
+const EXEC_PREFIXES: &[char] = &['@', '-', ':', '+', '!'];
+
 /// Expand the home prefix of a quoted executable without re-tokenizing
 /// systemd's command syntax or changing the arguments that follow it.
 fn expand_exec_string(command: &str) -> String {
+    let executable = command.trim_start_matches(EXEC_PREFIXES);
+    let prefixes = &command[..command.len() - executable.len()];
+    format!("{prefixes}{}", expand_executable(executable))
+}
+
+fn expand_executable(command: &str) -> String {
     for quote in ['\'', '"'] {
         if let Some(rest) = command.strip_prefix(quote)
             && let Some(rest) = rest.strip_prefix("~/")
@@ -972,6 +1048,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn exec_prefixes_are_kept_ahead_of_the_expanded_home() {
+        let home = crate::dirs::HOME.to_string_lossy().to_string();
+        for prefix in ["-", "@", ":", "+", "!", "!!", "-+", "-@"] {
+            assert_eq!(
+                super::expand_exec_string(&format!("{prefix}~/bin/check --quiet")),
+                format!("{prefix}{}", expand_path_string("~/bin/check --quiet"))
+            );
+            assert_eq!(
+                super::expand_exec_string(&format!("{prefix}'~/my bin/check'")),
+                format!("{prefix}'{}/my bin/check'", home.replace('\\', "\\\\"))
+            );
+        }
+        assert_eq!(
+            super::expand_exec_string("-/usr/bin/check"),
+            "-/usr/bin/check"
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -1109,6 +1204,117 @@ mod tests {
     }
 
     #[test]
+    fn test_render_session_unit_directives() {
+        let request = SystemdRequest::from_toml(
+            "panel".to_string(),
+            SystemdTomlConfig {
+                after: vec!["graphical-session.target".to_string()],
+                before: vec!["xdg-desktop-autostart.target".to_string()],
+                binds_to: vec!["wayland-session.target".to_string()],
+                part_of: vec!["graphical-session.target".to_string()],
+                conflicts: vec!["other-panel.service".to_string()],
+                exec_start_pre: vec![
+                    " /usr/bin/check-display ".to_string(),
+                    "-~/bin/optional-check".to_string(),
+                ],
+                exec_start: Some("/usr/bin/panel".to_string()),
+                exec_start_post: vec!["/usr/bin/notify ready".to_string()],
+                exec_stop: Some("/usr/bin/panel --quit".to_string()),
+                exec_stop_post: vec!["-/usr/bin/cleanup".to_string()],
+                start: true,
+                wanted_by: Some(vec!["graphical-session.target".to_string()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let unit = render_unit(&request);
+        let expected = format!(
+            "[Unit]\n\
+             After=graphical-session.target\n\
+             Before=xdg-desktop-autostart.target\n\
+             BindsTo=wayland-session.target\n\
+             PartOf=graphical-session.target\n\
+             Conflicts=other-panel.service\n\
+             \n\
+             [Service]\n\
+             ExecStartPre=/usr/bin/check-display\n\
+             ExecStartPre=-{}\n\
+             ExecStart=/usr/bin/panel\n\
+             ExecStartPost=/usr/bin/notify ready\n\
+             ExecStop=/usr/bin/panel --quit\n\
+             ExecStopPost=-/usr/bin/cleanup\n\
+             \n\
+             [Install]\n\
+             WantedBy=graphical-session.target\n",
+            expand_path_string("~/bin/optional-check")
+        );
+        assert_eq!(unit, expected);
+    }
+
+    #[test]
+    fn test_timer_rejects_service_lifecycle_commands() {
+        for (field, config) in [
+            (
+                "exec_start_pre",
+                SystemdTomlConfig {
+                    exec_start_pre: vec!["/bin/true".to_string()],
+                    ..Default::default()
+                },
+            ),
+            (
+                "exec_start_post",
+                SystemdTomlConfig {
+                    exec_start_post: vec!["/bin/true".to_string()],
+                    ..Default::default()
+                },
+            ),
+            (
+                "exec_stop_post",
+                SystemdTomlConfig {
+                    exec_stop_post: vec!["/bin/true".to_string()],
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let err = SystemdRequest::from_toml(
+                "tick".to_string(),
+                SystemdTomlConfig {
+                    on_calendar: Some("hourly".to_string()),
+                    part_of: vec!["graphical-session.target".to_string()],
+                    ..config
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("service-only"), "{err}");
+            assert!(err.to_string().contains(field), "{err}");
+        }
+        let timer = SystemdRequest::from_toml(
+            "tick".to_string(),
+            SystemdTomlConfig {
+                on_calendar: Some("hourly".to_string()),
+                part_of: vec!["graphical-session.target".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(render_unit(&timer).contains("PartOf=graphical-session.target\n"));
+    }
+
+    #[test]
+    fn test_empty_lifecycle_command_is_rejected() {
+        let err = SystemdRequest::from_toml(
+            "svc".to_string(),
+            SystemdTomlConfig {
+                exec_start: Some("/bin/true".to_string()),
+                exec_start_pre: vec!["  ".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("empty `exec_start_pre`"), "{err}");
+    }
+
+    #[test]
     fn test_render_timer_unit() {
         let request = SystemdRequest::from_toml(
             "healthcheck".to_string(),
@@ -1236,7 +1442,7 @@ mod tests {
         crate::file::create_dir_all(runtime_dir.path().join("systemd/private")).unwrap();
         assert!(user_manager_socket_available(runtime_dir.path()));
 
-        crate::file::remove_file_or_dir(runtime_dir.path().join("systemd/private")).unwrap();
+        std::fs::remove_dir(runtime_dir.path().join("systemd/private")).unwrap();
         std::fs::write(runtime_dir.path().join("bus"), "").unwrap();
         assert!(user_manager_socket_available(runtime_dir.path()));
     }

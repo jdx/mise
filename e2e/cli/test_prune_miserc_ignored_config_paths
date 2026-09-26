@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# A project's `.miserc.toml` `ignored_config_paths` applies to that project's
+# own config discovery. It must not hide other tracked configs from prune.
+
+mkdir project-a project-b
+cat <<'EOF2' >project-a/mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+mise -C project-a trust
+mise -C project-a install
+
+echo 'ignored_config_paths = ["../project-a"]' >project-b/.miserc.toml
+
+assert_not_contains "cd project-b && mise ls --prunable" "dummy"
+assert_not_contains "cd project-b && mise prune --dry-run --tools --raw 2>&1" "dummy@1.0.0"
+(cd project-b && mise prune --yes --tools)
+assert "mise -C project-a which dummy" "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy"
+
+# A machine-wide ignore in the global miserc still excludes the config.
+echo "ignored_config_paths = [\"$PWD/project-a\"]" >"$MISE_CONFIG_DIR/miserc.toml"
+assert_contains "cd project-b && mise prune --dry-run --tools --raw 2>&1" "dummy@1.0.0"

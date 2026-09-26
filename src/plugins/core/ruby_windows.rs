@@ -4,12 +4,12 @@ use std::{
     sync::Arc,
 };
 
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::normalize_idiomatic_contents;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
 use crate::http::HTTP;

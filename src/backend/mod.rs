@@ -12,10 +12,10 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::cli::args::{BackendArg, ToolVersionType};
+use crate::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
-use crate::config::{Config, Settings, global_config_path};
+use crate::config::{Config, Settings, SettingsExt, global_config_path};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
@@ -27,7 +27,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::{PEP440_PRERELEASE_REGEX, PluginType, VERSION_REGEX};
+use crate::plugins::{PluginType, VERSION_REGEX, is_python_prerelease};
 use crate::registry::{
     REGISTRY, RegistryIdiomaticFile, full_to_url, normalize_remote, tool_enabled,
 };
@@ -76,7 +76,6 @@ pub(crate) mod npm_registry;
 pub(crate) mod options;
 pub(crate) mod packslip;
 pub(crate) mod pipx;
-pub(crate) mod pkgx;
 pub(crate) mod platform_target;
 mod platform_tokens;
 pub(crate) mod s3;
@@ -131,13 +130,6 @@ pub(crate) fn version_listing_failure(ba: &BackendArg) -> Option<String> {
         .cloned()
 }
 
-pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
-    let full = ba.full_without_opts();
-    REGISTRY
-        .get(ba.short.as_str())
-        .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
-}
-
 /// mise-versions publishes one version list per registry short name, generated from the
 /// entry's first backend. Every other backend of the same entry lists different versions:
 /// a `min_version` boundary routes older requests to a later backend, and platform or
@@ -149,6 +141,33 @@ pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
+}
+
+/// Whether the versions host may serve this backend type's remote version list.
+///
+/// Only a subset of backends benefit from the versions host cache — those
+/// whose upstream listing is rate-limited (github API) or not otherwise
+/// available. Package-registry backends (npm, pipx, cargo, gem, go, conda,
+/// dotnet, spm) and http/s3 with an explicit version_list_url already have
+/// canonical, always-fresh sources, so the cache would only add latency and
+/// staleness risk. Note: this asymmetrically overrides
+/// `settings.use_versions_host = true` — the setting can still disable the
+/// host globally, but cannot re-enable it for backends that are not on this
+/// allowlist.
+fn versions_host_applies(backend_type: &BackendType, listing_opts: &ToolVersionOptions) -> bool {
+    match backend_type {
+        BackendType::Github
+        | BackendType::Gitlab
+        | BackendType::Forgejo
+        | BackendType::Ubi
+        | BackendType::Aqua
+        | BackendType::Core
+        | BackendType::Asdf
+        | BackendType::Vfox
+        | BackendType::VfoxBackend(_) => true,
+        BackendType::Http | BackendType::S3 => !listing_opts.contains_key("version_list_url"),
+        _ => false,
+    }
 }
 
 pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
@@ -645,7 +664,6 @@ pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Packslip => Some(Arc::new(packslip::PackslipBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
-        BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -677,7 +695,6 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Packslip => packslip::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
-        BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
@@ -910,7 +927,7 @@ pub(crate) async fn configured_toolset_or_path_which(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
     use std::fs;
     use std::sync::Arc;
@@ -1438,16 +1455,6 @@ mod tests {
     }
 
     #[test]
-    fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
-        let ba = BackendArg::new(
-            "communique".to_string(),
-            Some("github:jdx/communique[asset_pattern=communique-*]".to_string()),
-        );
-
-        assert!(backend_arg_matches_registry_backend(&ba));
-    }
-
-    #[test]
     fn test_only_the_preferred_registry_backend_may_use_the_versions_host() {
         // mise-versions publishes one list per short name, built from the preferred
         // backend. A `min_version` boundary routes older requests to a later backend
@@ -1457,9 +1464,6 @@ mod tests {
             Some("packslip:github.com/jdx/hk".to_string()),
         );
         let fallback = BackendArg::new("hk".to_string(), Some("aqua:jdx/hk".to_string()));
-
-        assert!(backend_arg_matches_registry_backend(&preferred));
-        assert!(backend_arg_matches_registry_backend(&fallback));
 
         assert!(backend_arg_is_preferred_registry_backend(&preferred));
         assert!(!backend_arg_is_preferred_registry_backend(&fallback));
@@ -1782,6 +1786,31 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzzy_match_versions_pep440_ignores_local_label() {
+        let versions = vec![
+            "1.0".to_string(),
+            "1.1+gpu.dev0".to_string(),
+            "1.2.dev0".to_string(),
+            "1.2-rc1+gpu".to_string(),
+        ];
+        // `.dev` in a local label does not make `1.1+gpu.dev0` a prerelease,
+        // but the channel tags still apply to the public version.
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "latest", true),
+            vec!["1.0".to_string(), "1.1+gpu.dev0".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions_pep440(versions.clone(), "1.1", true),
+            vec!["1.1+gpu.dev0".to_string()]
+        );
+        // Other backends keep the shared filter on the full string.
+        assert_eq!(
+            fuzzy_match_versions(versions, "latest", true),
+            vec!["1.0".to_string()]
+        );
+    }
+
+    #[test]
     fn test_filter_cached_prereleases_drops_flagged_entries_by_default() {
         // The cache stores the pre-release superset; `prerelease = false` (the
         // default) must filter out entries flagged by the upstream so the user
@@ -1985,6 +2014,7 @@ mod tests {
         use crate::toolset::ToolVersionOptions;
         use confique::Layer;
 
+        let _settings = crate::test::SettingsGuard::lock();
         let backend = TestBackend::default();
         let opts = ToolVersionOptions::default();
         // Sanity: with no per-tool opt and no setting, prereleases stay filtered.
@@ -2481,39 +2511,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let ba = self.ba().clone();
         let id = self.id();
 
-        // Only a subset of backends benefit from the versions host cache —
-        // those whose upstream listing is rate-limited (github API) or not
-        // otherwise available. Package-registry backends (npm, pipx, cargo,
-        // gem, go, conda, dotnet, spm) and http/s3 with an explicit
-        // version_list_url already have canonical, always-fresh sources, so
-        // the cache would only add latency and staleness risk. Note: this
-        // asymmetrically overrides `settings.use_versions_host = true` — the
-        // setting can still disable the host globally, but cannot re-enable
-        // it for backends that are not on this allowlist.
-        let backend_type = self.get_type();
-        let has_version_list_url = if matches!(backend_type, BackendType::Http | BackendType::S3) {
-            listing_opts.contains_key("version_list_url")
-        } else {
-            false
-        };
-        let versions_host_applies = match backend_type {
-            BackendType::Github
-            | BackendType::Gitlab
-            | BackendType::Forgejo
-            | BackendType::Ubi
-            | BackendType::Aqua
-            | BackendType::Core
-            | BackendType::Asdf
-            | BackendType::Vfox
-            | BackendType::VfoxBackend(_) => true,
-            BackendType::Http | BackendType::S3 => !has_version_list_url,
-            _ => false,
-        };
-
-        let use_versions_host = if !versions_host_applies {
+        let use_versions_host = if !Settings::get().use_versions_host {
             trace!(
-                "Skipping versions host for {} because {} backend has a direct source",
-                ba.short, backend_type
+                "Skipping versions host for {} because use_versions_host is off",
+                ba.short
             );
             false
         } else if has_local_version_listing_override {
@@ -2530,48 +2531,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 ba.short,
             );
             false
-        } else if let Some(plugin) = self.plugin()
-            && let Ok(Some(remote_url)) = plugin.get_remote_url()
-        {
-            // Check if remote matches the registry default
-            let normalized_remote =
-                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
-            let shorthand_remote = REGISTRY
-                .get(plugin.name())
-                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
-                .unwrap_or_default();
-            let matches =
-                normalized_remote == normalize_remote(&shorthand_remote).unwrap_or_default();
-            if !matches {
-                trace!(
-                    "Skipping versions host for {} because it has a non-default remote",
-                    ba.short
-                );
-            }
-            matches
+        } else if let Some(reason) = self.versions_host_skip_reason(listing_opts) {
+            trace!("Skipping versions host for {} because {reason}", ba.short);
+            false
         } else {
-            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
-            // registry's preferred one. When a user aliases a tool to a different backend
-            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
-            // older request to a later backend, the versions host would return the
-            // preferred backend's versions, which do not describe the resolved backend.
-            if REGISTRY.contains_key(ba.short.as_str()) {
-                let is_preferred = backend_arg_is_preferred_registry_backend(&ba);
-                if !is_preferred {
-                    trace!(
-                        "Skipping versions host for {} because backend {} is not the registry default",
-                        ba.short,
-                        ba.full()
-                    );
-                }
-                is_preferred
-            } else {
-                trace!(
-                    "Skipping versions host for {} because it is not in the registry",
-                    ba.short
-                );
-                false
-            }
+            true
         };
 
         // Read-time filter: cache stores the pre-release superset for backends
@@ -3399,8 +3363,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string_lossy()
                         .to_string();
                     // A `latest` link written before the backend could tell this
-                    // version is a pre-release must not keep winning.
-                    if !filter || !self.is_backend_prerelease(&version) {
+                    // version is a pre-release must not keep winning, and neither
+                    // may one left pointing into an interrupted install.
+                    if (!filter || !self.is_backend_prerelease(&version))
+                        && !install_state::incomplete_file_path(&self.ba().short, &version).exists()
+                    {
                         return Ok(Some(version));
                     }
                 }
@@ -3409,7 +3376,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
@@ -3673,7 +3640,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
             );
         }
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+        if ctx.locked && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms
@@ -3747,8 +3714,8 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
         let _state_lock =
-            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|| {
-                ctx.pr.set_message("waiting for install lock".into());
+            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|pid| {
+                ctx.pr.set_message(install_lock_wait_message(pid));
             })?;
 
         let mut install_satisfied = self
@@ -4539,6 +4506,44 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(VersionOrder::Source)
     }
 
+    /// Why the versions host cannot serve this backend's remote version list,
+    /// or `None` when it can. Ignores `use_versions_host` and cache contexts,
+    /// which callers check themselves.
+    fn versions_host_skip_reason(&self, listing_opts: &ToolVersionOptions) -> Option<String> {
+        let ba = self.ba();
+        let backend_type = self.get_type();
+        if !versions_host_applies(&backend_type, listing_opts) {
+            return Some(format!("{backend_type} backend has a direct source"));
+        }
+        if let Some(plugin) = self.plugin()
+            && let Ok(Some(remote_url)) = plugin.get_remote_url()
+        {
+            // Check if remote matches the registry default
+            let normalized_remote =
+                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
+            let shorthand_remote = REGISTRY
+                .get(plugin.name())
+                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
+                .unwrap_or_default();
+            if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
+                return Some("it has a non-default remote".to_string());
+            }
+        } else if !REGISTRY.contains_key(ba.short.as_str()) {
+            return Some("it is not in the registry".to_string());
+        } else if !backend_arg_is_preferred_registry_backend(ba) {
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
+            // registry's preferred one. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
+            // older request to a later backend, the versions host would return the
+            // preferred backend's versions, which do not describe the resolved backend.
+            return Some(format!("backend {} is not the registry default", ba.full()));
+        }
+        if !versions_host::lists_versions_for(&ba.short) {
+            return Some("the versions host does not list it".to_string());
+        }
+        None
+    }
+
     /// The key of the remote-version cache entry these listing options select.
     async fn remote_version_cache_context_for(
         &self,
@@ -4553,18 +4558,28 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let opt_context = has_local_version_listing_override.then(|| {
             listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
         });
-        Ok(
-            match (
-                self.remote_version_cache_context(config).await?,
-                opt_context,
-            ) {
-                (Some(backend_context), Some(opt_context)) => {
-                    Some(hash::hash_to_str(&(backend_context, opt_context)))
-                }
-                (Some(context), None) | (None, Some(context)) => Some(context),
-                (None, None) => None,
-            },
-        )
+        let context = match (
+            self.remote_version_cache_context(config).await?,
+            opt_context,
+        ) {
+            (Some(backend_context), Some(opt_context)) => {
+                Some(hash::hash_to_str(&(backend_context, opt_context)))
+            }
+            (Some(context), None) | (None, Some(context)) => Some(context),
+            (None, None) => None,
+        };
+        // A list fetched from the versions host lags new releases, so turning
+        // the host off must not reuse it. Only the off state changes the key,
+        // which keeps existing cache entries valid, and only for listings the
+        // host would otherwise serve: a context already bypasses the host, and
+        // the other listings are always direct, so their one entry is correct.
+        if context.is_none()
+            && !Settings::get().use_versions_host
+            && self.versions_host_skip_reason(listing_opts).is_none()
+        {
+            return Ok(Some("direct".to_string()));
+        }
+        Ok(context)
     }
 
     /// The remote-version cache entry these listing options select. A backend
@@ -4906,7 +4921,7 @@ fn latest_stable_candidate_allowed_by_before_date(
 #[cfg(test)]
 mod latest_version_tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
     use crate::toolset::{ResolvedToolOptions, ToolSource};
     use confique::Layer;
@@ -5381,6 +5396,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_prerelease_selection_skips_latest_stable_fast_path() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let config = Config::get().await.unwrap();
         let mut backend =
@@ -5630,6 +5646,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_remote_versions_use_cache_without_fetching() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-cache");
         let cache = backend.get_remote_version_cache();
@@ -5661,6 +5678,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_rolling_check_does_not_fetch_missing_checksum() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-rolling-check");
         backend
@@ -5834,6 +5852,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_latest_uses_fast_path_when_available() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-offline-latest-cache");
 
@@ -5850,6 +5869,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_offline_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-offline-latest-cache-fallback").with_stable_result(None);
@@ -5883,6 +5903,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_latest_falls_back_to_cached_versions_when_fast_path_has_no_result() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-fast-path-none").with_stable_result(None);
@@ -5980,6 +6001,17 @@ const DOWNLOAD_OPERATION_WEIGHT: f64 = 0.7;
 
 /// Replacing an existing install before the new one is fetched.
 const UNINSTALL_OPERATION_WEIGHT: f64 = 0.05;
+
+/// What an install says while another process holds its tool-version lock.
+/// Naming the PID matters: the holder is usually a shim auto-installing the
+/// tool, and a shim's command line reads like the tool (`node app.js`), not
+/// like mise.
+pub(crate) fn install_lock_wait_message(holder_pid: Option<u32>) -> String {
+    match holder_pid {
+        Some(pid) => format!("waiting for install lock held by pid {pid}"),
+        None => "waiting for install lock".to_string(),
+    }
+}
 
 /// Weight the first operation as the fetch and split the remainder evenly over
 /// whatever verification and unpacking steps the backend declared.
@@ -6107,28 +6139,20 @@ fn tool_option_bool(value: &toml::Value) -> bool {
     crate::backend::options::bool_value_or_default("prerelease", value, false)
 }
 
-/// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection
-/// applied on top of the shared filter. Used by Python-flavored backends
-/// (`pipx`, the `python` core plugin) so `3.15.0a8`-style versions are dropped
-/// from `latest` resolution and partial-prefix queries when the user hasn't
-/// opted in to prereleases.
+/// Fuzzy-match `versions` against `query` with Python pre-release detection
+/// ([`is_python_prerelease`]) in place of the shared filter. Used by
+/// Python-flavored backends (`pipx`, the `python` core plugin) so
+/// `3.15.0a8`-style versions are dropped from `latest` resolution and
+/// partial-prefix queries when the user hasn't opted in to prereleases, while
+/// a local label such as `1.1+gpu.dev0` does not make a release a prerelease.
 pub(crate) fn fuzzy_match_versions_pep440(
     versions: Vec<String>,
     query: &str,
     filter_prereleases: bool,
 ) -> Vec<String> {
-    let versions = if filter_prereleases {
-        // Mirror the exact-match bypass in `fuzzy_match_versions` so an
-        // explicit prerelease request (`python@3.14.0a1`) still resolves even
-        // when filter_prereleases is on.
-        versions
-            .into_iter()
-            .filter(|v| query == v || !PEP440_PRERELEASE_REGEX.is_match(v))
-            .collect()
-    } else {
-        versions
-    };
-    fuzzy_match_versions(versions, query, filter_prereleases)
+    fuzzy_match_versions_by(versions, query, |v| {
+        filter_prereleases && is_python_prerelease(v)
+    })
 }
 
 /// Fuzzy-match `versions` against `query`. When `filter_prereleases` is true,
@@ -6139,6 +6163,19 @@ pub(crate) fn fuzzy_match_versions(
     versions: Vec<String>,
     query: &str,
     filter_prereleases: bool,
+) -> Vec<String> {
+    fuzzy_match_versions_by(versions, query, |v| {
+        filter_prereleases && VERSION_REGEX.is_match(v)
+    })
+}
+
+/// Fuzzy-match `versions` against `query`, dropping versions for which
+/// `is_filtered_prerelease` returns true unless they equal `query` exactly, so
+/// an explicit prerelease request (`python@3.14.0a1`) still resolves.
+fn fuzzy_match_versions_by(
+    versions: Vec<String>,
+    query: &str,
+    is_filtered_prerelease: impl Fn(&str) -> bool,
 ) -> Vec<String> {
     let escaped_query = regex::escape(query);
     let query_pattern = if query == "latest" {
@@ -6191,7 +6228,7 @@ pub(crate) fn fuzzy_match_versions(
             if query == v {
                 return true;
             }
-            if filter_prereleases && VERSION_REGEX.is_match(v) {
+            if is_filtered_prerelease(v) {
                 return false;
             }
             if query_regex.is_match(v) {

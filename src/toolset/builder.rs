@@ -3,7 +3,7 @@ use std::sync::Arc;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
@@ -75,6 +75,17 @@ impl ToolsetBuilder {
     pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
         self.config_files = Some(config_files);
         self
+    }
+
+    /// Build a toolset from configuration, environment, and arguments without resolving versions.
+    pub(crate) fn build_unresolved(self, config: &Arc<Config>) -> Result<Toolset> {
+        let mut toolset = Toolset {
+            ..Default::default()
+        };
+        self.load_config_files(config, &mut toolset)?;
+        self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
+        self.load_runtime_args(&mut toolset)?;
+        Ok(toolset)
     }
 
     pub(crate) async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
@@ -366,7 +377,7 @@ mod tests {
     async fn runtime_args_use_platform_supported_version_and_lockfile_owner() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

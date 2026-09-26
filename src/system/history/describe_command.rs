@@ -20,9 +20,6 @@ use super::checkpoint::{Store, annotate};
 use super::shadow::DiffOpts;
 use super::store::{self, Annotation, DescriptionSource, Entry};
 
-#[cfg(windows)]
-mod windows_job;
-
 /// How long the command may take, how much diff it is given, and how long a
 /// description it may print.
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
@@ -52,7 +49,7 @@ static RUNNING: Mutex<Option<RunningCommand>> = Mutex::new(None);
 struct RunningCommand {
     pid: u32,
     #[cfg(windows)]
-    job: std::sync::Arc<windows_job::Job>,
+    job: std::sync::Arc<crate::windows_job::Job>,
 }
 
 impl RunningCommand {
@@ -130,7 +127,7 @@ fn run_with_limits(
         shell.process_group(0);
     }
     #[cfg(windows)]
-    let (mut child, job) = windows_job::spawn(&mut shell)?;
+    let (mut child, job) = crate::windows_job::spawn(&mut shell, 0)?;
     #[cfg(not(windows))]
     let mut child = shell.spawn()?;
     let active = ActiveCommand(RunningCommand {

@@ -1,10 +1,11 @@
-//! Early initialization settings from .miserc.toml
+//! Early initialization settings from .miserc.toml and .miserc.local.toml
 //!
 //! This module handles loading settings that need to be known before the main
 //! config files are parsed. The primary use case is setting MISE_ENV, which
 //! determines which environment-specific config files (e.g., mise.development.toml)
 //! to load.
 
+use crate::config::SettingsExt;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -27,6 +28,13 @@ static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Load operator-owned environment selection without discovering project files.
 pub(crate) fn init_global_only() {
+    let _ = MISERC.set(load_global_miserc_settings());
+    let _ = take_tera_accessed_files();
+}
+
+/// Merge the system and global miserc files, skipping project files found
+/// from the working directory.
+fn load_global_miserc_settings() -> MisercSettings {
     let mut settings = MisercSettings::default();
     // A broken file must not block credentials or discard another valid layer.
     for path in [
@@ -37,11 +45,10 @@ pub(crate) fn init_global_only() {
             merge_settings(&mut settings, layer);
         }
     }
-    let _ = MISERC.set(settings);
-    let _ = take_tera_accessed_files();
+    settings
 }
 
-/// Initialize miserc settings by loading .miserc.toml files.
+/// Initialize miserc settings by loading shared and local miserc files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
 pub(crate) fn init() -> Result<()> {
@@ -103,6 +110,20 @@ pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ignored_config_paths.as_ref()
 }
 
+/// Get the ignored_config_paths value from the system and global miserc files
+/// only. Unlike [`get_ignored_config_paths`], this does not depend on the
+/// directory mise runs from, so machine-wide operations such as `mise prune`
+/// reach the same verdict everywhere.
+pub(crate) fn get_global_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+    static GLOBAL: std::sync::LazyLock<Option<BTreeSet<PathBuf>>> =
+        std::sync::LazyLock::new(|| {
+            let settings = load_global_miserc_settings();
+            let _ = take_tera_accessed_files();
+            settings.ignored_config_paths
+        });
+    GLOBAL.as_ref()
+}
+
 /// Get the override_config_filenames value from miserc, if set.
 pub(crate) fn get_override_config_filenames() -> Option<&'static Vec<String>> {
     get().override_config_filenames.as_ref()
@@ -138,11 +159,12 @@ fn render_miserc_template(
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", config_root);
-    match std::env::current_dir() {
-        Ok(dir) => context.insert("cwd", &dir),
-        Err(e) => {
-            debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}")
-        }
+    // Use the invocation directory, not the current one: the global ignore list
+    // is rendered lazily, possibly after `-C` changed directory, and must match
+    // what startup rendered.
+    match invocation_cwd() {
+        Some(dir) => context.insert("cwd", dir),
+        None => debug!("miserc template: could not determine cwd, `cwd` will be unavailable"),
     };
     context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
@@ -159,7 +181,7 @@ fn render_miserc_template(
 
 /// Load and merge all miserc settings files.
 /// Precedence (highest to lowest):
-/// 1. Local .miserc.toml and .config/miserc.toml (closest to cwd wins)
+/// 1. Closest directory first: .miserc.local.toml, .miserc.toml, .config/miserc.toml
 /// 2. Global ~/.config/mise/miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
@@ -235,7 +257,7 @@ fn find_miserc_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
     let ceiling_paths = env_ceiling_paths();
 
-    // Local hierarchy: .miserc.toml and .config/miserc.toml in cwd and ancestors
+    // Local overrides precede shared settings at each directory level.
     // Use raw std::env to avoid depending on our lazy statics
     if let Ok(cwd) = std::env::current_dir() {
         // Walk up the directory tree, but stop at home or root
@@ -244,9 +266,11 @@ fn find_miserc_files() -> Vec<PathBuf> {
             if ceiling_paths.contains(dir) {
                 break;
             }
-            let path = dir.join(".miserc.toml");
-            if path.is_file() {
-                files.push(path);
+            for name in [".miserc.local.toml", ".miserc.toml"] {
+                let path = dir.join(name);
+                if path.is_file() {
+                    files.push(path);
+                }
             }
             // Stop at home directory to avoid searching too far
             if dir == home || dir.parent().is_none() {

@@ -100,6 +100,14 @@ pitchfork = "system"
 run = "sleep 30"
 ready_cmd = "echo {{ env.SOMETHING }}"
 TOML
+# Registration prepares the complete project without starting any daemon.
+mise daemons register
+assert_contains "cat '$DAEMON_LOG'" 'config add'
+assert_not_contains "cat '$DAEMON_LOG'" 'args=start '
+assert_not_contains "cat '$DAEMON_LOG'" 'args=restart '
+assert_fail "mise daemons register api"
+assert_fail "MISE_SAFE=1 mise daemons register"
+: >"$DAEMON_LOG"
 assert_fail "OLD_PITCHFORK=1 mise daemons start"
 assert_contains "OLD_PITCHFORK=1 mise daemons start 2>&1 || true" 'external configuration support'
 mise daemons start
@@ -624,3 +632,44 @@ generated="$(daemon_state_dir)/pitchfork.toml"
 assert_contains "cat '$generated'" 'proxy = "front"'
 assert_contains "cat '$generated'" 'proxy_tls = "passthrough"'
 assert_contains "cat '$generated'" 'proxy = false'
+
+# Registration includes all local daemons, even outside the default group, and
+# prepares the complete dependency closure in an imported project's own scope.
+mkdir -p "$HOME/register/shared" "$HOME/register/app"
+cat >"$HOME/register/shared/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "register-shared"
+[daemons.storage]
+run = "sleep 600"
+[daemons.events]
+run = "sleep 600"
+depends = ["storage"]
+TOML
+cat >"$HOME/register/app/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "register-app"
+[daemons.events]
+project = "../shared"
+name = "events"
+[daemons.api]
+run = "sleep 600"
+depends = ["events"]
+[daemons.extra]
+run = "sleep 600"
+[daemon_groups]
+default = ["api"]
+TOML
+mise trust "$HOME/register/shared/mise.toml"
+cd "$HOME/register/app"
+: >"$DAEMON_LOG"
+mise daemons register
+assert_contains "cat '$DAEMON_LOG'" '--namespace register-shared'
+assert_contains "cat '$DAEMON_LOG'" '--namespace register-app'
+assert_not_contains "cat '$DAEMON_LOG'" 'args=start '
+assert_not_contains "cat '$DAEMON_LOG'" 'args=restart '
+assert_contains "cat '$(daemon_state_dir)/pitchfork.toml'" '[daemons.extra]'
+assert_contains "cat '$(daemon_state_dir ../shared)/pitchfork.toml'" '[daemons.storage]'

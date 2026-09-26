@@ -1,3 +1,4 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -5,16 +6,16 @@ use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
-    apply_rename_exe, clean_binary_name, ensure_plain_bin_name, ensure_safe_relative_bin_path,
-    eval_checksum_expr, fetch_checksum_from_file, fetch_checksum_from_shasums,
-    get_filename_from_url, lookup_value_with_fallback, rename_binary_name, shasums_has_entries,
-    template_string, template_string_for_target, verify_artifact,
+    apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
+    ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file,
+    fetch_checksum_from_shasums, get_filename_from_url, lookup_value_with_fallback,
+    rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
+    verify_artifact,
 };
 use crate::backend::version_list;
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::http::HTTP;
+use crate::http::{DownloadFileMetadata, HTTP};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -435,29 +436,24 @@ impl HttpBackend {
         file_info: &FileInfo,
         opts: &HttpOptions<'_>,
     ) -> Result<String> {
-        // Check for explicit bin name first
-        if let Some(bin_name) = opts.bin() {
-            ensure_safe_relative_bin_path("bin", &bin_name)?;
-            return Ok(bin_name);
-        }
-        if let Some(rename_to) = opts.rename_exe() {
-            ensure_plain_bin_name("rename_exe", &rename_to)?;
-            let source_name = if file_info.is_compressed_binary {
-                file_info.decompressed_name()
-            } else {
-                file_path.file_name().unwrap().to_string_lossy().to_string()
-            };
-            return Ok(rename_binary_name(&source_name, &rename_to));
-        }
-
-        // Auto-clean the binary name
-        let raw_name = if file_info.is_compressed_binary {
+        let source_name = if file_info.is_compressed_binary {
             file_info.decompressed_name()
         } else {
             file_path.file_name().unwrap().to_string_lossy().to_string()
         };
 
-        Ok(clean_binary_name(&raw_name, Some(&self.ba.tool_name)))
+        // Check for explicit bin name first
+        if let Some(bin_name) = opts.bin() {
+            ensure_safe_relative_bin_path("bin", &bin_name)?;
+            return Ok(bin_name_for_download(&source_name, &bin_name));
+        }
+        if let Some(rename_to) = opts.rename_exe() {
+            ensure_plain_bin_name("rename_exe", &rename_to)?;
+            return Ok(rename_binary_name(&source_name, &rename_to));
+        }
+
+        // Auto-clean the binary name
+        Ok(clean_binary_name(&source_name, Some(&self.ba.tool_name)))
     }
 
     // -------------------------------------------------------------------------
@@ -1246,10 +1242,21 @@ impl Backend for HttpBackend {
             .and_then(|p| p.checksum.as_ref())
             .is_some();
 
-        ctx.pr.set_message(format!("download {filename}"));
-        let download = HTTP
-            .download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
-            .await?;
+        let download = match local_artifact_path(&url)? {
+            Some(src) => {
+                ctx.pr.set_message(format!("copy {filename}"));
+                if let Some(parent) = file_path.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                file::run_blocking(|| file::copy(&src, &file_path))?;
+                DownloadFileMetadata::default()
+            }
+            None => {
+                ctx.pr.set_message(format!("download {filename}"));
+                HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
+                    .await?
+            }
+        };
 
         // Verify artifact (checksum if provided)
         if opts.checksum().is_some() {
@@ -1389,6 +1396,25 @@ impl Backend for HttpBackend {
 /// (which would otherwise make `tool.` and `tool` share a cache entry). The key
 /// still differs whenever the rename config differs, which is all it needs to do;
 /// the human-readable part of the cache key is the file checksum, not this token.
+/// The local file a `file://` artifact URL names, so an archive fetched by hand
+/// (or from a mirror mise cannot reach) installs exactly like a downloaded one.
+/// Any other scheme is left to the HTTP client.
+fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return Ok(None);
+    };
+    if parsed.scheme() != "file" {
+        return Ok(None);
+    }
+    let path = parsed
+        .to_file_path()
+        .map_err(|_| eyre::eyre!("invalid file URL: {url}"))?;
+    if !path.is_file() {
+        eyre::bail!("local artifact not found: {}", path.display());
+    }
+    Ok(Some(path))
+}
+
 fn rename_cache_token(rename: &toml::Value) -> String {
     hash::hash_blake3_to_str(&rename.to_string())
 }
@@ -1396,8 +1422,29 @@ fn rename_cache_token(rename: &toml::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
+
+    #[test]
+    fn local_artifact_path_only_claims_file_urls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("my tool-1.0.0.tar.gz");
+        std::fs::write(&archive, b"").unwrap();
+        let url = url::Url::from_file_path(&archive).unwrap().to_string();
+
+        assert_eq!(local_artifact_path(&url).unwrap(), Some(archive.clone()));
+        assert_eq!(
+            local_artifact_path("https://example.com/tool.tar.gz").unwrap(),
+            None
+        );
+
+        let missing = url::Url::from_file_path(tmp.path().join("missing.tar.gz")).unwrap();
+        let err = local_artifact_path(missing.as_str()).unwrap_err();
+        assert!(
+            err.to_string().contains("local artifact not found"),
+            "{err}"
+        );
+    }
 
     #[test]
     fn windows_script_launcher_preserves_script_filename() {
@@ -1781,6 +1828,40 @@ mod tests {
             backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "code2prompt.exe"
         );
+    }
+
+    #[test]
+    fn dest_filename_keeps_windows_extension_for_bin() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-cloud-sql-proxy".to_string(),
+                Some("http:cloud-sql-proxy".to_string()),
+                "cloud-sql-proxy".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let raw_opts = crate::toolset::parse_tool_options("bin=cloud-sql-proxy");
+        let opts = HttpOptions::new(&raw_opts);
+        let expected = if cfg!(windows) {
+            "cloud-sql-proxy.exe"
+        } else {
+            "cloud-sql-proxy"
+        };
+
+        // Both a raw download and a compressed one are named from the executable inside.
+        for file_path in [
+            Path::new("cloud-sql-proxy.x64.exe"),
+            Path::new("cloud-sql-proxy.x64.exe.gz"),
+        ] {
+            let file_info = FileInfo::new(file_path, None, &opts);
+            assert_eq!(
+                backend.dest_filename(file_path, &file_info, &opts).unwrap(),
+                expected,
+                "{}",
+                file_path.display()
+            );
+        }
     }
 
     #[test]

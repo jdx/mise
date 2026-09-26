@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# With no config declaring `task_config.includes`, `mise-tasks` is found by the
+# built-in defaults rather than claimed by any config, so there is no standing
+# for a block to outrank: a block from any config in the chain replaces the
+# script, including the lowest-precedence one. A task from an included .toml
+# file has always worked this way; this pins that a script now does too.
+
+mkdir -p mise-tasks .config
+
+cat <<'EOF' >mise-tasks/hello.sh
+#!/usr/bin/env bash
+echo hello-script-ran
+EOF
+chmod +x mise-tasks/hello.sh
+
+cat <<'EOF' >mise-tasks/ci.toml
+[included]
+run = "echo included-toml-ran"
+EOF
+
+# `.config/mise.toml` is the lowest-precedence config here; `mise.toml` sits
+# above it and declares no tasks of its own.
+cat <<'EOF' >mise.toml
+[env]
+UNRELATED = "1"
+EOF
+
+cat <<'EOF' >.config/mise.toml
+[tasks."hello.sh"]
+run = "echo lowest-config-ran"
+
+[tasks.included]
+run = "echo lowest-config-replaced-the-include"
+EOF
+
+assert "mise run hello" "lowest-config-ran"
+assert_not_contains "mise run hello" "hello-script-ran"
+
+# The task from the included .toml answers the same way, which is the behavior
+# a script is being brought in line with.
+assert "mise run included" "lowest-config-replaced-the-include"

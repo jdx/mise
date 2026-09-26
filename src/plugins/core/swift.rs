@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -1222,28 +1222,16 @@ mod platform_selection_tests {
 #[cfg(test)]
 mod lockfile_tests {
     use super::*;
+    use crate::config::SettingsExt;
     use crate::config::settings::SettingsPartial;
     use crate::platform::Platform;
     use crate::toolset::ToolSource;
     use confique::Layer;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct SettingsResetGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl Drop for SettingsResetGuard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
-    }
-
     /// Pin `swift.platform` so the assertions don't depend on the distro the
     /// tests happen to run on.
-    fn pin_platform(platform: Option<&str>) -> SettingsResetGuard {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-        let guard = SettingsResetGuard { _lock: lock };
+    fn pin_platform(platform: Option<&str>) -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
         let mut settings = SettingsPartial::empty();
         settings.swift.platform = platform.map(str::to_string);
         Settings::reset(Some(settings));

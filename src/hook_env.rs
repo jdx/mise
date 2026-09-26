@@ -14,7 +14,6 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
-use crate::cli::HookReason;
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
@@ -22,6 +21,14 @@ use crate::errors::Error;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
+
+/// Why the shell hook ran: before a prompt, or after a directory change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+#[usage(rename_all = "lowercase")]
+pub(crate) enum HookReason {
+    Precmd,
+    Chpwd,
+}
 
 /// Directory to store per-directory last check timestamps.
 /// Timestamps are stored per-directory (using a hash of CWD) so that
@@ -515,13 +522,21 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
             for subdir in &config_subdirs {
-                let check_dir = if subdir.is_empty() {
-                    dir.clone()
+                // `conf.d/*` names the folder fragments: a file added to one
+                // changes that folder's mtime, not conf.d's.
+                let check_dirs = if subdir.contains('*') {
+                    glob::glob(&dir.join(subdir).to_string_lossy())
+                        .map(|paths| paths.flatten().collect())
+                        .unwrap_or_default()
+                } else if subdir.is_empty() {
+                    vec![dir.clone()]
                 } else {
-                    dir.join(subdir)
+                    vec![dir.join(subdir)]
                 };
-                if let Ok(Ok(modified)) = check_dir.metadata().map(|m| m.modified()) {
-                    mtimes.push(modified);
+                for check_dir in check_dirs {
+                    if let Ok(Ok(modified)) = check_dir.metadata().map(|m| m.modified()) {
+                        mtimes.push(modified);
+                    }
                 }
             }
         }

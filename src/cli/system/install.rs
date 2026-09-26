@@ -1,8 +1,8 @@
 use eyre::Result;
 
-use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::driver::{self, Action, DriverOpts};
 use crate::system::history::OperationScope;
 
 #[derive(Debug, Default)]
@@ -231,7 +231,7 @@ pub(crate) fn apply_shell_activation(
         verbose: Settings::get().verbose,
         yes,
     };
-    system::edits::apply(config, &edits, &opts).map(|_| ())
+    system::edits::apply(config, &edits, &opts, &mut vec![]).map(|_| ())
 }
 
 /// Apply `[bootstrap.repos]` entries that are missing or differ.

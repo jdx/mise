@@ -1,13 +1,13 @@
 mod lock;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::parse_into_timestamp;
 #[cfg(unix)]
 use crate::env;
@@ -17,7 +17,7 @@ use crate::github::{self, GithubRelease};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::plugins::is_python_prerelease;
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -241,10 +241,6 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
-    fn mark_prereleases_from_version_pattern(&self) -> bool {
-        true
-    }
-
     /// PyPI versions follow PEP 440, so the shared filter alone (which only
     /// knows about `-rc1`/`-dev` separators) would let `3.12.0a1`-style
     /// versions slip through. See `fuzzy_match_versions_pep440`.
@@ -296,12 +292,12 @@ impl Backend for PIPXBackend {
                         .collect()
                 }
             }
-            PipxRequest::Git(url) => match PipxRequest::github_repo(&url) {
+            PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
                 Some(repo) => {
                     let data = github::list_releases(&repo).await?;
                     Self::versions_from_github_releases(data)
                 }
-                None => Self::versions_from_git_tags(&url).await?,
+                None => Self::versions_from_git_tags(&source.remote()).await?,
             },
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
@@ -310,11 +306,11 @@ impl Backend for PIPXBackend {
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
-            PipxRequest::Git(url) => {
-                return if PipxRequest::github_repo(&url).is_some() {
+            PipxRequest::Git(source) => {
+                return if PipxRequest::github_repo(&source.repo).is_some() {
                     Ok(None)
                 } else {
-                    Self::git_head(&url).await.map(Some)
+                    Self::git_head(&source.remote()).await.map(Some)
                 };
             }
         };
@@ -334,18 +330,9 @@ impl Backend for PIPXBackend {
                             let url = registry_url.replace("{}", &package);
                             let html = HTTP_FETCH.get_html(url).await?;
 
-                            let version = Self::versions_from_simple_index(&package, &html)
-                                .into_iter()
-                                .filter(|v| {
-                                    !v.contains("dev")
-                                        && !v.contains("a")
-                                        && !v.contains("b")
-                                        && !v.contains("rc")
-                                })
-                                .sorted_by_cached_key(|v| Versioning::new(v))
-                                .next_back();
-
-                            Ok(version)
+                            Ok(Self::latest_stable_from_simple_index(
+                                Self::versions_from_simple_index(&package, &html),
+                            ))
                         }
                     })
                     .await
@@ -360,7 +347,7 @@ impl Backend for PIPXBackend {
         version == "latest"
             && matches!(
                 self.tool_name().parse::<PipxRequest>(),
-                Ok(PipxRequest::Git(url)) if PipxRequest::github_repo(&url).is_none()
+                Ok(PipxRequest::Git(source)) if PipxRequest::github_repo(&source.repo).is_none()
             )
     }
 
@@ -379,7 +366,7 @@ impl Backend for PIPXBackend {
             return Ok(None);
         }
         match self.tool_name().parse()? {
-            PipxRequest::Git(url) => Self::git_head(&url).await.map(Some),
+            PipxRequest::Git(source) => Self::git_head(&source.remote()).await.map(Some),
             PipxRequest::Pypi(_) => Ok(None),
         }
     }
@@ -390,7 +377,7 @@ impl Backend for PIPXBackend {
 
     fn unresolved_latest_version(&self) -> Option<String> {
         match self.tool_name().parse() {
-            Ok(PipxRequest::Git(url)) if PipxRequest::github_repo(&url).is_some() => {
+            Ok(PipxRequest::Git(source)) if PipxRequest::github_repo(&source.repo).is_some() => {
                 Some("latest".to_string())
             }
             _ => None,
@@ -704,8 +691,7 @@ impl Backend for PIPXBackend {
 
         // Fix venv Python symlink to use minor version path
         // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
-        let pkg_name = self.tool_name();
-        fix_venv_python_symlink(&tv.install_path(), &pkg_name)?;
+        fix_venv_python_symlink(&tv.install_path())?;
 
         Ok(tv)
     }
@@ -736,13 +722,12 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 
 impl PIPXBackend {
     /// Resolves a Git remote's default-branch HEAD to a concrete commit SHA.
-    async fn git_head(url: &str) -> Result<String> {
-        let remote = format!("{url}.git");
+    async fn git_head(remote: &str) -> Result<String> {
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    &["ls-remote", &remote, "HEAD"],
+                    &["ls-remote", remote, "HEAD"],
                     std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
                 .await?;
@@ -763,13 +748,12 @@ impl PIPXBackend {
     }
 
     /// Lists tags from a Git remote while preserving Git's source ordering.
-    async fn versions_from_git_tags(url: &str) -> Result<Vec<VersionInfo>> {
-        let remote = format!("{url}.git");
+    async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    &["ls-remote", "--tags", "--refs", &remote],
+                    &["ls-remote", "--tags", "--refs", remote],
                     std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
                 .await?;
@@ -896,8 +880,16 @@ impl PIPXBackend {
         Self::versions_from_pypi_package(data)
             .into_iter()
             .rev()
-            .find(|v| !PEP440_PRERELEASE_REGEX.is_match(&v.version))
+            .find(|v| !is_python_prerelease(&v.version))
             .map(|v| v.version)
+    }
+
+    fn latest_stable_from_simple_index(versions: Vec<String>) -> Option<String> {
+        versions
+            .into_iter()
+            .filter(|v| !is_python_prerelease(v))
+            .sorted_by_cached_key(|v| Versioning::new(v))
+            .next_back()
     }
 
     fn versions_from_github_releases(releases: Vec<GithubRelease>) -> Vec<VersionInfo> {
@@ -1161,12 +1153,99 @@ impl PIPXBackend {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum PipxRequest {
     /// git+https://github.com/psf/black.git@24.2.0
+    /// git+https://github.com/o/monorepo#subdirectory=cli
     /// psf/black@24.2.0
-    Git(String),
+    Git(GitSource),
     /// black@24.2.0
     Pypi(String),
+}
+
+/// A Git source split into its repository and any pip/uv URL fragment
+/// (`#subdirectory=cli`, `#egg=name`). Only `repo` is used to discover
+/// versions; the fragment is only applied to install requests.
+#[derive(Debug, PartialEq)]
+struct GitSource {
+    /// Repository URL without `git+`, a trailing `.git`, or the fragment.
+    repo: String,
+    /// Whether the remote is spelled with `.git`. Kept as written because not
+    /// every remote accepts both spellings (e.g. `git+file:///path/to/repo`).
+    git_suffix: bool,
+    /// Fragment items (`key=value`) in their original order and spelling.
+    fragment: Vec<String>,
+}
+
+impl GitSource {
+    fn new(repo: &str, fragment: Option<&str>) -> Self {
+        let stripped = repo.strip_suffix(".git");
+        Self {
+            repo: stripped.unwrap_or(repo).to_string(),
+            git_suffix: stripped.is_some(),
+            fragment: fragment
+                .into_iter()
+                .flat_map(|f| f.split('&'))
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+
+    fn fragment_key(item: &str) -> &str {
+        item.split_once('=').map_or(item, |(key, _)| key)
+    }
+
+    fn fragment_value(&self, key: &str) -> Option<&str> {
+        self.fragment.iter().find_map(|item| {
+            item.split_once('=')
+                .filter(|(k, _)| *k == key)
+                .map(|(_, value)| value)
+        })
+    }
+
+    /// The remote as written, for `git ls-remote` and install requests.
+    fn remote(&self) -> String {
+        if self.git_suffix {
+            format!("{}.git", self.repo)
+        } else {
+            self.repo.clone()
+        }
+    }
+
+    /// pip and uv expect the ref before the fragment:
+    /// `git+<remote>@<ref>#<fragment>`.
+    fn url(&self, v: &str, fragment: &[String]) -> String {
+        let mut url = format!("git+{}", self.remote());
+        if v != "latest" {
+            url.push('@');
+            url.push_str(v);
+        }
+        if !fragment.is_empty() {
+            url.push('#');
+            url.push_str(&fragment.join("&"));
+        }
+        url
+    }
+
+    /// The distribution name used to attach extras. In a monorepo the
+    /// subdirectory is a better guess than the repository name.
+    fn package_name<'a>(&'a self, opts: &PipxOptions<'a>) -> &'a str {
+        let last_segment = |path: &'a str| path.trim_end_matches('/').rsplit('/').next();
+        let non_empty = |name: &&str| !name.is_empty();
+        opts.package_name()
+            .or_else(|| {
+                self.fragment_value("egg")
+                    .and_then(|egg| egg.split('[').next())
+                    .filter(non_empty)
+            })
+            .or_else(|| {
+                self.fragment_value("subdirectory")
+                    .and_then(last_segment)
+                    .filter(non_empty)
+            })
+            .unwrap_or_else(|| last_segment(&self.repo).unwrap_or(&self.repo))
+    }
 }
 
 impl PipxRequest {
@@ -1188,29 +1267,16 @@ impl PipxRequest {
         }
     }
 
-    fn git_url(url: &str, v: &str) -> String {
-        if v == "latest" {
-            format!("git+{url}.git")
-        } else {
-            format!("git+{url}.git@{v}")
-        }
-    }
-
-    fn git_package_name<'a>(url: &'a str, opts: &PipxOptions<'a>) -> &'a str {
-        opts.package_name()
-            .unwrap_or_else(|| url.rsplit('/').next().unwrap_or(url))
-    }
-
     fn uvx_request(&self, v: &str, opts: &PipxOptions<'_>) -> String {
         let extras = self.extras_from_opts(opts);
 
         match self {
-            PipxRequest::Git(url) => {
-                let git_url = Self::git_url(url, v);
+            PipxRequest::Git(source) => {
+                let git_url = source.url(v, &source.fragment);
                 if extras.is_empty() {
                     git_url
                 } else {
-                    let package = Self::git_package_name(url, opts);
+                    let package = source.package_name(opts);
                     format!("{package}{extras} @ {git_url}")
                 }
             }
@@ -1223,16 +1289,23 @@ impl PipxRequest {
         let extras = self.extras_from_opts(opts);
 
         match self {
-            PipxRequest::Git(url) => {
-                let git_url = Self::git_url(url, v);
+            PipxRequest::Git(source) => {
                 if extras.is_empty() {
-                    git_url
-                } else {
-                    // pipx ignored extras on PEP 508 URL requirements before 0.15.6.0.
-                    // Its VCS `egg` form works across the supported pipx version range.
-                    let package = Self::git_package_name(url, opts);
-                    format!("{git_url}#egg={package}{extras}")
+                    return source.url(v, &source.fragment);
                 }
+                // pipx ignored extras on PEP 508 URL requirements before 0.15.6.0.
+                // Its VCS `egg` form works across the supported pipx version range.
+                // Merge it into the existing fragment so the URL keeps one `#`.
+                let egg = format!("egg={}{extras}", source.package_name(opts));
+                let mut fragment = source.fragment.clone();
+                match fragment
+                    .iter_mut()
+                    .find(|item| GitSource::fragment_key(item) == "egg")
+                {
+                    Some(item) => *item = egg,
+                    None => fragment.push(egg),
+                }
+                source.url(v, &fragment)
             }
             PipxRequest::Pypi(package) if v == "latest" => format!("{package}{extras}"),
             PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
@@ -1271,10 +1344,23 @@ impl FromStr for PipxRequest {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(cap) = regex!(r"(git\+)(.*)(\.git)").captures(s) {
-            Ok(PipxRequest::Git(cap.get(2).unwrap().as_str().to_string()))
-        } else if s.contains('/') {
-            Ok(PipxRequest::Git(format!("https://github.com/{s}")))
+        // pip/uv VCS URLs may carry a fragment such as `#subdirectory=cli`; the
+        // `.git` suffix is optional (`git+https://github.com/o/r#subdirectory=cli`).
+        let (source, fragment) = match s.split_once('#') {
+            Some((source, fragment)) => (source, Some(fragment)),
+            None => (s, None),
+        };
+        if let Some(url) = source.strip_prefix("git+")
+            && (url.contains("://") || url.ends_with(".git"))
+        {
+            Ok(PipxRequest::Git(GitSource::new(url, fragment)))
+        } else if source.contains('/') {
+            // Shorthand has always been requested with a `.git` suffix.
+            let repo = source.strip_suffix(".git").unwrap_or(source);
+            Ok(PipxRequest::Git(GitSource::new(
+                &format!("https://github.com/{repo}.git"),
+                fragment,
+            )))
         } else {
             Ok(PipxRequest::Pypi(s.to_string()))
         }
@@ -1357,16 +1443,17 @@ fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
 ///
 /// We need to fix the absolute symlink to use minor version path (3.12 instead of 3.12.1)
 #[cfg(unix)]
-fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
-    // For Git-based packages like "psf/black", the venv directory is just "black"
-    // Extract the actual package name (last component after any '/')
-    let actual_pkg_name = pkg_name.rsplit('/').next().unwrap_or(pkg_name);
-
-    // Check both possible venv locations: {pkg}/ for uvx, venvs/{pkg}/ for pipx
-    let venv_dirs = [
-        install_path.join(actual_pkg_name),
-        install_path.join("venvs").join(actual_pkg_name),
-    ];
+fn fix_venv_python_symlink(install_path: &Path) -> Result<()> {
+    // uv and pipx name the venv after the Python distribution, which the tool
+    // name doesn't reliably give (`o/repo#subdirectory=cli` builds `cli-dist`).
+    // Each install path holds one tool, so check every venv under it:
+    // {dist}/ for uvx, venvs/{dist}/ for pipx.
+    let mut venv_dirs = vec![];
+    for base in [install_path.to_path_buf(), install_path.join("venvs")] {
+        for name in file::dir_subdirs(&base)? {
+            venv_dirs.push(base.join(name));
+        }
+    }
 
     trace!(
         "fix_venv_python_symlink: checking venv dirs: {:?}",
@@ -1422,18 +1509,20 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
 
 /// No-op on non-Unix platforms
 #[cfg(not(unix))]
-fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> {
+fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
     Ok(())
 }
 
 /// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
 /// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
 /// the rule stays scoped to Python — hex commit hashes used by other
-/// ecosystems (e.g. Go pseudo-versions) would false-positive. Only fills in
-/// unknowns: an authoritative flag from a GitHub release (either value) wins
-/// over pattern detection.
+/// ecosystems (e.g. Go pseudo-versions) would false-positive. This replaces
+/// the generic `mark_prerelease`, so the shared channel tags are checked here
+/// too, against the public version only (`1.1+gpu.dev0` is stable). Only
+/// fills in unknowns: an authoritative flag from a GitHub release (either
+/// value) wins over pattern detection.
 fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if version.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&version.version) {
+    if version.prerelease.is_none() && is_python_prerelease(&version.version) {
         version.prerelease = Some(true);
     }
     version
@@ -1442,7 +1531,8 @@ fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION,
+        GitSource, PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease,
+        UV_EXCLUDE_NEWER_VERSION,
     };
     use crate::backend::Backend;
     use crate::github::GithubRelease;
@@ -1465,6 +1555,24 @@ mod tests {
         assert_eq!(
             PIPXBackend::versions_from_simple_index("demo-pkg", html),
             vec!["1.0.0", "2.0.0", "2.1.0", "3.0.0rc1"]
+        );
+    }
+
+    #[test]
+    fn test_latest_stable_from_simple_index_uses_python_prerelease_rule() {
+        let versions = [
+            "1.0",
+            "1.1+gpu.dev0",
+            "1.2.dev0",
+            "1.3b1",
+            "1.4-rc1",
+            "1.5a",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            PIPXBackend::latest_stable_from_simple_index(versions).as_deref(),
+            Some("1.1+gpu.dev0")
         );
     }
 
@@ -1877,6 +1985,266 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
     }
 
     #[test]
+    fn test_git_requests_without_fragments_are_unchanged() {
+        let raw = ToolVersionOptions::default();
+        let opts = PipxOptions::new(&raw);
+        for (tool, version, expected) in [
+            (
+                "git+https://github.com/psf/black.git",
+                "latest",
+                "git+https://github.com/psf/black.git",
+            ),
+            (
+                "git+https://github.com/psf/black.git",
+                "24.3.0",
+                "git+https://github.com/psf/black.git@24.3.0",
+            ),
+            (
+                "psf/black",
+                "24.3.0",
+                "git+https://github.com/psf/black.git@24.3.0",
+            ),
+            (
+                "git+ssh://git@github.com/psf/black.git",
+                "main",
+                "git+ssh://git@github.com/psf/black.git@main",
+            ),
+            (
+                "git+https://gitlab.example.com/sre/mytool.git",
+                "v0.8.1",
+                "git+https://gitlab.example.com/sre/mytool.git@v0.8.1",
+            ),
+        ] {
+            let request: PipxRequest = tool.parse().unwrap();
+            assert_eq!(request.uvx_request(version, &opts), expected, "{tool}");
+            assert_eq!(request.pipx_request(version, &opts), expected, "{tool}");
+        }
+    }
+
+    #[test]
+    fn test_git_sources_parse_optional_suffix_and_fragment() {
+        let ltui = "https://github.com/runpantheon/ltui";
+        for (tool, repo, git_suffix, fragment) in [
+            (
+                "git+https://github.com/runpantheon/ltui",
+                ltui,
+                false,
+                vec![],
+            ),
+            (
+                "git+https://github.com/runpantheon/ltui.git",
+                ltui,
+                true,
+                vec![],
+            ),
+            (
+                "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
+                ltui,
+                false,
+                vec!["subdirectory=ltui"],
+            ),
+            (
+                "git+https://github.com/runpantheon/ltui.git#subdirectory=ltui",
+                ltui,
+                true,
+                vec!["subdirectory=ltui"],
+            ),
+            (
+                "runpantheon/ltui#subdirectory=ltui",
+                ltui,
+                true,
+                vec!["subdirectory=ltui"],
+            ),
+            ("runpantheon/ltui.git", ltui, true, vec![]),
+            (
+                "git+ssh://git@github.com/psf/black.git",
+                "ssh://git@github.com/psf/black",
+                true,
+                vec![],
+            ),
+            (
+                "git+file:///tmp/project",
+                "file:///tmp/project",
+                false,
+                vec![],
+            ),
+            (
+                "git+https://github.com/o/r#subdirectory=pkg&foo=bar",
+                "https://github.com/o/r",
+                false,
+                vec!["subdirectory=pkg", "foo=bar"],
+            ),
+        ] {
+            assert_eq!(
+                tool.parse::<PipxRequest>().unwrap(),
+                PipxRequest::Git(GitSource {
+                    repo: repo.to_string(),
+                    git_suffix,
+                    fragment: fragment.into_iter().map(str::to_string).collect(),
+                }),
+                "{tool}"
+            );
+        }
+        assert_eq!(
+            "black".parse::<PipxRequest>().unwrap(),
+            PipxRequest::Pypi("black".to_string())
+        );
+    }
+
+    #[test]
+    fn test_git_fragment_requests_put_ref_before_fragment() {
+        let raw = ToolVersionOptions::default();
+        let opts = PipxOptions::new(&raw);
+        let sha = "f05b7ddaa9725baddf7e0833502795b66f9d7dd7";
+        for (tool, version, expected) in [
+            (
+                "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
+                "main",
+                "git+https://github.com/runpantheon/ltui@main#subdirectory=ltui".to_string(),
+            ),
+            (
+                "runpantheon/ltui#subdirectory=ltui",
+                sha,
+                format!("git+https://github.com/runpantheon/ltui.git@{sha}#subdirectory=ltui"),
+            ),
+            (
+                "git+https://github.com/runpantheon/ltui#subdirectory=ltui",
+                "latest",
+                "git+https://github.com/runpantheon/ltui#subdirectory=ltui".to_string(),
+            ),
+            (
+                "git+https://github.com/o/r#subdirectory=pkg&foo=bar",
+                "v1",
+                "git+https://github.com/o/r@v1#subdirectory=pkg&foo=bar".to_string(),
+            ),
+            (
+                "git+file:///tmp/project#subdirectory=pkg",
+                "v1",
+                "git+file:///tmp/project@v1#subdirectory=pkg".to_string(),
+            ),
+        ] {
+            let request: PipxRequest = tool.parse().unwrap();
+            assert_eq!(request.uvx_request(version, &opts), expected, "{tool}");
+            assert_eq!(request.pipx_request(version, &opts), expected, "{tool}");
+        }
+    }
+
+    #[test]
+    fn test_git_fragment_extras_keep_one_fragment() {
+        let mut raw = ToolVersionOptions::default();
+        raw.opts.insert(
+            "extras".to_string(),
+            toml::Value::Array(vec![toml::Value::String("cli".to_string())]),
+        );
+        raw.opts.insert(
+            "package_name".to_string(),
+            toml::Value::String("mypkg".to_string()),
+        );
+        let opts = PipxOptions::new(&raw);
+
+        let request: PipxRequest = "git+https://github.com/o/r#subdirectory=pkg"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            request.uvx_request("v1", &opts),
+            "mypkg[cli] @ git+https://github.com/o/r@v1#subdirectory=pkg"
+        );
+        assert_eq!(
+            request.pipx_request("v1", &opts),
+            "git+https://github.com/o/r@v1#subdirectory=pkg&egg=mypkg[cli]"
+        );
+
+        let request: PipxRequest = "git+https://github.com/o/r#egg=old&subdirectory=pkg"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            request.pipx_request("v1", &opts),
+            "git+https://github.com/o/r@v1#egg=mypkg[cli]&subdirectory=pkg"
+        );
+    }
+
+    #[test]
+    fn test_git_package_name_precedence() {
+        let raw = ToolVersionOptions::default();
+        let opts = PipxOptions::new(&raw);
+        let mut named = ToolVersionOptions::default();
+        named.opts.insert(
+            "package_name".to_string(),
+            toml::Value::String("explicit".to_string()),
+        );
+        let named = PipxOptions::new(&named);
+        let source = |tool: &str| match tool.parse::<PipxRequest>().unwrap() {
+            PipxRequest::Git(source) => source,
+            PipxRequest::Pypi(_) => panic!("{tool} should be a git source"),
+        };
+
+        let egg = source("git+https://github.com/o/repo#egg=fromegg[x]&subdirectory=tools/sub");
+        assert_eq!(egg.package_name(&named), "explicit");
+        assert_eq!(egg.package_name(&opts), "fromegg");
+        assert_eq!(
+            source("git+https://github.com/o/repo#subdirectory=tools/ltui/").package_name(&opts),
+            "ltui"
+        );
+        assert_eq!(
+            source("git+https://github.com/o/repo#egg=&subdirectory=sub").package_name(&opts),
+            "sub"
+        );
+        assert_eq!(
+            source("git+https://github.com/o/repo.git").package_name(&opts),
+            "repo"
+        );
+    }
+
+    #[test]
+    fn test_git_fragment_does_not_reach_version_discovery() {
+        use crate::backend::Backend;
+
+        let source = |tool: &str| match tool.parse::<PipxRequest>().unwrap() {
+            PipxRequest::Git(source) => source,
+            PipxRequest::Pypi(_) => panic!("{tool} should be a git source"),
+        };
+        let with_fragment = source("git+https://github.com/runpantheon/ltui#subdirectory=ltui");
+        assert_eq!(
+            PipxRequest::github_repo(&with_fragment.repo),
+            PipxRequest::github_repo(&source("runpantheon/ltui").repo)
+        );
+        assert_eq!(
+            PipxRequest::github_repo(&with_fragment.repo).as_deref(),
+            Some("runpantheon/ltui")
+        );
+        assert_eq!(
+            source("git+https://gitlab.example.com/sre/mytool.git#subdirectory=x").remote(),
+            "https://gitlab.example.com/sre/mytool.git"
+        );
+        assert_eq!(
+            source("git+file:///tmp/project#subdirectory=x").remote(),
+            "file:///tmp/project"
+        );
+
+        for (bare, fragment) in [
+            (
+                "pipx:git+https://gitlab.example.com/sre/mytool.git",
+                "pipx:git+https://gitlab.example.com/sre/mytool.git#subdirectory=x",
+            ),
+            (
+                "pipx:git+https://github.com/psf/black.git",
+                "pipx:git+https://github.com/psf/black#subdirectory=x",
+            ),
+        ] {
+            let bare = PIPXBackend::from_arg(bare.into());
+            let fragment = PIPXBackend::from_arg(fragment.into());
+            assert_eq!(
+                bare.is_rolling_channel("latest"),
+                fragment.is_rolling_channel("latest")
+            );
+            assert_eq!(
+                bare.unresolved_latest_version(),
+                fragment.unresolved_latest_version()
+            );
+        }
+    }
+
+    #[test]
     fn test_git_extras_use_frontend_compatible_requests() {
         let mut inferred_opts = ToolVersionOptions::default();
         inferred_opts.opts.insert(
@@ -1884,7 +2252,8 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             toml::Value::Array(vec![toml::Value::String("jupyter".to_string())]),
         );
         let inferred_opts = PipxOptions::new(&inferred_opts);
-        let inferred_request = PipxRequest::Git("https://github.com/psf/black".to_string());
+        let inferred_request =
+            PipxRequest::Git(GitSource::new("https://github.com/psf/black.git", None));
         assert_eq!(
             inferred_request.uvx_request("latest", &inferred_opts),
             "black[jupyter] @ git+https://github.com/psf/black.git"
@@ -1904,7 +2273,10 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             toml::Value::String("black".to_string()),
         );
         let named_opts = PipxOptions::new(&named_opts);
-        let request = PipxRequest::Git("https://github.com/psf/black-repository".to_string());
+        let request = PipxRequest::Git(GitSource::new(
+            "https://github.com/psf/black-repository.git",
+            None,
+        ));
 
         assert_eq!(
             request.uvx_request("latest", &named_opts),
@@ -2048,9 +2420,62 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 "2.0.0a1",
                 vec![pypi_release(Some("2024-04-01T00:00:00Z"), false)],
             ),
+            (
+                "2024.5.1.123456.dev0",
+                vec![pypi_release(Some("2024-05-01T00:00:00Z"), false)],
+            ),
+            (
+                "2.0-rc1",
+                vec![pypi_release(Some("2024-06-01T00:00:00Z"), false)],
+            ),
         ]));
 
         assert_eq!(version.as_deref(), Some("1.1.0"));
+    }
+
+    #[test]
+    fn test_pep440_local_label_does_not_mark_prerelease() {
+        let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
+            (
+                "1.0.0",
+                vec![pypi_release(Some("2024-01-01T00:00:00Z"), false)],
+            ),
+            (
+                "1.1+build1dev0",
+                vec![pypi_release(Some("2024-02-01T00:00:00Z"), false)],
+            ),
+        ]));
+        assert_eq!(version.as_deref(), Some("1.1+build1dev0"));
+
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+build1dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
+
+        // `.dev` inside the local label matches the shared channel-tag regex,
+        // which must not apply to the local label either.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1+gpu.dev0".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, None);
+
+        // The shared channel tags still apply to the public version.
+        let stamped = super::stamp_pep440_prerelease(crate::backend::VersionInfo {
+            version: "1.1-rc1".into(),
+            ..Default::default()
+        });
+        assert_eq!(stamped.prerelease, Some(true));
+    }
+
+    #[test]
+    fn test_pipx_stamps_prereleases_itself() {
+        // The generic `mark_prerelease` would flag `1.1+gpu.dev0` from the
+        // local label; pipx stamps with the PEP 440-aware rule instead.
+        assert!(
+            !PIPXBackend::from_arg("pipx:black".into()).mark_prereleases_from_version_pattern()
+        );
     }
 
     #[test]

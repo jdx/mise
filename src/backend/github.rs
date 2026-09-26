@@ -1,3 +1,4 @@
+use crate::args::{BackendArg, ToolVersionType};
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
@@ -8,12 +9,8 @@ use crate::backend::static_helpers::{
     lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
     verify_artifact,
 };
-use crate::backend::{
-    MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
-    runtime_path_for_install_path,
-};
-use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::{Config, Settings};
+use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -316,6 +313,46 @@ impl<'a> GitBackendOptions<'a> {
 /// Server doesn't implement the attestations endpoint, so any verification
 /// attempt against a custom api_url will fail. Callers gate on this so users
 /// don't have to disable `MISE_GITHUB_ATTESTATIONS` globally for GHE tools.
+/// The provenance an install must verify: the registry's requirement when
+/// there is one, since a lockfile may have been written without it (after a
+/// wrong "no attestations", or recording SLSA instead); otherwise the
+/// lockfile's.
+fn expected_install_provenance(
+    locked: Option<ProvenanceType>,
+    required: Option<ProvenanceType>,
+) -> Option<ProvenanceType> {
+    required.or(locked)
+}
+
+/// Whether a lockfile's recorded provenance lets an install skip
+/// verification: only when it is what the registry requires, if anything.
+fn locked_provenance_satisfies(
+    locked: Option<&ProvenanceType>,
+    required: Option<&ProvenanceType>,
+) -> bool {
+    required.is_none_or(|required| locked == Some(required))
+}
+
+/// Fail `mise lock` when verification settled on anything other than the
+/// provenance the registry requires (SLSA, or nothing at all).
+fn ensure_registry_provenance(
+    tv: &ToolVersion,
+    required: Option<&ProvenanceType>,
+    verified: Option<&ProvenanceType>,
+) -> Result<()> {
+    match required {
+        Some(required) if verified != Some(required) => Err(eyre::eyre!(
+            "mise registry requires {required} provenance for {tv} but {}. \
+             This may indicate a downgrade attack.",
+            verified.map_or_else(
+                || "none was verified".to_string(),
+                |verified| format!("only {verified} was verified")
+            )
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn attestations_supported(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
 }
@@ -797,18 +834,12 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
             let api_url = api_url.clone();
             let repo = repo.clone();
             async move {
-                github::get_release_for_url_with_versions_host(
-                    &api_url,
-                    &repo,
-                    &candidate,
-                    use_versions_host,
-                )
-                .await
+                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+                    .await
             }
         })
         .await
@@ -1004,7 +1035,12 @@ impl Backend for UnifiedGitBackend {
             Ok(mut asset) => {
                 let primary_explicit_pattern = opts.asset_pattern_for_target(target).is_some();
                 // Detect provenance availability from release assets and attestation API
-                let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                // A registry requirement is recorded without asking anyone;
+                // the lock-time verification below still has to pass.
+                let required = self.registry_required_provenance(tv, &opts);
+                let mut provenance = if let Some(required) = required.clone() {
+                    Some(required)
+                } else if !self.is_gitlab() && !self.is_forgejo() {
                     self.detect_provenance_type(tv, &opts, &asset, target, primary_explicit_pattern)
                         .await?
                 } else {
@@ -1031,6 +1067,7 @@ impl Backend for UnifiedGitBackend {
                         }
                     }
                 }
+                ensure_registry_provenance(tv, required.as_ref(), provenance.as_ref())?;
                 let mut additional_artifacts = Vec::new();
                 for pattern in opts.additional_asset_patterns_for_target(target) {
                     let mut additional = self
@@ -1042,7 +1079,10 @@ impl Backend for UnifiedGitBackend {
                             Some(&pattern),
                         )
                         .await?;
-                    let mut additional_provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                    // The registry's requirement covers every asset of the release.
+                    let mut additional_provenance = if let Some(required) = required.clone() {
+                        Some(required)
+                    } else if !self.is_gitlab() && !self.is_forgejo() {
                         self.detect_provenance_type(tv, &opts, &additional, target, true)
                             .await?
                     } else {
@@ -1059,6 +1099,11 @@ impl Backend for UnifiedGitBackend {
                             )
                             .await?;
                     }
+                    ensure_registry_provenance(
+                        tv,
+                        required.as_ref(),
+                        additional_provenance.as_ref(),
+                    )?;
                     additional_artifacts.push(ArtifactInfo {
                         checksum: additional.digest,
                         url: additional.url,
@@ -1118,8 +1163,28 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn use_versions_host_for_github_metadata(&self) -> bool {
-        backend_arg_matches_registry_backend(&self.ba)
+    /// The provenance the mise registry requires for `tv`'s primary asset:
+    /// GitHub attestations, for a tool the registry says publishes them from
+    /// this version on. Without this, "no attestations" (from mise-versions,
+    /// or a lockfile written after it) just skips verification. Off whenever
+    /// the user has turned GitHub attestations off.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (!self.is_gitlab()
+            && !self.is_forgejo()
+            && settings.github_attestations
+            && settings.github.github_attestations
+            && opts.github_attestations()
+            && attestations_supported(&opts.api_url())
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
     }
 
     fn additional_artifacts_match_patterns(
@@ -1180,13 +1245,7 @@ impl UnifiedGitBackend {
         repo: &str,
         tag: &str,
     ) -> Result<github::GithubRelease> {
-        github::get_release_for_url_with_versions_host(
-            api_url,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(),
-        )
-        .await
+        github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await
     }
 
     /// Detect what provenance type is available for a release by checking its assets
@@ -1205,17 +1264,13 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -1238,11 +1293,7 @@ impl UnifiedGitBackend {
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
                 match crate::github::sigstore::detect_attestations(
-                    owner,
-                    repo_name,
-                    &api_url,
-                    digest,
-                    self.use_versions_host_for_github_metadata(),
+                    owner, repo_name, &api_url, digest, true,
                 )
                 .await
                 {
@@ -1338,9 +1389,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&download_url, &api_url)
+            gitlab::get_headers(&download_url, &api_url)?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&download_url, &api_url)
+            forgejo::get_headers(&download_url, &api_url)?
         } else {
             github::get_headers(&download_url)?
         };
@@ -1376,7 +1427,7 @@ impl UnifiedGitBackend {
                     repo_name,
                     None,
                     Some(&api_url),
-                    self.use_versions_host_for_github_metadata(),
+                    true,
                 )
                 .await
                 {
@@ -1405,17 +1456,13 @@ impl UnifiedGitBackend {
         if settings.slsa && settings.github.slsa {
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
-            let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
                         github::get_release_for_url_with_versions_host(
-                            &api_url,
-                            &repo,
-                            &candidate,
-                            use_versions_host,
+                            &api_url, &repo, &candidate, true,
                         )
                         .await
                     }
@@ -1630,9 +1677,9 @@ impl UnifiedGitBackend {
         };
 
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url, &opts.api_url())
+            gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url, &opts.api_url())
+            forgejo::get_headers(&url, &opts.api_url())?
         } else {
             github::get_headers(&url)?
         };
@@ -1651,16 +1698,27 @@ impl UnifiedGitBackend {
         // downloaded file. We only want to skip provenance when the lockfile already
         // had integrity data before this install.
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_provenance);
-        let locked_provenance = tv
+        let recorded_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
+        let required = self.registry_required_provenance(tv, opts);
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_checksum_and_provenance)
+            && locked_provenance_satisfies(recorded_provenance.as_ref(), required.as_ref());
+        let locked_provenance = expected_install_provenance(recorded_provenance, required);
 
-        self.verify_checksum(ctx, tv, &file_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &file_path) {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
@@ -1731,7 +1789,9 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
-        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance();
+        let required = self.registry_required_provenance(tv, opts);
+        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance()
+            && locked_provenance_satisfies(artifact_info.provenance.as_ref(), required.as_ref());
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest
@@ -1751,9 +1811,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url, &opts.api_url())
+            gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url, &opts.api_url())
+            forgejo::get_headers(&url, &opts.api_url())?
         } else {
             github::get_headers(&url)?
         };
@@ -1763,8 +1823,19 @@ impl UnifiedGitBackend {
             .await?;
         ctx.pr.next_operation();
 
-        self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)?;
-        let expected_provenance = artifact_info.provenance.clone();
+        if let Err(err) =
+            self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)
+        {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
+        let expected_provenance =
+            expected_install_provenance(artifact_info.provenance.clone(), required);
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
@@ -2700,12 +2771,13 @@ impl UnifiedGitBackend {
             }
         }
 
-        // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
+        // If the lockfile or the registry expects provenance but no verification
+        // succeeded, it's a downgrade attack
         if let Some(expected) = expected_provenance {
             return Err(eyre::eyre!(
-                "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
-                 This may indicate a downgrade attack. Enable the corresponding verification setting \
-                 or update the lockfile."
+                "Lockfile or mise registry requires {expected} provenance for {tv} but verification \
+                 was not performed. This may indicate a downgrade attack. Enable the corresponding \
+                 verification setting or update the lockfile."
             ));
         }
 
@@ -2743,7 +2815,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
-            self.use_versions_host_for_github_metadata(),
+            true,
         )
         .await
         {
@@ -2847,17 +2919,13 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -3083,7 +3151,91 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+
+    #[test]
+    fn test_registry_required_provenance_overrides_the_lockfile() {
+        use crate::lockfile::ProvenanceType as P;
+        let slsa = || P::Slsa { url: None };
+        let required = Some(P::GithubAttestations);
+
+        // What an install verifies: the registry's requirement wins over a
+        // lockfile that recorded something weaker, or nothing.
+        assert_eq!(
+            expected_install_provenance(Some(slsa()), required.clone()),
+            required
+        );
+        assert_eq!(
+            expected_install_provenance(None, required.clone()),
+            required
+        );
+        assert_eq!(
+            expected_install_provenance(Some(slsa()), None),
+            Some(slsa())
+        );
+
+        // Whether a locked entry may skip verification.
+        assert!(locked_provenance_satisfies(Some(&slsa()), None));
+        assert!(locked_provenance_satisfies(
+            Some(&P::GithubAttestations),
+            required.as_ref()
+        ));
+        assert!(!locked_provenance_satisfies(
+            Some(&slsa()),
+            required.as_ref()
+        ));
+        assert!(!locked_provenance_satisfies(None, required.as_ref()));
+    }
+
+    #[test]
+    fn test_lock_rejects_anything_but_the_required_provenance() {
+        use crate::lockfile::ProvenanceType as P;
+        let tv = ToolVersion::new(
+            crate::toolset::ToolRequest::new(
+                std::sync::Arc::new(BackendArg::from("github:example/tool")),
+                "2.3.0",
+                crate::toolset::ToolSource::Argument,
+            )
+            .unwrap(),
+            "2.3.0".into(),
+        );
+        let required = Some(P::GithubAttestations);
+        assert!(
+            ensure_registry_provenance(&tv, required.as_ref(), Some(&P::GithubAttestations))
+                .is_ok()
+        );
+        let slsa = ensure_registry_provenance(&tv, required.as_ref(), Some(&P::Slsa { url: None }))
+            .unwrap_err()
+            .to_string();
+        assert!(slsa.contains("only slsa was verified"), "{slsa}");
+        let none = ensure_registry_provenance(&tv, required.as_ref(), None)
+            .unwrap_err()
+            .to_string();
+        assert!(none.contains("none was verified"), "{none}");
+        assert!(ensure_registry_provenance(&tv, None, None).is_ok());
+    }
+
+    #[test]
+    fn test_registry_attestation_requirement_comes_from_declared_backends() {
+        // registry/aube.toml: github:aubepkg/aube, attestations_since = 2.2.5
+        assert!(crate::registry::requires_github_attestations(
+            "github:aubepkg/aube",
+            "2.3.0"
+        ));
+        assert!(!crate::registry::requires_github_attestations(
+            "github:aubepkg/aube",
+            "2.2.4"
+        ));
+        assert!(!crate::registry::requires_github_attestations(
+            "github:example/unlisted",
+            "9.9.9"
+        ));
+        // GitHub repository names are case-insensitive.
+        assert!(crate::registry::requires_github_attestations(
+            "github:Aubepkg/Aube",
+            "2.3.0"
+        ));
+    }
+    use crate::args::BackendArg;
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
@@ -3477,10 +3629,12 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             assets: assets
                 .into_iter()
                 .map(|name| github::GithubAsset {
+                    from_versions_host: false,
                     name: name.into(),
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
                     digest: None,
+                    updated_at: None,
                 })
                 .collect(),
         }

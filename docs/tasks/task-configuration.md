@@ -1254,19 +1254,7 @@ includes = [
 ]
 ```
 
-An inline `[tasks.<name>]` command takes precedence over a same-named task from
-an included TOML file when it comes from the config that selected the include
-or a higher-precedence config. An inline block without `run`, `run_windows`, or
-`file` instead overlays metadata such as description, environment, and
-dependencies. For executable file tasks, the script also remains the task's
-command and the inline definition overlays its metadata.
-
-The same overlay rule applies across layered inline task definitions. For
-example, a metadata-only task in `mise.local.toml` overlays the nearest
-lower-precedence command-bearing definition in `mise.toml`. A higher-precedence
-definition with its own command still replaces the lower task. All metadata-only
-definitions above the selected command-bearing base contribute in precedence
-order, while definitions below it do not contribute metadata.
+#### Included TOML files
 
 Included task toml files have a different format than `mise.toml`: they are simply a list of tasks.
 The file uses the same format as the `[tasks]` section of `mise.toml` but without the `[tasks]` prefix:
@@ -1286,6 +1274,122 @@ vars = { target = "linux" }
 :::
 
 For auto-completion and validation in included toml task files, use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
+
+#### Configuring file tasks from TOML
+
+Use a `[tasks.<name>]` block to configure an executable file task. A block
+without `run`, `run_windows`, or `file` adds metadata and keeps the script as
+its command. Adding one of those fields replaces the script's command, subject
+to [config precedence](#file-task-config-precedence).
+
+##### Add metadata and dependencies
+
+For `mise-tasks/hello.sh`, use either `[tasks.hello]` or `[tasks."hello.sh"]`:
+
+```toml [mise.toml]
+[tasks.hello]
+description = "Say hello after linting"
+env = { GREETING = "hi" }
+depends = ["lint"]
+```
+
+`mise run hello` runs `lint` and then the script with `GREETING=hi`.
+`mise tasks ls` shows the description. The script's full task name is `hello.sh`;
+`mise run` also accepts `hello` without the extension.
+
+The full name selects one script. The name without the extension selects all
+scripts with that name, unless a task already has that exact name. For example,
+if both `hello.sh` and `hello.js` exist, `[tasks.hello]` configures both, while
+`[tasks."hello.sh"]` configures only `hello.sh`.
+
+##### Replace a script's command
+
+Set `run`, `run_windows`, or `file` to replace a matching file task:
+
+```toml [mise.toml]
+[tasks.hello]
+run = "echo hi"
+```
+
+`mise run hello` now runs `echo hi`. The discovered `hello.sh` no longer exists
+as a separate task, so `mise run hello.sh` is no longer available. If `hello.js`
+also exists, this block replaces both scripts with one task named `hello`.
+
+To replace only `hello.sh`, use its full name:
+
+```toml [mise.toml]
+[tasks."hello.sh"]
+run = "echo hi"
+```
+
+Here, `mise run hello.sh` runs `echo hi`, and `hello.js` remains a separate task.
+To keep both the original script and a new command available, give the command
+a different task name.
+
+##### File task config precedence
+
+A command replaces a script only when its block comes from the config whose
+[`task_config.includes`](#task_config.includes) selected the script's directory,
+or from a higher-precedence config. A lower-precedence block can add metadata,
+but its command is ignored and the script still runs. This applies to both
+full names and names without extensions.
+
+When no config sets `task_config.includes`, mise discovers scripts in the default
+directories. In that case, a command from any config in the chain can replace a
+matching script.
+
+While a script remains the task's command, only the highest-precedence TOML block
+that matches it supplies metadata. Lower-precedence blocks add nothing, including
+`env` and `alias`. For example, `[tasks.hello]` in `mise.local.toml` takes precedence
+over `[tasks."hello.sh"]` in `mise.toml`; their metadata is not combined.
+
+Once a TOML command replaces the script, [layered task definitions](#layered-task-definitions)
+apply. Higher-precedence metadata blocks can configure the replacement using either
+name. For example, `[tasks."hello.sh"]` in `mise.local.toml` can add a description to
+`[tasks.hello] run = "echo hi"` in `mise.toml`. Blocks below the selected command
+contribute nothing. If both names declare commands, the higher-precedence command wins.
+
+##### Windows script pairs
+
+On Windows, mise selects the [Windows-native sibling](/tasks/file-tasks#windows)
+from a pair such as `build.sh` and `build.ps1`, and names the task `build`.
+Use `[tasks.build]` to configure or replace that task. A block named
+`[tasks."build.ps1"]` defines a separate task.
+
+#### Layered task definitions
+
+An inline `[tasks.<name>]` block without `run`, `run_windows`, or `file` adds
+metadata to a task of the same name from a lower-precedence config. It can add a
+description, environment variables, or dependencies without repeating the command.
+
+::: code-group
+
+```toml [mise.toml]
+[tasks.check]
+depends = ["lint", "test"]
+```
+
+```toml [mise.local.toml]
+[tasks.check]
+description = "Run the project checks"
+```
+
+:::
+
+Here, `mise run check` still runs `lint` and `test`. A dependency group can receive
+metadata even when it has no command of its own.
+
+When a definition with `run`, `run_windows`, or `file` exists, it provides the
+command. Blocks above the highest-precedence command definition add metadata in
+precedence order, including any `depends` they declare. Definitions below that
+command do not contribute. When no definition has a command, the
+highest-precedence dependency group provides the base instead.
+
+For a task from an [included TOML file](#included-toml-files), an inline command
+replaces the included task, while an inline block without a command adds metadata.
+The inline block must come from the config that selected the include or a
+higher-precedence config. This is also required when
+[replacing a file task's command](#file-task-config-precedence).
 
 #### Remote Git Includes <Badge type="warning" text="experimental" />
 

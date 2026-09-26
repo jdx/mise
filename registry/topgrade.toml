@@ -1,6 +1,6 @@
 backends = [
   "aqua:topgrade-rs/topgrade",
-  "github:topgrade-rs/topgrade",
+  { full = "github:topgrade-rs/topgrade", attestations_since = "16.1.0" },
   "cargo:topgrade",
 ]
 description = "Upgrade all the things"

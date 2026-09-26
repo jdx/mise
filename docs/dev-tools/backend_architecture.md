@@ -55,7 +55,7 @@ separate from the internal Rust trait.
 | Forge releases               | `github:`, `gitlab:`, `forgejo:`                    | Matching release assets for the target platform                                |
 | Direct artifacts             | `http:`, `s3:`                                      | Artifact location, authentication, platform mapping, and integrity information |
 | Language packages            | `npm:`, `pipx:`, `cargo:`, `gem:`, `go:`, `dotnet:` | Required runtime or toolchain and package-manager behavior                     |
-| Other package sources        | `conda:`, `pkgx:`, `spm:`                           | Backend-specific platform support and dependencies                             |
+| Other package sources        | `conda:`, `spm:`                                    | Backend-specific platform support and dependencies                             |
 | External plugins             | asdf, vfox tool plugins, backend plugins            | Plugin code, prerequisites, and supported platforms                            |
 
 The [backend reference](/dev-tools/backends/) lists available backends and their
@@ -76,7 +76,7 @@ name such as `node` also depends on configuration and local state:
 
 Use `mise tool <name>` to inspect the effective backend instead of inferring it
 from the tool's short name. The
-[resolution implementation](https://github.com/jdx/mise/blob/main/src/cli/args/backend_arg.rs)
+[resolution implementation](https://github.com/jdx/mise/blob/main/src/args/backend_arg.rs)
 contains the detailed precedence rules.
 
 ### Environment Variable Overrides

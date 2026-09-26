@@ -4,9 +4,9 @@ use eyre::Result;
 use jiff::Timestamp;
 use serde::Serialize;
 
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::{Backend, VersionInfo};
-use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
 use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;

@@ -1,4 +1,7 @@
-backends = ["aqua:syncthing/syncthing", "github:syncthing/syncthing"]
+backends = [
+  "aqua:syncthing/syncthing",
+  { full = "github:syncthing/syncthing", attestations_since = "2.0.14" },
+]
 description = "Open Source Continuous File Synchronization"
 test = { cmd = "syncthing --version", expected = "syncthing v{{version}}" }
 version_order = "semver"

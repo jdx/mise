@@ -2,6 +2,8 @@
 pub(crate) mod hook_env;
 pub(crate) mod ports;
 pub(crate) mod presets;
+pub(crate) mod providers;
+mod providers_nats;
 pub(crate) mod prune;
 pub(crate) mod runtime;
 pub(crate) mod tasks;
@@ -9,7 +11,7 @@ pub(crate) mod urls;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{Config, ConfigMap, Settings};
+use crate::config::{Config, ConfigMap, Settings, SettingsExt};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 use eyre::{Result, bail};
 use indexmap::IndexMap;
@@ -127,11 +129,14 @@ pub(crate) struct Daemon {
     pub root: PathBuf,
     pub table: toml::Table,
     pub preset: Option<String>,
+    /// Resolved persistent storage for presets, independent of runtime state.
+    pub data_dir: Option<PathBuf>,
     /// Task this daemon runs, when declared with `task = "..."`. Retained so
     /// the reference can be checked against the loaded task list, which is not
     /// available while configuration is still being parsed.
     pub task: Option<String>,
     pub tool: Option<(String, String)>,
+    pub provider: Option<providers::Binding>,
     pub exports: IndexMap<String, String>,
     /// True when this daemon was declared by another project and pulled in with
     /// `project =`. Its tools and exported environment belong to that project.
@@ -373,6 +378,17 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             );
         }
     }
+    let provider_names = declarations
+        .values()
+        .filter_map(|(decl, _, _)| match decl {
+            Declaration::Definition(table) => table
+                .get("provider")
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned),
+            Declaration::Preset(_) => None,
+        })
+        .collect();
+    let providers = providers::load_selected(files, Some(&provider_names))?;
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
     // Keyed by the importing root: a name means an import only in the project
@@ -416,6 +432,13 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             imported_ids.insert((root.clone(), name.clone()), key.clone());
             set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
+            continue;
+        }
+        if let Declaration::Definition(table) = &declaration
+            && table.contains_key("provider")
+        {
+            let daemon = providers::binding(&providers, &name, table.clone(), source, root)?;
+            set.daemons.insert(name, daemon);
             continue;
         }
         let settings = settings_for(&settings, &root);
@@ -794,6 +817,11 @@ fn build(
                 DAEMON_TASK_MARKER.into(),
                 toml::Value::String("1".to_string()),
             );
+        // Preserve an explicit opt-out before inserting the task's own `mise =
+        // false` default: probes still need the project environment by default.
+        if cfg!(unix) && table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+            presets::wrap_probe_commands(&mut table);
+        }
         // mise is already the entry point, so pitchfork does not need
         // to wrap a bare task daemon in `mise x`. With `init` it does:
         // the setup steps and the task then share one shell inside the
@@ -879,8 +907,10 @@ fn build(
         root,
         table,
         preset: None,
+        data_dir: None,
         task,
         tool: None,
+        provider: None,
         exports,
         imported,
         port: claim,
@@ -1431,7 +1461,7 @@ impl DaemonSet {
             let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
                 continue;
             };
-            let ba = crate::cli::args::BackendArg::from(tool.as_str());
+            let ba = crate::args::BackendArg::from(tool.as_str());
             if let Some(existing) = trs.tools.get(&ba) {
                 // Explicit declarations are validated against backend resolution before starting.
                 if existing.iter().all(|tr| tr.source().is_mise_toml_daemon())
@@ -1873,6 +1903,33 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn task_probe_environment_respects_explicit_opt_out() {
+        for opt_out in [false, true] {
+            let source = format!(
+                "[daemons.api]\ntask = 'dev'\nready_cmd = 'echo ready'\nhealth_cmd = {{ run = 'echo {{{{ env.FOO }}}}', interval = '2s' }}\n{}",
+                if opt_out { "mise = false\n" } else { "" }
+            );
+            let config = files(&[("/project/mise.toml", &source)]);
+            let set = load(&config).unwrap();
+            let table = &set.daemons["api"].table;
+            let expected = if opt_out {
+                "echo ready".to_string()
+            } else {
+                presets::in_tool_env("echo ready")
+            };
+            assert_eq!(table["ready_cmd"].as_str(), Some(expected.as_str()));
+            let expected = if opt_out {
+                "echo {{ env.FOO }}".to_string()
+            } else {
+                presets::in_tool_env("echo {{ env.FOO }}")
+            };
+            assert_eq!(table["health_cmd"]["run"].as_str(), Some(expected.as_str()));
+            assert_eq!(table["health_cmd"]["interval"].as_str(), Some("2s"));
+        }
+    }
+
+    #[test]
     fn task_daemons_run_mise_without_a_mise_wrapper() {
         let config = files(&[(
             "/project/mise.toml",
@@ -2035,13 +2092,11 @@ mod tests {
         path
     }
 
-    /// Every test that imports takes this lock. The paranoid-mode test changes a
-    /// global setting, and under `paranoid` a fixture's directory-level trust no
-    /// longer covers its config file, so an overlapping import would fail.
-    static IMPORT_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn import_lock() -> std::sync::MutexGuard<'static, ()> {
-        crate::test::lock_ignoring_poison(&IMPORT_TESTS)
+    /// Every test that imports takes the settings lock. The paranoid-mode test
+    /// changes a global setting, and under `paranoid` a fixture's directory-level
+    /// trust no longer covers its config file, so an overlapping import would fail.
+    fn import_lock() -> crate::test::SettingsGuard {
+        crate::test::SettingsGuard::lock()
     }
 
     /// The recorded failure for an import, by the name the project gave it.
@@ -2715,7 +2770,7 @@ mod tests {
 
     #[test]
     fn an_untrusted_referenced_project_is_not_imported() {
-        let _serial = import_lock();
+        let serial = import_lock();
         // This exercises the real trust gate. `mise x`, `mise run` and
         // `mise daemons start` mark the active config implicitly trusted, and
         // reading a sibling through that branch would grant it durable trust
@@ -2733,7 +2788,7 @@ mod tests {
         // `is_trusted` trusts everything under `cfg!(test)`, except in paranoid
         // mode, where trust is bound to file contents and checked first. That is
         // the only way to exercise this gate without the bypass.
-        let _paranoid = Paranoid::on();
+        paranoid_on(&serial);
         let set = load(&config).unwrap();
         assert!(set.find("worker").is_none());
         let err = &failure(&set, "worker");
@@ -2758,24 +2813,14 @@ mod tests {
         assert_eq!(set.find("worker").map(|d| d.imported), Some(true));
     }
 
-    /// Turns on `paranoid` for one test and restores the settings on drop, even
-    /// if the test panics.
-    struct Paranoid;
-
-    impl Paranoid {
-        fn on() -> Self {
-            use confique::Layer;
-            let mut settings = crate::config::settings::SettingsPartial::empty();
-            settings.paranoid = Some(true);
-            crate::config::Settings::reset(Some(settings));
-            Self
-        }
-    }
-
-    impl Drop for Paranoid {
-        fn drop(&mut self) {
-            crate::config::Settings::reset(None);
-        }
+    /// Turns on `paranoid` for the rest of the test. Taking the guard proves the
+    /// caller holds the settings lock, and the guard restores the settings on drop,
+    /// even if the test panics.
+    fn paranoid_on(_held: &crate::test::SettingsGuard) {
+        use confique::Layer;
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.paranoid = Some(true);
+        crate::config::Settings::reset(Some(settings));
     }
 
     #[test]

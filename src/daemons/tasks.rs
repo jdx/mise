@@ -6,7 +6,7 @@
 //! ready.
 
 use super::{DaemonSet, runtime};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
@@ -211,6 +211,8 @@ pub(crate) async fn start(
         if set.daemons.is_empty() {
             continue;
         }
+        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        super::presets::ensure_set_runnable_as_user(&will_start)?;
         let previous = runtime::read_state(&root)?;
         let (scoped, ts) = if install_tools {
             runtime::toolset(&scoped, true).await?
@@ -232,9 +234,11 @@ pub(crate) async fn start(
         };
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
-        // This root's own configuration, which is the only view that knows
-        // about imports the referenced project itself declares.
-        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        // `will_start` comes from this root's own configuration, which is the
+        // only view that knows about imports the referenced project declares.
+        if install_tools {
+            super::providers::install_set(&will_start).await?;
+        }
         super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
@@ -365,8 +369,10 @@ mod tests {
                             root: PathBuf::from("/project"),
                             table: toml::Table::new(),
                             preset: None,
+                            data_dir: None,
                             task: None,
                             tool: None,
+                            provider: None,
                             exports: Default::default(),
                             imported: false,
                             port: None,

@@ -19,6 +19,8 @@ use super::api::RubySourceChecksum;
 use super::prefix;
 use super::source;
 use crate::cmd::CmdLineRunner;
+#[cfg(unix)]
+use crate::file::remove_all_at;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::git::{CloneOptions, Git};
 use crate::hash;
@@ -1273,6 +1275,7 @@ impl SystemPackageManager for BrewCaskManager {
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
+                display_name: None,
             });
         }
         Ok(statuses)
@@ -2643,34 +2646,6 @@ fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Resul
 #[cfg(all(unix, not(target_os = "macos")))]
 fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
     std::io::copy(from, to)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> Result<()> {
-    let stat =
-        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
-            Ok(stat) => stat,
-            Err(nix::errno::Errno::ENOENT) => return Ok(()),
-            Err(err) => return Err(err.into()),
-        };
-    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
-    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
-        let fd = open_dir_nofollow_at(&parent, name)?;
-        let mut directory = nix::dir::Dir::from_fd(fd)?;
-        let entries = directory
-            .iter()
-            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        for entry in entries {
-            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
-                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
-            }
-        }
-        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
-    } else {
-        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
-    }
     Ok(())
 }
 

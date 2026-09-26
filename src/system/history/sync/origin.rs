@@ -124,7 +124,11 @@ async fn set_inner(
         }
         RepoState::Unmarked => {
             miseprintln!(
-                "The repository already has content without mise enrollment metadata. Connecting does not import its files or replace unrelated history. Synchronization requires compatible Git ancestry; use an empty origin or reconcile the histories explicitly. Ordinary non-tracking `--from`/`--adopt` workflows remain available."
+                "This repository has content but no mise enrollment metadata. Connecting does not import its files.\n\
+                 A machine with no checkpoints adopts branch `{branch}` as its history. Existing checkpoints can synchronize only if they share Git ancestry with that branch.\n\
+                 To keep unrelated local checkpoints, connect an empty repository with `mise dot origin set <url>`. \
+                 Alternatively, use Git to push the local history to a new remote branch, then connect it with `mise dot origin set <url> --branch <name>`.\n\
+                 To use the repository as bootstrap configuration without enabling history sharing, use `mise bootstrap --from <url>` or `mise bootstrap --adopt <url>`."
             );
         }
     }
@@ -154,6 +158,7 @@ async fn set_inner(
         let mut differing = vec![];
         let mut incoming = 0;
         let roots = Roots::current();
+        let exclude = tracked.exclude_set()?;
         for (branch_path, file) in &shared.files {
             match upstream_files.files.get(branch_path) {
                 Some((_, oid)) if *oid == file.oid => present += 1,
@@ -164,7 +169,7 @@ async fn set_inner(
         for branch_path in upstream_files.files.keys() {
             if !shared.files.contains_key(branch_path)
                 && roots.locate(branch_path).path().is_some()
-                && run::eligible(&roots, tracked, branch_path)
+                && run::eligible(&roots, tracked, &exclude, branch_path)
             {
                 incoming += 1;
             }
@@ -287,7 +292,7 @@ pub(crate) fn report(outcome: &run::SyncOutcome) {
     match &outcome.published {
         Some(commit) => info!(
             "history: published {}",
-            crate::cli::dotfiles::history::short(commit)
+            crate::system::history::short(commit)
         ),
         None => info!("history: nothing new to publish"),
     }
@@ -323,7 +328,7 @@ pub(crate) fn confirmed(yes: bool, question: &str) -> Result<bool> {
 /// machine's own declaration never conflicts with the configuration it
 /// pulls.
 fn origin_file() -> Result<PathBuf> {
-    crate::cli::dotfiles::track::declaration_file(true)
+    crate::config::edit::declaration_file(true)
 }
 
 /// Writes the ordinary repository connection.
@@ -332,7 +337,7 @@ pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> R
     if let Some(parent) = global.parent() {
         crate::file::create_dir_all(parent)?;
     }
-    let mut doc = crate::cli::dotfiles::track::read_document(&global)?;
+    let mut doc = crate::config::edit::read_document(&global)?;
     let history = doc
         .entry("history")
         .or_insert(Item::Table(toml_edit::Table::new()));
@@ -441,7 +446,7 @@ fn remove_locked(state_dir: &std::path::Path, status: &mut run::SyncStatus) -> R
         if !file.exists() {
             continue;
         }
-        let mut doc = crate::cli::dotfiles::track::read_document(&file)?;
+        let mut doc = crate::config::edit::read_document(&file)?;
         let mut changed = false;
         if let Some(history) = doc.get_mut("history").and_then(Item::as_table_mut) {
             changed = history.remove("origin").is_some();

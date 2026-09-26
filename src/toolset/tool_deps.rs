@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::config::Config;
     use crate::toolset::{CoreToolOptions, ToolSource, ToolVersionOptions, parse_tool_options};
 

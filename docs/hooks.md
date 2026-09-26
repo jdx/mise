@@ -91,11 +91,11 @@ The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable co
 [hooks]
 postinstall = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
-# Example output: [{"name":"node","version":"20.10.0","requested_version":"20"}]
+# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/20.10.0"}]
 '''
 ```
 
-Each entry has three fields:
+Each entry has five fields:
 
 - `name`: the tool's short name, e.g. `node`.
 - `version`: the concrete version that was installed, e.g. `20.10.0`.
@@ -105,6 +105,14 @@ Each entry has three fields:
   the same as `version`. This is normally the string as written in the config or on
   the command line, but ref selectors are normalized to their `:` form, so a request
   written as `ref-main` is reported as `ref:main`.
+- `backend`: the canonical backend identifier that performed the installation, such as
+  `core:node` or `npm:prettier`. Backend options are omitted because they may contain
+  registry credentials. URL user information is omitted except for SSH usernames such as
+  `git`, while passwords, query parameters, and fragments are omitted for all URL backends.
+- `install_path`: the exact directory of the completed installation. This names the
+  concrete version directory, not a floating link such as `latest` or `20`. Like other
+  environment variables, paths that are not valid Unicode use the platform's lossy
+  Unicode representation.
 
 `requested_version` lets a hook branch on how the tool was selected without re-reading
 config files, which a `postinstall` hook cannot reliably do for the install that just
@@ -117,6 +125,17 @@ echo "$MISE_INSTALLED_TOOLS" | jq -r '
   .[] | select(.requested_version == "latest") | "\(.name) floats on latest, got \(.version)"'
 '''
 ```
+
+The payload describes installation completion. It does not report that a later config write
+selected the installation, that floating version links have moved, or that an already-running
+application has adopted it. Tool-level hooks can run before floating links are refreshed, and a
+batch postinstall hook can run before a command finishes its final configuration changes. A
+no-op install still runs the batch hook with `[]`; after a partial failure, the array retains the
+tools that did install successfully before mise returns the failure.
+
+Service refresh belongs after a successful explicit upgrade workflow: run the upgrade, resolve
+the service launcher again in the configuration context that owns it, then ask the service to
+refresh. A postinstall hook is not an application-activation notification.
 
 ## Tool-level postinstall
 
@@ -217,7 +236,7 @@ Hooks are executed with the following environment variables set:
 - `MISE_PROJECT_ROOT`: The root directory of the project.
 - `MISE_CONFIG_ROOT`: The root directory of the config that defines the hook.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
-- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed, each with `name`, `version` and `requested_version` (only for `postinstall` hooks).
+- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed, each with `name`, `version`, `requested_version`, `backend`, and `install_path` (only for `postinstall` hooks).
 
 Global hooks use the active project's root for `MISE_PROJECT_ROOT` and the global config root for
 `MISE_CONFIG_ROOT`. For global-only operations such as `mise use --global`, both variables use the

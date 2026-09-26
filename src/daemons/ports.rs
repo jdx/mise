@@ -124,6 +124,14 @@ pub(crate) fn slot(root: &Path) -> u16 {
     if is_primary(&root) {
         return 0;
     }
+    hashed_slot(&root)
+}
+
+/// The slot a canonical root hashes to, in 1..SLOTS. Distinct roots draw from
+/// a bounded number of slots, so two of them can land on the same one; what
+/// this guarantees is that a given root always lands on the same slot and
+/// never on slot 0, which belongs to the primary checkout.
+pub(crate) fn hashed_slot(root: &Path) -> u16 {
     // hash_to_str renders a u64 siphash as hex; reuse it so the slot and the
     // state directory agree on how a root is identified. The root, not the
     // checkout, is hashed, so sibling projects in one worktree stay distinct.
@@ -141,6 +149,17 @@ pub(crate) fn resolve(
     preset_default: Option<u16>,
     persisted: Option<PortClaim>,
 ) -> Result<PortClaim> {
+    resolve_slot(name, slot(root), base, stride, preset_default, persisted)
+}
+
+pub(crate) fn resolve_slot(
+    name: &str,
+    slot: u16,
+    base: Option<u16>,
+    stride: u16,
+    preset_default: Option<u16>,
+    persisted: Option<PortClaim>,
+) -> Result<PortClaim> {
     let base = base.or(preset_default).ok_or_else(|| {
         eyre::eyre!(
             "[daemons.{name}].port = \"auto\" needs a base port; \
@@ -153,7 +172,7 @@ pub(crate) fn resolve(
     {
         return Ok(claim);
     }
-    let offset = slot(root).checked_mul(stride).ok_or_else(|| {
+    let offset = slot.checked_mul(stride).ok_or_else(|| {
         eyre::eyre!("[daemons.{name}].port stride {stride} overflows the port range")
     })?;
     let port = base.checked_add(offset).filter(|p| *p > 0).ok_or_else(|| {
@@ -187,6 +206,29 @@ mod tests {
         root
     }
 
+    /// The slot a canonical root must land on, worked out here rather than by
+    /// calling [`hashed_slot`], so that a changed formula -- a wider modulus, a
+    /// dropped `1 +` handing a worktree the primary checkout's port -- fails
+    /// instead of moving both sides of the assertion together. The hash itself
+    /// is still read through [`crate::hash::hash_to_str`]: a golden hex digest
+    /// would pin `Path`'s `Hash` implementation, which std does not promise to
+    /// keep stable across releases, and which `PortClaim` persistence is
+    /// designed to tolerate changing.
+    fn expected_slot_of(canonical: &Path) -> u16 {
+        let hash = u64::from_str_radix(&crate::hash::hash_to_str(&canonical), 16).unwrap();
+        1 + u16::try_from(hash % u64::from(SLOTS - 1)).unwrap()
+    }
+
+    /// [`expected_slot_of`] for a root that still has to be canonicalized, the
+    /// way `slot` does. A root's slot is pinned by its own path; that two roots
+    /// differ is not a property the code provides, since 511 slots make a
+    /// collision between two unrelated paths likely enough to fail a run and a
+    /// random tempdir decides when. So the tests pin the derivation instead of
+    /// comparing two slots.
+    fn expected_slot(root: &Path) -> u16 {
+        expected_slot_of(&root.canonicalize().unwrap())
+    }
+
     #[test]
     fn primary_checkouts_keep_the_base_port() {
         let tmp = tempfile::tempdir().unwrap();
@@ -204,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn linked_worktrees_are_stable_and_distinct() {
+    fn linked_worktrees_get_their_own_stable_slot() {
         let tmp = tempfile::tempdir().unwrap();
         let one = worktree(tmp.path(), "feature-a");
         let two = worktree(tmp.path(), "feature-b");
@@ -214,12 +256,14 @@ mod tests {
             slot(&one),
             "same root resolves to the same slot"
         );
-        assert_ne!(slot(&one), slot(&two));
+        assert_eq!(slot(&one), expected_slot(&one), "each root picks its own");
+        assert_eq!(slot(&two), expected_slot(&two));
         assert!((1..SLOTS).contains(&slot(&one)));
 
         let a = resolve("db", &one, None, 1, Some(5432), None).unwrap();
         let b = resolve("db", &two, None, 1, Some(5432), None).unwrap();
-        assert_ne!(a.port, b.port);
+        assert_eq!(a.port, 5432 + slot(&one));
+        assert_eq!(b.port, 5432 + slot(&two));
         assert!(a.port > 5432 && a.port <= 5432 + SLOTS);
         assert_eq!(a, resolve("db", &one, None, 1, Some(5432), None).unwrap());
     }
@@ -281,15 +325,17 @@ mod tests {
         assert!(!is_primary(&nested), "nested root is still in the worktree");
         assert_ne!(slot(&nested), 0);
 
-        // Sibling projects inside one worktree stay distinct from each other
-        // and from the same project in another worktree.
+        // The project root is what gets hashed, not the checkout, so sibling
+        // projects inside one worktree draw from their own slots, as does the
+        // same project in another worktree.
+        assert_eq!(slot(&nested), expected_slot(&nested));
         let sibling = wt.join("packages").join("web");
         std::fs::create_dir_all(&sibling).unwrap();
-        assert_ne!(slot(&nested), slot(&sibling));
+        assert_eq!(slot(&sibling), expected_slot(&sibling));
         let other_wt = worktree(tmp.path(), "second");
         let other_nested = other_wt.join("packages").join("api");
         std::fs::create_dir_all(&other_nested).unwrap();
-        assert_ne!(slot(&nested), slot(&other_nested));
+        assert_eq!(slot(&other_nested), expected_slot(&other_nested));
 
         // The primary checkout keeps the base port at any depth.
         let primary = tmp.path().join("primary");
@@ -320,10 +366,34 @@ mod tests {
             )
             .unwrap();
             assert!(!is_primary(&root), "{name} is a worktree");
+            assert_eq!(slot(&root), expected_slot(&root), "{name} hashes its root");
             slots.push(slot(&root));
         }
         assert!(slots.iter().all(|s| *s != 0), "none keeps the base port");
-        assert_ne!(slots[0], slots[1]);
+    }
+
+    #[test]
+    fn distinct_roots_spread_across_the_slot_range() {
+        // The slot of a linked worktree comes from its path alone, so this
+        // needs no filesystem and no tempdir: fixed paths always produce the
+        // same slots. Slots are bounded, so two roots can share one; what must
+        // hold is that they stay in range, never take slot 0, and spread out
+        // instead of clumping onto a few.
+        let roots: Vec<_> = (0..64)
+            .map(|i| std::path::PathBuf::from(format!("/repo/worktrees/wt-{i}")))
+            .collect();
+        let slots: Vec<u16> = roots.iter().map(|r| hashed_slot(r)).collect();
+        assert!(slots.iter().all(|s| (1..SLOTS).contains(s)));
+        for (root, slot) in roots.iter().zip(&slots) {
+            assert_eq!(*slot, expected_slot_of(root), "{}", root.display());
+        }
+        let distinct: std::collections::HashSet<u16> = slots.iter().copied().collect();
+        assert!(
+            distinct.len() > roots.len() / 2,
+            "{} of {} roots shared a slot",
+            roots.len() - distinct.len(),
+            roots.len()
+        );
     }
 
     #[test]

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# When url_replacements reroutes GitHub (a proxy, a mirror, a fixture), the
+# replacement is the only source of GitHub data: mise-versions answers for
+# github.com itself, so it must not be asked instead.
+
+HEADERS_LOG_DIR="$TMPDIR/github_api_replacement_logs"
+mkdir -p "$HEADERS_LOG_DIR"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+
+cat <<EOF >mise.toml
+[settings]
+url_replacements = { "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
+EOF
+
+# The stand-in server has no releases, so listing fails; what matters is
+# where the requests went.
+output="$(MISE_DEBUG=1 mise ls-remote github:jdx/communique 2>&1 || true)"
+
+if [[ $output == *"mise-versions.jdx.dev/api/github"* ]]; then
+  echo "$output"
+  fail "mise-versions was asked for GitHub metadata although GitHub is rerouted"
+fi
+if [[ $output != *"url_replacements reroutes GitHub"* ]]; then
+  echo "$output"
+  fail "expected mise to report that it skipped mise-versions"
+fi
+if ! compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
+  echo "$output"
+  fail "the url_replacements endpoint was not used"
+fi

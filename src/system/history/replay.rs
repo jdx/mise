@@ -119,7 +119,10 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     if req.to.is_none() && req.all {
         bail!("`--all` needs `--to <ref>`");
     }
-    let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
+    let (store, tracked, entries) = crate::system::history::open().await?;
+    // A rollback writes and removes live files, so it does not run on a
+    // rule set that could not be fully built.
+    tracked.refuse_unusable_exclusions()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("rolling back requires git"))?;
@@ -136,10 +139,31 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
                 display_path(path)
             );
         }
+        // a repository found inside a tracked directory is skipped by
+        // every capture, so a rollback has nothing to put back there and
+        // says so rather than quietly doing nothing
+        if let Some(repository) = nested_repository_at_or_above(&tracked, path) {
+            // the target may be the repository itself, and "X is inside
+            // X" is not a sentence that helps anyone
+            if repository == *path {
+                warn!(
+                    "history: {} is {}",
+                    display_path(path),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            } else {
+                warn!(
+                    "history: {} is inside {}, {}",
+                    display_path(path),
+                    display_path(&repository),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            }
+        }
     }
     let targets = match &req.to {
         Some(reference) => {
-            let entry = crate::cli::dotfiles::history::resolve(
+            let entry = crate::system::history::resolve(
                 reference,
                 &entries,
                 (paths.len() == 1)
@@ -225,7 +249,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
 
 pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
     ensure_enabled()?;
-    let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
+    let (store, tracked, entries) = crate::system::history::open().await?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("undoing requires git"))?;
@@ -254,7 +278,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         undoes_of.insert(entry.checkpoint.uuid.clone(), target);
     }
     let operation = match &req.reference {
-        Some(reference) => crate::cli::dotfiles::history::resolve(reference, &entries, None)?,
+        Some(reference) => crate::system::history::resolve(reference, &entries, None)?,
         None => entries
             .iter()
             .rev()
@@ -1267,38 +1291,92 @@ fn decide(
                 );
             }
             let from = format!("{} {}", kind_of(&cmode), &coid[..7]);
-            match classify(checkpoint, &display) {
-                PathState::Absent => (Action::Delete, from, "missing".into()),
-                PathState::Uncovered => (
-                    Action::Skip(format!(
-                        "not covered by checkpoint {}",
-                        &checkpoint.uuid[..8]
-                    )),
-                    from,
-                    "?".into(),
-                ),
-                PathState::Omitted(reason) => (Action::Skip(reason), from, "?".into()),
+            // one decision point: the state decides whether the file is
+            // removed, and every answer but `Absent` keeps it
+            match classify(checkpoint, &display).skip_reason(&checkpoint.uuid) {
+                None => (Action::Delete, from, "missing".into()),
+                Some(reason) => (Action::Skip(reason), from, "?".into()),
             }
         }
         (None, None) => (Action::Unchanged, "missing".into(), "missing".into()),
     }
 }
 
-enum PathState {
+pub(crate) enum PathState {
+    /// The checkpoint positively covered this path and did not hold it,
+    /// so it was absent. Only this answer permits removing a live file.
     Absent,
     Uncovered,
     Omitted(String),
+    /// The checkpoint's own exclusion rules cannot be evaluated here, so
+    /// whether it covered this path is unknown.
+    ///
+    /// **An exclusion rule that cannot be evaluated never causes a live
+    /// file to be deleted.** A checkpoint records its globs as written,
+    /// and one naming an environment variable resolves differently — or
+    /// not at all — in another environment. Dropping such a rule is safe
+    /// while capturing, where the cost is saving something unintended;
+    /// here the cost would be destroying a file the snapshot never held.
+    Unevaluable(String),
+}
+
+impl PathState {
+    /// Why the live file is left alone, or `None` when the checkpoint
+    /// positively covered the path and did not hold it.
+    ///
+    /// **`None` is the only answer that permits removing a live file.**
+    /// Every reader of a `PathState` decides through this one method, so
+    /// a new state cannot become a deleting one by omission.
+    pub(crate) fn skip_reason(self, checkpoint: &str) -> Option<String> {
+        match self {
+            PathState::Absent => None,
+            PathState::Uncovered => Some(format!("not covered by checkpoint {}", &checkpoint[..8])),
+            PathState::Omitted(reason) | PathState::Unevaluable(reason) => Some(reason),
+        }
+    }
+}
+
+/// The repository a path lies in, when that repository is itself inside a
+/// tracked directory rather than tracked in its own right.
+fn nested_repository_at_or_above(tracked: &TrackedSet, path: &Path) -> Option<PathBuf> {
+    let owner = tracked.entry_for(path)?;
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .find(|ancestor| ancestor.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 /// What a checkpoint says about a path it does not hold.
 fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
-    let coverage = &checkpoint.tree.coverage;
-    let under = |prefix: &str| {
-        display == prefix
-            || display
-                .strip_prefix(prefix)
-                .is_some_and(|rest| rest.starts_with('/'))
-    };
+    classify_coverage(&checkpoint.tree.coverage, display)
+}
+
+/// The same question asked of a coverage record on its own, so the
+/// answer can be compared with what a capture decided from the same set.
+///
+/// **`Absent` is returned only when the recorded coverage positively says
+/// the path was covered and captured. Every other answer keeps the live
+/// file.** The two that are not `Absent` say different things, and the
+/// user sees the difference: `Omitted` carries the record's own
+/// explanation for a path the checkpoint deliberately left out — most
+/// often a repository it skipped, which is an explanation a user can act
+/// on — while `Unevaluable` means this mise cannot interpret the record
+/// at all, because a newer matcher wrote it or a rule in it cannot be
+/// read. Either way the answer to a question that cannot be answered is
+/// never "delete this file".
+pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str) -> PathState {
+    let under = |prefix: &str| super::tracked::display_under(display, prefix);
+    // **A repository the checkpoint recorded as skipped is not something
+    // it ever held.** The filesystem check finds one that still has its
+    // `.git`; the record is what still answers after the user removes it,
+    // which is the documented way to turn such a directory into ordinary
+    // content — and without this, doing that turns the next rollback into
+    // a deletion of files the checkpoint never had.
+    for nested in &coverage.nested {
+        if under(&nested.path) {
+            return PathState::Omitted(nested.reason.clone());
+        }
+    }
     for omitted in &coverage.omitted {
         if under(&omitted.path) {
             return PathState::Omitted(omitted.reason.clone());
@@ -1309,16 +1387,79 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
             return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
         }
     }
-    let covered = coverage.entries.iter().any(|entry| under(&entry.path));
-    if !covered {
+    // the most-specific entry owns the path, exactly as
+    // `TrackedSet::entry_for` decides during capture. Picking the first
+    // declared ancestor instead would judge a nested entry's files by the
+    // outer entry's root, and a replay would then call a file uncovered
+    // that the checkpoint actually holds.
+    let Some(owner) =
+        super::tracked::owning_display(&coverage.entries, display, |entry| entry.path.as_str())
+    else {
         return PathState::Uncovered;
-    }
-    if let Ok(exclude) = super::tracked::ExcludeSet::new(&coverage.exclude)
-        && exclude.is_match(&file::replace_path(Path::new(display)))
+    };
+    let local = file::replace_path(Path::new(display));
+    let root = file::replace_path(Path::new(&owner.path));
+    // Recompile saved exclusions against the current filesystem. If a
+    // symlink now expands a rule into an unusable glob, coverage is unknown.
+    // A checkpoint written by another matcher read its lists
+    // differently — an older one excluded more or selected less for some
+    // patterns, and a newer one is simply unknown here. Either way, where
+    // those patterns apply, what it covered cannot be reconstructed.
+    // Only the owning entry's lists can affect this path.
+    let has_patterns = !coverage.exclude.is_empty()
+        || owner
+            .exclude
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty())
+        || owner
+            .include
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty());
+    let legacy = !super::tracked::matcher_reads_alike(coverage.matcher, owner.include.as_deref())
+        && has_patterns;
+    let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
+        .ok()
+        .filter(|exclude| exclude.unusable().is_empty());
+    if let Some(exclude) = &exclude
+        && !legacy
+        && exclude.is_match(&local, &root)
     {
         return PathState::Uncovered;
     }
-    PathState::Absent
+    // the entry's own lists, recorded with the checkpoint: a file either
+    // of them left out was never known to be absent
+    if super::tracked::excluded_by_entry(&root, owner.exclude.as_deref().unwrap_or(&[]), &local) {
+        return PathState::Uncovered;
+    }
+    // **Unselected is not absent.** `Absent` is the one answer that
+    // permits removing a live file, and it means the record positively
+    // covered this path and did not hold it. A path an `include` list
+    // does not select was never covered — including the entry's own
+    // path, which no pattern can name — so a file that appears there
+    // later is not something this checkpoint is entitled to delete.
+    if let Some(include) = &owner.include {
+        if local == root {
+            return PathState::Omitted(
+                "an include list selects paths inside this entry, not the entry itself".into(),
+            );
+        }
+        if !super::tracked::included_by_entry(&root, include, &local) {
+            return PathState::Uncovered;
+        }
+    }
+    // everything readable says the checkpoint covered this path — but a
+    // rule that could not be read, or one this checkpoint never recorded
+    // the expansion of, makes that a guess, and a guess must not delete a
+    // file
+    if legacy {
+        return PathState::Unevaluable(
+            "this checkpoint's exclusions were read by a different matcher, so what it covered cannot be determined".into(),
+        );
+    }
+    match exclude {
+        None => PathState::Unevaluable("an exclusion cannot be read".into()),
+        Some(_) => PathState::Absent,
+    }
 }
 
 fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<()> {
@@ -1739,6 +1880,16 @@ pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf])
     }
 }
 
+/// The form [`run_reload`] matches a written path in: a symlinked `$HOME`
+/// resolved like the globs' home, the rest kept as written so a file behind a
+/// directory link mise itself created still matches a glob under the link.
+pub(crate) fn reload_path(path: &Path) -> PathBuf {
+    match path.strip_prefix(*crate::dirs::HOME) {
+        Ok(rest) => normalize(&crate::dirs::HOME).join(rest),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
 /// Restoring configuration never runs bootstrap: say when declarations may
 /// now differ from the applied setup.
 fn config_hint(touched: &[PathBuf]) {
@@ -1755,5 +1906,21 @@ fn config_hint(touched: &[PathBuf]) {
             "history: {} changed; declarations may differ from the applied setup — run `mise bootstrap --dry-run` to see",
             config_files.join(", ")
         );
+    }
+}
+
+#[cfg(test)]
+mod reload_tests {
+    use super::*;
+
+    #[test]
+    fn reload_path_resolves_home_only() {
+        let home = normalize(&crate::dirs::HOME);
+        assert_eq!(
+            reload_path(&crate::dirs::HOME.join(".config/hypr/monitors.conf")),
+            home.join(".config/hypr/monitors.conf")
+        );
+        let outside = PathBuf::from("/etc/hosts");
+        assert_eq!(reload_path(&outside), outside);
     }
 }

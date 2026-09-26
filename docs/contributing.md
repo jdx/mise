@@ -626,6 +626,7 @@ bins = ["your-tool"]
 test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
+url = "https://your-tool.dev" # Optional project homepage or repository
 ```
 
 Only list backends that support the tool: `packslip` requires signed release
@@ -648,6 +649,14 @@ When `aqua` is the first backend, mise derives the command names from the Aqua
 registry's file metadata. Omit `bins` when that inferred list is correct. Set it
 explicitly when the shorthand needs a different backend-independent command set,
 such as commands bundled by a fallback backend that Aqua does not describe.
+
+The registry page links each tool name to a project URL inferred from the
+first backend that has one: the repository for `aqua`, `github`, and similar
+backends, or the package page for `npm`, `cargo`, and other package registries.
+Backends such as `http` have no inferable URL, so a tool with only those backends
+is left unlinked. Set `url` when there is no inferred link or it points to the
+wrong place, such as a tool published from a monorepo. `mise tool` and
+`mise registry --json` also show it.
 
 #### Minimum backend versions
 
@@ -675,6 +684,50 @@ Selection still respects platform support and disabled backends. Explicit
 backend identifiers, backend overrides, and a matching lockfile's recorded
 backend remain authoritative. A failed download or signature verification does
 not trigger fallback. A backend without `min_version` has no lower bound.
+
+#### Required attestations
+
+When a project publishes [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
+for its release assets, set `attestations_since` on its `github:` backend to the
+first version whose assets all carry them:
+
+```toml
+version_order = "semver"
+backends = [
+  { full = "github:aubepkg/aube", attestations_since = "2.2.5" },
+]
+```
+
+For that version and later ones, mise requires a verified GitHub attestation
+for every downloaded asset, including `additional_asset_patterns` assets. An
+install or `mise lock` that finds none fails as a possible downgrade instead of
+silently skipping verification. The same applies when only another kind of
+provenance, such as SLSA, verifies. It also holds when the "none" came from the
+shared mise-versions cache, or from a lockfile written after one. Earlier
+versions, and versions that are not semantic versions, are unaffected. Users who
+turn off `github_attestations` are also unaffected.
+
+The value must be a complete semantic version. The tool's `version_order` can
+be anything: mise compares only the version being installed against the
+boundary and never orders a version list. A version that isn't a semantic
+version (`nightly`, `1.0`, `2024.01.15`) is never required.
+
+Pick a boundary such that every release whose version is a semantic version at
+or past it carries attestations. Be careful with projects that publish backports
+out of order. If a patch to an older line was the first attested release, a
+newer line released before it would wrongly be required.
+
+Either kind of GitHub attestation satisfies it, as long as it names the tool's
+repository:
+
+- a build provenance attestation made by the project's workflow
+  (`actions/attest-build-provenance`), checked with
+  `gh attestation verify <file> --repo owner/repo`;
+- GitHub's release attestation, which every immutable release gets for all of
+  its assets, checked with `gh release verify-asset <tag> <file> --repo owner/repo`.
+
+Check every asset of the boundary release, and the release before it, before
+adding the field. The boundary is the first release where every asset passes.
 
 #### Idiomatic version files
 
@@ -839,7 +892,7 @@ across different installation systems.
    - Add it to the backend registry/factory function
    - Add the `BackendType` enum variant
 
-4. **Add CLI argument parsing** in `src/cli/args/backend_arg.rs` if needed
+4. **Add CLI argument parsing** in `src/args/backend_arg.rs` if needed
 
 5. **Update the registry** in `registry/` if it should be available as a
    shorthand

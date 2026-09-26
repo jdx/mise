@@ -47,6 +47,7 @@ pub(crate) mod accounts;
 pub(crate) mod compose;
 pub(crate) mod defaults;
 pub(crate) mod deps;
+pub(crate) mod driver;
 pub(crate) mod edits;
 pub(crate) mod files;
 #[cfg(target_os = "linux")]
@@ -66,6 +67,7 @@ pub(crate) mod repos;
 pub(crate) mod resources;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod secrets;
+pub(crate) mod service_exec;
 #[cfg(target_os = "linux")]
 pub(crate) mod services;
 #[cfg(not(target_os = "linux"))]
@@ -76,6 +78,7 @@ pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
 pub(crate) mod templating;
+pub(crate) mod unapply;
 pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
@@ -239,7 +242,7 @@ impl PackageTomlConfig {
             || options
                 .os
                 .iter()
-                .any(|entry| crate::cli::version::os_selector_matches(entry))
+                .any(|entry| crate::platform::os_selector_matches(entry))
     }
 
     /// Whether this package is enabled by at least one active mise environment.
@@ -3064,7 +3067,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn folded_package_names_filtered_apart_by_os_are_not_a_conflict() -> Result<()> {
-        let current_os = crate::cli::version::OS.as_str();
+        let current_os = crate::platform::OS.as_str();
         let inactive_os = if current_os == "linux" {
             "macos"
         } else {
@@ -3091,8 +3094,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_packages_from_config_files_filters_os_and_arch() -> Result<()> {
-        let current_os = crate::cli::version::OS.as_str();
-        let current_arch = crate::cli::version::ARCH.as_str();
+        let current_os = crate::platform::OS.as_str();
+        let current_arch = crate::platform::ARCH.as_str();
         let inactive_os = if current_os == "linux" {
             "macos"
         } else {

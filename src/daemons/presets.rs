@@ -1,5 +1,6 @@
 use super::ports::PortClaim;
 use super::{Daemon, state_dir};
+use crate::config::SettingsExt;
 use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -47,6 +48,9 @@ struct Preset {
     /// against the mise marker (for example Postgres's `PG_VERSION`).
     #[serde(default)]
     data_version_file: Option<String>,
+    /// The tool exits when run as root, as `initdb` and `postgres` do.
+    #[serde(default)]
+    refuses_root: bool,
     #[serde(default)]
     options: IndexMap<String, OptionSpec>,
     #[serde(default)]
@@ -300,6 +304,39 @@ fn preset(name: &str) -> Result<Preset> {
     Ok(toml::from_str(content)?)
 }
 
+/// Fails before anything is installed or started when `label` would run a preset
+/// that refuses root. Otherwise the tool's own refusal surfaces only in the daemon
+/// log, after its tools were installed.
+pub(crate) fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<()> {
+    #[cfg(unix)]
+    let root = nix::unistd::geteuid().is_root();
+    // Windows has no root; presets are rejected there before anything starts.
+    #[cfg(not(unix))]
+    let root = false;
+    if root && preset(preset_name)?.refuses_root {
+        bail!(
+            "{label} cannot run as root: the {preset_name} preset's server refuses root privileges. \
+             Run mise as a regular user, for example by adding one and switching to it with \
+             `USER` in a Dockerfile or with `su - <user>`"
+        );
+    }
+    Ok(())
+}
+
+/// [`ensure_runnable_as_user`] for every preset daemon about to start, including
+/// the provider a consumer daemon would start with it.
+pub(crate) fn ensure_set_runnable_as_user(set: &super::DaemonSet) -> Result<()> {
+    for daemon in set.daemons.values() {
+        if let Some(preset) = &daemon.preset {
+            ensure_runnable_as_user(&format!("daemon {}", daemon.name), preset)?;
+        }
+        if let Some(binding) = &daemon.provider {
+            binding.provider.ensure_runnable_as_user()?;
+        }
+    }
+    Ok(())
+}
+
 /// The well-known port a preset binds when nothing overrides it, and the base
 /// that `port = "auto"` offsets per worktree.
 pub(crate) fn default_port(name: &str) -> Result<u16> {
@@ -532,6 +569,24 @@ pub(crate) fn in_tool_env(command: &str) -> String {
     )
 }
 
+/// Probes are separate processes: wrapping the daemon does not give them its
+/// project environment. Preserve structured probe options while wrapping `run`.
+pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
+    for key in ["ready_cmd", "health_cmd"] {
+        let command = match table.get_mut(key) {
+            Some(toml::Value::String(command)) => Some(command),
+            Some(toml::Value::Table(fields)) => match fields.get_mut("run") {
+                Some(toml::Value::String(command)) => Some(command),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(command) = command {
+            *command = in_tool_env(command);
+        }
+    }
+}
+
 /// Chain idempotent setup steps in front of the long-running command, using
 /// pitchfork's shell-command semantics: every step must succeed before the
 /// process that keeps running is reached. Returns `run` unchanged when there is
@@ -617,7 +672,13 @@ pub(crate) fn expand(
         warn!("[daemons.{name}] {preset_name} option {key:?} has no effect with {other:?} set");
     }
 
-    let data = state_dir(root).join("data").join(name);
+    let data = match super::take_string(&mut overrides, "data_dir")? {
+        Some(path) if path.trim().is_empty() => {
+            bail!("[daemons.{name}].data_dir must not be empty")
+        }
+        Some(path) => root.join(crate::file::replace_path(path)),
+        None => state_dir(root).join("data").join(name),
+    };
     // Resolve the proxy before rendering, so a preset's own default label and a
     // user override both reach `{{ url }}`. `proxy` and `proxy_tls` are the two
     // override keys that have to be applied early; everything else in
@@ -659,9 +720,6 @@ pub(crate) fn expand(
         toml::Value::Array(items) => !items.is_empty(),
         _ => true,
     });
-    if let Some(toml::Value::String(command)) = table.get_mut("ready_cmd") {
-        *command = in_tool_env(command.as_str());
-    }
     let mut exports = preset.exports;
     for (key, value) in exports.iter_mut() {
         *value = crate::tera::render_str(&mut renderer, value, &plain_ctx).map_err(|err| {
@@ -714,14 +772,19 @@ pub(crate) fn expand(
     overrides.remove("proxy");
     overrides.remove("proxy_tls");
     table.extend(overrides);
+    if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+        wrap_probe_commands(&mut table);
+    }
     Ok(Daemon {
         name: name.into(),
         source: source.into(),
         root: root.into(),
         table,
         preset: Some(preset_name.into()),
+        data_dir: Some(data.into()),
         task: None,
         tool: Some((tool, version.into())),
+        provider: None,
         exports,
         imported: extras.imported,
         port: Some(claim),
@@ -1115,6 +1178,7 @@ pub(crate) fn initialize(
     if cfg!(windows) {
         bail!("daemon presets are not supported on Windows yet");
     }
+    ensure_runnable_as_user("this daemon", preset_name)?;
     let preset = preset(preset_name)?;
     let owned;
     let values = match values {
@@ -1261,6 +1325,100 @@ mod tests {
     }
 
     #[test]
+    fn custom_data_directory_is_root_relative_and_shell_quoted() {
+        for path in [
+            ".data/my postgres",
+            "/tmp/my postgres",
+            ".data/it's postgres",
+        ] {
+            let daemon = render("postgres", toml::toml! { data_dir = path });
+            let expected = Path::new("/project").join(path);
+            assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
+            let run = daemon.table["run"].as_str().unwrap();
+            assert!(run.contains(&quote(expected.to_string_lossy())));
+            assert!(!daemon.table.contains_key("data_dir"));
+        }
+        let daemon = render("postgres", toml::Table::new());
+        assert_eq!(
+            daemon.data_dir,
+            Some(state_dir(Path::new("/project")).join("data/postgres"))
+        );
+    }
+
+    #[test]
+    fn custom_data_directory_expands_home_before_resolving_from_root() {
+        let daemon = render("postgres", toml::toml! { data_dir = "~/my postgres" });
+        let expected = crate::env::HOME.join("my postgres");
+        assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
+        assert!(
+            daemon.table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&quote(expected.to_string_lossy()))
+        );
+        assert!(!daemon.table.contains_key("data_dir"));
+    }
+
+    #[test]
+    fn custom_data_directory_rejects_empty_or_non_string_values() {
+        for value in [
+            toml::Value::String(String::new()),
+            toml::Value::String("  ".into()),
+            toml::Value::Integer(42),
+        ] {
+            let mut overrides = toml::Table::new();
+            overrides.insert("data_dir".into(), value);
+            let error = expand(
+                "postgres",
+                "postgres",
+                "18",
+                overrides,
+                Extras {
+                    init: &[],
+                    port: None,
+                    labels: &labels(),
+                    imported: false,
+                },
+                Path::new("/project/mise.toml"),
+                Path::new("/project"),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("data_dir"));
+        }
+    }
+
+    #[test]
+    fn preset_probe_overrides_keep_options_and_project_environment() {
+        let daemon = render(
+            "postgres",
+            toml::toml! {
+                ready_cmd = { run = "test -n \"$PGPORT\"", timeout = "15s" }
+                health_cmd = { run = "pg_isready", interval = "2s", retries = 4 }
+            },
+        );
+        assert_eq!(
+            daemon.table["ready_cmd"]["run"].as_str(),
+            Some(in_tool_env("test -n \"$PGPORT\"").as_str())
+        );
+        assert_eq!(daemon.table["ready_cmd"]["timeout"].as_str(), Some("15s"));
+        assert_eq!(
+            daemon.table["health_cmd"]["run"].as_str(),
+            Some(in_tool_env("pg_isready").as_str())
+        );
+        assert_eq!(daemon.table["health_cmd"]["interval"].as_str(), Some("2s"));
+        assert_eq!(daemon.table["health_cmd"]["retries"].as_integer(), Some(4));
+
+        let unmanaged = render(
+            "postgres",
+            toml::toml! {
+                mise = false
+                ready_cmd = "custom-ready"
+            },
+        );
+        assert_eq!(unmanaged.table["ready_cmd"].as_str(), Some("custom-ready"));
+    }
+
+    #[test]
     fn named_instances_override_ports_and_keep_templates() {
         let overrides = toml::toml! { ready_cmd = "echo {{ env.FOO }}" };
         let daemon = expand(
@@ -1281,7 +1439,7 @@ mod tests {
         assert_eq!(daemon.exports["PGPORT"], "5433");
         assert_eq!(
             daemon.table["ready_cmd"].as_str(),
-            Some("echo {{ env.FOO }}")
+            Some(in_tool_env("echo {{ env.FOO }}").as_str())
         );
         assert!(daemon.table["run"].as_str().unwrap().contains("analytics"));
     }

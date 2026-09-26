@@ -1802,9 +1802,47 @@ pub(super) fn remove_stale_versions(token_dir: &Path, current_version: &str) -> 
     Ok(())
 }
 
+/// The last path segment of `raw`, percent-decoded.
+///
+/// Cask URLs escape characters that are literal in the artifact the cask
+/// declares: Google Fonts serves `MPLUS1Code%5Bwght%5D.ttf` for
+/// font-m-plus-1-code's `font "MPLUS1Code[wght].ttf"`. A raw (non-archive)
+/// download is staged under this name, so an encoded one never matches the
+/// artifact lookup. Homebrew unescapes the same basename.
+///
+/// Decoding can also produce a name that would escape the staging directory
+/// (`%2F`, `%2E%2E`) or that no filesystem accepts, so an unusable result falls
+/// back to the encoded segment — which is the value this returned before
+/// decoding, and is inert as a path component.
 pub(super) fn archive_filename(raw: &str) -> Option<String> {
     let url = url::Url::parse(raw).ok()?;
-    url.path_segments()?.next_back().map(str::to_string)
+    let segment = url.path_segments()?.next_back()?;
+    Some(decoded_path_segment(segment).unwrap_or_else(|| segment.to_string()))
+}
+
+fn decoded_path_segment(segment: &str) -> Option<String> {
+    let decoded = urlencoding::decode(segment).ok()?.into_owned();
+    (!is_unusable_file_name(&decoded)).then_some(decoded)
+}
+
+/// Whether `name` cannot stand as a single path component under the staging
+/// directory.
+///
+/// The first group is about containment rather than platform convention: each
+/// would put the staged artifact somewhere other than the name the cask
+/// declares, and `%2F` in particular survives URL normalization. The second is
+/// Windows path syntax and applies only there — `Foo?.ttf` is an ordinary file
+/// name on macOS and Linux, and rejecting it would strand the cask on the
+/// mismatching encoded basename this decoding exists to avoid.
+fn is_unusable_file_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return true;
+    }
+    cfg!(windows)
+        && (name.ends_with([' ', '.'])
+            || name.chars().any(|c| {
+                c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '\\' | '|' | '?' | '*')
+            }))
 }
 
 pub(super) fn split_tap_name(name: &str) -> Option<(&str, &str, &str)> {

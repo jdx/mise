@@ -67,7 +67,7 @@ node = "20.11.1"
 EOF
 MISE_LOCKFILE=1 mise -C auto-lock install
 assert_succeed "find '$MISE_DATA_DIR/installs/npm-inflight' -maxdepth 1 -name '1.0.6~aube~*' | grep -q ."
-assert_succeed "test ! -e '$MISE_DATA_DIR/installs/npm-inflight/1.0.6/incomplete'"
+assert_succeed "test ! -e '$MISE_CACHE_DIR/npm-inflight/1.0.6/incomplete'"
 
 # Generate-mode upgrades fill graphs after changing the lockfile revision.
 mkdir upgrade-lock
@@ -142,6 +142,50 @@ EOF
 assert_fail "cd missing-graph && MISE_LOCKFILE=1 mise install --locked"
 missing_graph_output="$(cd missing-graph && MISE_LOCKFILE=1 mise install --locked 2>&1 || true)"
 assert_contains_text "$missing_graph_output" "has no embedded-aube dependency graph"
+
+# Git checks sidecars out with CRLF on Windows (core.autocrlf=true). The
+# recorded digest covers the normalized graph text, so such a checkout still
+# installs, and re-locking leaves the working copy byte-for-byte alone.
+mkdir crlf
+cp mise.toml mise.lock crlf/
+cp -R .mise crlf/
+python3 - <<'PY_CRLF'
+from pathlib import Path
+for name in ['aube-lock.yaml', 'package.json']:
+    path = Path('crlf/.mise/locks/npm-cowsay/1.6.0') / name
+    data = path.read_bytes()
+    assert b'\r\n' not in data, path
+    path.write_bytes(data.replace(b'\n', b'\r\n'))
+PY_CRLF
+cp crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml crlf-checkout.yaml
+MISE_DATA_DIR="$PWD/.crlf-data" MISE_LOCKFILE=1 mise -C crlf install --locked
+assert_contains "MISE_DATA_DIR='$PWD/.crlf-data' MISE_LOCKFILE=1 mise -C crlf exec -- cowsay --version" "1.6.0"
+mise -C crlf lock
+assert_succeed 'cmp crlf-checkout.yaml crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
+assert_succeed 'cmp mise.lock crlf/mise.lock'
+
+# A lockfile an older mise wrote from a CRLF checkout pins the raw bytes. It
+# keeps installing, and an ordinary install records the normalized digest.
+python3 - <<'PY_LEGACY_DIGEST'
+import hashlib
+from pathlib import Path
+graph = Path('crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml').read_bytes()
+legacy = 'sha256:' + hashlib.sha256(graph).hexdigest()
+normalized = 'sha256:' + hashlib.sha256(graph.replace(b'\r\n', b'\n')).hexdigest()
+assert legacy != normalized
+lock = Path('crlf/mise.lock')
+assert normalized in lock.read_text()
+lock.write_text(lock.read_text().replace(normalized, legacy))
+Path('legacy-digest').write_text(legacy)
+Path('normalized-digest').write_text(normalized)
+PY_LEGACY_DIGEST
+cp crlf/mise.lock legacy-checkout.lock
+MISE_DATA_DIR="$PWD/.legacy-data" MISE_LOCKFILE=1 mise -C crlf install --locked
+assert_succeed 'cmp legacy-checkout.lock crlf/mise.lock'
+assert_contains "cat crlf/mise.lock" "$(cat legacy-digest)"
+MISE_DATA_DIR="$PWD/.legacy-heal-data" MISE_LOCKFILE=1 mise -C crlf install
+assert_contains "cat crlf/mise.lock" "$(cat normalized-digest)"
+assert_succeed 'cmp crlf-checkout.yaml crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
 
 # A project lockfile must not require dependency graphs for npm tools owned by
 # the global config, whose lockfile is only created explicitly with --global.

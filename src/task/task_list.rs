@@ -1,4 +1,4 @@
-use crate::config::{self, Config};
+use crate::config::{self, Config, SettingsExt};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
@@ -82,16 +82,14 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
 
 /// Check if a name is similar to any known CLI subcommands using fuzzy matching
 fn suggest_similar_commands(name: &str) -> Vec<String> {
-    let cmd = crate::cli::Cli::command();
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(name);
-    cmd.subcommands
-        .iter()
-        .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
+    crate::frontend::subcommand_names()
+        .into_iter()
         .filter_map(|subcmd| {
             matcher
-                .score_pattern(subcmd, &pattern)
-                .map(|score| (score, subcmd.to_string()))
+                .score_pattern(&subcmd, &pattern)
+                .map(|score| (score, subcmd))
         })
         .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
         .take(3)

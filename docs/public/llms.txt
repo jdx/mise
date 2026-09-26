@@ -63,7 +63,6 @@
 - [npm](https://mise.jdx.dev/dev-tools/backends/npm.html): The npm backend installs command-line packages from npm registries into separate tool directories. Keep your application's dependencies in package.json and use its package manager or mise deps to…
 - [packslip](https://mise.jdx.dev/dev-tools/backends/packslip.html): The Packslip backend installs tools using signed release manifests published by their maintainers. mise verifies the release, selects the build for your platform, and installs its executables.
 - [pypi](https://mise.jdx.dev/dev-tools/backends/pypi.html): The pypi backend installs Python command-line applications in isolated virtual environments. Each tool gets its own dependencies.
-- [pkgx](https://mise.jdx.dev/dev-tools/backends/pkgx.html): The pkgx backend installs packages from the pkgx pantry without shelling out to the pkgx CLI. mise resolves pantry metadata, downloads pkgx bottles from dist.pkgx.dev, verifies bottle checksums when…
 - [spm](https://mise.jdx.dev/dev-tools/backends/spm.html): You may install executables managed by Swift Package Manager directly from GitHub or GitLab releases.
 - [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html): The ubi backend is deprecated. Use the GitHub backend instead.
 - [vfox](https://mise.jdx.dev/dev-tools/backends/vfox.html): vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
@@ -107,7 +106,8 @@
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
 - [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.
-- [Daemons](https://mise.jdx.dev/daemons.html): Daemon management requires experimental = true. It requires pitchfork 2.25.0 or later for external configuration support.
+- [Daemons](https://mise.jdx.dev/daemons.html): Daemon management requires experimental = true and pitchfork for process supervision. Install or update Pitchfork before following this guide.
+- [Set up a development stack](https://mise.jdx.dev/daemons/development-stack.html): Keep each application's tools, environment, and daemons in its mise.toml. Use presets for databases and brokers, run for application servers, and depends for the services a server needs.
 - [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both change the environment when you enter a directory. Their shell hooks can disagree about which PATH entries to add, restore, or remove.
 
 ## Tasks
@@ -123,6 +123,7 @@
 - [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): [!WARNING] Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
 - [Task Templates](https://mise.jdx.dev/tasks/templates.html): Define a task template when several tasks share commands, tools, environment variables, or dependencies. Each task selects a template with extends and supplies the settings that differ.
 - [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own mise.toml with…
+- [OpenTelemetry](https://mise.jdx.dev/tasks/opentelemetry.html): mise can export traces (and, separately, task stdout/stderr logs) for mise run to any OpenTelemetry-compatible backend such as Jaeger, Grafana Tempo, or SigNoz.
 - [Sandboxing](https://mise.jdx.dev/sandboxing.html): mise can restrict filesystem, network, and environment access for commands launched by mise exec and mise run. Restrictions use the host operating system, with different support on Linux and macOS.
 
 ## Plugins
@@ -149,7 +150,7 @@
 - [Cookbook](https://mise.jdx.dev/mise-cookbook/): These recipes combine tools, environment variables, and tasks for specific workflows. Start with the recipe closest to your project, then adapt its paths, versions, and application commands.
 - [Bazel](https://mise.jdx.dev/mise-cookbook/bazel.html): Use mise to install the Bazel version declared in a project's .bazelversion file. This avoids repeating the version in mise.toml.
 - [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Use mise to install build tools and define the configure/build cycle. A C or C++ compiler must already be available, for example through your operating system's development tools.
-- [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers.
+- [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Use the Debian image to run mise and install project tools, or copy the static mise binary into an existing image.
 - [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project.
 - [Ruby](https://mise.jdx.dev/mise-cookbook/ruby.html): Use mise to select Ruby and tasks to run the application's Bundler and Rails commands. This recipe assumes an existing Rails project with Gemfile, Gemfile.lock, and bin/rails.
 - [Terraform](https://mise.jdx.dev/mise-cookbook/terraform.html): Use tasks to keep infrastructure commands pointed at the same working directory. The recipe assumes a terraform/ directory containing your configuration and any provider credentials already configured…
@@ -176,6 +177,7 @@
 - [mise activate](https://mise.jdx.dev/cli/activate.html): Print the script to activate mise in an interactive shell
 - [mise backends](https://mise.jdx.dev/cli/backends.html): Manage backends
 - [mise backends ls](https://mise.jdx.dev/cli/backends/ls.html): List built-in backends
+- [mise backends switch](https://mise.jdx.dev/cli/backends/switch.html): Switch tools to the backend the registry now installs them from
 - [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
 - [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine from the current configuration
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
@@ -197,7 +199,7 @@
 - [mise bootstrap dotfiles history diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Capture paths matching a glob again
+- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
 - [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
@@ -261,6 +263,7 @@
 - [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Remove an installed user-scope service, declared or not
 - [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show configured service state (system and user scope)
 - [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the aggregate bootstrap status
+- [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove the resources a config environment contributes
 - [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage current-user bootstrap settings from [bootstrap.user]
 - [mise bootstrap user apply](https://mise.jdx.dev/cli/bootstrap/user/apply.html): Apply current-user settings from [bootstrap.user]
 - [mise bootstrap user status](https://mise.jdx.dev/cli/bootstrap/user/status.html): Show whether current-user settings match [bootstrap.user]
@@ -277,7 +280,13 @@
 - [mise daemons](https://mise.jdx.dev/cli/daemons.html): [experimental] Manage project daemons with pitchfork
 - [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): List project daemons without starting a supervisor or registering configuration.
+- [mise daemons providers](https://mise.jdx.dev/cli/daemons/providers.html): Manage shared servers defined in global [daemon_providers].
+- [mise daemons providers ls](https://mise.jdx.dev/cli/daemons/providers/ls.html): List configured and previously managed shared servers.
+- [mise daemons providers restart](https://mise.jdx.dev/cli/daemons/providers/restart.html): Restart the named shared servers with their current configuration.
+- [mise daemons providers start](https://mise.jdx.dev/cli/daemons/providers/start.html): Start the named shared servers.
+- [mise daemons providers stop](https://mise.jdx.dev/cli/daemons/providers/stop.html): Stop the named shared servers without deleting their data.
 - [mise daemons prune](https://mise.jdx.dev/cli/daemons/prune.html): Remove daemon state left behind by deleted project directories.
+- [mise daemons register](https://mise.jdx.dev/cli/daemons/register.html): Prepare all project daemons for on-demand startup without starting them.
 - [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): Arguments passed to pitchfork; daemon names may be short or qualified.
@@ -305,7 +314,7 @@
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Capture paths matching a glob again
+- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies

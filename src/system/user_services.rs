@@ -51,6 +51,9 @@ pub(crate) struct UserServiceRequest {
     /// executable to run through (see `unresolved`).
     pub command: Option<String>,
     pub unresolved: Option<String>,
+    /// The durable mise executable a Windows task that sets `environment`
+    /// runs through; `None` when none was found, which `unresolved` reports.
+    pub launcher: Option<String>,
     pub builtin: Option<String>,
     pub restart: ServiceRestart,
     pub nice: Option<i8>,
@@ -109,7 +112,7 @@ impl UserServiceRequest {
                 description.get_or_insert_with(|| definition.description.to_string());
                 restart.get_or_insert(definition.restart);
                 nice = definition.nice;
-                match executable {
+                match &executable {
                     Some(exe) => Some(
                         std::iter::once(quote_program(&exe.to_string_lossy()))
                             .chain(definition.args.iter().map(|arg| arg.to_string()))
@@ -133,11 +136,29 @@ impl UserServiceRequest {
                 Some(command.to_string())
             }
         };
+        // On Windows a service that sets `environment` runs through mise,
+        // which applies it (Task Scheduler's XML has no environment block).
+        // Without a durable mise there is nothing to carry it with. Reported
+        // per service, the way the builtin case is: a staged binary is a
+        // whole-host condition, and failing the render would take every
+        // other bootstrap resource down with this one.
+        let launcher = executable.map(|exe| exe.to_string_lossy().to_string());
+        if cfg!(windows)
+            && !config.environment.is_empty()
+            && launcher.is_none()
+            && unresolved.is_none()
+        {
+            unresolved = Some(
+                "no durable mise executable to carry `environment`; install mise on this host first"
+                    .to_string(),
+            );
+        }
         Ok(Self {
             name,
             description,
             command,
             unresolved,
+            launcher,
             builtin: config.builtin,
             restart: restart.unwrap_or_default(),
             nice,
@@ -225,6 +246,7 @@ impl UserServiceRequest {
         request.command = self.command.clone().unwrap_or_default();
         request.restart_on_failure = self.restart != ServiceRestart::Never;
         request.environment = self.environment.clone();
+        request.launcher = self.launcher.clone();
         request.working_directory = self.working_directory.clone();
         request.start = self.start();
         request.at_logon = self.enabled;
@@ -369,6 +391,13 @@ pub(crate) fn manager_name() -> &'static str {
     }
 }
 
+/// Reported when no definition is installed for a declared service.
+const NOT_INSTALLED: &str = "not installed";
+/// Reported when the installed definition no longer matches the declaration.
+const DIFFERS: &str = "installed, differs";
+/// Reported for a service declared absent that has nothing installed.
+const ABSENT: &str = "absent";
+
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct UserServiceStatus {
     pub name: String,
@@ -392,6 +421,23 @@ pub(crate) struct UserServiceStatus {
 }
 
 impl UserServiceStatus {
+    /// Whether nothing is installed for this service.
+    pub(crate) fn not_installed(&self) -> bool {
+        self.current == NOT_INSTALLED || self.current == ABSENT
+    }
+
+    /// Whether the installed definition is known to match the declaration.
+    ///
+    /// Drift is reported as "installed, differs"; an unavailable manager or an
+    /// unresolved command means the comparison could not be made at all. An
+    /// apply rewrites the definition in every one of those cases, so only
+    /// removal has to tell them apart.
+    pub(crate) fn matches_declaration(&self) -> bool {
+        !(self.current == DIFFERS
+            || self.current.starts_with("unknown:")
+            || self.current.starts_with("unavailable:"))
+    }
+
     pub(crate) fn plan(&self) -> ResourcePlan {
         let plan = ResourcePlan::new(
             ResourceId::new("user-service", &self.name),
@@ -535,8 +581,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .pop()
                 .expect("one status per request");
             let current = match status.state {
-                SystemdState::Missing => "not installed",
-                SystemdState::Differs => "installed, differs",
+                SystemdState::Missing => NOT_INSTALLED,
+                SystemdState::Differs => DIFFERS,
                 SystemdState::Active => "running",
                 SystemdState::Inactive => "stopped",
             };
@@ -554,8 +600,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .expect("one status per request");
             let running = status.loaded && launchd::is_running(&agent.label).await?;
             let (current, desired) = match status.state {
-                LaunchdState::Missing => ("not installed", false),
-                LaunchdState::Differs => ("installed, differs", false),
+                LaunchdState::Missing => (NOT_INSTALLED, false),
+                LaunchdState::Differs => (DIFFERS, false),
                 LaunchdState::Unloaded => ("installed, not loaded", false),
                 LaunchdState::Loaded if running => ("running", request.start()),
                 LaunchdState::Loaded => ("stopped", !request.start()),
@@ -573,8 +619,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .pop()
                 .expect("one status per request");
             let current = match status.state {
-                ScheduledTaskState::Missing => "not installed",
-                ScheduledTaskState::Differs => "installed, differs",
+                ScheduledTaskState::Missing => NOT_INSTALLED,
+                ScheduledTaskState::Differs => DIFFERS,
                 ScheduledTaskState::Disabled => "installed, disabled",
                 ScheduledTaskState::Running => "running",
                 ScheduledTaskState::Ready => "stopped",
@@ -598,7 +644,7 @@ fn absent_state(installed: bool) -> (&'static str, ResourceAction) {
     if installed {
         ("installed", ResourceAction::Remove)
     } else {
-        ("absent", ResourceAction::Noop)
+        (ABSENT, ResourceAction::Noop)
     }
 }
 
@@ -772,6 +818,26 @@ mod tests {
             Some(PathBuf::from("/usr/bin/mise")),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn removal_only_trusts_a_definition_that_matches() {
+        let request = request(user_config("sleep 100"));
+        let status = |current: &str| {
+            UserServiceStatus::new(&request, current.to_string(), ResourceAction::Update)
+        };
+        assert!(status(NOT_INSTALLED).not_installed());
+        // A service declared absent reports its converged state differently.
+        assert!(status(ABSENT).not_installed());
+        assert!(!status(DIFFERS).not_installed());
+
+        assert!(status("running").matches_declaration());
+        assert!(status("stopped").matches_declaration());
+        // Drift, an unavailable manager, and an unresolved command all mean the
+        // installed definition is not known to be the declared one.
+        assert!(!status(DIFFERS).matches_declaration());
+        assert!(!status("unavailable: systemd user manager not available").matches_declaration());
+        assert!(!status("unknown: no durable mise executable").matches_declaration());
     }
 
     #[test]

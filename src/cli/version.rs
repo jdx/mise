@@ -3,14 +3,15 @@ use std::time::Duration;
 
 use console::style;
 use eyre::Result;
-use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::{SelfUpdate, upgrade_instructions_or_hint};
 use crate::config::Settings;
 use crate::file::modified_duration;
+use crate::platform::{ARCH, OS};
 use crate::ui::style;
+use crate::version::{V, VERSION};
 use crate::{dirs, duration, env, file};
 
 const DEFAULT_SELF_UPDATE_API_URL: &str = "https://api.github.com";
@@ -131,64 +132,10 @@ impl Version {
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
         });
-        println!("{}", serde_json::to_string_pretty(&json)?);
+        miseprintln!("{}", serde_json::to_string_pretty(&json)?);
         Ok(())
     }
 }
-
-pub(crate) static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
-pub(crate) static ARCH: Lazy<String> = Lazy::new(|| {
-    match env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        _ => env::consts::ARCH,
-    }
-    .to_string()
-});
-
-/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
-pub(crate) fn normalize_os(os: &str) -> &str {
-    match os {
-        "darwin" | "macos" => "macos",
-        "windows" | "win" => "windows",
-        other => other,
-    }
-}
-
-/// Normalize architecture name aliases to the canonical form used by [`ARCH`].
-pub(crate) fn normalize_arch(arch: &str) -> &str {
-    match arch {
-        "x86_64" | "amd64" | "x64" => "x64",
-        "aarch64" | "arm64" => "arm64",
-        other => other,
-    }
-}
-
-/// Whether an `os` or `os/arch` selector matches the current platform.
-pub(crate) fn os_selector_matches(entry: &str) -> bool {
-    if let Some((os, arch)) = entry.split_once('/') {
-        normalize_os(os) == OS.as_str() && normalize_arch(arch) == ARCH.as_str()
-    } else {
-        normalize_os(entry) == OS.as_str()
-    }
-}
-
-pub(crate) static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
-    let mut v = V.to_string();
-    if cfg!(debug_assertions) {
-        v.push_str("-DEBUG");
-    };
-    v
-});
-
-pub(crate) static VERSION: Lazy<String> = Lazy::new(|| {
-    let build_time = BUILD_TIME.format("%Y-%m-%d");
-    let v = &*VERSION_PLAIN;
-    format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
-});
-
-pub(crate) static V: Lazy<Versioning> =
-    Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
 pub(crate) fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     if args.len() == 2 && !*crate::env::IS_RUNNING_AS_SHIM {
@@ -451,26 +398,6 @@ mod tests {
         let p = dir.join("latest-version");
         std::fs::write(&p, body).unwrap();
         p
-    }
-
-    #[test]
-    fn test_normalize_os() {
-        assert_eq!(normalize_os("macos"), "macos");
-        assert_eq!(normalize_os("darwin"), "macos");
-        assert_eq!(normalize_os("linux"), "linux");
-        assert_eq!(normalize_os("windows"), "windows");
-        assert_eq!(normalize_os("win"), "windows");
-        assert_eq!(normalize_os("freebsd"), "freebsd");
-    }
-
-    #[test]
-    fn test_normalize_arch() {
-        assert_eq!(normalize_arch("arm64"), "arm64");
-        assert_eq!(normalize_arch("aarch64"), "arm64");
-        assert_eq!(normalize_arch("x64"), "x64");
-        assert_eq!(normalize_arch("x86_64"), "x64");
-        assert_eq!(normalize_arch("amd64"), "x64");
-        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 
     #[test]

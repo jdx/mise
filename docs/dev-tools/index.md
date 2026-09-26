@@ -212,6 +212,7 @@ The `os` field accepts an array of operating system identifiers:
 - `"linux"` - All Linux distributions
 - `"macos"` - macOS (Darwin). `"darwin"` is also accepted as an alias.
 - `"windows"` - Windows. `"win"` is also accepted as an alias.
+- `"unix"` - Every platform except Windows, such as Linux and macOS
 
 ### OS/Architecture Combinations
 

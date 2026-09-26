@@ -637,8 +637,13 @@ pub(super) fn raw_cask_artifact_name(
             }
         }
     }
+    // A URL whose path ends in a separator, or only in dot segments that
+    // normalization collapses, has no final segment to name the staged file;
+    // `extract_dir.join("")` would target the staging directory itself.
     Ok((
-        archive_filename(&cask.url).unwrap_or_else(|| fallback.to_string()),
+        archive_filename(&cask.url)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| fallback.to_string()),
         true,
     ))
 }

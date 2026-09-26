@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A file:// url installs an archive that was fetched by hand, with no network.
+
+set -euo pipefail
+
+mkdir -p src/bin
+printf '#!/bin/sh\necho hello-from-archive\n' >src/bin/my-tool
+chmod +x src/bin/my-tool
+tar -C src -czf my-tool-1.0.0.tar.gz bin
+ARCHIVE="$PWD/my-tool-1.0.0.tar.gz"
+SHA256=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+
+cat >mise.toml <<EOF
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file://$ARCHIVE", checksum = "sha256:$SHA256" }
+EOF
+
+assert_succeed "MISE_OFFLINE=1 mise install http:my-tool"
+assert "mise x -- my-tool" "hello-from-archive"
+assert_contains "mise ls http:my-tool" "1.0.0"
+
+# A checksum that does not match the local file still fails the install.
+cat >mise.toml <<EOF
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file://$ARCHIVE", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+EOF
+assert_fail "mise install -f http:my-tool" "Checksum mismatch"
+
+# A missing file names the path instead of a generic URL error.
+cat >mise.toml <<EOF
+[tools]
+"http:my-tool" = { version = "2.0.0", url = "file://$PWD/missing.tar.gz" }
+EOF
+assert_fail "mise install http:my-tool" "local artifact not found"

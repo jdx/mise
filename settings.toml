@@ -322,9 +322,14 @@ default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
 docs = """
 The age of the cache before it is considered stale. mise will occasionally delete cache files which
-have not been accessed in this amount of time.
+have not been accessed in this amount of time, and `mise cache prune` sweeps by the same age.
 
-Set to `0s` to keep cache files indefinitely.
+Set to `0s` to keep cache files indefinitely. Both the occasional sweep and `mise cache prune` stop
+for it; the command says so rather than pruning anyway. Sub-second durations such as `500ms` are
+ages like any other, not a way to disable it.
+
+This governs the cache directories only. Cached environments expire by
+[`env_cache_ttl`](/configuration/settings.html#env_cache_ttl) and are pruned on their own terms.
 """
 env = "MISE_CACHE_PRUNE_AGE"
 type = "Duration"
@@ -575,6 +580,19 @@ default = "symlink"
 description = "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`."
 env = "MISE_DOTFILES_DEFAULT_MODE"
 type = "String"
+
+[dotfiles.relative_symlinks]
+default = false
+description = "Create dotfile symlinks with relative targets instead of absolute ones."
+docs = """
+Applies to `symlink` and `symlink-each` entries; an entry's `relative` key overrides it.
+Relative links keep working when the home directory is mounted at a different path on
+another machine or the tree is moved, as long as the target and source stay in the same
+place relative to each other. Ignored on Windows, where directory links are junctions,
+which cannot be relative.
+"""
+env = "MISE_DOTFILES_RELATIVE_SYMLINKS"
+type = "Bool"
 
 [dotfiles.root]
 default = "~/.dotfiles"
@@ -1576,6 +1594,13 @@ Relative paths in `.miserc.toml` are resolved from the directory containing that
 file. Relative paths from the environment or CLI are resolved from the directory
 where mise was invoked. Glob patterns are supported, including recursive `**`
 patterns. Paths without glob metacharacters retain directory-prefix matching.
+
+Commands that act on every tracked config (`mise prune`, `mise ls --prunable`,
+and the stale-version check in `mise upgrade`) honor only the environment
+variable and the global/system `miserc.toml` files. A project's own
+`.miserc.toml` ignores do not hide other projects' configs from them or change
+their result. Relative paths in `MISE_IGNORED_CONFIG_PATHS` still resolve from
+the directory where mise was invoked.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -2268,6 +2293,44 @@ description = "OS to use for precompiled binaries."
 env = "MISE_OS"
 optional = true
 type = "String"
+
+[otel.enabled]
+default = false
+description = "[experimental] Enable OpenTelemetry trace export for task executions."
+docs = """
+When `true`, mise exports OpenTelemetry traces for `mise run` executions, provided a
+traces endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+
+Configure the collector endpoint and other options using the standard OpenTelemetry
+environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_SERVICE_NAME`, etc.).
+
+Log export (task stdout/stderr) is a separate, explicit opt-in — see `otel.logs`.
+
+This flag prevents mise from unexpectedly emitting spans in environments that set
+`OTEL_EXPORTER_OTLP_ENDPOINT` for other tools.
+"""
+env = "MISE_OTEL_ENABLED"
+type = "Bool"
+
+[otel.logs]
+default = false
+description = "[experimental] Enable OpenTelemetry log export for task stdout/stderr."
+docs = """
+When `true` (and a logs endpoint is configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`), mise exports each line of task stdout/stderr as
+an OTLP log record linked to the task span.
+
+This is a separate opt-in from `otel.enabled` because log export ships task output
+to the collector, which is a different trust boundary than traces — secrets that
+appear in stdout/stderr will leave the machine. It also changes task stdio behaviour:
+in `interleave`/`quiet` mode the child process's stdio is piped (not a TTY) so mise
+can tee every line to the collector, which can affect `isatty()`-dependent behaviour
+(buffering, colour, progress bars, prompts).
+"""
+env = "MISE_OTEL_LOGS"
+type = "Bool"
 
 [override_config_filenames]
 default = []
@@ -3305,7 +3368,7 @@ OIDC claims.
 """
 enum = ["read-write", "read-only", "write-only"]
 env = "MISE_TASK_CACHE_REMOTE_MODE"
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache.remote_namespace]
@@ -3422,7 +3485,7 @@ description = "Compatibility alias for task.cache.remote_mode."
 enum = ["read-write", "read-only", "write-only"]
 hide = true
 optional = true
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache_remote_namespace]
@@ -3588,7 +3651,7 @@ enum = [
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task.quiet]
@@ -3681,7 +3744,7 @@ deprecated_warn_at = "2026.8.0"
 description = "Change output style when executing tasks."
 hide = true
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task_remote_no_cache]
@@ -3878,6 +3941,11 @@ docs = '''
 Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
 and advanced regex-based URL transformations for download mirroring and custom registries.
 
+Rerouting `api.github.com` (or a repository's release and attestation API paths)
+also stops mise from using [mise-versions](#use_versions_host) for that GitHub
+metadata, so it all comes from the replacement. Rerouting only release
+downloads does not.
+
 See [URL Replacements](/url-replacements.html) for more information.
 '''
 env = "MISE_URL_REPLACEMENTS"
@@ -3911,6 +3979,12 @@ If the versions host does not have the requested metadata yet, mise falls back t
 GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
 users who disable this setting still need normal GitHub authentication when they
 would otherwise exceed GitHub's rate limits.
+
+When [`url_replacements`](#url_replacements) reroutes `api.github.com`, or a
+repository's release or attestation API paths, mise does not use this host for
+that GitHub metadata. The replacement is the only source, since this host only
+describes github.com itself. Rules that only reroute release downloads don't
+change this, and version lists for registry tools still come from this host.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply

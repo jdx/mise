@@ -19,7 +19,7 @@ use super::style;
 use super::text_install_progress::{
     Action, Outcome, State, Tool, elapsed, filled_cells, first_line, format_bytes,
 };
-use crate::cli::version::VERSION_PLAIN;
+use crate::version::VERSION_PLAIN;
 
 /// Redraw cadence for elapsed times and rates. clx animates the spinner on its
 /// own; this only needs to keep the numbers from looking stuck.
@@ -256,23 +256,35 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
             left.push_str(&format!("  {bytes}"));
         }
         job.prop("left", &left);
-        let mut right = String::new();
-        if !tool.weights.is_empty() && layout.row_bar {
+        job.prop("right", &row_right(tool, &layout, started, now));
+    }
+}
+
+/// The cells after a running tool's phase. The bar sits last, beside the
+/// spinner, so every row's bar starts in the same column whatever the artifact
+/// and elapsed time before it say.
+fn row_right(tool: &Tool, layout: &Layout, started: Instant, now: Instant) -> String {
+    let mut right = String::new();
+    if let Some(artifact) = &tool.artifact
+        && layout.artifact
+    {
+        right.push_str(&format!("{}  ", style::edim(artifact)));
+    }
+    right.push_str(&elapsed(started, now));
+    if layout.row_bar {
+        if tool.weights.is_empty() {
+            // Hold the bar's place so elapsed times still end together.
+            right.push_str(&" ".repeat(ROW_BAR_WIDTH + 2));
+        } else {
             let filled = filled_cells(tool.fraction, ROW_BAR_WIDTH, tool.outcome.is_some());
             right.push_str(&format!(
-                "{}{}  ",
+                "  {}{}",
                 style::ecyan("█".repeat(filled)),
                 style::edim("░".repeat(ROW_BAR_WIDTH - filled))
             ));
         }
-        right.push_str(&elapsed(started, now));
-        if let Some(artifact) = &tool.artifact
-            && layout.artifact
-        {
-            right.push_str(&format!("  {}", style::edim(artifact)));
-        }
-        job.prop("right", &right);
     }
+    right
 }
 
 impl InstallProgress for TtyInstallProgress {
@@ -592,6 +604,39 @@ mod tests {
         assert!(final_summary(&state, now, false).is_none());
         state.finish_tool(0, Outcome::Skipped, now, None);
         assert!(final_summary(&state, now, false).is_none());
+    }
+
+    #[test]
+    fn row_bars_line_up_whatever_comes_before_them() {
+        let mut state = State::new(
+            ["node@22", "jq@1.7.1", "go@1.23"]
+                .into_iter()
+                .map(|tool| (tool.into(), tool.into())),
+        );
+        let now = state.started + Duration::from_millis(12_300);
+        state.tools[0].artifact = Some("node-v22.23.2-linux-x64.tar.gz".into());
+        state.tools[0].weights = vec![1.0];
+        state.tools[0].fraction = 0.5;
+        state.tools[1].weights = vec![1.0];
+        let layout = Layout::fit(200, 12, 8);
+        let rows: Vec<String> = [
+            (0, state.started),
+            (1, now - Duration::from_millis(850)),
+            (2, state.started),
+        ]
+        .into_iter()
+        .map(|(index, started)| {
+            let right = row_right(&state.tools[index], &layout, started, now);
+            console::strip_ansi_codes(&right).into_owned()
+        })
+        .collect();
+        // The row template right-aligns this cell, so the bars share a column
+        // as long as every row ends in the same twelve cells.
+        assert!(rows[0].starts_with("node-v22.23.2-linux-x64.tar.gz  12.3s"));
+        assert!(rows[0].ends_with("12.3s  █████░░░░░"), "{}", rows[0]);
+        assert!(rows[1].ends_with("850ms  ░░░░░░░░░░"), "{}", rows[1]);
+        let blank = " ".repeat(ROW_BAR_WIDTH + 2);
+        assert!(rows[2].ends_with(&format!("12.3s{blank}")), "{:?}", rows[2]);
     }
 
     #[test]

@@ -53,6 +53,7 @@ if [[ ${1:-} == --all ]]; then
 	./e2e/run_all_tests
 else
 	# Handle multiple test arguments
+	TEST_FILES=()
 	for TEST_ARG in "$@"; do
 		# Strip e2e/ prefix if present, then extract just the filename
 		PATTERN="${TEST_ARG#e2e/}"
@@ -68,8 +69,17 @@ else
 		fi
 
 		for FILE in $FILES; do
+			TEST_FILES+=("$FILE")
+		done
+	done
+
+	# E2E_JOBS opts into running the matches concurrently, in argument order.
+	if [[ -n ${E2E_JOBS:-} && ${#TEST_FILES[@]} -gt 0 ]]; then
+		./e2e/run_all_tests "${TEST_FILES[@]}"
+	else
+		for FILE in ${TEST_FILES[@]+"${TEST_FILES[@]}"}; do
 			echo "[xtask:e2e] Running test: $FILE" >&2
 			./e2e/run_test "$FILE"
 		done
-	done
+	fi
 fi

@@ -919,7 +919,7 @@ fn template_contains_var(template: &str, key: &str) -> bool {
 }
 
 pub(super) fn rollout_warning_active() -> bool {
-    rollout_warning_active_for(&crate::cli::version::V)
+    rollout_warning_active_for(&crate::version::V)
 }
 
 fn rollout_warning_active_for(current: &versions::Versioning) -> bool {
@@ -1127,10 +1127,12 @@ mod tests {
             Some("example/demo".to_string())
         );
         let assets = vec![crate::github::GithubAsset {
+            from_versions_host: false,
             name: "demo-x86_64-unknown-linux-gnu.tar.gz".to_string(),
             browser_download_url: "https://github.com/example/demo/releases/download/v1.2.3/demo-x86_64-unknown-linux-gnu.tar.gz".to_string(),
             url: "https://api.github.com/repos/example/demo/releases/assets/1".to_string(),
             digest: None,
+            updated_at: None,
         }];
 
         let discovered =

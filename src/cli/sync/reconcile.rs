@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::install_state;

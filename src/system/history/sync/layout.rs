@@ -40,6 +40,18 @@ impl Roots {
         is_safe_branch_path(&path).then_some(path)
     }
 
+    /// The root a local path is mapped under, with the same precedence as
+    /// [`Self::branch_path`]: the configuration directory first, then home.
+    pub(crate) fn root_of(&self, local: &Path) -> Option<&Path> {
+        if local.starts_with(&self.config_dir) {
+            Some(&self.config_dir)
+        } else if local.starts_with(&self.home) {
+            Some(&self.home)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn locate(&self, branch_path: &str) -> Located {
         if !is_safe_branch_path(branch_path) {
             return Located::Unmapped;

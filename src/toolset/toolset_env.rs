@@ -7,7 +7,7 @@ use eyre::Result;
 
 use crate::backend::backend_type::BackendType;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::install_context::InstallDependencyContext;

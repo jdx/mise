@@ -10,8 +10,8 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::config::Config;
 use crate::config::settings::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::{InstallContext, install_dependency_declarations};
@@ -382,6 +382,12 @@ impl Toolset {
         let (installed, failed, attempted_failures) = self
             .install_with_deps(config, versions, opts, install_progress.as_deref())
             .await;
+        // Capture the completed installation itself before config reload, floating-link
+        // rebuilds, or a caller's later config write can change what a second lookup sees.
+        // `installed` contains every success even when a sibling failed, so partial-failure
+        // hooks retain the successful installation records.
+        let installed_tools: Vec<InstalledToolInfo> =
+            installed.iter().map(InstalledToolInfo::from).collect();
         let failed_backends = attempted_failures
             .iter()
             .filter_map(|tr| tr.backend().ok())
@@ -486,8 +492,6 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
-            let installed_tools: Vec<InstalledToolInfo> =
-                installed.iter().map(InstalledToolInfo::from).collect();
             hooks::run_one_hook_with_context(
                 config,
                 self,
@@ -785,6 +789,8 @@ impl Toolset {
         .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
+        crate::lockfile::ensure_locked_url_matches_version(&tv, &backend.get_platform_key())?;
+        tv.ba().warn_if_locked_backend_superseded(&tv.version);
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs
                 .then(|| scope_installs_dir(tr))
@@ -1052,7 +1058,7 @@ fn transitive_dependency_before_date(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     #[cfg(windows)]
@@ -1098,7 +1104,7 @@ mod tests {
         );
 
         let mut inactive_options = parse_tool_options(r#"postinstall="echo inactive""#);
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

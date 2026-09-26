@@ -14,7 +14,7 @@ EOF_TOOL
 chmod +x fixture/resume-tool/bin/resume-tool
 tar -czf artifact.tar.gz -C fixture resume-tool
 
-cat <<'EOF_SERVER' >server.py
+start_http_server --handler - <<'EOF_SERVER'
 import http.server
 import pathlib
 import socket
@@ -61,20 +61,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(artifact)
 
-    def log_message(self, *_args):
-        pass
 
-
-server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-pathlib.Path("server.port").write_text(str(server.server_port), encoding="utf-8")
-server.serve_forever()
+# One request at a time, so request_count orders them
+SERVER_CLASS = http.server.HTTPServer
 EOF_SERVER
-
-python3 server.py &
-server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-wait_for_file server.port "HTTP server port"
-port="$(cat server.port)"
 
 cat >registry/registry.yml <<EOF_REGISTRY
 packages:
@@ -83,7 +73,7 @@ packages:
     supported_envs:
       - darwin
       - linux
-    url: http://127.0.0.1:$port/artifact.tar.gz
+    url: http://127.0.0.1:$HTTP_PORT/artifact.tar.gz
     files:
       - name: resume-tool
         src: resume-tool/bin/resume-tool

@@ -32,6 +32,10 @@ pub(crate) struct LaunchdTomlConfig {
     /// Niceness of the process (`Nice` in the plist).
     #[serde(default)]
     pub nice: Option<i8>,
+    /// Scheduling band launchd places the job in (`ProcessType` in the plist):
+    /// `Background`, `Standard`, `Adaptive` or `Interactive`.
+    #[serde(default)]
+    pub process_type: Option<String>,
     #[serde(default)]
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     #[serde(default)]
@@ -81,6 +85,7 @@ pub(crate) struct LaunchdRequest {
     pub start_interval: Option<u64>,
     pub throttle_interval: Option<u64>,
     pub nice: Option<i8>,
+    pub process_type: Option<String>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     pub queue_directories: Vec<String>,
     pub environment: IndexMap<String, String>,
@@ -123,6 +128,14 @@ impl LaunchdRequest {
         if config.nice.is_some_and(|nice| !(-20..=20).contains(&nice)) {
             bail!("agent '{name}' `nice` must be between -20 and 20");
         }
+        // Validated rather than passed through: launchd silently ignores a
+        // `ProcessType` it does not recognize, so a typo would leave the job in
+        // the default band while the config claims otherwise.
+        let process_type = config
+            .process_type
+            .as_deref()
+            .map(|value| canonical_process_type(value, &name))
+            .transpose()?;
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
         }
@@ -152,6 +165,7 @@ impl LaunchdRequest {
             start_interval: config.start_interval,
             throttle_interval: config.throttle_interval,
             nice: config.nice,
+            process_type,
             start_calendar_interval: config.start_calendar_interval,
             queue_directories: config.queue_directories,
             environment: config.environment,
@@ -429,6 +443,9 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     if let Some(interval) = request.throttle_interval {
         dict.insert("ThrottleInterval".into(), Value::Integer(interval.into()));
     }
+    if let Some(process_type) = &request.process_type {
+        dict.insert("ProcessType".into(), Value::String(process_type.clone()));
+    }
     if let Some(nice) = request.nice {
         dict.insert("Nice".into(), Value::Integer(nice.into()));
     }
@@ -570,6 +587,42 @@ fn is_absolute_launchd_path(path: &str) -> bool {
     path == "~" || path.starts_with("~/") || path.starts_with('/')
 }
 
+/// The four bands launchd defines for `ProcessType`, in the capitalization it
+/// expects.
+const PROCESS_TYPES: [&str; 4] = ["Background", "Standard", "Adaptive", "Interactive"];
+
+/// Accept exactly launchd's own spelling of a process type.
+///
+/// launchd compares `ProcessType` exactly and ignores a value it does not know,
+/// so a wrong spelling would be accepted by the plist parser and then quietly
+/// do nothing: the config would claim a band the job is not in. That is what
+/// makes this worth rejecting rather than passing through.
+///
+/// Exact rather than case-insensitive, so that `schema/mise.json` can say the
+/// same thing. The schema is an enum of these four strings, and JSON Schema has
+/// no case-insensitive enum: matching loosely here would mean either an
+/// unreadable character-class regex in the schema, or editors red-lining a
+/// config mise accepts. One spelling keeps parser, schema and docs in exact
+/// agreement, and it is the spelling Apple documents.
+///
+/// A value that differs only in case or surrounding space is still a typo worth
+/// naming precisely, so the error suggests the canonical form rather than
+/// silently accepting it.
+fn canonical_process_type(value: &str, name: &str) -> Result<String> {
+    if let Some(exact) = PROCESS_TYPES.iter().find(|candidate| **candidate == value) {
+        return Ok((*exact).to_string());
+    }
+    let suggestion = PROCESS_TYPES
+        .iter()
+        .find(|candidate| candidate.eq_ignore_ascii_case(value.trim()))
+        .map(|candidate| format!(" (did you mean '{candidate}'?)"))
+        .unwrap_or_default();
+    Err(eyre::eyre!(
+        "agent '{name}' `process_type` must be one of {}, got '{value}'{suggestion}",
+        PROCESS_TYPES.join(", ")
+    ))
+}
+
 fn expand_path_string(path: &str) -> String {
     if path == "~" {
         return crate::dirs::HOME.to_string_lossy().to_string();
@@ -640,6 +693,83 @@ fn bootout_missing_error(error: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request_with_process_type(value: &str) -> Result<LaunchdRequest> {
+        LaunchdRequest::from_toml(
+            "band".into(),
+            LaunchdTomlConfig {
+                program: Some("/bin/echo".into()),
+                process_type: Some(value.into()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The four launchd spells, and only those, so `schema/mise.json` can carry
+    /// the same enum without an editor red-lining a config mise accepts.
+    #[test]
+    fn process_type_accepts_launchds_own_spelling() {
+        for expected in ["Background", "Standard", "Adaptive", "Interactive"] {
+            let request = request_with_process_type(expected).unwrap();
+            assert_eq!(request.process_type.as_deref(), Some(expected));
+        }
+    }
+
+    /// Rejected rather than passed through: launchd would accept the plist and
+    /// silently ignore the key, so the config would claim a band the job is not
+    /// in.
+    #[test]
+    fn an_unknown_process_type_is_an_error() {
+        for input in ["Realtime", "bg", "", "Backgroundd"] {
+            assert!(
+                request_with_process_type(input).is_err(),
+                "{input:?} should be rejected"
+            );
+        }
+    }
+
+    /// A near miss is the likely typo, and the one a bare list of valid values
+    /// reads as unhelpful for, so the error names the exact fix. Still an
+    /// error: accepting it is what would put the schema and the parser at odds.
+    #[test]
+    fn a_near_miss_process_type_suggests_the_exact_spelling() {
+        for input in ["background", "  Adaptive  ", "INTERACTIVE"] {
+            let err = request_with_process_type(input).unwrap_err().to_string();
+            assert!(err.contains("did you mean"), "{input:?}: {err}");
+        }
+        // Quoted, so trailing space is visible in the message rather than
+        // leaving the reader staring at an apparently correct value.
+        let err = request_with_process_type("  Adaptive  ")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("'  Adaptive  '"), "{err}");
+        assert!(err.contains("'Adaptive'"), "{err}");
+
+        // A value that is not close to anything gets the list and no guess.
+        let err = request_with_process_type("Realtime")
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains("did you mean"), "{err}");
+    }
+
+    #[test]
+    fn process_type_reaches_the_plist_only_when_set() {
+        let with = request_with_process_type("Background").unwrap();
+        let rendered = String::from_utf8(render_plist(&with).unwrap()).unwrap();
+        assert!(rendered.contains("<key>ProcessType</key>"));
+        assert!(rendered.contains("<string>Background</string>"));
+
+        let without = LaunchdRequest::from_toml(
+            "band".into(),
+            LaunchdTomlConfig {
+                program: Some("/bin/echo".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let rendered = String::from_utf8(render_plist(&without).unwrap()).unwrap();
+        assert!(!rendered.contains("ProcessType"));
+    }
 
     #[test]
     fn test_launchd_request_validation() {
@@ -721,6 +851,7 @@ mod tests {
             start_interval: Some(60),
             throttle_interval: Some(300),
             nice: None,
+            process_type: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
                 LaunchdCalendarInterval {
                     hour: Some(2),
@@ -833,6 +964,7 @@ mod tests {
             start_interval: None,
             throttle_interval: None,
             nice: None,
+            process_type: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![
                 LaunchdCalendarInterval {
                     hour: Some(3),
@@ -889,6 +1021,7 @@ mod tests {
                 program: Some("/bin/echo".to_string()),
                 throttle_interval: Some(10),
                 nice: None,
+                process_type: None,
                 queue_directories: vec![
                     "~/Library/Queues/sync".to_string(),
                     "/var/spool/sync".to_string(),

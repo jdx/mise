@@ -4,9 +4,9 @@ use eyre::Result;
 use jiff::civil::date;
 use jiff::{Span, Timestamp};
 
+use crate::args::{BackendArg, split_bracketed_opts};
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
 
@@ -324,7 +324,8 @@ mod tests {
         resolve_before_date, resolve_before_date_for_tool,
         resolve_before_date_for_tool_with_source,
     };
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
+    use crate::config::SettingsExt;
     use crate::config::settings::{Settings, SettingsPartial};
     use confique::Layer;
     use jiff::Timestamp;
@@ -349,27 +350,28 @@ mod tests {
 
     #[test]
     fn test_effective_before_date_prefers_override() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let cli_before = "2024-01-02T03:04:05Z".parse().unwrap();
         assert_eq!(
             resolved_timestamp(Some(cli_before), Some("7d")),
             Some(cli_before)
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_prefers_tool_option() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(
             resolved_timestamp(None, Some("2024-01-02")),
             Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_zero_minimum_release_age_disables_cutoff() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(resolved_timestamp(None, Some("0s")), None);
         assert_eq!(
@@ -382,11 +384,11 @@ mod tests {
         partial.minimum_release_age = Some("0s".to_string());
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("github:cli/cli", None, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_falls_back_to_global_setting() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         Settings::reset(Some(partial));
@@ -394,21 +396,21 @@ mod tests {
             resolved_timestamp(None, None),
             Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_excludes_global_by_backend_id() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_pypi_release_age_exclusions_accept_both_backend_names() {
+        let _settings = crate::test::SettingsGuard::lock();
         for exclude in ["pipx:*", "pypi:*", "pipx:black", "pypi:black"] {
             let mut partial = SettingsPartial::empty();
             partial.minimum_release_age = Some("2024-01-03".to_string());
@@ -417,11 +419,11 @@ mod tests {
             assert_eq!(resolved_tool_timestamp("pypi:black", None, None), None);
             assert_eq!(resolved_tool_timestamp("pipx:black", None, None), None);
         }
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_does_not_exclude_backend_by_bare_name() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm".to_string()]);
@@ -430,21 +432,21 @@ mod tests {
             resolved_tool_timestamp("npm:prettier", None, None),
             Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_excludes_global_by_backend_wildcard() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm:*".to_string()]);
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_does_not_exclude_by_bare_backend_tool_name() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["prettier".to_string()]);
@@ -453,11 +455,11 @@ mod tests {
             resolved_tool_timestamp("npm:prettier", None, None),
             Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_exclude_does_not_override_tool_option() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut partial = SettingsPartial::empty();
         partial.minimum_release_age = Some("2024-01-03".to_string());
         partial.minimum_release_age_excludes = Some(vec!["npm".to_string()]);
@@ -466,45 +468,45 @@ mod tests {
             resolved_tool_timestamp("npm:prettier", None, Some("2024-01-02")),
             Some(crate::duration::parse_into_timestamp("2024-01-02").unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_without_backend_has_no_default() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(resolved_timestamp(None, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_falls_back_to_default_for_supported_backend() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(
             resolved_tool_timestamp("npm:prettier", None, None),
             Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_falls_back_to_default_for_forgejo_backend() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(
             resolved_tool_timestamp("forgejo:codeberg.org/forgejo/forgejo", None, None),
             Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap())
         );
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_skips_default_for_unsupported_backend() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         assert_eq!(resolved_tool_timestamp("asdf:tiny", None, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_before_date_source_distinguishes_default_from_explicit() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let ba: BackendArg = "npm:prettier".into();
 
@@ -537,11 +539,11 @@ mod tests {
             .unwrap();
         assert_eq!(ts, cli_before);
         assert_eq!(source, BeforeDateSource::Provided);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_minimum_release_age_label_only_names_the_value_that_produced_the_cutoff() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let ba: BackendArg = "npm:prettier".into();
 
@@ -572,12 +574,11 @@ mod tests {
             minimum_release_age_label(&ba, Some("7d"), flag_cutoff),
             None
         );
-
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_minimum_release_age_for_tool_reports_raw_value() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let ba: BackendArg = "npm:prettier".into();
 
@@ -606,11 +607,11 @@ mod tests {
         // Backend without release timestamps → no cutoff, no value
         let asdf_ba: BackendArg = "asdf:tiny".into();
         assert_eq!(effective_minimum_release_age_for_tool(&asdf_ba, None), None);
-        Settings::reset(None);
     }
 
     #[test]
     fn test_effective_before_date_stable_within_process() {
+        let _settings = crate::test::SettingsGuard::lock();
         // Covers the invariant behind #9156: relative durations resolve
         // identically across calls within one invocation.
         Settings::reset(None);
@@ -620,7 +621,6 @@ mod tests {
         let a = resolved_timestamp(None, None);
         let b = resolved_timestamp(None, None);
         assert_eq!(a, b);
-        Settings::reset(None);
     }
 
     #[test]

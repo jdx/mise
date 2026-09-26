@@ -8,11 +8,13 @@ members = [
   "crates/mise-interactive-config",
   "crates/mise-shim",
   "crates/mise-sigstore",
+  "crates/mise-settings",
+  "crates/mise-util",
 ]
 
 [package]
 name = "mise"
-version = "2026.9.11"
+version = "2026.9.14"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -28,14 +30,14 @@ include = [
   "/LICENSE",
   "/README.md",
   "/build.rs",
-  "/build/lockfile_rollout.rs",
+  "/build/*.rs",
   "/completions/*",
   "/docs/public/apple-touch-icon.png",
   "/docs/public/android-chrome-512x512.png",
   "/minisign.pub",
   "/registry/*.toml",
   "/registry/daemon-presets/*.toml",
-  "/settings.toml",
+  "/schema/mise.json",
   "/zipsign.pub",
   "/src/**/*.rs",
   "/src/system/history/notify/macos.m",
@@ -73,7 +75,6 @@ opt-level = 3
 
 [dependencies]
 age = { version = "0.12", features = ["ssh", "plugin"] }
-aho-corasick = "1"
 aube-registry = { version = "2", default-features = false, features = [
   "rustls",
 ] }
@@ -95,20 +96,19 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
 ] }
 base64 = "0.23"
 bytesize = "2"
-bzip2 = "0.6"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = [
   "std",
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", version = "6.8", features = [
+usage_rs = { package = "usage-rs", version = "6.11", features = [
   "completions",
   "config",
   "diagnostics",
   "validation",
 ] }
-usage-cli = "6.8"
+usage-cli = "6.11"
 color-eyre = { version = "0.6", default-features = false, features = [
   "track-caller",
 ] }
@@ -120,20 +120,18 @@ contracts = "0.6"
 dashmap = "6"
 demand = "2"
 diffy = "0.5"
-digest = "0.11"
 dotenvy = "0.15"
 duct = "1"
 dunce = "1"
-homedir = "0.3"
 expr-lang = "2"
 eyre = "0.6"
 file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
-mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
-mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
+mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -150,10 +148,6 @@ ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
 http = "1"
-axum = { version = "0.8", default-features = false, features = [
-  "http1",
-  "tokio",
-] }
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }
@@ -165,11 +159,8 @@ jiff = "0.2"
 junction = "2"
 log = "0.4"
 minisign-verify = "0.2"
-md-5 = "0.11"
 miette = { version = "7", features = ["fancy"] }
-netrc-rs = "0.1"
 nodejs-semver = "5"
-nucleo-matcher = "0.3"
 notify = { version = "8", default-features = false, features = [
   "macos_fsevent",
 ] }
@@ -179,12 +170,12 @@ once_cell = "1"
 packslip = { version = "1.0", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
+pathdiff = "0.2"
 petgraph = "0.8"
-pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
-rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.52", default-features = false }
+rattler = { version = "0.49", default-features = false }
+rattler_conda_types = { version = "0.53", default-features = false }
 rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
   "gateway",
 ] }
@@ -192,7 +183,7 @@ rattler_solve = { version = "9", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
-rattler_virtual_packages = { version = "6", default-features = false }
+rattler_virtual_packages = { version = "7", default-features = false }
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -229,15 +220,12 @@ serde_ignored = "0.1"
 serde_json = "1"
 serde_yaml = "0.9"
 semver = "1"
-sevenz-rust2 = "0.22"
-sha1 = "0.11"
 sha2 = "0.11"
 blake3 = "1"
 chacha20poly1305 = "0.11"
 shell-escape = "0.1"
 shell-words = "1"
 signal-hook = "0.4"
-siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
 tabled = { version = "0.22", features = ["ansi"] }
@@ -245,18 +233,6 @@ taplo = "0.14"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1" }
-tera-contrib = { version = "0.3", features = [
-  "base64",
-  "date",
-  "filesize_format",
-  "format",
-  "json",
-  "rand",
-  "regex",
-  "slug",
-  "urlencode",
-] }
-terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "rt"] }
@@ -268,7 +244,7 @@ unicode-normalization = "0.1"
 url = "2"
 urlencoding = "2"
 uuid = { version = "1", features = ["v7"] }
-usage-lib = { version = "6.8", features = ["docs"] }
+usage-lib = { version = "6.11", features = ["docs"] }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
@@ -276,9 +252,26 @@ mise-interactive-config = { path = "crates/mise-interactive-config", version = "
 walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
-xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.14"
+opentelemetry = { version = "0.33", default-features = false, features = [
+  "trace",
+  "logs",
+] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = [
+  "trace",
+  "logs",
+  "rt-tokio",
+  "experimental_logs_batch_log_processor_with_async_runtime",
+  "experimental_trace_batch_span_processor_with_async_runtime",
+] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
+  "http-proto",
+  "http-json",
+  "trace",
+  "logs",
+  "reqwest-client",
+] }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
@@ -291,10 +284,6 @@ self_update = { version = "1", optional = true, default-features = false, featur
   "github",
   "progress-bar",
 ] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-landlock = "0.4"
-seccompiler = "0.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
@@ -321,6 +310,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemServices",
   "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 [build-dependencies]
@@ -329,8 +319,6 @@ built = { version = "0.8", features = ["chrono"] }
 cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
-heck = "0.5"
-indexmap = "2"
 phf_codegen = "0.14"
 regex = "1"
 semver = "1"
@@ -342,6 +330,9 @@ toml = "1"
 ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
+opentelemetry_sdk = { version = "0.33", default-features = false, features = [
+  "testing",
+] }
 pretty_assertions = "1"
 test-log = "0.2"
 
@@ -352,8 +343,8 @@ native-tls = [
   "reqwest/native-tls",
   "rattler/native-tls",
   "rattler_repodata_gateway/native-tls",
-  "mise-sigstore/native-tls",
   "mise-cache-core/native-tls",
+  "mise-util/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
@@ -364,8 +355,8 @@ rustls = [
   "reqwest/rustls",
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
-  "mise-sigstore/rustls",
   "mise-cache-core/rustls",
+  "mise-util/rustls",
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
@@ -376,8 +367,8 @@ rustls-native-roots = [
   "reqwest/rustls",
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
-  "mise-sigstore/rustls",
   "mise-cache-core/rustls-native-roots",
+  "mise-util/rustls-native-roots",
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",

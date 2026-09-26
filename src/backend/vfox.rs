@@ -11,13 +11,13 @@ use tokio::sync::RwLock;
 use url::Url;
 use walkdir::WalkDir;
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, runtime_path_for_install_path};
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::hash::hash_to_str;
@@ -476,13 +476,31 @@ impl Backend for VfoxBackend {
         _pr: &dyn crate::ui::progress_report::SingleReport,
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
-        if self.is_backend_plugin() || !self.plugin.is_installed() {
+        if !self.plugin.is_installed() {
             return Ok(());
         }
 
         let (mut vfox, log_rx) = self.plugin.vfox()?;
         Self::forward_plugin_logs(log_rx);
         vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
+        if self.is_backend_plugin() {
+            let options = self
+                .tool_options_for_tv(config, tv)
+                .await
+                .into_backend_options()
+                .into_map();
+            vfox.backend_uninstall(
+                &self.pathname,
+                self.get_tool_name()?,
+                &tv.version,
+                tv.install_path(),
+                tv.download_path(),
+                options,
+            )
+            .await
+            .wrap_err("Backend uninstall method failed")?;
+            return Ok(());
+        }
         vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
             .await?;
         Ok(())

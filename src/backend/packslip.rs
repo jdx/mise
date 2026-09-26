@@ -23,6 +23,7 @@ use packslip::model::{
 };
 use packslip::sigstore::{Policy, Trust};
 
+use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{ArchiveLayout, install_artifact};
@@ -30,8 +31,7 @@ use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
     runtime_path_for_install_path,
 };
-use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -148,6 +148,13 @@ fn bundle_name(project: &str) -> String {
         Some(sub) => format!("packslip.{}.sigstore.json", sub.replace('/', "-")),
         None => "packslip.sigstore.json".to_string(),
     }
+}
+
+/// The tag in a `https://github.com/{owner}/{repo}/releases/tag/{tag}` URL.
+fn release_url_tag(url: &str) -> Option<String> {
+    let (_, tag) = url.rsplit_once("/releases/tag/")?;
+    let tag = urlencoding::decode(tag).ok()?;
+    (!tag.is_empty()).then(|| tag.into_owned())
 }
 
 /// The signed release list of a project on its own domain.
@@ -719,6 +726,54 @@ impl PackslipBackend {
         repository(project).map(|(_, owner, repo)| format!("{owner}/{repo}"))
     }
 
+    /// Whether mise-versions stands in for api.github.com. It catalogs the
+    /// versions of a registry tool's preferred backend, which for a packslip
+    /// tool is the same listing [`Self::vendor_versions`] makes (its update
+    /// job runs `mise ls-remote`), and it mirrors that repository's releases.
+    /// Which of those versions this client accepts is still decided here:
+    /// the signed list, stamps and every manifest are read and verified on
+    /// each resolution, so a stale catalog can only hold back a new release,
+    /// never admit one that policy refuses.
+    fn versions_host_applies(&self) -> bool {
+        Settings::get().use_versions_host
+            && crate::backend::backend_arg_is_preferred_registry_backend(&self.ba)
+    }
+
+    /// Every release carrying a packslip, oldest first, from mise-versions.
+    /// `None` sends the caller to GitHub, for a tool the host does not
+    /// describe or has nothing for.
+    async fn mirrored_versions(&self) -> Result<Option<Vec<VersionInfo>>> {
+        if !self.versions_host_applies() {
+            return Ok(None);
+        }
+        let versions = match crate::versions_host::list_versions(&self.ba.short).await {
+            Ok(Some(versions)) => versions,
+            Ok(None) => return Ok(None),
+            Err(err) => {
+                debug!("{}: mise-versions has no listing: {err:#}", self.ba);
+                return Ok(None);
+            }
+        };
+        let versions: Vec<_> = versions
+            .into_iter()
+            .filter_map(|v| version_info(Some(v.version), v.created_at, v.release_url))
+            .collect();
+        Ok((!versions.is_empty()).then_some(versions))
+    }
+
+    /// The release tag mise-versions records for `version`, so its release
+    /// mirror can be asked for that one release rather than GitHub for all.
+    async fn mirrored_tag(&self, project: &str, version: &str) -> Result<Option<String>> {
+        let Some(versions) = self.mirrored_versions().await? else {
+            return Ok(None);
+        };
+        Ok(versions
+            .iter()
+            .filter(|v| v.version == version)
+            .filter_map(|v| v.release_url.as_deref().and_then(release_url_tag))
+            .find(|tag| tag_version(tag, project).as_deref() == Some(version)))
+    }
+
     async fn release_list(
         &self,
         project: &str,
@@ -759,7 +814,11 @@ impl PackslipBackend {
             Some(sub) => format!(".well-known/packslip/{sub}.json"),
             None => ".well-known/packslip.json".to_string(),
         };
-        let url = format!("https://api.github.com/repos/{repo}/contents/{path}?ref=HEAD");
+        // The CDN, not the contents API: the list has to be read on every
+        // resolution, and api.github.com's rate limit is what fails first for
+        // users without a token. The CDN serves the default branch for `HEAD`
+        // and takes the same token for a private repository.
+        let url = format!("https://raw.githubusercontent.com/{repo}/HEAD/{path}");
         let headers = github::get_headers(&url)?;
         let text = match HTTP_FETCH
             .get_text_request(&url)
@@ -853,12 +912,26 @@ impl PackslipBackend {
         let asset_name = bundle_name(project);
         let repo = Self::repo(project)
             .ok_or_else(|| eyre!("packslip:{project} publishes no signed release list"))?;
-        let releases = github::list_releases_including_prereleases(&repo).await?;
-        let found = releases.iter().find_map(|r| {
-            let asset = r.assets.iter().find(|a| a.name == asset_name)?;
-            (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
-                .then_some(asset)
-        });
+        let find = |releases: &[github::GithubRelease]| {
+            releases.iter().find_map(|r| {
+                let asset = r.assets.iter().find(|a| a.name == asset_name)?;
+                (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
+                    .then(|| asset.clone())
+            })
+        };
+        let mut found = None;
+        if let Some(tag) = self.mirrored_tag(project, &tv.version).await? {
+            let release = github::get_release_with_versions_host(&repo, &tag, true).await?;
+            found = find(std::slice::from_ref(&release));
+            if found.is_none() {
+                // A mirrored release fetched before the packslip was uploaded
+                // must not stand in for the release as it is now.
+                debug!("packslip:{project}: the mirrored {tag} carries no {asset_name}");
+            }
+        }
+        if found.is_none() {
+            found = find(&github::list_releases_including_prereleases(&repo).await?);
+        }
         let Some(asset) = found else {
             bail!(
                 "github.com/{repo} has no release {} carrying {asset_name}; mise installs from a packslip and does not guess at release assets",
@@ -967,7 +1040,9 @@ impl PackslipBackend {
         if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
             return Ok(Some(latest.clone()));
         }
-        let release = match github::get_release_with_versions_host(&repo, "latest", false).await {
+        // The release mirror serves any public repo, unlike the per-tool
+        // catalog `versions_host_applies` guards.
+        let release = match github::get_release_with_versions_host(&repo, "latest", true).await {
             Ok(release) => release,
             Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
             Err(err) => return Err(err),
@@ -1087,24 +1162,31 @@ impl PackslipBackend {
         let opts = PackslipOptions::new(raw_opts);
         let pin = pin(&project, &opts)?;
         if let Some(repo) = Self::repo(&project) {
-            let asset_name = bundle_name(&project);
-            // GitHub's prerelease flag is not consulted: the version says.
-            let mut versions: Vec<VersionInfo> = github::list_releases_including_prereleases(&repo)
-                .await?
-                .into_iter()
-                .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
-                .filter_map(|r| {
-                    version_info(
-                        tag_version(&r.tag_name, &project),
-                        Some(r.released_at().to_string()),
-                        Some(format!(
-                            "https://github.com/{repo}/releases/tag/{}",
-                            r.tag_name
-                        )),
-                    )
-                })
-                .collect();
-            versions.reverse();
+            let mut versions = match self.mirrored_versions().await? {
+                Some(versions) => versions,
+                None => {
+                    let asset_name = bundle_name(&project);
+                    // GitHub's prerelease flag is not consulted: the version says.
+                    let mut versions: Vec<VersionInfo> =
+                        github::list_releases_including_prereleases(&repo)
+                            .await?
+                            .into_iter()
+                            .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
+                            .filter_map(|r| {
+                                version_info(
+                                    tag_version(&r.tag_name, &project),
+                                    Some(r.released_at().to_string()),
+                                    Some(format!(
+                                        "https://github.com/{repo}/releases/tag/{}",
+                                        r.tag_name
+                                    )),
+                                )
+                            })
+                            .collect();
+                    versions.reverse();
+                    versions
+                }
+            };
             // The repository's own signed list, when it keeps one, is the
             // last word on what it names: a withdrawn release goes, and a
             // release whose tag names no version is added.
@@ -1987,6 +2069,23 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         assert!(check_verified_age(Some(new), old, None).is_ok());
         assert!(check_verified_age(Some("invalid"), old, before).is_err());
         assert!(check_verified_age(Some("2026-09-03T00:00:00Z"), old, before).is_ok());
+    }
+
+    #[test]
+    fn release_url_tags_round_trip_through_the_catalog() {
+        assert_eq!(
+            release_url_tag("https://github.com/jdx/usage/releases/tag/v6.11.0").as_deref(),
+            Some("v6.11.0")
+        );
+        assert_eq!(
+            release_url_tag("https://github.com/o/r/releases/tag/sub%2Fv1.0.0").as_deref(),
+            Some("sub/v1.0.0")
+        );
+        assert_eq!(
+            release_url_tag("https://github.com/o/r/releases/tag/"),
+            None
+        );
+        assert_eq!(release_url_tag("https://github.com/o/r"), None);
     }
 
     #[test]

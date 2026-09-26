@@ -10,17 +10,52 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::task::Task;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 /// A tool to lock for a specific lockfile target.
-type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
+type LockTool = (crate::args::BackendArg, crate::toolset::ToolVersion);
+
+/// Without its version list a request can only resolve to itself, and that
+/// string is not known to be a version: `4` would be locked as a release that
+/// may not exist. A version the lockfile already holds, or one that is
+/// installed, is known to exist. `cli_versions` are the `tool@version`
+/// arguments, which lock can record without changing the configured request.
+fn reject_unverified_versions(tools: &[LockTool], cli_versions: &[(String, String)]) -> Result<()> {
+    for (ba, tv) in tools {
+        let as_requested = tv.version == tv.request.version()
+            || cli_versions
+                .iter()
+                .any(|(full, version)| *full == ba.full() && *version == tv.version);
+        if !as_requested || tv.resolved_from_lockfile() {
+            continue;
+        }
+        let Some(cause) = crate::backend::version_listing_failure(ba) else {
+            continue;
+        };
+        if tv
+            .backend()
+            .is_ok_and(|backend| backend.list_installed_versions().contains(&tv.version))
+        {
+            continue;
+        }
+        bail!(
+            "cannot lock {}@{}: unable to fetch versions for {}: {cause}",
+            ba.short,
+            tv.version,
+            ba.full()
+        );
+    }
+    Ok(())
+}
 type ToolSelectors = (BTreeSet<String>, BTreeSet<String>);
 
 struct LockCollectionContext<'a> {
@@ -43,13 +78,43 @@ fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
         && a.1.request.source() == b.1.request.source()
 }
 
-fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
+fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
+    // Installed-version resolution can yield an install directory name such
+    // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
+    tool.1.strip_install_path_identity();
     if !tools
         .iter()
         .any(|existing| lock_tool_matches(existing, &tool))
     {
         tools.push(tool);
     }
+}
+
+/// Tool stubs listed in a lockfile that still find it from where they live,
+/// each paired with its parsed stub or the error parsing it.
+fn live_tool_stubs(
+    lockfile_path: &Path,
+) -> Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)> {
+    let mut lockfile = match Lockfile::read(lockfile_path) {
+        Ok(lockfile) => lockfile,
+        Err(err) => {
+            debug!(
+                "skipping tool stubs of {}: {err}",
+                display_path(lockfile_path)
+            );
+            return vec![];
+        }
+    };
+    lockfile.retain_live_tool_stubs(lockfile_path);
+    lockfile
+        .tool_stubs()
+        .iter()
+        .map(|reference| {
+            let path = lockfile::tool_stub_path(lockfile_path, reference);
+            let stub = crate::cli::tool_stub::ToolStubFile::from_file(&path);
+            (path, stub)
+        })
+        .collect()
 }
 
 /// Create or refresh lockfile versions, checksums, and download URLs
@@ -121,6 +186,8 @@ pub(crate) struct Lock {
     /// advances without installing anything. Config files are never modified:
     /// exactly pinned versions resolve to themselves and stay unchanged
     /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
+    /// If the remote versions cannot be fetched, it fails rather than keep
+    /// the locked version.
     #[usage(long, verbatim_doc_comment)]
     pub bump: bool,
 
@@ -165,6 +232,11 @@ pub(crate) struct Lock {
     /// combined with tool arguments.
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
+
+    /// Restrict the run to these lockfiles, for callers that relock the
+    /// entries they rewrote (`mise backends switch`).
+    #[usage(skip)]
+    pub lockfiles: Option<BTreeSet<PathBuf>>,
 }
 
 /// A lockfile version change reported by `--json`
@@ -337,6 +409,7 @@ impl Lock {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
         .await
@@ -353,7 +426,7 @@ impl Lock {
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
         let atomic = self.upgrade || generate;
-        if !self.dry_run && !atomic {
+        if !self.dry_run && !atomic && self.lockfiles.is_none() {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -361,6 +434,7 @@ impl Lock {
             before_date,
             filter_installed_versions_by_release_date: true,
             latest_versions: self.bump,
+            latest_versions_for_all_requests: self.bump,
             use_locked_version: !self.bump,
             // Lock moving channels to their current concrete value without making
             // ordinary `latest` requests ignore an installed concrete version.
@@ -397,7 +471,7 @@ impl Lock {
         };
         let lockfile_targets =
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
-        let migration_inputs = lockfile::monorepo_lockfile_migration_paths(&config);
+        let migration_inputs = self.monorepo_migration_paths(&config);
         let can_skip_generation = generate
             && installed.is_some_and(|versions| versions.is_empty())
             && !self.upgrade
@@ -497,11 +571,21 @@ impl Lock {
                             && actual.request.source() == tv.request.source()
                     }) {
                         *tv = actual.clone();
+                        tv.strip_install_path_identity();
                     }
                 }
                 if tools.is_empty() && !lockfile_path.exists() {
                     continue;
                 }
+            }
+            let cli_versions: Vec<_> = self
+                .tool
+                .iter()
+                .filter_map(|tool| Some((tool.ba.full(), tool.tvr.as_ref()?.version())))
+                .collect();
+            reject_unverified_versions(&tools, &cli_versions)?;
+            for (_, tv) in &tools {
+                tv.ba().warn_if_locked_backend_superseded(&tv.version);
             }
             let configured_selectors = self.configured_tool_selectors_for_target(
                 &config,
@@ -578,6 +662,7 @@ impl Lock {
                         &mut lockfile,
                         configured_selectors.as_ref(),
                     );
+                    let pruned_stubs = lockfile.retain_live_tool_stubs(&lockfile_path);
                     let format_changed = if self.upgrade {
                         if lockfile.tools().is_empty() {
                             self.prepare_lockfile_format(&lockfile_path, &mut lockfile)
@@ -591,7 +676,7 @@ impl Lock {
                         self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
                         false
                     };
-                    if format_changed || !pruned_tools.is_empty() {
+                    if format_changed || !pruned_tools.is_empty() || pruned_stubs {
                         if atomic {
                             staged_upgrade_writes.push(StagedUpgradeWrite {
                                 path: lockfile_path.clone(),
@@ -686,6 +771,7 @@ impl Lock {
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
             }
+            let pruned_stubs = lockfile.retain_live_tool_stubs(&lockfile_path);
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
@@ -708,6 +794,7 @@ impl Lock {
             // Keep unchanged files out of the mutation/rollback set, but leave them
             // in initial_lockfiles so publication still checks concurrent edits.
             if can_skip_generation
+                && !pruned_stubs
                 && original_content.is_some()
                 && lockfile::generate::is_current(&lockfile, &tools, &target_platforms)?
             {
@@ -885,7 +972,7 @@ impl Lock {
         // lockfiles untouched on failure.
         if !self.dry_run && atomic {
             verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
-            let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
+            let migration_paths = self.monorepo_migration_paths(&config);
             let mutation_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
                 .map(|staged| staged.path.clone())
@@ -1385,7 +1472,7 @@ impl Lock {
 
     fn configured_tool_selectors(
         &self,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
+        tools: &[(crate::args::BackendArg, crate::toolset::ToolVersion)],
     ) -> ToolSelectors {
         let configured_tools: BTreeSet<String> =
             tools.iter().map(|(ba, _)| ba.short.clone()).collect();
@@ -1430,6 +1517,24 @@ impl Lock {
                 // tools may be intentionally unavailable on the current platform.
                 configured_tools.insert(ba.short.clone());
                 configured_backends.insert(ba.full());
+            }
+        }
+
+        for (path, stub) in live_tool_stubs(target_lockfile_path) {
+            let request = stub.and_then(|stub| stub.to_tool_request(&path));
+            match request {
+                Ok(request) => {
+                    configured_tools.insert(request.ba().short.clone());
+                    configured_backends.insert(request.ba().full());
+                }
+                Err(err) => {
+                    debug!(
+                        "skipping stale-tool pruning for {} because {} could not be parsed: {err}",
+                        display_path(target_lockfile_path),
+                        display_path(&path)
+                    );
+                    return None;
+                }
             }
         }
 
@@ -1485,6 +1590,25 @@ impl Lock {
             stale_tools.iter().cloned().collect::<Vec<_>>().join(", ")
         );
         Ok(())
+    }
+
+    /// Legacy monorepo lockfiles to migrate. A run restricted to particular
+    /// lockfiles migrates none: its caller snapshots only those lockfiles.
+    fn monorepo_migration_paths(&self, config: &Config) -> Vec<(PathBuf, PathBuf)> {
+        if self.lockfiles.is_some() {
+            return vec![];
+        }
+        lockfile::monorepo_lockfile_migration_paths(config)
+    }
+
+    /// The lockfiles a run with these flags writes for the loaded config, each
+    /// with the config files whose tools it locks.
+    pub(crate) fn lockfile_targets(
+        &self,
+        config: &Config,
+    ) -> indexmap::IndexMap<PathBuf, Vec<PathBuf>> {
+        let scoped = self.config_paths_in_lock_scope(config, &config.config_files);
+        self.get_lockfile_targets(config, &config.config_files, &scoped)
     }
 
     fn config_paths_in_lock_scope(
@@ -1584,6 +1708,13 @@ impl Lock {
             if self.local && !is_local {
                 continue;
             }
+            if self
+                .lockfiles
+                .as_ref()
+                .is_some_and(|only| !only.contains(&lockfile_path))
+            {
+                continue;
+            }
             targets.entry(lockfile_path).or_default().push(path.clone());
         }
         targets
@@ -1611,6 +1742,10 @@ impl Lock {
         let config_paths_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         let mut all_tools: Vec<LockTool> = Vec::new();
+        let locks_here = |source: &ToolSource| {
+            lockfile::lockfile_path_for_tool_source(config, source)
+                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path)
+        };
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
         for (backend, tv) in ts.list_current_versions() {
@@ -1622,8 +1757,8 @@ impl Lock {
                 }
             } else if tv.request.source().path().is_some() {
                 // Path-backed sources that do not map to a mise lockfile, such
-                // as .tool-versions and tool stubs, should not be folded into
-                // an arbitrary project mise.lock.
+                // as .tool-versions, should not be folded into an arbitrary
+                // project mise.lock. Tool stubs map through the pass below.
                 continue;
             } else {
                 if Settings::get().generate_lockfiles() {
@@ -1675,11 +1810,14 @@ impl Lock {
                             ba.backend()?;
                         }
                         if ba.backend().is_ok() {
-                            // Check if the resolved toolset has a matching request.
+                            // Check if the resolved toolset has a matching request that was
+                            // resolved through this lockfile. An equal request from a config
+                            // that writes elsewhere was pinned by that other lockfile.
                             let mut matched_resolved = false;
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if request_matches(&tv.request, request)
+                                        && locks_here(tv.request.source())
                                         && tv.version != "latest"
                                         && !ba.backend().is_ok_and(|backend| {
                                             backend.is_rolling_channel(&tv.version)
@@ -1699,18 +1837,31 @@ impl Lock {
                                 || self.tool.iter().any(|tool| tool.ba.as_ref() == ba.as_ref());
                             let active_unresolved = requested_tool
                                 && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
-                                    tvl.requests
-                                        .iter()
-                                        .any(|active| request_matches(active, request))
+                                    tvl.requests.iter().any(|active| {
+                                        request_matches(active, request)
+                                            && locks_here(active.source())
+                                    })
                                 });
                             // Resolve overridden requests through the same path as active
                             // tools when the request cannot be copied from the resolved
-                            // toolset. Keep this broad only for idiomatic version files;
-                            // other sources preserve the previous latest-only behavior.
-                            let should_resolve_overridden = active_unresolved
+                            // toolset. These cases bypass this lockfile's pinned version.
+                            let unlock_overridden = active_unresolved
                                 || Settings::get().generate_lockfiles()
                                 || request.version() == "latest"
                                 || source.is_idiomatic_version_file();
+                            // A request shadowed by a config that writes a different lockfile
+                            // (e.g. a global `hk = "1"` under a project `hk = "1.58.1"`) still
+                            // belongs in this one. Resolve it through its own lock entry so
+                            // `mise lock --global` keeps the pinned version. When the winning
+                            // request also writes here, it alone describes this lockfile.
+                            let shadowed_elsewhere =
+                                !ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
+                                    tvl.requests
+                                        .iter()
+                                        .any(|active| locks_here(active.source()))
+                                });
+                            let should_resolve_overridden =
+                                unlock_overridden || requested_tool && shadowed_elsewhere;
                             if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(context.resolve_options)
@@ -1731,7 +1882,7 @@ impl Lock {
                                         }
                                     }
                                 };
-                                if !Settings::get().generate_lockfiles() {
+                                if unlock_overridden && !Settings::get().generate_lockfiles() {
                                     resolve_options.use_locked_version = false;
                                 }
                                 if resolve_options.before_date.is_some() {
@@ -1761,6 +1912,39 @@ impl Lock {
                     }
                 }
             }
+        }
+
+        // Third pass: tool stubs that read their entries from this lockfile.
+        // They are not part of any config, so nothing above sees them.
+        for (path, stub) in live_tool_stubs(target_lockfile_path) {
+            let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
+                Ok(request) => request,
+                Err(err) => {
+                    warn!("skipping tool stub {}: {err:#}", display_path(&path));
+                    continue;
+                }
+            };
+            // `mise lock node` must not fail on an unrelated stub.
+            if !self.tool.is_empty()
+                && !self
+                    .tool
+                    .iter()
+                    .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
+            {
+                continue;
+            }
+            let resolve_options = request.resolve_options(context.resolve_options)?;
+            let tv = request
+                .resolve(config, &resolve_options)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve tool stub {} for lockfile {}",
+                        display_path(&path),
+                        display_path(target_lockfile_path)
+                    )
+                })?;
+            push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
         }
 
         self.add_task_tools_to_lock(
@@ -1809,20 +1993,44 @@ impl Lock {
                         .ok()
                         .and_then(|request| request.resolve_options(context.resolve_options).ok());
                     let is_rolling = backend
+                        .as_ref()
                         .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
+                    // An installed exact pin resolves to itself, so `--bump` has
+                    // nothing to look up for it. `latest` and rolling channels are
+                    // selectors even when a directory by that name is installed.
+                    let installed_exact = !is_rolling
+                        && effective_version != "latest"
+                        && backend.is_some_and(|backend| {
+                            backend
+                                .list_installed_versions()
+                                .contains(&effective_version)
+                        });
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
                         && (self.bump || resolve_options.before_date.is_some() || is_rolling)
                     {
-                        resolve_options.use_locked_version = false;
-                        resolve_options.latest_versions = true;
-                        match request.resolve(config, &resolve_options).await {
-                            Ok(resolved_tv) => tv = resolved_tv,
-                            Err(err) if is_rolling => {
-                                return Err(err.wrap_err(format!(
-                                    "failed to resolve specified rolling channel {request}"
-                                )));
+                        if self.bump && installed_exact {
+                            // The request itself, not the configured tool's, so an
+                            // alias is locked as the version it resolved to.
+                            tv = ToolVersion::new(request, effective_version);
+                        } else {
+                            resolve_options.use_locked_version = false;
+                            resolve_options.latest_versions = true;
+                            match request.resolve(config, &resolve_options).await {
+                                Ok(resolved_tv) => tv = resolved_tv,
+                                Err(err) if is_rolling => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve specified rolling channel {request}"
+                                    )));
+                                }
+                                // Keeping the locked version would report success for a
+                                // bump that never looked at the remote versions.
+                                Err(err) if self.bump => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve {request} for `mise lock --bump`"
+                                    )));
+                                }
+                                Err(err) => debug!("failed to resolve specified {request}: {err}"),
                             }
-                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
                         if let Some(latest_version) = crate::backend::get(&ba)
@@ -2005,7 +2213,7 @@ impl Lock {
 
         // Collect all platform variants for each tool/platform combination
         let mut all_tasks: Vec<(
-            crate::cli::args::BackendArg,
+            crate::args::BackendArg,
             crate::toolset::ToolVersion,
             Platform,
         )> = Vec::new();
@@ -2056,7 +2264,7 @@ impl Lock {
                         debug!("{msg}");
                     }
                     let error_is_fatal =
-                        resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+                        resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -2111,7 +2319,7 @@ mod tests {
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
         restore_lockfile_snapshots,
     };
-    use crate::cli::args::{BackendArg, ToolArg};
+    use crate::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
     use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
@@ -2226,6 +2434,7 @@ mod tests {
             minimum_release_age: None,
             bump: false,
             upgrade: false,
+            lockfiles: None,
             json: false,
         }
     }
@@ -2266,12 +2475,11 @@ mod tests {
             Err(error.clone()),
             BTreeMap::new(),
             BTreeMap::new(),
-            BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Required,
         );
         let mut lockfile = Lockfile::default();
         let resolution_error = resolution.4.as_ref().err().cloned();
-        let error_is_fatal = resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+        let error_is_fatal = resolution.7 == crate::lockfile::LockResolutionStatus::Required;
 
         let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
         let (status, returned_error) =
@@ -2320,11 +2528,8 @@ mod tests {
         lockfile
     }
 
-    fn configured_tool(
-        backend: &str,
-        version: &str,
-    ) -> (crate::cli::args::BackendArg, ToolVersion) {
-        let ba = crate::cli::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
+    fn configured_tool(backend: &str, version: &str) -> (crate::args::BackendArg, ToolVersion) {
+        let ba = crate::args::BackendArg::new(backend.to_string(), Some(backend.to_string()));
         let request =
             ToolRequest::new(Arc::new(ba.clone()), version, ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, version.to_string());
@@ -2578,7 +2783,6 @@ mod tests {
             "asdf:dummy".to_string(),
             Platform::parse("linux-x64").unwrap(),
             Ok(PlatformInfo::default()),
-            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Optional,

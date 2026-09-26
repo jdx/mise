@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use eyre::{Result, bail};
 
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env;
 use crate::file::display_filename;
 

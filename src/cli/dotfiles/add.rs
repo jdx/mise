@@ -107,6 +107,9 @@ impl DotfilesAdd {
             Some("track") => bail!(
                 "`--mode track` tracks a file where it is and takes no source; use `mise dot track <path>`"
             ),
+            Some("absent") => bail!(
+                "`--mode absent` removes a file rather than capturing it; declare `mode = \"absent\"` in [dotfiles]"
+            ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
@@ -171,6 +174,14 @@ impl DotfilesAdd {
                     "{target_raw}: tracked in place; pass `--mode copy` after `mise dot untrack {target_raw}` to seed a source instead"
                 );
             }
+            if managed
+                .iter()
+                .any(|req| req.mode == FileMode::Permissions && req.target == target)
+            {
+                bail!(
+                    "{target_raw}: only its permissions are managed; remove that permissions-only [dotfiles] entry, or give it a source, before adding the file"
+                );
+            }
             if managed_edits.iter().any(|req| {
                 system::files::matches_target(
                     &req.path,
@@ -189,6 +200,25 @@ impl DotfilesAdd {
                     std::slice::from_ref(target_raw),
                 )
             });
+            if let Some(req) = existing
+                && req.mode == FileMode::Absent
+            {
+                bail!(
+                    "{target_raw}: declared absent in {}; remove that entry before adding the file",
+                    req.origin.config.display_user()
+                );
+            }
+            // capturing copies the target tree into the source verbatim,
+            // which would store `.bashrc` where the entry reads `dot-bashrc`
+            if let Some(req) = existing
+                && req.dot_prefix
+            {
+                bail!(
+                    "{target_raw}: declared with dot_prefix in {}; edit its source {} directly",
+                    req.origin.config.display_user(),
+                    req.source.display_user()
+                );
+            }
             let source = if let Some(req) = existing {
                 req.source.clone()
             } else if let Some(source) = &self.source {
@@ -478,7 +508,7 @@ impl DotfilesAdd {
             }
             if let Some(plan) = apply_plan {
                 apply_started = true;
-                system::files::execute_apply(&config, plan, &apply_opts)?;
+                system::files::execute_apply(&config, plan, &apply_opts, &mut vec![])?;
             }
             Ok(())
         })();
@@ -546,7 +576,9 @@ impl PlannedAdd {
             content: None,
             mode: self.mode,
             exclude: vec![],
+            include: None,
             manifest: None,
+            permissions: None,
             base: config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
@@ -554,6 +586,9 @@ impl PlannedAdd {
             policy: system::files::FilePolicy::for_mode(self.mode),
             variants: vec![],
             enabled: true,
+            remove_empty: false,
+            dot_prefix: false,
+            relative: system::files::relative_symlinks(self.mode, None),
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),
@@ -626,7 +661,7 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content | FileMode::Track => {
+        FileMode::Content | FileMode::Track | FileMode::Absent | FileMode::Permissions => {
             unreachable!("dotfiles add always captures a source file")
         }
     }

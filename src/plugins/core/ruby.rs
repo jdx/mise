@@ -8,11 +8,11 @@ use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
 use xx::regex;
 
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{CompilePurpose, Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
@@ -1260,19 +1260,8 @@ mod tests {
     use confique::Layer;
     use pretty_assertions::assert_eq;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     const DEFAULT_RUBY_BUILD_REPO: &str = "https://github.com/rbenv/ruby-build.git";
     const DEFAULT_RUBY_INSTALL_REPO: &str = "https://github.com/postmodern/ruby-install.git";
-
-    struct SettingsResetGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl Drop for SettingsResetGuard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
-    }
 
     fn resolve_ruby_lockfile_options(
         configure_settings: impl FnOnce(&mut SettingsPartial),
@@ -1284,11 +1273,10 @@ mod tests {
         configure_settings: impl FnOnce(&mut SettingsPartial),
         target: PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let _guard = crate::test::SettingsGuard::lock();
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
-        let _guard = SettingsResetGuard { _lock: lock };
 
         let backend = RubyPlugin::new();
         let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
@@ -1299,11 +1287,10 @@ mod tests {
         configure_settings: impl FnOnce(&mut SettingsPartial),
         f: impl FnOnce(&RubyPlugin) -> T,
     ) -> T {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let _guard = crate::test::SettingsGuard::lock();
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
-        let _guard = SettingsResetGuard { _lock: lock };
 
         f(&RubyPlugin::new())
     }
@@ -1344,10 +1331,12 @@ mod tests {
             assets: assets
                 .iter()
                 .map(|name| crate::github::GithubAsset {
+                    from_versions_host: false,
                     name: (*name).to_string(),
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
                     digest: None,
+                    updated_at: None,
                 })
                 .collect(),
         }
@@ -1621,7 +1610,7 @@ mod tests {
 
     #[test]
     fn test_ruby_lock_info_url_uses_precompiled_overrides() {
-        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let _guard = crate::test::SettingsGuard::lock();
         let mut settings = SettingsPartial::empty();
         settings.ruby.compile = Some(false);
         settings.ruby.precompiled_url =
@@ -1629,7 +1618,6 @@ mod tests {
         settings.ruby.precompiled_arch = Some("arm64".to_string());
         settings.ruby.precompiled_os = Some("linux".to_string());
         Settings::reset(Some(settings));
-        let _guard = SettingsResetGuard { _lock: lock };
 
         let backend = RubyPlugin::new();
         let request = ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();

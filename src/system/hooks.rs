@@ -11,7 +11,7 @@ use eyre::{Result, bail};
 use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]

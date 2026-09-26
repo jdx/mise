@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use eyre::{Result, WrapErr, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::toolset::{ToolVersion, ToolsetBuilder};
@@ -151,7 +151,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
     }
 
     let config = Config::get().await?;
-    let prunable = crate::cli::prune::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
+    let prunable = crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
     let prunable_by_path = prunable
         .into_iter()
         .map(|(backend, tv)| (tv.install_path(), (backend, tv)))

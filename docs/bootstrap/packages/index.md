@@ -95,7 +95,7 @@ additional download fields.
 
 Use `os` to restrict a package to an operating system or OS/architecture pair.
 It accepts one value or a list, with the same names and aliases as `[tools]`,
-such as `linux`, `macos`, `windows`, `linux/x64`, and `macos/arm64`.
+such as `linux`, `macos`, `windows`, `unix`, `linux/x64`, and `macos/arm64`.
 
 Entries with a nonmatching selector are skipped. Managers unavailable on the
 current machine are also skipped when applying the full configuration. Status
