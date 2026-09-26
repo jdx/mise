@@ -1285,8 +1285,8 @@ mod tests {
     }
 
     /// cfprefsd writes plists shortly after synchronizing, so poll for the file until the
-    /// deadline. Callers share one deadline so the test stays within nextest's one-second
-    /// limit.
+    /// deadline. Callers share one deadline, which stays within the three seconds these
+    /// tests get in `.config/nextest.toml`.
     #[cfg(target_os = "macos")]
     fn wait_for_plist(
         path: &std::path::Path,
@@ -1305,7 +1305,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     fn plist_deadline() -> std::time::Instant {
-        std::time::Instant::now() + std::time::Duration::from_millis(400)
+        std::time::Instant::now() + std::time::Duration::from_secs(2)
     }
 
     #[cfg(target_os = "macos")]

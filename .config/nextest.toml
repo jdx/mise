@@ -40,6 +40,13 @@ slow-timeout = { period = "1s", terminate-after = 4 }
 filter = 'test(/^(system::history::|system::remote_repository::|git::tests::|system::packages::apt::)/)'
 slow-timeout = { period = "2s", terminate-after = 4 }
 
+# These macOS tests write preferences through cfprefsd and then wait for it to
+# write the plist to disk, which it does shortly after the write returns. Give
+# the wait a real budget instead of racing the one-second ceiling.
+[[profile.ci.overrides]]
+filter = 'test(/^system::defaults::tests::test_(sandboxed_round_trip_writes_container|host_uuid_names_core_foundation_byhost_files)$/)'
+slow-timeout = { period = "1s", terminate-after = 3 }
+
 # unit-macos runs on two very different machines: a dedicated Namespace runner
 # for trusted pushes and PRs, and a shared GitHub-hosted `macos-14` for everyone
 # else. The same suite takes 121s on the former and 263s on the latter, so the
