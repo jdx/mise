@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{
     collections::BTreeSet,
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use super::{TOML_CONFIG_FILENAMES, load_config_paths, load_config_paths_from};
@@ -92,11 +92,6 @@ impl IdiomaticVersionFileSettings {
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
 /// Caches the resolved `safe` value from the most recent settings load so
-/// `safe_mode()` answers correctly during the config parse pass that runs before
-/// settings are (re)loaded — e.g. after `Config::reset()`. This captures `safe`
-/// set via global config, which the `MISE_SAFE` env-var fallback cannot see.
-/// 0 = false, 1 = true, 2 = never loaded (fall back to the env var).
-static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
@@ -1215,12 +1210,11 @@ impl SettingsExt for Settings {
             return Settings::get().safe;
         }
         // Settings not loaded (e.g. the config parse pass after Config::reset).
-        // Use the value cached from the last full load, which captures `safe`
-        // set via global config; before any load, fall back to the env var.
-        match LAST_SAFE.load(Ordering::Relaxed) {
-            0 => false,
-            1 => true,
-            _ => crate::env::var_is_true("MISE_SAFE"),
+        // Use the last settings that were cached, which capture `safe` set via
+        // global config; before any load, fall back to the env var.
+        match mise_settings::last_cached() {
+            Some(settings) => settings.safe,
+            None => crate::env::var_is_true("MISE_SAFE"),
         }
     }
 
@@ -1603,7 +1597,6 @@ fn load() -> Result<Arc<Settings>> {
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
     let settings = Arc::new(settings);
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
-    LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();
     }

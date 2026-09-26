@@ -390,6 +390,9 @@ struct SettingsCache {
 struct CacheState {
     generation: u64,
     settings: Option<Arc<Settings>>,
+    /// The most recently cached settings. Survives [`clear`], and is only ever
+    /// set to a value that was actually cached, never to a discarded stale load.
+    last: Option<Arc<Settings>>,
 }
 
 impl SettingsCache {
@@ -398,6 +401,7 @@ impl SettingsCache {
             state: RwLock::new(CacheState {
                 generation: 0,
                 settings: None,
+                last: None,
             }),
         }
     }
@@ -406,9 +410,14 @@ impl SettingsCache {
         self.state.read().unwrap().settings.is_some()
     }
 
+    fn last(&self) -> Option<Arc<Settings>> {
+        self.state.read().unwrap().last.clone()
+    }
+
     fn store(&self, settings: Arc<Settings>) {
         let mut state = self.state.write().unwrap();
         state.generation += 1;
+        state.last = Some(settings.clone());
         state.settings = Some(settings);
     }
 
@@ -436,7 +445,12 @@ impl SettingsCache {
         }
         // Another thread in the same generation may have finished first;
         // keep its value so every reader shares one snapshot.
-        Ok(state.settings.get_or_insert(loaded).clone())
+        if let Some(settings) = &state.settings {
+            return Ok(settings.clone());
+        }
+        state.last = Some(loaded.clone());
+        state.settings = Some(loaded.clone());
+        Ok(loaded)
     }
 }
 
@@ -451,6 +465,13 @@ pub fn set_loader(loader: Loader) {
 /// Whether settings have been loaded since the last [`clear`].
 pub fn is_loaded() -> bool {
     CURRENT.is_loaded()
+}
+
+/// The settings most recently cached, even if [`clear`] has run since. For
+/// answers needed while settings are being reloaded; a load whose result was
+/// discarded as stale never shows up here.
+pub fn last_cached() -> Option<Arc<Settings>> {
+    CURRENT.last()
 }
 
 /// Cache `settings` as the value [`Settings::get`] returns until the next [`clear`].
@@ -597,6 +618,10 @@ mod tests {
         assert!(cache.is_loaded());
         let cached = cache.get_or_load(|| panic!("loader rerun")).unwrap();
         assert!(Arc::ptr_eq(&loaded, &cached));
+
+        cache.clear();
+        assert!(!cache.is_loaded());
+        assert!(Arc::ptr_eq(&loaded, &cache.last().unwrap()));
     }
 
     /// Thread A starts loading, thread B changes an input and clears, then A
@@ -612,6 +637,7 @@ mod tests {
             })
             .unwrap();
         assert!(!cache.is_loaded());
+        assert!(cache.last().is_none());
 
         let fresh = cache.get_or_load(|| Ok(defaults())).unwrap();
         assert!(!Arc::ptr_eq(&stale, &fresh));
@@ -633,6 +659,7 @@ mod tests {
         let cached = cache.get_or_load(|| panic!("loader rerun")).unwrap();
         assert!(Arc::ptr_eq(&stored, &cached));
         assert!(!Arc::ptr_eq(&stale, &cached));
+        assert!(Arc::ptr_eq(&stored, &cache.last().unwrap()));
     }
 
     /// Two loads in the same generation: the first to finish wins, and the
