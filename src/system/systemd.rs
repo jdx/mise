@@ -14,7 +14,7 @@ use serde::Deserialize;
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct SystemdTomlConfig {
+pub struct SystemdTomlConfig {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -94,13 +94,13 @@ pub(crate) struct SystemdTomlConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SystemdUnitKind {
+pub enum SystemdUnitKind {
     Service,
     Timer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SystemdRequest {
+pub struct SystemdRequest {
     pub name: String,
     pub unit: String,
     pub kind: SystemdUnitKind,
@@ -148,7 +148,7 @@ pub(crate) struct SystemdRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SystemdState {
+pub enum SystemdState {
     Active,
     Inactive,
     Differs,
@@ -156,7 +156,7 @@ pub(crate) enum SystemdState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SystemdStatus {
+pub struct SystemdStatus {
     pub request: SystemdRequest,
     pub path: PathBuf,
     pub active: bool,
@@ -165,7 +165,7 @@ pub(crate) struct SystemdStatus {
 }
 
 impl SystemdStatus {
-    pub(crate) fn is_desired(&self) -> bool {
+    pub fn is_desired(&self) -> bool {
         match self.state {
             SystemdState::Active => self.request.start,
             SystemdState::Inactive => !self.request.start,
@@ -323,14 +323,14 @@ impl std::fmt::Display for SystemdRequest {
     }
 }
 
-pub(crate) fn is_available() -> bool {
+pub fn is_available() -> bool {
     cfg!(target_os = "linux")
         && crate::file::which("systemctl").is_some()
         && sudo_invoking_user().is_none()
         && user_manager_available()
 }
 
-pub(crate) fn unavailable_reason() -> String {
+pub fn unavailable_reason() -> String {
     if !cfg!(target_os = "linux") {
         "only available on linux".to_string()
     } else if crate::file::which("systemctl").is_none() {
@@ -344,7 +344,7 @@ pub(crate) fn unavailable_reason() -> String {
     }
 }
 
-pub(crate) async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
+pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = unit_path(req);
@@ -397,7 +397,7 @@ pub(crate) async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdSta
     Ok(out)
 }
 
-pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
+pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
     if dry_run {
         for req in requests {
             miseprintln!(

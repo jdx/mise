@@ -13,7 +13,7 @@ use crate::result::Result;
 use crate::system::packages::PackageRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct InstalledFormula {
+pub struct InstalledFormula {
     pub name: String,
     pub version: String,
     pub tap: Option<String>,
@@ -28,11 +28,11 @@ impl InstalledFormula {
         }
     }
 
-    pub(crate) fn config_key(&self) -> String {
+    pub fn config_key(&self) -> String {
         format!("brew:{}", self.package_name())
     }
 
-    pub(crate) fn tap_entry_with_urls(
+    pub fn tap_entry_with_urls(
         &self,
         configured_taps: &BTreeMap<String, String>,
     ) -> Result<Option<(String, String)>> {
@@ -51,19 +51,19 @@ impl InstalledFormula {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PruneCandidate {
+pub struct PruneCandidate {
     pub name: String,
     pub version: String,
     pub keg: PathBuf,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct PrunePlan {
+pub struct PrunePlan {
     pub remove: Vec<PruneCandidate>,
 }
 
 impl PrunePlan {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
@@ -82,7 +82,7 @@ struct ReceiptSource {
     tap: Option<String>,
 }
 
-pub(crate) fn default_tap_url(tap: &str) -> Result<String> {
+pub fn default_tap_url(tap: &str) -> Result<String> {
     let mut parts = tap.split('/');
     match (parts.next(), parts.next(), parts.next()) {
         (Some(owner), Some(repo), None) if !owner.is_empty() && !repo.is_empty() => {
@@ -94,7 +94,7 @@ pub(crate) fn default_tap_url(tap: &str) -> Result<String> {
     }
 }
 
-pub(crate) fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>> {
+pub fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>> {
     let opt = prefix::prefix().join("opt");
     let mut formulae = BTreeMap::new();
     for entry in file::ls(&opt)? {
@@ -142,12 +142,12 @@ pub(crate) fn linked_formulae(include_all: bool) -> Result<Vec<InstalledFormula>
     Ok(formulae.into_values().collect())
 }
 
-pub(crate) async fn prune_plan(configured: &[PackageRequest]) -> Result<PrunePlan> {
+pub async fn prune_plan(configured: &[PackageRequest]) -> Result<PrunePlan> {
     let keep = configured_package_closure(configured).await?;
     prune_plan_from_linked_formulae(&keep)
 }
 
-pub(crate) fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
+pub fn apply_prune_plan(plan: &PrunePlan, dry_run: bool) -> Result<()> {
     if dry_run {
         for candidate in &plan.remove {
             miseprintln!("remove brew:{}@{}", candidate.name, candidate.version);

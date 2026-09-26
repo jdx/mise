@@ -15,7 +15,7 @@ use crate::config::{Config, Settings, SettingsExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum BootstrapHookPhase {
+pub enum BootstrapHookPhase {
     PrePackages,
     PostPackages,
     PreRepos,
@@ -32,7 +32,7 @@ pub(crate) enum BootstrapHookPhase {
 }
 
 impl BootstrapHookPhase {
-    pub(crate) fn parse(raw: &str) -> Option<Self> {
+    pub fn parse(raw: &str) -> Option<Self> {
         let normalized = raw.replace('_', "-");
         Self::iter().find(|phase| phase.as_str() == normalized)
     }
@@ -63,7 +63,7 @@ impl fmt::Display for BootstrapHookPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BootstrapHook {
+pub struct BootstrapHook {
     pub phase: BootstrapHookPhase,
     pub run: String,
     pub config_path: PathBuf,
@@ -128,7 +128,7 @@ fn string_array(values: Vec<toml::Value>, message: &str) -> Result<Vec<String>> 
     Ok(out)
 }
 
-pub(crate) async fn run_phase(
+pub async fn run_phase(
     config: &Config,
     hooks: &[BootstrapHook],
     phase: BootstrapHookPhase,

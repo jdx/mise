@@ -1,1 +1,1 @@
-pub(crate) use mise_util::parallel::*;
+pub use mise_util::parallel::*;

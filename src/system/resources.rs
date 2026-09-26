@@ -14,14 +14,14 @@ use crate::system::packages::{PackageRequest, PackageState};
 
 /// Stable identity for one declarative bootstrap resource.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-pub(crate) struct ResourceId {
+pub struct ResourceId {
     pub kind: String,
     pub name: String,
 }
 
 /// Where a declarative resource came from.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ResourceOrigin {
+pub struct ResourceOrigin {
     #[serde(serialize_with = "serialize_path")]
     pub config: PathBuf,
     #[serde(serialize_with = "serialize_path")]
@@ -44,7 +44,7 @@ impl ResourceOrigin {
 
 const ENCODED_PATH_PREFIX: &str = "mise:path-";
 
-pub(crate) fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+pub fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -105,7 +105,7 @@ impl fmt::Display for ResourceId {
 /// The operation needed to converge a resource.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ResourceAction {
+pub enum ResourceAction {
     Create,
     Update,
     Remove,
@@ -127,7 +127,7 @@ impl fmt::Display for ResourceAction {
 
 /// A secret-safe description of one resource's current and desired state.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct ResourcePlan {
+pub struct ResourcePlan {
     pub id: ResourceId,
     pub current: String,
     pub desired: String,
@@ -174,7 +174,7 @@ impl ResourcePlan {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct PlanSummary {
+pub struct PlanSummary {
     pub create: usize,
     pub update: usize,
     pub remove: usize,
@@ -193,24 +193,24 @@ impl PlanSummary {
         }
     }
 
-    pub(crate) fn has_changes(self) -> bool {
+    pub fn has_changes(self) -> bool {
         self.create + self.update + self.remove > 0
     }
 
-    pub(crate) fn has_unknown(self) -> bool {
+    pub fn has_unknown(self) -> bool {
         self.unknown > 0
     }
 }
 
 #[derive(Serialize)]
-pub(crate) struct BootstrapPlanOutput<'a> {
+pub struct BootstrapPlanOutput<'a> {
     pub resources: Vec<&'a ResourcePlan>,
     pub summary: PlanSummary,
 }
 
 /// A validated resource graph in declaration order.
 #[derive(Default)]
-pub(crate) struct BootstrapPlan {
+pub struct BootstrapPlan {
     resources: IndexMap<ResourceId, ResourcePlan>,
 }
 
@@ -240,7 +240,7 @@ impl BootstrapPlan {
         Ok(())
     }
 
-    pub(crate) fn output(&self) -> Result<BootstrapPlanOutput<'_>> {
+    pub fn output(&self) -> Result<BootstrapPlanOutput<'_>> {
         let resources = self.ordered()?;
         let mut summary = PlanSummary::default();
         for resource in &resources {
@@ -322,7 +322,7 @@ impl BootstrapPlan {
 
 /// Build the resource plan currently supported by the provisioning engine.
 /// Other bootstrap sections will move into this graph as resource adapters land.
-pub(crate) async fn plan(
+pub async fn plan(
     config: &Config,
     secrets: &super::secrets::SecretValues,
 ) -> Result<BootstrapPlan> {

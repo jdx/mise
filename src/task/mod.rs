@@ -42,48 +42,46 @@ pub(crate) fn reset() {
 pub(crate) type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
-pub(crate) mod task_cache;
+pub mod task_cache;
 mod task_cache_audit;
 mod task_cache_store;
 pub(crate) mod task_confirm;
-pub(crate) mod task_context_builder;
+pub mod task_context_builder;
 mod task_dep;
-pub(crate) mod task_executor;
-pub(crate) mod task_fetcher;
+pub mod task_executor;
+pub mod task_fetcher;
 pub(crate) mod task_file_providers;
-pub(crate) mod task_helpers;
-pub(crate) mod task_list;
+pub mod task_helpers;
+pub mod task_list;
 mod task_load_context;
-pub(crate) mod task_output;
-pub(crate) mod task_output_handler;
-pub(crate) mod task_results_display;
-pub(crate) mod task_scheduler;
+pub mod task_output;
+pub mod task_output_handler;
+pub mod task_results_display;
+pub mod task_scheduler;
 mod task_script_parser;
-pub(crate) mod task_source_checker;
+pub mod task_source_checker;
 pub(crate) mod task_sources;
 pub(crate) mod task_template;
-pub(crate) mod task_tool_installer;
+pub mod task_tool_installer;
 // Some graph traversal APIs are currently consumed only by tests and follow-up
 // workspace-task features.
 #[allow(dead_code)]
-pub(crate) mod workspace;
+pub mod workspace;
 
 pub(crate) use task_cache::TaskCacheOutput;
-pub(crate) use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
+pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
 pub(crate) use task_cache_audit::TaskCacheAudit;
 pub(crate) use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
-pub(crate) use task_load_context::{
-    TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task,
-};
-pub(crate) use task_output::{TaskOutput, TaskOutputExt};
-pub(crate) use task_script_parser::{has_any_args_defined, has_any_usage_spec};
+pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
+pub use task_output::{TaskOutput, TaskOutputExt};
+pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub(crate) use task_template::TaskTemplate;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[doc(hidden)]
-pub(crate) enum TaskRunPhase {
+pub enum TaskRunPhase {
     #[default]
     Normal,
     Post,
@@ -101,7 +99,7 @@ impl Task {
         self
     }
 
-    pub(crate) fn graph_display_name(&self) -> String {
+    pub fn graph_display_name(&self) -> String {
         match self.run_phase {
             TaskRunPhase::Normal => self.display_name.clone(),
             TaskRunPhase::Post => format!("{} (post)", self.display_name),
@@ -115,7 +113,7 @@ use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
-pub(crate) use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
+pub use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
 
@@ -124,7 +122,7 @@ use task_sources::{RawOutputTemplates, TaskOutputs};
 /// (e.g., { version = "1.0.0", targets = ["x86_64"] })
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
-pub(crate) enum TaskToolValue {
+pub enum TaskToolValue {
     String(String),
     Map(TaskToolValueMap),
 }
@@ -172,7 +170,7 @@ impl<'de> Deserialize<'de> for TaskToolValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct TaskToolValueMap {
+pub struct TaskToolValueMap {
     pub version: String,
     #[serde(flatten)]
     pub opts: IndexMap<String, toml::Value>,
@@ -299,7 +297,7 @@ impl TaskToolValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum RunEntry {
+pub enum RunEntry {
     /// Shell script entry
     Script(String),
     /// Run a single task with optional args and env
@@ -409,7 +407,7 @@ impl RunEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub(crate) enum Silent {
+pub enum Silent {
     #[default]
     Off,
     Bool(bool),
@@ -567,7 +565,7 @@ impl Display for RunEntry {
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct TaskWatchOptions {
+pub struct TaskWatchOptions {
     /// Ignore VCS ignore files such as `.gitignore` when running `mise watch`.
     pub no_vcs_ignore: bool,
 }
@@ -590,7 +588,7 @@ impl Default for TaskRustCacheOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TaskRustCacheConfig {
+pub struct TaskRustCacheConfig {
     pub enabled: bool,
 }
 
@@ -642,7 +640,7 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
 /// project, or an explicit name or list of names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum TaskDaemons {
+pub enum TaskDaemons {
     All(bool),
     One(String),
     Names(Vec<String>),
@@ -651,7 +649,7 @@ pub(crate) enum TaskDaemons {
 impl TaskDaemons {
     /// The names written in the declaration. Empty for `true` and `false`,
     /// which name no daemon.
-    pub(crate) fn names(&self) -> &[String] {
+    pub fn names(&self) -> &[String] {
         match self {
             Self::All(_) => &[],
             Self::One(name) => std::slice::from_ref(name),
@@ -670,7 +668,7 @@ impl TaskDaemons {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Task {
+pub struct Task {
     /// Internal execution occurrence. A task referenced as both a regular and
     /// post dependency must run once in each phase.
     #[serde(skip)]
@@ -1363,7 +1361,7 @@ fn normalize_root_mount_node(line: &str) -> String {
     }
 }
 
-pub(crate) fn usage_command_for_args<'a>(
+pub fn usage_command_for_args<'a>(
     spec: &'a usage::Spec,
     args: &[String],
 ) -> &'a usage::SpecCommand {
@@ -1440,20 +1438,20 @@ impl Task {
         }
     }
 
-    pub(crate) fn config_sources(&self) -> Vec<&Path> {
+    pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
             .collect()
     }
 
-    pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
+    pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
         self.tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
             .collect()
     }
 
-    pub(crate) fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+    pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
             name: name_from_path(prefix, path)?,
             config_source: path.to_path_buf(),
@@ -1462,7 +1460,7 @@ impl Task {
         })
     }
 
-    pub(crate) async fn from_path(
+    pub async fn from_path(
         config: &Arc<Config>,
         path: &Path,
         prefix: &Path,
@@ -1688,7 +1686,7 @@ impl Task {
         }
     }
 
-    pub(crate) fn is_match(&self, pat: &str) -> bool {
+    pub fn is_match(&self, pat: &str) -> bool {
         if self.name == pat || self.aliases.contains(&pat.to_string()) {
             return true;
         }
@@ -1721,7 +1719,7 @@ impl Task {
         matches || self.aliases.contains(&pat.to_string())
     }
 
-    pub(crate) async fn task_dir() -> Result<PathBuf> {
+    pub async fn task_dir() -> Result<PathBuf> {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
@@ -1748,7 +1746,7 @@ impl Task {
         }
     }
 
-    pub(crate) fn run(&self) -> &Vec<RunEntry> {
+    pub fn run(&self) -> &Vec<RunEntry> {
         if cfg!(windows) && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
@@ -2204,17 +2202,14 @@ impl Task {
     }
 
     /// Parse usage spec for display purposes without expensive environment rendering
-    pub(crate) async fn parse_usage_spec_for_display(
-        &self,
-        config: &Arc<Config>,
-    ) -> Result<usage::Spec> {
+    pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         self.parse_usage_spec_for_display_inner(config, false).await
     }
 
     /// Parse usage spec like [`Self::parse_usage_spec_for_display`], except that a file task
     /// whose `#USAGE` spec does not parse is an error rather than a warning and an empty spec.
     /// Checking the spec is what `mise tasks validate` is for.
-    pub(crate) async fn parse_usage_spec_for_validation(
+    pub async fn parse_usage_spec_for_validation(
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
@@ -2338,7 +2333,7 @@ impl Task {
         }
     }
 
-    pub(crate) async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
+    pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
         let mut spec = self.parse_usage_spec_for_display(config).await?;
         if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
             spec.cmd.help = None;
@@ -2349,11 +2344,11 @@ impl Task {
         Ok(ctx.render_spec()?)
     }
 
-    pub(crate) fn estyled_prefix(&self) -> String {
+    pub fn estyled_prefix(&self) -> String {
         style::prefix(self.prefix(), &self.display_name, true)
     }
 
-    pub(crate) async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+    pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(dir) = self.dir.clone().or_else(|| {
             self.cf(config)
                 .as_ref()
@@ -2651,7 +2646,7 @@ impl Task {
         Ok(vars)
     }
 
-    pub(crate) fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
+    pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
         // For monorepo tasks, use the stored config file reference
         if let Some(ref cf) = self.cf {
             return Some(cf);
@@ -2993,7 +2988,7 @@ impl Task {
     /// Re-render runtime templates with usage args/flags from this task invocation.
     /// Sources and outputs must be resolved before freshness/cache checks, while
     /// dependencies must be resolved before constructing the execution graph.
-    pub(crate) fn has_usage_runtime_templates(&self) -> bool {
+    pub fn has_usage_runtime_templates(&self) -> bool {
         let has_usage_deps = |raw: &Option<Vec<TaskDep>>| {
             raw.as_ref()
                 .is_some_and(|deps| deps.iter().any(dep_has_usage_ref))
@@ -3015,7 +3010,7 @@ impl Task {
                 .is_some_and(|d| d.names().iter().any(|n| tera_template_has_usage_ref(n)))
     }
 
-    pub(crate) async fn render_runtime_templates_with_usage(
+    pub async fn render_runtime_templates_with_usage(
         &mut self,
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
@@ -3093,7 +3088,7 @@ impl Task {
         Ok(())
     }
 
-    pub(crate) fn name_to_path(&self) -> PathBuf {
+    pub fn name_to_path(&self) -> PathBuf {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
@@ -3102,7 +3097,7 @@ impl Task {
     /// A file task's `name` keeps its file's extension while everything else about the task drops
     /// it, so the two spellings disagree for exactly the tasks that come from a file. Anything
     /// naming a file *after* the task -- a task stub, say -- wants this one.
-    pub(crate) fn display_name_to_path(&self) -> PathBuf {
+    pub fn display_name_to_path(&self) -> PathBuf {
         self.display_name
             .replace(':', path::MAIN_SEPARATOR_STR)
             .into()
@@ -3377,7 +3372,7 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
 /// e.g., "//projects/frontend:test" -> Some("projects/frontend")
 /// e.g., "//projects/frontend:test:nested" -> Some("projects/frontend")
 /// Returns None if the task name doesn't have monorepo syntax
-pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
+pub fn extract_monorepo_path(name: &str) -> Option<String> {
     name.strip_prefix("//").and_then(|stripped| {
         // Find the FIRST colon after "//" prefix to handle task names with colons like "do:item-1"
         stripped.find(':').map(|idx| stripped[..idx].to_string())
@@ -3391,7 +3386,7 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
 /// A task's own name always wins over another task's alias. Without that, a
 /// `tests` task aliased to `test` in a parent directory's config would shadow a
 /// `test` task defined in the current directory's config (#13219).
-pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
+pub fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
 where
     I: Iterator<Item = (&'a String, &'a Task)> + 'a,
 {
@@ -3423,7 +3418,7 @@ where
 /// `:build` and bare task names resolve within the parent's project, while
 /// `./...:build` and other `./`-prefixed paths resolve from the parent's
 /// monorepo path.
-pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+pub fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
     let is_relative_path = pattern.starts_with("./");
     // Check if this is a bare task name that should be treated as relative
     let is_bare_name = !is_relative_path
@@ -3722,7 +3717,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     }
 }
 
-pub(crate) trait GetMatchingExt<T> {
+pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
@@ -4060,7 +4055,7 @@ fn tera_tag_has_usage_ref(tag: &str) -> bool {
 /// Parse a task's usage spec against its current args and return a map of named
 /// arg/flag values preserving their Tera types (e.g., strings and booleans).
 /// Used to provide `{{usage.*}}` context when rendering dependency templates.
-pub(crate) async fn parse_usage_values_from_task(
+pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {

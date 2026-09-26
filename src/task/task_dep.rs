@@ -9,7 +9,7 @@ use std::str::FromStr;
 use crate::tera::{TeraEngine, contains_template_syntax, render_str};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct TaskDep {
+pub struct TaskDep {
     pub task: String,
     pub args: Vec<String>,
     pub env: IndexMap<String, String>,

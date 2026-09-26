@@ -124,7 +124,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 
 /// The packslip project name behind a tool name: `github.com/owner/repo`
 /// as given, `owner/repo` with github.com implied, or a vendor's host.
-pub(crate) fn project_name(tool_name: &str) -> Result<String> {
+pub fn project_name(tool_name: &str) -> Result<String> {
     let name = tool_name.trim_matches('/');
     let first = name.split('/').next().unwrap_or_default();
     let project = if first.contains('.') {

@@ -8,7 +8,7 @@ use crate::system::edits::{BlockSource, EditOp, EditRequest};
 use crate::system::resources::ResourceOrigin;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ShellActivationRequest {
+pub struct ShellActivationRequest {
     pub target: ShellActivationTarget,
     pub shell: ShellActivationShell,
     pub mode: ShellActivationMode,
@@ -46,7 +46,7 @@ impl ShellActivationRequest {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub(crate) enum ShellActivationMode {
+pub enum ShellActivationMode {
     Activate,
     Shims,
 }
@@ -60,7 +60,7 @@ impl ShellActivationMode {
         }
     }
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Activate => "activate",
             Self::Shims => "shims",
@@ -69,7 +69,7 @@ impl ShellActivationMode {
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum ShellActivationShell {
+pub enum ShellActivationShell {
     Bash,
     Zsh,
     Fish,
@@ -99,7 +99,7 @@ impl ShellActivationShell {
         }
     }
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
@@ -109,7 +109,7 @@ impl ShellActivationShell {
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum ShellActivationTarget {
+pub enum ShellActivationTarget {
     BashProfile,
     Bashrc,
     Zshenv,
@@ -135,7 +135,7 @@ impl ShellActivationTarget {
         "bash, zsh, fish, bash_profile, bashrc, zshenv, zprofile, or zshrc"
     }
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::BashProfile => "bash_profile",
             Self::Bashrc => "bashrc",

@@ -44,7 +44,7 @@ fn builtin(name: &str) -> Option<Builtin> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct UserServiceRequest {
+pub struct UserServiceRequest {
     pub name: String,
     pub description: Option<String>,
     /// The resolved command line; `None` when a builtin has no durable
@@ -286,7 +286,7 @@ fn valid_name(name: &str) -> bool {
 /// Every user-scope service, validated, with names that collide with
 /// `[bootstrap.linux.systemd.units]` or `[bootstrap.macos.launchd.agents]`
 /// rejected (both would write the same unit or plist).
-pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<UserServiceRequest>> {
+pub fn requests_from_config(config: &Config) -> Result<Vec<UserServiceRequest>> {
     let requests = compose_user_declarations(config)?
         .into_iter()
         .map(|(name, (declaration, origin))| {
@@ -381,7 +381,7 @@ pub(crate) fn unavailable_reason() -> String {
 }
 
 /// The name of the platform's user service manager, for messages.
-pub(crate) fn manager_name() -> &'static str {
+pub fn manager_name() -> &'static str {
     if cfg!(target_os = "linux") {
         "systemd user unit"
     } else if cfg!(target_os = "macos") {
@@ -399,7 +399,7 @@ const DIFFERS: &str = "installed, differs";
 const ABSENT: &str = "absent";
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct UserServiceStatus {
+pub struct UserServiceStatus {
     pub name: String,
     pub scope: &'static str,
     pub current: String,
@@ -438,7 +438,7 @@ impl UserServiceStatus {
             || self.current.starts_with("unavailable:"))
     }
 
-    pub(crate) fn plan(&self) -> ResourcePlan {
+    pub fn plan(&self) -> ResourcePlan {
         let plan = ResourcePlan::new(
             ResourceId::new("user-service", &self.name),
             self.current.clone(),
@@ -473,7 +473,7 @@ impl UserServiceStatus {
 /// process as running right now. A service whose installed definition
 /// differs from the declaration is not it: an apply rewrites and restarts
 /// that one anyway.
-pub(crate) async fn is_process_running(request: &UserServiceRequest) -> Result<bool> {
+pub async fn is_process_running(request: &UserServiceRequest) -> Result<bool> {
     if !is_available() {
         return Ok(false);
     }
@@ -501,7 +501,7 @@ pub(crate) async fn is_process_running(request: &UserServiceRequest) -> Result<b
     }
 }
 
-pub(crate) async fn status(requests: &[UserServiceRequest]) -> Result<Vec<UserServiceStatus>> {
+pub async fn status(requests: &[UserServiceRequest]) -> Result<Vec<UserServiceStatus>> {
     let mut out = vec![];
     for request in requests {
         out.push(status_one(request).await?);
@@ -665,7 +665,7 @@ fn converge_action(desired: bool, missing: bool) -> ResourceAction {
 /// with a different `MISE_STATE_DIR`. An apply restarts it; `mise doctor`
 /// and `mise dot status` report it with the same predicate, so they never
 /// advise an apply that would not act.
-pub(crate) fn stale_history_watcher(request: &UserServiceRequest) -> bool {
+pub fn stale_history_watcher(request: &UserServiceRequest) -> bool {
     request.builtin.as_deref() == Some("history-watch")
         // `enabled` only decides whether it also starts at login; a service
         // declared running is meant to be running now either way
@@ -680,7 +680,7 @@ pub(crate) fn stale_history_watcher(request: &UserServiceRequest) -> bool {
 
 /// Converge the given user services. Returns a reason when the platform's
 /// user service manager is unavailable and nothing was applied.
-pub(crate) async fn apply(
+pub async fn apply(
     requests: &[UserServiceRequest],
     dry_run: bool,
     yes: bool,
@@ -778,7 +778,7 @@ async fn apply_one(request: &UserServiceRequest, restart: Restart, dry_run: bool
 
 /// Remove the installed definition for `name`, declared or not. Returns
 /// whether one existed.
-pub(crate) async fn remove_named(name: &str, dry_run: bool) -> Result<bool> {
+pub async fn remove_named(name: &str, dry_run: bool) -> Result<bool> {
     if !valid_name(name) {
         bail!("user service name '{name}' must contain only letters, numbers, '.', '_', or '-'");
     }

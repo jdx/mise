@@ -325,7 +325,7 @@ pub(crate) fn ensure_runnable_as_user(label: &str, preset_name: &str) -> Result<
 
 /// [`ensure_runnable_as_user`] for every preset daemon about to start, including
 /// the provider a consumer daemon would start with it.
-pub(crate) fn ensure_set_runnable_as_user(set: &super::DaemonSet) -> Result<()> {
+pub fn ensure_set_runnable_as_user(set: &super::DaemonSet) -> Result<()> {
     for daemon in set.daemons.values() {
         if let Some(preset) = &daemon.preset {
             ensure_runnable_as_user(&format!("daemon {}", daemon.name), preset)?;
@@ -1167,7 +1167,7 @@ fn legacy_values(preset: &Preset, database: Option<&str>) -> String {
     }
 }
 
-pub(crate) fn initialize(
+pub fn initialize(
     preset_name: &str,
     data: &Path,
     values: Option<&str>,

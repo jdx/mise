@@ -5,7 +5,7 @@
 //! mise can hand a shell: a completion script for whichever version of the
 //! tool is active, from the most verifiable source the vendor offered.
 
-pub(crate) mod completions;
+pub mod completions;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -731,7 +731,7 @@ async fn fetch_repo_dir(
 /// A skill one of the active tools declares: a directory holding
 /// `SKILL.md`, for the exact version that is active here.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub(crate) struct Skill {
+pub struct Skill {
     pub name: String,
     pub tool: String,
     pub version: String,
@@ -742,7 +742,7 @@ pub(crate) struct Skill {
 /// this, a skill that never arrived is indistinguishable from a tool that
 /// declares none, and both look like an empty `mise skills ls`.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct MissingSkill {
+pub struct MissingSkill {
     pub name: String,
     pub tool: String,
     pub version: String,
@@ -763,7 +763,7 @@ impl std::fmt::Display for MissingSkill {
 /// What a packslip declares: the skills the install holds, and the ones it
 /// declares that are not there.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct DeclaredSkills {
+pub struct DeclaredSkills {
     pub found: Vec<Skill>,
     pub missing: Vec<MissingSkill>,
 }
@@ -915,7 +915,7 @@ pub(crate) fn skills_of(
 }
 
 /// The skills of every tool active in the current directory.
-pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
+pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
     let ts = config.get_toolset().await?;
     let mut skills = DeclaredSkills::default();
     for (backend, tv) in ts.list_current_installed_versions(config) {
@@ -949,7 +949,7 @@ pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills
 /// Where skills are linked under `root`, a project root or the home
 /// directory: the `skills.dir` setting, or that setting itself when it
 /// is absolute.
-pub(crate) fn skills_dir(root: &Path) -> PathBuf {
+pub fn skills_dir(root: &Path) -> PathBuf {
     root.join(&Settings::get().skills.dir)
 }
 
@@ -957,7 +957,7 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 /// project after an install or a version change. Nothing fails an install
 /// here: a problem is reported and the tools stay installed. Outside a
 /// project root there is nowhere to link into, so nothing happens.
-pub(crate) async fn auto_sync_skills(config: &Arc<Config>) {
+pub async fn auto_sync_skills(config: &Arc<Config>) {
     let settings = Settings::get();
     let Some(root) = &config.project_root else {
         return;
@@ -1024,7 +1024,7 @@ async fn hint_skills(config: &Arc<Config>) {
 
 /// What [`sync_skills`] did.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct SyncReport {
+pub struct SyncReport {
     pub linked: Vec<String>,
     pub unchanged: Vec<String>,
     pub pruned: Vec<String>,
@@ -1036,7 +1036,7 @@ pub(crate) struct SyncReport {
 /// it records in [`SYNC_STATE`] beside them and which point into
 /// `installs`, are ever replaced or, with `prune`, removed; anything else
 /// at a skill's name is left alone.
-pub(crate) fn sync_skills(
+pub fn sync_skills(
     dir: &Path,
     skills: &[Skill],
     installs: &Path,
@@ -1451,11 +1451,7 @@ fn completion_cache_path(install_path: &Path, tool: &str, shell: &str) -> Result
         .join(format!("{shell}.completion")))
 }
 
-pub(crate) async fn completion_script(
-    config: &Arc<Config>,
-    tool: &str,
-    shell: &str,
-) -> Result<String> {
+pub async fn completion_script(config: &Arc<Config>, tool: &str, shell: &str) -> Result<String> {
     let ts = config.get_toolset().await?;
     let (backend, tv) = find_tool(config, ts, tool).await?;
     let install_path = tv.install_path();
@@ -1638,7 +1634,7 @@ pub(crate) fn completion_ident(tool: &str) -> String {
 /// tab. fish reads the script in a child shell of its own, and PowerShell
 /// puts this completer back after delegating, for the same reason: neither
 /// keeps the registrations of a version that is no longer the active one.
-pub(crate) fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<String> {
+pub fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<String> {
     use usage_rs::complete::Shell;
     let note = format!("mise completes {tool} from the packslip of whichever version is active");
     let by = format!(

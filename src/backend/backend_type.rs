@@ -13,7 +13,7 @@ use std::fmt::{Display, Formatter};
     PartialOrd,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum BackendType {
+pub enum BackendType {
     Aqua,
     Asdf,
     Cargo,
@@ -85,7 +85,7 @@ impl BackendType {
     }
 
     /// Returns true if this backend is still gated behind experimental mode.
-    pub(crate) fn is_experimental(&self) -> bool {
+    pub fn is_experimental(&self) -> bool {
         use super::{dotnet, packslip, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,

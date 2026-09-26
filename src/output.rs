@@ -161,8 +161,7 @@ macro_rules! error {
     }};
 }
 
-pub(crate) static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> =
-    LazyLock::new(Default::default);
+pub static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Default::default);
 
 #[macro_export]
 macro_rules! deprecated {

@@ -16,7 +16,7 @@ use crate::result::Result;
     Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
 )]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum HostScope {
+pub enum HostScope {
     #[default]
     Any,
     Current,
@@ -31,7 +31,7 @@ pub(super) fn canonical_domain(domain: &str) -> &str {
 
 /// A typed preference and its host scope.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DefaultsRequest {
+pub struct DefaultsRequest {
     /// preferences domain, e.g. "com.apple.dock" or "NSGlobalDomain"
     pub domain: String,
     pub key: String,
@@ -45,7 +45,7 @@ pub(crate) struct DefaultsRequest {
 }
 
 impl DefaultsRequest {
-    pub(crate) fn display_key(&self) -> String {
+    pub fn display_key(&self) -> String {
         let mut key = self.key.clone();
         if let Some(path) = &self.path {
             for component in path {
@@ -57,7 +57,7 @@ impl DefaultsRequest {
         key
     }
 
-    pub(crate) fn display_domain(&self) -> String {
+    pub fn display_domain(&self) -> String {
         if self.host == HostScope::Current {
             format!("{} (current host)", self.domain)
         } else {
@@ -81,7 +81,7 @@ impl std::fmt::Display for DefaultsRequest {
 /// Property-list values that mise can write and verify. TOML arrays and tables
 /// are converted recursively, preserving the types of nested values.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DefaultsValue {
+pub enum DefaultsValue {
     Bool(bool),
     Int(i64),
     Float(f64),
@@ -141,7 +141,7 @@ impl DefaultsValue {
         }
     }
 
-    pub(crate) fn to_json(&self) -> serde_json::Value {
+    pub fn to_json(&self) -> serde_json::Value {
         match self {
             Self::Bool(b) => (*b).into(),
             Self::Int(i) => (*i).into(),
@@ -199,7 +199,7 @@ impl std::fmt::Display for DefaultsValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DefaultsState {
+pub enum DefaultsState {
     /// current value matches the config
     Set,
     /// a value exists but differs from the config (in value or type)
@@ -209,21 +209,21 @@ pub(crate) enum DefaultsState {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DefaultsStatus {
+pub struct DefaultsStatus {
     pub request: DefaultsRequest,
     pub state: DefaultsState,
 }
 
-pub(crate) fn is_available() -> bool {
+pub fn is_available() -> bool {
     cfg!(target_os = "macos")
 }
 
-pub(crate) fn unavailable_reason() -> String {
+pub fn unavailable_reason() -> String {
     "only available on macos".to_string()
 }
 
 /// Query the current state of each entry. Side-effect free.
-pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
+pub async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     validate_requests(requests)?;
     let requests = requests.to_vec();
     tokio::task::spawn_blocking(move || status_sync(&requests)).await?
@@ -260,7 +260,7 @@ fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
 }
 
 /// Write the given entries (already filtered to unset/differing ones)
-pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
+pub async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
     validate_requests(requests)?;
     for req in requests {
         if dry_run {

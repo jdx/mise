@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 /// One `<state-dir>/state.json` and the directory that contains it.
 #[derive(Debug, Clone)]
-pub(crate) struct Entry {
+pub struct Entry {
     pub dir: PathBuf,
     pub state: State,
 }
@@ -62,7 +62,7 @@ impl Entry {
     /// entry at all, so it is not a prune candidate. Worth saying once, where
     /// somebody is looking at prune's output, rather than on every command that
     /// happens to scan.
-    pub(crate) fn unreadable_root(&self) -> Option<String> {
+    pub fn unreadable_root(&self) -> Option<String> {
         match std::fs::symlink_metadata(&self.state.root) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Some(format!(
                 "keeping {}: cannot read {}: {err}",
@@ -97,7 +97,7 @@ impl Entry {
     /// `/tmp` on macOS and every path on Windows, so ordinary old state can
     /// carry a spelling its directory was not named from. Hence a question
     /// rather than a refusal, which would strand that state forever.
-    pub(crate) fn ambiguity(&self) -> Option<String> {
+    pub fn ambiguity(&self) -> Option<String> {
         if is_a_mount_point(&self.state.root) {
             return Some(format!(
                 "{} is where a volume gets mounted, so it may be unmounted rather than a deleted project",
@@ -140,7 +140,7 @@ impl Entry {
 
 /// What [`remove`] did with one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     /// The state directory and its data are gone.
     Removed,
     /// Left in place. A warning says why, and a later run can retry.
@@ -185,7 +185,7 @@ fn as_container(path: &Path) -> String {
 }
 
 /// The directory holding every project's daemon state.
-pub(crate) fn base_dir() -> PathBuf {
+pub fn base_dir() -> PathBuf {
     crate::dirs::STATE.join("daemons")
 }
 
@@ -196,7 +196,7 @@ pub(crate) fn base_dir() -> PathBuf {
 /// mise will not guess at data it does not understand, but such a directory can
 /// never be pruned either, so saying nothing would leave it invisible forever.
 /// One unreadable entry does not hide the rest.
-pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
+pub fn scan(base: &Path) -> Result<Vec<Entry>> {
     let Ok(read_dir) = std::fs::read_dir(base) else {
         return Ok(vec![]);
     };
@@ -246,13 +246,13 @@ pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
 }
 
 /// Entries whose project root has been deleted.
-pub(crate) fn orphans(base: &Path) -> Result<Vec<Entry>> {
+pub fn orphans(base: &Path) -> Result<Vec<Entry>> {
     Ok(scan(base)?.into_iter().filter(Entry::orphaned).collect())
 }
 
 /// Total size in bytes of everything below `path`; `0` when it does not exist.
 /// Symlinks are not followed, so a linked data directory counts once.
-pub(crate) fn dir_size(path: &Path) -> u64 {
+pub fn dir_size(path: &Path) -> u64 {
     walkdir::WalkDir::new(path)
         .into_iter()
         .filter_map(Result::ok)
@@ -262,12 +262,12 @@ pub(crate) fn dir_size(path: &Path) -> u64 {
         .sum()
 }
 
-pub(crate) fn human_size(bytes: u64) -> String {
+pub fn human_size(bytes: u64) -> String {
     bytesize::ByteSize::b(bytes).display().iec().to_string()
 }
 
 /// One line per orphan for the confirmation prompt and dry-run output.
-pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
+pub fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
     entries
         .iter()
         .map(|(entry, size)| {
@@ -291,7 +291,7 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 /// all (`runtime` is `None`): deleting the directory would take `state.json`
 /// and the generated configuration with it, which is the only record of the
 /// registration a later run could act on.
-pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
+pub async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
     let lock = match super::ProjectLock::try_acquire(cwd) {

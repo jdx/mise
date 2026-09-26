@@ -13,7 +13,7 @@ use plist::{Dictionary, Value};
 use serde::Deserialize;
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct LaunchdTomlConfig {
+pub struct LaunchdTomlConfig {
     #[serde(default)]
     pub program: Option<String>,
     #[serde(default)]
@@ -53,7 +53,7 @@ pub(crate) struct LaunchdTomlConfig {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
-pub(crate) struct LaunchdCalendarInterval {
+pub struct LaunchdCalendarInterval {
     #[serde(default)]
     pub minute: Option<u8>,
     #[serde(default)]
@@ -68,13 +68,13 @@ pub(crate) struct LaunchdCalendarInterval {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum LaunchdCalendarIntervals {
+pub enum LaunchdCalendarIntervals {
     Single(LaunchdCalendarInterval),
     Multiple(Vec<LaunchdCalendarInterval>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LaunchdRequest {
+pub struct LaunchdRequest {
     pub name: String,
     pub label: String,
     pub program: String,
@@ -96,7 +96,7 @@ pub(crate) struct LaunchdRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LaunchdState {
+pub enum LaunchdState {
     Loaded,
     Unloaded,
     Differs,
@@ -104,7 +104,7 @@ pub(crate) enum LaunchdState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LaunchdStatus {
+pub struct LaunchdStatus {
     pub request: LaunchdRequest,
     pub path: PathBuf,
     pub loaded: bool,
@@ -236,11 +236,11 @@ impl std::fmt::Display for LaunchdRequest {
     }
 }
 
-pub(crate) fn is_available() -> bool {
+pub fn is_available() -> bool {
     cfg!(target_os = "macos") && crate::file::which("launchctl").is_some()
 }
 
-pub(crate) fn unavailable_reason() -> String {
+pub fn unavailable_reason() -> String {
     if cfg!(target_os = "macos") {
         "`launchctl` not found".to_string()
     } else {
@@ -248,7 +248,7 @@ pub(crate) fn unavailable_reason() -> String {
     }
 }
 
-pub(crate) async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
+pub async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = plist_path(req);
@@ -275,7 +275,7 @@ pub(crate) async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdSta
     Ok(out)
 }
 
-pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
+pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
     for req in requests {
         let path = plist_path(req);
         let domain = launchctl_domain();

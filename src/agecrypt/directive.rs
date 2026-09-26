@@ -25,7 +25,7 @@ use crate::file;
 
 const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
 
-pub(crate) async fn create_age_directive(
+pub async fn create_age_directive(
     key: String,
     value: &str,
     recipients: &[Box<dyn Recipient + Send>],
@@ -65,7 +65,7 @@ pub(crate) async fn create_age_directive(
     })
 }
 
-pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
+pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
     Settings::get().ensure_experimental("age encryption")?;
     match directive {
         EnvDirective::Age { value, format, .. } => {
@@ -114,7 +114,7 @@ pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<St
     }
 }
 
-pub(crate) async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {
+pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {
     let mut parsed_recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
     for recipient_str in default_recipient_strings().await? {
         if let Some(recipient) = parse_recipient(&recipient_str)? {
@@ -131,9 +131,7 @@ pub(crate) async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipi
     Ok(parsed_recipients)
 }
 
-pub(crate) async fn load_recipients_from_key_file(
-    path: &Path,
-) -> Result<Vec<Box<dyn Recipient + Send>>> {
+pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Recipient + Send>>> {
     let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
 
     if !path.exists() {
@@ -166,7 +164,7 @@ pub(crate) async fn load_recipients_from_key_file(
     Ok(recipients)
 }
 
-pub(crate) async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn Recipient + Send>> {
+pub async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn Recipient + Send>> {
     let content = file::read_to_string(path)?;
     let trimmed = content.trim();
 

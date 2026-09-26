@@ -5,11 +5,11 @@ use std::sync::LazyLock as Lazy;
 // module is private to the mise binary, so those generated visibilities cannot
 // be narrowed at the source.
 #[allow(unreachable_pub)]
-pub(crate) mod built_info {
+pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-pub(crate) static BUILD_TIME: Lazy<DateTime<FixedOffset>> =
+pub static BUILD_TIME: Lazy<DateTime<FixedOffset>> =
     Lazy::new(|| DateTime::parse_from_rfc2822(built_info::BUILT_TIME_UTC).unwrap());
 
-pub(crate) static TARGET: &str = built_info::TARGET;
+pub static TARGET: &str = built_info::TARGET;

@@ -25,7 +25,7 @@ use crate::{dirs, duration, env, file, hooks, watch_files};
 /// Why the shell hook ran: before a prompt, or after a directory change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
 #[usage(rename_all = "lowercase")]
-pub(crate) enum HookReason {
+pub enum HookReason {
     Precmd,
     Chpwd,
 }
@@ -98,7 +98,7 @@ fn mtime_to_millis(mtime: SystemTime) -> u128 {
         .as_millis()
 }
 
-pub(crate) fn untrusted_config_error_path(err: &eyre::Report) -> Option<PathBuf> {
+pub fn untrusted_config_error_path(err: &eyre::Report) -> Option<PathBuf> {
     err.chain()
         .find_map(|cause| match cause.downcast_ref::<Error>() {
             Some(Error::UntrustedConfig(path)) => Some(path.clone()),
@@ -106,15 +106,12 @@ pub(crate) fn untrusted_config_error_path(err: &eyre::Report) -> Option<PathBuf>
         })
 }
 
-pub(crate) fn should_show_untrusted_config_warning(config_path: &Path) -> bool {
+pub fn should_show_untrusted_config_warning(config_path: &Path) -> bool {
     env::var(LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV).unwrap_or_default()
         != current_untrusted_warning_key(config_path)
 }
 
-pub(crate) fn mark_untrusted_config_warning_seen(
-    shell: &dyn Shell,
-    config_path: &Path,
-) -> Result<()> {
+pub fn mark_untrusted_config_warning_seen(shell: &dyn Shell, config_path: &Path) -> Result<()> {
     miseprint!(
         "{}",
         shell.set_env(
@@ -125,7 +122,7 @@ pub(crate) fn mark_untrusted_config_warning_seen(
     Ok(())
 }
 
-pub(crate) fn clear_untrusted_config_warning(patches: &mut EnvDiffPatches) {
+pub fn clear_untrusted_config_warning(patches: &mut EnvDiffPatches) {
     if has_untrusted_config_warning_marker() {
         patches.push(EnvDiffOperation::Remove(
             LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV.into(),
@@ -163,7 +160,7 @@ fn config_path_mtime_millis(path: &Path) -> u128 {
         .unwrap_or_default()
 }
 
-pub(crate) static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
+pub static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
     env::var("__MISE_SESSION")
         .ok()
         .and_then(|s| {
@@ -178,7 +175,7 @@ pub(crate) static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
 });
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub(crate) struct WatchFilePattern {
+pub struct WatchFilePattern {
     pub root: Option<PathBuf>,
     pub patterns: Vec<String>,
 }
@@ -204,7 +201,7 @@ impl From<PathBuf> for WatchFilePattern {
 /// Fast-path early exit check that can be called BEFORE loading config/tools.
 /// This checks basic conditions using only the previous session data.
 /// Returns true if we can definitely skip hook-env, false if we need to continue.
-pub(crate) fn should_exit_early_fast() -> bool {
+pub fn should_exit_early_fast() -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
@@ -350,7 +347,7 @@ pub(crate) fn should_exit_early_fast() -> bool {
 /// Check if hook-env can exit early after config is loaded.
 /// This is called after the fast-path check and handles cases that need
 /// the full config (watch_files, hook scheduling).
-pub(crate) fn should_exit_early(
+pub fn should_exit_early(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
     reason: Option<HookReason>,
 ) -> bool {
@@ -395,7 +392,7 @@ pub(crate) fn should_exit_early(
 /// Schedules the leave, cd, and enter hooks when the directory differs from the
 /// previous session's, including the first run after activation. Returns whether
 /// it scheduled them.
-pub(crate) fn schedule_dir_change_hooks() -> bool {
+pub fn schedule_dir_change_hooks() -> bool {
     if dir_change().is_none() {
         return false;
     }
@@ -473,7 +470,7 @@ fn have_mise_env_vars_been_modified() -> bool {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct HookEnvSession {
+pub struct HookEnvSession {
     pub loaded_tools: IndexSet<String>,
     pub loaded_configs: IndexSet<PathBuf>,
     pub config_paths: IndexSet<PathBuf>,
@@ -493,7 +490,7 @@ pub(crate) struct HookEnvSession {
     latest_update: u128,
 }
 
-pub(crate) fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
+pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
     let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
     gz.write_all(&rmp_serde::to_vec_named(obj)?)?;
     Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
@@ -544,7 +541,7 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
     mtimes
 }
 
-pub(crate) async fn build_session(
+pub async fn build_session(
     config: &Arc<Config>,
     env: EnvMap,
     aliases: indexmap::IndexMap<String, String>,
@@ -642,7 +639,7 @@ fn get_mise_env_vars_hashed() -> String {
     hash_to_str(&env_vars)
 }
 
-pub(crate) fn clear_old_env_patches(shell: &dyn Shell) -> EnvDiffPatches {
+pub fn clear_old_env_patches(shell: &dyn Shell) -> EnvDiffPatches {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
 
     // For fish shell, filter out PATH operations from the reversed diff because
@@ -780,7 +777,7 @@ fn compute_deactivated_path() -> String {
         .unwrap_or(pristine_path)
 }
 
-pub(crate) fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
+pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
     let mut output = String::new();
 
     for patch in patches.iter() {
@@ -798,7 +795,7 @@ pub(crate) fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) ->
 }
 
 /// Build shell alias commands based on the difference between old and new aliases
-pub(crate) fn build_alias_commands(
+pub fn build_alias_commands(
     shell: &dyn Shell,
     old_aliases: &indexmap::IndexMap<String, String>,
     new_aliases: &indexmap::IndexMap<String, String>,

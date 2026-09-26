@@ -19,7 +19,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ScriptManager {
+pub struct ScriptManager {
     pub plugin_path: PathBuf,
     pub env: HashMap<OsString, OsString>,
 }

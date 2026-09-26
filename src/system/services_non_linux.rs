@@ -3,42 +3,42 @@ use eyre::{Result, bail};
 use crate::config::Config;
 use crate::system::resources::ResourcePlan;
 
-pub(crate) use super::services_common::*;
+pub use super::services_common::*;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ServiceRequest {
+pub struct ServiceRequest {
     pub(super) name: String,
 }
 
-pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     Ok(compose_system_declarations(config)?
         .into_iter()
         .map(|(name, _)| ServiceRequest { name })
         .collect())
 }
 
-pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     reject_configured(config)
 }
 
-pub(crate) fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     prepare_requests_from_config(config)
 }
 
-pub(crate) fn inspect_requests(_requests: &mut [ServiceRequest]) {}
+pub fn inspect_requests(_requests: &mut [ServiceRequest]) {}
 
-pub(crate) fn plans_with_notifications(
+pub fn plans_with_notifications(
     _requests: &[ServiceRequest],
     _notifications: &ServiceNotifications,
 ) -> Vec<ResourcePlan> {
     vec![]
 }
 
-pub(crate) fn apply(_requests: &[ServiceRequest], _dry_run: bool, _yes: bool) -> Result<()> {
+pub fn apply(_requests: &[ServiceRequest], _dry_run: bool, _yes: bool) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn apply_with_notifications(
+pub fn apply_with_notifications(
     _requests: &[ServiceRequest],
     _notifications: &ServiceNotifications,
     _dry_run: bool,
@@ -47,7 +47,7 @@ pub(crate) fn apply_with_notifications(
     Ok(())
 }
 
-pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     bail!("bootstrap system services are only supported on Linux")
 }
 

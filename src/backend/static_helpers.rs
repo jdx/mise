@@ -617,7 +617,7 @@ fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEng
     }
 }
 
-pub(crate) fn get_filename_from_url(url_str: &str) -> String {
+pub fn get_filename_from_url(url_str: &str) -> String {
     let filename = if let Ok(url) = url::Url::parse(url_str) {
         // Use proper URL parsing to get the path and extract filename
         url.path_segments()

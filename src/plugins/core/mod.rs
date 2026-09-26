@@ -33,7 +33,7 @@ mod rust;
 mod swift;
 mod zig;
 
-pub(crate) static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
+pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),

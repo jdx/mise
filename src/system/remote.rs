@@ -17,7 +17,7 @@ const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 pub(crate) const DEFAULT_INSTALL_MISE_PATH: &str = "~/.local/bin/mise";
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct RemoteTomlConfig {
+pub struct RemoteTomlConfig {
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
     pub install_mise: Option<InstallMiseTomlConfig>,
@@ -32,7 +32,7 @@ pub(crate) struct RemoteTomlConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct RemoteHostTomlConfig {
+pub struct RemoteHostTomlConfig {
     pub host: String,
     pub user: Option<String>,
     pub port: Option<u16>,
@@ -57,7 +57,7 @@ pub(crate) struct RemoteHostTomlConfig {
 /// `install_mise = true` or `install_mise = "~/bin/mise"`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum InstallMiseTomlConfig {
+pub enum InstallMiseTomlConfig {
     Enabled(bool),
     Path(String),
 }
@@ -73,7 +73,7 @@ impl InstallMiseTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RemoteHost {
+pub struct RemoteHost {
     pub name: String,
     pub host: String,
     pub user: Option<String>,
@@ -95,7 +95,7 @@ pub(crate) struct RemoteHost {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RemoteOverrides {
+pub struct RemoteOverrides {
     /// Git onboarding does not use the inventory's archive source.
     pub from_git: bool,
     pub source: Option<PathBuf>,
@@ -114,7 +114,7 @@ pub(crate) struct RemoteOverrides {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RemoteRunOptions {
+pub struct RemoteRunOptions {
     pub relay: Option<crate::github_relay::Scope>,
     pub dry_run: bool,
     pub yes: bool,
@@ -128,7 +128,7 @@ pub(crate) struct RemoteRunOptions {
 }
 
 #[derive(Default)]
-pub(crate) struct RemoteArtifactResolver {
+pub struct RemoteArtifactResolver {
     directory: Option<tempfile::TempDir>,
     manifest: Option<ReleaseManifest>,
     artifacts: IndexMap<String, PathBuf>,
@@ -147,7 +147,7 @@ struct RemotePlatform {
     libc: Option<LibcFlavor>,
 }
 
-pub(crate) fn hosts_from_config(
+pub fn hosts_from_config(
     config: &Config,
     layered_excludes: &[String],
 ) -> Result<IndexMap<String, RemoteHost>> {
@@ -208,7 +208,7 @@ pub(crate) fn hosts_from_config(
     Ok(hosts)
 }
 
-pub(crate) fn excludes_from_config(config: &Config) -> Vec<String> {
+pub fn excludes_from_config(config: &Config) -> Vec<String> {
     config
         .config_files
         .values()
@@ -217,7 +217,7 @@ pub(crate) fn excludes_from_config(config: &Config) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn ad_hoc_host(
+pub fn ad_hoc_host(
     destination: &str,
     source: PathBuf,
     config_excludes: &[String],
@@ -254,7 +254,7 @@ pub(crate) fn ad_hoc_host(
 }
 
 impl RemoteHost {
-    pub(crate) fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
+    pub fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
         if let Some(source) = &overrides.source {
             self.source = absolutize(source)?;
         }
@@ -408,7 +408,7 @@ impl RemoteHost {
     }
 }
 
-pub(crate) async fn run(
+pub async fn run(
     host: &RemoteHost,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,
@@ -418,7 +418,7 @@ pub(crate) async fn run(
 }
 
 /// Observe cancellation inside resource ownership, so cleanup can still be awaited.
-pub(crate) async fn interruptible<T>(
+pub async fn interruptible<T>(
     operation: impl std::future::Future<Output = Result<T>>,
 ) -> Result<T> {
     #[cfg(unix)]
@@ -725,7 +725,7 @@ async fn start_relay(
 }
 
 #[cfg(unix)]
-pub(crate) async fn ssh(
+pub async fn ssh(
     host: &RemoteHost,
     scope: crate::github_relay::Scope,
     command: &[String],

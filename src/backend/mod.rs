@@ -59,9 +59,9 @@ use self::options::VersionOrder;
 
 pub(crate) mod aqua;
 pub(crate) mod asdf;
-pub(crate) mod asset_matcher;
-pub(crate) mod aube_host;
-pub(crate) mod backend_type;
+pub mod asset_matcher;
+pub mod aube_host;
+pub mod backend_type;
 pub(crate) mod cargo;
 pub(crate) mod conda;
 pub(crate) mod dotnet;
@@ -74,13 +74,13 @@ pub(crate) mod jq;
 pub(crate) mod npm;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
-pub(crate) mod packslip;
-pub(crate) mod pipx;
-pub(crate) mod platform_target;
+pub mod packslip;
+pub mod pipx;
+pub mod platform_target;
 mod platform_tokens;
 pub(crate) mod s3;
 pub(crate) mod spm;
-pub(crate) mod static_helpers;
+pub mod static_helpers;
 pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
@@ -114,7 +114,7 @@ static VERSION_LISTING_FAILURES: Lazy<std::sync::Mutex<HashMap<String, String>>>
     Lazy::new(Default::default);
 
 /// Remember that listing remote versions for `ba` failed.
-pub(crate) fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
+pub fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -122,7 +122,7 @@ pub(crate) fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report
 }
 
 /// The cause of the failed remote version listing for `ba`, if one was recorded.
-pub(crate) fn version_listing_failure(ba: &BackendArg) -> Option<String> {
+pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -307,7 +307,7 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn set_strict_metadata(strict: bool) {
+pub fn set_strict_metadata(strict: bool) {
     STRICT_METADATA.store(strict, Ordering::Relaxed);
 }
 
@@ -317,14 +317,14 @@ pub(crate) fn strict_metadata() -> bool {
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
-pub(crate) struct GitHubReleaseInfo {
+pub struct GitHubReleaseInfo {
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
 }
 
 /// Information about a tool version including optional metadata like creation time
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct VersionInfo {
+pub struct VersionInfo {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub created_at: Option<String>,
@@ -354,7 +354,7 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
-    pub(crate) fn created_at_timestamp(&self) -> Option<Timestamp> {
+    pub fn created_at_timestamp(&self) -> Option<Timestamp> {
         match &self.created_at {
             Some(ts) => {
                 let created = parse_into_timestamp(ts);
@@ -372,13 +372,13 @@ impl VersionInfo {
             .is_some_and(|created| created >= before)
     }
 
-    pub(crate) fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
         versions.iter().filter(|v| v.hidden_by_date(before)).count()
     }
 
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
-    pub(crate) fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
         versions
             .into_iter()
             .filter(|v| {
@@ -392,7 +392,7 @@ impl VersionInfo {
 /// Security feature information for a tool
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum SecurityFeature {
+pub enum SecurityFeature {
     Checksum {
         #[serde(skip_serializing_if = "Option::is_none")]
         algorithm: Option<String>,
@@ -429,7 +429,7 @@ static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
 /// recording it costs one Arc clone rather than a copy of every short.
 static TOOLS_SEEDED: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
+pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return Ok(memo_tools);
     }
@@ -533,7 +533,7 @@ fn ensure_installed_tools_loaded() {
     *tools = Some(Arc::new(next));
 }
 
-pub(crate) fn list() -> BackendList {
+pub fn list() -> BackendList {
     ensure_installed_tools_loaded();
     TOOLS
         .lock()
@@ -580,7 +580,7 @@ pub(crate) fn alias_backends() -> BackendList {
         .collect()
 }
 
-pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
+pub fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
     if ba.has_registry_version() {
@@ -615,7 +615,7 @@ pub(crate) fn remove(short: &str) {
     }
 }
 
-pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
     if *backend_type == BackendType::Pipx {
         return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
     }
@@ -638,7 +638,7 @@ fn is_disabled_backend_name(backend: &str) -> bool {
         .any(|disabled| disabled == backend)
 }
 
-pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
             CORE_PLUGINS
@@ -2174,7 +2174,7 @@ mod tests {
 }
 
 #[async_trait]
-pub(crate) trait Backend: Debug + Send + Sync {
+pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
     }
@@ -6320,7 +6320,7 @@ pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str>
     }
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
+pub fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
@@ -6480,7 +6480,7 @@ fn invalidate_postinstall_env() {
     POSTINSTALL_ENV_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
-pub(crate) async fn reset() -> Result<()> {
+pub async fn reset() -> Result<()> {
     install_state::reset();
     invalidate_postinstall_env();
     {

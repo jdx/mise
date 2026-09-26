@@ -26,7 +26,7 @@ pub(crate) enum KeepOrderLine {
 /// Other tasks buffer their output. When the active task finishes,
 /// any already-finished tasks' buffers are flushed, then the next
 /// running task with buffered output is promoted to stream live.
-pub(crate) struct KeepOrderState {
+pub struct KeepOrderState {
     /// The task whose output is currently being streamed live
     active: Option<Task>,
     /// Buffered output for non-active tasks (insertion order preserved)
@@ -283,7 +283,7 @@ impl KeepOrderState {
     }
 
     /// Called when a task finishes execution.
-    pub(crate) fn on_task_finished(&mut self, task: &Task) {
+    pub fn on_task_finished(&mut self, task: &Task) {
         if !self.buffers.contains_key(task) {
             return; // Not a keep-order task
         }
@@ -398,7 +398,7 @@ fn print_stderr(prefix: &str, line: &str) {
 }
 
 /// Configuration for OutputHandler
-pub(crate) struct OutputHandlerConfig {
+pub struct OutputHandlerConfig {
     pub output: Option<TaskOutput>,
     pub silent: bool,
     pub quiet: bool,
@@ -408,7 +408,7 @@ pub(crate) struct OutputHandlerConfig {
 }
 
 /// Handles task output routing, formatting, and display
-pub(crate) struct OutputHandler {
+pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
     pub timed_outputs: TimedOutputMap,
@@ -478,7 +478,7 @@ fn displays_colored_task_prefix(output: TaskOutput) -> bool {
 }
 
 impl OutputHandler {
-    pub(crate) fn new(config: OutputHandlerConfig) -> Self {
+    pub fn new(config: OutputHandlerConfig) -> Self {
         Self {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
             task_prs: Arc::new(Mutex::new(IndexMap::new())),
@@ -493,7 +493,7 @@ impl OutputHandler {
     }
 
     /// Initialize output handling for a task
-    pub(crate) fn init_task(&mut self, task: &Task) {
+    pub fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
             // See `task_gets_keep_order_slot` for which tasks get a slot and why.
             // The executor applies the same rule to the tasks a run entry
@@ -516,7 +516,7 @@ impl OutputHandler {
     /// quietness combine freely (e.g. `output = "prefix"` + `quiet = true` prints
     /// prefixed task lines with none of mise's own chatter). Full-silent is the
     /// one verbosity level that still shows up here, because it nulls both streams.
-    pub(crate) fn output(&self, task: Option<&Task>) -> TaskOutput {
+    pub fn output(&self, task: Option<&Task>) -> TaskOutput {
         // Full-silent (null BOTH streams) is terminal. This must stay distinct
         // from *partial* per-task silent (`silent = "stdout"`/`"stderr"`), which
         // falls through to a real style and is nulled per-stream in the executor —
@@ -561,7 +561,7 @@ impl OutputHandler {
     /// Print error/metadata message for a task.
     /// For keep-order mode, routes through the streaming state so messages
     /// stay ordered with the task's stdout/stderr.
-    pub(crate) fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+    pub fn eprint(&self, task: &Task, prefix: &str, line: &str) {
         match self.output(Some(task)) {
             TaskOutput::KeepOrder => {
                 self.keep_order_state.lock().unwrap().on_stderr(
@@ -675,7 +675,7 @@ impl OutputHandler {
     }
 
     /// Return whether mise-generated output should be suppressed for this task.
-    pub(crate) fn quiet(&self, task: Option<&Task>) -> bool {
+    pub fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
             || Settings::get().quiet
             || Settings::get().task.quiet
@@ -693,7 +693,7 @@ impl OutputHandler {
         self.raw || Settings::get().raw || task.is_some_and(|t| t.raw || t.interactive)
     }
 
-    pub(crate) fn jobs(&self) -> usize {
+    pub fn jobs(&self) -> usize {
         if self.raw {
             1
         } else {

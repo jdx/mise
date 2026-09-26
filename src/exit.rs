@@ -1,1 +1,1 @@
-pub(crate) use mise_util::exit::*;
+pub use mise_util::exit::*;

@@ -37,7 +37,7 @@ const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
-pub(crate) struct BuildOptions {
+pub struct BuildOptions {
     /// Output directory for the OCI image layout.
     pub out_dir: PathBuf,
     /// Base image reference (overrides mise.toml and default setting).
@@ -121,7 +121,7 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
     index
 }
 
-pub(crate) struct Builder {
+pub struct Builder {
     pub cfg: Arc<Config>,
     pub ts: Toolset,
     pub oci: OciConfig,
@@ -131,13 +131,13 @@ pub(crate) struct Builder {
 }
 
 /// Output summary returned to the CLI.
-pub(crate) struct BuildOutput {
+pub struct BuildOutput {
     pub out_dir: PathBuf,
     pub manifest_digest: String,
     pub tool_layers: Vec<ToolLayerInfo>,
 }
 
-pub(crate) struct ToolLayerInfo {
+pub struct ToolLayerInfo {
     pub short: String,
     pub version: String,
     pub digest: String,
@@ -147,7 +147,7 @@ pub(crate) struct ToolLayerInfo {
 }
 
 impl Builder {
-    pub(crate) fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
+    pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
         Self {
             cfg,
             ts,
@@ -158,18 +158,18 @@ impl Builder {
         }
     }
 
-    pub(crate) fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
         self.dotfiles = dotfiles;
         self
     }
 
-    pub(crate) fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
+    pub fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
         self.system_packages = system_packages;
         self
     }
 
     /// Build the image and write it to the output directory.
-    pub(crate) async fn build(self) -> Result<BuildOutput> {
+    pub async fn build(self) -> Result<BuildOutput> {
         let versions = self.ts.list_current_versions();
         if versions.is_empty() {
             warn!("mise oci build: no tools in the toolset — image will have only the base layer");

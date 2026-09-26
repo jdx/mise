@@ -653,7 +653,7 @@ fn normalize_task_cwd(path: PathBuf) -> PathBuf {
 }
 
 /// Get the working directory for a task
-pub(crate) async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
+pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     if let Some(d) = task.dir(config).await? {
         Ok(normalize_task_cwd(d))
     } else {

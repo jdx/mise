@@ -86,7 +86,7 @@ fn validate_watch_files(watch_files: &[PathBuf], expected_mtimes: &[u64]) -> Res
 
 /// Represents the cached environment data
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CachedEnv {
+pub struct CachedEnv {
     /// Cached environment variables
     pub env: BTreeMap<String, String>,
     /// Variables explicitly removed by env directives
@@ -144,7 +144,7 @@ pub(crate) struct CachedNonToolEnv {
 
 impl CachedEnv {
     /// Returns the directory where env cache files are stored
-    pub(crate) fn cache_dir() -> PathBuf {
+    pub fn cache_dir() -> PathBuf {
         dirs::STATE.join("env-cache")
     }
 
@@ -201,7 +201,7 @@ impl CachedEnv {
     }
 
     /// Ensures an encryption key exists, returns one if not set
-    pub(crate) fn ensure_encryption_key() -> String {
+    pub fn ensure_encryption_key() -> String {
         std::env::var("__MISE_ENV_CACHE_KEY").unwrap_or_else(|_| Self::generate_encryption_key())
     }
 
@@ -308,7 +308,7 @@ impl CachedEnv {
     }
 
     /// Clears all env cache files
-    pub(crate) fn clear() -> Result<()> {
+    pub fn clear() -> Result<()> {
         let cache_dir = Self::cache_dir();
         if cache_dir.exists() {
             file::remove_all(&cache_dir)?;

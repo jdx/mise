@@ -46,7 +46,7 @@ pub(crate) fn read_meta_calls() -> usize {
 /// One top-level root of a snapshot tree and the files to add under it,
 /// relative to `path`.
 #[derive(Clone, Debug)]
-pub(crate) struct CaptureRoot {
+pub struct CaptureRoot {
     pub label: String,
     pub path: PathBuf,
     pub files: Vec<PathBuf>,
@@ -64,7 +64,7 @@ pub(crate) struct CaptureResult {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct TreeEntry {
+pub struct TreeEntry {
     pub mode: String,
     pub oid: String,
     pub size: Option<u64>,
@@ -72,7 +72,7 @@ pub(crate) struct TreeEntry {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct DiffOpts {
+pub struct DiffOpts {
     /// Full patch instead of a per-file summary.
     pub patch: bool,
     /// Write the diff to the terminal as git produces it instead of
@@ -84,7 +84,7 @@ pub(crate) struct DiffOpts {
 }
 
 #[derive(Debug)]
-pub(crate) struct DiffResult {
+pub struct DiffResult {
     pub output: Vec<u8>,
     pub changed: bool,
 }
@@ -108,7 +108,7 @@ pub(crate) struct Change {
 }
 
 #[derive(Debug)]
-pub(crate) struct HistoryRepo {
+pub struct HistoryRepo {
     git: GitPlumbing,
     /// Comparison and decrypted bytes live only for this process. They must
     /// never become objects merely because a preflight or diff read them.
@@ -307,7 +307,7 @@ impl HistoryRepo {
     pub(crate) const HISTORY_REF: &'static str = "refs/heads/main";
     const MATCHER_TRAILER: &'static str = "Mise-History-Matcher: ";
     const RECORD_TRAILER: &'static str = "Mise-History: ";
-    pub(crate) fn path_in(state_dir: &Path) -> PathBuf {
+    pub fn path_in(state_dir: &Path) -> PathBuf {
         repo_dir_in(state_dir)
     }
 
@@ -336,7 +336,7 @@ impl HistoryRepo {
         Ok(Some(repo))
     }
 
-    pub(crate) fn dir(&self) -> &Path {
+    pub fn dir(&self) -> &Path {
         self.git.git_dir()
     }
 
@@ -1003,7 +1003,7 @@ impl HistoryRepo {
     }
 
     /// Recursive listing of a tree (or a path inside it).
-    pub(crate) fn ls_tree(&self, spec: &str) -> Result<Vec<TreeEntry>> {
+    pub fn ls_tree(&self, spec: &str) -> Result<Vec<TreeEntry>> {
         let out = self
             .git
             .output(PlumbingCall::new(["ls-tree", "-r", "-l", "-z", spec]))?;
@@ -1050,14 +1050,14 @@ impl HistoryRepo {
 
     /// An empty object of `kind` (`tree` or `blob`), written so it can stand
     /// in for a side of a diff where a path does not exist.
-    pub(crate) fn empty_object(&self, kind: &str) -> Result<String> {
+    pub fn empty_object(&self, kind: &str) -> Result<String> {
         match kind {
             "tree" => self.mktree(""),
             _ => self.hash_blob(b""),
         }
     }
 
-    pub(crate) fn cat_object(&self, oid: &str) -> Result<Vec<u8>> {
+    pub fn cat_object(&self, oid: &str) -> Result<Vec<u8>> {
         if let Some(bytes) = self.transient_blob(oid) {
             return Ok(bytes);
         }
@@ -1135,7 +1135,7 @@ impl HistoryRepo {
     /// Compares two trees, from `a` to `b`. With `paths`, a path that exists
     /// on only one side is compared against an empty tree or blob so an
     /// added or removed path shows up as its whole contents.
-    pub(crate) fn diff(&self, a: &str, b: &str, opts: &DiffOpts) -> Result<DiffResult> {
+    pub fn diff(&self, a: &str, b: &str, opts: &DiffOpts) -> Result<DiffResult> {
         if !super::sync::files::encrypted_paths(self, Some(a))?.is_empty()
             || !super::sync::files::encrypted_paths(self, Some(b))?.is_empty()
         {
@@ -1352,7 +1352,7 @@ impl HistoryRepo {
     }
 
     /// The object at `path` inside `tree_ish`: its mode and oid.
-    pub(crate) fn object_at(&self, tree_ish: &str, path: &str) -> Result<Option<(String, String)>> {
+    pub fn object_at(&self, tree_ish: &str, path: &str) -> Result<Option<(String, String)>> {
         let output = self
             .git
             .output_unchecked(PlumbingCall::new(["ls-tree", "-z", tree_ish, "--", path]))?;

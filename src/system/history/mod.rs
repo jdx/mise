@@ -8,26 +8,26 @@
 //! - [`scope`] — the operation a mutating command records into.
 //! - [`journal`] — the write-ahead journal of what an operation changed.
 
-pub(crate) mod checkpoint;
-pub(crate) mod config;
+pub mod checkpoint;
+pub mod config;
 pub(crate) mod describe_command;
 pub(crate) mod enrollment;
-pub(crate) mod health;
-pub(crate) mod journal;
-pub(crate) mod manifest;
-pub(crate) mod notices;
+pub mod health;
+pub mod journal;
+pub mod manifest;
+pub mod notices;
 pub(crate) mod notify;
 pub(crate) mod recovery;
-pub(crate) mod replay;
-pub(crate) mod scope;
-pub(crate) mod select;
-pub(crate) mod shadow;
-pub(crate) mod store;
-pub(crate) mod sync;
-pub(crate) mod tracked;
-pub(crate) mod watch;
+pub mod replay;
+pub mod scope;
+pub mod select;
+pub mod shadow;
+pub mod store;
+pub mod sync;
+pub mod tracked;
+pub mod watch;
 
-pub(crate) use scope::OperationScope;
+pub use scope::OperationScope;
 
 use eyre::Result;
 
@@ -38,7 +38,7 @@ use tracked::TrackedSet;
 /// Opens the store and lists its checkpoints, oldest first. Reading never
 /// changes the store: an operation that died is closed by the next one
 /// that takes the operation lock (a save, a bootstrap, the watcher).
-pub(crate) async fn open() -> Result<(Store, TrackedSet, Vec<Entry>)> {
+pub async fn open() -> Result<(Store, TrackedSet, Vec<Entry>)> {
     let store = Store::open()?;
     let tracked = TrackedSet::effective().await?;
     let entries = store.list()?;
@@ -47,7 +47,7 @@ pub(crate) async fn open() -> Result<(Store, TrackedSet, Vec<Entry>)> {
 
 /// Resolves a checkpoint reference. With a path scope, `latest[~N]` counts
 /// only the checkpoints where that path changed.
-pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Result<Entry> {
+pub fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Result<Entry> {
     let scoped: Vec<Entry> = match path {
         Some(path) => entries
             .iter()
@@ -68,6 +68,6 @@ pub(crate) fn resolve(spec: &str, entries: &[Entry], path: Option<&str>) -> Resu
         .ok_or_else(|| eyre::eyre!("no history checkpoint {id}"))
 }
 
-pub(crate) fn short(oid: &str) -> String {
+pub fn short(oid: &str) -> String {
     oid.chars().take(7).collect()
 }

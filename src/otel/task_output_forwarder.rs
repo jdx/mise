@@ -28,7 +28,7 @@ struct HookContext {
 /// `SdkLogger`, which delegates to `BatchLogProcessor` for batching and
 /// export. No background task needed — the SDK manages it.
 #[derive(Clone)]
-pub(crate) struct TaskOutputForwarder {
+pub struct TaskOutputForwarder {
     logger: Arc<SdkLogger>,
     logger_provider: Arc<Mutex<Option<SdkLoggerProvider>>>,
     is_shutdown: Arc<AtomicBool>,

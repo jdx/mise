@@ -65,9 +65,12 @@ None of this applies to editing an existing registry entry; do not ask the user 
 ### High-Level Structure
 Mise is a Rust CLI tool that manages development environments, tools, tasks, and environment variables. The codebase follows a modular architecture:
 
+The `mise` package has two targets. The library (`src/lib.rs`) is everything except the command line; the binary (`src/main.rs` plus `src/cli/`) sits on top of it and glob-imports its root, so `cli` code still writes `crate::config::…`. An edit under `src/cli/` recompiles only the binary. Core code must not refer to `crate::cli`: it reaches command behavior through the hooks in `src/frontend.rs`. When `cli` needs a core item, make that item `pub`; `unreachable_pub` keeps everything else `pub(crate)`. `cfg(test)` does not reach the library from the binary's tests, so core code that behaves differently under tests checks `mise_util::testing::in_tests()` instead.
+
 **Core Components:**
-- `src/main.rs` - Entry point and CLI initialization
-- `src/cli/` - Command-line interface implementation with subcommands
+- `src/main.rs` - Binary entry point
+- `src/lib.rs` - Library root: module list and the hooks lower crates need
+- `src/cli/` - Command-line interface implementation with subcommands (binary only)
 - `src/config/` - Configuration file parsing and management
 - `src/backend/` - Tool backend implementations (aqua, github, cargo, npm, asdf, vfox, …)
 - `src/toolset/` - Tool version management and installation logic

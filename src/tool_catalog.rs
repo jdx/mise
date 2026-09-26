@@ -27,13 +27,13 @@ const SEARCH_LIMIT: usize = 20;
 const ALL_SEARCH_LIMIT: usize = 10;
 
 #[derive(Debug, Clone)]
-pub(crate) enum ToolCatalogSource {
+pub enum ToolCatalogSource {
     Registry(&'static RegistryTool),
     Backend,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ToolCatalogEntry {
+pub struct ToolCatalogEntry {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
@@ -41,14 +41,14 @@ pub(crate) struct ToolCatalogEntry {
 }
 
 impl ToolCatalogEntry {
-    pub(crate) fn canonical_id(&self) -> &str {
+    pub fn canonical_id(&self) -> &str {
         match &self.source {
             ToolCatalogSource::Registry(tool) => tool.short,
             ToolCatalogSource::Backend => &self.id,
         }
     }
 
-    pub(crate) fn selector_description(&self) -> &str {
+    pub fn selector_description(&self) -> &str {
         match &self.source {
             ToolCatalogSource::Registry(tool) => tool
                 .description
@@ -58,7 +58,7 @@ impl ToolCatalogEntry {
         }
     }
 
-    pub(crate) fn selectable(&self) -> bool {
+    pub fn selectable(&self) -> bool {
         match &self.source {
             ToolCatalogSource::Registry(tool) => !tool.backends().is_empty(),
             ToolCatalogSource::Backend => true,
@@ -66,7 +66,7 @@ impl ToolCatalogEntry {
     }
 }
 
-pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
+pub async fn search(query: &str) -> Vec<ToolCatalogEntry> {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
@@ -144,7 +144,7 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
 /// e.g. `npm:prettier`, searches that backend's registry. An unprefixed query
 /// searches every registry when `all` is set and none otherwise, so plain
 /// searches and shell completion never query package registries.
-pub(crate) async fn search_package_registry(query: &str, all: bool) -> Vec<ToolCatalogEntry> {
+pub async fn search_package_registry(query: &str, all: bool) -> Vec<ToolCatalogEntry> {
     match query.split_once(':') {
         Some((backend, query)) => search_backend_registry(backend, query, SEARCH_LIMIT).await,
         None if all => {

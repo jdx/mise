@@ -14,7 +14,7 @@ pub(crate) const UPSTREAM_REF: &str = "refs/remotes/origin/setup";
 /// encryption policy, or reconciliation plan.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
-pub(crate) struct NetworkError(pub String);
+pub struct NetworkError(pub String);
 
 /// Authentication belongs in a credential helper or SSH agent, never in
 /// persisted connection URLs or the errors recorded in history health.

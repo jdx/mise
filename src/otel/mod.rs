@@ -4,7 +4,7 @@ pub(crate) mod task_run_telemetry;
 
 pub(crate) use log_claim::{LOG_CLAIM_ENV, LogClaim, LogClaimWatcher};
 pub(crate) use task_output_forwarder::{ExportStreams, TaskOutputForwarder};
-pub(crate) use task_run_telemetry::TaskRunTelemetry;
+pub use task_run_telemetry::TaskRunTelemetry;
 
 use crate::config::{Settings, SettingsExt};
 use opentelemetry_otlp::WithExportConfig;

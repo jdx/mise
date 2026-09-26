@@ -9,14 +9,14 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AccountState {
+pub enum AccountState {
     #[default]
     Present,
     Absent,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct GroupTomlConfig {
+pub struct GroupTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub gid: Option<u32>,
@@ -25,7 +25,7 @@ pub(crate) struct GroupTomlConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct UserTomlConfig {
+pub struct UserTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub uid: Option<u32>,
@@ -46,13 +46,13 @@ pub(crate) struct UserTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GroupRequest {
+pub struct GroupRequest {
     pub name: String,
     pub state: AccountState,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct UserRequest {
+pub struct UserRequest {
     pub name: String,
     pub state: AccountState,
     pub group: Option<String>,
@@ -60,7 +60,7 @@ pub(crate) struct UserRequest {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct AccountRequests {
+pub struct AccountRequests {
     pub groups: Vec<GroupRequest>,
     pub users: Vec<UserRequest>,
 }
@@ -91,32 +91,32 @@ impl UserRequest {
     }
 }
 
-pub(crate) fn requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     if accounts_configured(config) {
         bail!("bootstrap users and groups are only supported on Linux");
     }
     Ok(AccountRequests::default())
 }
 
-pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
     if accounts_configured(config) {
         warn!("ignoring [bootstrap.users] and [bootstrap.groups] on non-Linux host");
     }
     Ok(AccountRequests::default())
 }
 
-pub(crate) fn plans(_requests: &AccountRequests) -> Vec<ResourcePlan> {
+pub fn plans(_requests: &AccountRequests) -> Vec<ResourcePlan> {
     vec![]
 }
 
-pub(crate) fn apply(requests: &AccountRequests, _dry_run: bool, _yes: bool) -> Result<bool> {
+pub fn apply(requests: &AccountRequests, _dry_run: bool, _yes: bool) -> Result<bool> {
     if !requests.groups.is_empty() || !requests.users.is_empty() {
         bail!("bootstrap users and groups are only supported on Linux");
     }
     Ok(true)
 }
 
-pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     bail!("bootstrap users and groups are only supported on Linux")
 }
 

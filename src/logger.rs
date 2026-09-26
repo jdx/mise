@@ -179,7 +179,7 @@ pub(crate) fn thread_id() -> String {
     id.replace(")", "")
 }
 
-pub(crate) fn init() {
+pub fn init() {
     static LOGGER: OnceLock<Logger> = OnceLock::new();
     let settings = Settings::try_get();
     if let Some(logger) = LOGGER.get() {

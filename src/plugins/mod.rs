@@ -24,20 +24,20 @@ use std::{
 };
 
 pub(crate) mod asdf_plugin;
-pub(crate) mod core;
+pub mod core;
 pub(crate) mod mise_plugin_toml;
 pub(crate) mod packslip;
 pub(crate) mod script_manager;
 pub(crate) mod vfox_plugin;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExternalCommand {
+pub struct ExternalCommand {
     pub topic: String,
     pub subcommands: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
-pub(crate) enum PluginType {
+pub enum PluginType {
     Asdf,
     Vfox,
     VfoxBackend,
@@ -45,7 +45,7 @@ pub(crate) enum PluginType {
 }
 
 #[derive(Debug)]
-pub(crate) enum PluginEnum {
+pub enum PluginEnum {
     Asdf(Arc<AsdfPlugin>),
     Vfox(Arc<VfoxPlugin>),
     VfoxBackend(Arc<VfoxPlugin>),
@@ -53,7 +53,7 @@ pub(crate) enum PluginEnum {
 }
 
 impl PluginEnum {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             PluginEnum::Asdf(plugin) => plugin.name(),
             PluginEnum::Vfox(plugin) => plugin.name(),
@@ -71,7 +71,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn get_plugin_type(&self) -> PluginType {
+    pub fn get_plugin_type(&self) -> PluginType {
         match self {
             PluginEnum::Asdf(_) => PluginType::Asdf,
             PluginEnum::Vfox(_) => PluginType::Vfox,
@@ -80,7 +80,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn get_remote_url(&self) -> eyre::Result<Option<String>> {
+    pub fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
             PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
@@ -89,7 +89,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn set_remote_url(&self, url: String) {
+    pub fn set_remote_url(&self, url: String) {
         match self {
             PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
             PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
@@ -98,7 +98,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
+    pub fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
@@ -107,7 +107,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn current_sha_short(&self) -> eyre::Result<Option<String>> {
+    pub fn current_sha_short(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
             PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
@@ -116,7 +116,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn remote_sha(&self) -> eyre::Result<Option<String>> {
+    pub fn remote_sha(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.remote_sha(),
             PluginEnum::Vfox(plugin) => plugin.remote_sha(),
@@ -125,7 +125,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
+    pub fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
@@ -134,11 +134,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn execute_external_command(
-        &self,
-        command: &str,
-        args: Vec<String>,
-    ) -> eyre::Result<()> {
+    pub fn execute_external_command(&self, command: &str, args: Vec<String>) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
@@ -147,11 +143,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn update(
-        &self,
-        pr: &dyn SingleReport,
-        gitref: Option<String>,
-    ) -> eyre::Result<()> {
+    pub async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
@@ -160,7 +152,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    pub async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
             PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
@@ -169,7 +161,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn is_installed(&self) -> bool {
+    pub fn is_installed(&self) -> bool {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),
             PluginEnum::Vfox(plugin) => plugin.is_installed(),
@@ -187,7 +179,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn ensure_installed(
+    pub async fn ensure_installed(
         &self,
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
@@ -208,7 +200,7 @@ impl PluginEnum {
 }
 
 impl PluginType {
-    pub(crate) fn from_full(full: &str) -> eyre::Result<Self> {
+    pub fn from_full(full: &str) -> eyre::Result<Self> {
         match full.split(':').next() {
             Some("asdf") => Ok(Self::Asdf),
             Some("vfox") => Ok(Self::Vfox),
@@ -218,7 +210,7 @@ impl PluginType {
         }
     }
 
-    pub(crate) fn from_plugin_config(key: &str) -> (Self, &str) {
+    pub fn from_plugin_config(key: &str) -> (Self, &str) {
         if let Some(name) = key.strip_prefix("vfox:") {
             (Self::Vfox, name)
         } else if let Some(name) = key.strip_prefix("vfox-backend:") {
@@ -252,7 +244,7 @@ impl PluginType {
         }
     }
 
-    pub(crate) fn plugin(&self, short: String) -> PluginEnum {
+    pub fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
             PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
@@ -267,7 +259,7 @@ impl PluginType {
 
 /// Warn if a plugin is an env-only vfox plugin that shadows a registry entry.
 /// Env-only plugins have `hooks/mise_env.lua` but not `hooks/available.lua`.
-pub(crate) fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
+pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
     let hooks = plugin_path.join("hooks");
     let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
     if is_env_only && REGISTRY.contains_key(name) {
@@ -323,7 +315,7 @@ pub(crate) fn is_python_prerelease(version: &str) -> bool {
     PEP440_PRERELEASE_REGEX.is_match(public) || VERSION_REGEX.is_match(public)
 }
 
-pub(crate) fn get(short: &str) -> Result<PluginEnum> {
+pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
 
     // For plugin:tool format, look up the plugin by just the plugin name
@@ -575,7 +567,7 @@ fn clone_git_plugin_source(
 
 /// An installed plugin whose checkout no longer matches its `[plugins]` entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PluginDrift {
+pub struct PluginDrift {
     pub name: String,
     pub reason: String,
 }
@@ -596,7 +588,7 @@ impl Display for PluginDrift {
 /// `[plugins]` is applied when a plugin is installed, so editing an entry
 /// afterwards leaves the old checkout in place. mise doesn't move it on its
 /// own; this lets commands point out the mismatch instead.
-pub(crate) fn plugin_drift(config: &Config) -> Vec<PluginDrift> {
+pub fn plugin_drift(config: &Config) -> Vec<PluginDrift> {
     let mut drift: Vec<_> = config
         .repo_urls
         .keys()
@@ -620,7 +612,7 @@ pub(crate) fn plugin_drift(config: &Config) -> Vec<PluginDrift> {
     drift
 }
 
-pub(crate) fn warn_plugin_drift(config: &Config) {
+pub fn warn_plugin_drift(config: &Config) {
     for drift in plugin_drift(config) {
         warn!("{drift}");
     }

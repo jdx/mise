@@ -11,7 +11,7 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, Resou
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ComposeState {
+pub enum ComposeState {
     #[default]
     Running,
     Stopped,
@@ -20,7 +20,7 @@ pub(crate) enum ComposeState {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ComposePullPolicy {
+pub enum ComposePullPolicy {
     Always,
     #[default]
     Missing,
@@ -29,7 +29,7 @@ pub(crate) enum ComposePullPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ComposeBuildPolicy {
+pub enum ComposeBuildPolicy {
     #[default]
     Auto,
     Always,
@@ -38,7 +38,7 @@ pub(crate) enum ComposeBuildPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ComposeRecreatePolicy {
+pub enum ComposeRecreatePolicy {
     #[default]
     Auto,
     Always,
@@ -47,13 +47,13 @@ pub(crate) enum ComposeRecreatePolicy {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ComposeRemoveImages {
+pub enum ComposeRemoveImages {
     Local,
     All,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub(crate) struct ComposeTomlConfig {
+pub struct ComposeTomlConfig {
     pub project_dir: PathBuf,
     #[serde(default)]
     pub files: Vec<PathBuf>,
@@ -100,7 +100,7 @@ pub(crate) struct ComposeTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ComposeRequest {
+pub struct ComposeRequest {
     pub name: String,
     project_dir: PathBuf,
     files: Vec<PathBuf>,
@@ -155,7 +155,7 @@ struct ComposeContainer {
     config_hash: Option<String>,
 }
 
-pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
+pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut composed: IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for (name, declaration) in compose_from_config_files(config_files) {
@@ -202,13 +202,13 @@ fn compose_from_config_files(
     merged
 }
 
-pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
+pub fn requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut requests = prepare_requests_from_config(config)?;
     inspect_requests(&mut requests);
     Ok(requests)
 }
 
-pub(crate) fn inspect_requests(requests: &mut [ComposeRequest]) {
+pub fn inspect_requests(requests: &mut [ComposeRequest]) {
     for request in requests {
         request.inspection = Some(
             request
@@ -218,18 +218,18 @@ pub(crate) fn inspect_requests(requests: &mut [ComposeRequest]) {
     }
 }
 
-pub(crate) fn plans(requests: &[ComposeRequest], dependency_changed: bool) -> Vec<ResourcePlan> {
+pub fn plans(requests: &[ComposeRequest], dependency_changed: bool) -> Vec<ResourcePlan> {
     requests
         .iter()
         .map(|request| request.plan_with_dependency_change(dependency_changed))
         .collect()
 }
 
-pub(crate) fn apply(requests: &[ComposeRequest], dry_run: bool, yes: bool) -> Result<()> {
+pub fn apply(requests: &[ComposeRequest], dry_run: bool, yes: bool) -> Result<()> {
     apply_with_dry_run_actions(requests, &HashMap::new(), dry_run, yes)
 }
 
-pub(crate) fn apply_with_dry_run_actions(
+pub fn apply_with_dry_run_actions(
     requests: &[ComposeRequest],
     dry_run_actions: &HashMap<String, ResourceAction>,
     dry_run: bool,

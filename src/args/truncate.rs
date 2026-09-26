@@ -1,7 +1,7 @@
 /// Control whether long terminal output is shortened to fit the available
 /// width.
 #[derive(Debug, usage_rs::Args)]
-pub(crate) struct TruncateOptions {
+pub struct TruncateOptions {
     /// Truncate long terminal output to fit the available width
     #[usage(
         long,
@@ -10,5 +10,5 @@ pub(crate) struct TruncateOptions {
         setting = "truncate",
         verbatim_doc_comment
     )]
-    pub(crate) truncate: bool,
+    pub truncate: bool,
 }

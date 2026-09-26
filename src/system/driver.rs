@@ -10,7 +10,7 @@ use crate::system::packages::{InstallOpts, PackageDesiredState, PackageState, Pa
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Action {
+pub enum Action {
     Install,
     Upgrade,
 }
@@ -24,7 +24,7 @@ impl Action {
     }
 }
 
-pub(crate) struct DriverOpts {
+pub struct DriverOpts {
     /// `--manager` filter
     pub manager: Option<String>,
     /// packages were named explicitly on the CLI — unavailable managers are
@@ -57,7 +57,7 @@ fn unavailable_package_reason<'a>(
 /// Run `action` for every manager in `mgrs`, honoring the `--manager` filter,
 /// disabled/unavailable managers, unsatisfiable version pins, and the
 /// confirmation prompt.
-pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> Result<()> {
+pub async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOpts) -> Result<()> {
     if let Some(only) = &d.manager
         && !mgrs.iter().any(|mp| mp.manager.name() == only)
     {

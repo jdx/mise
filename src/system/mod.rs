@@ -40,50 +40,50 @@ use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 use crate::system::templating::Templated;
 
 #[cfg(target_os = "linux")]
-pub(crate) mod accounts;
+pub mod accounts;
 #[cfg(not(target_os = "linux"))]
 #[path = "accounts_non_linux.rs"]
-pub(crate) mod accounts;
-pub(crate) mod compose;
-pub(crate) mod defaults;
-pub(crate) mod deps;
-pub(crate) mod driver;
-pub(crate) mod edits;
-pub(crate) mod files;
+pub mod accounts;
+pub mod compose;
+pub mod defaults;
+pub mod deps;
+pub mod driver;
+pub mod edits;
+pub mod files;
 #[cfg(target_os = "linux")]
-pub(crate) mod firewall;
+pub mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
-pub(crate) mod firewall;
-pub(crate) mod history;
-pub(crate) mod hooks;
-pub(crate) mod launchd;
-pub(crate) mod login_shell;
-pub(crate) mod managed_files;
-pub(crate) mod packages;
-pub(crate) mod remote;
-pub(crate) mod remote_repository;
-pub(crate) mod repos;
-pub(crate) mod resources;
+pub mod firewall;
+pub mod history;
+pub mod hooks;
+pub mod launchd;
+pub mod login_shell;
+pub mod managed_files;
+pub mod packages;
+pub mod remote;
+pub mod remote_repository;
+pub mod repos;
+pub mod resources;
 pub(crate) mod scheduled_tasks;
-pub(crate) mod secrets;
-pub(crate) mod service_exec;
+pub mod secrets;
+pub mod service_exec;
 #[cfg(target_os = "linux")]
-pub(crate) mod services;
+pub mod services;
 #[cfg(not(target_os = "linux"))]
 #[path = "services_non_linux.rs"]
-pub(crate) mod services;
-pub(crate) mod services_common;
-pub(crate) mod shell_activation;
+pub mod services;
+pub mod services_common;
+pub mod shell_activation;
 pub(crate) mod sudo;
-pub(crate) mod systemd;
+pub mod systemd;
 pub(crate) mod templating;
-pub(crate) mod unapply;
-pub(crate) mod user_services;
+pub mod unapply;
+pub mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapTomlConfig {
+pub struct BootstrapTomlConfig {
     /// Independent configuration roots whose declarative files and dotfiles
     /// participate in bootstrap composition.
     pub config_roots: Option<Vec<String>>,
@@ -148,14 +148,14 @@ pub(crate) struct BootstrapTomlConfig {
 /// the table form adds platform selection without changing package keys.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum PackageTomlConfig {
+pub enum PackageTomlConfig {
     Version(String),
     Options(PackageOptionsTomlConfig),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PackageOptionsTomlConfig {
+pub struct PackageOptionsTomlConfig {
     #[serde(default = "latest_package_version")]
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_package_os")]
@@ -180,14 +180,14 @@ pub(crate) struct PackageOptionsTomlConfig {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum PackageDesiredStateTomlConfig {
+pub enum PackageDesiredStateTomlConfig {
     #[default]
     Present,
     Absent,
 }
 
 impl PackageTomlConfig {
-    pub(crate) fn version(&self) -> &str {
+    pub fn version(&self) -> &str {
         match self {
             Self::Version(version) => version,
             Self::Options(options) => &options.version,
@@ -305,7 +305,7 @@ where
     Ok(values)
 }
 
-pub(crate) fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
+pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
     let mut plugins = IndexMap::new();
     for cf in config.config_files.values().rev() {
         if let Some(bootstrap) = cf.bootstrap_config() {
@@ -318,14 +318,14 @@ pub(crate) fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapUserTomlConfig {
+pub struct BootstrapUserTomlConfig {
     /// desired login shell for the current user, applied with `chsh -s`
     #[serde(default)]
     pub login_shell: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapMacosTomlConfig {
+pub struct BootstrapMacosTomlConfig {
     /// Friendly Dock settings that compile into `[bootstrap.macos.defaults]`.
     #[serde(default)]
     pub dock: IndexMap<String, toml::Value>,
@@ -355,7 +355,7 @@ pub(crate) struct BootstrapMacosTomlConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct BootstrapMacosDefaultsEntry {
+pub struct BootstrapMacosDefaultsEntry {
     pub domain: String,
     pub key: String,
     #[serde(default)]
@@ -366,7 +366,7 @@ pub(crate) struct BootstrapMacosDefaultsEntry {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapMacosLaunchdTomlConfig {
+pub struct BootstrapMacosLaunchdTomlConfig {
     /// User LaunchAgents, keyed by a short stable name. mise gives these a
     /// `dev.mise.<name>` label when rendering the plist.
     #[serde(default)]
@@ -374,7 +374,7 @@ pub(crate) struct BootstrapMacosLaunchdTomlConfig {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapLinuxTomlConfig {
+pub struct BootstrapLinuxTomlConfig {
     /// Declarative Linux host firewall policy and rules.
     #[serde(default)]
     pub firewall: Option<firewall::FirewallTomlConfig>,
@@ -385,7 +385,7 @@ pub(crate) struct BootstrapLinuxTomlConfig {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct BootstrapLinuxSystemdTomlConfig {
+pub struct BootstrapLinuxSystemdTomlConfig {
     /// User services and timers, keyed by a short stable name. mise gives
     /// these a `dev.mise.<name>.<service|timer>` unit name when rendering.
     #[serde(default)]
@@ -393,7 +393,7 @@ pub(crate) struct BootstrapLinuxSystemdTomlConfig {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct SystemBrewTomlConfig {
+pub struct SystemBrewTomlConfig {
     /// Adopt identical existing app bundles for brew-cask entries by default.
     #[cfg(unix)]
     #[serde(default)]
@@ -408,10 +408,10 @@ pub(crate) struct SystemBrewTomlConfig {
 /// `[dotfiles]` as parsed from a single mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(transparent)]
-pub(crate) struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
+pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 
 /// Packages for one manager, aggregated across the config hierarchy
-pub(crate) struct ManagerPackages {
+pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
     pub options: ManagerPackageOptions,
@@ -422,7 +422,7 @@ pub(crate) struct ManagerPackages {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) enum ManagerPackageOptions {
+pub enum ManagerPackageOptions {
     #[default]
     None,
     #[cfg(unix)]
@@ -458,7 +458,7 @@ impl ManagerPackageOptions {
 /// cask definition that `brew-cask` would have fetched.
 #[cfg(unix)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AppSpec {
+pub struct AppSpec {
     pub url: String,
     pub sha256: String,
     pub artifact: String,
@@ -561,7 +561,7 @@ impl AppSpec {
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
 /// first `:` separates — apt arch qualifiers ("apt:gcc:arm64") and brew
 /// versioned formula names ("brew:postgresql@17") stay part of the package.
-pub(crate) fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
+pub fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
     match spec.split_once(':') {
         Some((mgr, pkg)) if !mgr.is_empty() && !pkg.is_empty() => {
             Ok((mgr.to_string(), pkg.to_string()))
@@ -579,7 +579,7 @@ pub(crate) fn parse_spec(spec: &str) -> eyre::Result<(String, String)> {
 /// Homebrew names (`postgresql@17` — that name IS brew's versioning
 /// mechanism), and bottles/casks can't be installed at a pinned version
 /// anyway. mas uses numeric ADAM IDs only.
-pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
+pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
     let (mgr, rest) = parse_spec(spec)?;
     let rest = normalize_use_spec_package_name(&mgr, &rest)?;
     validate_package_name(&mgr, rest)?;
@@ -622,7 +622,7 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
 /// Build [`ManagerPackages`] from already-parsed requests (used by
 /// `mise bootstrap packages use`, where version pins come from the CLI spec). Unknown or
 /// settings-excluded managers are hard errors.
-pub(crate) fn packages_from_requests(
+pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
     resolve_managers(
@@ -635,10 +635,7 @@ pub(crate) fn packages_from_requests(
     )
 }
 
-pub(crate) fn attach_brew_tap_urls(
-    config: &Config,
-    by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
-) {
+pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
     let brew_taps = brew_taps_from_config(config);
     for mgr in ["brew", "brew-cask"] {
         if let Some(requests) = by_mgr.get_mut(mgr) {
@@ -657,7 +654,7 @@ pub(crate) fn attach_brew_tap_urls(
 /// warn (forward compatibility) and are skipped. The
 /// `system_packages.managers` setting restricts which managers are used at
 /// all.
-pub(crate) fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
+pub fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     let brew_taps = brew_taps_from_config(config);
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
 }
@@ -665,7 +662,7 @@ pub(crate) fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackage
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
 /// applying host filters. Configs more local than the target are excluded.
 #[cfg(unix)]
-pub(crate) fn package_configs_for_target(
+pub fn package_configs_for_target(
     config: &Config,
     target: &Path,
 ) -> IndexMap<String, PackageTomlConfig> {
@@ -677,7 +674,7 @@ pub(crate) fn package_configs_for_target(
 /// During a bootstrap dry run, plugin installation is intentionally not
 /// persisted, but the later package phase still needs to show the packages
 /// that the newly declared plugins would manage.
-pub(crate) fn pending_plugin_packages_from_config(
+pub fn pending_plugin_packages_from_config(
     config: &Config,
 ) -> IndexMap<String, Vec<PackageRequest>> {
     pending_plugin_packages_from_config_including_disabled(config)
@@ -717,7 +714,7 @@ pub(crate) fn package_manager_is_enabled(name: &str) -> bool {
 /// tracked config file, mirroring the way `mise prune` protects tool versions
 /// still referenced by other projects.
 #[cfg(unix)]
-pub(crate) async fn packages_from_config_and_tracked_config_files(
+pub async fn packages_from_config_and_tracked_config_files(
     config: &Arc<Config>,
 ) -> Result<Vec<ManagerPackages>> {
     let tracked_config_files = config.get_tracked_config_files().await?;
@@ -728,7 +725,7 @@ pub(crate) async fn packages_from_config_and_tracked_config_files(
 /// declares `manager:name`, so prune errors can point at a stale entry in
 /// another project.
 #[cfg(unix)]
-pub(crate) async fn config_files_declaring_package(
+pub async fn config_files_declaring_package(
     config: &Arc<Config>,
     manager: &str,
     name: &str,
@@ -776,7 +773,7 @@ fn config_files_declaring_package_in<'a>(
 /// loadable tracked config. This does not resolve unrelated managers, which
 /// keeps plugin pruning portable when shared configs contain host-specific
 /// package managers.
-pub(crate) async fn package_requests_for_manager_from_config_and_tracked_config_files(
+pub async fn package_requests_for_manager_from_config_and_tracked_config_files(
     config: &Arc<Config>,
     manager: &str,
 ) -> Result<Vec<PackageRequest>> {
@@ -873,7 +870,7 @@ fn merge_manager_packages(
 }
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
-pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Result<Vec<ManagerPackages>> {
+pub fn packages_from_config_files(config_files: &ConfigMap) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(config_files, &IndexMap::new(), true)
 }
 
@@ -1056,7 +1053,7 @@ fn merge_package_configs<'a>(
 /// Within each host scope, (domain, key, path) entries union global -> local;
 /// a more local config overrides the value a global config declared. Unsupported
 /// value shapes warn (forward compatibility) and are skipped.
-pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
+pub fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
     let mut merged = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
@@ -1126,7 +1123,7 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
 /// Agent names union global -> local; a more local config replaces the full
 /// agent declaration from a global config. Invalid entries warn and are
 /// skipped.
-pub(crate) fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
+pub fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     let mut merged: IndexMap<String, (Templated<LaunchdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config.config_files.iter().rev() {
@@ -1166,7 +1163,7 @@ pub(crate) fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
 /// Repo paths union global -> local; a more local config replaces the full
 /// repo declaration for the same expanded path. Invalid entries warn and are
 /// skipped.
-pub(crate) fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
+pub fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
     let mut merged: IndexMap<PathBuf, RepoRequest> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
@@ -1186,7 +1183,7 @@ pub(crate) fn repos_from_config(config: &Config) -> Vec<RepoRequest> {
 
 /// Count macOS defaults declared in one config file, including friendly
 /// sections that compile into raw defaults entries.
-pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> usize {
+pub fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> usize {
     let mut friendly: IndexMap<(String, String), toml::Value> = IndexMap::new();
     let mut raw: IndexMap<(String, String), toml::Value> = IndexMap::new();
     let mut malformed_domains = 0usize;
@@ -1697,7 +1694,7 @@ fn merge_trackpad_defaults(
 ///
 /// Unit names union global -> local; a more local config replaces the full
 /// unit declaration from a global config. Invalid entries warn and are skipped.
-pub(crate) fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
+pub fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
     let mut merged: IndexMap<String, (Templated<SystemdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config.config_files.iter().rev() {
@@ -1733,7 +1730,7 @@ pub(crate) fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
 }
 
 /// Desired login shell from the most local config that declares it.
-pub(crate) fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShellRequest> {
+pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShellRequest> {
     let mut shell = None;
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
@@ -1764,13 +1761,11 @@ pub(crate) fn login_shell_from_config(config: &Config) -> Option<login_shell::Lo
 /// files before target-specific keys in the same config are applied. Explicit
 /// `[dotfiles]` edits for the same rc file/id win over the generated shell
 /// activation edit.
-pub(crate) fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
+pub fn shell_activation_from_config(config: &Config) -> Vec<ShellActivationRequest> {
     shell_activation_from_config_files(&config.config_files)
 }
 
-pub(crate) fn shell_activation_from_config_files(
-    config_files: &ConfigMap,
-) -> Vec<ShellActivationRequest> {
+pub fn shell_activation_from_config_files(config_files: &ConfigMap) -> Vec<ShellActivationRequest> {
     let explicit_files = files::files_from_config_files(config_files);
     let explicit_edits = edits::edits_from_config_files(config_files);
     let mut merged: IndexMap<ShellActivationTarget, Option<ShellActivationMode>> = IndexMap::new();
@@ -1999,7 +1994,7 @@ fn shell_activation_setting_display(setting: Option<ShellActivationMode>) -> &'s
 ///
 /// Hooks are additive and ordered global -> local. A hook value can be a string
 /// command, an array of string commands, or a table with a `run` string/array.
-pub(crate) fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
+pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
     hooks_from_config_files(&config.config_files)
 }
 
@@ -2023,7 +2018,7 @@ pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::Bo
 ///
 /// Unlike the config path, malformed specs and unknown managers are hard
 /// errors. CLI specs carry no version pin — pins live in the config value.
-pub(crate) fn packages_from_specs_with_config(
+pub fn packages_from_specs_with_config(
     specs: &[String],
     config: Option<&Config>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
@@ -2224,7 +2219,7 @@ fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
 
 /// Collect export declarations before manager validation can warn and skip an
 /// invalid entry. Export must either represent the entire selection or fail.
-pub(crate) fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfig)> {
+pub fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfig)> {
     let environments = &crate::env::MISE_ENV_WITH_AUTO;
     package_configs_from_config_files(&config.config_files)
         .into_iter()
@@ -2237,7 +2232,7 @@ pub(crate) fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTo
         .collect()
 }
 
-pub(crate) fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
+pub fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
     brew_taps_from_config_files(&config.config_files)
 }
 

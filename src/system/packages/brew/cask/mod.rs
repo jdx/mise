@@ -51,7 +51,7 @@ pub(super) use model::{Cask, CaskManager};
 use paths::*;
 use running::*;
 use state::*;
-pub(crate) use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
+pub use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
 const HOMEBREW_CASK_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-cask";
@@ -71,7 +71,7 @@ const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 /// own state directory. Everything between those two ends — download, checksum,
 /// extraction, adoption, and the app swap — is identical, so both are the same
 /// manager configured differently, as with `flatpak` and `flatpak-user`.
-pub(crate) struct BrewCaskManager {
+pub struct BrewCaskManager {
     manager: CaskManager,
 }
 
@@ -582,7 +582,7 @@ struct CaskTransactionJournal<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CaskPruneCandidate {
+pub struct CaskPruneCandidate {
     pub token: String,
     pub version: String,
     version_dir: PathBuf,
@@ -590,13 +590,13 @@ pub(crate) struct CaskPruneCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CaskPruneSkip {
+pub struct CaskPruneSkip {
     pub token: String,
     pub reason: String,
 }
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CaskPrunePlan {
+pub struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
 }
@@ -608,13 +608,19 @@ struct CaskDependencyClosure {
 }
 
 impl CaskPrunePlan {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
 
+impl Default for BrewCaskManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrewCaskManager {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             manager: CaskManager::BrewCask,
         }

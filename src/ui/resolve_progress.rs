@@ -1,1 +1,1 @@
-pub(crate) use mise_util::resolve_progress::*;
+pub use mise_util::resolve_progress::*;

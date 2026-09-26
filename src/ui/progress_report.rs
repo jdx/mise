@@ -8,7 +8,7 @@ use std::sync::LazyLock as Lazy;
 use crate::ui::style;
 use crate::{backend, ui};
 
-pub(crate) use mise_util::progress::{ProgressIcon, SingleReport};
+pub use mise_util::progress::{ProgressIcon, SingleReport};
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
     backend::list()
@@ -29,7 +29,7 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
 
 /// clx-based progress report implementation
 #[derive(Debug)]
-pub(crate) struct ProgressReport {
+pub struct ProgressReport {
     job: Arc<ProgressJob>,
     /// The phase and any secondary detail, folded into one `message` prop:
     /// this row has a single status cell.
@@ -38,7 +38,7 @@ pub(crate) struct ProgressReport {
 }
 
 impl ProgressReport {
-    pub(crate) fn new(prefix: String) -> ProgressReport {
+    pub fn new(prefix: String) -> ProgressReport {
         Self::new_with_pad(prefix, *LONGEST_PLUGIN_NAME)
     }
 

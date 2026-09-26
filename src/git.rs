@@ -1,4 +1,4 @@
-pub(crate) use mise_util::git::*;
+pub use mise_util::git::*;
 
 #[cfg(test)]
 mod tests {

@@ -1763,12 +1763,10 @@ mod tests {
     #[test]
     fn task_watch_options_disable_vcs_ignores_for_combined_watch() {
         let default_task = Task::default();
-        let opted_in_task = Task {
-            watch: Some(TaskWatchOptions {
-                no_vcs_ignore: true,
-            }),
-            ..Default::default()
-        };
+        let mut opted_in_task = Task::default();
+        opted_in_task.watch = Some(TaskWatchOptions {
+            no_vcs_ignore: true,
+        });
 
         assert!(!tasks_disable_vcs_ignores(std::slice::from_ref(
             &default_task,

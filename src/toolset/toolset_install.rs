@@ -74,7 +74,7 @@ impl Toolset {
             .and_then(|(_, tv)| (tv.request.options().lazy == Some(true)).then_some(tv)))
     }
 
-    pub(crate) async fn has_missing_lazy_bin_provider(
+    pub async fn has_missing_lazy_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -109,7 +109,7 @@ impl Toolset {
         requests
     }
 
-    pub(crate) async fn install_missing_lazy_bin(
+    pub async fn install_missing_lazy_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -157,7 +157,7 @@ impl Toolset {
         Ok(Some(installed))
     }
 
-    pub(crate) async fn should_install_missing_registry_bin_provider(
+    pub async fn should_install_missing_registry_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -291,7 +291,7 @@ impl Toolset {
             .await
     }
 
-    pub(crate) async fn install_all_versions_with_progress(
+    pub async fn install_all_versions_with_progress(
         &mut self,
         config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
@@ -838,7 +838,7 @@ impl Toolset {
     /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
     /// so this relies on the signals available before install: the tool's name, registry bin
     /// metadata, or another installed version of the same tool that ships the bin.
-    pub(crate) async fn missing_bin_providers(
+    pub async fn missing_bin_providers(
         &self,
         config: &Arc<Config>,
         missing: Vec<ToolVersion>,
@@ -872,7 +872,7 @@ impl Toolset {
     }
 
     /// Whether a configured, installed version of `tv`'s tool ships `bin_name`.
-    pub(crate) async fn configured_version_ships_bin(
+    pub async fn configured_version_ships_bin(
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
@@ -882,7 +882,7 @@ impl Toolset {
         installed_version_ships_bin(config, &installed, tv, bin_name).await
     }
 
-    pub(crate) async fn install_missing_bin(
+    pub async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -981,7 +981,7 @@ impl Toolset {
     }
 
     /// Install all plugins defined in [plugins] config section
-    pub(crate) async fn ensure_config_plugins_installed(
+    pub async fn ensure_config_plugins_installed(
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
@@ -989,7 +989,7 @@ impl Toolset {
     }
 
     /// Install all plugins from an explicit plugin URL map.
-    pub(crate) async fn ensure_config_plugins_installed_from_urls(
+    pub async fn ensure_config_plugins_installed_from_urls(
         config: &Arc<Config>,
         repo_urls: &HashMap<String, String>,
         dry_run: bool,

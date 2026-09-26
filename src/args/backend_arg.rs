@@ -24,7 +24,7 @@ use std::str::FromStr;
 /// This struct is designed for extensibility - additional fields can be added
 /// as needed without breaking existing code.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BackendResolution {
+pub struct BackendResolution {
     /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
     /// Also true when restored from install state for backward compatibility with existing installations,
     /// and for plugin-based tools initialized from the plugin registry.
@@ -38,7 +38,7 @@ impl BackendResolution {
 }
 
 #[derive(Clone)]
-pub(crate) struct BackendArg {
+pub struct BackendArg {
     /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
     pub short: String,
     /// full identifier, "core:node", "npm:prettier", "cargo:eza", "vfox:version-fox/vfox-nodejs"
@@ -111,7 +111,7 @@ impl From<InstallStateTool> for BackendArg {
 
 /// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
 /// Returns `None` if no bracketed opts are present.
-pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
+pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
     if !s.ends_with(']') {
         return None;
     }
@@ -240,7 +240,7 @@ fn plugin_type_to_backend_type(plugin_name: &str, plugin_type: PluginType) -> Ba
 }
 
 impl BackendArg {
-    pub(crate) fn matches_bin_name(&self, bin_name: &str) -> bool {
+    pub fn matches_bin_name(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
         let bin_name = if exe_suffix.is_empty() {
             bin_name
@@ -305,7 +305,7 @@ impl BackendArg {
             .to_string()
     }
 
-    pub(crate) fn backend(&self) -> Result<ABackend> {
+    pub fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {
         //     if let Some(backend) = backend::get(self) {
@@ -492,7 +492,7 @@ impl BackendArg {
     /// an unrelated registry entry with the same trailing tool name. A concrete
     /// backend restored from a lockfile under a bare shorthand remains eligible:
     /// it records resolution, not an explicit backend identifier from the user.
-    pub(crate) fn registry_tool(&self) -> Option<&'static crate::registry::RegistryTool> {
+    pub fn registry_tool(&self) -> Option<&'static crate::registry::RegistryTool> {
         if self.has_explicit_backend_identifier() {
             return None;
         }
@@ -503,7 +503,7 @@ impl BackendArg {
         self.resolution.explicit && self.short.contains(':')
     }
 
-    pub(crate) fn full(&self) -> String {
+    pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         let short = short.as_ref();
 
@@ -647,7 +647,7 @@ impl BackendArg {
     /// Carry a version boundary without making a registry choice user-explicit.
     /// Keeping this separate from `full` lets installed shorthands migrate to a
     /// newer backend while explicit identifiers, overrides, and locks stay pinned.
-    pub(crate) fn with_registry_version(&self, version: &str) -> Option<Self> {
+    pub fn with_registry_version(&self, version: &str) -> Option<Self> {
         if self.has_explicit_backend()
             || self.has_env_backend_override()
             || !self
@@ -678,7 +678,7 @@ impl BackendArg {
     /// (`github:owner/repo`), an environment or alias override, or a tool the
     /// registry does not know. A tool restored from its lock entry counts as
     /// explicit, so this asks whether the user wrote a bare shorthand instead.
-    pub(crate) fn superseded_backend(&self, version: &str) -> Option<(String, String)> {
+    pub fn superseded_backend(&self, version: &str) -> Option<(String, String)> {
         if self.short.contains(':') || self.has_env_backend_override() || !config::is_loaded() {
             return None;
         }
@@ -709,7 +709,7 @@ impl BackendArg {
 
     /// Warn that the lockfile keeps this tool on a backend the registry has
     /// replaced, and how to adopt the new one.
-    pub(crate) fn warn_if_locked_backend_superseded(&self, version: &str) {
+    pub fn warn_if_locked_backend_superseded(&self, version: &str) {
         if let Some((locked, registry)) = self.superseded_locked_backend(version) {
             warn_once!(
                 "{short} is locked to {locked}, but the registry now installs it from {registry}. \
@@ -719,7 +719,7 @@ impl BackendArg {
         }
     }
 
-    pub(crate) fn full_without_opts(&self) -> String {
+    pub fn full_without_opts(&self) -> String {
         let full = self.full();
         if let Some((name, _)) = split_bracketed_opts(&full) {
             return name.to_string();
@@ -727,7 +727,7 @@ impl BackendArg {
         full
     }
 
-    pub(crate) fn opts(&self) -> ToolVersionOptions {
+    pub fn opts(&self) -> ToolVersionOptions {
         self.resolve_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None, None)
             .into_effective()
     }
@@ -790,7 +790,7 @@ impl BackendArg {
         opts
     }
 
-    pub(crate) fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
+    pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
         self.opts
             .as_ref()
             .filter(|_| self.opts_source == Some(ToolOptionSource::InlineBackendArg))
@@ -861,7 +861,7 @@ impl BackendArg {
     /// respects registry updates, allowing automatic backend migration when registry/
     /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
     /// Options are stripped since lockfiles have a separate options field.
-    pub(crate) fn stored_full(&self) -> String {
+    pub fn stored_full(&self) -> String {
         // For non-explicit tools, use full() which respects registry updates.
         // This allows tools to automatically switch backends when the registry changes.
         if !self.resolution.explicit {
@@ -906,7 +906,7 @@ impl BackendArg {
     }
 
     /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
-    pub(crate) fn all_fulls(&self) -> HashSet<String> {
+    pub fn all_fulls(&self) -> HashSet<String> {
         let full = self.full();
         let mut all = HashSet::new();
         for short in registry::shorts_for_full(&full) {

@@ -28,7 +28,7 @@ macro_rules! cmd {
     };
 }
 
-pub(crate) use mise_util::cmd::*;
+pub use mise_util::cmd::*;
 
 #[cfg(unix)]
 #[cfg(test)]

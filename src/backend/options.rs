@@ -8,7 +8,7 @@ use eyre::{Result, bail};
 
 /// The ordering policy a backend applies to remote versions.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VersionOrder {
+pub enum VersionOrder {
     #[default]
     Source,
     Semver,

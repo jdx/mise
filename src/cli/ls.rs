@@ -457,7 +457,7 @@ impl Ls {
         let mut trs = ToolRequestSet::new();
         for cf in config.get_tracked_config_files().await?.values() {
             let cf_trs = cf.to_tool_request_set()?;
-            for (_ba, tool_requests, _source) in cf_trs.into_iter() {
+            for (_ba, tool_requests, _source) in cf_trs.into_tools() {
                 for tr in tool_requests {
                     trs.add_version(tr.clone(), tr.source());
                 }

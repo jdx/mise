@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::hash::Hash;
 
-pub(crate) trait TreeItem: Clone {
+pub trait TreeItem: Clone {
     type Child: TreeItem;
 
     fn write_self(&self) -> std::io::Result<()>;
@@ -60,16 +60,12 @@ impl TreeItemIndent {
     }
 }
 
-pub(crate) fn print_tree<T: TreeItem>(item: &T) -> std::io::Result<()> {
+pub fn print_tree<T: TreeItem>(item: &T) -> std::io::Result<()> {
     let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
     print_tree_item(item, String::from(""), String::from(""), &indent, 0)
 }
 
-pub(crate) fn print_tree_compact<T, K, F>(
-    item: &T,
-    key: F,
-    seen: &mut HashSet<K>,
-) -> std::io::Result<()>
+pub fn print_tree_compact<T, K, F>(item: &T, key: F, seen: &mut HashSet<K>) -> std::io::Result<()>
 where
     T: TreeItem<Child = T>,
     K: Eq + Hash,

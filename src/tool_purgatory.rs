@@ -83,7 +83,7 @@ fn save_state(state: &PurgatoryState) -> Result<()> {
     crate::file::write_atomic(path, contents)
 }
 
-pub(crate) fn scheduled_removals() -> Result<BTreeMap<PathBuf, u64>> {
+pub fn scheduled_removals() -> Result<BTreeMap<PathBuf, u64>> {
     if !state_path().exists() {
         return Ok(BTreeMap::new());
     }
@@ -95,7 +95,7 @@ pub(crate) fn scheduled_removals() -> Result<BTreeMap<PathBuf, u64>> {
         .collect())
 }
 
-pub(crate) fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
+pub fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
     let _lock = crate::lock_file::get(state_path(), false)?;
     let mut state = load_state()?;
     let install_path = tv.install_path();
@@ -110,7 +110,7 @@ pub(crate) fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
     save_state(&state)
 }
 
-pub(crate) fn forget_path(path: &Path) -> Result<()> {
+pub fn forget_path(path: &Path) -> Result<()> {
     if !state_path().exists() {
         return Ok(());
     }
@@ -120,7 +120,7 @@ pub(crate) fn forget_path(path: &Path) -> Result<()> {
     save_state(&state)
 }
 
-pub(crate) async fn auto_prune() -> Result<()> {
+pub async fn auto_prune() -> Result<()> {
     if !state_path().exists() {
         return Ok(());
     }

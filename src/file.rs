@@ -1,4 +1,4 @@
-pub(crate) use mise_util::file::*;
+pub use mise_util::file::*;
 
 #[cfg(test)]
 mod tests {

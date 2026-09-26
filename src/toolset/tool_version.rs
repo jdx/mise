@@ -38,7 +38,7 @@ pub(super) fn reset_install_path_cache() {
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
-pub(crate) struct ToolVersion {
+pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
     /// Effective install-before cutoff used to resolve this version.
@@ -49,11 +49,11 @@ pub(crate) struct ToolVersion {
     pub install_path: Option<PathBuf>,
     /// The HTTP backend should treat `install_path` as the final destination
     /// rather than a `<tool>/<version>` path. Used by install-into.
-    pub(crate) install_path_is_exact: bool,
+    pub install_path_is_exact: bool,
     /// The HTTP backend should place files directly in `install_path` instead
     /// of linking to its shared extraction cache. Set for system, shared, and
     /// install-into destinations.
-    pub(crate) install_path_is_explicit: bool,
+    pub install_path_is_explicit: bool,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
     /// Portable dependency graph used by embedded aube installs.
@@ -140,7 +140,7 @@ impl ToolVersion {
         )
     }
 
-    pub(crate) fn new(request: ToolRequest, version: String) -> Self {
+    pub fn new(request: ToolRequest, version: String) -> Self {
         let request = request.with_registry_version(&version);
         ToolVersion {
             request,
@@ -160,7 +160,7 @@ impl ToolVersion {
         }
     }
 
-    pub(crate) async fn resolve(
+    pub async fn resolve(
         config: &Arc<Config>,
         request: ToolRequest,
         opts: &ResolveOptions,
@@ -268,7 +268,7 @@ impl ToolVersion {
         tv
     }
 
-    pub(crate) fn resolved_from_lockfile(&self) -> bool {
+    pub fn resolved_from_lockfile(&self) -> bool {
         self.resolved_from_lockfile
     }
 
@@ -300,21 +300,21 @@ impl ToolVersion {
             .is_ok_and(|backend| backend.is_rolling_channel(version))
     }
 
-    pub(crate) fn ba(&self) -> &BackendArg {
+    pub fn ba(&self) -> &BackendArg {
         self.request.ba()
     }
 
-    pub(crate) fn backend(&self) -> Result<ABackend> {
+    pub fn backend(&self) -> Result<ABackend> {
         self.ba().backend()
     }
 
-    pub(crate) fn short(&self) -> &str {
+    pub fn short(&self) -> &str {
         &self.ba().short
     }
 
     /// The logical tool version, excluding an internal embedded-aube graph
     /// identity suffix discovered while scanning install directories.
-    pub(crate) fn display_version(&self) -> &str {
+    pub fn display_version(&self) -> &str {
         self.aube_install_path_version()
             .or_else(|| self.uv_install_path_version())
             .unwrap_or(&self.version)
@@ -324,7 +324,7 @@ impl ToolVersion {
     /// (`<version>~aube~<digest>`, `<version>~uv~<digest>`) with the logical
     /// version it stands for. Lockfiles and dependency resolvers must only
     /// ever see the logical version; the digest is a private path identity.
-    pub(crate) fn strip_install_path_identity(&mut self) {
+    pub fn strip_install_path_identity(&mut self) {
         let version = if self.aube_lock.is_none() {
             self.aube_install_path_version()
                 .or_else(|| self.legacy_aube_install_path_version())
@@ -415,7 +415,7 @@ impl ToolVersion {
         actual.starts_with(identity).then_some(version)
     }
 
-    pub(crate) fn install_path(&self) -> PathBuf {
+    pub fn install_path(&self) -> PathBuf {
         if let Some(p) = &self.install_path {
             return p.clone();
         }
@@ -506,7 +506,7 @@ impl ToolVersion {
             .await
     }
 
-    pub(crate) async fn latest_version_with_opts(
+    pub async fn latest_version_with_opts(
         &self,
         config: &Arc<Config>,
         base_opts: &ResolveOptions,
@@ -531,14 +531,14 @@ impl ToolVersion {
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
     }
-    pub(crate) fn style(&self) -> String {
+    pub fn style(&self) -> String {
         format!(
             "{}{}",
             style(&self.ba().short).blue().for_stderr(),
             style(&format!("@{}", self.version)).for_stderr()
         )
     }
-    pub(crate) fn tv_pathname(&self) -> String {
+    pub fn tv_pathname(&self) -> String {
         let pathname = match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
@@ -1040,7 +1040,7 @@ impl ToolVersion {
 /// `tool_request::version_sub` can subtract from — it needs a concrete version. Every
 /// command that accepts `sub-N:` must go through here; skipping this step is what made
 /// `mise ls-remote <tool>@sub-2:lts` panic.
-pub(crate) async fn resolve_sub_base(
+pub async fn resolve_sub_base(
     config: &Arc<Config>,
     backend: &ABackend,
     sub: &str,
@@ -1131,7 +1131,7 @@ impl Hash for ToolVersion {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ResolveOptions {
+pub struct ResolveOptions {
     pub latest_versions: bool,
     /// Apply `latest_versions` to every request in a toolset, not only
     /// `latest` and rolling channels, so a selector such as `6` resolves to
@@ -1189,7 +1189,7 @@ impl Default for ResolveOptions {
 
 impl ResolveOptions {
     /// Full-toolset resolve used as a side effect of another operation.
-    pub(crate) fn without_lockfile_warnings() -> Self {
+    pub fn without_lockfile_warnings() -> Self {
         Self {
             warn_not_in_lockfile: false,
             ..Default::default()
@@ -1200,7 +1200,7 @@ impl ResolveOptions {
     /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
     /// resolved here are flagged by source so installed-version fast paths
     /// can ignore the built-in default.
-    pub(crate) fn apply_before_date_for_tool(
+    pub fn apply_before_date_for_tool(
         &mut self,
         backend_arg: &BackendArg,
         minimum_release_age: Option<&str>,

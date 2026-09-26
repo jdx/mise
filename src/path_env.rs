@@ -1,4 +1,4 @@
-pub(crate) use mise_util::path_env::*;
+pub use mise_util::path_env::*;
 
 #[cfg(unix)]
 #[cfg(test)]

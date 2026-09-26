@@ -49,7 +49,7 @@ pub(crate) struct ImageIndex {
 
 /// Descriptor referencing a blob by digest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Descriptor {
+pub struct Descriptor {
     #[serde(rename = "mediaType")]
     pub media_type: String,
     pub size: u64,
@@ -61,7 +61,7 @@ pub(crate) struct Descriptor {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Platform {
+pub struct Platform {
     pub architecture: String,
     pub os: String,
     #[serde(
@@ -78,7 +78,7 @@ pub(crate) struct Platform {
 
 /// Image manifest JSON blob.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ImageManifest {
+pub struct ImageManifest {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
     #[serde(rename = "mediaType")]

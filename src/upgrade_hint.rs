@@ -11,7 +11,7 @@ use crate::env;
 /// with a marker file, an instructions file or `MISE_SELF_UPDATE_AVAILABLE`,
 /// and a build without the `self_update` feature never has it.
 #[cfg(feature = "self_update")]
-pub(crate) fn self_update_available() -> bool {
+pub fn self_update_available() -> bool {
     if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
         return b;
     }
@@ -44,7 +44,7 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
     None
 }
 
-pub(crate) fn upgrade_instructions_text() -> Option<String> {
+pub fn upgrade_instructions_text() -> Option<String> {
     if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
         && let Some(msg) = read_instructions_file(path)
     {
@@ -65,7 +65,7 @@ pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
 
 /// How to update mise when `mise self-update` is not available: the packager's
 /// instructions when they shipped some, otherwise the generic hint.
-pub(crate) fn upgrade_instructions_or_hint() -> String {
+pub fn upgrade_instructions_or_hint() -> String {
     upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
 }
 

@@ -15,11 +15,11 @@ use super::{
     task_sources::TaskOutputs,
 };
 
-pub(crate) mod cargo;
-pub(crate) mod git;
-pub(crate) mod go;
-pub(crate) mod node;
-pub(crate) mod uv;
+pub mod cargo;
+pub mod git;
+pub mod go;
+pub mod node;
+pub mod uv;
 
 /// A stable, provider-namespaced identifier for a workspace project.
 ///
@@ -27,7 +27,7 @@ pub(crate) mod uv;
 /// package name, rather than from the project's current filesystem location.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub(crate) struct ProjectId(String);
+pub struct ProjectId(String);
 
 impl ProjectId {
     /// Creates an ID whose namespace prevents collisions between providers.
@@ -77,7 +77,7 @@ fn validate_id_part(kind: &str, value: &str) -> Result<()> {
 
 /// A project discovered from ecosystem-specific workspace metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct WorkspaceProject {
+pub struct WorkspaceProject {
     /// Stable identity used by dependency edges and task scoping.
     pub id: ProjectId,
     /// Normalized path relative to the workspace root. `.` represents the root.
@@ -111,7 +111,7 @@ impl WorkspaceProject {
 
 /// Attribution for a value inferred by a workspace provider.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct WorkspaceProvenance {
+pub struct WorkspaceProvenance {
     /// Workspace provider that inferred the value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -122,7 +122,7 @@ pub(crate) struct WorkspaceProvenance {
 
 /// A provider-neutral task inferred for a workspace project.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct WorkspaceTask {
+pub struct WorkspaceTask {
     /// Command to execute in the project root.
     pub command: String,
     /// Human-readable description of the inferred task.
@@ -137,7 +137,7 @@ pub(crate) struct WorkspaceTask {
 
 /// Optional task configuration a workspace provider can derive confidently.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct WorkspaceTaskSuggestions {
+pub struct WorkspaceTaskSuggestions {
     /// Project-relative input patterns, mapped to mise task sources.
     pub inputs: Vec<String>,
     /// Project-relative output patterns. An empty vector means the task has no file outputs.
@@ -158,7 +158,7 @@ pub(crate) struct WorkspaceTaskSuggestions {
 
 /// Provider attribution for each independently suggested task field.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct WorkspaceTaskSuggestionProvenance {
+pub struct WorkspaceTaskSuggestionProvenance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inputs: Option<WorkspaceProvenance>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,7 +208,7 @@ impl WorkspaceTaskSuggestions {
 /// Explicit changes applied after workspace providers discover their projects.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct WorkspaceProjectOverride {
+pub struct WorkspaceProjectOverride {
     /// Removes the project and every dependency edge connected to it.
     pub remove: bool,
     /// Adds a project at this root or replaces an inferred project's root.
@@ -224,7 +224,7 @@ pub(crate) struct WorkspaceProjectOverride {
 }
 
 /// Discovers projects and dependency edges from one workspace ecosystem.
-pub(crate) trait WorkspaceProvider: Debug + Send + Sync {
+pub trait WorkspaceProvider: Debug + Send + Sync {
     /// Stable namespace used when constructing project IDs.
     fn id(&self) -> &str;
 
@@ -280,7 +280,7 @@ pub(crate) trait WorkspaceProvider: Debug + Send + Sync {
 
 /// Filesystem results shared by every provider during one graph discovery.
 #[derive(Debug, Default)]
-pub(crate) struct WorkspaceDiscoveryContext {
+pub struct WorkspaceDiscoveryContext {
     cache: Mutex<WorkspaceDiscoveryCache>,
     #[cfg(test)]
     physical_accesses: WorkspaceDiscoveryAccessCounts,
@@ -426,7 +426,7 @@ fn normalize_filesystem_path(path: &Path) -> PathBuf {
 
 /// A validated, deterministically ordered project graph from workspace providers.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct WorkspaceProjectGraph {
+pub struct WorkspaceProjectGraph {
     projects: BTreeMap<ProjectId, WorkspaceProject>,
     provider_errors: BTreeMap<String, String>,
 }
@@ -443,7 +443,7 @@ pub(crate) struct WorkspaceProjectPathMap {
 /// A direct or dependency-derived reason that a workspace project is affected.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub(crate) enum AffectedProjectReason {
+pub enum AffectedProjectReason {
     /// A changed file is owned by this project.
     ChangedPath { path: PathBuf },
     /// A changed file affects every project in the workspace.
@@ -456,20 +456,20 @@ pub(crate) enum AffectedProjectReason {
 
 /// Affected workspace projects and the reasons each was selected.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct AffectedProjects {
+pub struct AffectedProjects {
     projects: BTreeMap<ProjectId, BTreeSet<AffectedProjectReason>>,
 }
 
 impl AffectedProjects {
     /// Returns affected projects and their reasons in stable project-ID order.
-    pub(crate) fn projects(
+    pub fn projects(
         &self,
     ) -> impl ExactSizeIterator<Item = (&ProjectId, &BTreeSet<AffectedProjectReason>)> {
         self.projects.iter()
     }
 
     /// Returns whether no projects are affected.
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.projects.is_empty()
     }
 }
@@ -751,12 +751,12 @@ impl WorkspaceProjectGraph {
     }
 
     /// Returns projects in stable project-ID order.
-    pub(crate) fn projects(&self) -> impl ExactSizeIterator<Item = &WorkspaceProject> {
+    pub fn projects(&self) -> impl ExactSizeIterator<Item = &WorkspaceProject> {
         self.projects.values()
     }
 
     /// Finds a project by its stable ID.
-    pub(crate) fn get(&self, id: &ProjectId) -> Option<&WorkspaceProject> {
+    pub fn get(&self, id: &ProjectId) -> Option<&WorkspaceProject> {
         self.projects.get(id)
     }
 
@@ -857,7 +857,7 @@ impl WorkspaceProjectGraph {
     }
 
     /// Explains affected projects from ordinary paths and provider-attributed lockfiles.
-    pub(crate) fn affected_projects_for_changes(
+    pub fn affected_projects_for_changes(
         &self,
         workspace_root: &Path,
         paths: impl IntoIterator<Item = impl AsRef<Path>>,
@@ -940,7 +940,7 @@ impl WorkspaceProjectGraph {
     }
 
     /// Asks workspace providers to attribute a changed lockfile to projects.
-    pub(crate) fn affected_projects_for_lockfile(
+    pub fn affected_projects_for_lockfile(
         &self,
         providers: &[&dyn WorkspaceProvider],
         lockfile_path: &Path,

@@ -25,7 +25,7 @@ const MAX_HOSTNAME_LEN: usize = 253;
 /// The hostname components a project root contributes, shared by every daemon
 /// declared there.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct RootLabels {
+pub struct RootLabels {
     /// Identifies the project itself across all of its checkouts.
     pub project: Option<String>,
     /// Separates this checkout from the project's others. Absent in the
@@ -58,7 +58,7 @@ pub(crate) enum Proxy {
 
 /// The pitchfork proxy settings that decide what a hostname's URL looks like.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProxySettings {
+pub struct ProxySettings {
     pub https: bool,
     pub port: u16,
     pub tld: String,
@@ -82,7 +82,7 @@ impl ProxySettings {
     /// follows `proxy.https`, and the port is written out only when it is not
     /// the standard one for that scheme, so the common setup yields a bare
     /// `https://api.main.shop.localhost`.
-    pub(crate) fn url(&self, host: &str) -> String {
+    pub fn url(&self, host: &str) -> String {
         let scheme = if self.https { "https" } else { "http" };
         let standard = if self.https { 443 } else { 80 };
         if self.port == standard {
@@ -94,13 +94,13 @@ impl ProxySettings {
 
     /// Where this checkout's own page lives, for `mise daemons urls`. The
     /// primary checkout has no page of its own; its stack is the project.
-    pub(crate) fn stack_url(&self, labels: &RootLabels) -> Option<String> {
+    pub fn stack_url(&self, labels: &RootLabels) -> Option<String> {
         let project = labels.project.as_deref()?;
         let worktree = labels.worktree.as_deref()?;
         self.page_url(&format!("{worktree}.{project}.{}", self.tld))
     }
 
-    pub(crate) fn project_url(&self, labels: &RootLabels) -> Option<String> {
+    pub fn project_url(&self, labels: &RootLabels) -> Option<String> {
         let project = labels.project.as_deref()?;
         self.page_url(&format!("{project}.{}", self.tld))
     }
@@ -122,7 +122,7 @@ impl ProxySettings {
 /// project-level `[settings.proxy]` in a `pitchfork.toml` is deliberately not
 /// consulted: it would make one project's URL depend on which directory the
 /// supervisor happened to start in.
-pub(crate) fn proxy_settings() -> &'static ProxySettings {
+pub fn proxy_settings() -> &'static ProxySettings {
     static SETTINGS: LazyLock<ProxySettings> = LazyLock::new(read_proxy_settings);
     &SETTINGS
 }

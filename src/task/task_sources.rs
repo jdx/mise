@@ -7,7 +7,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
 #[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
-pub(crate) enum TaskOutputs {
+pub enum TaskOutputs {
     Files(Vec<String>),
     NoFiles,
     Auto,
@@ -16,7 +16,7 @@ pub(crate) enum TaskOutputs {
 /// Stores raw (pre-render) output templates so they can be re-rendered after
 /// dependency env overrides and usage arguments are available.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct RawOutputTemplates {
+pub struct RawOutputTemplates {
     pub templates: Option<Vec<String>>,
 }
 
@@ -34,14 +34,14 @@ impl TaskOutputs {
         }
     }
 
-    pub(crate) fn patterns(&self) -> Vec<String> {
+    pub fn patterns(&self) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),
             TaskOutputs::NoFiles | TaskOutputs::Auto => vec![],
         }
     }
 
-    pub(crate) fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
+    pub fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),
             TaskOutputs::NoFiles => vec![],

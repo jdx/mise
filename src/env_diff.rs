@@ -1,4 +1,4 @@
-pub(crate) use mise_util::env_diff::*;
+pub use mise_util::env_diff::*;
 
 #[cfg(test)]
 mod tests {
