@@ -265,11 +265,12 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
     for req in requests {
         if dry_run {
             if let Some(write_args) = req.value.write_args().filter(|_| req.path.is_none()) {
+                let (domain, host) = command_target(&req.domain, req.host)?;
                 let mut args = vec![];
-                if req.host == HostScope::Current {
+                if host == HostScope::Current {
                     args.push("-currentHost".to_string());
                 }
-                args.extend(["write".to_string(), req.domain.clone(), req.key.clone()]);
+                args.extend(["write".to_string(), domain, req.key.clone()]);
                 args.extend(write_args);
                 miseprintln!("defaults {}", shell_words::join(&args));
             } else {
@@ -483,6 +484,17 @@ fn read(_domain: &str, _key: &str, _host: HostScope) -> Result<Option<plist::Val
     Ok(None)
 }
 
+/// The domain and host scope a `defaults` command needs to reach the plist `apply` writes.
+#[cfg(target_os = "macos")]
+fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+    macos::command_target(domain, host)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+    Ok((domain.to_string(), host))
+}
+
 #[cfg(target_os = "macos")]
 fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
     macos::write_all(requests)
@@ -596,6 +608,15 @@ mod macos {
             _application: Some(application),
             host,
             container,
+        })
+    }
+
+    /// `defaults` passes a path domain to Core Foundation as `apply` does, so a container
+    /// entry is printed as its plist path in the any-host scope.
+    pub(super) fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+        Ok(match locate(domain, host)?.container {
+            Some(path) => (path.to_string_lossy().into_owned(), HostScope::Any),
+            None => (domain.to_string(), host),
         })
     }
 
@@ -1263,17 +1284,28 @@ mod tests {
         }
     }
 
-    /// cfprefsd writes plists shortly after synchronizing, so poll for the file, within
-    /// nextest's one-second limit.
+    /// cfprefsd writes plists shortly after synchronizing, so poll for the file until the
+    /// deadline. Callers share one deadline so the test stays within nextest's one-second
+    /// limit.
     #[cfg(target_os = "macos")]
-    fn wait_for_plist(path: &std::path::Path) -> Option<plist::Value> {
-        for _ in 0..20 {
+    fn wait_for_plist(
+        path: &std::path::Path,
+        deadline: std::time::Instant,
+    ) -> Option<plist::Value> {
+        loop {
             if let Ok(value) = plist::Value::from_file(path) {
                 return Some(value);
             }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        None
+    }
+
+    #[cfg(target_os = "macos")]
+    fn plist_deadline() -> std::time::Instant {
+        std::time::Instant::now() + std::time::Duration::from_millis(400)
     }
 
     #[cfg(target_os = "macos")]
@@ -1316,12 +1348,21 @@ mod tests {
         std::fs::create_dir_all(&container).unwrap();
 
         let result = (|| -> Result<()> {
+            // A dry run prints the same plist paths apply writes.
+            assert_eq!(
+                command_target(&domain, HostScope::Current)?,
+                (
+                    prefs.join("ByHost").join(&domain).display().to_string(),
+                    HostScope::Any
+                )
+            );
             write_all(&requests)?;
             for status in status_sync(&requests)? {
                 assert_eq!(status.state, DefaultsState::Set);
             }
+            let deadline = plist_deadline();
             for plist in &written {
-                let value = wait_for_plist(plist).unwrap_or_else(|| {
+                let value = wait_for_plist(plist, deadline).unwrap_or_else(|| {
                     let elsewhere: Vec<_> = list_files(&home.join("Library/Preferences"))
                         .into_iter()
                         .filter(|path| path.contains(&domain))
@@ -1371,7 +1412,7 @@ mod tests {
         let byhost = macos::preferences_home().join("Library/Preferences/ByHost");
         let expected = byhost.join(format!("{domain}.{}.plist", macos::host_uuid().unwrap()));
         let result = write_all(std::slice::from_ref(&request));
-        let found = wait_for_plist(&expected).is_some();
+        let found = wait_for_plist(&expected, plist_deadline()).is_some();
         let written: Vec<_> = list_files(&byhost)
             .into_iter()
             .filter(|path| path.contains(&domain))
