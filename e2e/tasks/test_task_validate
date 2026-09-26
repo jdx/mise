@@ -490,6 +490,3 @@ SCRIPT
 
 assert_fail "mise tasks validate --errors-only"
 assert_contains "mise tasks validate --errors-only 2>&1 || true" "usage-parse-error"
-
-# Clean up
-rm -rf mise-tasks
