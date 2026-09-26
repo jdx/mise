@@ -19,7 +19,7 @@ or `mise oci run --image-dir ./mise-oci -- command` to load and run it.
 
 Build on Linux with the target architecture: this packages host tool installs
 and, by default, the running mise binary. `--no-mise` omits that binary but does
-not cross-compile tools installed for another OS. asdf/vfox tools are unsupported.
+not cross-compile tools installed for another OS. asdf tools are unsupported.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
@@ -59,8 +59,9 @@ Notes:
   any configs at-or-below the project root). Tools from
   `~/.config/mise/config.toml` are not included; pass --include-global
   to package them too.
-- asdf and vfox plugins are not supported in v1; use a different backend
-  (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
+- asdf plugins are not supported; use a vfox plugin or another backend
+  (core, aqua, github, cargo, npm, go, pipx, spm, http) for each tool.
+  vfox plugins are copied into the image next to the tools they install.
 - The host mise binary is embedded at /usr/local/bin/mise by default;
   build on the same OS/arch as your target image (or pass --no-mise).
 ```

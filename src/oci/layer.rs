@@ -140,6 +140,26 @@ pub(crate) fn build_layer_from_dir(
     build_layer_from_entries(&entries, target_prefix, owner, None)
 }
 
+/// Build a layer from a plugin checkout, leaving out `.git` directories.
+///
+/// The image only needs the plugin's source to run its hooks; git metadata
+/// would add size and make the layer digest depend on fetch history.
+pub(crate) fn build_plugin_layer_from_dir(
+    src_dir: &Path,
+    target_prefix: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    if !src_dir.is_dir() {
+        eyre::bail!("not a directory: {}", src_dir.display());
+    }
+
+    let entries: Vec<Entry> = collect_sorted_entries(src_dir, false, owner, None)?
+        .into_iter()
+        .filter(|e| !e.rel.components().any(|c| c.as_os_str() == ".git"))
+        .collect();
+    build_layer_from_entries(&entries, target_prefix, owner, None)
+}
+
 /// Build a tool layer while rebasing host paths embedded by its installer.
 pub(crate) fn build_relocated_tool_layer_from_dir(
     src_dir: &Path,
@@ -951,6 +971,41 @@ mod tests {
 
         assert!(paths.contains(&PathBuf::from("opt/app/greeting.txt")));
         assert!(!paths.contains(&PathBuf::from("opt/app/hello.txt")));
+    }
+
+    #[test]
+    fn plugin_layer_omits_git_metadata() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join(".git/objects")).unwrap();
+        fs::write(dir.path().join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        fs::write(dir.path().join("hooks/available.lua"), b"").unwrap();
+        fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+
+        let blob =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default())
+                .unwrap();
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = Archive::new(decoder);
+        let paths = archive
+            .entries()
+            .unwrap()
+            .map(|entry| entry.unwrap().path().unwrap().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&PathBuf::from("mise/plugins/demo/metadata.lua")));
+        assert!(paths.contains(&PathBuf::from("mise/plugins/demo/hooks/available.lua")));
+        assert!(
+            !paths.iter().any(|p| p.to_string_lossy().contains(".git")),
+            "git metadata leaked into the plugin layer: {paths:?}"
+        );
+
+        // Git history must not change the layer: only plugin sources count.
+        fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/other\n").unwrap();
+        let again =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default())
+                .unwrap();
+        assert_eq!(blob.diff_id, again.diff_id);
     }
 
     #[test]

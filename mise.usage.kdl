@@ -4245,11 +4245,11 @@ or `mise oci run --image-dir ./mise-oci -- command` to load and run it.
 
 Build on Linux with the target architecture: this packages host tool installs
 and, by default, the running mise binary. `--no-mise` omits that binary but does
-not cross-compile tools installed for another OS. asdf/vfox tools are unsupported.
+not cross-compile tools installed for another OS. asdf tools are unsupported.
 
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mNotes:\u{1b}[22m\u{1b}[24m\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf and vfox plugins are not supported in v1; use a different backend\n      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mNotes:\u{1b}[22m\u{1b}[24m\n\n    - The image only contains tools from the project's mise config (and\n      any configs at-or-below the project root). Tools from\n      `~/.config/mise/config.toml` are not included; pass --include-global\n      to package them too.\n    - asdf plugins are not supported; use a vfox plugin or another backend\n      (core, aqua, github, cargo, npm, go, pipx, spm, http) for each tool.\n      vfox plugins are copied into the image next to the tools they install.\n    - The host mise binary is embedded at /usr/local/bin/mise by default;\n      build on the same OS/arch as your target image (or pass --no-mise).\n"
         flag --copy help="Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)" var=#true {
             arg <HOST_PATH:IMAGE_PATH>
         }
