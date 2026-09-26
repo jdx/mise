@@ -419,9 +419,10 @@ impl BackendArg {
         }
 
         // A version-scoped registry lookup with no eligible backend must not
-        // revive the backend recorded by another installed version.
+        // revive the backend recorded by another installed version, nor
+        // resolve a core plugin by name outside the registry's bounds.
         if self.has_registry_version() {
-            return BackendType::Core;
+            return BackendType::Unknown;
         }
 
         // Legacy install state may have a backend type without a full
