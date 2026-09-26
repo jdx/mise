@@ -1348,7 +1348,7 @@ struct PluginLayers {
 /// section isn't carried into the image config.
 ///
 /// Plugins embedded in the mise binary have no directory to copy; the
-/// embedded mise carries them, and their fingerprint is the mise version.
+/// embedded mise carries them, and their fingerprint hashes their sources.
 async fn build_plugin_layers(
     config: &Arc<Config>,
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
@@ -1375,8 +1375,8 @@ async fn build_plugin_layers(
             .await
             .wrap_err_with(|| format!("installing plugin {} for {}", plugin.name, tv.style()))?;
         if !plugin.plugin_path.exists() {
-            if plugin.is_embedded() {
-                tool_fingerprints.push(format!("embedded:{}", *crate::version::VERSION_PLAIN));
+            if let Some(fingerprint) = embedded_plugin_fingerprint(&plugin.name) {
+                tool_fingerprints.push(fingerprint);
                 continue;
             }
             bail!(
@@ -1426,6 +1426,31 @@ fn rebase_path_value(value: &str, host_prefix: &std::path::Path, in_image_prefix
         return value.to_string();
     }
     value.replace(host, in_image_prefix)
+}
+
+/// Content hash of a plugin compiled into the mise binary, over its metadata,
+/// hook, and library sources. `None` when no such plugin is embedded.
+fn embedded_plugin_fingerprint(name: &str) -> Option<String> {
+    let plugin = vfox::embedded_plugins::get_embedded_plugin(name)?;
+    let mut hasher = Sha256::new();
+    // Length-prefix every field so adjacent fields can't run together.
+    let mut field = |bytes: &[u8]| {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    };
+    field(plugin.metadata.as_bytes());
+    for (kind, files) in [("hooks", plugin.hooks), ("lib", plugin.lib)] {
+        field(kind.as_bytes());
+        field(&(files.len() as u64).to_le_bytes());
+        for (path, source) in files {
+            field(path.as_bytes());
+            field(source.as_bytes());
+        }
+    }
+    Some(format!(
+        "embedded:sha256:{}",
+        layer::hex_encode(&hasher.finalize())
+    ))
 }
 
 /// Whether an env value names a path under the build host's home directory.
@@ -2035,6 +2060,19 @@ mod tests {
         // An updated plugin, or no plugin at all, must not reuse the layer.
         assert!(!index.contains_key(&key("sha256:plugin-b")));
         assert!(!index.contains_key(&key("")));
+    }
+
+    #[test]
+    fn embedded_plugin_fingerprint_hashes_plugin_sources() {
+        assert_eq!(embedded_plugin_fingerprint("not-an-embedded-plugin"), None);
+        let mut seen = std::collections::HashSet::new();
+        for name in vfox::embedded_plugins::list_embedded_plugins() {
+            let fingerprint = embedded_plugin_fingerprint(name).unwrap();
+            assert!(fingerprint.starts_with("embedded:sha256:"));
+            assert_eq!(embedded_plugin_fingerprint(name).unwrap(), fingerprint);
+            // Distinct plugins have distinct sources, so distinct fingerprints.
+            assert!(seen.insert(fingerprint), "duplicate fingerprint for {name}");
+        }
     }
 
     #[test]

@@ -183,19 +183,24 @@ fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry
         let kind = if entry.file_type().is_dir() {
             EntryKind::Dir
         } else if entry.file_type().is_symlink() {
+            let raw = std::fs::read_link(&abs)?;
+            // Check both where the link resolves and the path it spells: a
+            // link can leave the checkout through an external symlink and
+            // resolve back inside, but that detour won't exist in the image.
             if let Ok(target) = std::fs::canonicalize(&abs)
-                && !target.starts_with(&canonical_src)
+                && (!target.starts_with(&canonical_src)
+                    || !link_stays_inside(&abs, &raw, src_dir, &canonical_src))
             {
                 eyre::bail!(
-                    "plugin symlink {} points to {}, outside the plugin directory; \
+                    "plugin symlink {} points to {} ({}), outside the plugin directory; \
                      mise oci build won't copy files from outside a plugin into the image. \
                      Replace the link with a copy of the file to package this plugin.",
                     abs.display(),
+                    raw.display(),
                     target.display()
                 );
             }
             // In-checkout links stay links; dangling ones are emitted as-is.
-            let raw = std::fs::read_link(&abs)?;
             EntryKind::Symlink(rebase_symlink_target(
                 &raw,
                 &abs,
@@ -223,6 +228,25 @@ fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry
     }
     entries.sort_by(|a, b| a.rel.cmp(&b.rel));
     Ok(entries)
+}
+
+/// Whether a symlink's raw target, normalized lexically against the link's
+/// directory, stays inside the plugin checkout.
+fn link_stays_inside(link: &Path, raw: &Path, src_dir: &Path, canonical_src: &Path) -> bool {
+    use std::path::Component;
+
+    let joined = link.parent().unwrap_or_else(|| Path::new("")).join(raw);
+    let mut normalized = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other),
+        }
+    }
+    normalized.starts_with(src_dir) || normalized.starts_with(canonical_src)
 }
 
 /// Build a tool layer while rebasing host paths embedded by its installer.
@@ -1091,6 +1115,29 @@ mod tests {
 
         // A link out of the checkout must not pull a host file into the image.
         symlink("../../shared/secret", plugin.join("hooks/install.lua")).unwrap();
+        let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("outside the plugin directory"),
+            "{err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_rejects_links_that_detour_outside_the_checkout() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let plugin = dir.path().join("plugin");
+        fs::create_dir_all(plugin.join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join("shared")).unwrap();
+        fs::write(plugin.join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        // shared/bridge leads back into the plugin, so the link resolves
+        // inside it, but the image has no shared/bridge to follow.
+        symlink("../plugin/metadata.lua", dir.path().join("shared/bridge")).unwrap();
+        symlink("../../shared/bridge", plugin.join("hooks/indirect.lua")).unwrap();
+
         let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
             .unwrap_err();
         assert!(
