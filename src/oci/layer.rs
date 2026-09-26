@@ -160,9 +160,11 @@ pub(crate) fn build_plugin_layer_from_dir(
 /// Walk a plugin checkout for its layer.
 ///
 /// `.git` directories are pruned during the walk, so a large or partly
-/// unreadable object store costs nothing. A symlink whose target lies outside
-/// the checkout is rejected: it would dangle in the image, and copying its
-/// target instead could publish an unrelated host file.
+/// unreadable object store costs nothing. A symlink that resolves to, or
+/// passes through, a path outside the checkout is rejected: it would dangle in
+/// the image, and copying its target instead could publish an unrelated host
+/// file. A link already dangling on the host carries no contents and is kept
+/// as-is, so a stray broken link doesn't block packaging a working plugin.
 fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry>> {
     let canonical_src = std::fs::canonicalize(src_dir)
         .wrap_err_with(|| format!("resolving {}", src_dir.display()))?;

@@ -444,8 +444,9 @@ are packaged like any other tool. mise also copies each plugin into its own
 layer at `/mise/plugins/<name>/` (without `.git`), so the image's embedded mise
 can resolve these tools without cloning the plugin. Plugins embedded in the mise
 binary are not copied. The build logs each plugin directory it copies. A
-symlink inside a plugin that points outside the plugin directory fails the
-build instead of copying a host file into the image; replace it with a copy.
+symlink inside a plugin that resolves to a file outside the plugin directory
+fails the build instead of copying a host file into the image; replace it with
+a copy. Links that are already broken on the build host are kept as-is.
 
 The plugin's env hook (`EnvKeys` or `BackendExecEnv`) runs on the build host.
 Paths under the host install directory are rewritten to the in-image path;
