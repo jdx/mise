@@ -124,13 +124,13 @@ pub(crate) struct Exec {
 
 impl Exec {
     #[async_backtrace::framed]
-    pub async fn run(self) -> eyre::Result<()> {
+    pub async fn run(mut self) -> eyre::Result<()> {
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
             env::reset_env_cache_key();
         }
 
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
 
         // Check if any tool arg explicitly specified @latest
         // If so, resolve to the actual latest version from the registry (not just latest installed)
@@ -149,14 +149,38 @@ impl Exec {
             Default::default()
         };
 
-        let ts = measure!("toolset", {
+        // A native Windows shim runs `mise x -- <name>` in place of `handle_shim`, which also
+        // resolves the tools of the task that ran it, such as a task-only command wrapper.
+        let shim_task_tools =
+            if self.tool.is_empty() && env::MISE_SHIM_PATH.read().unwrap().is_some() {
+                crate::shims::task_tool_args_from_env()?
+            } else {
+                vec![]
+            };
+        let tool_args = if shim_task_tools.is_empty() {
+            &self.tool
+        } else {
+            &shim_task_tools
+        };
+        let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
-                .with_args(&self.tool)
+                .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
                 .build(&config)
                 .await?
         });
+
+        // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
+        // command wrapper is applied here instead of by `handle_shim`.
+        if self.tool.is_empty()
+            && let Some(command) = self.command.as_mut()
+            && let Some(wrapper_env) =
+                super::shim::apply_native_shim_command_wrapper(&mut config, &mut ts, command)
+                    .await?
+        {
+            return self.run_with_command_wrapper(config, ts, wrapper_env).await;
+        }
 
         self.run_with_context(
             config,
