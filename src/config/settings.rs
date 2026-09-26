@@ -22,12 +22,12 @@ use super::{TOML_CONFIG_FILENAMES, load_config_paths, load_config_paths_from};
 use url::Url;
 
 #[derive(Clone, Copy)]
-pub(crate) enum CompilePurpose {
+pub enum CompilePurpose {
     Install,
     Inspect,
 }
 
-pub(crate) use mise_settings::*;
+pub use mise_settings::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SettingsSourcePolicy {
     EnvironmentOnly,
@@ -147,7 +147,7 @@ fn warn_implicit_all_compile_default_deprecated(
     all_compile: Option<bool>,
     compile: Option<bool>,
 ) {
-    if cfg!(test) {
+    if mise_util::testing::in_tests() {
         return;
     }
     let distro = env::LINUX_DISTRO.as_deref();
@@ -180,7 +180,7 @@ static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
 });
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct SettingsFile {
+pub struct SettingsFile {
     #[serde(default)]
     pub settings: SettingsPartial,
 }
@@ -654,7 +654,7 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
 
 /// mise behavior layered on the generated [`Settings`] type, which lives in the
 /// `mise-settings` crate.
-pub(crate) trait SettingsExt: Sized {
+pub trait SettingsExt: Sized {
     /// Returns true only when `--yes` was explicitly supplied on this command
     /// line, excluding implicit confirmation from CI mode or configuration.
     fn cli_yes() -> bool;
@@ -840,7 +840,7 @@ impl SettingsExt for Settings {
 
     fn all_compile(&self) -> bool {
         self.all_compile.unwrap_or_else(|| {
-            !cfg!(test)
+            !mise_util::testing::in_tests()
                 && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
         })
     }
@@ -1580,7 +1580,7 @@ fn load() -> Result<Arc<Settings>> {
     } else if *env::CLICOLOR == Some(false) {
         console::set_colors_enabled(false);
         console::set_colors_enabled_stderr(false);
-    } else if ci_info::is_ci() && !cfg!(test) {
+    } else if ci_info::is_ci() && !mise_util::testing::in_tests() {
         console::set_colors_enabled_stderr(true);
     }
     if settings.ci {
@@ -1591,7 +1591,7 @@ fn load() -> Result<Arc<Settings>> {
         settings.swift.gpg_verify = settings.swift.gpg_verify.or(settings.gpg_verify);
     }
     settings.set_hidden_configs();
-    if cfg!(test) {
+    if mise_util::testing::in_tests() {
         settings.experimental = true;
     }
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));

@@ -1,1 +1,1 @@
-pub(crate) use mise_util::gitlab::*;
+pub use mise_util::gitlab::*;

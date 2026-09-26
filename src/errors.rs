@@ -9,7 +9,7 @@ use thiserror::Error;
 pub(crate) use mise_util::errors::ProcessError;
 
 #[derive(Debug, Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("{0}")]
     UnsupportedTarget(String),
     #[error("[{ts}] {tr}: {source:#}")]
@@ -113,7 +113,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
 }
 
 /// Split an install result into successful versions and a result preserving any error.
-pub(crate) fn split_install_result(
+pub fn split_install_result(
     result: Result<Vec<ToolVersion>, Report>,
 ) -> (Vec<ToolVersion>, Result<(), Report>) {
     match result {
@@ -132,20 +132,20 @@ pub(crate) fn split_install_result(
 }
 
 impl Error {
-    pub(crate) fn get_exit_status(err: &Report) -> Option<i32> {
+    pub fn get_exit_status(err: &Report) -> Option<i32> {
         ProcessError::get_exit_status(err)
     }
 
     /// See [`ProcessError::is_killed_by_signal`].
-    pub(crate) fn is_killed_by_signal(err: &Report) -> bool {
+    pub fn is_killed_by_signal(err: &Report) -> bool {
         ProcessError::is_killed_by_signal(err)
     }
 
-    pub(crate) fn is_sigint(err: &Report) -> bool {
+    pub fn is_sigint(err: &Report) -> bool {
         ProcessError::is_sigint(err)
     }
 
-    pub(crate) fn is_task_interrupted_before_start(err: &Report) -> bool {
+    pub fn is_task_interrupted_before_start(err: &Report) -> bool {
         ProcessError::is_task_interrupted_before_start(err)
     }
 

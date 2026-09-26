@@ -22,7 +22,7 @@ use url::Url;
 use crate::file;
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct RepoTomlConfig {
+pub struct RepoTomlConfig {
     #[serde(default)]
     pub url: Option<String>,
     #[serde(default, rename = "ref")]
@@ -30,7 +30,7 @@ pub(crate) struct RepoTomlConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RepoRequest {
+pub struct RepoRequest {
     pub path_raw: String,
     pub path: PathBuf,
     pub url: String,
@@ -38,7 +38,7 @@ pub(crate) struct RepoRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RepoState {
+pub enum RepoState {
     Current,
     Missing,
     Differs,
@@ -47,7 +47,7 @@ pub(crate) enum RepoState {
 }
 
 impl RepoState {
-    pub(crate) fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Current => "current",
             Self::Missing => "missing",
@@ -57,13 +57,13 @@ impl RepoState {
         }
     }
 
-    pub(crate) fn is_current(&self) -> bool {
+    pub fn is_current(&self) -> bool {
         matches!(self, Self::Current)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RepoStatus {
+pub struct RepoStatus {
     pub request: RepoRequest,
     pub origin: Option<String>,
     pub current_ref: Option<String>,
@@ -150,14 +150,14 @@ impl std::fmt::Display for RepoRequest {
     }
 }
 
-pub(crate) async fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
+pub async fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
     crate::parallel::parallel(requests.to_vec(), |request| async move {
         tokio::task::spawn_blocking(move || status_one(&request)).await?
     })
     .await
 }
 
-pub(crate) fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
+pub fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Dirty => {
@@ -176,7 +176,7 @@ pub(crate) fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
 }
 
 /// Apply statuses previously validated with [`preflight_statuses`].
-pub(crate) fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+pub fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Current => {
@@ -191,7 +191,7 @@ pub(crate) fn apply_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<(
 }
 
 /// Update statuses previously validated with [`preflight_statuses`].
-pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
+pub fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Missing => clone_repo(&status.request, dry_run)?,
@@ -208,7 +208,7 @@ pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<
     Ok(())
 }
 
-pub(crate) async fn exec(
+pub async fn exec(
     requests: &[RepoRequest],
     command: &[String],
     dry_run: bool,

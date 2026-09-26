@@ -67,7 +67,7 @@ fn failing_line(source: &str, offset: usize) -> Option<&str> {
 /// A diagnostic error that stores pre-rendered miette output.
 /// This allows miette's fancy formatting to be preserved when wrapped in eyre.
 #[derive(Debug)]
-pub(crate) struct MiseDiagnostic {
+pub struct MiseDiagnostic {
     /// Short description for Display
     message: String,
     /// Pre-rendered miette output for rich display
@@ -91,7 +91,7 @@ impl MiseDiagnostic {
     }
 
     /// Get the pre-rendered miette output
-    pub(crate) fn render(&self) -> &str {
+    pub fn render(&self) -> &str {
         &self.rendered
     }
 }

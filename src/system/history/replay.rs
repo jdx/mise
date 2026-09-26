@@ -37,7 +37,7 @@ use crate::ui::table::MiseTable;
 /// changing while the plan is verified.
 const VERIFY_ROUNDS: usize = 3;
 
-pub(crate) struct RollbackRequest {
+pub struct RollbackRequest {
     /// Paths to roll back; empty with `all` = everything the checkpoint covers.
     pub paths: Vec<PathBuf>,
     /// The checkpoint to roll back to; per path, the newest differing one
@@ -49,7 +49,7 @@ pub(crate) struct RollbackRequest {
     pub force: bool,
 }
 
-pub(crate) struct UndoRequest {
+pub struct UndoRequest {
     /// The operation to undo; the newest not yet undone when absent.
     pub reference: Option<String>,
     pub dry_run: bool,
@@ -106,7 +106,7 @@ struct Target {
     paths: Vec<PathBuf>,
 }
 
-pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
+pub async fn rollback(req: RollbackRequest) -> Result<()> {
     ensure_enabled()?;
     if req.all && !req.paths.is_empty() {
         bail!("choose explicit paths or `--all`, not both");
@@ -247,7 +247,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     .await
 }
 
-pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
+pub async fn undo(req: UndoRequest) -> Result<()> {
     ensure_enabled()?;
     let (store, tracked, entries) = crate::system::history::open().await?;
     let repo = store
@@ -1525,7 +1525,7 @@ fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<
 
 /// The tracked set as it is on disk right now, as a tree in the repository
 /// (objects only; nothing is recorded).
-pub(crate) fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
+pub fn live_tree(repo: &HistoryRepo, tracked: &TrackedSet) -> Result<String> {
     let walk = tracked.walk()?;
     let recipients = if walk.files.values().any(|(_, policy)| policy.encrypt) {
         tracked.manifest.recipients.clone()
@@ -1843,7 +1843,7 @@ mod permission_tests {
 
 /// Runs the reload commands whose glob matches a touched path, each once,
 /// best-effort.
-pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
+pub fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf]) {
     let mut commands: Vec<&String> = vec![];
     for (glob, command) in reload {
         // touched paths are normalized (a symlinked `$HOME` resolved), so
@@ -1883,7 +1883,7 @@ pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf])
 /// The form [`run_reload`] matches a written path in: a symlinked `$HOME`
 /// resolved like the globs' home, the rest kept as written so a file behind a
 /// directory link mise itself created still matches a glob under the link.
-pub(crate) fn reload_path(path: &Path) -> PathBuf {
+pub fn reload_path(path: &Path) -> PathBuf {
     match path.strip_prefix(*crate::dirs::HOME) {
         Ok(rest) => normalize(&crate::dirs::HOME).join(rest),
         Err(_) => path.to_path_buf(),

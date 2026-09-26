@@ -27,11 +27,11 @@ use url::Url;
 static BAKED_REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 
 #[cfg(any(test, debug_assertions))]
-pub(crate) fn baked_registry() -> &'static Registry {
+pub fn baked_registry() -> &'static Registry {
     &BAKED_REGISTRY
 }
 
-pub(crate) static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
+pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     if !Settings::get().registry_floating {
         return &BAKED_REGISTRY;
     }
@@ -60,7 +60,7 @@ const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
 const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
 const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 
-pub(crate) struct Registry {
+pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
     lookup: RegistryLookup,
     missing_version_order: bool,
@@ -72,7 +72,7 @@ enum RegistryLookup {
 }
 
 impl Registry {
-    pub(crate) fn get(&self, name: &str) -> Option<&'static RegistryTool> {
+    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
         self.lookup.get(name).map(|index| &self.entries[*index].1)
     }
 
@@ -80,7 +80,7 @@ impl Registry {
         self.lookup.get(name).is_some()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
         self.entries.iter().map(|(name, tool)| (*name, tool))
     }
 
@@ -121,7 +121,7 @@ impl RegistryLookup {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryTool {
+pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
     /// Project homepage or repository, when the one inferred from the backends is wrong
@@ -139,7 +139,7 @@ pub(crate) struct RegistryTool {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryIdiomaticFile {
+pub struct RegistryIdiomaticFile {
     pub path: &'static str,
     pub version_regex: Option<&'static str>,
     pub version_json_path: Option<&'static str>,
@@ -160,14 +160,14 @@ impl RegistryIdiomaticFile {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryToolTest {
+pub struct RegistryToolTest {
     pub cmd: &'static str,
     pub expected: &'static str,
     pub tools: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryBackend {
+pub struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub min_version: Option<&'static str>,
@@ -258,7 +258,7 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
 
 /// Refresh the floating mise registry before anything initializes [`REGISTRY`].
 /// Fast and offline commands use the cached archive (or the baked registry) without networking.
-pub(crate) async fn refresh() {
+pub async fn refresh() {
     let settings = Settings::get();
     if !settings.registry_floating || settings.prefer_offline() {
         return;
@@ -710,7 +710,7 @@ impl RegistryTool {
         })
     }
 
-    pub(crate) fn backends(&self) -> Vec<&'static str> {
+    pub fn backends(&self) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
         let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
@@ -770,7 +770,7 @@ impl RegistryTool {
 
     /// Filter only requests known to be older than a backend's introduction.
     /// Channels and unresolved aliases retain the ordinary backend priority.
-    pub(crate) fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {
+    pub fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {
         self.backends()
             .into_iter()
             .filter(|full| version.is_none_or(|v| self.backend_supports_version(full, v)))
@@ -782,7 +782,7 @@ impl RegistryTool {
             .is_none_or(|backend| backend.supports_version(version))
     }
 
-    pub(crate) fn is_supported_os(&self) -> bool {
+    pub fn is_supported_os(&self) -> bool {
         self.os.is_empty() || self.os.contains(&OS)
     }
 
@@ -943,7 +943,7 @@ pub(crate) fn normalize_remote(remote: &str) -> eyre::Result<String> {
     Ok(format!("{host}{path}"))
 }
 
-pub(crate) fn full_to_url(full: &str) -> String {
+pub fn full_to_url(full: &str) -> String {
     if let Some(source) = full.strip_prefix("vfox:packslip:") {
         return format!("packslip:{source}");
     }
@@ -981,7 +981,7 @@ impl Display for RegistryTool {
 /// individual tools. `Some(empty)` is an explicit empty allowlist and disables
 /// every tool. When an allowlist is configured, it is authoritative and
 /// `disable_tools` is not applied.
-pub(crate) fn tool_enabled<T: Ord>(
+pub fn tool_enabled<T: Ord>(
     enable_tools: Option<&BTreeSet<T>>,
     disable_tools: &BTreeSet<T>,
     name: &T,

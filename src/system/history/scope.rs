@@ -31,7 +31,7 @@ use crate::lock_file::LockFile;
 
 /// Set in the environment while an operation is open; a child mise that
 /// sees it records nothing of its own.
-pub(crate) const ENV_VAR: &str = "__MISE_HISTORY_OPERATION";
+pub const ENV_VAR: &str = "__MISE_HISTORY_OPERATION";
 
 struct Writer {
     store: Store,
@@ -70,7 +70,7 @@ pub(crate) fn record(entry: JournalEntry) -> Result<Option<u32>> {
 }
 
 /// Whether an operation is open in this process.
-pub(crate) fn is_active() -> bool {
+pub fn is_active() -> bool {
     lock_unpoisoned(&CURRENT).is_some()
 }
 
@@ -86,20 +86,16 @@ pub(crate) fn requires_recovery_preimage() -> bool {
 /// (dry runs, recording disabled, nested commands) are no-ops so callers
 /// never branch on them.
 #[must_use = "finish the scope so the operation is recorded"]
-pub(crate) struct OperationScope(Option<Shared>);
+pub struct OperationScope(Option<Shared>);
 
 impl OperationScope {
     /// Opens an operation for `command` unless nothing should be recorded.
     /// Fails when another history operation holds the operation lock.
-    pub(crate) async fn begin(command: &str, dry_run: bool) -> Result<Self> {
+    pub async fn begin(command: &str, dry_run: bool) -> Result<Self> {
         Self::begin_kind(OperationKind::Bootstrap, command, dry_run).await
     }
 
-    pub(crate) async fn begin_kind(
-        kind: OperationKind,
-        command: &str,
-        dry_run: bool,
-    ) -> Result<Self> {
+    pub async fn begin_kind(kind: OperationKind, command: &str, dry_run: bool) -> Result<Self> {
         Self::begin_with_wait(kind, command, dry_run, OPERATION_LOCK_WAIT, false).await
     }
 
@@ -170,7 +166,7 @@ impl OperationScope {
 
     /// Reloads the tracked set so the outcome capture covers what the
     /// operation declared or removed (a new track entry, a new destination).
-    pub(crate) async fn refresh_tracked(&self) {
+    pub async fn refresh_tracked(&self) {
         if self.0.is_none() {
             return;
         }
@@ -191,7 +187,7 @@ impl OperationScope {
 
     /// Runs `f` inside an operation for `command`, a single-part command,
     /// and finishes it with the outcome.
-    pub(crate) async fn wrap<T, F>(command: &str, dry_run: bool, f: F) -> Result<T>
+    pub async fn wrap<T, F>(command: &str, dry_run: bool, f: F) -> Result<T>
     where
         F: Future<Output = Result<T>>,
     {
@@ -221,7 +217,7 @@ impl OperationScope {
     /// External commands cannot journal individual writes. Capture all tracked
     /// entries live (including manual-save files) and keep the label on the
     /// pending record so crash recovery can identify the operation too.
-    pub(crate) fn prepare_capture(&self, label: Option<&str>) {
+    pub fn prepare_capture(&self, label: Option<&str>) {
         if let Some(shared) = &self.0 {
             let mut writer = lock_unpoisoned(shared);
             writer.promote = writer
@@ -239,7 +235,7 @@ impl OperationScope {
     }
 
     /// The protective checkpoint this operation took, if any.
-    pub(crate) fn before(&self) -> Option<(u64, String)> {
+    pub fn before(&self) -> Option<(u64, String)> {
         self.0
             .as_ref()
             .and_then(|shared| lock_unpoisoned(shared).before.clone())
@@ -297,7 +293,7 @@ impl OperationScope {
 
     /// Captures the outcome and marks the operation completed, or failed
     /// when `error` is set.
-    pub(crate) fn finish(self, error: Option<String>, summary: Option<Summary>) {
+    pub fn finish(self, error: Option<String>, summary: Option<Summary>) {
         self.finish_with_writes(error, summary, true);
     }
 
@@ -669,7 +665,7 @@ fn records_file_history(
 /// failed first. Every write to the store that is not an operation of its
 /// own (an explicit save) holds this for its duration too, so it never
 /// interleaves with a bootstrap, rollback, or undo.
-pub(crate) fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
+pub fn take_operation_lock(store: &Store, tracked: &TrackedSet) -> Result<fslock::LockFile> {
     take_operation_lock_with_wait(store, tracked, OPERATION_LOCK_WAIT)
 }
 
@@ -698,7 +694,7 @@ fn take_operation_lock_with_wait(
 
 /// Recovery must be able to acquire the operation lock without first retrying
 /// the very transaction whose concurrent edits require an explicit decision.
-pub(crate) fn recovery_lock(store: &Store) -> Result<fslock::LockFile> {
+pub fn recovery_lock(store: &Store) -> Result<fslock::LockFile> {
     acquire_operation_lock(store, std::time::Duration::ZERO)
 }
 
@@ -753,7 +749,7 @@ pub(crate) fn recover_stale(store: &Store, tracked: &TrackedSet) -> Result<()> {
 
 /// Retry a single operation under the caller's recovery lock. Accepting live
 /// files is deliberately separate from ordinary automatic recovery.
-pub(crate) fn recover_operation(
+pub fn recover_operation(
     store: &Store,
     tracked: &TrackedSet,
     uuid: &str,

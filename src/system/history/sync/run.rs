@@ -29,7 +29,7 @@ const PUSH_RETRIES: usize = 5;
 /// An incoming change waiting for `mise dot pull` (or automatic
 /// application in `sync` mode).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct PendingApplication {
+pub struct PendingApplication {
     pub branch_path: String,
     /// `None` deletes the local file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,13 +46,13 @@ pub(crate) struct PendingApplication {
 
 /// A path sync leaves alone, and why; listed by `mise dot status`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct SkippedPath {
+pub struct SkippedPath {
     pub branch_path: String,
     pub reason: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Resolution {
+pub struct Resolution {
     pub local: Option<Object>,
     pub remote: Option<Object>,
     pub live: Option<Object>,
@@ -65,7 +65,7 @@ pub(crate) struct Resolution {
 /// Derived from the repository after every sync; rebuilt when it
 /// disagrees.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct SyncStatus {
+pub struct SyncStatus {
     /// Choices are bound to all three observed versions, not just a path.
     #[serde(default)]
     pub resolutions: BTreeMap<String, Resolution>,
@@ -132,7 +132,7 @@ pub(crate) fn status_path(state_dir: &Path) -> PathBuf {
     hstore::store_dir_in(state_dir).join("sync.json")
 }
 
-pub(crate) fn read_status(state_dir: &Path) -> Result<SyncStatus> {
+pub fn read_status(state_dir: &Path) -> Result<SyncStatus> {
     let path = status_path(state_dir);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
@@ -181,14 +181,14 @@ mod status_read_tests {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct SyncOutcome {
+pub struct SyncOutcome {
     pub published: Option<String>,
     pub pending: usize,
     pub conflicts: usize,
     pub fetched_upstream: Option<String>,
 }
 
-pub(crate) struct SyncRequest {
+pub struct SyncRequest {
     pub fetch_only: bool,
     /// Skip the plaintext ancestry audit for this sync.
     pub allow_plaintext_history: bool,
@@ -209,7 +209,7 @@ pub(crate) struct SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn new(fetch_only: bool) -> Self {
+    pub fn new(fetch_only: bool) -> Self {
         Self {
             fetch_only,
             allow_plaintext_history: false,
@@ -222,7 +222,7 @@ impl SyncRequest {
 }
 
 /// The connected origin, or why there is none.
-pub(crate) fn origin() -> Result<OriginTomlConfig> {
+pub fn origin() -> Result<OriginTomlConfig> {
     if let Some((_, origin)) = crate::system::history::config::origin()? {
         return Ok(origin);
     }
@@ -238,11 +238,7 @@ pub(crate) fn origin() -> Result<OriginTomlConfig> {
 }
 
 /// Runs one synchronization.
-pub(crate) fn sync(
-    store: &Store,
-    tracked: &TrackedSet,
-    request: &SyncRequest,
-) -> Result<SyncOutcome> {
+pub fn sync(store: &Store, tracked: &TrackedSet, request: &SyncRequest) -> Result<SyncOutcome> {
     let _sync_lock = lock(store)?;
     sync_locked(store, tracked, request)
 }
@@ -499,7 +495,7 @@ fn lock_path(state_dir: &Path) -> PathBuf {
 /// The sync lock: every reader-then-writer of `sync.json` holds it. A sync
 /// or pull takes it for its whole duration and fails at once when another
 /// holds it.
-pub(crate) fn lock(store: &Store) -> Result<fslock::LockFile> {
+pub fn lock(store: &Store) -> Result<fslock::LockFile> {
     lock_in(store.state_dir())
 }
 
@@ -661,7 +657,7 @@ pub(crate) fn refresh(store: &Store, tracked: &TrackedSet, status: &mut SyncStat
     refresh_with_interaction(store, tracked, status, false)
 }
 
-pub(crate) fn refresh_with_interaction(
+pub fn refresh_with_interaction(
     store: &Store,
     tracked: &TrackedSet,
     status: &mut SyncStatus,
@@ -1126,7 +1122,7 @@ pub(super) fn incoming_repository_tree(
 
 /// A bootstrap finished: the declarations that arrived through sync are
 /// applied now, so `status` stops asking for one.
-pub(crate) fn bootstrap_completed() {
+pub fn bootstrap_completed() {
     let state_dir: &Path = &crate::dirs::STATE;
     let status = match read_status(state_dir) {
         Ok(status) => status,

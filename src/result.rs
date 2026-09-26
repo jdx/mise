@@ -1,1 +1,1 @@
-pub(crate) type Result<T> = eyre::Result<T>;
+pub type Result<T> = eyre::Result<T>;

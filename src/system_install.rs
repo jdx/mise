@@ -19,7 +19,7 @@ const HELPER: &str = "__publish-system-install";
 /// The privileged half of a system installation, run as root by
 /// `mise __publish-system-install`. Reads one request and its archive from
 /// stdin; never loads configuration or backend code.
-pub(crate) fn apply_from_stdin() -> Result<()> {
+pub fn apply_from_stdin() -> Result<()> {
     ensure!(
         sudo::is_root(),
         "the system installation helper requires root"
@@ -30,7 +30,7 @@ pub(crate) fn apply_from_stdin() -> Result<()> {
 
 /// True when mise itself was started through sudo. Plain root (containers, CI)
 /// has no `SUDO_UID`.
-pub(crate) fn under_sudo() -> bool {
+pub fn under_sudo() -> bool {
     sudo::is_root() && std::env::var_os("SUDO_UID").is_some()
 }
 

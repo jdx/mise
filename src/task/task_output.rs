@@ -1,10 +1,10 @@
 use crate::config::Settings;
 use crate::env;
 
-pub(crate) use mise_settings::TaskOutput;
+pub use mise_settings::TaskOutput;
 
 /// How the task runner resolves a configured [`TaskOutput`] into a stream style.
-pub(crate) trait TaskOutputExt {
+pub trait TaskOutputExt {
     fn style_only(self) -> TaskOutput;
     fn style_with_raw(self, raw: bool) -> TaskOutput;
 }

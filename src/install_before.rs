@@ -56,7 +56,7 @@ pub(crate) fn resolve_before_date(
 
 /// Resolve the CLI `--minimum-release-age` flag without falling back to global
 /// settings or the built-in default when the flag is omitted.
-pub(crate) fn resolve_cli_minimum_release_age(
+pub fn resolve_cli_minimum_release_age(
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
     if minimum_release_age
@@ -106,7 +106,7 @@ pub(crate) fn resolve_before_date_for_tool_with_source(
 /// `resolve_before_date_for_tool_with_source`, except cutoffs pre-resolved by
 /// the caller (e.g. the CLI flag) are not visible here — the caller already
 /// knows those. Returns `None` when no cutoff applies to the tool.
-pub(crate) fn effective_minimum_release_age_for_tool(
+pub fn effective_minimum_release_age_for_tool(
     backend_arg: &BackendArg,
     minimum_release_age: Option<&str>,
 ) -> Option<String> {
@@ -233,7 +233,7 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
     })
 }
 
-pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
+pub async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
     config: &Arc<Config>,
     backend: &B,
     before_date: Option<Timestamp>,
@@ -250,7 +250,7 @@ pub(crate) async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
 /// when it came out and when it becomes eligible, plus the configured age value.
 /// Shared by `mise upgrade`'s warning and the resolution error raised when the
 /// cutoff hides every candidate.
-pub(crate) fn format_hidden_release_details(
+pub fn format_hidden_release_details(
     created_at: Option<Timestamp>,
     age: Option<&str>,
     tz: jiff::tz::TimeZone,

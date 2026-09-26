@@ -12,7 +12,7 @@ use serde::{Deserialize, Deserializer};
 use toml::Value;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ToolStubFile {
+pub struct ToolStubFile {
     #[serde(default = "default_version")]
     pub version: String,
     pub bin: Option<String>,  // defaults to filename if not specified
@@ -120,7 +120,7 @@ fn extract_toml_from_bootstrap(content: &str) -> Option<String> {
 }
 
 impl ToolStubFile {
-    pub(crate) fn from_file(path: &Path) -> Result<Self> {
+    pub fn from_file(path: &Path) -> Result<Self> {
         let content = file::read_to_string(path)?;
         let stub_name = path
             .file_name()
@@ -167,7 +167,7 @@ impl ToolStubFile {
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
-    pub(crate) fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
+    pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
         use crate::args::BackendArg;
 
         let mut backend_arg = BackendArg::from(&self.tool_name);

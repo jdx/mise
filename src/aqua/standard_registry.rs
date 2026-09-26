@@ -4,17 +4,17 @@ use crate::platform::Platform;
 
 /// Metadata for the baked aqua registry snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AquaRegistryMetadata {
+pub struct AquaRegistryMetadata {
     pub repository: &'static str,
     pub tag: &'static str,
 }
 
 /// Baked canonical registry packages (compiled into the mise binary).
-pub(crate) static AQUA_STANDARD_REGISTRY_FILES: phf::Map<&'static str, &'static [u8]> =
+pub static AQUA_STANDARD_REGISTRY_FILES: phf::Map<&'static str, &'static [u8]> =
     include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs"));
 
 /// Baked aqua registry snapshot metadata (compiled into the mise binary).
-pub(crate) static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
+pub static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
     env!("OUT_DIR"),
     "/aqua_standard_registry_metadata.rs"
 ));
@@ -107,7 +107,7 @@ pub(crate) fn search_entries() -> impl Iterator<Item = (&'static str, Option<&'s
     })
 }
 
-pub(crate) fn package(package_id: &str) -> Option<Result<AquaPackage>> {
+pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
     baked_registry_file(package_id).map(|content| decode_package_rkyv(package_id, content))
 }
 

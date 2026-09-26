@@ -1,7 +1,7 @@
-pub(crate) mod generate;
+pub mod generate;
 mod graph;
 
-pub(crate) use graph::sidecar_root;
+pub use graph::sidecar_root;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::args::BackendArg;
@@ -61,7 +61,7 @@ const LOCKFILE_HEADER_PREFIX: &str = "# @generated - this file is auto-generated
 const DEFAULT_LOCKFILE_DOC_URL: &str = "https://mise.jdx.dev/dev-tools/mise-lock.html";
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
-pub(crate) fn invalidate_caches() {
+pub fn invalidate_caches() {
     if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
         cache.clear();
     }
@@ -79,7 +79,7 @@ pub(crate) fn invalidate_caches() {
 const CURRENT_LOCKFILE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct AubeLock {
+pub struct AubeLock {
     pub graph: toml::Table,
     #[serde(skip)]
     pub graph_text: String,
@@ -126,7 +126,7 @@ impl AubeLock {
 /// Lossless native uv lock plus the synthetic project used to resolve it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct UvLock {
+pub struct UvLock {
     pub project: toml::Table,
     pub graph: toml::Table,
     #[serde(skip)]
@@ -231,7 +231,7 @@ fn toml_to_yaml(value: toml::Value) -> serde_yaml::Value {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Lockfile {
+pub struct Lockfile {
     #[serde(skip)]
     lockfile_version: u32,
     #[serde(skip)]
@@ -253,7 +253,7 @@ pub(crate) struct Lockfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct LockfileTool {
+pub struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
@@ -295,7 +295,7 @@ type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 /// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
-pub(crate) enum ProvenanceType {
+pub enum ProvenanceType {
     Minisign,
     Cosign,
     #[strum(serialize = "slsa")]
@@ -440,7 +440,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub(crate) enum GithubAttestationsStatus {
+pub enum GithubAttestationsStatus {
     Unavailable,
 }
 
@@ -462,7 +462,7 @@ fn merge_provenance_state(
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ArtifactInfo {
+pub struct ArtifactInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
@@ -534,7 +534,7 @@ fn merge_additional_artifacts(
 }
 
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct PlatformInfo {
+pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -998,19 +998,19 @@ fn existing_lockfile_doc_url_from_path(path: &Path) -> Option<String> {
 }
 
 impl Lockfile {
-    pub(crate) fn lockfile_version(&self) -> u32 {
+    pub fn lockfile_version(&self) -> u32 {
         self.lockfile_version
     }
 
-    pub(crate) fn upgrade(&mut self) {
+    pub fn upgrade(&mut self) {
         self.lockfile_version = CURRENT_LOCKFILE_VERSION;
     }
 
-    pub(crate) fn needs_upgrade(&self) -> bool {
+    pub fn needs_upgrade(&self) -> bool {
         self.lockfile_version < CURRENT_LOCKFILE_VERSION
     }
 
-    pub(crate) fn uses_request_bindings(&self) -> bool {
+    pub fn uses_request_bindings(&self) -> bool {
         self.lockfile_version > 0
     }
 
@@ -1023,7 +1023,7 @@ impl Lockfile {
     }
 
     /// Whether `short`'s entry at `version` records artifact data for any platform.
-    pub(crate) fn has_platforms(&self, short: &str, version: &str) -> bool {
+    pub fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
             entries.iter().any(|entry| {
                 entry.version == version && entry.platforms.values().any(|p| !p.is_empty())
@@ -1041,7 +1041,7 @@ impl Lockfile {
     /// artifact data and dependency graphs recorded for the old backend so the
     /// next lock records the new one's. Returns each moved version with its new
     /// backend and whether the old entry carried artifact data.
-    pub(crate) fn switch_backend(
+    pub fn switch_backend(
         &mut self,
         short: &str,
         from: &str,
@@ -1068,7 +1068,7 @@ impl Lockfile {
         moved
     }
 
-    pub(crate) fn bind_request(
+    pub fn bind_request(
         &mut self,
         short: &str,
         specifier: &str,
@@ -1094,7 +1094,7 @@ impl Lockfile {
         true
     }
 
-    pub(crate) fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(Lockfile::default());
@@ -1200,7 +1200,7 @@ impl Lockfile {
         Ok(())
     }
 
-    pub(crate) fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
+    pub fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
         // Resolve the lockfile target before choosing sidecar locations and pointers.
         let mut source_symlink = None;
         let target = if path.is_symlink() {
@@ -1390,11 +1390,7 @@ impl Lockfile {
     }
 
     /// Get a conda package from the shared section by basename
-    pub(crate) fn get_conda_package(
-        &self,
-        platform: &str,
-        basename: &str,
-    ) -> Option<&CondaPackageInfo> {
+    pub fn get_conda_package(&self, platform: &str, basename: &str) -> Option<&CondaPackageInfo> {
         self.conda_packages.get(platform)?.get(basename)
     }
 
@@ -1434,7 +1430,7 @@ impl Lockfile {
     }
 
     /// Get all platform keys present in the lockfile
-    pub(crate) fn all_platform_keys(&self) -> BTreeSet<String> {
+    pub fn all_platform_keys(&self) -> BTreeSet<String> {
         let mut platforms = BTreeSet::new();
         for tools in self.tools.values() {
             for tool in tools {
@@ -1446,22 +1442,19 @@ impl Lockfile {
         platforms
     }
 
-    pub(crate) fn retain_graph_entries(
-        &mut self,
-        mut keep: impl FnMut(&str, &LockfileTool) -> bool,
-    ) {
+    pub fn retain_graph_entries(&mut self, mut keep: impl FnMut(&str, &LockfileTool) -> bool) {
         for (short, entries) in &mut self.tools {
             entries
                 .retain(|entry| (entry.uv.is_none() && entry.aube.is_none()) || keep(short, entry));
         }
     }
 
-    pub(crate) fn tool_stubs(&self) -> &BTreeSet<String> {
+    pub fn tool_stubs(&self) -> &BTreeSet<String> {
         &self.tool_stubs
     }
 
     /// Record that `stub` reads its entries from the lockfile at `lockfile_path`.
-    pub(crate) fn add_tool_stub(&mut self, lockfile_path: &Path, stub: &Path) -> Result<()> {
+    pub fn add_tool_stub(&mut self, lockfile_path: &Path, stub: &Path) -> Result<()> {
         self.tool_stubs
             .insert(tool_stub_reference(lockfile_path, stub)?);
         Ok(())
@@ -1469,7 +1462,7 @@ impl Lockfile {
 
     /// Drop references to stubs that were deleted, or that now find a
     /// different lockfile. Returns whether any reference was dropped.
-    pub(crate) fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
+    pub fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
         let before = self.tool_stubs.len();
         self.tool_stubs.retain(|reference| {
             let stub = tool_stub_path(lockfile_path, reference);
@@ -1480,13 +1473,13 @@ impl Lockfile {
         self.tool_stubs.len() != before
     }
 
-    pub(crate) fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
+    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
         &self.tools
     }
 
     /// Keep only tools matching configured short names or backend identifiers.
     /// Also removes conda packages that become unreferenced.
-    pub(crate) fn retain_tools_by_short_or_backend(
+    pub fn retain_tools_by_short_or_backend(
         &mut self,
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
@@ -1499,7 +1492,7 @@ impl Lockfile {
 
     /// Remove entries for a tool whose version is not in the given set.
     /// Used to prune stale version entries during filtered `mise lock <tool>` runs.
-    pub(crate) fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
+    pub fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
         if let Some(key) = self.tool_key(short).cloned()
             && let Some(tools) = self.tools.get_mut(&key)
         {
@@ -1512,7 +1505,7 @@ impl Lockfile {
     }
 
     /// Return versions of a tool that would be removed by `retain_tool_versions`.
-    pub(crate) fn stale_tool_versions(
+    pub fn stale_tool_versions(
         &self,
         short: &str,
         keep_versions: &BTreeSet<String>,
@@ -1529,7 +1522,7 @@ impl Lockfile {
     }
 
     /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
-    pub(crate) fn stale_tool_shorts(
+    pub fn stale_tool_shorts(
         &self,
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
@@ -1561,7 +1554,7 @@ impl Lockfile {
 
     /// Update or add platform info for a tool version
     /// Merges with existing info, preserving fields we don't have new values for
-    pub(crate) fn set_platform_info(
+    pub fn set_platform_info(
         &mut self,
         short: &str,
         version: &str,
@@ -1795,7 +1788,7 @@ impl Lockfile {
     }
 
     /// Save the lockfile to disk (public for mise lock command)
-    pub(crate) fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+    pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
 }
@@ -1809,24 +1802,24 @@ fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
     )
 }
 
-pub(crate) struct PreparedWrite {
+pub struct PreparedWrite {
     tmp: Option<tempfile::NamedTempFile>,
     target: PathBuf,
     source_symlink: Option<PathBuf>,
     sidecars: graph::SidecarWrites,
 }
 
-pub(crate) struct GraphCleanup(graph::SidecarWrites);
+pub struct GraphCleanup(graph::SidecarWrites);
 impl GraphCleanup {
-    pub(crate) fn prune(self) -> Result<()> {
+    pub fn prune(self) -> Result<()> {
         self.0.prune()
     }
 }
 impl PreparedWrite {
-    pub(crate) fn mutation_paths(&self) -> impl Iterator<Item = &PathBuf> {
+    pub fn mutation_paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.sidecars.files.iter().map(|(path, _)| path)
     }
-    pub(crate) fn publish_deferred(self) -> Result<GraphCleanup> {
+    pub fn publish_deferred(self) -> Result<GraphCleanup> {
         // Detect a deployment switch during preparation before publishing any
         // sidecars. This is a recheck, not a lock against external symlink edits.
         if let Some(path) = &self.source_symlink
@@ -1860,7 +1853,7 @@ impl PreparedWrite {
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
 /// - `mise/conf.d/foo.toml` -> `mise/mise.lock`
 /// - `mise/conf.d/foo/mise.toml` -> `mise/mise.lock` (so do conf.d folder fragments)
-pub(crate) fn lockfile_path_for_config(
+pub fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
 ) -> (PathBuf, bool) {
@@ -1907,7 +1900,7 @@ pub(crate) fn lockfile_path_for_config(
 /// If multiple base configs share that root, the later entry in config_files wins
 /// so colocated configs have a deterministic lockfile target, such as
 /// .mise/config.toml mapping .dummy-version to .mise/mise.lock instead of mise.lock.
-pub(crate) fn lockfile_path_for_tool_source(
+pub fn lockfile_path_for_tool_source(
     config: &Config,
     source: &ToolSource,
 ) -> Option<(PathBuf, bool)> {
@@ -1957,7 +1950,7 @@ fn lockfile_path_for_tool_source_with_root(
 /// first, so a stub linked onto PATH still finds its project's lockfile, and
 /// the directory it is invoked from never matters. Local and environment
 /// configs are skipped: a committed stub resolves the same way everywhere.
-pub(crate) fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
+pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
     let stub = resolve_tool_stub_path(stub)?;
     let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
     let monorepo_root = monorepo_root.as_deref();
@@ -2004,7 +1997,7 @@ fn tool_stub_reference(lockfile_path: &Path, stub: &Path) -> Result<String> {
         .join("/"))
 }
 
-pub(crate) fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
+pub fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
     let dir = lockfile_path.parent().unwrap_or(Path::new("."));
     reference
         .split('/')
@@ -2055,7 +2048,7 @@ pub(crate) fn extract_env_from_config_path(path: &Path) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LockfileUpdateMode {
+pub enum LockfileUpdateMode {
     Normal,
     AllowLocked,
 }
@@ -2066,14 +2059,11 @@ impl LockfileUpdateMode {
     }
 }
 
-pub(crate) fn migrate_monorepo_lockfiles(
-    config: &Config,
-    allow_format_upgrade: bool,
-) -> Result<()> {
+pub fn migrate_monorepo_lockfiles(config: &Config, allow_format_upgrade: bool) -> Result<()> {
     migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, true, None, None)
 }
 
-pub(crate) fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf, PathBuf)> {
+pub fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf, PathBuf)> {
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return Vec::new();
     };
@@ -2087,7 +2077,7 @@ pub(crate) fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf
         .collect()
 }
 
-pub(crate) fn migrate_monorepo_lockfiles_already_locked(
+pub fn migrate_monorepo_lockfiles_already_locked(
     config: &Config,
     allow_format_upgrade: bool,
     migration_paths: &[(PathBuf, PathBuf)],
@@ -3149,7 +3139,7 @@ fn determine_target_platforms_from_lockfile(
 /// Determine target platforms from an existing lockfile for explicit `mise lock` calls.
 /// If the lockfile already has platform entries, only those are targeted.
 /// Otherwise, falls back to all common platforms + current platform.
-pub(crate) fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
+pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
     // If lockfile_platforms setting is configured, use it as the authoritative set
     if let Some(configured) = Settings::get().lockfile_platforms()? {
         let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
@@ -3457,13 +3447,13 @@ fn deferred_provenance_resolution_error(
 /// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
 /// genuine conda solve failures from backends that use errors to skip unsupported targets.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LockResolutionStatus {
+pub enum LockResolutionStatus {
     Optional,
     Required,
     Unsupported,
 }
 
-pub(crate) type LockResolutionResult = (
+pub type LockResolutionResult = (
     String,
     String,
     String,
@@ -3479,7 +3469,7 @@ pub(crate) type LockResolutionResult = (
 /// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options,
 /// conda_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
-pub(crate) async fn resolve_tool_lock_info(
+pub async fn resolve_tool_lock_info(
     ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
@@ -3596,10 +3586,7 @@ pub(crate) async fn resolve_tool_lock_info(
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
-pub(crate) fn apply_lock_result(
-    lockfile: &mut Lockfile,
-    result: LockResolutionResult,
-) -> Result<bool> {
+pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
     let (short, version, backend, platform, info, options, conda_packages, _error_is_fatal) =
         result;
     let platform_key = platform.to_key();

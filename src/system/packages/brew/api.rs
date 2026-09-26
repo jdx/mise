@@ -237,7 +237,7 @@ impl fmt::Display for FormulaFetchFailed {
 
 /// The formula name behind a failed homebrew/core metadata lookup, if `err`
 /// came from one.
-pub(crate) fn failed_formula_name(err: &Report) -> Option<&str> {
+pub fn failed_formula_name(err: &Report) -> Option<&str> {
     err.downcast_ref::<FormulaFetchFailed>()
         .map(|failed| failed.0.as_str())
 }

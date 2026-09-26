@@ -171,7 +171,7 @@ struct RubyGemsVersion {
 
 /// Parse gem sources output to extract the primary source URL.
 /// Output format:
-/// ```
+/// ```text
 /// *** CURRENT SOURCES ***
 ///
 /// https://rubygems.org/

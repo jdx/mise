@@ -5,7 +5,7 @@ use crate::config::settings::Settings;
 use crate::toolset::tool_version::ResolveOptions;
 
 #[derive(Debug, Clone)]
-pub(crate) struct InstallOptions {
+pub struct InstallOptions {
     pub reason: String,
     /// The caller prints its own final installation results.
     pub hide_success_summary: bool,

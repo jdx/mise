@@ -1,6 +1,6 @@
 //! Shared helpers for `mise oci` subcommands.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
 
@@ -8,6 +8,21 @@ use crate::config::{Config, ConfigMap};
 use crate::oci::{BuildOptions, BuildOutput, Builder, OciConfig};
 use crate::system;
 use crate::toolset::{ConfigScope, ToolsetBuilder};
+
+/// Resolve the CLI binary for embedding while keeping image builds usable if
+/// the executable path is unavailable (for example, without /proc on Linux).
+pub(super) fn mise_binary_path(no_mise: bool) -> Option<PathBuf> {
+    if no_mise {
+        return None;
+    }
+    match std::env::current_exe() {
+        Ok(path) => Some(path),
+        Err(err) => {
+            warn!("could not locate mise binary to embed in image: {err}");
+            None
+        }
+    }
+}
 
 /// Merge `[oci]` sections from the given config files, with more specific
 /// (closer to the current directory) configs winning per-field.

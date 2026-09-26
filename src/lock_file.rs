@@ -1,1 +1,1 @@
-pub(crate) use mise_util::lock_file::*;
+pub use mise_util::lock_file::*;

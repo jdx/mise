@@ -79,7 +79,7 @@ pub(crate) struct LayerBlob {
 
 /// Numeric owner to write into every tar header in a generated OCI layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LayerOwner {
+pub struct LayerOwner {
     pub uid: u32,
     pub gid: u32,
 }

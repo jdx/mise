@@ -8,7 +8,7 @@ use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, Verb
 use crate::version::VERSION_PLAIN;
 
 #[derive(Debug)]
-pub(crate) struct MultiProgressReport {
+pub struct MultiProgressReport {
     quiet: bool,
     use_progress_ui: bool,
     pause_state: Mutex<ProgressPauseState>,
@@ -61,11 +61,11 @@ impl Drop for ProgressPauseGuard {
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
 
 impl MultiProgressReport {
-    pub(crate) fn try_get() -> Option<Arc<Self>> {
+    pub fn try_get() -> Option<Arc<Self>> {
         INSTANCE.lock().unwrap().as_ref().cloned()
     }
 
-    pub(crate) fn get() -> Arc<Self> {
+    pub fn get() -> Arc<Self> {
         let mut guard = INSTANCE.lock().unwrap();
         if let Some(existing) = guard.as_ref() {
             return existing.clone();
@@ -182,7 +182,7 @@ impl MultiProgressReport {
         self.use_progress_ui
     }
 
-    pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
+    pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         self.add_with_options(prefix, false)
     }
 
@@ -297,12 +297,12 @@ impl MultiProgressReport {
 
     /// Render the final progress state, then clear clx's registered jobs so
     /// later regular terminal output cannot be erased by process shutdown.
-    pub(crate) fn finish_progress(&self) {
+    pub fn finish_progress(&self) {
         progress::stop();
         self.reset_jobs();
     }
 
-    pub(crate) fn stop(&self) -> eyre::Result<()> {
+    pub fn stop(&self) -> eyre::Result<()> {
         progress::stop_clear();
         self.reset_jobs();
         Ok(())

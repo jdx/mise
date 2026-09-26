@@ -8,7 +8,7 @@ use crate::file::display_path;
 
 /// where a tool version came from (e.g.: .tool-versions)
 #[derive(Debug, Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, strum::EnumIs)]
-pub(crate) enum ToolSource {
+pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
     MiseTomlDaemon(PathBuf),
@@ -36,7 +36,7 @@ impl Display for ToolSource {
 }
 
 impl ToolSource {
-    pub(crate) fn path(&self) -> Option<&Path> {
+    pub fn path(&self) -> Option<&Path> {
         match self {
             ToolSource::ToolVersions(path) => Some(path),
             ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) => Some(path),
@@ -46,7 +46,7 @@ impl ToolSource {
         }
     }
 
-    pub(crate) fn as_json(&self) -> IndexMap<String, String> {
+    pub fn as_json(&self) -> IndexMap<String, String> {
         match self {
             ToolSource::ToolVersions(path) => indexmap! {
                 "type".to_string() => ".tool-versions".to_string(),

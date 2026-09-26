@@ -24,7 +24,7 @@ use crate::system::services_common::ServiceState;
 use crate::system::{edits, files, managed_files, secrets, user_services};
 
 #[derive(Debug, Default)]
-pub(crate) struct UnapplyOpts {
+pub struct UnapplyOpts {
     pub dry_run: bool,
     /// Remove targets whose current state no longer matches their declaration.
     pub force: bool,
@@ -33,14 +33,14 @@ pub(crate) struct UnapplyOpts {
 
 /// A resource this unapply removes.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct Removal {
+pub struct Removal {
     pub kind: &'static str,
     pub name: String,
 }
 
 /// A resource the environment contributes that this unapply leaves alone.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct Skip {
+pub struct Skip {
     pub kind: &'static str,
     pub name: String,
     pub reason: String,
@@ -48,14 +48,14 @@ pub(crate) struct Skip {
 
 /// Declarations in sections that keep their own removal commands.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct Uncovered {
+pub struct Uncovered {
     pub section: &'static str,
     pub count: usize,
     pub command: &'static str,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct Unapply {
+pub struct Unapply {
     files: Vec<ManagedFileRequest>,
     directories: Vec<ManagedDirectoryRequest>,
     user_services: Vec<String>,
@@ -67,13 +67,13 @@ pub(crate) struct Unapply {
 }
 
 impl Unapply {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.removals.is_empty()
     }
 }
 
 /// Plan the removal of everything `environments` adds to the desired state.
-pub(crate) async fn plan(
+pub async fn plan(
     config: &Config,
     environments: &[String],
     secrets: &secrets::SecretValues,
@@ -545,7 +545,7 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
 }
 
 /// Remove the planned resources.
-pub(crate) async fn execute(
+pub async fn execute(
     config: &Config,
     unapply: &Unapply,
     secrets: &secrets::SecretValues,

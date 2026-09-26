@@ -974,13 +974,13 @@ pub(super) fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
 }
 
-pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
+pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
     let closure = resolve_cask_dependency_closure(configured).await?;
     let keep = closure.casks.into_values().collect();
     cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
 }
 
-pub(crate) async fn cask_formula_dependencies(
+pub async fn cask_formula_dependencies(
     configured: &[PackageRequest],
 ) -> Result<Vec<PackageRequest>> {
     Ok(resolve_cask_dependency_closure(configured)
@@ -1304,7 +1304,7 @@ pub(super) fn cask_prune_plan_from_tokens(
     Ok(plan)
 }
 
-pub(crate) fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
+pub fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
     apply_cask_prune_plan_in(plan, dry_run, &crate::dirs::STATE)
 }
 

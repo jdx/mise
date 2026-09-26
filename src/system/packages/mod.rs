@@ -14,13 +14,13 @@ pub(crate) mod apk;
 pub(crate) mod apt;
 pub(crate) mod aur;
 #[cfg(unix)]
-pub(crate) mod brew;
+pub mod brew;
 pub(crate) mod dnf;
 pub(crate) mod flatpak;
 pub(crate) mod mas;
-pub(crate) mod nix;
+pub mod nix;
 pub(crate) mod pacman;
-pub(crate) mod plugin;
+pub mod plugin;
 pub(crate) mod scoop;
 pub(crate) mod winget;
 pub(crate) mod zypper;
@@ -28,7 +28,7 @@ pub(crate) mod zypper;
 /// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct PackageRequest {
+pub struct PackageRequest {
     /// package name as written in the spec (apt: may carry an `:arch`
     /// qualifier like "gcc:arm64"; brew/brew-cask: full name incl. "@17")
     pub name: String,
@@ -46,7 +46,7 @@ pub(crate) struct PackageRequest {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub(crate) enum PackageDesiredState {
+pub enum PackageDesiredState {
     #[default]
     Present,
     Absent,
@@ -62,7 +62,7 @@ impl std::fmt::Display for PackageRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PackageState {
+pub enum PackageState {
     Installed {
         version: String,
     },
@@ -91,7 +91,7 @@ pub(crate) enum PackageState {
 }
 
 impl PackageState {
-    pub(crate) fn is_installed(&self) -> bool {
+    pub fn is_installed(&self) -> bool {
         match self {
             Self::Installed { .. } => true,
             #[cfg(unix)]
@@ -100,7 +100,7 @@ impl PackageState {
         }
     }
 
-    pub(crate) fn auto_updates(&self) -> bool {
+    pub fn auto_updates(&self) -> bool {
         match self {
             #[cfg(unix)]
             Self::InstalledAutoUpdates { .. } => true,
@@ -115,7 +115,7 @@ impl PackageState {
         }
     }
 
-    pub(crate) fn is_unavailable(&self) -> bool {
+    pub fn is_unavailable(&self) -> bool {
         #[cfg(unix)]
         if matches!(self, Self::Unavailable { .. }) {
             return true;
@@ -133,7 +133,7 @@ impl PackageState {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PackageStatus {
+pub struct PackageStatus {
     pub request: PackageRequest,
     pub state: PackageState,
     /// human-readable name for a package whose identifier is opaque, such as
@@ -142,7 +142,7 @@ pub(crate) struct PackageStatus {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct InstallOpts {
+pub struct InstallOpts {
     /// print what would be done without doing it
     pub dry_run: bool,
     /// force a package manager metadata refresh before installing
@@ -154,7 +154,7 @@ pub(crate) struct InstallOpts {
 // awaits. The driver awaits managers sequentially on one task, so the
 // futures never cross threads.
 #[async_trait(?Send)]
-pub(crate) trait SystemPackageManager: Send + Sync {
+pub trait SystemPackageManager: Send + Sync {
     /// config key, e.g. "apt", "brew"
     fn name(&self) -> &str;
 
@@ -373,13 +373,13 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     ]
 }
 
-pub(crate) fn is_builtin_manager_name(name: &str) -> bool {
+pub fn is_builtin_manager_name(name: &str) -> bool {
     builtin_managers()
         .iter()
         .any(|manager| manager.name() == name)
 }
 
-pub(crate) fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
+pub fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     let mut managers = builtin_managers();
     let builtins = managers
         .iter()

@@ -54,6 +54,12 @@ rust-version = "1.95"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "mise"
+path = "src/lib.rs"
+# Not a public API; see src/lib.rs. Runnable examples still get checked.
+doc = false
+
 [[bin]]
 name = "mise"
 path = "src/main.rs"

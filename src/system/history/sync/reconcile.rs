@@ -25,7 +25,7 @@ use super::state::{SyncRecord, SyncState};
 use crate::system::history::shadow::HistoryRepo;
 
 /// A blob with its mode.
-pub(crate) type Object = (String, String);
+pub type Object = (String, String);
 
 /// The fetched upstream head, by setup-branch path.
 #[derive(Debug, Default)]
@@ -65,7 +65,7 @@ pub(crate) fn upstream_with_interaction(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ConflictKind {
+pub enum ConflictKind {
     Repository,
     /// Both sides changed the same content and the merge is not clean.
     SameHunk,
@@ -96,7 +96,7 @@ pub(crate) enum ConflictKind {
 }
 
 impl ConflictKind {
-    pub(crate) fn describe(self) -> &'static str {
+    pub fn describe(self) -> &'static str {
         match self {
             Self::Repository => "repository metadata or inactive files require Git reconciliation",
             Self::SameHunk => "both sides changed the same lines",
@@ -117,7 +117,7 @@ impl ConflictKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Conflict {
+pub struct Conflict {
     pub branch_path: String,
     pub kind: ConflictKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]

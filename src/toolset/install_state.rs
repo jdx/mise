@@ -28,7 +28,7 @@ type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
 
 #[derive(Debug, Clone)]
-pub(crate) struct InstallStateTool {
+pub struct InstallStateTool {
     pub short: String,
     pub full: Option<String>,
     pub versions: Vec<String>,
@@ -194,7 +194,7 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
 /// which dominated startup on machines with many tools installed. Per-tool
 /// lookups load lazily via [`get_tool`]; enumerating callers get the full scan
 /// on first use of [`list_tools`].
-pub(crate) async fn init() -> Result<()> {
+pub async fn init() -> Result<()> {
     measure!("init_plugins", { init_plugins().await })?;
     Ok(())
 }
@@ -693,7 +693,7 @@ fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugi
     }
 }
 
-pub(crate) fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
+pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
     try_list_plugins().expect("INSTALL_STATE_PLUGINS is None")
 }
 
@@ -744,11 +744,12 @@ pub(crate) fn get_tool_full(short: &str) -> Option<String> {
     with_tool(short, |t| t.full.clone()).flatten()
 }
 
-pub(crate) fn get_plugin_type(short: &str) -> Option<PluginType> {
-    #[cfg(test)]
-    let plugins = try_list_plugins()?;
-    #[cfg(not(test))]
-    let plugins = list_plugins();
+pub fn get_plugin_type(short: &str) -> Option<PluginType> {
+    let plugins = if mise_util::testing::in_tests() {
+        try_list_plugins()?
+    } else {
+        list_plugins()
+    };
     plugins.get(short).cloned()
 }
 
@@ -768,7 +769,7 @@ pub(crate) fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>
 /// [`try_list_tools`] for callers that only display or enumerate, where a
 /// warning is a better outcome than aborting. Never use this to decide what to
 /// delete.
-pub(crate) fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
+pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
     try_list_tools().unwrap_or_else(|err| {
         warn!("failed to scan installed tools: {err:#}");
         Arc::new(Default::default())
@@ -952,7 +953,7 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// so install, uninstall, and link use this logical identity while mutating the
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
-pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
+pub fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
     lock_tool_version_with_notice(short, v, &|_| {})
 }
 
@@ -973,7 +974,7 @@ pub(crate) fn lock_tool_version_with_notice(
         .lock_with_notice(on_wait)
 }
 
-pub(crate) fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
+pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
     let incomplete_path = incomplete_file_path(short, v);
     match file::remove_file(&incomplete_path) {
         std::result::Result::Ok(()) => {

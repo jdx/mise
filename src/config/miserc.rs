@@ -51,7 +51,7 @@ fn load_global_miserc_settings() -> MisercSettings {
 /// Initialize miserc settings by loading shared and local miserc files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
-pub(crate) fn init() -> Result<()> {
+pub fn init() -> Result<()> {
     let _ = invocation_cwd();
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);

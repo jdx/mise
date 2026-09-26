@@ -43,7 +43,7 @@ const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
-pub(crate) struct BuildOptions {
+pub struct BuildOptions {
     /// Output directory for the OCI image layout.
     pub out_dir: PathBuf,
     /// Base image reference (overrides mise.toml and default setting).
@@ -54,8 +54,8 @@ pub(crate) struct BuildOptions {
     pub mount_point: Option<String>,
     /// Numeric owner assigned to every tar entry in generated layers.
     pub owner: Option<LayerOwner>,
-    /// Embed the current mise binary at /usr/local/bin/mise.
-    pub include_mise: bool,
+    /// Host mise binary to embed at /usr/local/bin/mise, if any.
+    pub mise_binary: Option<PathBuf>,
     /// CLI-provided host paths copied after config-provided entries.
     pub copy: Vec<OciCopy>,
     /// A previously pushed image to reuse unchanged tool layers from
@@ -132,7 +132,7 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
     index
 }
 
-pub(crate) struct Builder {
+pub struct Builder {
     pub cfg: Arc<Config>,
     pub ts: Toolset,
     pub oci: OciConfig,
@@ -142,13 +142,13 @@ pub(crate) struct Builder {
 }
 
 /// Output summary returned to the CLI.
-pub(crate) struct BuildOutput {
+pub struct BuildOutput {
     pub out_dir: PathBuf,
     pub manifest_digest: String,
     pub tool_layers: Vec<ToolLayerInfo>,
 }
 
-pub(crate) struct ToolLayerInfo {
+pub struct ToolLayerInfo {
     pub short: String,
     pub version: String,
     pub digest: String,
@@ -158,7 +158,7 @@ pub(crate) struct ToolLayerInfo {
 }
 
 impl Builder {
-    pub(crate) fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
+    pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
         Self {
             cfg,
             ts,
@@ -169,18 +169,18 @@ impl Builder {
         }
     }
 
-    pub(crate) fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
         self.dotfiles = dotfiles;
         self
     }
 
-    pub(crate) fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
+    pub fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
         self.system_packages = system_packages;
         self
     }
 
     /// Build the image and write it to the output directory.
-    pub(crate) async fn build(self) -> Result<BuildOutput> {
+    pub async fn build(self) -> Result<BuildOutput> {
         let versions = self.ts.list_current_versions();
         if versions.is_empty() {
             warn!("mise oci build: no tools in the toolset — image will have only the base layer");
@@ -479,7 +479,7 @@ impl Builder {
 
         // --- 6. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
-        if self.opts.include_mise {
+        if let Some(exe) = &self.opts.mise_binary {
             // OCI images are linux-targeted in v1 (we normalize `os` to
             // "linux" above). Embedding a darwin/windows mise binary would
             // pass the build but explode with `Exec format error` the first
@@ -491,17 +491,10 @@ impl Builder {
                     std::env::consts::OS
                 );
             }
-            match std::env::current_exe() {
-                Ok(exe) => {
-                    let bytes = std::fs::read(&exe)
-                        .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
-                    let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
-                    mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
-                }
-                Err(e) => {
-                    warn!("could not locate mise binary to embed in image: {e}");
-                }
-            }
+            let bytes = std::fs::read(exe)
+                .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
+            let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
+            mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
         }
 
         // --- 5. Dotfiles layer (optional) ---

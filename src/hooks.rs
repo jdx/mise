@@ -15,7 +15,7 @@ use tokio::sync::OnceCell;
 
 /// Represents installed tool info for hooks
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct InstalledToolInfo {
+pub struct InstalledToolInfo {
     pub name: String,
     pub version: String,
     /// The canonical form of the selector the tool was requested with, before
@@ -74,7 +74,7 @@ fn hook_backend_identifier(full: &str) -> String {
     Hash,
 )]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Hooks {
+pub enum Hooks {
     Enter,
     Leave,
     Cd,
@@ -239,7 +239,7 @@ fn script_hook_action(
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub(crate) struct Hook {
+pub struct Hook {
     pub hook: Hooks,
     pub action: HookAction,
     /// Whether this hook comes from a global config (skip directory matching)
@@ -247,7 +247,7 @@ pub(crate) struct Hook {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub(crate) enum HookAction {
+pub enum HookAction {
     Run {
         run: Option<String>,
         run_windows: Option<String>,
@@ -334,7 +334,7 @@ fn record_output_error(err: std::io::Error) {
     OUTPUT_ERROR.lock().unwrap().get_or_insert(err);
 }
 
-pub(crate) fn take_output_error() -> std::io::Result<()> {
+pub fn take_output_error() -> std::io::Result<()> {
     match OUTPUT_ERROR.lock().unwrap().take() {
         Some(err) => Err(err),
         None => Ok(()),
@@ -346,7 +346,7 @@ pub(crate) fn schedule_hook(hook: Hooks) {
     mu.insert(hook);
 }
 
-pub(crate) async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
+pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
     }
@@ -403,7 +403,7 @@ pub(crate) async fn run_one_hook(
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
 #[async_backtrace::framed]
-pub(crate) async fn run_one_hook_with_context(
+pub async fn run_one_hook_with_context(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,
@@ -488,7 +488,7 @@ pub(crate) async fn run_one_hook_with_context(
     }
 }
 
-pub(crate) async fn run_enter_hooks_for_newly_loaded_configs(
+pub async fn run_enter_hooks_for_newly_loaded_configs(
     config: &Arc<Config>,
     ts: &Toolset,
     shell: &dyn Shell,

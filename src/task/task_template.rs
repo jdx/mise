@@ -11,7 +11,7 @@ use serde::Deserialize;
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct TaskTemplate {
+pub struct TaskTemplate {
     #[serde(default)]
     pub description: String,
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]

@@ -13,7 +13,7 @@ fn path(repo: &HistoryRepo) -> std::path::PathBuf {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct SyncRecord {
+pub struct SyncRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acknowledged: Option<super::reconcile::Object>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

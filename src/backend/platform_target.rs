@@ -2,16 +2,16 @@ use crate::platform::Platform;
 
 /// Represents a target platform for lockfile metadata fetching
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PlatformTarget {
+pub struct PlatformTarget {
     pub platform: Platform,
 }
 
 impl PlatformTarget {
-    pub(crate) fn new(platform: Platform) -> Self {
+    pub fn new(platform: Platform) -> Self {
         Self { platform }
     }
 
-    pub(crate) fn from_current() -> Self {
+    pub fn from_current() -> Self {
         Self::new(Platform::current())
     }
 
@@ -31,7 +31,7 @@ impl PlatformTarget {
         self.platform.libc()
     }
 
-    pub(crate) fn to_key(&self) -> String {
+    pub fn to_key(&self) -> String {
         self.platform.to_key()
     }
 

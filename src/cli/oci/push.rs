@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use eyre::{Context, Result, bail};
 use tempfile::TempDir;
 
-use crate::cli::oci::common::perform_build;
+use crate::cli::oci::common::{mise_binary_path, perform_build};
 use crate::config::Settings;
 use crate::oci::{BuildOptions, LayerOwner, registry};
 
@@ -122,7 +122,7 @@ impl Push {
                     tag: Some(self.reference.clone()),
                     mount_point: self.mount_point.clone(),
                     owner: self.owner,
-                    include_mise: !self.no_mise,
+                    mise_binary: mise_binary_path(self.no_mise),
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
                     push_destination: Some(self.reference.clone()),

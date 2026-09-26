@@ -8,7 +8,7 @@ use crate::{args::BackendArg, config::Config};
 
 /// represents several versions of a tool for a particular plugin
 #[derive(Debug, Clone)]
-pub(crate) struct ToolVersionList {
+pub struct ToolVersionList {
     pub backend: Arc<BackendArg>,
     pub versions: Vec<ToolVersion>,
     pub requests: Vec<ToolRequest>,
@@ -73,13 +73,13 @@ impl ToolVersionList {
         Ok(())
     }
 
-    pub(crate) fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
+    pub fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
         self.versions
             .iter()
             .filter(|tv| tv.request.is_os_supported())
     }
 
-    pub(crate) fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
+    pub fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
         self.requests.iter().filter(|tvr| tvr.is_os_supported())
     }
 }

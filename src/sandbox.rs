@@ -1,1 +1,1 @@
-pub(crate) use mise_util::sandbox::*;
+pub use mise_util::sandbox::*;

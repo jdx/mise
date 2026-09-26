@@ -1,4 +1,4 @@
-pub(crate) use mise_util::tera::*;
+pub use mise_util::tera::*;
 
 #[cfg(test)]
 mod tests {
