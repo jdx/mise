@@ -196,8 +196,9 @@ end
 
 Return `{satisfied = false}` (or `false`) when the install needs updating. mise then runs
 `PostInstall` again on the existing install, without running `PreInstall`, downloading, or
-removing the install directory, so `PostInstall` must be safe to rerun. Afterwards mise calls
-`MiseInstallSatisfied` again and fails with its `reason` if the install still does not match;
+removing the install directory, so `PostInstall` must be safe to rerun. After that and the
+tool's `postinstall` script, mise calls `MiseInstallSatisfied` again and fails with its
+`reason` if the install still does not match;
 the existing install stays in place either way. `mise install --force` still reinstalls from
 scratch.
 

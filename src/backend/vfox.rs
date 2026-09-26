@@ -230,7 +230,14 @@ impl Backend for VfoxBackend {
             tool_options.into_backend_options().into_map(),
         )
         .await?;
+        Ok(true)
+    }
 
+    async fn verify_repaired_install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
         // Like the initial check, a hook error must not fail the install.
         let result = match self.mise_install_satisfied(&ctx.config, tv).await {
             Ok(result) => result,
@@ -239,7 +246,7 @@ impl Backend for VfoxBackend {
                     "{} MiseInstallSatisfied hook failed after PostInstall, treating install as current: {err:#}",
                     tv.style()
                 );
-                return Ok(true);
+                return Ok(());
             }
         };
         if !result.satisfied {
@@ -251,7 +258,7 @@ impl Backend for VfoxBackend {
                 tv.ba().short,
             );
         }
-        Ok(true)
+        Ok(())
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {

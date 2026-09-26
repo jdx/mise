@@ -137,6 +137,15 @@ EOF
 assert_fail "mise install" "still does not satisfy its tool options after PostInstall: missing component delta"
 assert "ls '$INSTALL_PATH/sentinel'" "$INSTALL_PATH/sentinel"
 
+# The recheck runs after the tool-level postinstall script, which can supply
+# what PostInstall did not.
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha", "zeta"], unavailable = "zeta", postinstall = "touch '$INSTALL_PATH/components/zeta'" }
+EOF
+mise install
+assert "ls '$INSTALL_PATH/components/zeta'" "$INSTALL_PATH/components/zeta"
+
 # A check that fails after PostInstall warns instead of failing the install.
 cat >mise.toml <<EOF
 [tools]

@@ -2850,6 +2850,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(false)
     }
 
+    /// Confirm a repaired install now satisfies its request, after the
+    /// tool-level `postinstall` script has run.
+    async fn verify_repaired_install(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     async fn is_install_satisfied_or_false(
         &self,
         config: &Arc<Config>,
@@ -3764,6 +3774,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             && self.repair_install(&ctx, &tv).await?
         {
             self.finish_install_changes(&ctx, &tv).await?;
+            self.verify_repaired_install(&ctx, &tv).await?;
             ctx.pr.finish_with_message("updated".to_string());
             return Ok(tv);
         }
