@@ -172,6 +172,44 @@ impl Backend for VfoxBackend {
         &self.ba
     }
 
+    /// A plugin can report that an installed version no longer matches the
+    /// request, e.g. because a tool option selects add-on components that are
+    /// not installed yet. mise then installs that version again.
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> eyre::Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+        if self.is_backend_plugin() || !self.plugin_has_hook("mise_install_satisfied") {
+            return Ok(true);
+        }
+        match self.mise_install_satisfied(config, tv).await {
+            Ok(result) => {
+                if !result.satisfied {
+                    debug!(
+                        "{} install is not satisfied: {}",
+                        tv.style(),
+                        result.reason.as_deref().unwrap_or("reported by plugin")
+                    );
+                }
+                Ok(result.satisfied)
+            }
+            // A broken check must not make mise reinstall a working tool on
+            // every command, so treat the install as current.
+            Err(err) => {
+                warn!(
+                    "{} MiseInstallSatisfied hook failed, treating install as current: {err:#}",
+                    tv.style()
+                );
+                Ok(true)
+            }
+        }
+    }
+
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         let deps = self.metadata_deps.get_or_init(|| {
             self.load_metadata_deps().unwrap_or_else(|e| {
@@ -700,6 +738,39 @@ impl VfoxBackend {
     /// reading only the directory would silently drop the declarations of every
     /// embedded plugin, since those ship compiled into the binary and have no
     /// directory. `None` when there is no plugin at all.
+    /// Check for a hook without loading the plugin, since install checks run
+    /// on hot paths such as `mise x`.
+    fn plugin_has_hook(&self, filename: &str) -> bool {
+        let plugin_path = dirs::PLUGINS.join(&self.pathname);
+        if plugin_path.exists() {
+            return plugin_path
+                .join("hooks")
+                .join(format!("{filename}.lua"))
+                .is_file();
+        }
+        vfox::embedded_plugins::get_embedded_plugin(&self.pathname)
+            .is_some_and(|plugin| plugin.hooks.iter().any(|(name, _)| *name == filename))
+    }
+
+    async fn mise_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> eyre::Result<vfox::MiseInstallSatisfiedResult> {
+        let (mut vfox, log_rx) = self.plugin.vfox()?;
+        Self::forward_plugin_logs(log_rx);
+        vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
+        let options = self
+            .tool_options_for_tv(config, tv)
+            .await
+            .into_backend_options()
+            .into_map();
+        let result = vfox
+            .mise_install_satisfied(&self.pathname, &tv.version, tv.install_path(), options)
+            .await?;
+        Ok(result.unwrap_or_default())
+    }
+
     fn plugin_metadata_snapshot(&self) -> eyre::Result<Option<VfoxMetadataSnapshot>> {
         let plugin_path = dirs::PLUGINS.join(&self.pathname);
         let installed = plugin_path.exists();

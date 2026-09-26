@@ -168,6 +168,39 @@ end
 The check above assumes a Unix executable layout. Archives normally carry executable
 permissions; only change them when the actual distribution requires it.
 
+#### MiseInstallSatisfied Hook
+
+Some tools keep install state that depends on tool options, such as add-on components the
+plugin installs in `PostInstall`. Without this hook, mise treats a version as installed
+once its directory exists, so changing the option later has no effect until the user runs
+`mise install --force`.
+
+`MiseInstallSatisfied` lets the plugin report that an installed version no longer matches
+the request. mise calls it whenever it decides whether a tool needs installing, including
+`mise install` and auto-install, so keep it fast and free of side effects: inspect files
+under `ctx.path` rather than running the tool or making network requests. `ctx.version` is
+the installed version and `ctx.options` contains the current tool options.
+
+```lua
+-- hooks/mise_install_satisfied.lua
+function PLUGIN:MiseInstallSatisfied(ctx)
+    local file = require("file")
+    for _, name in ipairs(ctx.options.components or {}) do
+        if not file.exists(file.join_path(ctx.path, "components", name)) then
+            return {satisfied = false, reason = "missing component " .. name}
+        end
+    end
+    return {satisfied = true}
+end
+```
+
+Return `{satisfied = false}` (or `false`) to have mise install the version again: it removes
+the install directory and runs `PreInstall` and `PostInstall` as for a new install. `reason`
+appears in debug output (`MISE_DEBUG=1`). Returning `true` or `nil` keeps the install. If the
+hook raises an error, mise warns and keeps the install, so a broken check cannot trigger a
+reinstall on every command. Make `PostInstall` fail when it cannot install what was
+requested; otherwise the check keeps failing and mise reinstalls on each run.
+
 #### PreUse Hook
 
 mise does not implement the upstream vfox `PreUse` hook. Do not rely on it to rewrite a
@@ -216,6 +249,7 @@ my-tool-plugin/
 │   ├── pre_install.lua
 │   ├── env_keys.lua
 │   ├── post_install.lua       # optional
+│   ├── mise_install_satisfied.lua  # optional
 │   └── parse_legacy_file.lua  # optional
 └── lib/
     └── helper.lua            # optional shared code

@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# A plugin's MiseInstallSatisfied hook can report that an installed version is
+# missing components requested through tool options, so mise installs it again.
+
+PLUGIN_DIR="$PWD/vfox-install-satisfied"
+INSTALL_COUNT="$MISE_DATA_DIR/install-satisfied-count"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "install-satisfied"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/install-satisfied"
+PLUGIN.license = "MIT"
+PLUGIN.description = "install satisfied test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return { version = ctx.version }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	local count_file = io.open([[$INSTALL_COUNT]], "a")
+	count_file:write("x")
+	count_file:close()
+
+	os.execute("mkdir -p \"" .. ctx.rootPath .. "/components\"")
+	for _, name in ipairs(ctx.options.components or {}) do
+		local component = io.open(ctx.rootPath .. "/components/" .. name, "w")
+		component:close()
+	end
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/mise_install_satisfied.lua" <<'LUA'
+function PLUGIN:MiseInstallSatisfied(ctx)
+	if ctx.options.broken then
+		error("check exploded")
+	end
+	for _, name in ipairs(ctx.options.components or {}) do
+		local component = io.open(ctx.path .. "/components/" .. name, "r")
+		if not component then
+			return { satisfied = false, reason = "missing component " .. name }
+		end
+		component:close()
+	end
+	return true
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm "test(e2e): initialize plugin fixture"
+
+TOOL="vfox:file://$PLUGIN_DIR"
+
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha"] }
+EOF
+mise install
+assert "cat '$INSTALL_COUNT'" "x"
+
+# All requested components are present, so nothing is reinstalled.
+mise install
+assert "cat '$INSTALL_COUNT'" "x"
+
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha", "beta"] }
+EOF
+assert_contains "MISE_DEBUG=1 mise install --dry-run 2>&1" "missing component beta"
+assert "cat '$INSTALL_COUNT'" "x"
+
+mise install
+assert "cat '$INSTALL_COUNT'" "xx"
+assert "ls \"\$(mise where '$TOOL')/components\"" "alpha
+beta"
+
+# A failing check warns and keeps the existing install.
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha", "gamma"], broken = true }
+EOF
+assert_contains "mise install 2>&1" "MiseInstallSatisfied hook failed, treating install as current"
+assert "cat '$INSTALL_COUNT'" "xx"

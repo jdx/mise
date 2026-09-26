@@ -20,6 +20,9 @@ use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::backend_uninstall::BackendUninstallContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
+use crate::hooks::mise_install_satisfied::{
+    MiseInstallSatisfiedContext, MiseInstallSatisfiedResult,
+};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::package::{
     PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
@@ -418,6 +421,27 @@ impl Vfox {
             .await?;
         }
         Ok(())
+    }
+
+    /// Ask the plugin whether an installed version still satisfies the request.
+    /// Returns `None` when the plugin has no `MiseInstallSatisfied` hook.
+    pub async fn mise_install_satisfied<ID: AsRef<Path>, T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        options: T,
+    ) -> Result<Option<MiseInstallSatisfiedResult>> {
+        let sdk = self.get_sdk_with_env(sdk)?;
+        if !sdk.get_metadata()?.hooks.contains("mise_install_satisfied") {
+            return Ok(None);
+        }
+        let ctx = MiseInstallSatisfiedContext {
+            version: version.to_string(),
+            path: install_dir.as_ref().to_path_buf(),
+            options,
+        };
+        Ok(Some(sdk.mise_install_satisfied(ctx).await?))
     }
 
     pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
