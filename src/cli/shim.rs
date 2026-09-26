@@ -165,14 +165,23 @@ async fn command_wrapper_for(
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
     validate_wrapper_names(wrappers.keys())?;
-    let wrapper = if cfg!(macos) {
-        wrappers
-            .iter()
-            .find(|(name, _)| command_names_eq(name, shim_name))
-            .map(|(_, wrapper)| wrapper)
-    } else {
-        wrappers.get(shim_name)
-    };
+    // Windows file names are case-insensitive, so a shim can be invoked as `Cargo` for
+    // `[wrappers.cargo]`. macOS collisions are rejected above; Windows ones cannot both be shims.
+    let wrapper = wrappers.get(shim_name).or_else(|| {
+        if cfg!(macos) {
+            wrappers
+                .iter()
+                .find(|(name, _)| command_names_eq(name, shim_name))
+                .map(|(_, wrapper)| wrapper)
+        } else if cfg!(windows) {
+            wrappers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(shim_name))
+                .map(|(_, wrapper)| wrapper)
+        } else {
+            None
+        }
+    });
     let Some(wrapper) = wrapper else {
         return Ok(None);
     };

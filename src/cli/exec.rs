@@ -149,9 +149,22 @@ impl Exec {
             Default::default()
         };
 
+        // A native Windows shim runs `mise x -- <name>` in place of `handle_shim`, which also
+        // resolves the tools of the task that ran it, such as a task-only command wrapper.
+        let shim_task_tools =
+            if self.tool.is_empty() && env::MISE_SHIM_PATH.read().unwrap().is_some() {
+                crate::shims::task_tool_args_from_env()?
+            } else {
+                vec![]
+            };
+        let tool_args = if shim_task_tools.is_empty() {
+            &self.tool
+        } else {
+            &shim_task_tools
+        };
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
-                .with_args(&self.tool)
+                .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
                 .build(&config)
