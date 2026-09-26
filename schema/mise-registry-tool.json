@@ -129,6 +129,11 @@
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
                 "description": "Inclusive minimum tool version supported by this backend. Requires version_order = semver; older versions use the next eligible backend."
               },
+              "max_version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+                "description": "Exclusive maximum tool version supported by this backend. Requires version_order = semver; newer versions use the next eligible backend."
+              },
               "attestations_since": {
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
@@ -269,7 +274,10 @@
           "backends": {
             "contains": {
               "type": "object",
-              "required": ["min_version"]
+              "anyOf": [
+                { "required": ["min_version"] },
+                { "required": ["max_version"] }
+              ]
             },
             "type": "array"
           }
