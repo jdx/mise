@@ -57,6 +57,10 @@ pub(crate) struct Draft {
     /// another path never defeats their schedule. Ignored by protective
     /// captures and explicit saves.
     pub held: Vec<PathBuf>,
+    /// Record nothing when the snapshot equals the newest checkpoint's,
+    /// even though the draft carries metadata: re-tracking a path that is
+    /// already tracked has something to say only if it changed.
+    pub skip_unchanged: bool,
 }
 
 impl Draft {
@@ -446,7 +450,7 @@ impl Store {
                 record.state = "saved".into();
             }
         }
-        if !draft.has_metadata()
+        if (!draft.has_metadata() || draft.skip_unchanged)
             && let Some((previous_checkpoint, tree)) = &previous_tree
             && snapshot.as_deref() == Some(tree.as_str())
             && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
