@@ -85,6 +85,15 @@ there by default. The folder can be a symlink, so a dotfiles checkout can keep i
 ln -s ~/src/dotfiles/git ~/.config/mise/conf.d/git-tools
 ```
 
+For tasks, a folder behaves like its own project root. Its `[task_config]` applies only to the tasks
+it defines, and `task_config.includes` resolve inside the folder, so `includes = ["tasks"]` loads
+file tasks from `git-tools/tasks/` without replacing the default task directories of the config
+around it, such as `~/.config/mise/tasks`. The folder counts as a config root inside the surrounding
+directory, so `[task_config]` values that config or a parent sets with `cascade = true` still apply,
+except `includes`. When a folder and other config define a task with the same name, the task from the
+higher-precedence file wins, following the load order below. A task found only in a default task
+directory, such as `.mise/tasks`, loses to one that a config file defines.
+
 Only `mise.toml`, `mise.local.toml`, `mise.<env>.toml`, and `mise.<env>.local.toml` are read from a
 folder, and folders are not searched recursively. Folders whose names start with `.` are ignored.
 `mise.<env>.toml` files load for explicit [config environments](/configuration/environments.html)

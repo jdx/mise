@@ -3993,6 +3993,47 @@ struct ResolvedTaskConfig {
     rust_cache: Option<TaskRustCacheConfig>,
 }
 
+/// Whether an inline block gives its task a command. A block without one
+/// overlays a same-named task that has one, or stands alone, such as a group
+/// of `depends`.
+fn task_has_command(task: &Task) -> bool {
+    !task.run.is_empty() || !task.run_windows.is_empty() || task.file.is_some()
+}
+
+impl ResolvedTaskConfig {
+    /// The defaults for an inline block with no command of its own, while its
+    /// tasks load. Such a block may overlay a task that already has the
+    /// defaults of its own root -- possibly a different one, such as a conf.d
+    /// folder -- so until the merge it takes none, keeping only the input
+    /// groups its own `sources` can name. A block still without a command after
+    /// the merge stands alone and gets the rest from
+    /// [`Self::apply_to_standalone`].
+    fn for_overlay(&self) -> Self {
+        Self {
+            inputs: ResolvedTaskInputs {
+                global_inputs: None,
+                input_groups: self.inputs.input_groups.clone(),
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Give a task that loaded with [`Self::for_overlay`] and was merged onto
+    /// nothing the defaults it would have had as a task of its own.
+    async fn apply_to_standalone(&self, task: &mut Task, config: &Arc<Config>) -> Result<()> {
+        if task.dir.is_none() {
+            task.dir = self.dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = self.shell.clone();
+        }
+        apply_task_config_inputs(task, config, &self.inputs).await?;
+        apply_task_config_cache_default(task, &self.cache);
+        apply_task_config_rust_cache_default(task, &self.rust_cache);
+        self.environment.apply(task)
+    }
+}
+
 impl ResolvedTaskInputs {
     fn from_configs(configs: &[&Arc<dyn ConfigFile>]) -> Self {
         Self {
@@ -5027,7 +5068,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
-        let sources = load_task_sources_from_configs(
+        let scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
@@ -5038,7 +5079,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         )
         .await?;
         rendered_file_tasks.finish_config();
-        for task in sources.into_tasks() {
+        for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
     }
@@ -5497,6 +5538,7 @@ async fn load_config_tasks(
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
+    let overlay_task_config = task_config.for_overlay();
     let mut tasks = vec![];
     for t in cf.tasks().into_iter() {
         let config_root = config_root.clone();
@@ -5513,6 +5555,11 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        let task_config = if task_has_command(&t) {
+            task_config
+        } else {
+            &overlay_task_config
+        };
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
         }
@@ -6021,6 +6068,7 @@ async fn load_tasks_in_dir_with_definitions(
 struct TaskSources {
     file_tasks: Vec<Task>,
     config_tasks: Vec<Task>,
+    task_config: ResolvedTaskConfig,
 }
 
 #[derive(Clone)]
@@ -6108,26 +6156,38 @@ fn cascaded_task_config_for_dir(
     let mut cascaded = None;
     for root in roots {
         let configs = configs_at_root(&root, config_files);
-        match configs.iter().find_map(|cf| cf.task_config().cascade) {
-            Some(false) => {
-                cascaded = None;
-                continue;
-            }
-            Some(true) if cascaded.is_none() => {
-                cascaded = Some(CascadedTaskConfig {
-                    task_config: TaskConfig::default(),
-                    inputs: ResolvedTaskInputs::default(),
-                    includes_root: root.clone(),
-                    excludes_root: root,
-                });
-            }
-            _ => {}
-        }
-        if let Some(cascaded) = &mut cascaded {
-            merge_cascaded_task_config(cascaded, &configs)?;
-        }
+        cascade_through_root(&mut cascaded, &root, &configs)?;
     }
     Ok(cascaded)
+}
+
+/// Carry the task config cascaded from `root`'s ancestors through `root`
+/// itself, on the way to a descendant root: `cascade = false` there drops it,
+/// and `cascade = true` starts it or adds `root`'s own `task_config`.
+fn cascade_through_root(
+    cascaded: &mut Option<CascadedTaskConfig>,
+    root: &Path,
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<()> {
+    match configs.iter().find_map(|cf| cf.task_config().cascade) {
+        Some(false) => {
+            *cascaded = None;
+            return Ok(());
+        }
+        Some(true) if cascaded.is_none() => {
+            *cascaded = Some(CascadedTaskConfig {
+                task_config: TaskConfig::default(),
+                inputs: ResolvedTaskInputs::default(),
+                includes_root: root.to_path_buf(),
+                excludes_root: root.to_path_buf(),
+            });
+        }
+        _ => {}
+    }
+    if let Some(cascaded) = cascaded {
+        merge_cascaded_task_config(cascaded, configs)?;
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -6156,22 +6216,20 @@ impl RenderedTaskCache {
     }
 }
 
-impl TaskSources {
-    fn into_tasks(self) -> Vec<Task> {
-        let mut tasks = merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
-            .into_iter()
-            .sorted_by_cached_key(|t| t.name.clone())
-            .collect::<Vec<_>>();
-        let all_tasks = tasks
-            .clone()
-            .into_iter()
-            .map(|t| (t.name.clone(), t))
-            .collect::<BTreeMap<_, _>>();
-        for task in tasks.iter_mut() {
-            task.display_name = task.display_name(&all_tasks);
-        }
-        tasks
+fn sort_and_name_tasks(tasks: Vec<Task>) -> Vec<Task> {
+    let mut tasks = tasks
+        .into_iter()
+        .sorted_by_cached_key(|t| t.name.clone())
+        .collect::<Vec<_>>();
+    let all_tasks = tasks
+        .clone()
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect::<BTreeMap<_, _>>();
+    for task in tasks.iter_mut() {
+        task.display_name = task.display_name(&all_tasks);
     }
+    tasks
 }
 
 /// Load one config root as a single precedence unit.
@@ -6187,7 +6245,7 @@ async fn load_tasks_from_configs(
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<Vec<Task>> {
-    Ok(load_task_sources_from_configs(
+    load_tasks_from_configs_and_folders(
         config,
         dir,
         configs,
@@ -6196,14 +6254,152 @@ async fn load_tasks_from_configs(
         cascaded_task_config,
         None,
     )
-    .await?
-    .into_tasks())
+    .await
+}
+
+/// The configs of one task root, with each config's precedence among all the
+/// configs being loaded.
+#[derive(Default)]
+struct TaskRootConfigs<'a> {
+    precedences: Vec<usize>,
+    configs: Vec<&'a Arc<dyn ConfigFile>>,
+}
+
+/// Load `configs` as one root, except that the files of each conf.d folder
+/// fragment among them load as a root of their own, the folder.
+///
+/// A folder fragment is self-contained: its tasks run in the folder, its
+/// `task_config` applies only to its own tasks, and its `includes` neither
+/// replace nor are replaced by the enclosing root's. As a root inside `dir`,
+/// it inherits the defaults and `excludes` that cascade from `dir`'s ancestors
+/// and from `dir` itself, but not their `includes`, which `dir` already loads.
+///
+/// Only where tasks run and which `task_config` applies differ by root. Every
+/// root's file and inline tasks are then merged as if they came from one root,
+/// by the precedence of their configs among all of `configs`, so a metadata
+/// block in one root still overlays a same-named task from another. A folder
+/// beats the single-file fragments beside it and loses to the root's own
+/// config. When two roots' default task directories hold the same file task,
+/// the enclosing root's wins, then folders in config order.
+async fn load_tasks_from_configs_and_folders(
+    config: &Arc<Config>,
+    dir: &Path,
+    configs: Vec<&Arc<dyn ConfigFile>>,
+    templates: &TaskDefinitions,
+    monorepo_context: bool,
+    cascaded_task_config: Option<&CascadedTaskConfig>,
+    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+) -> Result<Vec<Task>> {
+    let mut roots: IndexMap<PathBuf, TaskRootConfigs> = IndexMap::new();
+    roots.insert(dir.to_path_buf(), TaskRootConfigs::default());
+    for (precedence, cf) in configs.into_iter().enumerate() {
+        let root = if is_conf_d_folder_file(cf.get_path()) {
+            cf.config_root()
+        } else {
+            dir.to_path_buf()
+        };
+        let root = roots.entry(root).or_default();
+        root.precedences.push(precedence);
+        root.configs.push(cf);
+    }
+    // A folder is a root inside `dir`, so it inherits what cascades through
+    // `dir` itself, except `includes`, which `dir` already loads.
+    let mut folder_cascaded_task_config = cascaded_task_config.cloned();
+    cascade_through_root(&mut folder_cascaded_task_config, dir, &roots[dir].configs)?;
+    if let Some(tc) = &mut folder_cascaded_task_config {
+        tc.task_config.includes = None;
+    }
+
+    // The precedence of a file task from a root's default task directories,
+    // which no config selected, below every config.
+    let default_precedence = roots.values().map(|r| r.configs.len()).sum::<usize>();
+    // The root each config belongs to, to find a standalone block's defaults.
+    let config_roots: HashMap<PathBuf, usize> = roots
+        .values()
+        .enumerate()
+        .flat_map(|(i, root)| {
+            root.configs
+                .iter()
+                .map(move |cf| (cf.get_path().to_path_buf(), i))
+        })
+        .collect();
+    let mut root_task_configs = vec![];
+    let mut file_tasks = vec![];
+    let mut config_tasks = vec![];
+    for (
+        i,
+        (
+            root,
+            TaskRootConfigs {
+                precedences,
+                configs,
+            },
+        ),
+    ) in roots.into_iter().enumerate()
+    {
+        let root_cascaded_task_config = if i == 0 {
+            cascaded_task_config
+        } else {
+            folder_cascaded_task_config.as_ref()
+        };
+        let sources = load_task_sources_from_configs(
+            config,
+            &root,
+            configs,
+            templates,
+            monorepo_context,
+            root_cascaded_task_config,
+            rendered_file_tasks.as_deref_mut(),
+        )
+        .await?;
+        let global_precedence = |task: &Task| {
+            precedences
+                .get(task.config_precedence)
+                .copied()
+                .unwrap_or(default_precedence)
+        };
+        for mut task in sources.file_tasks {
+            task.config_precedence = global_precedence(&task);
+            file_tasks.push((i, task));
+        }
+        for mut task in sources.config_tasks {
+            task.config_precedence = global_precedence(&task);
+            config_tasks.push(task);
+        }
+        root_task_configs.push(sources.task_config);
+    }
+    // The merge wants file tasks in rising precedence, since the last file
+    // task with a name wins, and inline tasks highest precedence first. Roots
+    // were loaded enclosing root first, then folders highest precedence first,
+    // so equal file tasks sort in reverse load order. The sorts are stable,
+    // keeping each root's include order.
+    file_tasks.sort_by_key(|(root, task)| {
+        (
+            std::cmp::Reverse(task.config_precedence),
+            std::cmp::Reverse(*root),
+        )
+    });
+    config_tasks.sort_by_key(|task| task.config_precedence);
+    let file_tasks = file_tasks.into_iter().map(|(_, task)| task).collect();
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks);
+    for task in &mut tasks {
+        if task_has_command(task) {
+            continue;
+        }
+        if let Some(&root) = config_roots.get(&task.config_source) {
+            root_task_configs[root]
+                .apply_to_standalone(task, config)
+                .await?;
+        }
+    }
+    Ok(sort_and_name_tasks(tasks))
 }
 
 /// Load file and inline task sources without merging them.
 ///
-/// Global user and system scopes use this boundary so they can share rendered
-/// file tasks without merging task definitions across the scope boundary.
+/// Global user and system scopes pass a shared rendered-task cache through
+/// [`load_tasks_from_configs_and_folders`] so they can share rendered file
+/// tasks without merging task definitions across the scope boundary.
 async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,
@@ -6361,6 +6557,7 @@ async fn load_task_sources_from_configs(
     Ok(TaskSources {
         file_tasks,
         config_tasks,
+        task_config,
     })
 }
 

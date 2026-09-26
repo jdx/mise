@@ -36,6 +36,124 @@ assert_not_contains "mise env -s bash" "GIT_ENV"
 assert_not_contains "mise env -s bash" "HIDDEN_FOLDER"
 assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
 
+# a folder's task_config.includes resolve inside it, its file tasks run there,
+# and it does not replace the project's default task directories
+mkdir -p .mise/tasks .mise/conf.d/git/tasks
+printf '#!/usr/bin/env bash\necho "project-task"\n' >.mise/tasks/project-task
+cat >.mise/conf.d/git/tasks/git-file <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD $MISE_CONFIG_ROOT"
+EOF
+chmod +x .mise/tasks/project-task .mise/conf.d/git/tasks/git-file
+cat >>.mise/conf.d/git/mise.toml <<'EOF'
+
+[task_config]
+includes = ["tasks"]
+EOF
+assert "mise run --skip-tools git-file" "$PWD/.mise/conf.d/git $PWD/.mise/conf.d/git"
+assert "mise run --skip-tools project-task" "project-task"
+# a folder fragment has higher precedence than a single-file fragment
+cat >>.mise/conf.d/01-file.toml <<'EOF'
+
+[tasks.where]
+run = "echo file-fragment"
+EOF
+assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
+
+# a task a folder defines beats one from the enclosing root's default task
+# directories, whether or not a single-file fragment sits beside the folder
+mkdir -p shadow/.mise/tasks shadow/.mise/conf.d/folder
+echo '[env]' >shadow/mise.toml
+cat >shadow/.mise/tasks/shadowed <<'EOF'
+#!/usr/bin/env bash
+echo default-dir
+EOF
+chmod +x shadow/.mise/tasks/shadowed
+cat >shadow/.mise/conf.d/folder/mise.toml <<'EOF'
+[tasks.shadowed]
+run = "echo folder"
+EOF
+assert "cd shadow && mise run --skip-tools shadowed" "folder"
+echo '[env]' >shadow/.mise/conf.d/00-file.toml
+assert "cd shadow && mise run --skip-tools shadowed" "folder"
+
+# a metadata-only block in a folder still overlays a script from the
+# enclosing root's default task directories, without the folder's defaults
+cat >shadow/.mise/tasks/described <<'EOF'
+#!/usr/bin/env bash
+echo "script $PWD"
+EOF
+chmod +x shadow/.mise/tasks/described
+cat >>shadow/.mise/conf.d/folder/mise.toml <<EOF
+
+[task_config]
+dir = "$PWD/shadow/.mise/conf.d/folder"
+
+[tasks.described]
+description = "from the folder"
+EOF
+assert "cd shadow && mise run --skip-tools described" "script $PWD/shadow"
+assert_contains "cd shadow && mise tasks ls" "from the folder"
+
+# a block with only depends stands alone, so it still gets its folder's defaults
+mkdir -p group/.mise/conf.d/folder
+cat >group/.mise/conf.d/folder/mise.toml <<'EOF'
+[task_config]
+global_inputs = ["in.txt"]
+
+[tasks.a]
+run = "echo a"
+
+[tasks.group]
+depends = ["a"]
+EOF
+assert_contains "cd group && MISE_EXPERIMENTAL=1 mise tasks info group --json" "$PWD/group/.mise/conf.d/folder/in.txt"
+
+# task_config cascaded from a parent root still reaches a folder's tasks,
+# including its excludes
+mkdir -p cascade/child/.mise/conf.d/frag/tasks
+cat >cascade/wrap <<'EOF'
+#!/usr/bin/env bash
+echo wrapped
+exec bash "$@"
+EOF
+chmod +x cascade/wrap
+cat >cascade/mise.toml <<EOF
+[task_config]
+cascade = true
+shell = "$PWD/cascade/wrap -c"
+excludes = ["child/.mise/conf.d/frag/tasks/excluded"]
+EOF
+cat >cascade/child/.mise/conf.d/frag/mise.toml <<'EOF'
+[task_config]
+includes = ["tasks"]
+
+[tasks.frag-shell]
+run = "echo frag"
+EOF
+for t in kept excluded; do
+  printf '#!/usr/bin/env bash\necho %s\n' "$t" >"cascade/child/.mise/conf.d/frag/tasks/$t"
+  chmod +x "cascade/child/.mise/conf.d/frag/tasks/$t"
+done
+assert_contains "cd cascade/child && mise tasks ls" "kept"
+assert_not_contains "cd cascade/child && mise tasks ls" "excluded"
+assert "cd cascade/child && mise run --skip-tools frag-shell" "wrapped
+frag"
+
+# and so does task_config cascaded from the folder's own project
+mkdir -p enclosing/.mise/conf.d/frag
+cat >enclosing/mise.toml <<EOF
+[task_config]
+cascade = true
+shell = "$PWD/cascade/wrap -c"
+EOF
+cat >enclosing/.mise/conf.d/frag/mise.toml <<'EOF'
+[tasks.enclosed-shell]
+run = "echo enclosed"
+EOF
+assert "cd enclosing && mise run --skip-tools enclosed-shell" "wrapped
+enclosed"
+
 # environment files inside a folder follow the usual rule
 assert_contains "MISE_ENV=dev mise config ls" ".mise/conf.d/git/mise.dev.toml"
 assert_contains "MISE_ENV=dev mise env -s bash" "GIT_ENV=dev"
@@ -66,6 +184,31 @@ EOF
 ln -s "$HOME/dotfiles/shell/zsh" "$MISE_CONFIG_DIR/conf.d/shell-zsh"
 
 assert_contains "mise env -s bash" "DEV_GIT_ROOT=$MISE_CONFIG_DIR/conf.d/dev-git"
+
+# Global folder fragment tasks run in the folder too, with config_root and
+# MISE_CONFIG_ROOT pointing at it, and leave the global tasks directory loaded.
+mkdir -p "$MISE_CONFIG_DIR/tasks" "$MISE_CONFIG_DIR/conf.d/dev-git/tasks"
+printf '#!/usr/bin/env bash\necho "global-task"\n' >"$MISE_CONFIG_DIR/tasks/global-task"
+cat >"$MISE_CONFIG_DIR/conf.d/dev-git/tasks/dev-git-file" <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD $MISE_CONFIG_ROOT"
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/global-task" "$MISE_CONFIG_DIR/conf.d/dev-git/tasks/dev-git-file"
+cat >>"$MISE_CONFIG_DIR/conf.d/dev-git/mise.toml" <<'EOF'
+
+[task_config]
+includes = ["tasks"]
+
+[tasks.dev-git-root]
+run = 'echo "{{ config_root }}"'
+
+[tasks.dev-git-pwd]
+run = "pwd"
+EOF
+assert "mise run --skip-tools dev-git-root" "$MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools dev-git-pwd" "$MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools dev-git-file" "$MISE_CONFIG_DIR/conf.d/dev-git $MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools global-task" "global-task"
 assert_contains "mise bootstrap --dry-run" "conf.d/dev-git/gitconfig"
 assert_not_contains "mise bootstrap --dry-run" "zshrc"
 assert_contains "MISE_ENV=dev mise bootstrap --dry-run" "shell-zsh/zshrc"
