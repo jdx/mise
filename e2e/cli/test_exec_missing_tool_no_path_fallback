@@ -55,6 +55,32 @@ dummy = "2.0.0"
 TOML
 MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@2.0.0"
 
+# A project `_.path` entry is searched ahead of tool paths, so its copy runs.
+mkdir -p project-bin
+cat >project-bin/dummy <<'SCRIPT'
+#!/usr/bin/env bash
+echo "project dummy"
+SCRIPT
+chmod +x project-bin/dummy
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+
+[env]
+_.path = ["{{config_root}}/project-bin"]
+TOML
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy" "project dummy"
+
+# An entry the inherited PATH already has is searched after tool paths, so it does not.
+cat >mise.toml <<TOML
+[tools]
+dummy = "2.0.0"
+
+[env]
+_.path = ["$HOME/fallback-bin"]
+TOML
+MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@2.0.0"
+
 # A command wrapper configured for the command runs, even before its shim exists.
 cat >mise.toml <<'TOML'
 [tools]

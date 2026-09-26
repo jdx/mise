@@ -843,7 +843,7 @@ impl Toolset {
         config: &Arc<Config>,
         missing: Vec<ToolVersion>,
         bin_name: &str,
-    ) -> Result<Vec<ToolVersion>> {
+    ) -> Vec<ToolVersion> {
         let (mut providers, unmatched): (Vec<_>, Vec<_>) = missing.into_iter().partition(|tv| {
             tv.ba().matches_bin_name(bin_name)
                 || tv
@@ -852,15 +852,23 @@ impl Toolset {
                     .is_some_and(|tool| tool.provides_bin(bin_name))
         });
         if unmatched.is_empty() {
-            return Ok(providers);
+            return providers;
         }
-        let installed = self.list_installed_versions(config).await?;
+        // Without the scan, the name and registry signals above are all there is. Failing here
+        // instead would stop commands that no missing tool provides.
+        let installed = match self.list_installed_versions(config).await {
+            Ok(installed) => installed,
+            Err(err) => {
+                warn!("failed to list installed versions: {err:#}");
+                return providers;
+            }
+        };
         for tv in unmatched {
             if installed_version_ships_bin(config, &installed, &tv, bin_name).await {
                 providers.push(tv);
             }
         }
-        Ok(providers)
+        providers
     }
 
     /// Whether a configured, installed version of `tv`'s tool ships `bin_name`.

@@ -444,7 +444,7 @@ async fn ensure_command_provider_installed(
     if skipped.is_empty() {
         return Ok(());
     }
-    let providers = ts.missing_bin_providers(config, skipped, program).await?;
+    let providers = ts.missing_bin_providers(config, skipped, program).await;
     if providers.is_empty() {
         return Ok(());
     }
@@ -461,6 +461,28 @@ async fn ensure_command_provider_installed(
             .keys()
             .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
         {
+            return Ok(());
+        }
+    }
+    // A `_.path` entry that the inherited PATH lacks is searched ahead of every tool path, so it
+    // supplies the command whether or not the tool is installed. An inherited entry is searched
+    // after the tool paths, as in `exec_program`. Entries declared with `tools = true` resolve
+    // only with the full tool environment and are not consulted here.
+    let path_dirs = config
+        .path_dirs()
+        .await?
+        .iter()
+        .filter(|dir| {
+            !env::PATH
+                .iter()
+                .any(|inherited| crate::file::paths_eq(inherited, dir))
+                && !crate::file::is_mise_shims_dir(dir)
+                && !crate::file::is_command_wrapper_dir(dir)
+        })
+        .collect_vec();
+    if !path_dirs.is_empty() {
+        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+        if which::which_in(program, Some(std::env::join_paths(path_dirs)?), cwd).is_ok() {
             return Ok(());
         }
     }
