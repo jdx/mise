@@ -989,21 +989,10 @@ pub fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<PathBuf>
     }
 }
 
+/// Names of the directories in `dir`, including links that lead to one. A link whose target is
+/// gone is dropped: it is not a directory a caller can read a plugin, a cached download or another
+/// version manager's install out of. (Version listing keeps those; it has its own scan.)
 pub fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
-    subdirs(dir, false)
-}
-
-/// [`dir_subdirs`], but keeping a link whose target is gone.
-///
-/// Most callers want the plain version: a link that resolves to nothing is not a directory they
-/// can read a plugin, a cached download or another version manager's install out of. Version
-/// listing is the exception — the entry is still there, still occupying the name, and still the
-/// thing a user has to be told about before they can remove it.
-pub fn dir_subdirs_keeping_broken_links(dir: &Path) -> Result<BTreeSet<String>> {
-    subdirs(dir, true)
-}
-
-fn subdirs(dir: &Path, keep_broken_links: bool) -> Result<BTreeSet<String>> {
     let mut output = Default::default();
 
     if !dir.exists() {
@@ -1013,13 +1002,8 @@ fn subdirs(dir: &Path, keep_broken_links: bool) -> Result<BTreeSet<String>> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         // `entry.file_type()` describes the entry itself; `entry.path().is_dir()` resolves it.
-        // A link is kept when it leads to a directory, or — for the callers that asked — when it
-        // leads nowhere at all.
         let ft = entry.file_type()?;
-        let keep = ft.is_dir()
-            || (ft.is_symlink()
-                && (entry.path().is_dir() || keep_broken_links && !entry.path().exists()));
-        if keep {
+        if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
             output.insert(entry.file_name().into_string().unwrap());
         }
     }
@@ -2976,12 +2960,8 @@ esac
         assert!(!broken.exists());
     }
 
-    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
-    /// what the predicate keys on. `make_symlink` writes a junction here, so if that were not so,
-    /// `broken` would be dropped below — and the *live* junction would never have been listed
-    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
     #[test]
-    fn only_the_version_scan_keeps_a_link_that_leads_nowhere() {
+    fn dir_subdirs_drops_a_link_that_leads_nowhere() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("target");
         create_dir_all(&target).unwrap();
@@ -2989,21 +2969,13 @@ esac
         make_symlink(&dir.path().join("nowhere"), &dir.path().join("broken")).unwrap();
         write(dir.path().join("plain.txt"), "x").unwrap();
 
-        // The control: the plain listing still drops it, because a link that resolves to nothing
-        // is not a directory its callers can read a plugin or a cached download out of.
-        let plain = dir_subdirs(dir.path()).unwrap();
+        let subdirs = dir_subdirs(dir.path()).unwrap();
         assert!(
-            plain.contains("target") && plain.contains("live"),
-            "{plain:?}"
+            subdirs.contains("target") && subdirs.contains("live"),
+            "{subdirs:?}"
         );
-        assert!(!plain.contains("broken"), "{plain:?}");
-
-        let kept = dir_subdirs_keeping_broken_links(dir.path()).unwrap();
-        assert!(kept.contains("broken"), "{kept:?}");
-        // Everything else it reports is unchanged -- including that a regular file is still not a
-        // subdirectory.
-        assert!(kept.contains("target") && kept.contains("live"), "{kept:?}");
-        assert!(!kept.contains("plain.txt"), "{kept:?}");
+        assert!(!subdirs.contains("broken"), "{subdirs:?}");
+        assert!(!subdirs.contains("plain.txt"), "{subdirs:?}");
     }
 
     #[test]

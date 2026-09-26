@@ -7,7 +7,6 @@ use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
@@ -244,20 +243,49 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// `tool_dir_name` keys the incomplete markers. Install writes them under the
 /// tool's short name, which a manifest can map to a differently named dir.
 fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
-    // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its target is
-    // moved or deleted, and dropping it here is what made the version invisible to `mise ls` and
-    // unreachable to `mise uninstall` — occupying a name nothing would admit to. It is listed, not
-    // treated as installed: `is_version_installed` still resolves the path and still says no.
-    Ok(file::dir_subdirs_keeping_broken_links(dir)?
-        .into_iter()
-        .filter(|v| !v.starts_with('.'))
-        .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-        .filter(|v| !incomplete_marker(tool_dir_name, v).exists())
-        .sorted_by_cached_key(|v| {
-            let normalized = normalize_version_for_sort(v);
-            (Versioning::new(normalized), v.to_string())
-        })
-        .collect())
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    // One pass, deciding from the entry's own file type so a plain version
+    // directory costs no syscalls beyond the incomplete-marker check. Only links
+    // are resolved: a runtime symlink (`latest` -> `./1.2.3`) names another
+    // version, and on Windows those are files, which are never kept anyway.
+    let mut versions = vec![];
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            let path = entry.path();
+            if runtime_symlinks::is_runtime_symlink(&path) {
+                continue;
+            }
+            // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its
+            // target is moved or deleted, and dropping it here is what made the version invisible
+            // to `mise ls` and unreachable to `mise uninstall` — occupying a name nothing would
+            // admit to. It is listed, not treated as installed: `is_version_installed` still
+            // resolves the path and still says no.
+            if !path.is_dir() && path.exists() {
+                continue;
+            }
+        } else if !file_type.is_dir() {
+            continue;
+        }
+        if incomplete_marker(tool_dir_name, &name).exists() {
+            continue;
+        }
+        versions.push(name);
+    }
+    versions.sort_by_cached_key(|v| {
+        let normalized = normalize_version_for_sort(v);
+        (Versioning::new(normalized), v.to_string())
+    });
+    Ok(versions)
 }
 
 /// [`scan_versions`] for read-only shared install dirs, where a unreadable
@@ -1432,5 +1460,38 @@ explicit_backend = true
         let _ = std::fs::remove_dir_all(marker.parent().unwrap().parent().unwrap());
 
         assert_eq!(versions, ["1.0.0"]);
+    }
+
+    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
+    /// what the scan keys on. `make_symlink` writes a junction there, so if that were not so,
+    /// `broken` would be dropped below — and the *live* junction would never have been listed
+    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
+    #[test]
+    fn scan_versions_keeps_links_that_lead_nowhere_but_not_runtime_symlinks() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("tool");
+        std::fs::create_dir_all(dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(dir.join(".hidden")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "x").unwrap();
+        let external = temp.path().join("external");
+        std::fs::create_dir_all(&external).unwrap();
+        crate::file::make_symlink(&external, &dir.join("linked")).unwrap();
+        crate::file::make_symlink(&temp.path().join("nowhere"), &dir.join("broken")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("./1.0.0", dir.join("1")).unwrap();
+
+        let tool_dir_name = format!(
+            "scan-links{}",
+            temp.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut versions = scan_versions(&dir, &tool_dir_name).unwrap();
+        versions.sort();
+
+        assert_eq!(versions, ["1.0.0", "broken", "linked"]);
+        assert!(
+            scan_versions(&temp.path().join("missing"), &tool_dir_name)
+                .unwrap()
+                .is_empty()
+        );
     }
 }
