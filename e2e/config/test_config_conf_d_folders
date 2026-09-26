@@ -52,7 +52,33 @@ includes = ["tasks"]
 EOF
 assert "mise run --skip-tools git-file" "$PWD/.mise/conf.d/git $PWD/.mise/conf.d/git"
 assert "mise run --skip-tools project-task" "project-task"
+# a folder fragment has higher precedence than a single-file fragment
+cat >>.mise/conf.d/01-file.toml <<'EOF'
+
+[tasks.where]
+run = "echo file-fragment"
+EOF
 assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
+
+# task_config cascaded from a parent root still reaches a folder's tasks
+mkdir -p cascade/child/.mise/conf.d/frag
+cat >cascade/wrap <<'EOF'
+#!/usr/bin/env bash
+echo wrapped
+exec bash "$@"
+EOF
+chmod +x cascade/wrap
+cat >cascade/mise.toml <<EOF
+[task_config]
+cascade = true
+shell = "$PWD/cascade/wrap -c"
+EOF
+cat >cascade/child/.mise/conf.d/frag/mise.toml <<'EOF'
+[tasks.frag-shell]
+run = "echo frag"
+EOF
+assert "cd cascade/child && mise run --skip-tools frag-shell" "wrapped
+frag"
 
 # environment files inside a folder follow the usual rule
 assert_contains "MISE_ENV=dev mise config ls" ".mise/conf.d/git/mise.dev.toml"

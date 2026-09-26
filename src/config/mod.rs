@@ -6171,14 +6171,24 @@ async fn load_tasks_from_configs(
     .await
 }
 
+/// The configs of one task root, with each config's precedence among all the
+/// configs being loaded.
+#[derive(Default)]
+struct TaskRootConfigs<'a> {
+    precedences: Vec<usize>,
+    configs: Vec<&'a Arc<dyn ConfigFile>>,
+}
+
 /// Load `configs` as one root, except that the files of each conf.d folder
 /// fragment among them load as a root of their own, the folder.
 ///
 /// A folder fragment is self-contained: its tasks run in the folder, its
 /// `task_config` applies only to its own tasks, and its `includes` neither
-/// replace nor are replaced by the enclosing root's. The enclosing root's
-/// tasks win a name clash with a fragment's, as they would in one root, and
-/// a higher-precedence fragment's win over a lower one's.
+/// replace nor are replaced by the enclosing root's. Defaults cascaded from
+/// ancestor roots still reach it, but not their `includes` or `excludes`,
+/// which belong to the enclosing root. When roots define the same task name,
+/// the task from the higher-precedence config wins, so a folder beats the
+/// single-file fragments beside it and loses to the root's own config.
 async fn load_tasks_from_configs_and_folders(
     config: &Arc<Config>,
     dir: &Path,
@@ -6188,45 +6198,71 @@ async fn load_tasks_from_configs_and_folders(
     cascaded_task_config: Option<&CascadedTaskConfig>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
-    let (folder_configs, configs): (Vec<_>, Vec<_>) = configs
-        .into_iter()
-        .partition(|cf| is_conf_d_folder_file(cf.get_path()));
-    let mut folders: IndexMap<PathBuf, Vec<&Arc<dyn ConfigFile>>> = IndexMap::new();
-    for cf in folder_configs {
-        folders.entry(cf.config_root()).or_default().push(cf);
+    let mut roots: IndexMap<PathBuf, TaskRootConfigs> = IndexMap::new();
+    roots.insert(dir.to_path_buf(), TaskRootConfigs::default());
+    for (precedence, cf) in configs.into_iter().enumerate() {
+        let root = if is_conf_d_folder_file(cf.get_path()) {
+            cf.config_root()
+        } else {
+            dir.to_path_buf()
+        };
+        let root = roots.entry(root).or_default();
+        root.precedences.push(precedence);
+        root.configs.push(cf);
     }
+    let folder_cascaded_task_config = cascaded_task_config.map(|tc| {
+        let mut tc = tc.clone();
+        tc.task_config.includes = None;
+        tc.task_config.excludes = None;
+        tc
+    });
 
-    let mut tasks: IndexMap<String, Task> = load_task_sources_from_configs(
-        config,
-        dir,
-        configs,
-        templates,
-        monorepo_context,
-        cascaded_task_config,
-        rendered_file_tasks.as_deref_mut(),
-    )
-    .await?
-    .into_tasks()
-    .into_iter()
-    .map(|task| (task.name.clone(), task))
-    .collect();
-    for (folder, folder_configs) in folders {
-        let folder_tasks = load_task_sources_from_configs(
+    let mut tasks: IndexMap<String, (usize, Task)> = IndexMap::new();
+    for (
+        i,
+        (
+            root,
+            TaskRootConfigs {
+                precedences,
+                configs,
+            },
+        ),
+    ) in roots.into_iter().enumerate()
+    {
+        let root_cascaded_task_config = if i == 0 {
+            cascaded_task_config
+        } else {
+            folder_cascaded_task_config.as_ref()
+        };
+        let root_tasks = load_task_sources_from_configs(
             config,
-            &folder,
-            folder_configs,
+            &root,
+            configs,
             templates,
             monorepo_context,
-            None,
+            root_cascaded_task_config,
             rendered_file_tasks.as_deref_mut(),
         )
         .await?
         .into_tasks();
-        for task in folder_tasks {
-            tasks.entry(task.name.clone()).or_insert(task);
+        for task in root_tasks {
+            // A task from the root's default task directories ranks just
+            // below the root's lowest-precedence config.
+            let rank = match precedences.get(task.config_precedence) {
+                Some(precedence) => precedence * 2,
+                None => precedences.last().map_or(usize::MAX, |p| p * 2 + 1),
+            };
+            match tasks.get(&task.name) {
+                Some((existing, _)) if *existing <= rank => {}
+                _ => {
+                    tasks.insert(task.name.clone(), (rank, task));
+                }
+            }
         }
     }
-    Ok(sort_and_name_tasks(tasks.into_values().collect()))
+    Ok(sort_and_name_tasks(
+        tasks.into_values().map(|(_, task)| task).collect(),
+    ))
 }
 
 /// Load file and inline task sources without merging them.
