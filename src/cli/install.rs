@@ -162,6 +162,7 @@ impl Install {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let task_requests = self.collect_task_tool_requests(&config).await?;
+        crate::plugins::warn_plugin_drift(&config);
         match &self.tool {
             Some(runtime) => {
                 let original_tool_args = env::TOOL_ARGS.read().unwrap().clone();

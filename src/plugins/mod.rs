@@ -10,7 +10,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, dirs};
 use async_trait::async_trait;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub(crate) use script_manager::{Script, ScriptManager};
@@ -523,13 +523,7 @@ pub(crate) fn install_git_plugin_source(
         file::remove_all_with_progress(plugin_path, pr)?;
         file::remove_all_with_progress(&repo_path, pr)?;
 
-        let git = Git::new(&repo_path);
-        pr.set_message(format!("clone {repo_url}"));
-        git.clone(repo_url, CloneOptions::default().pr(pr))?;
-        if let Some(ref_) = git_ref {
-            pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
+        clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
 
         let subdir_path = repo_path.join(subdir);
         if !subdir_path.is_dir() {
@@ -543,15 +537,139 @@ pub(crate) fn install_git_plugin_source(
         file::make_symlink(&subdir_path, plugin_path)?;
         Ok(Git::new(plugin_path))
     } else {
-        let git = Git::new(plugin_path);
+        clone_git_plugin_source(plugin_path, repo_url, git_ref, pr)
+    }
+}
+
+/// Clones `repo_url` into `dir` and checks out `git_ref`. On failure `dir` is
+/// removed, so a ref that can't be checked out never leaves the default
+/// branch installed in its place.
+fn clone_git_plugin_source(
+    dir: &Path,
+    repo_url: &str,
+    git_ref: Option<&str>,
+    pr: &dyn SingleReport,
+) -> Result<Git> {
+    let git = Git::new(dir);
+    let result = (|| {
         pr.set_message(format!("clone {repo_url}"));
         git.clone(repo_url, CloneOptions::default().pr(pr))?;
         if let Some(ref_) = git_ref {
             pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
+            git.update(Some(ref_.to_string()))
+                .wrap_err_with(|| format!("failed to check out {ref_} from {repo_url}"))?;
         }
-        Ok(git)
+        Ok(())
+    })();
+    if let Err(err) = result {
+        if let Err(cleanup_err) = file::remove_all(dir) {
+            warn!(
+                "failed to remove {} after install failed: {cleanup_err:#}",
+                display_path(dir)
+            );
+        }
+        return Err(err);
     }
+    Ok(git)
+}
+
+/// An installed plugin whose checkout no longer matches its `[plugins]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PluginDrift {
+    pub name: String,
+    pub reason: String,
+}
+
+impl Display for PluginDrift {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "plugin {} {}; run `mise plugins install --force {}` to reinstall it from [plugins]",
+            self.name, self.reason, self.name
+        )
+    }
+}
+
+/// Compares installed git plugins with their `[plugins]` entries using only
+/// local git state.
+///
+/// `[plugins]` is applied when a plugin is installed, so editing an entry
+/// afterwards leaves the old checkout in place. mise doesn't move it on its
+/// own; this lets commands point out the mismatch instead.
+pub(crate) fn plugin_drift(config: &Config) -> Vec<PluginDrift> {
+    let mut drift: Vec<_> = config
+        .repo_urls
+        .keys()
+        .filter_map(|key| {
+            let (_, name) = PluginType::from_plugin_config(key);
+            let configured = config.configured_plugin_url(name)?;
+            match git_plugin_drift(name, &configured) {
+                Ok(reason) => reason.map(|reason| PluginDrift {
+                    name: name.to_string(),
+                    reason,
+                }),
+                Err(err) => {
+                    debug!("failed to compare plugin {name} with [plugins]: {err:#}");
+                    None
+                }
+            }
+        })
+        .collect();
+    drift.sort_by(|a, b| a.name.cmp(&b.name));
+    drift.dedup();
+    drift
+}
+
+pub(crate) fn warn_plugin_drift(config: &Config) {
+    for drift in plugin_drift(config) {
+        warn!("{drift}");
+    }
+}
+
+fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
+    if configured.starts_with("packslip:") || local_plugin_source_path(configured).is_some() {
+        return Ok(None);
+    }
+    let PluginSource::Git { url, git_ref, .. } = PluginSource::parse(configured) else {
+        return Ok(None);
+    };
+    let plugin_path = dirs::PLUGINS.join(name.to_kebab_case());
+    if !plugin_path.exists() || packslip::installed(&plugin_path)?.is_some() {
+        return Ok(None);
+    }
+    let repo_path = match managed_git_plugin_repo_path(name, &plugin_path)? {
+        Some(repo_path) => repo_path,
+        // A symlink mise didn't create is a linked local plugin.
+        None if plugin_path.is_symlink() => return Ok(None),
+        None => plugin_path,
+    };
+    let git = Git::new(&repo_path);
+    if !git.is_repo() {
+        return Ok(None);
+    }
+    if let Some(installed_url) = git.get_remote_url()
+        && normalize_git_url(&installed_url) != normalize_git_url(&url)
+    {
+        return Ok(Some(format!(
+            "is installed from {installed_url}, but [plugins] names {url}"
+        )));
+    }
+    let Some(git_ref) = git_ref else {
+        return Ok(None);
+    };
+    let head = git.current_sha()?;
+    if git.resolve_commit(&git_ref)?.as_deref() == Some(head.as_str()) {
+        return Ok(None);
+    }
+    let head_short = head.get(..7).unwrap_or(&head);
+    Ok(Some(format!(
+        "is checked out at {head_short}, but [plugins] pins {git_ref}"
+    )))
+}
+
+fn normalize_git_url(url: &str) -> &str {
+    let url = url.trim_end_matches('/');
+    url.strip_suffix(".git").unwrap_or(url)
 }
 
 pub(crate) fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {

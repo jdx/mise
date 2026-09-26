@@ -20,7 +20,7 @@ use crate::toolset::install_state;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::version::VERSION;
-use crate::{backend, dirs, duration, env, file, shims};
+use crate::{backend, dirs, duration, env, file, plugins, shims};
 use console::{Alignment, pad_str, style};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
@@ -214,6 +214,7 @@ impl Doctor {
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
+        self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
@@ -354,10 +355,11 @@ impl Doctor {
 
         self.analyze_plugins();
         self.analyze_backend_mismatches();
-        if let Ok(config) = Config::get().await
-            && let Ok(ts) = config.get_toolset().await
-        {
-            self.analyze_system_deps(ts).await;
+        if let Ok(config) = Config::get().await {
+            self.analyze_plugin_drift(&config);
+            if let Ok(ts) = config.get_toolset().await {
+                self.analyze_system_deps(ts).await;
+            }
         }
 
         let env_vars = mise_env_vars()
@@ -1166,6 +1168,14 @@ impl Doctor {
                     .push(format!("plugin {} overrides a core plugin", plugin.id()));
             }
         }
+    }
+
+    fn analyze_plugin_drift(&mut self, config: &Config) {
+        self.warnings.extend(
+            plugins::plugin_drift(config)
+                .into_iter()
+                .map(|drift| drift.to_string()),
+        );
     }
 
     fn analyze_backend_mismatches(&mut self) {

@@ -736,6 +736,29 @@ impl Config {
         })
     }
 
+    /// The source a `[plugins]` entry names for `plugin_name`, if any.
+    ///
+    /// Unlike [`Self::get_repo_url`], this ignores registry shorthands, so it
+    /// only returns a source the user configured explicitly.
+    pub(crate) fn configured_plugin_url(&self, plugin_name: &str) -> Option<String> {
+        let url = self.repo_urls.get(plugin_name).or_else(|| {
+            self.repo_urls
+                .iter()
+                .find(|(key, _)| {
+                    key.split_once(':')
+                        .is_some_and(|(_, name)| name == plugin_name)
+                })
+                .map(|(_, url)| url)
+        })?;
+        Some(
+            if Path::new(url).is_absolute() || url.starts_with("file://") {
+                url.clone()
+            } else {
+                registry::full_to_url(url)
+            },
+        )
+    }
+
     pub(crate) fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
             && (Path::new(url).is_absolute()

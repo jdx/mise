@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# `[plugins]` says what to install: editing a pin doesn't move an installed
+# plugin, but mise reports the mismatch and `--force` reinstalls from the pin.
+
+plugin_repo="$TMPDIR/pinned-plugin"
+mkdir -p "$plugin_repo"
+cp -R "$ROOT/test/data/plugins/dummy/." "$plugin_repo/"
+
+git -C "$plugin_repo" -c init.defaultBranch=main init -q
+git -C "$plugin_repo" add .
+git -C "$plugin_repo" -c user.email=t@t -c user.name=t commit -q -m v1
+v1_sha="$(git -C "$plugin_repo" rev-parse HEAD)"
+git -C "$plugin_repo" tag v1
+
+echo v2 >"$plugin_repo/version"
+git -C "$plugin_repo" add version
+git -C "$plugin_repo" -c user.email=t@t -c user.name=t commit -q -m v2
+v2_sha="$(git -C "$plugin_repo" rev-parse HEAD)"
+git -C "$plugin_repo" tag v2
+
+pin() {
+  cat >mise.toml <<EOF
+[plugins]
+pinned = "file://$plugin_repo#$1"
+EOF
+}
+head_sha="git -C '$MISE_DATA_DIR/plugins/pinned' rev-parse HEAD"
+
+pin v1
+mise plugins install pinned
+assert "$head_sha" "$v1_sha"
+assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
+
+pin v2
+assert_contains "mise plugins install pinned 2>&1" "plugin pinned is checked out at ${v1_sha:0:7}, but [plugins] pins v2"
+assert "$head_sha" "$v1_sha"
+assert_contains "mise doctor 2>&1 || true" "plugin pinned is checked out at ${v1_sha:0:7}, but [plugins] pins v2"
+assert_contains "mise doctor -J 2>/dev/null || true" "[plugins] pins v2"
+
+mise plugins install --force pinned
+assert "$head_sha" "$v2_sha"
+assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
+
+pin "$v1_sha"
+assert_contains "mise doctor 2>&1 || true" "but [plugins] pins $v1_sha"
+mise plugins install --force pinned
+assert "$head_sha" "$v1_sha"
+assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
+
+other_repo="$TMPDIR/other-plugin"
+git clone -q "$plugin_repo" "$other_repo"
+cat >mise.toml <<EOF
+[plugins]
+pinned = "file://$other_repo#$v1_sha"
+EOF
+assert_contains "mise doctor 2>&1 || true" "plugin pinned is installed from file://$plugin_repo, but [plugins] names file://$other_repo"
+
+# An abbreviated SHA can't be fetched from the remote. The install fails
+# without leaving a default-branch clone behind.
+cat >mise.toml <<EOF
+[plugins]
+short-pin = "file://$plugin_repo#${v1_sha:0:7}"
+EOF
+assert_fail_contains "mise plugins install short-pin" "abbreviated commit SHAs are not supported"
+[[ ! -e "$MISE_DATA_DIR/plugins/short-pin" ]] || fail "failed install left $MISE_DATA_DIR/plugins/short-pin behind"
