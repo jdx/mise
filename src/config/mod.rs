@@ -3961,11 +3961,21 @@ struct ResolvedTaskConfig {
     rust_cache: Option<TaskRustCacheConfig>,
 }
 
+/// Whether an inline block gives its task a command. A block without one
+/// overlays a same-named task that has one, or stands alone, such as a group
+/// of `depends`.
+fn task_has_command(task: &Task) -> bool {
+    !task.run.is_empty() || !task.run_windows.is_empty() || task.file.is_some()
+}
+
 impl ResolvedTaskConfig {
-    /// The defaults for an inline block with no command of its own. Such a
-    /// block only overlays another task, which already has the defaults of
-    /// its own root -- possibly a different one, such as a conf.d folder -- so
-    /// it takes none, keeping only the input groups its own `sources` can name.
+    /// The defaults for an inline block with no command of its own, while its
+    /// tasks load. Such a block may overlay a task that already has the
+    /// defaults of its own root -- possibly a different one, such as a conf.d
+    /// folder -- so until the merge it takes none, keeping only the input
+    /// groups its own `sources` can name. A block still without a command after
+    /// the merge stands alone and gets the rest from
+    /// [`Self::apply_to_standalone`].
     fn for_overlay(&self) -> Self {
         Self {
             inputs: ResolvedTaskInputs {
@@ -3974,6 +3984,21 @@ impl ResolvedTaskConfig {
             },
             ..Default::default()
         }
+    }
+
+    /// Give a task that loaded with [`Self::for_overlay`] and was merged onto
+    /// nothing the defaults it would have had as a task of its own.
+    async fn apply_to_standalone(&self, task: &mut Task, config: &Arc<Config>) -> Result<()> {
+        if task.dir.is_none() {
+            task.dir = self.dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = self.shell.clone();
+        }
+        apply_task_config_inputs(task, config, &self.inputs).await?;
+        apply_task_config_cache_default(task, &self.cache);
+        apply_task_config_rust_cache_default(task, &self.rust_cache);
+        self.environment.apply(task)
     }
 }
 
@@ -5498,10 +5523,10 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
-        let task_config = if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
-            &overlay_task_config
-        } else {
+        let task_config = if task_has_command(&t) {
             task_config
+        } else {
+            &overlay_task_config
         };
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
@@ -6011,6 +6036,7 @@ async fn load_tasks_in_dir_with_definitions(
 struct TaskSources {
     file_tasks: Vec<Task>,
     config_tasks: Vec<Task>,
+    task_config: ResolvedTaskConfig,
 }
 
 #[derive(Clone)]
@@ -6241,6 +6267,17 @@ async fn load_tasks_from_configs_and_folders(
     // The precedence of a file task from a root's default task directories,
     // which no config selected, below every config.
     let default_precedence = roots.values().map(|r| r.configs.len()).sum::<usize>();
+    // The root each config belongs to, to find a standalone block's defaults.
+    let config_roots: HashMap<PathBuf, usize> = roots
+        .values()
+        .enumerate()
+        .flat_map(|(i, root)| {
+            root.configs
+                .iter()
+                .map(move |cf| (cf.get_path().to_path_buf(), i))
+        })
+        .collect();
+    let mut root_task_configs = vec![];
     let mut file_tasks = vec![];
     let mut config_tasks = vec![];
     for (
@@ -6283,6 +6320,7 @@ async fn load_tasks_from_configs_and_folders(
             task.config_precedence = global_precedence(&task);
             config_tasks.push(task);
         }
+        root_task_configs.push(sources.task_config);
     }
     // The merge wants file tasks in rising precedence, since the last file
     // task with a name wins, and inline tasks highest precedence first. Roots
@@ -6297,10 +6335,18 @@ async fn load_tasks_from_configs_and_folders(
     });
     config_tasks.sort_by_key(|task| task.config_precedence);
     let file_tasks = file_tasks.into_iter().map(|(_, task)| task).collect();
-    Ok(sort_and_name_tasks(merge_file_and_config_tasks(
-        file_tasks,
-        config_tasks,
-    )))
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks);
+    for task in &mut tasks {
+        if task_has_command(task) {
+            continue;
+        }
+        if let Some(&root) = config_roots.get(&task.config_source) {
+            root_task_configs[root]
+                .apply_to_standalone(task, config)
+                .await?;
+        }
+    }
+    Ok(sort_and_name_tasks(tasks))
 }
 
 /// Load file and inline task sources without merging them.
@@ -6465,6 +6511,7 @@ async fn load_task_sources_from_configs(
     Ok(TaskSources {
         file_tasks,
         config_tasks,
+        task_config,
     })
 }
 

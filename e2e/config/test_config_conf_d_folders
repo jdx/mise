@@ -95,6 +95,20 @@ EOF
 assert "cd shadow && mise run --skip-tools described" "script $PWD/shadow"
 assert_contains "cd shadow && mise tasks ls" "from the folder"
 
+# a block with only depends stands alone, so it still gets its folder's defaults
+mkdir -p group/.mise/conf.d/folder
+cat >group/.mise/conf.d/folder/mise.toml <<'EOF'
+[task_config]
+global_inputs = ["in.txt"]
+
+[tasks.a]
+run = "echo a"
+
+[tasks.group]
+depends = ["a"]
+EOF
+assert_contains "cd group && MISE_EXPERIMENTAL=1 mise tasks info group --json" "$PWD/group/.mise/conf.d/folder/in.txt"
+
 # task_config cascaded from a parent root still reaches a folder's tasks,
 # including its excludes
 mkdir -p cascade/child/.mise/conf.d/frag/tasks
