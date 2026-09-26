@@ -57,8 +57,10 @@ rust-version = "1.95"
 [lib]
 name = "mise"
 path = "src/lib.rs"
-# Not a public API; see src/lib.rs.
+# Not a public API; see src/lib.rs. Code blocks in its doc comments are
+# illustrations of private items, not examples to compile.
 doc = false
+doctest = false
 
 [[bin]]
 name = "mise"
