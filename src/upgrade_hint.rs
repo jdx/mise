@@ -21,7 +21,7 @@ pub fn self_update_available() -> bool {
 }
 
 #[cfg(not(feature = "self_update"))]
-pub(crate) fn self_update_available() -> bool {
+pub fn self_update_available() -> bool {
     false
 }
 

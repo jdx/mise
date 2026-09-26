@@ -17,7 +17,7 @@ use eyre::Result;
 /// Extract string values from JSON using a jq-like path expression
 ///
 /// # Examples
-/// ```
+/// ```text
 /// use mise::backend::jq::extract;
 /// use serde_json::json;
 ///
