@@ -64,21 +64,33 @@ impl FromLua for MiseInstallSatisfiedResult {
                 reason: None,
             }),
             Value::Table(table) => {
-                let satisfied = table.get::<Option<bool>>("satisfied").map_err(|e| {
-                    LuaError::RuntimeError(format!(
-                        "Invalid 'satisfied' field in MiseInstallSatisfied result: expected boolean. Error: {e}"
-                    ))
-                })?;
-                let Some(satisfied) = satisfied else {
-                    return Err(LuaError::RuntimeError(
-                        "MiseInstallSatisfied result is missing the 'satisfied' field".to_string(),
-                    ));
+                // Read raw values: mlua's conversions would treat any non-nil
+                // `satisfied` as true and coerce a numeric `reason` to a string.
+                let satisfied = match table.get::<Value>("satisfied")? {
+                    Value::Boolean(satisfied) => satisfied,
+                    Value::Nil => {
+                        return Err(LuaError::RuntimeError(
+                            "MiseInstallSatisfied result is missing the 'satisfied' field"
+                                .to_string(),
+                        ));
+                    }
+                    other => {
+                        return Err(LuaError::RuntimeError(format!(
+                            "Invalid 'satisfied' field in MiseInstallSatisfied result: expected boolean, got {}",
+                            other.type_name()
+                        )));
+                    }
                 };
-                let reason = table.get::<Option<String>>("reason").map_err(|e| {
-                    LuaError::RuntimeError(format!(
-                        "Invalid 'reason' field in MiseInstallSatisfied result: expected string. Error: {e}"
-                    ))
-                })?;
+                let reason = match table.get::<Value>("reason")? {
+                    Value::Nil => None,
+                    Value::String(reason) => Some(reason.to_str()?.to_string()),
+                    other => {
+                        return Err(LuaError::RuntimeError(format!(
+                            "Invalid 'reason' field in MiseInstallSatisfied result: expected string, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
                 Ok(Self { satisfied, reason })
             }
             _ => Err(LuaError::RuntimeError(
@@ -113,6 +125,8 @@ mod tests {
             }
         );
         assert!(parse("return {}").is_err());
+        assert!(parse(r#"return { satisfied = "false" }"#).is_err());
+        assert!(parse("return { satisfied = false, reason = 42 }").is_err());
         assert!(parse(r#"return "yes""#).is_err());
     }
 }
