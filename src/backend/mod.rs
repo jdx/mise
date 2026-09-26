@@ -5110,6 +5110,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_resolves_dates_the_listing_left_out() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = partially_dated_backend("test-lazy-dates")
             .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
@@ -5132,6 +5133,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_resolves_dates_for_a_prefix_request() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-cutoff-prefix-path")
             .with_stable_result(None)
@@ -5166,6 +5168,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_reads_each_release_date_once() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = partially_dated_backend("test-lazy-dates-memo")
             .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
@@ -5188,6 +5191,7 @@ mod latest_version_tests {
 
     #[test]
     fn remembered_release_dates_evict_oldest_first() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut dates: OnDemandReleaseDates = (0..5)
             .map(|i| {
                 (
@@ -5208,6 +5212,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_retries_a_version_it_could_not_date() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // No date for 3.0.0: offline, an unreachable source and unparseable
         // metadata all look like this. Holding onto that answer would leave the
@@ -5230,6 +5235,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // An unreachable proxy or VCS host must not turn into a resolution
         // error for a request that resolved before the cutoff was checkable.
@@ -5251,6 +5257,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_keeps_versions_a_backend_cannot_date() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // No lazy dates: the default `fetch_version_created_at` returns None,
         // which has to leave the "undated versions are eligible" rule alone.
@@ -5269,6 +5276,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_does_not_redate_versions_the_listing_dated() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-already-dated").with_stable_result(None);
         let before = parse_into_timestamp("2025-06-01").unwrap();
@@ -5288,6 +5296,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_explicit_latest_uses_latest_stable_version() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-stable");
 
@@ -5316,6 +5325,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_semver_order_preserves_latest_fast_path() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-order[version_order=semver]")
             .with_remote_versions(vec![
@@ -5350,6 +5360,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_semver_order_applies_to_latest_fallback() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-fallback")
             .with_stable_result(None)
@@ -5460,6 +5471,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_uses_stable_when_not_newer() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-latest-before-date-allowed").with_stable_result(Some("1.0.0"));
@@ -5485,6 +5497,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_falls_back_when_stable_is_newer() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-latest-before-date-newer").with_stable_result(Some("2.0.0"));
@@ -5510,6 +5523,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_falls_back_when_stable_metadata_is_missing() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-missing-metadata")
             .with_stable_result(Some("3.0.0"));
@@ -5535,6 +5549,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_uses_stable_info_when_version_list_is_stale() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-stale-metadata")
             .with_stable_info(VersionInfo {
@@ -5564,6 +5579,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_unfiltered_latest_uses_stable_info_when_version_list_is_stale() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-unfiltered-latest-stale-metadata").with_stable_info(
             VersionInfo {
@@ -5594,6 +5610,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_permissive_cutoff_keeps_canonical_latest_missing_from_metadata() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-permissive")
             .with_stable_result(Some("3.0.0"));
@@ -5619,6 +5636,7 @@ mod latest_version_tests {
 
     #[test]
     fn test_latest_stable_candidate_rejects_unverified_cutoff_metadata() {
+        let _settings = crate::test::SettingsGuard::lock();
         let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
 
         assert!(!latest_stable_candidate_allowed_by_before_date(
@@ -5712,6 +5730,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_remote_version_cache_contexts_are_isolated() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-context-cache");
         let first = backend.get_remote_version_cache_with_context(Some("first"));
@@ -5743,6 +5762,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn registry_min_version_partitions_persisted_backend_lists() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let make_backend = |full: &str, version: &str| {
             let mut backend = LatestBackend::new("test-registry-min-version-cache")
@@ -5776,6 +5796,7 @@ mod latest_version_tests {
     /// entry, even though inline options are stripped from the cache directory.
     #[tokio::test]
     async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let version = |v: &str| VersionInfo {
             version: v.to_string(),
@@ -5819,6 +5840,7 @@ mod latest_version_tests {
     /// context here would take it away from every default installation of the tool.
     #[tokio::test]
     async fn test_declared_listing_keys_without_override_use_the_default_cache_entry() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-listing-opts-shared")
             .with_listing_keys(&["api_url", "version_prefix"])
@@ -5933,6 +5955,7 @@ mod latest_version_tests {
 
     #[test]
     fn test_latest_installed_version_ignores_real_latest_dir() {
+        let _settings = crate::test::SettingsGuard::lock();
         let temp_dir = tempfile::tempdir().unwrap();
         let mut ba = BackendArg::new_raw(
             "latest-real-dir".into(),
@@ -5967,6 +5990,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_inline_install_before_wins_over_config_entry() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // The test fixture has a `tiny` config entry without install_before.
         // Inline backend opts must still win when a config entry exists.
