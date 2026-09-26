@@ -265,11 +265,12 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
     for req in requests {
         if dry_run {
             if let Some(write_args) = req.value.write_args().filter(|_| req.path.is_none()) {
+                let (domain, host) = command_target(&req.domain, req.host)?;
                 let mut args = vec![];
-                if req.host == HostScope::Current {
+                if host == HostScope::Current {
                     args.push("-currentHost".to_string());
                 }
-                args.extend(["write".to_string(), req.domain.clone(), req.key.clone()]);
+                args.extend(["write".to_string(), domain, req.key.clone()]);
                 args.extend(write_args);
                 miseprintln!("defaults {}", shell_words::join(&args));
             } else {
@@ -483,6 +484,17 @@ fn read(_domain: &str, _key: &str, _host: HostScope) -> Result<Option<plist::Val
     Ok(None)
 }
 
+/// The domain and host scope a `defaults` command needs to reach the plist `apply` writes.
+#[cfg(target_os = "macos")]
+fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+    macos::command_target(domain, host)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+    Ok((domain.to_string(), host))
+}
+
 #[cfg(target_os = "macos")]
 fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
     macos::write_all(requests)
@@ -493,8 +505,54 @@ fn write_all(_requests: &[DefaultsRequest]) -> Result<()> {
     Ok(())
 }
 
+/// The plist (without `.plist`) a sandboxed app reads a domain from, or None when the
+/// domain has no container. Sandboxed apps keep preferences in their container, which
+/// Core Foundation resolves only for the app itself, so other processes must address
+/// the plist by path, as `defaults` does.
+#[cfg(any(target_os = "macos", test))]
+fn container_plist(
+    home: &std::path::Path,
+    domain: &str,
+    host: HostScope,
+) -> Result<Option<std::path::PathBuf>> {
+    if domain.is_empty() || domain.starts_with('.') || domain.contains('/') {
+        return Ok(None);
+    }
+    // Check the container itself, not its plist: an app that has never saved a
+    // preference has no plist yet, and privacy protection may hide the container's
+    // contents. Writing a protected container then fails instead of falling back to a
+    // plist the app never reads.
+    let container = home.join("Library/Containers").join(domain);
+    match std::fs::metadata(&container) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(None),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(err) => {
+            return Err(eyre::eyre!(
+                "cannot inspect the sandbox container {}: {err}",
+                container.display()
+            ));
+        }
+    }
+    let prefs = container.join("Data/Library/Preferences");
+    // Core Foundation appends the host UUID to a path in a ByHost folder, as it does
+    // for current-host preferences under ~/Library/Preferences.
+    Ok(Some(match host {
+        HostScope::Any => prefs.join(domain),
+        HostScope::Current => prefs.join("ByHost").join(domain),
+    }))
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
+    use super::*;
     use core_foundation::base::TCFType;
     use core_foundation::data::CFData;
     use core_foundation::propertylist::{CFPropertyList, create_data, create_with_data};
@@ -507,9 +565,6 @@ mod macos {
     use core_foundation_sys::propertylist::{
         kCFPropertyListImmutable, kCFPropertyListXMLFormat_v1_0,
     };
-    use indexmap::IndexSet;
-
-    use super::*;
 
     fn host_id(host: HostScope) -> core_foundation_sys::string::CFStringRef {
         unsafe {
@@ -520,27 +575,96 @@ mod macos {
         }
     }
 
-    fn application_id(
-        domain: &str,
-    ) -> (Option<CFString>, core_foundation_sys::string::CFStringRef) {
+    /// Where Core Foundation should read and write a domain's preferences.
+    struct Location {
+        /// Owns the string `application` points into.
+        _application: Option<CFString>,
+        application: core_foundation_sys::string::CFStringRef,
+        host: core_foundation_sys::string::CFStringRef,
+        /// The sandbox container plist (without `.plist`), if the domain has one.
+        container: Option<std::path::PathBuf>,
+    }
+
+    fn locate(domain: &str, host: HostScope) -> Result<Location> {
         if canonical_domain(domain) == "NSGlobalDomain" {
-            (None, unsafe { kCFPreferencesAnyApplication })
-        } else {
-            let domain = CFString::new(domain);
-            let reference = domain.as_concrete_TypeRef();
-            (Some(domain), reference)
+            return Ok(Location {
+                _application: None,
+                application: unsafe { kCFPreferencesAnyApplication },
+                host: host_id(host),
+                container: None,
+            });
         }
+        let container = container_plist(&preferences_home(), domain, host)?;
+        // A container path already selects the ByHost folder for current-host entries.
+        let (application, host) = match &container {
+            Some(path) => (
+                CFString::new(&path.to_string_lossy()),
+                host_id(HostScope::Any),
+            ),
+            None => (CFString::new(domain), host_id(host)),
+        };
+        Ok(Location {
+            application: application.as_concrete_TypeRef(),
+            _application: Some(application),
+            host,
+            container,
+        })
+    }
+
+    /// `defaults` passes a path domain to Core Foundation as `apply` does, so a container
+    /// entry is printed as its plist path in the any-host scope.
+    pub(super) fn command_target(domain: &str, host: HostScope) -> Result<(String, HostScope)> {
+        Ok(match locate(domain, host)?.container {
+            Some(path) => (path.to_string_lossy().into_owned(), HostScope::Any),
+            None => (domain.to_string(), host),
+        })
+    }
+
+    /// The home folder Core Foundation keeps preferences under. Like Core Foundation, this
+    /// ignores `$HOME` and uses `CFFIXED_USER_HOME` or the account's home folder.
+    pub(super) fn preferences_home() -> std::path::PathBuf {
+        if let Some(home) = std::env::var_os("CFFIXED_USER_HOME").filter(|home| !home.is_empty()) {
+            return home.into();
+        }
+        nix::unistd::User::from_uid(nix::unistd::getuid())
+            .ok()
+            .flatten()
+            .map(|user| user.dir)
+            .unwrap_or_else(|| crate::dirs::HOME.to_path_buf())
+    }
+
+    /// The hardware UUID that names this Mac's ByHost preference files.
+    #[cfg(test)]
+    pub(super) fn host_uuid() -> Result<String> {
+        let mut id = [0u8; 16];
+        let wait = nix::libc::timespec {
+            tv_sec: 5,
+            tv_nsec: 0,
+        };
+        if unsafe { nix::libc::gethostuuid(id.as_mut_ptr(), &wait) } != 0 {
+            return Err(eyre::eyre!(
+                "failed to read the host UUID: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(uuid::Uuid::from_bytes(id)
+            .hyphenated()
+            .encode_upper(&mut uuid::Uuid::encode_buffer())
+            .to_string())
     }
 
     pub(super) fn read(domain: &str, key: &str, host: HostScope) -> Result<Option<plist::Value>> {
+        read_at(&locate(domain, host)?, key)
+    }
+
+    fn read_at(location: &Location, key: &str) -> Result<Option<plist::Value>> {
         let key = CFString::new(key);
-        let (_application, application_id) = application_id(domain);
         let value = unsafe {
             CFPreferencesCopyValue(
                 key.as_concrete_TypeRef(),
-                application_id,
+                location.application,
                 kCFPreferencesCurrentUser,
-                host_id(host),
+                location.host,
             )
         };
         if value.is_null() {
@@ -552,7 +676,7 @@ mod macos {
         Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
 
-    fn set(domain: &str, key: &str, value: &plist::Value, host: HostScope) -> Result<()> {
+    fn set(location: &Location, domain: &str, key: &str, value: &plist::Value) -> Result<()> {
         let mut xml = Vec::new();
         plist::to_writer_xml(&mut xml, value)?;
         let data = CFData::from_buffer(&xml);
@@ -560,58 +684,98 @@ mod macos {
             .map_err(|err| eyre::eyre!("failed to parse macOS preference: {err}"))?;
         let value = unsafe { CFPropertyList::wrap_under_create_rule(value) };
         let key = CFString::new(key);
-        let (_application, application_id) = application_id(domain);
+        if let Some(parent) = location.container.as_deref().and_then(|path| path.parent()) {
+            // A container that has never saved a preference, or a ByHost one, may not
+            // have its folder yet.
+            std::fs::create_dir_all(parent).map_err(|err| container_error(domain, err))?;
+        }
         unsafe {
             CFPreferencesSetValue(
                 key.as_concrete_TypeRef(),
                 value.as_CFTypeRef(),
-                application_id,
+                location.application,
                 kCFPreferencesCurrentUser,
-                host_id(host),
+                location.host,
             );
         }
         Ok(())
     }
 
-    fn synchronize(domain: &str, host: HostScope) -> Result<()> {
-        let (_application, application_id) = application_id(domain);
+    fn synchronize(location: &Location, domain: &str) -> Result<()> {
         unsafe {
-            if CFPreferencesSynchronize(application_id, kCFPreferencesCurrentUser, host_id(host))
-                == 0
+            if CFPreferencesSynchronize(
+                location.application,
+                kCFPreferencesCurrentUser,
+                location.host,
+            ) == 0
             {
+                if location.container.is_some() {
+                    eyre::bail!(
+                        "failed to synchronize macOS preference domain {domain}; writing a sandboxed app's container may require Full Disk Access for your terminal"
+                    );
+                }
                 eyre::bail!("failed to synchronize macOS preference domain {domain}");
             }
         }
         Ok(())
     }
 
-    pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
-        let mut domains = IndexSet::new();
-        let writes = prepare_writes(requests, read)?;
-        for ((domain, key, host), value) in &writes {
-            set(domain, key, value, *host)?;
-            domains.insert((domain.as_str(), *host));
+    fn container_error(domain: &str, err: std::io::Error) -> eyre::Report {
+        if err.kind() == std::io::ErrorKind::PermissionDenied {
+            eyre::eyre!(
+                "cannot write the sandbox container for {domain}: {err}; grant your terminal Full Disk Access in System Settings > Privacy & Security"
+            )
+        } else {
+            eyre::eyre!("cannot write the sandbox container for {domain}: {err}")
         }
-        for (domain, host) in domains {
-            synchronize(domain, host)?;
+    }
+
+    pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
+        // Resolve each domain once, so an app creating its container during apply
+        // cannot split a read, write, and synchronize across two plists.
+        let mut locations = IndexMap::new();
+        let writes = prepare_writes(requests, |domain, key, host| {
+            read_at(located(&mut locations, domain, host)?, key)
+        })?;
+        for ((domain, key, host), value) in &writes {
+            set(located(&mut locations, domain, *host)?, domain, key, value)?;
+        }
+        for ((domain, _), location) in &locations {
+            synchronize(location, domain)?;
         }
         Ok(())
+    }
+
+    fn located<'a>(
+        locations: &'a mut IndexMap<(String, HostScope), Location>,
+        domain: &str,
+        host: HostScope,
+    ) -> Result<&'a Location> {
+        let key = (domain.to_string(), host);
+        if !locations.contains_key(&key) {
+            let location = locate(domain, host)?;
+            locations.insert(key.clone(), location);
+        }
+        Ok(&locations[&key])
     }
 
     #[cfg(test)]
     pub(super) fn remove(domain: &str, key: &str, host: HostScope) -> Result<()> {
         let key = CFString::new(key);
-        let (_application, application_id) = application_id(domain);
+        let location = locate(domain, host)?;
         unsafe {
             CFPreferencesSetValue(
                 key.as_concrete_TypeRef(),
                 std::ptr::null(),
-                application_id,
+                location.application,
                 kCFPreferencesCurrentUser,
-                host_id(host),
+                location.host,
             );
-            if CFPreferencesSynchronize(application_id, kCFPreferencesCurrentUser, host_id(host))
-                == 0
+            if CFPreferencesSynchronize(
+                location.application,
+                kCFPreferencesCurrentUser,
+                location.host,
+            ) == 0
             {
                 eyre::bail!("failed to synchronize macOS preference domain {domain}");
             }
@@ -1092,5 +1256,176 @@ mod tests {
 
         assert_eq!(current.unwrap(), Some(value.to_plist()));
         cleanup.unwrap();
+    }
+
+    #[test]
+    fn test_container_plist_uses_existing_container() {
+        let home = tempfile::tempdir().unwrap();
+        let domain = "com.example.Sandboxed";
+        let container = |host| container_plist(home.path(), domain, host).unwrap();
+        assert_eq!(container(HostScope::Any), None);
+        assert_eq!(container(HostScope::Current), None);
+
+        // A launched app has a container before it has ever saved a preference.
+        let root = home.path().join("Library/Containers").join(domain);
+        std::fs::create_dir_all(&root).unwrap();
+        let prefs = root.join("Data/Library/Preferences");
+        assert_eq!(container(HostScope::Any), Some(prefs.join(domain)));
+        assert_eq!(
+            container(HostScope::Current),
+            Some(prefs.join("ByHost").join(domain))
+        );
+
+        for domain in ["/tmp/elsewhere", "..", ""] {
+            assert_eq!(
+                container_plist(home.path(), domain, HostScope::Any).unwrap(),
+                None
+            );
+        }
+    }
+
+    /// cfprefsd writes plists shortly after synchronizing, so poll for the file until the
+    /// deadline. Callers share one deadline, which stays within the three seconds these
+    /// tests get in `.config/nextest.toml`.
+    #[cfg(target_os = "macos")]
+    fn wait_for_plist(
+        path: &std::path::Path,
+        deadline: std::time::Instant,
+    ) -> Option<plist::Value> {
+        loop {
+            if let Ok(value) = plist::Value::from_file(path) {
+                return Some(value);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn plist_deadline() -> std::time::Instant {
+        std::time::Instant::now() + std::time::Duration::from_secs(2)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn list_files(dir: &std::path::Path) -> Vec<String> {
+        walkdir::WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path().display().to_string())
+            .collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_sandboxed_round_trip_writes_container() {
+        let domain = format!("com.mise.sandbox-test.{}", uuid::Uuid::now_v7());
+        let home = macos::preferences_home();
+        let container = home.join("Library/Containers").join(&domain);
+        let prefs = container.join("Data/Library/Preferences");
+        let request = |host| DefaultsRequest {
+            dock_apps: false,
+            host,
+            path: None,
+            domain: domain.clone(),
+            key: "Sandboxed".into(),
+            value: DefaultsValue::Bool(true),
+        };
+        let requests = [request(HostScope::Any), request(HostScope::Current)];
+        let host_uuid = macos::host_uuid().unwrap();
+        let written = [
+            prefs.join(format!("{domain}.plist")),
+            prefs.join(format!("ByHost/{domain}.{host_uuid}.plist")),
+        ];
+        let unsandboxed = [
+            home.join(format!("Library/Preferences/{domain}.plist")),
+            home.join(format!(
+                "Library/Preferences/ByHost/{domain}.{host_uuid}.plist"
+            )),
+        ];
+        // Only the container exists, as for an app that has never saved a preference.
+        std::fs::create_dir_all(&container).unwrap();
+
+        let result = (|| -> Result<()> {
+            // A dry run prints the same plist paths apply writes.
+            assert_eq!(
+                command_target(&domain, HostScope::Current)?,
+                (
+                    prefs.join("ByHost").join(&domain).display().to_string(),
+                    HostScope::Any
+                )
+            );
+            write_all(&requests)?;
+            for status in status_sync(&requests)? {
+                assert_eq!(status.state, DefaultsState::Set);
+            }
+            let deadline = plist_deadline();
+            for plist in &written {
+                let value = wait_for_plist(plist, deadline).unwrap_or_else(|| {
+                    let elsewhere: Vec<_> = list_files(&home.join("Library/Preferences"))
+                        .into_iter()
+                        .filter(|path| path.contains(&domain))
+                        .collect();
+                    panic!(
+                        "{} was not written; container holds {:#?}; Library/Preferences holds {elsewhere:#?}",
+                        plist.display(),
+                        list_files(&container)
+                    )
+                });
+                assert_eq!(
+                    value.as_dictionary().unwrap().get("Sandboxed"),
+                    Some(&plist::Value::Boolean(true)),
+                    "{}",
+                    plist.display()
+                );
+            }
+            for plist in &unsandboxed {
+                assert!(!plist.exists(), "{}", plist.display());
+            }
+            Ok(())
+        })();
+        for host in [HostScope::Any, HostScope::Current] {
+            macos::remove(&domain, "Sandboxed", host).unwrap();
+        }
+        std::fs::remove_dir_all(&container).unwrap();
+        for plist in &unsandboxed {
+            let _ = std::fs::remove_file(plist);
+        }
+        result.unwrap();
+    }
+
+    /// The sandbox round trip expects ByHost files named with this UUID, so it must match
+    /// the one Core Foundation names its own ByHost files with.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_host_uuid_names_core_foundation_byhost_files() {
+        let domain = format!("com.mise.byhost-test.{}", uuid::Uuid::now_v7());
+        let request = DefaultsRequest {
+            dock_apps: false,
+            host: HostScope::Current,
+            path: None,
+            domain: domain.clone(),
+            key: "ByHost".into(),
+            value: DefaultsValue::Bool(true),
+        };
+        let byhost = macos::preferences_home().join("Library/Preferences/ByHost");
+        let expected = byhost.join(format!("{domain}.{}.plist", macos::host_uuid().unwrap()));
+        let result = write_all(std::slice::from_ref(&request));
+        let found = wait_for_plist(&expected, plist_deadline()).is_some();
+        let written: Vec<_> = list_files(&byhost)
+            .into_iter()
+            .filter(|path| path.contains(&domain))
+            .collect();
+        macos::remove(&domain, "ByHost", HostScope::Current).unwrap();
+        for path in &written {
+            let _ = std::fs::remove_file(path);
+        }
+        result.unwrap();
+        assert!(
+            found,
+            "expected {}, Core Foundation wrote {written:#?}",
+            expected.display()
+        );
     }
 }
