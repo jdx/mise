@@ -1266,14 +1266,15 @@ mod tests {
         }
     }
 
-    /// cfprefsd writes plists shortly after synchronizing, so poll for the file.
+    /// cfprefsd writes plists shortly after synchronizing, so poll for the file, within
+    /// nextest's one-second limit.
     #[cfg(target_os = "macos")]
     fn wait_for_plist(path: &std::path::Path) -> Option<plist::Value> {
-        for _ in 0..50 {
+        for _ in 0..20 {
             if let Ok(value) = plist::Value::from_file(path) {
                 return Some(value);
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
         None
     }
@@ -1324,8 +1325,12 @@ mod tests {
             }
             for plist in &written {
                 let value = wait_for_plist(plist).unwrap_or_else(|| {
+                    let elsewhere: Vec<_> = list_files(&home.join("Library/Preferences"))
+                        .into_iter()
+                        .filter(|path| path.contains(&domain))
+                        .collect();
                     panic!(
-                        "{} was not written; container holds {:#?}",
+                        "{} was not written; container holds {:#?}; Library/Preferences holds {elsewhere:#?}",
                         plist.display(),
                         list_files(&container)
                     )
