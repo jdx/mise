@@ -502,7 +502,6 @@ fn container_plist(
     home: &std::path::Path,
     domain: &str,
     host: HostScope,
-    host_uuid: impl FnOnce() -> Result<String>,
 ) -> Result<Option<std::path::PathBuf>> {
     if domain.is_empty() || domain.starts_with('.') || domain.contains('/') {
         return Ok(None);
@@ -531,11 +530,11 @@ fn container_plist(
         }
     }
     let prefs = container.join("Data/Library/Preferences");
+    // Core Foundation appends the host UUID to a path in a ByHost folder, as it does
+    // for current-host preferences under ~/Library/Preferences.
     Ok(Some(match host {
         HostScope::Any => prefs.join(domain),
-        HostScope::Current => prefs
-            .join("ByHost")
-            .join(format!("{domain}.{}", host_uuid()?)),
+        HostScope::Current => prefs.join("ByHost").join(domain),
     }))
 }
 
@@ -583,10 +582,8 @@ mod macos {
                 container: None,
             });
         }
-        let container = container_plist(&preferences_home(), domain, host, host_uuid)?;
-        // A container path names the exact plist, including its ByHost file, so it is
-        // read in the any-host scope instead of leaving Core Foundation to derive a
-        // host-specific name from a path.
+        let container = container_plist(&preferences_home(), domain, host)?;
+        // A container path already selects the ByHost folder for current-host entries.
         let (application, host) = match &container {
             Some(path) => (
                 CFString::new(&path.to_string_lossy()),
@@ -616,6 +613,7 @@ mod macos {
     }
 
     /// The hardware UUID that names this Mac's ByHost preference files.
+    #[cfg(test)]
     pub(super) fn host_uuid() -> Result<String> {
         let mut id = [0u8; 16];
         let wait = nix::libc::timespec {
@@ -1243,8 +1241,7 @@ mod tests {
     fn test_container_plist_uses_existing_container() {
         let home = tempfile::tempdir().unwrap();
         let domain = "com.example.Sandboxed";
-        let uuid = || Ok("HOST-UUID".to_string());
-        let container = |host| container_plist(home.path(), domain, host, uuid).unwrap();
+        let container = |host| container_plist(home.path(), domain, host).unwrap();
         assert_eq!(container(HostScope::Any), None);
         assert_eq!(container(HostScope::Current), None);
 
@@ -1255,12 +1252,12 @@ mod tests {
         assert_eq!(container(HostScope::Any), Some(prefs.join(domain)));
         assert_eq!(
             container(HostScope::Current),
-            Some(prefs.join("ByHost").join(format!("{domain}.HOST-UUID")))
+            Some(prefs.join("ByHost").join(domain))
         );
 
         for domain in ["/tmp/elsewhere", "..", ""] {
             assert_eq!(
-                container_plist(home.path(), domain, HostScope::Any, uuid).unwrap(),
+                container_plist(home.path(), domain, HostScope::Any).unwrap(),
                 None
             );
         }
@@ -1357,8 +1354,8 @@ mod tests {
         result.unwrap();
     }
 
-    /// Container ByHost paths are built by hand, so the UUID must match the one Core
-    /// Foundation names its own ByHost files with.
+    /// The sandbox round trip expects ByHost files named with this UUID, so it must match
+    /// the one Core Foundation names its own ByHost files with.
     #[cfg(target_os = "macos")]
     #[test]
     fn test_host_uuid_names_core_foundation_byhost_files() {
