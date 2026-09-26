@@ -13,6 +13,12 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 const STATE_SCHEMA_VERSION: u8 = 1;
 
+/// How long a due receipt waits before it is evaluated again after pruning
+/// kept it. Deciding whether a version is still in use loads every tracked
+/// config and scans installed versions, which is far too slow to repeat on
+/// every command while a tracked config keeps referencing the version.
+const RECHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
 #[derive(Debug, Deserialize, Serialize)]
 struct PurgatoryState {
     schema_version: u8,
@@ -31,6 +37,33 @@ impl PurgatoryState {
         Self {
             schema_version: STATE_SCHEMA_VERSION,
             entries: BTreeMap::new(),
+        }
+    }
+
+    fn has_due(&self, now: u64) -> bool {
+        self.entries.values().any(|entry| entry.remove_after <= now)
+    }
+
+    /// Applies the outcome of a pruning pass. Entries that changed since the
+    /// pass read them (for example, a newer upgrade rescheduled the same path)
+    /// are left alone so the newer receipt wins.
+    fn apply_prune_outcome(
+        &mut self,
+        removed: Vec<(String, PurgatoryEntry)>,
+        kept: Vec<(String, PurgatoryEntry)>,
+        recheck_after: u64,
+    ) {
+        for (key, entry) in removed {
+            if self.entries.get(&key) == Some(&entry) {
+                self.entries.remove(&key);
+            }
+        }
+        for (key, entry) in kept {
+            if let Some(current) = self.entries.get_mut(&key)
+                && *current == entry
+            {
+                current.remove_after = recheck_after;
+            }
         }
     }
 }
@@ -124,6 +157,13 @@ pub(crate) async fn auto_prune() -> Result<()> {
     if !state_path().exists() {
         return Ok(());
     }
+    // This runs on nearly every command, so check for due receipts without
+    // taking either lock. Saves are atomic renames, so an unlocked read sees
+    // a complete state. A failed read falls through to the locked path.
+    let now = now_epoch_seconds()?;
+    if load_state().is_ok_and(|state| !state.has_due(now)) {
+        return Ok(());
+    }
     // Config resolution below may execute trusted templates. If one of those
     // templates invokes mise, the child reaches auto-prune before the parent
     // has removed the due receipt. Serialize the whole cleanup separately
@@ -135,7 +175,6 @@ pub(crate) async fn auto_prune() -> Result<()> {
         debug!("skipping deferred pruning because another invocation is handling it");
         return Ok(());
     };
-    let now = now_epoch_seconds()?;
     let due = {
         let _lock = crate::lock_file::get(state_path(), false)?;
         let state = load_state()?;
@@ -169,6 +208,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
     let mut install_state_changed = false;
     let mut entries_awaiting_reconciliation = vec![];
     let mut entries_to_remove = vec![];
+    let mut entries_to_recheck = vec![];
     for (key, entry) in due {
         let install_path = &entry.install_path;
         let display = &entry.display;
@@ -220,11 +260,13 @@ pub(crate) async fn auto_prune() -> Result<()> {
             // version. It may become prunable again after that reference goes
             // away, without another upgrade to create a fresh receipt.
             debug!("keeping deferred {display} because it is still in use");
+            entries_to_recheck.push((key, entry));
         } else {
             warn!(
                 "keeping unrecognized tool purgatory entry {}",
                 display_path(install_path)
             );
+            entries_to_recheck.push((key, entry));
         }
     }
     mpr.finish_progress();
@@ -255,14 +297,11 @@ pub(crate) async fn auto_prune() -> Result<()> {
             }
         }
     }
-    if !entries_to_remove.is_empty() {
+    if !entries_to_remove.is_empty() || !entries_to_recheck.is_empty() {
+        let recheck_after = now_epoch_seconds()?.saturating_add(RECHECK_INTERVAL.as_secs());
         let _lock = crate::lock_file::get(state_path(), false)?;
         let mut state = load_state()?;
-        for (key, entry) in entries_to_remove {
-            if state.entries.get(&key) == Some(&entry) {
-                state.entries.remove(&key);
-            }
-        }
+        state.apply_prune_outcome(entries_to_remove, entries_to_recheck, recheck_after);
         save_state(&state)?;
     }
     Ok(())
@@ -276,5 +315,60 @@ mod tests {
     fn entry_keys_are_stable_and_path_specific() {
         assert_eq!(entry_key(Path::new("/a")), entry_key(Path::new("/a")));
         assert_ne!(entry_key(Path::new("/a")), entry_key(Path::new("/b")));
+    }
+
+    fn entry(path: &str, remove_after: u64) -> (String, PurgatoryEntry) {
+        (
+            entry_key(Path::new(path)),
+            PurgatoryEntry {
+                install_path: PathBuf::from(path),
+                display: path.to_string(),
+                remove_after,
+            },
+        )
+    }
+
+    #[test]
+    fn kept_receipts_back_off_until_the_recheck_interval() {
+        let (removed_key, removed) = entry("/installs/a/1", 100);
+        let (kept_key, kept) = entry("/installs/b/1", 100);
+        let (future_key, future) = entry("/installs/c/1", u64::MAX);
+        let mut state = PurgatoryState::empty();
+        for (key, entry) in [
+            (removed_key.clone(), removed.clone()),
+            (kept_key.clone(), kept.clone()),
+            (future_key.clone(), future.clone()),
+        ] {
+            state.entries.insert(key, entry);
+        }
+        assert!(state.has_due(100));
+
+        let recheck_after = 100 + RECHECK_INTERVAL.as_secs();
+        state.apply_prune_outcome(
+            vec![(removed_key.clone(), removed)],
+            vec![(kept_key.clone(), kept)],
+            recheck_after,
+        );
+
+        assert!(!state.entries.contains_key(&removed_key));
+        // The kept receipt stays, so the version becomes prunable again once
+        // nothing references it, but it is not due again until the interval
+        // passes. Receipts that were not evaluated are untouched.
+        assert_eq!(state.entries[&kept_key].remove_after, recheck_after);
+        assert_eq!(state.entries[&future_key], future);
+        assert!(!state.has_due(recheck_after - 1));
+        assert!(state.has_due(recheck_after));
+    }
+
+    #[test]
+    fn prune_outcome_skips_receipts_rescheduled_during_the_pass() {
+        let (key, stale) = entry("/installs/a/1", 100);
+        let (_, rescheduled) = entry("/installs/a/1", 200);
+        let mut state = PurgatoryState::empty();
+        state.entries.insert(key.clone(), rescheduled.clone());
+        state.apply_prune_outcome(vec![], vec![(key.clone(), stale.clone())], 9_999);
+        assert_eq!(state.entries[&key], rescheduled);
+        state.apply_prune_outcome(vec![(key.clone(), stale)], vec![], 9_999);
+        assert_eq!(state.entries[&key], rescheduled);
     }
 }
