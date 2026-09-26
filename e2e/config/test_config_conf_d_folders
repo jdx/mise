@@ -77,6 +77,21 @@ assert "cd shadow && mise run --skip-tools shadowed" "folder"
 echo '[env]' >shadow/.mise/conf.d/00-file.toml
 assert "cd shadow && mise run --skip-tools shadowed" "folder"
 
+# a metadata-only block in a folder still overlays a script from the
+# enclosing root's default task directories
+cat >shadow/.mise/tasks/described <<'EOF'
+#!/usr/bin/env bash
+echo script
+EOF
+chmod +x shadow/.mise/tasks/described
+cat >>shadow/.mise/conf.d/folder/mise.toml <<'EOF'
+
+[tasks.described]
+description = "from the folder"
+EOF
+assert "cd shadow && mise run --skip-tools described" "script"
+assert_contains "cd shadow && mise tasks ls" "from the folder"
+
 # task_config cascaded from a parent root still reaches a folder's tasks,
 # including its excludes
 mkdir -p cascade/child/.mise/conf.d/frag/tasks

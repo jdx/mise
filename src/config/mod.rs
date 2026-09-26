@@ -6124,12 +6124,6 @@ impl RenderedTaskCache {
     }
 }
 
-impl TaskSources {
-    fn into_tasks(self) -> Vec<Task> {
-        merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
-    }
-}
-
 fn sort_and_name_tasks(tasks: Vec<Task>) -> Vec<Task> {
     let mut tasks = tasks
         .into_iter()
@@ -6186,12 +6180,15 @@ struct TaskRootConfigs<'a> {
 /// `task_config` applies only to its own tasks, and its `includes` neither
 /// replace nor are replaced by the enclosing root's. Defaults and `excludes`
 /// cascaded from ancestor roots still reach it, but not their `includes`,
-/// which the enclosing root already loads. When roots define the same task name,
-/// the task from the higher-precedence config wins, so a folder beats the
-/// single-file fragments beside it and loses to the root's own config. A task
-/// from a default task directory loses to any a config defines, as it would
-/// within one root; between two, the enclosing root's wins, then folders in
-/// config order.
+/// which the enclosing root already loads.
+///
+/// Only where tasks run and which `task_config` applies differ by root. Every
+/// root's file and inline tasks are then merged as if they came from one root,
+/// by the precedence of their configs among all of `configs`, so a metadata
+/// block in one root still overlays a same-named task from another. A folder
+/// beats the single-file fragments beside it and loses to the root's own
+/// config. When two roots' default task directories hold the same file task,
+/// the enclosing root's wins, then folders in config order.
 async fn load_tasks_from_configs_and_folders(
     config: &Arc<Config>,
     dir: &Path,
@@ -6219,7 +6216,11 @@ async fn load_tasks_from_configs_and_folders(
         tc
     });
 
-    let mut tasks: IndexMap<String, (usize, Task)> = IndexMap::new();
+    // The precedence of a file task from a root's default task directories,
+    // which no config selected, below every config.
+    let default_precedence = roots.values().map(|r| r.configs.len()).sum::<usize>();
+    let mut file_tasks = vec![];
+    let mut config_tasks = vec![];
     for (
         i,
         (
@@ -6236,7 +6237,7 @@ async fn load_tasks_from_configs_and_folders(
         } else {
             folder_cascaded_task_config.as_ref()
         };
-        let root_tasks = load_task_sources_from_configs(
+        let sources = load_task_sources_from_configs(
             config,
             &root,
             configs,
@@ -6245,27 +6246,39 @@ async fn load_tasks_from_configs_and_folders(
             root_cascaded_task_config,
             rendered_file_tasks.as_deref_mut(),
         )
-        .await?
-        .into_tasks();
-        for task in root_tasks {
-            // A task no config names, found in a root's default task
-            // directories, ranks below every task a config defines. Among
-            // those, the first root loaded keeps the name.
-            let rank = precedences
+        .await?;
+        let global_precedence = |task: &Task| {
+            precedences
                 .get(task.config_precedence)
                 .copied()
-                .unwrap_or(usize::MAX);
-            match tasks.get(&task.name) {
-                Some((existing, _)) if *existing <= rank => {}
-                _ => {
-                    tasks.insert(task.name.clone(), (rank, task));
-                }
-            }
+                .unwrap_or(default_precedence)
+        };
+        for mut task in sources.file_tasks {
+            task.config_precedence = global_precedence(&task);
+            file_tasks.push((i, task));
+        }
+        for mut task in sources.config_tasks {
+            task.config_precedence = global_precedence(&task);
+            config_tasks.push(task);
         }
     }
-    Ok(sort_and_name_tasks(
-        tasks.into_values().map(|(_, task)| task).collect(),
-    ))
+    // The merge wants file tasks in rising precedence, since the last file
+    // task with a name wins, and inline tasks highest precedence first. Roots
+    // were loaded enclosing root first, then folders highest precedence first,
+    // so equal file tasks sort in reverse load order. The sorts are stable,
+    // keeping each root's include order.
+    file_tasks.sort_by_key(|(root, task)| {
+        (
+            std::cmp::Reverse(task.config_precedence),
+            std::cmp::Reverse(*root),
+        )
+    });
+    config_tasks.sort_by_key(|task| task.config_precedence);
+    let file_tasks = file_tasks.into_iter().map(|(_, task)| task).collect();
+    Ok(sort_and_name_tasks(merge_file_and_config_tasks(
+        file_tasks,
+        config_tasks,
+    )))
 }
 
 /// Load file and inline task sources without merging them.
