@@ -1537,8 +1537,8 @@ pub(crate) fn register_loader() {
     mise_settings::set_loader(load);
 }
 
-/// Build settings from every source and cache them. Registered with
-/// [`mise_settings::set_loader`], so [`Settings::try_get`] runs this when nothing is cached.
+/// Build settings from every source. Registered with [`mise_settings::set_loader`], so
+/// [`Settings::try_get`] runs this, and caches the result, when nothing is cached.
 fn load() -> Result<Arc<Settings>> {
     time!("try_get");
 
@@ -1604,7 +1604,6 @@ fn load() -> Result<Arc<Settings>> {
     let settings = Arc::new(settings);
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
     LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
-    mise_settings::store(settings.clone());
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();
     }
