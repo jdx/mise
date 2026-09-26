@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
 # A plugin's MiseInstallSatisfied hook can report that an installed version is
-# missing components requested through tool options, so mise installs it again.
+# missing components requested through tool options. mise then reruns
+# PostInstall on the existing install instead of reinstalling it.
 
 PLUGIN_DIR="$PWD/vfox-install-satisfied"
-INSTALL_COUNT="$MISE_DATA_DIR/install-satisfied-count"
+PRE_COUNT="$MISE_DATA_DIR/install-satisfied-pre"
+POST_COUNT="$MISE_DATA_DIR/install-satisfied-post"
 
 mkdir -p "$PLUGIN_DIR/hooks"
 
@@ -25,22 +27,27 @@ function PLUGIN:Available(ctx)
 end
 LUA
 
-cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
 function PLUGIN:PreInstall(ctx)
+	local count_file = io.open([[$PRE_COUNT]], "a")
+	count_file:write("x")
+	count_file:close()
 	return { version = ctx.version }
 end
 LUA
 
 cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
 function PLUGIN:PostInstall(ctx)
-	local count_file = io.open([[$INSTALL_COUNT]], "a")
+	local count_file = io.open([[$POST_COUNT]], "a")
 	count_file:write("x")
 	count_file:close()
 
 	os.execute("mkdir -p \"" .. ctx.rootPath .. "/components\"")
 	for _, name in ipairs(ctx.options.components or {}) do
-		local component = io.open(ctx.rootPath .. "/components/" .. name, "w")
-		component:close()
+		if name ~= ctx.options.unavailable then
+			local component = io.open(ctx.rootPath .. "/components/" .. name, "w")
+			component:close()
+		end
 	end
 end
 LUA
@@ -78,28 +85,54 @@ cat >mise.toml <<EOF
 "$TOOL" = { version = "1.0.0", components = ["alpha"] }
 EOF
 mise install
-assert "cat '$INSTALL_COUNT'" "x"
+assert "cat '$PRE_COUNT'" "x"
+assert "cat '$POST_COUNT'" "x"
+INSTALL_PATH="$(mise where "$TOOL")"
+touch "$INSTALL_PATH/sentinel"
 
-# All requested components are present, so nothing is reinstalled.
+# All requested components are present, so nothing runs again.
 mise install
-assert "cat '$INSTALL_COUNT'" "x"
+assert "cat '$POST_COUNT'" "x"
 
 cat >mise.toml <<EOF
 [tools]
 "$TOOL" = { version = "1.0.0", components = ["alpha", "beta"] }
 EOF
 assert_contains "MISE_DEBUG=1 mise install --dry-run 2>&1" "missing component beta"
-assert "cat '$INSTALL_COUNT'" "x"
+assert "cat '$POST_COUNT'" "x"
 
+# PostInstall runs again on the existing install: no PreInstall, no wipe.
 mise install
-assert "cat '$INSTALL_COUNT'" "xx"
-assert "ls \"\$(mise where '$TOOL')/components\"" "alpha
+assert "cat '$PRE_COUNT'" "x"
+assert "cat '$POST_COUNT'" "xx"
+assert "ls '$INSTALL_PATH/components'" "alpha
 beta"
+assert "ls '$INSTALL_PATH/sentinel'" "$INSTALL_PATH/sentinel"
+
+# Auto-install repairs the same way.
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha", "beta", "gamma"] }
+EOF
+mise x -- true
+assert "cat '$PRE_COUNT'" "x"
+assert "cat '$POST_COUNT'" "xxx"
+assert "ls '$INSTALL_PATH/components'" "alpha
+beta
+gamma"
+
+# If PostInstall does not fix the install, mise fails and keeps it.
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = { version = "1.0.0", components = ["alpha", "delta"], unavailable = "delta" }
+EOF
+assert_fail "mise install" "still does not satisfy its tool options after PostInstall: missing component delta"
+assert "ls '$INSTALL_PATH/sentinel'" "$INSTALL_PATH/sentinel"
 
 # A failing check warns and keeps the existing install.
 cat >mise.toml <<EOF
 [tools]
-"$TOOL" = { version = "1.0.0", components = ["alpha", "gamma"], broken = true }
+"$TOOL" = { version = "1.0.0", components = ["alpha", "epsilon"], broken = true }
 EOF
 assert_contains "mise install 2>&1" "MiseInstallSatisfied hook failed, treating install as current"
-assert "cat '$INSTALL_COUNT'" "xx"
+assert "cat '$PRE_COUNT'" "x"

@@ -173,7 +173,7 @@ permissions; only change them when the actual distribution requires it.
 Some tools keep install state that depends on tool options, such as add-on components the
 plugin installs in `PostInstall`. Without this hook, mise treats a version as installed
 once its directory exists, so changing the option later has no effect until the user runs
-`mise install --force`.
+`mise install --force`, which downloads the tool again.
 
 `MiseInstallSatisfied` lets the plugin report that an installed version no longer matches
 the request. mise calls it whenever it decides whether a tool needs installing, including
@@ -194,12 +194,16 @@ function PLUGIN:MiseInstallSatisfied(ctx)
 end
 ```
 
-Return `{satisfied = false}` (or `false`) to have mise install the version again: it removes
-the install directory and runs `PreInstall` and `PostInstall` as for a new install. `reason`
-appears in debug output (`MISE_DEBUG=1`). Returning `true` or `nil` keeps the install. If the
-hook raises an error, mise warns and keeps the install, so a broken check cannot trigger a
-reinstall on every command. Make `PostInstall` fail when it cannot install what was
-requested; otherwise the check keeps failing and mise reinstalls on each run.
+Return `{satisfied = false}` (or `false`) when the install needs updating. mise then runs
+`PostInstall` again on the existing install, without running `PreInstall`, downloading, or
+removing the install directory, so `PostInstall` must be safe to rerun. Afterwards mise calls
+`MiseInstallSatisfied` again and fails with its `reason` if the install still does not match;
+the existing install stays in place either way. `mise install --force` still reinstalls from
+scratch.
+
+`reason` appears in debug output (`MISE_DEBUG=1`). Returning `true` or `nil` keeps the install
+as it is. If the hook raises an error, mise warns and keeps the install, so a broken check
+cannot trigger work on every command.
 
 #### PreUse Hook
 

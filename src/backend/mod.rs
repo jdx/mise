@@ -2843,6 +2843,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(self.is_version_installed(config, tv, check_symlink))
     }
 
+    /// Bring an installed but unsatisfied version back in line with its
+    /// request without reinstalling it. Returns `false` when the backend cannot
+    /// repair in place, in which case mise reinstalls the version.
+    async fn repair_install(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<bool> {
+        Ok(false)
+    }
+
     async fn is_install_satisfied_or_false(
         &self,
         config: &Arc<Config>,
@@ -3750,6 +3757,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // creating any of its install directories, then reuse the stored context in
         // backend and tool-level hooks.
         ctx.dependency_context(&tv.request).await?;
+
+        // Repair in place before anything below removes the working install.
+        if !will_uninstall
+            && self.is_version_installed(&ctx.config, &tv, true)
+            && self.repair_install(&ctx, &tv).await?
+        {
+            ctx.pr.finish_with_message("updated".to_string());
+            return Ok(tv);
+        }
 
         // Query backend for its operation plan and set up progress tracking
         let mut weights = self.install_operation_weights(&tv, &ctx).await;

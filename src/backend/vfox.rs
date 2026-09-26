@@ -1,6 +1,6 @@
 use crate::{env, plugins::PluginEnum, timeout};
 use async_trait::async_trait;
-use eyre::{WrapErr, eyre};
+use eyre::{WrapErr, bail, eyre};
 use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -174,7 +174,7 @@ impl Backend for VfoxBackend {
 
     /// A plugin can report that an installed version no longer matches the
     /// request, e.g. because a tool option selects add-on components that are
-    /// not installed yet. mise then installs that version again.
+    /// not installed yet. mise then repairs it through `repair_install`.
     async fn is_install_satisfied(
         &self,
         config: &Arc<Config>,
@@ -208,6 +208,40 @@ impl Backend for VfoxBackend {
                 Ok(true)
             }
         }
+    }
+
+    /// When `MiseInstallSatisfied` rejects an existing install, run
+    /// `PostInstall` on it again instead of downloading and extracting the
+    /// version from scratch, so a failure leaves the working install in place.
+    async fn repair_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<bool> {
+        if self.is_backend_plugin() || !self.plugin_has_hook("mise_install_satisfied") {
+            return Ok(false);
+        }
+        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let pr = Arc::clone(&ctx.pr);
+        vfox.set_log_handler(move |line| pr.set_message(line));
+        let (cmd_env, tool_options) = self.install_cmd_env(ctx, tv).await?;
+        vfox.cmd_env = Some(cmd_env);
+        ctx.pr.set_message("post-install".to_string());
+        vfox.repair_install(
+            &self.pathname,
+            &tv.version,
+            tv.install_path(),
+            tool_options.into_backend_options().into_map(),
+        )
+        .await?;
+
+        let result = self.mise_install_satisfied(&ctx.config, tv).await?;
+        if !result.satisfied {
+            bail!(
+                "{} still does not satisfy its tool options after PostInstall: {}\n\
+                 hint: run `mise install --force {}` to reinstall it from scratch",
+                tv.style(),
+                result.reason.as_deref().unwrap_or("reported by plugin"),
+                tv.ba().short,
+            );
+        }
+        Ok(true)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -315,64 +349,7 @@ impl Backend for VfoxBackend {
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         let pr = Arc::clone(&ctx.pr);
         vfox.set_log_handler(move |line| pr.set_message(normalize_install_log(&line)));
-        let mut cmd_env: indexmap::IndexMap<String, String> = self
-            .dependency_env_for_install(ctx, &tv)
-            .await?
-            .into_iter()
-            .collect();
-        let tool_options = self.tool_options_for_tv(&ctx.config, &tv).await;
-        add_tool_option_env(&mut cmd_env, &tool_options);
-        let mut install_env_removals = Vec::new();
-        for (key, value) in tv.install_env() {
-            match value.into_string() {
-                Some(value) => {
-                    set_env_var(&mut cmd_env, key, value);
-                }
-                None => {
-                    remove_env_var(&mut cmd_env, &key);
-                    install_env_removals.push(key);
-                }
-            }
-        }
-        // Surface `tools = true` `[env]` *value* directives (e.g.
-        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) so the plugin's
-        // install hooks (including os.execute) see the resolved value during a
-        // combined `mise install`, mirroring the separate-install case where a
-        // re-activated shell re-exports it.
-        //
-        // Resolve against a fully-resolved toolset of this tool's dependencies, NOT
-        // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
-        // whose `.versions` are empty until `resolve()` runs *after* installs, so its
-        // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
-        // The install dependency context is resolved offline and includes both backend deps
-        // and the per-tool mise.toml `depends` option (`gcloud = { depends =
-        // ["python"] }`) with real install paths, and is install-safe (it uses
-        // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
-        // Best-effort: env *modules* are excluded via `ToolsFilter::ToolsOnlyVals`,
-        // any value evaluation error falls back to the tool-less env, and PATH is left to
-        // the strict install dependency environment. (#10282, follow-up to #10432)
-        {
-            let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let dependencies = ctx.dependency_context(&tv.request).await?;
-            let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
-            match tool_vals {
-                Ok(vals) => {
-                    for (k, v) in vals {
-                        // PATH stays owned by dependency_env, under any casing on Windows.
-                        if !crate::env::is_path_key(&k) {
-                            set_env_var(&mut cmd_env, k, v);
-                        }
-                    }
-                }
-                Err(e) => debug!("vfox: skipping tools=true value directives: {e:#}"),
-            }
-        }
-        for key in install_env_removals {
-            remove_env_var(&mut cmd_env, &key);
-        }
-        if let Ok(config_env) = ctx.config.env().await {
-            restore_config_tool_option_env(&mut cmd_env, &config_env);
-        }
+        let (cmd_env, tool_options) = self.install_cmd_env(ctx, &tv).await?;
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
         }
@@ -738,6 +715,74 @@ impl VfoxBackend {
     /// reading only the directory would silently drop the declarations of every
     /// embedded plugin, since those ship compiled into the binary and have no
     /// directory. `None` when there is no plugin at all.
+    /// The environment for install hooks: dependency tools, tool options,
+    /// `install_env`, and `tools = true` value directives.
+    async fn install_cmd_env(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<(indexmap::IndexMap<String, String>, ToolOptions)> {
+        let mut cmd_env: indexmap::IndexMap<String, String> = self
+            .dependency_env_for_install(ctx, tv)
+            .await?
+            .into_iter()
+            .collect();
+        let tool_options = self.tool_options_for_tv(&ctx.config, tv).await;
+        add_tool_option_env(&mut cmd_env, &tool_options);
+        let mut install_env_removals = Vec::new();
+        for (key, value) in tv.install_env() {
+            match value.into_string() {
+                Some(value) => {
+                    set_env_var(&mut cmd_env, key, value);
+                }
+                None => {
+                    remove_env_var(&mut cmd_env, &key);
+                    install_env_removals.push(key);
+                }
+            }
+        }
+        // Surface `tools = true` `[env]` *value* directives (e.g.
+        // `CLOUDSDK_PYTHON = "{{ tools.python.path }}/bin/python3"`) so the plugin's
+        // install hooks (including os.execute) see the resolved value during a
+        // combined `mise install`, mirroring the separate-install case where a
+        // re-activated shell re-exports it.
+        //
+        // Resolve against a fully-resolved toolset of this tool's dependencies, NOT
+        // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
+        // whose `.versions` are empty until `resolve()` runs *after* installs, so its
+        // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
+        // The install dependency context is resolved offline and includes both backend deps
+        // and the per-tool mise.toml `depends` option (`gcloud = { depends =
+        // ["python"] }`) with real install paths, and is install-safe (it uses
+        // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
+        // Best-effort: env *modules* are excluded via `ToolsFilter::ToolsOnlyVals`,
+        // any value evaluation error falls back to the tool-less env, and PATH is left to
+        // the strict install dependency environment. (#10282, follow-up to #10432)
+        {
+            let base: EnvMap = cmd_env.clone().into_iter().collect();
+            let dependencies = ctx.dependency_context(&tv.request).await?;
+            let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
+            match tool_vals {
+                Ok(vals) => {
+                    for (k, v) in vals {
+                        // PATH stays owned by dependency_env, under any casing on Windows.
+                        if !crate::env::is_path_key(&k) {
+                            set_env_var(&mut cmd_env, k, v);
+                        }
+                    }
+                }
+                Err(e) => debug!("vfox: skipping tools=true value directives: {e:#}"),
+            }
+        }
+        for key in install_env_removals {
+            remove_env_var(&mut cmd_env, &key);
+        }
+        if let Ok(config_env) = ctx.config.env().await {
+            restore_config_tool_option_env(&mut cmd_env, &config_env);
+        }
+        Ok((cmd_env, tool_options))
+    }
+
     /// Check for a hook without loading the plugin, since install checks run
     /// on hot paths such as `mise x`.
     fn plugin_has_hook(&self, filename: &str) -> bool {
