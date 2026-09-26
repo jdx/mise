@@ -2080,10 +2080,12 @@ mod tests {
         let home = std::path::Path::new("/home/runner");
         assert!(value_refers_to_dir("/home/runner/go", home));
         assert!(value_refers_to_dir("/home/runner", home));
-        assert!(value_refers_to_dir(
-            "/mise/installs/x/bin:/home/runner/.cargo/bin",
-            home
-        ));
+        // PATH-like values use the host's separator (`;` on Windows).
+        let list = std::env::join_paths(["/mise/installs/x/bin", "/home/runner/.cargo/bin"])
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(value_refers_to_dir(&list, home));
         assert!(!value_refers_to_dir("/home/runner2/go", home));
         assert!(!value_refers_to_dir("/mise/installs/x/1.0.0", home));
         assert!(!value_refers_to_dir("1", home));
