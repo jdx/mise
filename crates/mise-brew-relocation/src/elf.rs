@@ -452,7 +452,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const PREFIX: &str = "/home/linuxbrew/.linuxbrew";
@@ -467,7 +467,7 @@ mod tests {
 
     /// minimal 64-bit LE ET_DYN ELF: PHDR + INTERP + LOAD + DYNAMIC headers,
     /// an interpreter string, a dynamic section with an rpath, and a dynstr
-    fn synthetic_elf(interp: &str, rpath: &str) -> Vec<u8> {
+    pub(crate) fn synthetic_elf(interp: &str, rpath: &str) -> Vec<u8> {
         let phnum = 4;
         let phoff = EHDR_SIZE;
         let interp_off = phoff + phnum * PHDR_SIZE;
@@ -525,7 +525,7 @@ mod tests {
         elf
     }
 
-    fn read_linkage(content: &[u8]) -> (String, String) {
+    pub(crate) fn read_linkage(content: &[u8]) -> (String, String) {
         let phdrs = read_phdrs(content).unwrap();
         let interp = phdrs.iter().find(|p| p.p_type == PT_INTERP).unwrap();
         let interp_str = read_cstr(content, interp.p_offset as usize).unwrap();

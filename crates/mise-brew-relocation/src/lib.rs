@@ -369,6 +369,37 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_relocate_keg_uses_caller_prefix_for_elf_linkage() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let binary = tmp.path().join("binary");
+        std::fs::write(
+            &binary,
+            elf::tests::synthetic_elf(
+                "@@HOMEBREW_PREFIX@@/lib/ld.so",
+                "@@HOMEBREW_PREFIX@@/Cellar/xz/lib",
+            ),
+        )?;
+
+        let report = relocate_keg(
+            tmp.path(),
+            "xz",
+            false,
+            Path::new("/custom/linuxbrew"),
+            Path::new("/custom/linuxbrew/Homebrew"),
+        )?;
+
+        assert_eq!(report.changed_files, vec![binary.clone()]);
+        let (interpreter, rpath) = elf::tests::read_linkage(&std::fs::read(binary)?);
+        assert_eq!(interpreter, "/custom/linuxbrew/lib/ld.so");
+        assert_eq!(
+            rpath,
+            "/custom/linuxbrew/Cellar/xz/lib:/custom/linuxbrew/lib"
+        );
+        Ok(())
+    }
+
     #[test]
     fn test_skip_linkage_still_relocates_text_files() -> Result<()> {
         let tmp = tempfile::tempdir()?;
