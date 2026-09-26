@@ -11,6 +11,7 @@ use color_eyre::eyre::{Result, bail};
 use itertools::Itertools;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -105,6 +106,85 @@ fn invoked_shim_path() -> PathBuf {
         .unwrap_or(argv0)
 }
 
+/// Apply the command wrapper for `mise x -- <name>` run by a native Windows shim.
+///
+/// `exe`- and `file`-mode shims on Windows are not mise itself: they run `mise x -- <name>` with
+/// `__MISE_SHIM_PATH` naming themselves, so `handle_shim` never sees them. Left to `mise x`, the
+/// wrapper is lost: the PATH lookup reaches the wrapper's own shim, skips it as the active shim,
+/// and runs the real tool (#13671). When a wrapper applies, `command` is rewritten to run it and
+/// the wrapper's environment is returned.
+pub(crate) async fn apply_native_shim_command_wrapper(
+    config: &mut Arc<Config>,
+    ts: &mut Toolset,
+    command: &mut Vec<String>,
+) -> Result<Option<BTreeMap<String, String>>> {
+    let Some(shim_path) = env::MISE_SHIM_PATH.read().unwrap().clone() else {
+        return Ok(None);
+    };
+    let Some(program) = command.first() else {
+        return Ok(None);
+    };
+    // A shim dispatches under its own name. The wrapper to apply is the one for that name, which
+    // on Windows can differ from the typed command only in case.
+    let Some(shim_name) = shim_path.file_stem().and_then(|stem| stem.to_str()) else {
+        return Ok(None);
+    };
+    let same_name = if cfg!(windows) {
+        shim_name.eq_ignore_ascii_case(program)
+    } else {
+        command_names_eq(shim_name, program)
+    };
+    if !same_name {
+        return Ok(None);
+    }
+    let Some(wrapper) = command_wrapper_for(config, ts, shim_name, true).await? else {
+        return Ok(None);
+    };
+    trace!("shim[{shim_name}] WRAPPER command: {}", wrapper.command());
+    command[0] = wrapper.command().to_string();
+    command.splice(1..1, wrapper.args().iter().cloned());
+    Ok(Some(
+        wrapper
+            .env()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    ))
+}
+
+/// The command wrapper configured for `shim_name`, with its command installed first when
+/// `install_command` is set and a tool provides it.
+async fn command_wrapper_for(
+    config: &mut Arc<Config>,
+    ts: &mut Toolset,
+    shim_name: &str,
+    install_command: bool,
+) -> Result<Option<CommandWrapper>> {
+    let wrappers = load_command_wrappers(
+        &config.config_files,
+        ts.versions.values().flat_map(|versions| &versions.requests),
+    )?;
+    validate_wrapper_names(wrappers.keys())?;
+    let wrapper = if cfg!(macos) {
+        wrappers
+            .iter()
+            .find(|(name, _)| command_names_eq(name, shim_name))
+            .map(|(_, wrapper)| wrapper)
+    } else {
+        wrappers.get(shim_name)
+    };
+    let Some(wrapper) = wrapper else {
+        return Ok(None);
+    };
+    if command_names_eq(wrapper.command(), shim_name) {
+        bail!("command wrapper for {shim_name} cannot delegate to itself");
+    }
+    if install_command {
+        install_missing_wrapper_command(config, ts, wrapper.command()).await?;
+    }
+    Ok(Some(wrapper.clone()))
+}
+
 async fn which_shim(
     config: &mut Arc<Config>,
     bin_name: &str,
@@ -136,28 +216,11 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
-    let wrappers = load_command_wrappers(
-        &config.config_files,
-        ts.versions.values().flat_map(|versions| &versions.requests),
-    )?;
-    validate_wrapper_names(wrappers.keys())?;
-    let wrapper = if cfg!(macos) {
-        wrappers
-            .iter()
-            .find(|(name, _)| command_names_eq(name, shim_name))
-            .map(|(_, wrapper)| wrapper)
-    } else {
-        wrappers.get(shim_name)
-    };
-    if let Some(wrapper) = wrapper {
-        if command_names_eq(wrapper.command(), shim_name) {
-            bail!("command wrapper for {shim_name} cannot delegate to itself");
-        }
+    if let Some(wrapper) =
+        command_wrapper_for(config, &mut ts, shim_name, !completion_offline).await?
+    {
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
-        if !completion_offline {
-            install_missing_wrapper_command(config, &mut ts, wrapper.command()).await?;
-        }
-        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
+        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper)));
     }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
