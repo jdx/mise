@@ -704,7 +704,9 @@ be a complete semantic version, requires `version_order = "semver"`, and a
 backend may set both as long as `min_version` is lower. Here `tool@1` and
 `tool@1.9.9` select `tool-legacy`, while `tool@2` and `tool@2.0.0` select
 `tool-next`. A prefix entirely at or above the boundary, such as `2`, skips the
-backend; one overlapping it keeps the preferred backend.
+backend; one overlapping it keeps the preferred backend. Pre-releases of the
+boundary version sort below it, so an exact request for `tool@2.0.0-rc.1`
+selects `tool-legacy`, while the prefix `2` still selects `tool-next`.
 
 A locked backend stays in use only for versions it serves. If the lockfile
 records `tool-legacy` and the config moves to `tool@2`, mise selects

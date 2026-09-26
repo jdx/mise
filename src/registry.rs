@@ -252,8 +252,12 @@ impl RegistryBackend {
             }
             false
         });
-        // The prefix's lowest version (`1.58` -> 1.58.0) at or above the
-        // maximum puts every version it matches out of range.
+        // The prefix's lowest release (`1.58` -> 1.58.0) at or above the
+        // maximum puts it out of range. Pre-releases of the boundary version
+        // (`2.0.0-rc.1` under `2`) are deliberately not counted: routing `2`
+        // to a backend capped at 2.0.0 would keep a lock on that backend when
+        // a config moves from `1` to `2`, asking it for releases it never
+        // publishes. An exact pre-release is still routed by its own version.
         let at_or_above_maximum = maximum.is_some_and(|maximum| {
             let lowest = semver::Version::new(parts[0], parts.get(1).copied().unwrap_or(0), 0);
             !lowest.cmp_precedence(&maximum).is_lt()
@@ -1125,6 +1129,12 @@ mod tests {
         ] {
             assert!(backend.supports_version(request), "{request}");
         }
+
+        // The boundary's pre-releases are routed by exact version only: the
+        // prefix `2` goes to the next backend even though `2.0.0-rc.1` sorts
+        // below the maximum, so a lock on this backend doesn't follow `2`.
+        assert!(backend.supports_version("2.0.0-rc.1"));
+        assert!(!backend.supports_version("2"));
 
         // A prefix overlapping the boundary keeps the backend.
         let backend = super::RegistryBackend {
