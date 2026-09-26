@@ -44,6 +44,7 @@ mod tag;
 mod tap;
 
 pub(crate) struct BrewManager {}
+pub(crate) use api::failed_formula_name;
 pub(crate) use cask::{
     BrewCaskManager, apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan,
 };
