@@ -651,7 +651,9 @@ fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
         && normalize_git_url(&installed_url) != normalize_git_url(&url)
     {
         return Ok(Some(format!(
-            "is installed from {installed_url}, but [plugins] names {url}"
+            "is installed from {}, but [plugins] names {}",
+            display_git_url(&installed_url),
+            display_git_url(&url)
         )));
     }
     let Some(git_ref) = git_ref else {
@@ -665,6 +667,20 @@ fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
     Ok(Some(format!(
         "is checked out at {head_short}, but [plugins] pins {git_ref}"
     )))
+}
+
+/// Strips credentials from a git URL before it is shown to the user, since
+/// drift warnings end up in install logs and shared `mise doctor` reports.
+fn display_git_url(url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(url) else {
+        // scp-style `user@host:path` can't carry a password.
+        return url.to_string();
+    };
+    if parsed.scheme() != "ssh" {
+        let _ = parsed.set_username("");
+    }
+    let _ = parsed.set_password(None);
+    parsed.to_string()
 }
 
 fn normalize_git_url(url: &str) -> &str {
@@ -742,6 +758,22 @@ pub(crate) fn install_local_plugin_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_display_git_url_strips_credentials() {
+        assert_eq!(
+            display_git_url("https://user:token@example.com/org/repo.git"),
+            "https://example.com/org/repo.git"
+        );
+        assert_eq!(
+            display_git_url("ssh://git@example.com/org/repo.git"),
+            "ssh://git@example.com/org/repo.git"
+        );
+        assert_eq!(
+            display_git_url("git@github.com:org/repo.git"),
+            "git@github.com:org/repo.git"
+        );
+    }
 
     #[test]
     fn test_local_plugin_source_path_requires_plain_absolute_path() {

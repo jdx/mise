@@ -147,9 +147,11 @@ pub(crate) async fn install_plugin(
     let explicit_type = name.contains(':');
     let (mut plugin_type, name) = PluginType::from_plugin_config(name);
     // `[plugins]` says what to install, so `--force` reinstalls from it rather
-    // than from the existing checkout's origin.
+    // than from the existing checkout's origin. Without `--force` the plugin
+    // resolves the entry itself, keeping the untrusted-plugin prompt that an
+    // explicit URL skips.
     let git_url = git_url
-        .or_else(|| config.configured_plugin_url(name))
+        .or_else(|| force.then(|| config.configured_plugin_url(name)).flatten())
         .or_else(|| {
             config
                 .get_repo_url(name)

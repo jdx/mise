@@ -754,7 +754,7 @@ impl Config {
             if Path::new(url).is_absolute() || url.starts_with("file://") {
                 url.clone()
             } else {
-                registry::full_to_url(url)
+                plugin_entry_to_url(url)
             },
         )
     }
@@ -790,7 +790,7 @@ impl Config {
                 {
                     url.clone()
                 } else {
-                    registry::full_to_url(url)
+                    plugin_entry_to_url(url)
                 },
             );
         }
@@ -800,7 +800,7 @@ impl Config {
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {
                 if registry::url_like(plugin_name) || plugin_name.split('/').count() == 2 {
-                    Some(registry::full_to_url(plugin_name))
+                    Some(plugin_entry_to_url(plugin_name))
                 } else {
                     None
                 }
@@ -3553,6 +3553,15 @@ pub(crate) fn load_command_wrappers<'a>(
     }
     command_wrapper::add_rust_wrapper(&mut wrappers, tools)?;
     Ok(wrappers)
+}
+
+/// Expands a `[plugins]` value to a URL, keeping any `#ref` outside the
+/// expansion so `owner/repo#v1` doesn't become `…/repo#v1.git`.
+fn plugin_entry_to_url(entry: &str) -> String {
+    match entry.split_once('#') {
+        Some((source, git_ref)) => format!("{}#{git_ref}", registry::full_to_url(source)),
+        None => registry::full_to_url(entry),
+    }
 }
 
 fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
@@ -6460,6 +6469,22 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_plugin_entry_to_url_keeps_ref_outside_shorthand_expansion() {
+        assert_eq!(
+            plugin_entry_to_url("owner/repo#v1.2.0"),
+            "https://github.com/owner/repo.git#v1.2.0"
+        );
+        assert_eq!(
+            plugin_entry_to_url("owner/repo"),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            plugin_entry_to_url("https://example.com/repo.git#main"),
+            "https://example.com/repo.git#main"
+        );
+    }
 
     #[test]
     fn test_resolve_task_template_tracks_definition_sources() -> Result<()> {
