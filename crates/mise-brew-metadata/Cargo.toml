@@ -1,0 +1,30 @@
+[package]
+name = "mise-brew-metadata"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "Homebrew formula metadata and API lookup for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+readme = "README.md"
+
+[dependencies]
+eyre = "0.6"
+log = "0.4"
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+ctor = "1"
+mise-settings = { path = "../mise-settings", version = "2026" }
+mockito = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+default = ["native-tls"]
+native-tls = ["mise-util/native-tls"]
+rustls = ["mise-util/rustls"]
+rustls-native-roots = ["mise-util/rustls-native-roots"]

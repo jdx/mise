@@ -385,6 +385,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_AGENT_ENV_VERSION=""
 	MISE_SETTINGS_VERSION=""
 	MISE_UTIL_VERSION=""
+	MISE_BREW_METADATA_VERSION=""
 
 	# Publish in dependency order: mise-settings needs mise-cache-core, and
 	# mise-util needs mise-agent-env, mise-cache-core, mise-settings and
@@ -413,6 +414,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 
 	bump_and_publish_subcrate "mise-util" "crates/mise-util" "MISE_UTIL_VERSION"
 	cargo add -p mise "mise-util@$MISE_UTIL_VERSION"
+	cargo add -p mise-brew-metadata "mise-util@$MISE_UTIL_VERSION" --no-default-features
+
+	bump_and_publish_subcrate "mise-brew-metadata" "crates/mise-brew-metadata" "MISE_BREW_METADATA_VERSION"
+	cargo add -p mise "mise-brew-metadata@$MISE_BREW_METADATA_VERSION" --no-default-features
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
