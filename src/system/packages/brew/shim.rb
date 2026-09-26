@@ -513,6 +513,33 @@ class DependencyFormula
   def to_s = @name
 end
 
+# Homebrew's Language::* mixins (Library/Homebrew/language/*.rb). A formula
+# pulls one in from its class body, e.g. `include Language::Python::Virtualenv`
+# in qmk. That is a CONSTANT reference, so neither method_missing fallback
+# covers it: an undefined one raises NameError while the class body is still
+# being evaluated, before the build can report what it does not support.
+#
+# The mixins only contribute install-time helpers, so empty modules are the
+# right shape. Calling one still fails loudly and specifically through
+# Formula#method_missing, which reports it as an unsupported install-time
+# helper rather than as a bare NameError.
+module Language
+  module Java; end
+  module Node
+    module Shebang; end
+  end
+  module Perl
+    module Shebang; end
+  end
+  module PHP
+    module Shebang; end
+  end
+  module Python
+    module Shebang; end
+    module Virtualenv; end
+  end
+end
+
 class Formula
   include FileUtils
 
