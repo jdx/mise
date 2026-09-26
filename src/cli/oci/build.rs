@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
-use crate::cli::oci::common::{perform_build, short_digest};
+use crate::cli::oci::common::{mise_binary_path, perform_build, short_digest};
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::oci::{BuildOptions, LayerOwner, OciCopy};
@@ -106,7 +106,7 @@ impl Build {
             tag: self.tag.clone(),
             mount_point: self.mount_point.clone(),
             owner: self.owner,
-            mise_binary: (!self.no_mise).then(std::env::current_exe).transpose()?,
+            mise_binary: mise_binary_path(self.no_mise),
             copy: self.copy.clone(),
             // Layer reuse would leave blob-less holes in the layout; `build`
             // must produce a complete, standalone image directory.

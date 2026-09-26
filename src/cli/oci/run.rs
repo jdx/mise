@@ -4,7 +4,7 @@ use std::process::Command;
 use eyre::{Context, Result, bail};
 use tempfile::TempDir;
 
-use crate::cli::oci::common::perform_build;
+use crate::cli::oci::common::{mise_binary_path, perform_build};
 use crate::config::Settings;
 use crate::file;
 use crate::oci::{BuildOptions, LayerOwner};
@@ -140,7 +140,7 @@ impl Run {
                     tag: Some("mise-oci:run".to_string()),
                     mount_point: self.mount_point.clone(),
                     owner: self.owner,
-                    mise_binary: (!self.no_mise).then(std::env::current_exe).transpose()?,
+                    mise_binary: mise_binary_path(self.no_mise),
                     copy: vec![],
                     // The layout is loaded into a local engine, which needs
                     // every blob present — no remote reuse.
