@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Re-tracking a path that is already tracked changes nothing: no rewrite,
+# no new checkpoint, and it says so.
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+echo original >~/.retrackrc
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+# kept as written
+[dotfiles]
+"~/.retrackrc"={mode="track"}
+TOML
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/declared.toml"
+
+assert_succeed 'mise dot track ~/.retrackrc'
+first=$(git --git-dir="$repository" rev-parse HEAD)
+# the declaration already says this, so the file is not reformatted
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+
+assert_contains 'mise dot track ~/.retrackrc 2>&1' '~/.retrackrc is already tracked'
+assert "git --git-dir=$repository rev-parse HEAD" "$first"
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+
+# a re-track still saves what changed since the newest checkpoint
+echo edited >~/.retrackrc
+assert_succeed 'mise dot track ~/.retrackrc'
+assert "git --git-dir=$repository show HEAD:home/.retrackrc" 'edited'
+
+# and one that changes the declaration still rewrites it
+assert_succeed 'mise dot track ~/.retrackrc --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'autosave = false'
+
+# tracking a new path beside an already-tracked one baselines the new one
+echo other >~/.otherrc
+assert_contains 'mise dot track ~/.retrackrc ~/.otherrc 2>&1' 'dotfiles: tracking ~/.otherrc'
+assert "git --git-dir=$repository show HEAD:home/.otherrc" 'other'
