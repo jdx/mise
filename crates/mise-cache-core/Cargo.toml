@@ -10,7 +10,7 @@ repository = "https://github.com/jdx/mise"
 [dependencies]
 base64 = "0.23"
 blake3 = "1"
-eyre = "0.6.14"
+eyre = "0.6"
 futures-util = "0.3"
 hex = "0.4"
 log = "0.4"
