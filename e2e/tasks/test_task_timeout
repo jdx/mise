@@ -21,6 +21,62 @@ if [[ $output != *"timed out"* ]]; then
 fi
 echo "✓ CLI flag global timeout works"
 
+# A killed task is reparented, and a zombie still answers `kill -0` until
+# something reaps it; containers often run an init that never does.
+process_running() {
+  local stat
+  stat="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  [[ $stat != Z* ]]
+}
+
+# The global timeout must not leave the running task behind. Output goes to a
+# file: a leaked task holding a pipe would keep the command substitution waiting
+# until the task ended on its own. Friendly errors exit through
+# `exit::kill_all`; test the run's own cleanup instead.
+assert_timeout_stops_task() {
+  rm -f task.pid
+  MISE_FRIENDLY_ERROR=0 mise run --timeout=5s stuck >timeout.log 2>&1 || true
+  if ! grep -q "timed out" timeout.log; then
+    echo "ERROR: Expected 'timed out' in output, got: $(cat timeout.log)"
+    exit 1
+  fi
+  if [[ ! -f task.pid ]]; then
+    echo "ERROR: the task did not start before the timeout"
+    exit 1
+  fi
+  local task_pid
+  task_pid="$(cat task.pid)"
+  for _ in $(seq 50); do
+    process_running "$task_pid" || break
+    sleep 0.1
+  done
+  if process_running "$task_pid"; then
+    kill -9 "$task_pid"
+    echo "ERROR: task process $task_pid outlived mise run --timeout"
+    exit 1
+  fi
+}
+
+# The task ignores SIGTERM (inherited through exec), so this covers the SIGKILL
+# after the grace period.
+cat <<'EOF' >mise.toml
+[tasks.stuck]
+run = "trap '' TERM; echo $$ > task.pid; exec sleep 60"
+EOF
+echo "Testing global timeout stops the running task..."
+assert_timeout_stops_task
+echo "✓ Global timeout stops the running task"
+
+# The shell exits on SIGTERM, but its background child ignores it and has let go
+# of mise's pipes. The SIGKILL must still reach the child's process group.
+cat <<'EOF' >mise.toml
+[tasks.stuck]
+run = "(trap '' TERM; exec sleep 60) >/dev/null 2>&1 & echo $! > task.pid; wait"
+EOF
+echo "Testing global timeout stops a background child that ignores SIGTERM..."
+assert_timeout_stops_task
+echo "✓ Global timeout stops a background child that ignores SIGTERM"
+
 # Test timeout via task config (individual task timeout)
 cat <<EOF >mise.toml
 [tasks.quick]
