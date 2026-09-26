@@ -1165,13 +1165,13 @@ pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usag
     })
 }
 
-/// Parse a task script's usage spec, warning with the detail and falling back to an empty spec.
+/// Parse a task script's usage spec, failing when the spec itself does not parse.
 ///
-/// A file task's spec failing must not take the whole task load down, the same way one
-/// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
-fn parse_task_script_usage_or_warn(file: &Path, env: Option<&EnvMap>) -> usage::Spec {
+/// A script that cannot be read still warns and yields an empty spec: that is not a spec
+/// problem, and `mise tasks validate` reports a missing task file on its own.
+fn parse_task_script_usage_checked(file: &Path, env: Option<&EnvMap>) -> Result<usage::Spec> {
     match parse_task_script_usage_with_env(file, env) {
-        Ok(spec) => spec,
+        Ok(spec) => Ok(spec),
         // Reading the script is the first thing this does, and a script that was discovered
         // and has since been deleted or made unreadable fails there. Calling that an invalid
         // spec sends the reader to look at lines that are fine.
@@ -1180,17 +1180,25 @@ fn parse_task_script_usage_or_warn(file: &Path, env: Option<&EnvMap>) -> usage::
                 "could not read task file {}: {err}",
                 file::display_path(file)
             );
-            usage::Spec::default()
+            Ok(usage::Spec::default())
         }
-        Err(err) => {
-            warn!(
-                "invalid usage spec in task file {}\n{}",
-                file::display_path(file),
-                render_usage_err(err)
-            );
-            usage::Spec::default()
-        }
+        Err(err) => Err(eyre!(
+            "invalid usage spec in task file {}\n{}",
+            file::display_path(file),
+            render_usage_err(err)
+        )),
     }
+}
+
+/// Parse a task script's usage spec, warning with the detail and falling back to an empty spec.
+///
+/// A file task's spec failing must not take the whole task load down, the same way one
+/// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
+fn parse_task_script_usage_or_warn(file: &Path, env: Option<&EnvMap>) -> usage::Spec {
+    parse_task_script_usage_checked(file, env).unwrap_or_else(|err| {
+        warn!("{err}");
+        usage::Spec::default()
+    })
 }
 
 fn parse_task_usage_raw(
@@ -2200,10 +2208,32 @@ impl Task {
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
+        self.parse_usage_spec_for_display_inner(config, false).await
+    }
+
+    /// Parse usage spec like [`Self::parse_usage_spec_for_display`], except that a file task
+    /// whose `#USAGE` spec does not parse is an error rather than a warning and an empty spec.
+    /// Checking the spec is what `mise tasks validate` is for.
+    pub(crate) async fn parse_usage_spec_for_validation(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        self.parse_usage_spec_for_display_inner(config, true).await
+    }
+
+    async fn parse_usage_spec_for_display_inner(
+        &self,
+        config: &Arc<Config>,
+        strict: bool,
+    ) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
             let env = self.usage_include_env(config, &file);
-            parse_task_script_usage_or_warn(&file, Some(&env))
+            if strict {
+                parse_task_script_usage_checked(&file, Some(&env))?
+            } else {
+                parse_task_script_usage_or_warn(&file, Some(&env))
+            }
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
