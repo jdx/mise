@@ -153,11 +153,77 @@ pub(crate) fn build_plugin_layer_from_dir(
         eyre::bail!("not a directory: {}", src_dir.display());
     }
 
-    let entries: Vec<Entry> = collect_sorted_entries(src_dir, false, owner, None)?
-        .into_iter()
-        .filter(|e| !e.rel.components().any(|c| c.as_os_str() == ".git"))
-        .collect();
+    let entries = collect_plugin_entries(src_dir, owner)?;
     build_layer_from_entries(&entries, target_prefix, owner, None)
+}
+
+/// Walk a plugin checkout for its layer.
+///
+/// `.git` directories are pruned during the walk, so a large or partly
+/// unreadable object store costs nothing. A symlink whose target lies outside
+/// the checkout (e.g. a hook linked to a shared file) would dangle in the
+/// image, so it is replaced by the file it points to.
+fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry>> {
+    let canonical_src = std::fs::canonicalize(src_dir)
+        .wrap_err_with(|| format!("resolving {}", src_dir.display()))?;
+
+    let mut entries: Vec<Entry> = Vec::new();
+    let walker = WalkDir::new(src_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || e.file_name() != ".git");
+    for entry in walker {
+        let entry = entry.wrap_err("walking plugin directory")?;
+        let abs = entry.path().to_path_buf();
+        let rel = abs.strip_prefix(src_dir).unwrap().to_path_buf();
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let md = entry.path().symlink_metadata()?;
+        let (kind, source, md) = if entry.file_type().is_dir() {
+            (EntryKind::Dir, abs, md)
+        } else if entry.file_type().is_symlink() {
+            match std::fs::canonicalize(&abs) {
+                Ok(target) if !target.starts_with(&canonical_src) => {
+                    let target_md = std::fs::metadata(&target)
+                        .wrap_err_with(|| format!("reading {}", target.display()))?;
+                    if !target_md.is_file() {
+                        eyre::bail!(
+                            "plugin symlink {} points to {}, a directory outside the plugin; \
+                             it would be missing from the OCI image",
+                            abs.display(),
+                            target.display()
+                        );
+                    }
+                    (EntryKind::File, target, target_md)
+                }
+                // In-checkout links stay links; dangling ones are emitted as-is.
+                _ => {
+                    let raw = std::fs::read_link(&abs)?;
+                    let target = rebase_symlink_target(&raw, &abs, &canonical_src, src_dir, None);
+                    (EntryKind::Symlink(target), abs, md)
+                }
+            }
+        } else {
+            (EntryKind::File, abs, md)
+        };
+        let (mode, size) = match &kind {
+            EntryKind::Dir => (0o755, 0),
+            EntryKind::Symlink(_) => (0o777, 0),
+            EntryKind::File if file_is_executable(&source, &md) => (0o755, md.len()),
+            EntryKind::File => (0o644, md.len()),
+        };
+        entries.push(Entry {
+            rel,
+            abs: source,
+            kind,
+            mode,
+            owner,
+            size,
+        });
+    }
+    entries.sort_by(|a, b| a.rel.cmp(&b.rel));
+    Ok(entries)
 }
 
 /// Build a tool layer while rebasing host paths embedded by its installer.
@@ -1006,6 +1072,77 @@ mod tests {
             build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default())
                 .unwrap();
         assert_eq!(blob.diff_id, again.diff_id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_inlines_links_that_leave_the_checkout() {
+        use std::io::Read;
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let plugin = dir.path().join("plugin");
+        fs::create_dir_all(plugin.join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join("shared/lib")).unwrap();
+        fs::write(dir.path().join("shared/install.lua"), b"-- shared\n").unwrap();
+        fs::write(plugin.join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        symlink(
+            "../../shared/install.lua",
+            plugin.join("hooks/backend_install.lua"),
+        )
+        .unwrap();
+        // In-checkout links stay links.
+        symlink("../metadata.lua", plugin.join("hooks/meta.lua")).unwrap();
+
+        let blob = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
+            .unwrap();
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = Archive::new(decoder);
+        let mut seen = std::collections::BTreeMap::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().to_string();
+            let link = entry
+                .header()
+                .link_name()
+                .map(|l| l.to_string_lossy().to_string());
+            let mut contents = String::new();
+            if link.is_none() && !path.ends_with('/') {
+                entry.read_to_string(&mut contents).unwrap();
+            }
+            seen.insert(path, (link, contents));
+        }
+        assert_eq!(
+            seen["mise/plugins/demo/hooks/backend_install.lua"],
+            (None, "-- shared\n".to_string())
+        );
+        assert_eq!(
+            seen["mise/plugins/demo/hooks/meta.lua"].0.as_deref(),
+            Some("../metadata.lua")
+        );
+
+        // A linked directory outside the checkout can't be inlined as a file.
+        symlink("../shared/lib", plugin.join("lib")).unwrap();
+        let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
+            .unwrap_err();
+        assert!(err.to_string().contains("a directory outside the plugin"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_does_not_walk_git_metadata() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let objects = dir.path().join(".git/objects");
+        fs::create_dir_all(objects.join("ab")).unwrap();
+        fs::write(dir.path().join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        // Walking into an unreadable directory would fail the build.
+        fs::set_permissions(&objects, fs::Permissions::from_mode(0o000)).unwrap();
+        let result =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default());
+        fs::set_permissions(&objects, fs::Permissions::from_mode(0o755)).unwrap();
+        result.unwrap();
     }
 
     #[test]

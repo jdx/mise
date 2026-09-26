@@ -1397,6 +1397,12 @@ async fn build_plugin_layers(
             let src = std::fs::canonicalize(&plugin.plugin_path).wrap_err_with(|| {
                 format!("resolving plugin path {}", plugin.plugin_path.display())
             })?;
+            // Everything in the plugin directory except `.git` ships, including
+            // untracked local files; name the source so it can be reviewed.
+            info!(
+                "oci: copying plugin {name} from {} into the image (all files except .git)",
+                crate::file::display_path(&src)
+            );
             let prefix = format!("{}/plugins/{name}", mount_point.trim_start_matches('/'));
             let blob = layer::build_plugin_layer_from_dir(&src, &prefix, owner)
                 .wrap_err_with(|| format!("building layer for plugin {name}"))?;

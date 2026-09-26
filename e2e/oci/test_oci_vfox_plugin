@@ -63,6 +63,7 @@ layer_blob() {
 mise oci build --from scratch --no-mise -o out >build.log 2>&1
 # The env hook runs on the host; a value under the host's home is flagged.
 assert_contains "cat build.log" "OCIDEMO_CACHE to a path under the build host's home"
+assert_contains "cat build.log" "copying plugin ocidemo from"
 
 # The plugin ships in its own layer at the path the embedded mise reads.
 plugin_layer="$(layer_blob out '.layers[] | select(.annotations."dev.mise.plugin" == "ocidemo") | .digest')"
