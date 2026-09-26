@@ -161,8 +161,8 @@ pub(crate) fn build_plugin_layer_from_dir(
 ///
 /// `.git` directories are pruned during the walk, so a large or partly
 /// unreadable object store costs nothing. A symlink whose target lies outside
-/// the checkout (e.g. a hook linked to a shared file) would dangle in the
-/// image, so it is replaced by the file it points to.
+/// the checkout is rejected: it would dangle in the image, and copying its
+/// target instead could publish an unrelated host file.
 fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry>> {
     let canonical_src = std::fs::canonicalize(src_dir)
         .wrap_err_with(|| format!("resolving {}", src_dir.display()))?;
@@ -180,42 +180,41 @@ fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry
             continue;
         }
         let md = entry.path().symlink_metadata()?;
-        let (kind, source, md) = if entry.file_type().is_dir() {
-            (EntryKind::Dir, abs, md)
+        let kind = if entry.file_type().is_dir() {
+            EntryKind::Dir
         } else if entry.file_type().is_symlink() {
-            match std::fs::canonicalize(&abs) {
-                Ok(target) if !target.starts_with(&canonical_src) => {
-                    let target_md = std::fs::metadata(&target)
-                        .wrap_err_with(|| format!("reading {}", target.display()))?;
-                    if !target_md.is_file() {
-                        eyre::bail!(
-                            "plugin symlink {} points to {}, a directory outside the plugin; \
-                             it would be missing from the OCI image",
-                            abs.display(),
-                            target.display()
-                        );
-                    }
-                    (EntryKind::File, target, target_md)
-                }
-                // In-checkout links stay links; dangling ones are emitted as-is.
-                _ => {
-                    let raw = std::fs::read_link(&abs)?;
-                    let target = rebase_symlink_target(&raw, &abs, &canonical_src, src_dir, None);
-                    (EntryKind::Symlink(target), abs, md)
-                }
+            if let Ok(target) = std::fs::canonicalize(&abs)
+                && !target.starts_with(&canonical_src)
+            {
+                eyre::bail!(
+                    "plugin symlink {} points to {}, outside the plugin directory; \
+                     mise oci build won't copy files from outside a plugin into the image. \
+                     Replace the link with a copy of the file to package this plugin.",
+                    abs.display(),
+                    target.display()
+                );
             }
+            // In-checkout links stay links; dangling ones are emitted as-is.
+            let raw = std::fs::read_link(&abs)?;
+            EntryKind::Symlink(rebase_symlink_target(
+                &raw,
+                &abs,
+                &canonical_src,
+                src_dir,
+                None,
+            ))
         } else {
-            (EntryKind::File, abs, md)
+            EntryKind::File
         };
         let (mode, size) = match &kind {
             EntryKind::Dir => (0o755, 0),
             EntryKind::Symlink(_) => (0o777, 0),
-            EntryKind::File if file_is_executable(&source, &md) => (0o755, md.len()),
+            EntryKind::File if file_is_executable(&abs, &md) => (0o755, md.len()),
             EntryKind::File => (0o644, md.len()),
         };
         entries.push(Entry {
             rel,
-            abs: source,
+            abs,
             kind,
             mode,
             owner,
@@ -1076,56 +1075,28 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn plugin_layer_inlines_links_that_leave_the_checkout() {
-        use std::io::Read;
+    fn plugin_layer_rejects_links_that_leave_the_checkout() {
         use std::os::unix::fs::symlink;
 
         let dir = tempdir().unwrap();
         let plugin = dir.path().join("plugin");
         fs::create_dir_all(plugin.join("hooks")).unwrap();
-        fs::create_dir_all(dir.path().join("shared/lib")).unwrap();
-        fs::write(dir.path().join("shared/install.lua"), b"-- shared\n").unwrap();
+        fs::create_dir_all(dir.path().join("shared")).unwrap();
+        fs::write(dir.path().join("shared/secret"), b"token\n").unwrap();
         fs::write(plugin.join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
-        symlink(
-            "../../shared/install.lua",
-            plugin.join("hooks/backend_install.lua"),
-        )
-        .unwrap();
-        // In-checkout links stay links.
+        // In-checkout and dangling links are packaged as links.
         symlink("../metadata.lua", plugin.join("hooks/meta.lua")).unwrap();
+        symlink("../missing.lua", plugin.join("hooks/gone.lua")).unwrap();
+        build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default()).unwrap();
 
-        let blob = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
-            .unwrap();
-        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
-        let mut archive = Archive::new(decoder);
-        let mut seen = std::collections::BTreeMap::new();
-        for entry in archive.entries().unwrap() {
-            let mut entry = entry.unwrap();
-            let path = entry.path().unwrap().to_string_lossy().to_string();
-            let link = entry
-                .header()
-                .link_name()
-                .map(|l| l.to_string_lossy().to_string());
-            let mut contents = String::new();
-            if link.is_none() && !path.ends_with('/') {
-                entry.read_to_string(&mut contents).unwrap();
-            }
-            seen.insert(path, (link, contents));
-        }
-        assert_eq!(
-            seen["mise/plugins/demo/hooks/backend_install.lua"],
-            (None, "-- shared\n".to_string())
-        );
-        assert_eq!(
-            seen["mise/plugins/demo/hooks/meta.lua"].0.as_deref(),
-            Some("../metadata.lua")
-        );
-
-        // A linked directory outside the checkout can't be inlined as a file.
-        symlink("../shared/lib", plugin.join("lib")).unwrap();
+        // A link out of the checkout must not pull a host file into the image.
+        symlink("../../shared/secret", plugin.join("hooks/install.lua")).unwrap();
         let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
             .unwrap_err();
-        assert!(err.to_string().contains("a directory outside the plugin"));
+        assert!(
+            err.to_string().contains("outside the plugin directory"),
+            "{err}"
+        );
     }
 
     #[cfg(unix)]
