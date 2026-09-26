@@ -17,9 +17,6 @@ mod lockfile_rollout;
 #[path = "build/registry_url.rs"]
 mod registry_url;
 
-// cfg_aliases 0.2.1 emits semicolon-terminated helper macros in expression
-// position, which the latest nightly compiler rejects as future-incompatible.
-#[allow(semicolon_in_expressions_from_macros)]
 fn main() -> Result<()> {
     let release = (
         env!("CARGO_PKG_VERSION_MAJOR").parse::<u32>()?,

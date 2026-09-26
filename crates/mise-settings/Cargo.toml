@@ -10,7 +10,7 @@ include = ["src/**/*", "build.rs", "settings.toml"]
 
 [dependencies]
 confique = { version = "0.4", default-features = false }
-eyre = "0.6"
+eyre = "0.6.14"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
 log = "0.4"
