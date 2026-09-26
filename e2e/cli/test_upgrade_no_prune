@@ -106,12 +106,20 @@ assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 # A due receipt remains pending while a config reselects the old version.
 sed -i.bak 's/dummy = "1"/dummy = "1.0.0"/' mise.toml
-mise current >/dev/null
+assert_contains "MISE_DEBUG=1 mise current 2>&1" "dummy@1.0.0 because it is still in use"
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
-# Once the reference goes away, the next invocation can remove it.
+# Deciding that loads every tracked config, so the kept receipt is not due
+# again for a day instead of being re-evaluated by every command.
+assert "jq '[.entries[].remove_after] | min > (now + 23 * 3600)' '$MISE_STATE_DIR/tool-purgatory.json'" "true"
+assert_not_contains "MISE_DEBUG=1 mise current 2>&1" "keeping deferred"
+
+# Once the reference goes away and the receipt is due again, the next
+# invocation can remove it.
 sed -i.bak 's/dummy = "1.0.0"/dummy = "1.1.0"/' mise.toml
+jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
 ln -s ./1.0.0 "$MISE_DATA_DIR/installs/dummy/retired"
 touch "$MISE_DATA_DIR/shims/deferred-prune-orphan"
 chmod +x "$MISE_DATA_DIR/shims/deferred-prune-orphan"

@@ -140,6 +140,117 @@ pub(crate) fn build_layer_from_dir(
     build_layer_from_entries(&entries, target_prefix, owner, None)
 }
 
+/// Build a layer from a plugin checkout, leaving out `.git` directories.
+///
+/// The image only needs the plugin's source to run its hooks; git metadata
+/// would add size and make the layer digest depend on fetch history.
+pub(crate) fn build_plugin_layer_from_dir(
+    src_dir: &Path,
+    target_prefix: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    if !src_dir.is_dir() {
+        eyre::bail!("not a directory: {}", src_dir.display());
+    }
+
+    let entries = collect_plugin_entries(src_dir, owner)?;
+    build_layer_from_entries(&entries, target_prefix, owner, None)
+}
+
+/// Walk a plugin checkout for its layer.
+///
+/// `.git` directories are pruned during the walk, so a large or partly
+/// unreadable object store costs nothing. A symlink that resolves to, or
+/// passes through, a path outside the checkout is rejected: it would dangle in
+/// the image, and copying its target instead could publish an unrelated host
+/// file. A link already dangling on the host carries no contents and is kept
+/// as-is, so a stray broken link doesn't block packaging a working plugin.
+fn collect_plugin_entries(src_dir: &Path, owner: LayerOwner) -> Result<Vec<Entry>> {
+    let canonical_src = std::fs::canonicalize(src_dir)
+        .wrap_err_with(|| format!("resolving {}", src_dir.display()))?;
+
+    let mut entries: Vec<Entry> = Vec::new();
+    let walker = WalkDir::new(src_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || e.file_name() != ".git");
+    for entry in walker {
+        let entry = entry.wrap_err("walking plugin directory")?;
+        let abs = entry.path().to_path_buf();
+        let rel = abs.strip_prefix(src_dir).unwrap().to_path_buf();
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let md = entry.path().symlink_metadata()?;
+        let kind = if entry.file_type().is_dir() {
+            EntryKind::Dir
+        } else if entry.file_type().is_symlink() {
+            let raw = std::fs::read_link(&abs)?;
+            // Check both where the link resolves and the path it spells: a
+            // link can leave the checkout through an external symlink and
+            // resolve back inside, but that detour won't exist in the image.
+            if let Ok(target) = std::fs::canonicalize(&abs)
+                && (!target.starts_with(&canonical_src)
+                    || !link_stays_inside(&abs, &raw, src_dir, &canonical_src))
+            {
+                eyre::bail!(
+                    "plugin symlink {} points to {} ({}), outside the plugin directory; \
+                     mise oci build won't copy files from outside a plugin into the image. \
+                     Replace the link with a copy of the file to package this plugin.",
+                    abs.display(),
+                    raw.display(),
+                    target.display()
+                );
+            }
+            // In-checkout links stay links; dangling ones are emitted as-is.
+            EntryKind::Symlink(rebase_symlink_target(
+                &raw,
+                &abs,
+                &canonical_src,
+                src_dir,
+                None,
+            ))
+        } else {
+            EntryKind::File
+        };
+        let (mode, size) = match &kind {
+            EntryKind::Dir => (0o755, 0),
+            EntryKind::Symlink(_) => (0o777, 0),
+            EntryKind::File if file_is_executable(&abs, &md) => (0o755, md.len()),
+            EntryKind::File => (0o644, md.len()),
+        };
+        entries.push(Entry {
+            rel,
+            abs,
+            kind,
+            mode,
+            owner,
+            size,
+        });
+    }
+    entries.sort_by(|a, b| a.rel.cmp(&b.rel));
+    Ok(entries)
+}
+
+/// Whether a symlink's raw target, normalized lexically against the link's
+/// directory, stays inside the plugin checkout.
+fn link_stays_inside(link: &Path, raw: &Path, src_dir: &Path, canonical_src: &Path) -> bool {
+    use std::path::Component;
+
+    let joined = link.parent().unwrap_or_else(|| Path::new("")).join(raw);
+    let mut normalized = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other),
+        }
+    }
+    normalized.starts_with(src_dir) || normalized.starts_with(canonical_src)
+}
+
 /// Build a tool layer while rebasing host paths embedded by its installer.
 pub(crate) fn build_relocated_tool_layer_from_dir(
     src_dir: &Path,
@@ -951,6 +1062,107 @@ mod tests {
 
         assert!(paths.contains(&PathBuf::from("opt/app/greeting.txt")));
         assert!(!paths.contains(&PathBuf::from("opt/app/hello.txt")));
+    }
+
+    #[test]
+    fn plugin_layer_omits_git_metadata() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join(".git/objects")).unwrap();
+        fs::write(dir.path().join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        fs::write(dir.path().join("hooks/available.lua"), b"").unwrap();
+        fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+
+        let blob =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default())
+                .unwrap();
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = Archive::new(decoder);
+        let paths = archive
+            .entries()
+            .unwrap()
+            .map(|entry| entry.unwrap().path().unwrap().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&PathBuf::from("mise/plugins/demo/metadata.lua")));
+        assert!(paths.contains(&PathBuf::from("mise/plugins/demo/hooks/available.lua")));
+        assert!(
+            !paths.iter().any(|p| p.to_string_lossy().contains(".git")),
+            "git metadata leaked into the plugin layer: {paths:?}"
+        );
+
+        // Git history must not change the layer: only plugin sources count.
+        fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/other\n").unwrap();
+        let again =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default())
+                .unwrap();
+        assert_eq!(blob.diff_id, again.diff_id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_rejects_links_that_leave_the_checkout() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let plugin = dir.path().join("plugin");
+        fs::create_dir_all(plugin.join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join("shared")).unwrap();
+        fs::write(dir.path().join("shared/secret"), b"token\n").unwrap();
+        fs::write(plugin.join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        // In-checkout and dangling links are packaged as links.
+        symlink("../metadata.lua", plugin.join("hooks/meta.lua")).unwrap();
+        symlink("../missing.lua", plugin.join("hooks/gone.lua")).unwrap();
+        build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default()).unwrap();
+
+        // A link out of the checkout must not pull a host file into the image.
+        symlink("../../shared/secret", plugin.join("hooks/install.lua")).unwrap();
+        let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("outside the plugin directory"),
+            "{err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_rejects_links_that_detour_outside_the_checkout() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let plugin = dir.path().join("plugin");
+        fs::create_dir_all(plugin.join("hooks")).unwrap();
+        fs::create_dir_all(dir.path().join("shared")).unwrap();
+        fs::write(plugin.join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        // shared/bridge leads back into the plugin, so the link resolves
+        // inside it, but the image has no shared/bridge to follow.
+        symlink("../plugin/metadata.lua", dir.path().join("shared/bridge")).unwrap();
+        symlink("../../shared/bridge", plugin.join("hooks/indirect.lua")).unwrap();
+
+        let err = build_plugin_layer_from_dir(&plugin, "mise/plugins/demo", LayerOwner::default())
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("outside the plugin directory"),
+            "{err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_layer_does_not_walk_git_metadata() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let objects = dir.path().join(".git/objects");
+        fs::create_dir_all(objects.join("ab")).unwrap();
+        fs::write(dir.path().join("metadata.lua"), b"PLUGIN = {}\n").unwrap();
+        // Walking into an unreadable directory would fail the build.
+        fs::set_permissions(&objects, fs::Permissions::from_mode(0o000)).unwrap();
+        let result =
+            build_plugin_layer_from_dir(dir.path(), "mise/plugins/demo", LayerOwner::default());
+        fs::set_permissions(&objects, fs::Permissions::from_mode(0o755)).unwrap();
+        result.unwrap();
     }
 
     #[test]
