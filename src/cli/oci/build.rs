@@ -106,7 +106,7 @@ impl Build {
             tag: self.tag.clone(),
             mount_point: self.mount_point.clone(),
             owner: self.owner,
-            include_mise: !self.no_mise,
+            mise_binary: (!self.no_mise).then(std::env::current_exe).transpose()?,
             copy: self.copy.clone(),
             // Layer reuse would leave blob-less holes in the layout; `build`
             // must produce a complete, standalone image directory.

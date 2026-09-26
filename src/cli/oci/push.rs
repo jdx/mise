@@ -122,7 +122,7 @@ impl Push {
                     tag: Some(self.reference.clone()),
                     mount_point: self.mount_point.clone(),
                     owner: self.owner,
-                    include_mise: !self.no_mise,
+                    mise_binary: (!self.no_mise).then(std::env::current_exe).transpose()?,
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
                     push_destination: Some(self.reference.clone()),

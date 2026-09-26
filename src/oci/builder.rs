@@ -54,8 +54,8 @@ pub struct BuildOptions {
     pub mount_point: Option<String>,
     /// Numeric owner assigned to every tar entry in generated layers.
     pub owner: Option<LayerOwner>,
-    /// Embed the current mise binary at /usr/local/bin/mise.
-    pub include_mise: bool,
+    /// Host mise binary to embed at /usr/local/bin/mise, if any.
+    pub mise_binary: Option<PathBuf>,
     /// CLI-provided host paths copied after config-provided entries.
     pub copy: Vec<OciCopy>,
     /// A previously pushed image to reuse unchanged tool layers from
@@ -479,7 +479,7 @@ impl Builder {
 
         // --- 6. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
-        if self.opts.include_mise {
+        if let Some(exe) = &self.opts.mise_binary {
             // OCI images are linux-targeted in v1 (we normalize `os` to
             // "linux" above). Embedding a darwin/windows mise binary would
             // pass the build but explode with `Exec format error` the first
@@ -491,17 +491,10 @@ impl Builder {
                     std::env::consts::OS
                 );
             }
-            match std::env::current_exe() {
-                Ok(exe) => {
-                    let bytes = std::fs::read(&exe)
-                        .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
-                    let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
-                    mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
-                }
-                Err(e) => {
-                    warn!("could not locate mise binary to embed in image: {e}");
-                }
-            }
+            let bytes = std::fs::read(exe)
+                .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
+            let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
+            mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
         }
 
         // --- 5. Dotfiles layer (optional) ---

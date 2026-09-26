@@ -140,7 +140,7 @@ impl Run {
                     tag: Some("mise-oci:run".to_string()),
                     mount_point: self.mount_point.clone(),
                     owner: self.owner,
-                    include_mise: !self.no_mise,
+                    mise_binary: (!self.no_mise).then(std::env::current_exe).transpose()?,
                     copy: vec![],
                     // The layout is loaded into a local engine, which needs
                     // every blob present — no remote reuse.
