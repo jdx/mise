@@ -512,8 +512,23 @@ fn container_plist(
     // contents. Writing a protected container then fails instead of falling back to a
     // plist the app never reads.
     let container = home.join("Library/Containers").join(domain);
-    if !container.is_dir() {
-        return Ok(None);
+    match std::fs::metadata(&container) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(None),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(err) => {
+            return Err(eyre::eyre!(
+                "cannot inspect the sandbox container {}: {err}",
+                container.display()
+            ));
+        }
     }
     let prefs = container.join("Data/Library/Preferences");
     Ok(Some(match host {
@@ -568,7 +583,7 @@ mod macos {
                 container: None,
             });
         }
-        let container = container_plist(&crate::dirs::HOME, domain, host, host_uuid)?;
+        let container = container_plist(&preferences_home(), domain, host, host_uuid)?;
         // A container path names the exact plist, including its ByHost file, so it is
         // read in the any-host scope instead of leaving Core Foundation to derive a
         // host-specific name from a path.
@@ -585,6 +600,19 @@ mod macos {
             host,
             container,
         })
+    }
+
+    /// The home folder Core Foundation keeps preferences under. Like Core Foundation, this
+    /// ignores `$HOME` and uses `CFFIXED_USER_HOME` or the account's home folder.
+    pub(super) fn preferences_home() -> std::path::PathBuf {
+        if let Some(home) = std::env::var_os("CFFIXED_USER_HOME").filter(|home| !home.is_empty()) {
+            return home.into();
+        }
+        nix::unistd::User::from_uid(nix::unistd::getuid())
+            .ok()
+            .flatten()
+            .map(|user| user.dir)
+            .unwrap_or_else(|| crate::dirs::HOME.to_path_buf())
     }
 
     /// The hardware UUID that names this Mac's ByHost preference files.
@@ -1238,11 +1266,32 @@ mod tests {
         }
     }
 
+    /// cfprefsd writes plists shortly after synchronizing, so poll for the file.
+    #[cfg(target_os = "macos")]
+    fn wait_for_plist(path: &std::path::Path) -> Option<plist::Value> {
+        for _ in 0..50 {
+            if let Ok(value) = plist::Value::from_file(path) {
+                return Some(value);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        None
+    }
+
+    #[cfg(target_os = "macos")]
+    fn list_files(dir: &std::path::Path) -> Vec<String> {
+        walkdir::WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path().display().to_string())
+            .collect()
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn test_sandboxed_round_trip_writes_container() {
         let domain = format!("com.mise.sandbox-test.{}", uuid::Uuid::now_v7());
-        let home = &*crate::dirs::HOME;
+        let home = macos::preferences_home();
         let container = home.join("Library/Containers").join(&domain);
         let prefs = container.join("Data/Library/Preferences");
         let request = |host| DefaultsRequest {
@@ -1274,7 +1323,13 @@ mod tests {
                 assert_eq!(status.state, DefaultsState::Set);
             }
             for plist in &written {
-                let value = plist::Value::from_file(plist)?;
+                let value = wait_for_plist(plist).unwrap_or_else(|| {
+                    panic!(
+                        "{} was not written; container holds {:#?}",
+                        plist.display(),
+                        list_files(&container)
+                    )
+                });
                 assert_eq!(
                     value.as_dictionary().unwrap().get("Sandboxed"),
                     Some(&plist::Value::Boolean(true)),
@@ -1311,15 +1366,23 @@ mod tests {
             key: "ByHost".into(),
             value: DefaultsValue::Bool(true),
         };
-        let plist = crate::dirs::HOME.join(format!(
-            "Library/Preferences/ByHost/{domain}.{}.plist",
-            macos::host_uuid().unwrap()
-        ));
+        let byhost = macos::preferences_home().join("Library/Preferences/ByHost");
+        let expected = byhost.join(format!("{domain}.{}.plist", macos::host_uuid().unwrap()));
         let result = write_all(std::slice::from_ref(&request));
-        let exists = plist.exists();
+        let found = wait_for_plist(&expected).is_some();
+        let written: Vec<_> = list_files(&byhost)
+            .into_iter()
+            .filter(|path| path.contains(&domain))
+            .collect();
         macos::remove(&domain, "ByHost", HostScope::Current).unwrap();
-        let _ = std::fs::remove_file(&plist);
+        for path in &written {
+            let _ = std::fs::remove_file(path);
+        }
         result.unwrap();
-        assert!(exists, "{}", plist.display());
+        assert!(
+            found,
+            "expected {}, Core Foundation wrote {written:#?}",
+            expected.display()
+        );
     }
 }
