@@ -27,6 +27,42 @@ impl AptManager {
         })
     }
 
+    /// Whether `apt-get install` with these arguments would fail against the
+    /// current lists.
+    ///
+    /// Lists can exist yet not cover the configured sources — an offline ISO
+    /// install indexes only the install media — and one unknown name or
+    /// missing pinned version fails the whole install. A simulation resolves
+    /// exactly as the real install does, virtual packages and pins included,
+    /// and needs no root. A simulation that cannot run is not a reason to
+    /// refresh.
+    async fn install_would_fail(&self, args: &[String]) -> bool {
+        debug!("$ apt-get --simulate {}", args.join(" "));
+        let output = tokio::process::Command::new("apt-get")
+            .arg("--simulate")
+            .arg("-q")
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+        match output {
+            Ok(output) if !output.status.success() => {
+                debug!(
+                    "apt-get --simulate failed, refreshing lists: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+                true
+            }
+            Ok(_) => false,
+            Err(err) => {
+                debug!("could not simulate apt-get install: {err:#}");
+                false
+            }
+        }
+    }
+
     /// Names in `args` that `apt-cache policy` reports with an install
     /// candidate. Keyed by the bare name apt heads each stanza with, so callers
     /// holding an arch-qualified name must query it alone.
@@ -227,9 +263,6 @@ impl SystemPackageManager for AptManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if opts.update || self.lists_missing() {
-            self.update(opts)?;
-        }
         // `--` keeps package operands from ever being parsed as apt-get
         // options; pins render to apt's native name=version syntax and
         // name:arch qualifiers pass through in the name
@@ -238,6 +271,9 @@ impl SystemPackageManager for AptManager {
             Some(v) => format!("{}={v}", p.name),
             None => p.name.clone(),
         }));
+        if opts.update || self.lists_missing() || self.install_would_fail(&args).await {
+            self.update(opts)?;
+        }
         if opts.dry_run {
             miseprintln!(
                 "{}",
@@ -312,6 +348,27 @@ mod tests {
         let names = vec!["bash:mise-not-an-arch".to_string(), "bash".to_string()];
         let available = mgr.available(&names).await.unwrap();
         assert_eq!(available, vec![false, true]);
+    }
+
+    /// The refresh check simulates the real install, so it agrees with apt on
+    /// virtual packages and pins that `apt-cache policy` cannot judge.
+    #[tokio::test]
+    async fn test_install_would_fail_against_real_apt_get() {
+        let mgr = AptManager::new();
+        if !mgr.is_available() {
+            return;
+        }
+        let install = |names: &[&str]| {
+            let mut args = vec!["install".to_string(), "-y".to_string(), "--".to_string()];
+            args.extend(names.iter().map(|n| n.to_string()));
+            args
+        };
+        assert!(!mgr.install_would_fail(&install(&["bash"])).await);
+        assert!(
+            mgr.install_would_fail(&install(&["bash", "mise-nonexistent-pkg-xyz"]))
+                .await
+        );
+        assert!(mgr.install_would_fail(&install(&["bash=0.0.0-mise"])).await);
     }
 
     #[test]
