@@ -724,6 +724,48 @@ pub(crate) async fn packages_from_config_and_tracked_config_files(
     packages_from_config_files_and_tracked_config_files(&config.config_files, &tracked_config_files)
 }
 
+/// Paths of the current and tracked config files whose `[bootstrap.packages]`
+/// declares `manager:name`, so prune errors can point at a stale entry in
+/// another project.
+#[cfg(unix)]
+pub(crate) async fn config_files_declaring_package(
+    config: &Arc<Config>,
+    manager: &str,
+    name: &str,
+) -> Result<Vec<PathBuf>> {
+    let tracked = config.get_tracked_config_files().await?;
+    Ok(config_files_declaring_package_in(
+        config.config_files.iter().chain(&tracked),
+        manager,
+        name,
+    ))
+}
+
+#[cfg(unix)]
+fn config_files_declaring_package_in<'a>(
+    config_files: impl Iterator<
+        Item = (
+            &'a PathBuf,
+            &'a Arc<dyn crate::config::config_file::ConfigFile>,
+        ),
+    >,
+    manager: &str,
+    name: &str,
+) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = vec![];
+    for (path, cf) in config_files {
+        let declares = cf.bootstrap_config().is_some_and(|sys| {
+            sys.packages
+                .keys()
+                .any(|spec| parse_spec(spec).is_ok_and(|(mgr, pkg)| mgr == manager && pkg == name))
+        });
+        if declares && !paths.contains(path) {
+            paths.push(path.clone());
+        }
+    }
+    paths
+}
+
 /// Return requests for one manager from the current config and every trusted,
 /// loadable tracked config. This does not resolve unrelated managers, which
 /// keeps plugin pruning portable when shared configs contain host-specific
@@ -2326,6 +2368,40 @@ mod tests {
             config_files.insert(path, cf);
         }
         Ok((tmp, config_files))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_config_files_declaring_package_finds_stale_tracked_entry() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:1password-cli" = "latest"
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:1password-cli" = "latest"
+            "#,
+        )])?;
+        let tracked_path = tracked.keys().next().unwrap().clone();
+
+        let find = |manager| {
+            config_files_declaring_package_in(
+                current.iter().chain(&tracked).chain(&tracked),
+                manager,
+                "1password-cli",
+            )
+        };
+        assert_eq!(find("brew"), vec![tracked_path]);
+        assert_eq!(
+            find("brew-cask"),
+            current.keys().cloned().collect::<Vec<_>>()
+        );
+        Ok(())
     }
 
     #[cfg(unix)]

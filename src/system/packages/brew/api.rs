@@ -1,8 +1,9 @@
 //! Client for the formulae.brew.sh JSON API (static JSON, no auth).
 
 use std::collections::HashMap;
+use std::fmt;
 
-use eyre::{WrapErr, bail, eyre};
+use eyre::{Report, WrapErr, bail, eyre};
 use serde::Deserialize;
 
 use crate::http::HTTP_FETCH;
@@ -191,12 +192,51 @@ async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Fo
             debug!("brew: {name} resolves to {canonical}");
             formula_exact_from(base, &canonical).await
         }
-        Ok(None) => Err(err),
+        Ok(None) => Err(with_cask_hint(base, name, err).await),
         Err(index_err) => {
             debug!("brew: could not load the formula index to resolve {name}: {index_err:#}");
-            Err(err)
+            Err(with_cask_hint(base, name, err).await)
         }
     }
+}
+
+/// A formula name that 404s is often a cask declared as `brew:` instead of
+/// `brew-cask:`; say so when the cask API knows the name.
+async fn with_cask_hint(base: &str, name: &str, err: Report) -> Report {
+    // json_cached keeps only the message of the underlying reqwest error
+    if !err
+        .chain()
+        .any(|cause| cause.to_string().contains("(404 Not Found)"))
+    {
+        return err;
+    }
+    match HTTP_FETCH.head(format!("{base}/cask/{name}.json")).await {
+        Ok(_) => err.wrap_err(format!(
+            "'{name}' is a Homebrew cask, not a formula; declare it as \"brew-cask:{name}\""
+        )),
+        Err(cask_err) => {
+            debug!("brew: {name} is not a cask either: {cask_err:#}");
+            err
+        }
+    }
+}
+
+/// A homebrew/core formula whose metadata could not be fetched. Typed so that
+/// callers can report which config declared the name.
+#[derive(Debug)]
+pub(super) struct FormulaFetchFailed(pub String);
+
+impl fmt::Display for FormulaFetchFailed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to fetch Homebrew formula '{}'", self.0)
+    }
+}
+
+/// The formula name behind a failed homebrew/core metadata lookup, if `err`
+/// came from one.
+pub(crate) fn failed_formula_name(err: &Report) -> Option<&str> {
+    err.downcast_ref::<FormulaFetchFailed>()
+        .map(|failed| failed.0.as_str())
 }
 
 /// Fetch homebrew/core formula metadata by its canonical name only.
@@ -209,7 +249,7 @@ async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
-        .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+        .wrap_err_with(|| FormulaFetchFailed(name.to_string()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -479,6 +519,50 @@ mod tests {
         for mock in not_found.iter().chain([&index, &canonical]) {
             mock.assert_async().await;
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_formula_that_is_a_cask_suggests_brew_cask() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        server
+            .mock("GET", mockito::Matcher::Regex("^/formula/".into()))
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/formula.json")
+            .with_body("[]")
+            .create_async()
+            .await;
+        server
+            .mock("HEAD", "/cask/1password-cli.json")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock("HEAD", "/cask/missing.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        let err = formula_from(&base, &aliases, "1password-cli")
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "'1password-cli' is a Homebrew cask, not a formula; declare it as \"brew-cask:1password-cli\""
+        );
+        assert_eq!(failed_formula_name(&err), Some("1password-cli"));
+
+        let err = formula_from(&base, &aliases, "missing").await.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "failed to fetch Homebrew formula 'missing'"
+        );
+        assert_eq!(failed_formula_name(&err), Some("missing"));
         Ok(())
     }
 

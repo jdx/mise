@@ -145,7 +145,10 @@ impl SystemPrune {
             .map(|mp| mp.requests.as_slice())
             .unwrap_or_default();
         configured.extend(brew::cask_formula_dependencies(configured_casks).await?);
-        let plan = brew::prune_plan(&configured).await?;
+        let plan = match brew::prune_plan(&configured).await {
+            Ok(plan) => plan,
+            Err(err) => return Err(with_declaring_config_files(&config, err).await),
+        };
         if plan.is_empty() {
             info!("brew: nothing to prune");
             return Ok(());
@@ -228,5 +231,33 @@ impl SystemPrune {
     async fn run_brew_cask(self) -> Result<()> {
         let _ = self.manager;
         bail!("brew-cask prune is not supported on windows")
+    }
+}
+
+/// Prune keeps packages declared by every tracked config, so a formula that
+/// cannot be resolved may come from a project other than the current one.
+/// Name the config files that declare it.
+#[cfg(unix)]
+async fn with_declaring_config_files(
+    config: &std::sync::Arc<Config>,
+    err: eyre::Report,
+) -> eyre::Report {
+    let Some(name) = brew::failed_formula_name(&err).map(str::to_string) else {
+        return err;
+    };
+    match system::config_files_declaring_package(config, "brew", &name).await {
+        Ok(paths) if !paths.is_empty() => {
+            let paths = paths
+                .iter()
+                .map(crate::file::display_path)
+                .collect::<Vec<_>>()
+                .join(", ");
+            err.wrap_err(format!("brew:{name} is declared in {paths}"))
+        }
+        Ok(_) => err,
+        Err(lookup_err) => {
+            debug!("brew: could not find the config declaring {name}: {lookup_err:#}");
+            err
+        }
     }
 }
