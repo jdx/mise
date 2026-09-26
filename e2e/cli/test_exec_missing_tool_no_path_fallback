@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Regression test for #13649: with auto-install off, `mise exec` ran a same-named
+# binary from the inherited PATH when the tool providing the command was missing,
+# exiting 0 with at most a warning.
+
+mkdir -p "$HOME/fallback-bin"
+cat >"$HOME/fallback-bin/dummy" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "dummy from PATH"
+SCRIPT
+chmod +x "$HOME/fallback-bin/dummy"
+export PATH="$HOME/fallback-bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1.0.0"
+TOML
+
+# A tool from config, with exec_auto_install and with auto_install disabled.
+MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
+MISE_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
+# A tool listed in auto_install_disable_tools.
+MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
+# A tool passed on the command line.
+MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x dummy@1.1.0 -- dummy" "Missing tool version: dummy@1.1.0"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy'"
+
+# A missing tool that does not provide the command still only warns.
+MISE_EXEC_AUTO_INSTALL=0 assert "mise x -- echo ran" "ran"
+
+# Another configured version of the tool supplies the command from mise's paths.
+mise install dummy@1.0.0
+cat >mise.toml <<'TOML'
+[tools]
+dummy = ["2.0.0", "1.0.0"]
+TOML
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy" "1.0.0"
+
+# The tool's name does not match the command, so an installed version of it is
+# what identifies it as the provider.
+mise plugin link -f mytool "$MISE_DATA_DIR/plugins/dummy"
+mise install mytool@1.0.0
+cat >mise.toml <<'TOML'
+[tools]
+mytool = "2.0.0"
+TOML
+MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: mytool@2.0.0"
+
+# With auto-install on, the pinned version is installed and run as before.
+assert_contains "mise x -- dummy" "2.0.0"

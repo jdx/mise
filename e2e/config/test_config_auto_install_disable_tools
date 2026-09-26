@@ -13,7 +13,7 @@ auto_install_disable_tools = ["dummy"]
 EOF
 
 # Should NOT auto-install dummy when running a command
-assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
+assert_fail "mise exec dummy@1.0.0 -- dummy --version" "Missing tool version: dummy@1.0.0"
 
 # Remove auto_install_disable_tools and check auto-install works
 cat <<EOF >mise.toml
@@ -32,5 +32,5 @@ cat <<EOF >mise.toml
 dummy = '1.0.0'
 EOF
 
-MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
+MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_fail "mise exec dummy@1.0.0 -- dummy --version" "Missing tool version: dummy@1.0.0"
 MISE_AUTO_INSTALL_DISABLE_TOOLS='' assert "mise exec dummy@1.0.0 -- dummy --version"

@@ -835,6 +835,43 @@ impl Toolset {
         backend.install_version(ctx, tv).await
     }
 
+    /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
+    /// so this relies on the signals available before install: the tool's name, registry bin
+    /// metadata, or another installed version of the same tool that ships the bin.
+    pub(crate) async fn missing_bin_providers(
+        &self,
+        config: &Arc<Config>,
+        missing: Vec<ToolVersion>,
+        bin_name: &str,
+    ) -> Vec<ToolVersion> {
+        let (mut providers, unmatched): (Vec<_>, Vec<_>) = missing.into_iter().partition(|tv| {
+            tv.ba().matches_bin_name(bin_name)
+                || tv
+                    .ba()
+                    .registry_tool()
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        });
+        if unmatched.is_empty() {
+            return providers;
+        }
+        let installed = match self.list_installed_versions(config).await {
+            Ok(installed) => installed,
+            Err(err) => {
+                debug!("failed to list installed versions: {err:#}");
+                return providers;
+            }
+        };
+        for tv in unmatched {
+            for (backend, installed_tv) in installed.iter().filter(|(b, _)| &**b.ba() == tv.ba()) {
+                if let Ok(Some(_bin)) = backend.which(config, installed_tv, bin_name).await {
+                    providers.push(tv.clone());
+                    break;
+                }
+            }
+        }
+        providers
+    }
+
     pub(crate) async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,

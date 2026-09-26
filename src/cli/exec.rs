@@ -18,7 +18,7 @@ use crate::env;
 use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
-use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -261,6 +261,8 @@ impl Exec {
             warn!("failed to create shims for lazy tools: {err:#}");
         }
 
+        ensure_command_provider_installed(&config, &ts, &opts, &missing, &program).await?;
+
         measure!("notify_if_versions_missing", {
             ts.notify_missing_versions(missing);
         });
@@ -399,6 +401,77 @@ impl Exec {
         // command must not be reinterpreted as a shell body.
         exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
+}
+
+/// With auto-install off, fail when the command belongs to a missing tool. Otherwise the PATH
+/// lookup in `exec_program` runs whatever same-named binary the inherited PATH offers, which is
+/// not the version the toolset pins (#13649). Missing tools the command does not use still only
+/// warn, as they do for `mise run`.
+async fn ensure_command_provider_installed(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    opts: &InstallOptions,
+    missing: &[ToolVersion],
+    program: &str,
+) -> Result<()> {
+    // A path names its binary directly; there is no lookup to fall through.
+    if program.contains(['/', '\\']) {
+        return Ok(());
+    }
+    let skipped = missing
+        .iter()
+        // A lazy provider of this command was already installed above, whatever the
+        // auto-install settings say.
+        .filter(|tv| tv.request.options().lazy != Some(true))
+        .filter(|tv| {
+            opts.skip_auto_install
+                || opts
+                    .auto_install_disable_tools
+                    .as_ref()
+                    .is_some_and(|tools| tools.contains(&tv.ba().short))
+        })
+        .cloned()
+        .collect_vec();
+    if skipped.is_empty() {
+        return Ok(());
+    }
+    let providers = ts.missing_bin_providers(config, skipped, program).await;
+    if providers.is_empty() {
+        return Ok(());
+    }
+    // Another configured version of the tool, `_.path`, or a command wrapper can still supply
+    // the command from mise's own paths. Only a lookup that would leave them falls back.
+    // Shim directories are skipped, as in `exec_program`'s lookup.
+    let (_, env_results) = ts.final_env(config).await?;
+    let paths = ts
+        .list_final_paths(config, env_results)
+        .await?
+        .into_iter()
+        .filter(|path| !crate::file::is_mise_shims_dir(path));
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    if which::which_in(program, Some(std::env::join_paths(paths)?), cwd).is_ok() {
+        return Ok(());
+    }
+    let versions = providers
+        .iter()
+        .map(|tv| format!("{}@{}", tv.ba().short, tv.version))
+        .collect_vec();
+    let mut msg = format!(
+        "Tool{} not installed for command: {program}\n",
+        if versions.len() > 1 { "s" } else { "" }
+    );
+    for version in &versions {
+        msg.push_str(&format!("Missing tool version: {version}\n"));
+    }
+    msg.push_str(&format!(
+        "Auto-install is disabled, so mise will not run a different {program} from PATH instead.\n"
+    ));
+    msg.push_str(&format!(
+        "Install {} with: mise install {}",
+        if versions.len() > 1 { "them" } else { "it" },
+        versions.join(" ")
+    ));
+    Err(eyre::eyre!(msg))
 }
 
 #[cfg(all(not(test), unix))]
