@@ -47,5 +47,40 @@ mytool = "2.0.0"
 TOML
 MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: mytool@2.0.0"
 
+# A different configured tool that ships the same command does not stand in for it.
+cat >mise.toml <<'TOML'
+[tools]
+mytool = "1.0.0"
+dummy = "2.0.0"
+TOML
+MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@2.0.0"
+
+# A command wrapper configured for the command runs, even before its shim exists.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+
+[wrappers]
+dummy = "echo"
+TOML
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/dummy'"
+MISE_EXEC_AUTO_INSTALL=0 assert "mise x -- dummy wrapped" "wrapped"
+
+# A wrapper's own command gets the same check when the wrapper dispatches it.
+# That lookup skips the wrapper directories, so the dummy wrapper does not apply.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+
+[wrappers]
+cargo = "dummy"
+dummy = "echo"
+TOML
+MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_fail "mise x -- cargo --version" "Missing tool version: dummy@2.0.0"
+
 # With auto-install on, the pinned version is installed and run as before.
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "2.0.0"
+TOML
 assert_contains "mise x -- dummy" "2.0.0"
