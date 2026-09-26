@@ -58,8 +58,8 @@ pub(super) fn merged_oci_config(config: &Config) -> OciConfig {
 /// is conceptually "package *this project's* tools into a deployable image" —
 /// personal dev tools (neovim, ripgrep, …) sitting in
 /// `~/.config/mise/config.toml` have no business in a project image, and
-/// several of them (asdf/vfox plugins) would in fact be rejected by the v1
-/// builder. See discussion #9690.
+/// some of them (asdf plugins) would in fact be rejected by the builder.
+/// See discussion #9690.
 ///
 /// Set `include_global = true` to revert to the merge-everything behavior.
 pub(super) async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<BuildOutput> {
@@ -108,7 +108,7 @@ fn project_config_files(config: &Config) -> Result<ConfigMap> {
         bail!(
             "mise oci: no project mise config found in the current directory or any parent. \
              Add a `mise.toml` to the project, or pass `--include-global` to use tools and \
-             [oci] settings from your global config (note: asdf/vfox plugins remain \
+             [oci] settings from your global config (note: asdf plugins remain \
              unsupported)."
         );
     }

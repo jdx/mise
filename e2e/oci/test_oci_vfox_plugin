@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# vfox plugin tools are packaged together with the plugin that installed them.
+export MISE_EXPERIMENTAL=1
+export SOURCE_DATE_EPOCH=1700000000
+
+PLUGIN_DIR="$PWD/ocidemo-plugin"
+mkdir -p "$PLUGIN_DIR/hooks" "$PLUGIN_DIR/.git"
+# Git metadata must stay out of the image.
+echo "ref: refs/heads/main" >"$PLUGIN_DIR/.git/HEAD"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {
+    name = "ocidemo",
+    version = "0.1.0",
+    description = "oci packaging test plugin",
+}
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+    return { versions = { "1.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+    os.execute("mkdir -p '" .. ctx.install_path .. "/bin'")
+    local file = io.open(ctx.install_path .. "/bin/" .. ctx.tool, "w")
+    file:write("#!/bin/sh\necho " .. ctx.tool .. "@" .. ctx.version .. "\n")
+    file:close()
+    os.execute("chmod +x '" .. ctx.install_path .. "/bin/" .. ctx.tool .. "'")
+    return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+    return {
+        env_vars = {
+            { key = "PATH", value = ctx.install_path .. "/bin" },
+            { key = "OCIDEMO_HOME", value = ctx.install_path },
+            { key = "OCIDEMO_CACHE", value = os.getenv("HOME") .. "/.ocidemo" },
+        },
+    }
+end
+LUA
+
+mise plugins link ocidemo "$PLUGIN_DIR"
+
+cat >mise.toml <<'EOF'
+[tools]
+"ocidemo:hello" = "1.0.0"
+EOF
+mise install
+
+manifest() {
+  jq -r '.manifests[0].digest | ltrimstr("sha256:")' "$1/index.json" | sed "s|^|$1/blobs/sha256/|"
+}
+layer_blob() {
+  jq -r "$2" "$(manifest "$1")" | sed "s|^sha256:|$1/blobs/sha256/|"
+}
+
+mise oci build --from scratch --no-mise -o out >build.log 2>&1
+# The env hook runs on the host; a value under the host's home is flagged.
+assert_contains "cat build.log" "OCIDEMO_CACHE to a path under the build host's home"
+assert_contains "cat build.log" "copying plugin ocidemo from"
+
+# The plugin ships in its own layer at the path the embedded mise reads.
+plugin_layer="$(layer_blob out '.layers[] | select(.annotations."dev.mise.plugin" == "ocidemo") | .digest')"
+assert_contains "tar -tzf '$plugin_layer'" "mise/plugins/ocidemo/metadata.lua"
+assert_contains "tar -tzf '$plugin_layer'" "mise/plugins/ocidemo/hooks/backend_exec_env.lua"
+assert_not_contains "tar -tzf '$plugin_layer'" ".git"
+
+# The tool layer records which plugin build produced it.
+tool_plugin="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "ocidemo:hello") | .annotations."dev.mise.tool.plugin"' "$(manifest out)")"
+assert_contains "echo '$tool_plugin'" "sha256:"
+tool_layer="$(layer_blob out '.layers[] | select(.annotations."dev.mise.tool.short" == "ocidemo:hello") | .digest')"
+assert_contains "tar -tzf '$tool_layer'" "mise/installs/ocidemo-hello/1.0.0/bin/hello"
+
+# Env from the plugin hook is rebased onto the in-image install path.
+config="$(layer_blob out '.config.digest')"
+env="$(jq -r '.config.Env | join("\n")' "$config")"
+assert_contains "echo '$env'" "OCIDEMO_HOME=/mise/installs/ocidemo-hello/1.0.0"
+assert_contains "echo '$env' | grep '^PATH='" "/mise/installs/ocidemo-hello/1.0.0/bin"
+
+# Editing the plugin changes its fingerprint.
+echo "-- changed" >>"$PLUGIN_DIR/hooks/backend_exec_env.lua"
+mise oci build --from scratch --no-mise -o changed >/dev/null 2>&1
+changed_plugin="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "ocidemo:hello") | .annotations."dev.mise.tool.plugin"' "$(manifest changed)")"
+assert_succeed "test '$changed_plugin' != '$tool_plugin'"
+
+# A mise that only sees the image's files resolves the tool through the
+# packaged plugin, without the host's plugin link.
+mkdir rootfs
+for blob in $(jq -r '.layers[].digest | ltrimstr("sha256:")' "$(manifest out)"); do
+  tar -xzf "out/blobs/sha256/$blob" -C rootfs
+done
+assert "env MISE_DATA_DIR=$PWD/rootfs/mise MISE_CONFIG_DIR=$PWD/rootfs/etc/mise MISE_CACHE_DIR=$PWD/rootfs-cache MISE_STATE_DIR=$PWD/rootfs-state mise x -C / -- hello" "hello@1.0.0"
+# Control: without the plugin layer the same lookup fails.
+rm -rf rootfs/mise/plugins
+assert_fail "env MISE_DATA_DIR=$PWD/rootfs/mise MISE_CONFIG_DIR=$PWD/rootfs/etc/mise MISE_CACHE_DIR=$PWD/rootfs-cache2 MISE_STATE_DIR=$PWD/rootfs-state2 mise x -C / -- hello"
