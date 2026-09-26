@@ -42,6 +42,11 @@ mise plugins install --force pinned
 assert "$head_sha" "$v2_sha"
 assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
 
+# A local branch sharing the pinned tag's name doesn't make it a branch pin.
+git -C "$MISE_DATA_DIR/plugins/pinned" branch v2
+assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
+git -C "$MISE_DATA_DIR/plugins/pinned" branch -q -D v2
+
 # A branch pin also needs HEAD on the branch, not just at its commit.
 git -C "$plugin_repo" branch release "$v2_sha"
 pin release

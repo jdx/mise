@@ -661,22 +661,25 @@ fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
     };
     let head = git.current_sha()?;
     let head_short = head.get(..7).unwrap_or(&head);
+    let name = git_ref.strip_prefix("refs/heads/").unwrap_or(&git_ref);
+    if !git_ref.starts_with("refs/tags/") && git.current_branch()? == name {
+        return Ok(None);
+    }
     if git.resolve_commit(&git_ref)?.as_deref() != Some(head.as_str()) {
         return Ok(Some(format!(
             "is checked out at {head_short}, but [plugins] pins {git_ref}"
         )));
     }
     // A branch pin also needs HEAD on that branch, or `mise plugins update`
-    // won't follow it. Only local branches count, so upstream commits on the
-    // branch aren't reported.
-    let branch = git_ref.strip_prefix("refs/heads/").unwrap_or(&git_ref);
-    if git
-        .resolve_commit(&format!("refs/heads/{branch}"))?
-        .is_some()
-        && git.current_branch()? != branch
-    {
+    // won't follow it. Only local refs count, so upstream commits on the
+    // branch aren't reported, and a same-named tag keeps a detached checkout
+    // of that tag valid.
+    let is_branch_pin = git_ref.starts_with("refs/heads/")
+        || (git.resolve_commit(&format!("refs/heads/{name}"))?.is_some()
+            && git.resolve_commit(&format!("refs/tags/{name}"))?.is_none());
+    if is_branch_pin {
         return Ok(Some(format!(
-            "is checked out at {head_short} rather than on branch {branch}, which [plugins] pins"
+            "is checked out at {head_short} rather than on branch {name}, which [plugins] pins"
         )));
     }
     Ok(None)
