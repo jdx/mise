@@ -231,7 +231,17 @@ impl Backend for VfoxBackend {
         )
         .await?;
 
-        let result = self.mise_install_satisfied(&ctx.config, tv).await?;
+        // Like the initial check, a hook error must not fail the install.
+        let result = match self.mise_install_satisfied(&ctx.config, tv).await {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(
+                    "{} MiseInstallSatisfied hook failed after PostInstall, treating install as current: {err:#}",
+                    tv.style()
+                );
+                return Ok(true);
+            }
+        };
         if !result.satisfied {
             bail!(
                 "{} still does not satisfy its tool options after PostInstall: {}\n\

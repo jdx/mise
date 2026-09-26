@@ -3763,6 +3763,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             && self.is_version_installed(&ctx.config, &tv, true)
             && self.repair_install(&ctx, &tv).await?
         {
+            self.finish_install_changes(&ctx, &tv).await?;
             ctx.pr.finish_with_message("updated".to_string());
             return Ok(tv);
         }
@@ -3820,18 +3821,29 @@ pub(crate) trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
+        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
+        self.finish_install_changes(&ctx, &tv).await?;
+        ctx.pr.finish_with_message("installed".to_string());
+        Ok(tv)
+    }
+
+    /// Steps shared by a fresh install and an in-place repair once the tool's
+    /// files have changed.
+    async fn finish_install_changes(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
         // Touch the data directory to trigger updates in hook-env after PATH changes.
         if let Err(err) = file::touch_dir(&dirs::DATA) {
             trace!("error touching data directory: {:?}", err);
         }
-        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
                 .set_message("running custom postinstall hook".to_string());
-            self.run_postinstall_hook(&ctx, &tv, script).await?;
+            self.run_postinstall_hook(ctx, tv, script).await?;
         }
-        ctx.pr.finish_with_message("installed".to_string());
-        Ok(tv)
+        Ok(())
     }
 
     async fn run_postinstall_hook(
