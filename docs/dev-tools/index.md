@@ -449,6 +449,7 @@ By default, [`mise x`](/cli/exec) and [`mise r`](/cli/run) install missing non-l
 - **How to control:**
   - Setting: [`exec_auto_install`](/configuration/settings.html#exec_auto_install) (default: true)
   - Setting: [`task.run_auto_install`](/configuration/settings.html#task.run_auto_install) (default: true)
+- **When it is disabled:** if the command passed to [`mise x`](/cli/exec) belongs to a missing tool, `mise x` fails and names that tool instead of running a different copy of the command from `PATH` or from another tool. The command still runs if another configured version of the same tool is installed, if a [command wrapper](/dev-tools/shims.html#command-wrappers) is configured for it, or if an [`env._.path`](/environments/#env-path) entry that is not already on your `PATH` provides it. mise recognizes the tool by its name, the registry's bin metadata, or another installed version of it. Missing tools the command does not use only produce a warning.
 
 ### Command Not Found Handler (Shell Integration)
 

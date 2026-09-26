@@ -18,7 +18,7 @@ use crate::install_context::{InstallContext, install_dependency_declarations};
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
-use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
+use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
 use crate::toolset::tool_request::ToolRequest;
@@ -835,6 +835,53 @@ impl Toolset {
         backend.install_version(ctx, tv).await
     }
 
+    /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
+    /// so this relies on the signals available before install: the tool's name, registry bin
+    /// metadata, or another installed version of the same tool that ships the bin.
+    pub(crate) async fn missing_bin_providers(
+        &self,
+        config: &Arc<Config>,
+        missing: Vec<ToolVersion>,
+        bin_name: &str,
+    ) -> Vec<ToolVersion> {
+        let (mut providers, unmatched): (Vec<_>, Vec<_>) = missing.into_iter().partition(|tv| {
+            tv.ba().matches_bin_name(bin_name)
+                || tv
+                    .ba()
+                    .registry_tool()
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        });
+        if unmatched.is_empty() {
+            return providers;
+        }
+        // Without the scan, the name and registry signals above are all there is. Failing here
+        // instead would stop commands that no missing tool provides.
+        let installed = match self.list_installed_versions(config).await {
+            Ok(installed) => installed,
+            Err(err) => {
+                warn!("failed to list installed versions: {err:#}");
+                return providers;
+            }
+        };
+        for tv in unmatched {
+            if installed_version_ships_bin(config, &installed, &tv, bin_name).await {
+                providers.push(tv);
+            }
+        }
+        providers
+    }
+
+    /// Whether a configured, installed version of `tv`'s tool ships `bin_name`.
+    pub(crate) async fn configured_version_ships_bin(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> bool {
+        let installed = self.list_current_installed_versions(config);
+        installed_version_ships_bin(config, &installed, tv, bin_name).await
+    }
+
     pub(crate) async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
@@ -1053,6 +1100,21 @@ fn transitive_dependency_before_date(
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
         _ => tv.before_date,
     }
+}
+
+/// Whether a version in `installed` of the same tool as `tv` ships `bin_name`.
+async fn installed_version_ships_bin(
+    config: &Arc<Config>,
+    installed: &[TVTuple],
+    tv: &ToolVersion,
+    bin_name: &str,
+) -> bool {
+    for (backend, installed_tv) in installed.iter().filter(|(b, _)| &**b.ba() == tv.ba()) {
+        if let Ok(Some(_bin)) = backend.which(config, installed_tv, bin_name).await {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
