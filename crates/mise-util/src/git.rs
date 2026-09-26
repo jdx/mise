@@ -67,6 +67,11 @@ impl Git {
         match gitref {
             Some(gitref) => {
                 let remote_ref_kind = self.remote_ref_kind(&gitref)?;
+                if remote_ref_kind.is_none() && looks_like_abbreviated_sha(&gitref) {
+                    return Err(eyre!(
+                        "{gitref} is not a branch or tag on the remote, and abbreviated commit SHAs are not supported; use the full commit SHA"
+                    ));
+                }
                 self.update_ref(gitref, remote_ref_kind)
             }
             None => self.update_ref(self.current_branch()?, None),
@@ -392,6 +397,24 @@ impl Git {
         }
     }
 
+    /// Resolves `rev` to a commit SHA using only local objects and refs.
+    /// Returns `None` when the repository has no such commit.
+    pub fn resolve_commit(&self, rev: &str) -> Result<Option<String>> {
+        validate_revision("revision", rev)?;
+        let spec = format!("{rev}^{{commit}}");
+        let output = git_cmd!(&self.dir, "rev-parse", "--verify", "--quiet", &spec)
+            .stdout_capture()
+            .stderr_null()
+            .unchecked()
+            .run()
+            .wrap_err_with(|| format!("git rev-parse {spec} failed"))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!sha.is_empty()).then_some(sha))
+    }
+
     pub fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
         let output = git_cmd_read!(&self.dir, "ls-remote", "origin", branch)?;
         Ok(output
@@ -597,6 +620,14 @@ fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<Remo
 /// resolution before they can be checked out.
 fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Whether `s` looks like a commit SHA shortened below its full length.
+///
+/// Only checked after the remote reports no branch or tag by that name, so a
+/// hex-only branch name such as `cafe123` still resolves as a branch.
+fn looks_like_abbreviated_sha(s: &str) -> bool {
+    (7..40).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// If `path` is inside a linked git worktree, returns the equivalent path in
@@ -1278,6 +1309,20 @@ mod tests {
         assert!(!looks_like_sha("abcdef1")); // short SHA not supported
         assert!(!looks_like_sha(""));
         assert!(!looks_like_sha("g123456789abcdef0123456789abcdef01234567")); // non-hex
+    }
+
+    #[test]
+    fn abbreviated_sha_detection() {
+        assert!(super::looks_like_abbreviated_sha("1f22e02"));
+        assert!(super::looks_like_abbreviated_sha(
+            "1f22e025e8c0d77ee3176102"
+        ));
+        assert!(!super::looks_like_abbreviated_sha("cafe")); // too short to be a git abbreviation
+        assert!(!super::looks_like_abbreviated_sha("main"));
+        assert!(!super::looks_like_abbreviated_sha("v1.2.3"));
+        assert!(!super::looks_like_abbreviated_sha(
+            "1f22e025e8c0d77ee3176102c26a3fd6fd770cb5"
+        ));
     }
 
     #[test]

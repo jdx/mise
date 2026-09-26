@@ -318,9 +318,18 @@ _new_ plugin installations; existing plugins can use any URL.
 ```toml
 [plugins]
 elixir = "https://github.com/my-org/mise-elixir.git"
-node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gitref
+node = "https://github.com/my-org/mise-node.git#v1.2.0" # supports a branch, tag, or full commit SHA
 "vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
 ```
+
+A gitref pinned to a commit must be the full SHA; abbreviated SHAs can't be
+fetched from the remote and are rejected.
+
+Changing an entry doesn't touch a plugin that is already installed. When the
+installed checkout no longer matches its entry (a different URL, or a gitref
+that isn't checked out), `mise install`, `mise plugins install`, and
+`mise doctor` warn about it. Run `mise plugins install --force <NAME>` to
+reinstall the plugin from `[plugins]`.
 
 The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional.
 If omitted, mise clones the plugin first and then detects the plugin type from
