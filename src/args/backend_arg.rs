@@ -650,9 +650,11 @@ impl BackendArg {
     pub(crate) fn with_registry_version(&self, version: &str) -> Option<Self> {
         if self.has_explicit_backend()
             || self.has_env_backend_override()
-            || !self
-                .registry_tool()
-                .is_some_and(|tool| tool.backends.iter().any(|b| b.min_version.is_some()))
+            || !self.registry_tool().is_some_and(|tool| {
+                tool.backends
+                    .iter()
+                    .any(|b| b.min_version.is_some() || b.max_version.is_some())
+            })
         {
             return None;
         }

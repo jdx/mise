@@ -685,6 +685,32 @@ backend identifiers, backend overrides, and a matching lockfile's recorded
 backend remain authoritative. A failed download or signature verification does
 not trigger fallback. A backend without `min_version` has no lower bound.
 
+#### Maximum backend versions
+
+When a backend only serves older releases, for example a frozen 1.x line
+published separately from later majors, set `max_version` on that backend:
+
+```toml
+version_order = "semver"
+backends = [
+  { full = "aqua:example/tool-next", min_version = "2.0.0" },
+  { full = "aqua:example/tool-legacy", max_version = "2.0.0" },
+]
+bins = ["tool"]
+```
+
+The maximum is exclusive and follows the same rules as `min_version`: it must
+be a complete semantic version, requires `version_order = "semver"`, and a
+backend may set both as long as `min_version` is lower. Here `tool@1` and
+`tool@1.9.9` select `tool-legacy`, while `tool@2` and `tool@2.0.0` select
+`tool-next`. A prefix entirely at or above the boundary, such as `2`, skips the
+backend; one overlapping it keeps the preferred backend.
+
+A locked backend stays in use only for versions it serves. If the lockfile
+records `tool-legacy` and the config moves to `tool@2`, mise selects
+`tool-next` rather than asking the legacy backend for a release it does not
+publish.
+
 #### Required attestations
 
 When a project publishes [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)

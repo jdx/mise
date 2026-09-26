@@ -286,6 +286,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             full: r#"{backend}"#,
                             platforms: &[],
                             min_version: None,
+                            max_version: None,
                             attestations_since: None,
                             options: &[],
                         }}"##
@@ -307,21 +308,36 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    let min_version = backend
-                        .get("min_version")
-                        .map(|value| {
+                    let version_bound = |key: &str| {
+                        backend.get(key).map(|value| {
                             let value = value
                                 .as_str()
-                                .expect("backend min_version must be a string");
+                                .unwrap_or_else(|| panic!("backend {key} must be a string"));
                             assert_eq!(
                                 version_order, "VersionOrder::Semver",
-                                "[{short}] backend min_version requires version_order = semver"
+                                "[{short}] backend {key} requires version_order = semver"
                             );
-                            semver::Version::parse(value)
-                                .expect("backend min_version must be a semantic version");
-                            format!("Some({})", raw_string_literal(value))
+                            let version = semver::Version::parse(value).unwrap_or_else(|_| {
+                                panic!("[{short}] backend {key} must be a semantic version")
+                            });
+                            (value.to_string(), version)
                         })
-                        .unwrap_or_else(|| "None".to_string());
+                    };
+                    let min_version = version_bound("min_version");
+                    let max_version = version_bound("max_version");
+                    if let (Some((_, minimum)), Some((_, maximum))) = (&min_version, &max_version) {
+                        assert!(
+                            minimum.cmp_precedence(maximum).is_lt(),
+                            "[{short}] backend min_version must be lower than max_version"
+                        );
+                    }
+                    let bound_literal = |bound: Option<(String, semver::Version)>| {
+                        bound
+                            .map(|(value, _)| format!("Some({})", raw_string_literal(&value)))
+                            .unwrap_or_else(|| "None".to_string())
+                    };
+                    let min_version = bound_literal(min_version);
+                    let max_version = bound_literal(max_version);
                     let attestations_since = backend
                         .get("attestations_since")
                         .map(|value| {
@@ -343,6 +359,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             full: r#"{full}"#,
                             platforms: &[{platforms}],
                             min_version: {min_version},
+                            max_version: {max_version},
                             attestations_since: {attestations_since},
                             options: &[{options}],
                         }}"##,
