@@ -86,6 +86,10 @@ impl DotfilesTrack {
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
         let mut locations = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
+        // targets this file already declares exactly as this command would:
+        // no prompt and no rewrite, and their baseline records a checkpoint
+        // only if something changed
+        let mut retracked: Vec<String> = vec![];
         let mut manual = vec![];
         // what each path expands to, sized up before anything is written:
         // one walk of every target of this run beside the entries already
@@ -246,9 +250,45 @@ impl DotfilesTrack {
             let declaration_key = existing
                 .filter(|req| req.origin.config == config_path)
                 .map_or(target_key.as_str(), |req| req.target_raw.as_str());
+            // the keys this file's declaration wrote, whether as an inline
+            // table or a `[dotfiles."path"]` table
+            let previous_item = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get(declaration_key));
+            let previous_table = previous_item.and_then(Item::as_table_like);
+            let previous: Vec<String> = previous_table
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            // the list as this file wrote it, so a pattern the loader
+            // could not parse (and warned about) is not silently dropped
+            let previous_exclude = previous_table
+                .and_then(|table| table.get("exclude"))
+                .and_then(Item::as_array)
+                .cloned();
+            let previous_include = previous_table
+                .and_then(|table| table.get("include"))
+                .and_then(Item::as_array)
+                .cloned();
+            let entry = self.entry(existing, &previous, previous_exclude, previous_include);
+            let retrack = existing.is_some_and(|req| req.origin.config == config_path)
+                && previous_item.is_some_and(|previous| same_declaration(previous, &entry));
+            if retrack {
+                retracked.push(target_key.clone());
+            } else {
+                let dotfiles = doc
+                    .entry("dotfiles")
+                    .or_insert(Item::Table(toml_edit::Table::new()));
+                if let Some(table) = dotfiles.as_table_mut() {
+                    table.set_implicit(false);
+                    table.insert(declaration_key, Item::Value(Value::InlineTable(entry)));
+                } else {
+                    doc["dotfiles"][declaration_key] = Item::Value(Value::InlineTable(entry));
+                }
+                edit.changed = true;
+            }
             locations.insert(target_key.clone(), config_path);
             let policy = self.policy(existing);
-            if !policy.autosave {
+            if !policy.autosave && !retrack {
                 manual.push(target_key.clone());
             }
             let set = &preview_set;
@@ -367,45 +407,18 @@ impl DotfilesTrack {
                 );
             }
             previews.push(summary);
-            // the keys this file's declaration wrote, whether as an inline
-            // table or a `[dotfiles."path"]` table
-            let previous_table = doc
-                .get("dotfiles")
-                .and_then(|dotfiles| dotfiles.get(declaration_key))
-                .and_then(Item::as_table_like);
-            let previous: Vec<String> = previous_table
-                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
-                .unwrap_or_default();
-            // the list as this file wrote it, so a pattern the loader
-            // could not parse (and warned about) is not silently dropped
-            let previous_exclude = previous_table
-                .and_then(|table| table.get("exclude"))
-                .and_then(Item::as_array)
-                .cloned();
-            let previous_include = previous_table
-                .and_then(|table| table.get("include"))
-                .and_then(Item::as_array)
-                .cloned();
-            let entry = self.entry(existing, &previous, previous_exclude, previous_include);
-            let dotfiles = doc
-                .entry("dotfiles")
-                .or_insert(Item::Table(toml_edit::Table::new()));
-            if let Some(table) = dotfiles.as_table_mut() {
-                table.set_implicit(false);
-                table.insert(declaration_key, Item::Value(Value::InlineTable(entry)));
-            } else {
-                doc["dotfiles"][declaration_key] = Item::Value(Value::InlineTable(entry));
-            }
             declared.push((target_key, target));
         }
         if self.dry_run {
             info!("dotfiles: dry run; nothing was tracked");
             return Ok(());
         }
-        if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
+        let only_retracks = retracked.len() == declared.len();
+        if !only_retracks && !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
                 .zip(&previews)
+                .filter(|((key, _), _)| !retracked.contains(key))
                 .map(|((key, _), summary)| format!("{key} ({summary})"))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -416,9 +429,11 @@ impl DotfilesTrack {
         }
         let result = async {
             for (path, edit) in &mut edits {
-                edit.write(path)?;
+                if edit.changed {
+                    edit.write(path)?;
+                }
             }
-            activate_and_baseline(&declared).await
+            activate_and_baseline(&declared, only_retracks).await
         }
         .await;
         if let Err(error) = result {
@@ -433,10 +448,17 @@ impl DotfilesTrack {
             return Err(error);
         }
         for ((key, _), summary) in declared.iter().zip(&previews) {
-            info!(
-                "dotfiles: tracking {key} ({summary}; declared in {})",
-                display_path(&locations[key])
-            );
+            if retracked.contains(key) {
+                info!(
+                    "dotfiles: {key} is already tracked (declared in {})",
+                    display_path(&locations[key])
+                );
+            } else {
+                info!(
+                    "dotfiles: tracking {key} ({summary}; declared in {})",
+                    display_path(&locations[key])
+                );
+            }
         }
         if !manual.is_empty() {
             info!(
@@ -444,7 +466,7 @@ impl DotfilesTrack {
                 manual.join(", ")
             );
         }
-        if manual.len() < declared.len() {
+        if !only_retracks && manual.len() < declared.len() - retracked.len() {
             crate::cli::dotfiles::capture_health::report().await;
         }
         Ok(())
@@ -588,6 +610,9 @@ struct DeclarationEdit {
     document: DocumentMut,
     original: Option<String>,
     written: Option<String>,
+    /// Whether any target changed its declaration here; a file only
+    /// re-tracked is left exactly as it is.
+    changed: bool,
 }
 
 impl DeclarationEdit {
@@ -601,6 +626,7 @@ impl DeclarationEdit {
             document: original.as_deref().unwrap_or("").parse()?,
             original,
             written: None,
+            changed: false,
         })
     }
 
@@ -678,7 +704,9 @@ fn commit_declaration(
 }
 
 /// Checks that every declared entry is active and saves their baseline.
-async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
+/// When every entry was already tracked, the baseline is recorded only if
+/// something changed since the newest checkpoint.
+async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bool) -> Result<()> {
     let config = Config::reset().await?;
     // The capture resolves this set again through `enrollment::resolve`,
     // so the declaration is what this function needs: it is checking
@@ -699,7 +727,7 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
     }
-    baseline(&tracked, declared).await?;
+    baseline(&tracked, declared, only_retracks).await?;
     for (key, target) in declared {
         if target.is_symlink() {
             // This resolver is read-only, follows dangling chains, and bounds
@@ -732,7 +760,11 @@ fn resolve_symlink_source(target: &Path) -> Result<PathBuf> {
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails
 /// the enrollment, since an untracked file must never look protected.
-async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Result<()> {
+async fn baseline(
+    tracked: &TrackedSet,
+    declared: &[(String, PathBuf)],
+    only_retracks: bool,
+) -> Result<()> {
     if !crate::config::Settings::get().history.enabled {
         warn!("dotfiles: history is disabled (history.enabled = false); no baseline saved");
         return Ok(());
@@ -761,6 +793,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
         .map(|(_, path)| normalize_target(path))
         .collect();
     draft.description = Some(format!("tracked {names}"));
+    draft.skip_unchanged = only_retracks;
     let tracked = tracked.clone();
     tokio::task::spawn_blocking(move || {
         // Lock waits and filesystem capture must not block a Tokio worker.
@@ -807,6 +840,18 @@ pub(crate) fn normalized_target(target: &Path) -> String {
         Ok(_) => "~".to_string(),
         Err(_) => target.to_string_lossy().to_string(),
     }
+}
+
+/// Whether `entry` says what the declaration `previous` already says, so
+/// writing it would change nothing but formatting. A declaration that
+/// cannot be compared counts as different, and is rewritten as before.
+fn same_declaration(previous: &Item, entry: &InlineTable) -> bool {
+    let Ok(previous) = previous.clone().into_value() else {
+        return false;
+    };
+    let parse = |value: &Value| toml::from_str::<toml::Table>(&format!("v = {value}")).ok();
+    parse(&previous)
+        .is_some_and(|previous| Some(previous) == parse(&Value::InlineTable(entry.clone())))
 }
 
 fn string(text: &str) -> Value {
