@@ -36,6 +36,24 @@ assert_not_contains "mise env -s bash" "GIT_ENV"
 assert_not_contains "mise env -s bash" "HIDDEN_FOLDER"
 assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
 
+# a folder's task_config.includes resolve inside it, its file tasks run there,
+# and it does not replace the project's default task directories
+mkdir -p .mise/tasks .mise/conf.d/git/tasks
+printf '#!/usr/bin/env bash\necho "project-task"\n' >.mise/tasks/project-task
+cat >.mise/conf.d/git/tasks/git-file <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD $MISE_CONFIG_ROOT"
+EOF
+chmod +x .mise/tasks/project-task .mise/conf.d/git/tasks/git-file
+cat >>.mise/conf.d/git/mise.toml <<'EOF'
+
+[task_config]
+includes = ["tasks"]
+EOF
+assert "mise run --skip-tools git-file" "$PWD/.mise/conf.d/git $PWD/.mise/conf.d/git"
+assert "mise run --skip-tools project-task" "project-task"
+assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
+
 # environment files inside a folder follow the usual rule
 assert_contains "MISE_ENV=dev mise config ls" ".mise/conf.d/git/mise.dev.toml"
 assert_contains "MISE_ENV=dev mise env -s bash" "GIT_ENV=dev"
@@ -66,6 +84,31 @@ EOF
 ln -s "$HOME/dotfiles/shell/zsh" "$MISE_CONFIG_DIR/conf.d/shell-zsh"
 
 assert_contains "mise env -s bash" "DEV_GIT_ROOT=$MISE_CONFIG_DIR/conf.d/dev-git"
+
+# Global folder fragment tasks run in the folder too, with config_root and
+# MISE_CONFIG_ROOT pointing at it, and leave the global tasks directory loaded.
+mkdir -p "$MISE_CONFIG_DIR/tasks" "$MISE_CONFIG_DIR/conf.d/dev-git/tasks"
+printf '#!/usr/bin/env bash\necho "global-task"\n' >"$MISE_CONFIG_DIR/tasks/global-task"
+cat >"$MISE_CONFIG_DIR/conf.d/dev-git/tasks/dev-git-file" <<'EOF'
+#!/usr/bin/env bash
+echo "$PWD $MISE_CONFIG_ROOT"
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/global-task" "$MISE_CONFIG_DIR/conf.d/dev-git/tasks/dev-git-file"
+cat >>"$MISE_CONFIG_DIR/conf.d/dev-git/mise.toml" <<'EOF'
+
+[task_config]
+includes = ["tasks"]
+
+[tasks.dev-git-root]
+run = 'echo "{{ config_root }}"'
+
+[tasks.dev-git-pwd]
+run = "pwd"
+EOF
+assert "mise run --skip-tools dev-git-root" "$MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools dev-git-pwd" "$MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools dev-git-file" "$MISE_CONFIG_DIR/conf.d/dev-git $MISE_CONFIG_DIR/conf.d/dev-git"
+assert "mise run --skip-tools global-task" "global-task"
 assert_contains "mise bootstrap --dry-run" "conf.d/dev-git/gitconfig"
 assert_not_contains "mise bootstrap --dry-run" "zshrc"
 assert_contains "MISE_ENV=dev mise bootstrap --dry-run" "shell-zsh/zshrc"

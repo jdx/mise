@@ -4995,7 +4995,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
-        let sources = load_task_sources_from_configs(
+        let scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
@@ -5006,7 +5006,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         )
         .await?;
         rendered_file_tasks.finish_config();
-        for task in sources.into_tasks() {
+        for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
     }
@@ -6126,20 +6126,24 @@ impl RenderedTaskCache {
 
 impl TaskSources {
     fn into_tasks(self) -> Vec<Task> {
-        let mut tasks = merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
-            .into_iter()
-            .sorted_by_cached_key(|t| t.name.clone())
-            .collect::<Vec<_>>();
-        let all_tasks = tasks
-            .clone()
-            .into_iter()
-            .map(|t| (t.name.clone(), t))
-            .collect::<BTreeMap<_, _>>();
-        for task in tasks.iter_mut() {
-            task.display_name = task.display_name(&all_tasks);
-        }
-        tasks
+        merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
     }
+}
+
+fn sort_and_name_tasks(tasks: Vec<Task>) -> Vec<Task> {
+    let mut tasks = tasks
+        .into_iter()
+        .sorted_by_cached_key(|t| t.name.clone())
+        .collect::<Vec<_>>();
+    let all_tasks = tasks
+        .clone()
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect::<BTreeMap<_, _>>();
+    for task in tasks.iter_mut() {
+        task.display_name = task.display_name(&all_tasks);
+    }
+    tasks
 }
 
 /// Load one config root as a single precedence unit.
@@ -6155,7 +6159,7 @@ async fn load_tasks_from_configs(
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<Vec<Task>> {
-    Ok(load_task_sources_from_configs(
+    load_tasks_from_configs_and_folders(
         config,
         dir,
         configs,
@@ -6164,14 +6168,72 @@ async fn load_tasks_from_configs(
         cascaded_task_config,
         None,
     )
+    .await
+}
+
+/// Load `configs` as one root, except that the files of each conf.d folder
+/// fragment among them load as a root of their own, the folder.
+///
+/// A folder fragment is self-contained: its tasks run in the folder, its
+/// `task_config` applies only to its own tasks, and its `includes` neither
+/// replace nor are replaced by the enclosing root's. The enclosing root's
+/// tasks win a name clash with a fragment's, as they would in one root, and
+/// a higher-precedence fragment's win over a lower one's.
+async fn load_tasks_from_configs_and_folders(
+    config: &Arc<Config>,
+    dir: &Path,
+    configs: Vec<&Arc<dyn ConfigFile>>,
+    templates: &TaskDefinitions,
+    monorepo_context: bool,
+    cascaded_task_config: Option<&CascadedTaskConfig>,
+    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+) -> Result<Vec<Task>> {
+    let (folder_configs, configs): (Vec<_>, Vec<_>) = configs
+        .into_iter()
+        .partition(|cf| is_conf_d_folder_file(cf.get_path()));
+    let mut folders: IndexMap<PathBuf, Vec<&Arc<dyn ConfigFile>>> = IndexMap::new();
+    for cf in folder_configs {
+        folders.entry(cf.config_root()).or_default().push(cf);
+    }
+
+    let mut tasks: IndexMap<String, Task> = load_task_sources_from_configs(
+        config,
+        dir,
+        configs,
+        templates,
+        monorepo_context,
+        cascaded_task_config,
+        rendered_file_tasks.as_deref_mut(),
+    )
     .await?
-    .into_tasks())
+    .into_tasks()
+    .into_iter()
+    .map(|task| (task.name.clone(), task))
+    .collect();
+    for (folder, folder_configs) in folders {
+        let folder_tasks = load_task_sources_from_configs(
+            config,
+            &folder,
+            folder_configs,
+            templates,
+            monorepo_context,
+            None,
+            rendered_file_tasks.as_deref_mut(),
+        )
+        .await?
+        .into_tasks();
+        for task in folder_tasks {
+            tasks.entry(task.name.clone()).or_insert(task);
+        }
+    }
+    Ok(sort_and_name_tasks(tasks.into_values().collect()))
 }
 
 /// Load file and inline task sources without merging them.
 ///
-/// Global user and system scopes use this boundary so they can share rendered
-/// file tasks without merging task definitions across the scope boundary.
+/// Global user and system scopes pass a shared rendered-task cache through
+/// [`load_tasks_from_configs_and_folders`] so they can share rendered file
+/// tasks without merging task definitions across the scope boundary.
 async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,
