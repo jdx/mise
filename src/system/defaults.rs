@@ -526,6 +526,7 @@ fn container_plist(
 
 #[cfg(target_os = "macos")]
 mod macos {
+    use super::*;
     use core_foundation::base::TCFType;
     use core_foundation::data::CFData;
     use core_foundation::propertylist::{CFPropertyList, create_data, create_with_data};
@@ -538,9 +539,6 @@ mod macos {
     use core_foundation_sys::propertylist::{
         kCFPropertyListImmutable, kCFPropertyListXMLFormat_v1_0,
     };
-    use indexmap::IndexSet;
-
-    use super::*;
 
     fn host_id(host: HostScope) -> core_foundation_sys::string::CFStringRef {
         unsafe {
@@ -609,8 +607,11 @@ mod macos {
     }
 
     pub(super) fn read(domain: &str, key: &str, host: HostScope) -> Result<Option<plist::Value>> {
+        read_at(&locate(domain, host)?, key)
+    }
+
+    fn read_at(location: &Location, key: &str) -> Result<Option<plist::Value>> {
         let key = CFString::new(key);
-        let location = locate(domain, host)?;
         let value = unsafe {
             CFPreferencesCopyValue(
                 key.as_concrete_TypeRef(),
@@ -628,7 +629,7 @@ mod macos {
         Ok(Some(plist::Value::from_reader_xml(data.bytes())?))
     }
 
-    fn set(domain: &str, key: &str, value: &plist::Value, host: HostScope) -> Result<()> {
+    fn set(location: &Location, domain: &str, key: &str, value: &plist::Value) -> Result<()> {
         let mut xml = Vec::new();
         plist::to_writer_xml(&mut xml, value)?;
         let data = CFData::from_buffer(&xml);
@@ -636,7 +637,6 @@ mod macos {
             .map_err(|err| eyre::eyre!("failed to parse macOS preference: {err}"))?;
         let value = unsafe { CFPropertyList::wrap_under_create_rule(value) };
         let key = CFString::new(key);
-        let location = locate(domain, host)?;
         if let Some(parent) = location.container.as_deref().and_then(|path| path.parent()) {
             // A container that has never saved a preference, or a ByHost one, may not
             // have its folder yet.
@@ -654,8 +654,7 @@ mod macos {
         Ok(())
     }
 
-    fn synchronize(domain: &str, host: HostScope) -> Result<()> {
-        let location = locate(domain, host)?;
+    fn synchronize(location: &Location, domain: &str) -> Result<()> {
         unsafe {
             if CFPreferencesSynchronize(
                 location.application,
@@ -685,16 +684,32 @@ mod macos {
     }
 
     pub(super) fn write_all(requests: &[DefaultsRequest]) -> Result<()> {
-        let mut domains = IndexSet::new();
-        let writes = prepare_writes(requests, read)?;
+        // Resolve each domain once, so an app creating its container during apply
+        // cannot split a read, write, and synchronize across two plists.
+        let mut locations = IndexMap::new();
+        let writes = prepare_writes(requests, |domain, key, host| {
+            read_at(located(&mut locations, domain, host)?, key)
+        })?;
         for ((domain, key, host), value) in &writes {
-            set(domain, key, value, *host)?;
-            domains.insert((domain.as_str(), *host));
+            set(located(&mut locations, domain, *host)?, domain, key, value)?;
         }
-        for (domain, host) in domains {
-            synchronize(domain, host)?;
+        for ((domain, _), location) in &locations {
+            synchronize(location, domain)?;
         }
         Ok(())
+    }
+
+    fn located<'a>(
+        locations: &'a mut IndexMap<(String, HostScope), Location>,
+        domain: &str,
+        host: HostScope,
+    ) -> Result<&'a Location> {
+        let key = (domain.to_string(), host);
+        if !locations.contains_key(&key) {
+            let location = locate(domain, host)?;
+            locations.insert(key.clone(), location);
+        }
+        Ok(&locations[&key])
     }
 
     #[cfg(test)]
