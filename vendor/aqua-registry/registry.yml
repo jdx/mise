@@ -7498,6 +7498,75 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: SUPERCILEX
+    repo_name: ftzz
+    description: File Tree Fuzzer creates a pseudo-random directory hierarchy filled with some number of files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.1.1"
+        no_asset: true
+      - version_constraint: Version == "1.1.4"
+        asset: ftzz-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.1.3")
+        asset: ftzz-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.0.0")
+        asset: ftzz-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+      - version_constraint: "true"
+        asset: "{{.Arch}}-{{.OS}}-ftzz"
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
   - name: SUPERCILEX/fuc/cpz
     type: github_release
     repo_owner: SUPERCILEX
@@ -17252,6 +17321,46 @@ packages:
     overrides:
       - goos: windows
         format: zip
+  - type: github_release
+    repo_owner: atomicdotdev
+    repo_name: atomic
+    description: A Semantic Change Graph (SCG) to track memory, intent, provenance, and change as a single unit of work
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.17.1")
+        asset: atomic-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums-sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: atomic-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums-sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: atuinsh
     repo_name: atuin
@@ -62457,6 +62566,28 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: kunchenguid
+    repo_name: treehouse
+    description: Manage worktrees without managing worktrees
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: treehouse-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: treehouse-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: http
     repo_owner: kunobi-ninja
     repo_name: kunobi
@@ -63455,18 +63586,48 @@ packages:
           - linux/amd64
   - type: github_release
     repo_owner: lexfrei
-    repo_name: claudeline
+    repo_name: ailine
+    aliases:
+      - name: lexfrei/claudeline
     description: Claude Code statusline with real usage limits from Anthropic API
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.9.0")
         asset: claudeline_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
+        files:
+          - name: claudeline
         checksum:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
         supported_envs:
+          - darwin
+      - version_constraint: semver("<= 1.10.1")
+        asset: claudeline_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: claudeline
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: ailine_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ailine
+          - name: claudeline
+            src: ailine
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
           - darwin
   - type: github_release
     repo_owner: liamg

@@ -1,5 +1,82 @@
 # Changelog
 
+## [2026.9.15](https://github.com/jdx/mise/compare/v2026.9.14..v2026.9.15) - 2026-09-26
+
+### 🚀 Features
+
+- **(bootstrap)** show Mac App Store app names in packages status by @jdx in [#13622](https://github.com/jdx/mise/pull/13622)
+- **(oci)** package vfox plugin tools in mise oci images by @jdx in [#13670](https://github.com/jdx/mise/pull/13670)
+- **(pypi)** support #subdirectory= and .git-less URLs in git sources by @jakedgy in [#13607](https://github.com/jdx/mise/pull/13607)
+- **(vfox)** let plugins update installs that no longer match tool options by @jdx in [#13668](https://github.com/jdx/mise/pull/13668)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** refresh apt lists when a package has no install candidate by @jdx in [#13659](https://github.com/jdx/mise/pull/13659)
+- **(bootstrap)** name the config behind an unresolvable brew formula in prune by @jdx in [#13661](https://github.com/jdx/mise/pull/13661)
+- **(bootstrap)** write macOS defaults to sandboxed app containers by @jdx in [#13660](https://github.com/jdx/mise/pull/13660)
+- **(config)** don't cache settings loaded before a concurrent reset by @jdx in [#13646](https://github.com/jdx/mise/pull/13646)
+- **(dotfiles)** stop `*` crossing `/` in tracked include patterns by @jdx in [#13618](https://github.com/jdx/mise/pull/13618)
+- **(dotfiles)** anchor include/exclude patterns with a leading slash to the entry root by @jdx in [#13621](https://github.com/jdx/mise/pull/13621)
+- **(exec)** don't fall back to PATH for a missing tool when auto-install is off by @jdx in [#13650](https://github.com/jdx/mise/pull/13650)
+- **(exec)** warn instead of failing when a missing tool's command falls back to PATH by @jdx in [#13658](https://github.com/jdx/mise/pull/13658)
+- **(plugins)** warn when an installed plugin drifts from its [plugins] pin by @jdx in [#13663](https://github.com/jdx/mise/pull/13663)
+- **(shim)** apply command wrappers through Windows exe and file shims by @jdx in [#13673](https://github.com/jdx/mise/pull/13673)
+- **(task)** fail `tasks validate` when a file task's #USAGE spec does not parse by @jdx in [#13672](https://github.com/jdx/mise/pull/13672)
+- **(task)** run conf.d folder fragment tasks in the folder by @jdx in [#13662](https://github.com/jdx/mise/pull/13662)
+
+### 🚜 Refactor
+
+- **(cli)** move the tool and backend argument types out of cli by @jdx in [#13637](https://github.com/jdx/mise/pull/13637)
+- **(cmd)** move process execution and git into mise-util by @jdx in [#13625](https://github.com/jdx/mise/pull/13625)
+- **(config)** move generated settings types into a mise-settings crate by @jdx in [#13616](https://github.com/jdx/mise/pull/13616)
+- **(env)** move environment and directory statics into a mise-util crate by @jdx in [#13620](https://github.com/jdx/mise/pull/13620)
+- **(file)** move file, path, hash and process helpers into mise-util by @jdx in [#13624](https://github.com/jdx/mise/pull/13624)
+- **(gpg)** move signature verification and its keys into mise-util by @jdx in [#13635](https://github.com/jdx/mise/pull/13635)
+- **(http)** move http, github, gitlab, forgejo and tokens into mise-util by @jdx in [#13631](https://github.com/jdx/mise/pull/13631)
+- **(tera)** move tera, agecrypt, remote_source and packslip_requirements into mise-util by @jdx in [#13633](https://github.com/jdx/mise/pull/13633)
+- move self-contained leaf modules into mise-util by @jdx in [#13628](https://github.com/jdx/mise/pull/13628)
+- move network flags, cache manager and exit plumbing into mise-util by @jdx in [#13629](https://github.com/jdx/mise/pull/13629)
+- remove every core → cli dependency by @jdx in [#13642](https://github.com/jdx/mise/pull/13642)
+- split mise into a library and a thin CLI binary by @jdx in [#13647](https://github.com/jdx/mise/pull/13647)
+
+### ⚡ Performance
+
+- **(prune)** back off re-checking in-use tool purgatory receipts by @jdx in [#13674](https://github.com/jdx/mise/pull/13674)
+
+### 🧪 Testing
+
+- **(dotfiles)** cover leading-slash track patterns end to end by @jdx in [#13617](https://github.com/jdx/mise/pull/13617)
+- share one settings lock across unit tests by @jdx in [#13644](https://github.com/jdx/mise/pull/13644)
+- keep re-exec'd unit tests from deleting the shared cwd fixture by @jdx in [#13645](https://github.com/jdx/mise/pull/13645)
+
+### 📦️ Dependency Updates
+
+- update rust crate demand to v2.3.0 by @renovate[bot] in [#13615](https://github.com/jdx/mise/pull/13615)
+
+### 📦 Registry
+
+- add sofka by @jylenhof in [#13612](https://github.com/jdx/mise/pull/13612)
+- add imessage-exporter ([github:ReagentX/imessage-exporter](https://github.com/ReagentX/imessage-exporter)) by @i-api in [#13640](https://github.com/jdx/mise/pull/13640)
+- add spotify-downloader ([aqua:spotDL/spotify-downloader](https://github.com/spotDL/spotify-downloader)) by @i-api in [#13641](https://github.com/jdx/mise/pull/13641)
+- nub serves 0.9.5+ from github:nubjs/nub and lists the nubr bin by @colinhacks in [#13643](https://github.com/jdx/mise/pull/13643)
+- list cog as cocogitto's bin by @jdx in [#13657](https://github.com/jdx/mise/pull/13657)
+- correct gcloud's Python bundling comment by @jdx in [#13664](https://github.com/jdx/mise/pull/13664)
+
+### Chore
+
+- **(release)** refuse release prep when a workspace manifest is already dirty by @jdx in [#13632](https://github.com/jdx/mise/pull/13632)
+- fix lints reported by the Rust 1.99 beta toolchain by @jdx in [#13627](https://github.com/jdx/mise/pull/13627)
+- drop semicolon_in_expressions_from_macros allowances by @jdx in [#13666](https://github.com/jdx/mise/pull/13666)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`SUPERCILEX/ftzz`](https://github.com/SUPERCILEX/ftzz)
+- [`atomicdotdev/atomic`](https://github.com/atomicdotdev/atomic)
+- [`kunchenguid/treehouse`](https://github.com/kunchenguid/treehouse)
+- [`lexfrei/ailine`](https://github.com/lexfrei/ailine)
+
 ## [2026.9.14](https://github.com/jdx/mise/compare/v2026.9.13..v2026.9.14) - 2026-09-25
 
 ### 🚀 Features
