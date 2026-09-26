@@ -20,6 +20,9 @@ use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::backend_uninstall::BackendUninstallContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
+use crate::hooks::mise_install_satisfied::{
+    MiseInstallSatisfiedContext, MiseInstallSatisfiedResult,
+};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::package::{
     PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
@@ -385,16 +388,7 @@ impl Vfox {
             checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         }
 
-        if sdk.get_metadata()?.hooks.contains("post_install") {
-            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.to_path_buf())?;
-            sdk.post_install(PostInstallContext {
-                root_path: install_dir.to_path_buf(),
-                runtime_version: version.to_string(),
-                sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
-                options,
-            })
-            .await?;
-        }
+        Self::run_post_install(&sdk, version, install_dir, options).await?;
         Ok(InstallResult {
             sha256: pre_install.sha256,
             verified_attestation,
@@ -418,6 +412,59 @@ impl Vfox {
             .await?;
         }
         Ok(())
+    }
+
+    async fn run_post_install(
+        sdk: &Plugin,
+        version: &str,
+        install_dir: &Path,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<()> {
+        if sdk.get_metadata()?.hooks.contains("post_install") {
+            let sdk_info = sdk.sdk_info(version.to_string(), install_dir.to_path_buf())?;
+            sdk.post_install(PostInstallContext {
+                root_path: install_dir.to_path_buf(),
+                runtime_version: version.to_string(),
+                sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
+                options,
+            })
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Run `PostInstall` again on an existing install, without downloading or
+    /// extracting, to bring it back in line with the current tool options.
+    pub async fn repair_install<ID: AsRef<Path>>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<()> {
+        let sdk = self.get_sdk_with_env(sdk)?;
+        Self::run_post_install(&sdk, version, install_dir.as_ref(), options).await
+    }
+
+    /// Ask the plugin whether an installed version still satisfies the request.
+    /// Returns `None` when the plugin has no `MiseInstallSatisfied` hook.
+    pub async fn mise_install_satisfied<ID: AsRef<Path>, T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        options: T,
+    ) -> Result<Option<MiseInstallSatisfiedResult>> {
+        let sdk = self.get_sdk_with_env(sdk)?;
+        if !sdk.get_metadata()?.hooks.contains("mise_install_satisfied") {
+            return Ok(None);
+        }
+        let ctx = MiseInstallSatisfiedContext {
+            version: version.to_string(),
+            path: install_dir.as_ref().to_path_buf(),
+            options,
+        };
+        Ok(Some(sdk.mise_install_satisfied(ctx).await?))
     }
 
     pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {

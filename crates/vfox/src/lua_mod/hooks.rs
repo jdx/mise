@@ -10,7 +10,7 @@ pub(super) struct HookFunc {
 }
 
 #[rustfmt::skip]
-pub(super) const HOOK_FUNCS: [HookFunc; 19] = [
+pub(super) const HOOK_FUNCS: [HookFunc; 20] = [
     HookFunc { _name: "Available", filename: "available" },
     HookFunc { _name: "PreInstall", filename: "pre_install" },
     HookFunc { _name: "EnvKeys", filename: "env_keys" },
@@ -36,6 +36,7 @@ pub(super) const HOOK_FUNCS: [HookFunc; 19] = [
     // mise
     HookFunc { _name: "MiseEnv", filename: "mise_env" },
     HookFunc { _name: "MisePath", filename: "mise_path" },
+    HookFunc { _name: "MiseInstallSatisfied", filename: "mise_install_satisfied" },
 ];
 
 pub(crate) fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
