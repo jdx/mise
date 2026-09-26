@@ -129,12 +129,7 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     let Some(shim_name) = shim_path.file_stem().and_then(|stem| stem.to_str()) else {
         return Ok(None);
     };
-    let same_name = if cfg!(windows) {
-        shim_name.eq_ignore_ascii_case(program)
-    } else {
-        command_names_eq(shim_name, program)
-    };
-    if !same_name {
+    if !same_command_name(shim_name, program) {
         return Ok(None);
     }
     let Some(wrapper) = command_wrapper_for(config, ts, shim_name, true).await? else {
@@ -165,33 +160,33 @@ async fn command_wrapper_for(
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
     validate_wrapper_names(wrappers.keys())?;
-    // Windows file names are case-insensitive, so a shim can be invoked as `Cargo` for
-    // `[wrappers.cargo]`. macOS collisions are rejected above; Windows ones cannot both be shims.
+    // An exact match wins. macOS collisions are rejected above; Windows ones cannot both be shims.
     let wrapper = wrappers.get(shim_name).or_else(|| {
-        if cfg!(macos) {
-            wrappers
-                .iter()
-                .find(|(name, _)| command_names_eq(name, shim_name))
-                .map(|(_, wrapper)| wrapper)
-        } else if cfg!(windows) {
-            wrappers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(shim_name))
-                .map(|(_, wrapper)| wrapper)
-        } else {
-            None
-        }
+        wrappers
+            .iter()
+            .find(|(name, _)| same_command_name(name, shim_name))
+            .map(|(_, wrapper)| wrapper)
     });
     let Some(wrapper) = wrapper else {
         return Ok(None);
     };
-    if command_names_eq(wrapper.command(), shim_name) {
+    if same_command_name(wrapper.command(), shim_name) {
         bail!("command wrapper for {shim_name} cannot delegate to itself");
     }
     if install_command {
         install_missing_wrapper_command(config, ts, wrapper.command()).await?;
     }
     Ok(Some(wrapper.clone()))
+}
+
+/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
+/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
+fn same_command_name(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        command_names_eq(a, b)
+    }
 }
 
 async fn which_shim(
