@@ -261,7 +261,7 @@ impl Exec {
             warn!("failed to create shims for lazy tools: {err:#}");
         }
 
-        ensure_command_provider_installed(
+        let warned = warn_if_command_falls_back(
             &config,
             &ts,
             &opts,
@@ -270,6 +270,8 @@ impl Exec {
             strip_dispatch_dirs,
         )
         .await?;
+        // Those were just named; the generic notice below would repeat them.
+        missing.retain(|tv| !warned.contains(tv));
 
         measure!("notify_if_versions_missing", {
             ts.notify_missing_versions(missing);
@@ -411,21 +413,21 @@ impl Exec {
     }
 }
 
-/// With auto-install off, fail when the command belongs to a missing tool. Otherwise the PATH
-/// lookup in `exec_program` runs whatever same-named binary it finds instead, which is not the
-/// version the toolset pins (#13649). Missing tools the command does not use still only warn,
-/// as they do for `mise run`.
-async fn ensure_command_provider_installed(
+/// With auto-install off, warn when the command belongs to a missing tool. The PATH lookup in
+/// `exec_program` then runs whatever same-named binary it finds, which is not the version the
+/// toolset pins, and the generic missing-tools notice is hidden by default when no other version
+/// of the tool is installed (#13649). Returns the tools it warned about.
+async fn warn_if_command_falls_back(
     config: &Arc<Config>,
     ts: &Toolset,
     opts: &InstallOptions,
     missing: &[ToolVersion],
     program: &str,
     strip_dispatch_dirs: bool,
-) -> Result<()> {
+) -> Result<Vec<ToolVersion>> {
     // A path names its binary directly; there is no lookup to fall through.
     if program.contains(['/', '\\']) {
-        return Ok(());
+        return Ok(vec![]);
     }
     let skipped = missing
         .iter()
@@ -442,11 +444,11 @@ async fn ensure_command_provider_installed(
         .cloned()
         .collect_vec();
     if skipped.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
     let providers = ts.missing_bin_providers(config, skipped, program).await;
     if providers.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
     // A command wrapper configured for this command runs in place of any tool's binary. Its
     // shim may not exist yet, so read the configuration. A wrapper dispatch resolves its own
@@ -461,7 +463,7 @@ async fn ensure_command_provider_installed(
             .keys()
             .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
         {
-            return Ok(());
+            return Ok(vec![]);
         }
     }
     // A `_.path` entry that the inherited PATH lacks is searched ahead of every tool path, so it
@@ -480,10 +482,12 @@ async fn ensure_command_provider_installed(
                 && !crate::file::is_command_wrapper_dir(dir)
         })
         .collect_vec();
-    if !path_dirs.is_empty() {
+    if !path_dirs.is_empty()
+        && let Ok(path_dirs) = std::env::join_paths(path_dirs)
+    {
         let cwd = crate::dirs::CWD.clone().unwrap_or_default();
-        if which::which_in(program, Some(std::env::join_paths(path_dirs)?), cwd).is_ok() {
-            return Ok(());
+        if which::which_in(program, Some(path_dirs), cwd).is_ok() {
+            return Ok(vec![]);
         }
     }
     // Another configured version of the same tool may supply the command, as with
@@ -492,28 +496,23 @@ async fn ensure_command_provider_installed(
     let mut uncovered = vec![];
     for tv in providers {
         if !ts.configured_version_ships_bin(config, &tv, program).await {
-            uncovered.push(format!("{}@{}", tv.ba().short, tv.version));
+            uncovered.push(tv);
         }
     }
     if uncovered.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
-    let mut msg = format!(
-        "Tool{} not installed for command: {program}\n",
-        if uncovered.len() > 1 { "s" } else { "" }
+    let versions = uncovered
+        .iter()
+        .map(|tv| format!("{}@{}", tv.ba().short, tv.version))
+        .join(" ");
+    let many = uncovered.len() > 1;
+    warn!(
+        "{versions} {} not installed and auto-install is disabled, so mise looks for {program} on PATH instead. Install {} with: mise install {versions}",
+        if many { "are" } else { "is" },
+        if many { "them" } else { "it" },
     );
-    for version in &uncovered {
-        msg.push_str(&format!("Missing tool version: {version}\n"));
-    }
-    msg.push_str(&format!(
-        "Auto-install is disabled, and mise will not run a different {program} in its place.\n"
-    ));
-    msg.push_str(&format!(
-        "Install {} with: mise install {}",
-        if uncovered.len() > 1 { "them" } else { "it" },
-        uncovered.join(" ")
-    ));
-    Err(eyre::eyre!(msg))
+    Ok(uncovered)
 }
 
 #[cfg(all(not(test), unix))]

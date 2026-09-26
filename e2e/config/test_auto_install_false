@@ -13,7 +13,7 @@ auto_install = false
 EOF
 
 # This should fail because auto_install is disabled
-assert_fail "mise exec dummy@1.0.0 -- dummy --version" "Missing tool version: dummy@1.0.0"
+assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
 
 # Test 2: mise exec with exec_auto_install=false should NOT install tools
 cat <<EOF >mise.toml
@@ -21,7 +21,7 @@ cat <<EOF >mise.toml
 exec_auto_install = false
 EOF
 
-assert_fail "mise x dummy@1.0.0 -- dummy --version" "Missing tool version: dummy@1.0.0"
+assert_fail "mise x dummy@1.0.0 -- dummy --version" "couldn't exec process"
 
 # Test 3: mise run with task_run_auto_install=false should NOT install tools
 cat <<EOF >mise.toml
@@ -52,7 +52,7 @@ run = 'dummy --version'
 EOF
 
 # Both exec and run should fail when auto_install is false
-assert_fail "mise x dummy@ref:master -- dummy --version" "Missing tool version: dummy@ref:master"
+assert_fail "mise x dummy@ref:master -- dummy --version" "couldn't exec process"
 assert_fail "mise run test" "not found"
 
 # Test 5: Verify that explicit install still works
