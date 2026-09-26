@@ -60,6 +60,23 @@ run = "echo file-fragment"
 EOF
 assert "mise run --skip-tools where" "$PWD/.mise/conf.d/git"
 
+# a task a folder defines beats one from the enclosing root's default task
+# directories, whether or not a single-file fragment sits beside the folder
+mkdir -p shadow/.mise/tasks shadow/.mise/conf.d/folder
+echo '[env]' >shadow/mise.toml
+cat >shadow/.mise/tasks/shadowed <<'EOF'
+#!/usr/bin/env bash
+echo default-dir
+EOF
+chmod +x shadow/.mise/tasks/shadowed
+cat >shadow/.mise/conf.d/folder/mise.toml <<'EOF'
+[tasks.shadowed]
+run = "echo folder"
+EOF
+assert "cd shadow && mise run --skip-tools shadowed" "folder"
+echo '[env]' >shadow/.mise/conf.d/00-file.toml
+assert "cd shadow && mise run --skip-tools shadowed" "folder"
+
 # task_config cascaded from a parent root still reaches a folder's tasks
 mkdir -p cascade/child/.mise/conf.d/frag
 cat >cascade/wrap <<'EOF'

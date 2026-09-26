@@ -90,7 +90,8 @@ it defines, and `task_config.includes` resolve inside the folder, so `includes =
 file tasks from `git-tools/tasks/` without replacing the default task directories of the config
 around it, such as `~/.config/mise/tasks`. `[task_config]` defaults cascaded from a parent config
 root still apply. When a folder and other config define a task with the same name, the task from the
-higher-precedence file wins, following the load order below.
+higher-precedence file wins, following the load order below. A task found only in a default task
+directory, such as `.mise/tasks`, loses to one that a config file defines.
 
 Only `mise.toml`, `mise.local.toml`, `mise.<env>.toml`, and `mise.<env>.local.toml` are read from a
 folder, and folders are not searched recursively. Folders whose names start with `.` are ignored.

@@ -6188,7 +6188,10 @@ struct TaskRootConfigs<'a> {
 /// ancestor roots still reach it, but not their `includes` or `excludes`,
 /// which belong to the enclosing root. When roots define the same task name,
 /// the task from the higher-precedence config wins, so a folder beats the
-/// single-file fragments beside it and loses to the root's own config.
+/// single-file fragments beside it and loses to the root's own config. A task
+/// from a default task directory loses to any a config defines, as it would
+/// within one root; between two, the enclosing root's wins, then folders in
+/// config order.
 async fn load_tasks_from_configs_and_folders(
     config: &Arc<Config>,
     dir: &Path,
@@ -6246,12 +6249,13 @@ async fn load_tasks_from_configs_and_folders(
         .await?
         .into_tasks();
         for task in root_tasks {
-            // A task from the root's default task directories ranks just
-            // below the root's lowest-precedence config.
-            let rank = match precedences.get(task.config_precedence) {
-                Some(precedence) => precedence * 2,
-                None => precedences.last().map_or(usize::MAX, |p| p * 2 + 1),
-            };
+            // A task no config names, found in a root's default task
+            // directories, ranks below every task a config defines. Among
+            // those, the first root loaded keeps the name.
+            let rank = precedences
+                .get(task.config_precedence)
+                .copied()
+                .unwrap_or(usize::MAX);
             match tasks.get(&task.name) {
                 Some((existing, _)) if *existing <= rank => {}
                 _ => {
