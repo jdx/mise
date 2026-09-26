@@ -31,9 +31,7 @@ use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
 mod api;
 mod cask;
-mod elf;
 mod fetch;
-mod macho;
 mod maintenance;
 mod pour;
 mod prefix;

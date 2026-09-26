@@ -14,8 +14,8 @@ use std::path::Path;
 
 use eyre::bail;
 
-use super::relocate::Replacement;
-use crate::result::Result;
+use super::Replacement;
+use eyre::Result;
 
 const MH_MAGIC_64_LE: u32 = 0xfeedfacf;
 const FAT_MAGIC_BE: u32 = 0xcafebabe;
@@ -206,7 +206,7 @@ pub(super) fn patch(content: &mut [u8], replacements: &[Replacement], path: &Pat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::system::packages::brew::relocate::tests::test_replacements;
+    use crate::tests::test_replacements;
 
     /// build a minimal 64-bit Mach-O: header + LC_SEGMENT_64 (one section)
     /// + LC_LOAD_DYLIB with the given name, then data at `data_off`

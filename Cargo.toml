@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-brew-relocation",
   "crates/mise-agent-env",
   "crates/vfox",
   "crates/aqua-registry",
@@ -281,6 +282,7 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = [
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
+mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
 self_update = { version = "1", optional = true, default-features = false, features = [
   "archive-tar",

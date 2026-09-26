@@ -381,6 +381,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
 	MISE_CACHE_CORE_VERSION=""
+	MISE_BREW_RELOCATION_VERSION=""
 	MISE_AGENT_ENV_VERSION=""
 	MISE_SETTINGS_VERSION=""
 	MISE_UTIL_VERSION=""
@@ -395,6 +396,9 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 	cargo add -p mise-settings "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
 	cargo add -p mise-util "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+
+	bump_and_publish_subcrate "mise-brew-relocation" "crates/mise-brew-relocation" "MISE_BREW_RELOCATION_VERSION"
+	cargo add -p mise --target 'cfg(unix)' "mise-brew-relocation@$MISE_BREW_RELOCATION_VERSION"
 
 	# Copy settings.toml into the crate directory so the published package includes it.
 	cp settings.toml crates/mise-settings/settings.toml
