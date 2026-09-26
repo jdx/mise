@@ -30,6 +30,7 @@ usage = { version = "latest", minimum_release_age = "0s" }
 wait-for-gh-rate-limit = { version = "latest", minimum_release_age = "0s" }
 sops = "latest"
 node = "24"
+bare = "1.33.4"
 
 [wrappers.cargo]
 command = "mbx"

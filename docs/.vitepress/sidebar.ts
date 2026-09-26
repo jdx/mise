@@ -71,6 +71,7 @@ export const sidebar: SidebarItem[] = [
         link: "/core-tools",
         collapsed: true,
         items: [
+          { text: "Bare", link: "/lang/bare" },
           { text: "Bun", link: "/lang/bun" },
           { text: "Deno", link: "/lang/deno" },
           { text: "Elixir", link: "/lang/elixir" },

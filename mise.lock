@@ -161,6 +161,35 @@ checksum = "sha256:8357e02ea6251ad325ccc8c99163a3d0a63ca8eaf2e7e75f0ed8578a81847
 url = "https://github.com/aubepkg/aube/releases/download/v2.4.0/aube-v2.4.0-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
+[[tools.bare]]
+version = "1.33.4"
+backend = "core:bare"
+specifiers = ["1.33.4"]
+
+[tools.bare."platforms.linux-arm64"]
+checksum = "sha256:6f0f9741c935a2a5ba5547156a5c2ae84cf848932412b8ffbf3d1c9e698a6a03"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-linux-arm64-1.33.4.tgz"
+
+[tools.bare."platforms.linux-x64"]
+checksum = "sha256:6e8583d6a5a15f6937555db8afdb4a4253dbd245d9f13e17a929b57db08914fb"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-linux-x64-1.33.4.tgz"
+
+[tools.bare."platforms.linux-x64-baseline"]
+checksum = "sha256:6e8583d6a5a15f6937555db8afdb4a4253dbd245d9f13e17a929b57db08914fb"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-linux-x64-1.33.4.tgz"
+
+[tools.bare."platforms.macos-arm64"]
+checksum = "sha256:2c378796ba9d449eda8d1a7bbe64f5dd3f5158a81dca9100c09b1bf6db2b1fd7"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-darwin-arm64-1.33.4.tgz"
+
+[tools.bare."platforms.windows-x64"]
+checksum = "sha256:490818c2b46824a34908565035d30d5a353957a60dae059147d1c5e118933b04"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-win32-x64-1.33.4.tgz"
+
+[tools.bare."platforms.windows-x64-baseline"]
+checksum = "sha256:490818c2b46824a34908565035d30d5a353957a60dae059147d1c5e118933b04"
+url = "https://github.com/holepunchto/bare-runtime/releases/download/v1.33.4/bare-runtime-win32-x64-1.33.4.tgz"
+
 [[tools.bun]]
 version = "1.4.2"
 backend = "core:bun"

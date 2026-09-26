@@ -13,6 +13,7 @@ use crate::path_env::PathEnv;
 use crate::timeout::{TimeoutError, run_with_timeout, run_with_timeout_async};
 use crate::toolset::ToolVersion;
 
+mod bare;
 mod bun;
 mod deno;
 mod dotnet;
@@ -35,6 +36,7 @@ mod zig;
 
 pub(crate) static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
+        Arc::new(bare::BarePlugin::new()),
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),
         Arc::new(dotnet::DotnetPlugin::new()),

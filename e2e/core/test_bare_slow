@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+mise use bare@1.28.3
+assert_contains "mise exec -- bare --version" "v1.28.3"
+
+mise use bare@1.33.4
+assert_contains "mise exec -- bare --version" "v1.33.4"
+assert_contains "mise exec -- bare --eval \"console.log('mise-bare-ok')\"" "mise-bare-ok"
+
+mise lock
+mise uninstall bare@1.33.4
+export MISE_URL_REPLACEMENTS='{"https://api.github.com":"http://127.0.0.1:1","https://mise-versions.jdx.dev":"http://127.0.0.1:1"}'
+assert "mise install --locked"
+assert_contains "mise exec -- bare --version" "v1.33.4"
+
+mise uninstall bare@1.33.4
+sed '/checksum = /d' mise.lock >mise.lock.tmp
+mv mise.lock.tmp mise.lock
+assert_fail "mise install --locked" "no locked Bare checksum"
+
+mise use bare@1.33.4
+mise lock
+mise uninstall bare@1.33.4
+# Use perl for cross-platform in-place editing (sed -i differs on macOS vs Linux)
+perl -pi -e 's/checksum = "sha256:[^"]*"/checksum = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"/' mise.lock
+assert_fail "mise install --locked" "Checksum mismatch"

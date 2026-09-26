@@ -1,0 +1,6 @@
+backends = ["core:bare"]
+bins = ["bare"]
+description = "Bare is a small and modular JavaScript runtime"
+idiomatic_files = ["package.json"]
+test = { cmd = "bare --version", expected = "v{{version}}" }
+version_order = "semver"
