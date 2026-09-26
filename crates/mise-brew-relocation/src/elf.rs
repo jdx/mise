@@ -19,8 +19,9 @@
 use std::path::Path;
 
 use eyre::bail;
+use log::debug;
 
-use crate::result::Result;
+use eyre::Result;
 
 const PLACEHOLDER_PREFIX: &str = "@@HOMEBREW_PREFIX@@";
 const PLACEHOLDER_CELLAR: &str = "@@HOMEBREW_CELLAR@@";
@@ -54,11 +55,11 @@ pub(super) struct LinkageOpts {
 }
 
 impl LinkageOpts {
-    pub(super) fn for_formula(name: &str) -> Self {
+    pub(super) fn for_formula(name: &str, prefix: &Path) -> Self {
         let is_gcc = name == "gcc" || name.starts_with("gcc@");
         LinkageOpts {
-            prefix: super::prefix::prefix().to_string_lossy().to_string(),
-            cellar: super::prefix::cellar().to_string_lossy().to_string(),
+            prefix: prefix.to_string_lossy().to_string(),
+            cellar: prefix.join("Cellar").to_string_lossy().to_string(),
             gcc_current: !is_gcc,
         }
     }
