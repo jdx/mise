@@ -2,7 +2,7 @@
 
 # Regression test for #13649: with auto-install off, `mise exec` ran a same-named
 # binary from the inherited PATH when the tool providing the command was missing,
-# exiting 0 with at most a warning.
+# usually without any warning. It still falls back, but now says so.
 
 mkdir -p "$HOME/fallback-bin"
 cat >"$HOME/fallback-bin/dummy" <<'SCRIPT'
@@ -12,30 +12,34 @@ SCRIPT
 chmod +x "$HOME/fallback-bin/dummy"
 export PATH="$HOME/fallback-bin:$PATH"
 
+warning="not installed and auto-install is disabled, so mise looks for dummy on PATH instead"
+
 cat >mise.toml <<'TOML'
 [tools]
 dummy = "1.0.0"
 TOML
 
 # A tool from config, with exec_auto_install and with auto_install disabled.
-MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
-MISE_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy@1.0.0 is $warning"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy from PATH"
+MISE_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy@1.0.0 is $warning"
 # A tool listed in auto_install_disable_tools.
-MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_fail "mise x -- dummy" "Missing tool version: dummy@1.0.0"
+MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_contains "mise x -- dummy 2>&1" "dummy@1.0.0 is $warning"
 # A tool passed on the command line.
-MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x dummy@1.1.0 -- dummy" "Missing tool version: dummy@1.1.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x dummy@1.1.0 -- dummy 2>&1" "dummy@1.1.0 is $warning"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy'"
 
-# A missing tool that does not provide the command still only warns.
-MISE_EXEC_AUTO_INSTALL=0 assert "mise x -- echo ran" "ran"
+# A missing tool that does not provide the command is not named.
+MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- echo ran 2>&1" "$warning"
 
-# Another configured version of the tool supplies the command from mise's paths.
+# Another configured version of the tool supplies the command.
 mise install dummy@1.0.0
 cat >mise.toml <<'TOML'
 [tools]
 dummy = ["2.0.0", "1.0.0"]
 TOML
 MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy" "1.0.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy 2>&1" "$warning"
 
 # The tool's name does not match the command, so an installed version of it is
 # what identifies it as the provider.
@@ -45,7 +49,7 @@ cat >mise.toml <<'TOML'
 [tools]
 mytool = "2.0.0"
 TOML
-MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: mytool@2.0.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "mytool@2.0.0 is $warning"
 
 # A different configured tool that ships the same command does not stand in for it.
 cat >mise.toml <<'TOML'
@@ -53,7 +57,7 @@ cat >mise.toml <<'TOML'
 mytool = "1.0.0"
 dummy = "2.0.0"
 TOML
-MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@2.0.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy@2.0.0 is $warning"
 
 # A project `_.path` entry is searched ahead of tool paths, so its copy runs.
 mkdir -p project-bin
@@ -70,6 +74,7 @@ dummy = "2.0.0"
 _.path = ["{{config_root}}/project-bin"]
 TOML
 MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy" "project dummy"
+MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy 2>&1" "$warning"
 
 # An entry the inherited PATH already has is searched after tool paths, so it does not.
 cat >mise.toml <<TOML
@@ -79,7 +84,7 @@ dummy = "2.0.0"
 [env]
 _.path = ["$HOME/fallback-bin"]
 TOML
-MISE_EXEC_AUTO_INSTALL=0 assert_fail "mise x -- dummy" "Missing tool version: dummy@2.0.0"
+MISE_EXEC_AUTO_INSTALL=0 assert_contains "mise x -- dummy 2>&1" "dummy@2.0.0 is $warning"
 
 # A command wrapper configured for the command runs, even before its shim exists.
 cat >mise.toml <<'TOML'
@@ -91,6 +96,7 @@ dummy = "echo"
 TOML
 assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/dummy'"
 MISE_EXEC_AUTO_INSTALL=0 assert "mise x -- dummy wrapped" "wrapped"
+MISE_EXEC_AUTO_INSTALL=0 assert_not_contains "mise x -- dummy wrapped 2>&1" "$warning"
 
 # A wrapper's own command gets the same check when the wrapper dispatches it.
 # That lookup skips the wrapper directories, so the dummy wrapper does not apply.
@@ -102,7 +108,7 @@ dummy = "2.0.0"
 cargo = "dummy"
 dummy = "echo"
 TOML
-MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_fail "mise x -- cargo --version" "Missing tool version: dummy@2.0.0"
+MISE_EXEC_AUTO_INSTALL=0 MISE_NOT_FOUND_AUTO_INSTALL=0 assert_contains "mise x -- cargo --version 2>&1" "dummy@2.0.0 is $warning"
 
 # With auto-install on, the pinned version is installed and run as before.
 cat >mise.toml <<'TOML'
