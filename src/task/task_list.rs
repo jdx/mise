@@ -661,3 +661,19 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
         .flatten_ok()
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A miss asks the CLI frontend for similar subcommand names. The library's own tests have
+    // no CLI, so this also checks that their stand-in frontend is registered.
+    #[tokio::test]
+    async fn a_missing_task_is_an_error() {
+        let config = Config::get().await.unwrap();
+        let err = get_task_lists(&config, &["no-such-task".to_string()], false, false, false)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("no-such-task"), "{err}");
+    }
+}
