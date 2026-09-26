@@ -77,8 +77,9 @@ assert "cd shadow && mise run --skip-tools shadowed" "folder"
 echo '[env]' >shadow/.mise/conf.d/00-file.toml
 assert "cd shadow && mise run --skip-tools shadowed" "folder"
 
-# task_config cascaded from a parent root still reaches a folder's tasks
-mkdir -p cascade/child/.mise/conf.d/frag
+# task_config cascaded from a parent root still reaches a folder's tasks,
+# including its excludes
+mkdir -p cascade/child/.mise/conf.d/frag/tasks
 cat >cascade/wrap <<'EOF'
 #!/usr/bin/env bash
 echo wrapped
@@ -89,11 +90,21 @@ cat >cascade/mise.toml <<EOF
 [task_config]
 cascade = true
 shell = "$PWD/cascade/wrap -c"
+excludes = ["child/.mise/conf.d/frag/tasks/excluded"]
 EOF
 cat >cascade/child/.mise/conf.d/frag/mise.toml <<'EOF'
+[task_config]
+includes = ["tasks"]
+
 [tasks.frag-shell]
 run = "echo frag"
 EOF
+for t in kept excluded; do
+  printf '#!/usr/bin/env bash\necho %s\n' "$t" >"cascade/child/.mise/conf.d/frag/tasks/$t"
+  chmod +x "cascade/child/.mise/conf.d/frag/tasks/$t"
+done
+assert_contains "cd cascade/child && mise tasks ls" "kept"
+assert_not_contains "cd cascade/child && mise tasks ls" "excluded"
 assert "cd cascade/child && mise run --skip-tools frag-shell" "wrapped
 frag"
 

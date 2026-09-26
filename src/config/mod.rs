@@ -6184,9 +6184,9 @@ struct TaskRootConfigs<'a> {
 ///
 /// A folder fragment is self-contained: its tasks run in the folder, its
 /// `task_config` applies only to its own tasks, and its `includes` neither
-/// replace nor are replaced by the enclosing root's. Defaults cascaded from
-/// ancestor roots still reach it, but not their `includes` or `excludes`,
-/// which belong to the enclosing root. When roots define the same task name,
+/// replace nor are replaced by the enclosing root's. Defaults and `excludes`
+/// cascaded from ancestor roots still reach it, but not their `includes`,
+/// which the enclosing root already loads. When roots define the same task name,
 /// the task from the higher-precedence config wins, so a folder beats the
 /// single-file fragments beside it and loses to the root's own config. A task
 /// from a default task directory loses to any a config defines, as it would
@@ -6216,7 +6216,6 @@ async fn load_tasks_from_configs_and_folders(
     let folder_cascaded_task_config = cascaded_task_config.map(|tc| {
         let mut tc = tc.clone();
         tc.task_config.includes = None;
-        tc.task_config.excludes = None;
         tc
     });
 
