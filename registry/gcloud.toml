@@ -1,7 +1,9 @@
 version_order = "semver"
-# Only the linux-x64 archive bundles Python (since v352.0.0). On macOS, the vfox
-# plugin looks for the Python version gcloud requires; on Windows it uses
-# Google's bundled-Python archive unless bundled_python = "false" is set.
+# Google's linux-x64 archive bundles Python (since v352.0.0). On Windows x86_64,
+# the vfox plugin uses Google's separate bundled-Python archive unless
+# bundled_python = "false" is set. On macOS, the exact Python version gcloud
+# requires must already be installed: the plugin finds it and passes it as
+# CLOUDSDK_PYTHON, or warns and skips gcloud's own Python setup if it is missing.
 backends = ["vfox:mise-plugins/vfox-gcloud", "asdf:mise-plugins/mise-gcloud"]
 bins = [
   "bq",
