@@ -190,7 +190,10 @@ async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Fo
     match canonical_formula_name(base, aliases, name).await {
         Ok(Some(canonical)) => {
             debug!("brew: {name} resolves to {canonical}");
-            formula_exact_from(base, &canonical).await
+            // keep the requested name outermost so callers find its config
+            formula_exact_from(base, &canonical)
+                .await
+                .wrap_err_with(|| FormulaFetchFailed(name.to_string()))
         }
         Ok(None) => Err(with_cask_hint(base, name, err).await),
         Err(index_err) => {
@@ -563,6 +566,28 @@ mod tests {
             "failed to fetch Homebrew formula 'missing'"
         );
         assert_eq!(failed_formula_name(&err), Some("missing"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_alias_reports_the_requested_name() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        server
+            .mock("GET", mockito::Matcher::Regex("^/formula/".into()))
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/formula.json")
+            .with_body(serde_json::json!([{"name": "renamed", "oldnames": ["old"]}]).to_string())
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        let err = formula_from(&base, &aliases, "old").await.unwrap_err();
+        assert_eq!(failed_formula_name(&err), Some("old"));
+        assert!(format!("{err:#}").contains("renamed.json"), "{err:#}");
         Ok(())
     }
 

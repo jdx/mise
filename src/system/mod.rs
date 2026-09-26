@@ -752,12 +752,18 @@ fn config_files_declaring_package_in<'a>(
     manager: &str,
     name: &str,
 ) -> Vec<PathBuf> {
+    // brew resolves `homebrew/core/<name>` to the bare formula name
+    let core_name = format!("homebrew/core/{name}");
     let mut paths: Vec<PathBuf> = vec![];
     for (path, cf) in config_files {
         let declares = cf.bootstrap_config().is_some_and(|sys| {
-            sys.packages
-                .keys()
-                .any(|spec| parse_spec(spec).is_ok_and(|(mgr, pkg)| mgr == manager && pkg == name))
+            sys.packages.iter().any(|(spec, package)| {
+                // skipped declarations never reach prune's keep-list
+                package.is_os_supported()
+                    && parse_spec(spec).is_ok_and(|(mgr, pkg)| {
+                        mgr == manager && (pkg == name || (manager == "brew" && pkg == core_name))
+                    })
+            })
         });
         if declares && !paths.contains(path) {
             paths.push(path.clone());
@@ -2380,14 +2386,37 @@ mod tests {
                 "brew-cask:1password-cli" = "latest"
             "#,
         )])?;
-        let (_tracked_dir, tracked) = config_map_from_toml(&[(
-            "tracked.toml",
-            r#"
+        let (_tracked_dir, tracked) = config_map_from_toml(&[
+            (
+                "tracked.toml",
+                r#"
                 [bootstrap.packages]
                 "brew:1password-cli" = "latest"
             "#,
-        )])?;
-        let tracked_path = tracked.keys().next().unwrap().clone();
+            ),
+            (
+                "qualified.toml",
+                r#"
+                [bootstrap.packages]
+                "brew:homebrew/core/1password-cli" = "latest"
+            "#,
+            ),
+            (
+                "tapped.toml",
+                r#"
+                [bootstrap.packages]
+                "brew:acme/tools/1password-cli" = "latest"
+            "#,
+            ),
+            (
+                "other-os.toml",
+                r#"
+                [bootstrap.packages]
+                "brew:1password-cli" = { version = "latest", os = ["windows"] }
+            "#,
+            ),
+        ])?;
+        let tracked_paths = tracked.keys().take(2).cloned().collect::<Vec<_>>();
 
         let find = |manager| {
             config_files_declaring_package_in(
@@ -2396,7 +2425,7 @@ mod tests {
                 "1password-cli",
             )
         };
-        assert_eq!(find("brew"), vec![tracked_path]);
+        assert_eq!(find("brew"), tracked_paths);
         assert_eq!(
             find("brew-cask"),
             current.keys().cloned().collect::<Vec<_>>()
