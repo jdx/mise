@@ -3961,6 +3961,22 @@ struct ResolvedTaskConfig {
     rust_cache: Option<TaskRustCacheConfig>,
 }
 
+impl ResolvedTaskConfig {
+    /// The defaults for an inline block with no command of its own. Such a
+    /// block only overlays another task, which already has the defaults of
+    /// its own root -- possibly a different one, such as a conf.d folder -- so
+    /// it takes none, keeping only the input groups its own `sources` can name.
+    fn for_overlay(&self) -> Self {
+        Self {
+            inputs: ResolvedTaskInputs {
+                global_inputs: None,
+                input_groups: self.inputs.input_groups.clone(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
 impl ResolvedTaskInputs {
     fn from_configs(configs: &[&Arc<dyn ConfigFile>]) -> Self {
         Self {
@@ -5465,6 +5481,7 @@ async fn load_config_tasks(
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
+    let overlay_task_config = task_config.for_overlay();
     let mut tasks = vec![];
     for t in cf.tasks().into_iter() {
         let config_root = config_root.clone();
@@ -5481,6 +5498,11 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        let task_config = if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            &overlay_task_config
+        } else {
+            task_config
+        };
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
         }
