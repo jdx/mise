@@ -140,6 +140,20 @@ assert_not_contains "cd cascade/child && mise tasks ls" "excluded"
 assert "cd cascade/child && mise run --skip-tools frag-shell" "wrapped
 frag"
 
+# and so does task_config cascaded from the folder's own project
+mkdir -p enclosing/.mise/conf.d/frag
+cat >enclosing/mise.toml <<EOF
+[task_config]
+cascade = true
+shell = "$PWD/cascade/wrap -c"
+EOF
+cat >enclosing/.mise/conf.d/frag/mise.toml <<'EOF'
+[tasks.enclosed-shell]
+run = "echo enclosed"
+EOF
+assert "cd enclosing && mise run --skip-tools enclosed-shell" "wrapped
+enclosed"
+
 # environment files inside a folder follow the usual rule
 assert_contains "MISE_ENV=dev mise config ls" ".mise/conf.d/git/mise.dev.toml"
 assert_contains "MISE_ENV=dev mise env -s bash" "GIT_ENV=dev"

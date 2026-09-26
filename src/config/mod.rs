@@ -6124,26 +6124,38 @@ fn cascaded_task_config_for_dir(
     let mut cascaded = None;
     for root in roots {
         let configs = configs_at_root(&root, config_files);
-        match configs.iter().find_map(|cf| cf.task_config().cascade) {
-            Some(false) => {
-                cascaded = None;
-                continue;
-            }
-            Some(true) if cascaded.is_none() => {
-                cascaded = Some(CascadedTaskConfig {
-                    task_config: TaskConfig::default(),
-                    inputs: ResolvedTaskInputs::default(),
-                    includes_root: root.clone(),
-                    excludes_root: root,
-                });
-            }
-            _ => {}
-        }
-        if let Some(cascaded) = &mut cascaded {
-            merge_cascaded_task_config(cascaded, &configs)?;
-        }
+        cascade_through_root(&mut cascaded, &root, &configs)?;
     }
     Ok(cascaded)
+}
+
+/// Carry the task config cascaded from `root`'s ancestors through `root`
+/// itself, on the way to a descendant root: `cascade = false` there drops it,
+/// and `cascade = true` starts it or adds `root`'s own `task_config`.
+fn cascade_through_root(
+    cascaded: &mut Option<CascadedTaskConfig>,
+    root: &Path,
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<()> {
+    match configs.iter().find_map(|cf| cf.task_config().cascade) {
+        Some(false) => {
+            *cascaded = None;
+            return Ok(());
+        }
+        Some(true) if cascaded.is_none() => {
+            *cascaded = Some(CascadedTaskConfig {
+                task_config: TaskConfig::default(),
+                inputs: ResolvedTaskInputs::default(),
+                includes_root: root.to_path_buf(),
+                excludes_root: root.to_path_buf(),
+            });
+        }
+        _ => {}
+    }
+    if let Some(cascaded) = cascaded {
+        merge_cascaded_task_config(cascaded, configs)?;
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -6226,9 +6238,9 @@ struct TaskRootConfigs<'a> {
 ///
 /// A folder fragment is self-contained: its tasks run in the folder, its
 /// `task_config` applies only to its own tasks, and its `includes` neither
-/// replace nor are replaced by the enclosing root's. Defaults and `excludes`
-/// cascaded from ancestor roots still reach it, but not their `includes`,
-/// which the enclosing root already loads.
+/// replace nor are replaced by the enclosing root's. As a root inside `dir`,
+/// it inherits the defaults and `excludes` that cascade from `dir`'s ancestors
+/// and from `dir` itself, but not their `includes`, which `dir` already loads.
 ///
 /// Only where tasks run and which `task_config` applies differ by root. Every
 /// root's file and inline tasks are then merged as if they came from one root,
@@ -6258,11 +6270,13 @@ async fn load_tasks_from_configs_and_folders(
         root.precedences.push(precedence);
         root.configs.push(cf);
     }
-    let folder_cascaded_task_config = cascaded_task_config.map(|tc| {
-        let mut tc = tc.clone();
+    // A folder is a root inside `dir`, so it inherits what cascades through
+    // `dir` itself, except `includes`, which `dir` already loads.
+    let mut folder_cascaded_task_config = cascaded_task_config.cloned();
+    cascade_through_root(&mut folder_cascaded_task_config, dir, &roots[dir].configs)?;
+    if let Some(tc) = &mut folder_cascaded_task_config {
         tc.task_config.includes = None;
-        tc
-    });
+    }
 
     // The precedence of a file task from a root's default task directories,
     // which no config selected, below every config.
