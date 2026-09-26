@@ -111,7 +111,7 @@ impl PIPXBackend {
 
     fn restore_system_uv_python(tv: &mut ToolVersion) {
         // Installed environments remain usable without rediscovering a system Python.
-        let roots = std::iter::once(tv.ba().installs_path.clone()).chain(
+        let roots = std::iter::once(tv.ba().installs_path().to_path_buf()).chain(
             crate::env::shared_install_dirs()
                 .into_iter()
                 .map(|root| root.join(tv.ba().tool_dir_name())),
@@ -661,7 +661,7 @@ mod tests {
     fn system_environment_discovery_needs_no_interpreter_and_matches_graph() {
         let temp = tempfile::tempdir().unwrap();
         let mut ba = BackendArg::from("pypi:demo");
-        ba.installs_path = temp.path().to_path_buf();
+        ba.set_installs_path(temp.path().to_path_buf());
         let request = ToolRequest::new(Arc::new(ba), "1.0.0", ToolSource::Argument).unwrap();
         let mut installed = ToolVersion::new(request, "1.0.0".into());
         installed.uv_lock = Some(fixture().2.into());

@@ -628,8 +628,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -652,8 +652,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -677,8 +677,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
         let request = ToolRequest::new(Arc::new(backend), "1.25", ToolSource::Argument).unwrap();
@@ -700,8 +700,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -724,8 +724,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.10");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.10");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.10");
 
@@ -748,7 +748,7 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
         let request = ToolRequest::new(Arc::new(backend), "1.25", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.25.10".into());
         OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap()

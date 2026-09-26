@@ -80,13 +80,12 @@ impl Link {
                 style(path.to_string_lossy()).cyan().for_stderr()
             );
         }
-        let target = self.tool.ba.installs_path.join(&version_pathname);
+        let target = self.tool.ba.installs_path().join(&version_pathname);
         if !file::is_symlink_to(&target, &path) && file::same_file(&path, &target) {
             bail!("cannot link {} to its own install path", self.tool.style());
         }
         {
-            let _state_lock =
-                install_state::lock_tool_version(&self.tool.ba.short, &version_pathname)?;
+            let _state_lock = install_state::lock_tool_version(&self.tool.ba, &version_pathname)?;
             if !file::is_symlink_to(&target, &path) {
                 if target.exists() {
                     if self.force {
@@ -104,7 +103,7 @@ impl Link {
             }
 
             if path.exists() {
-                install_state::clear_incomplete_marker(&self.tool.ba.short, &version_pathname)?;
+                install_state::clear_incomplete_marker(&self.tool.ba, &version_pathname)?;
             }
         }
 

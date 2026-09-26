@@ -17,7 +17,7 @@ use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /// Metadata about how a backend was resolved.
@@ -46,11 +46,11 @@ pub struct BackendArg {
     /// the name of the tool within the backend, e.g.: "node", "prettier", "eza", "vfox-nodejs"
     pub tool_name: String,
     /// ~/.local/share/mise/cache/<THIS>
-    pub cache_path: PathBuf,
+    cache_path: PathBuf,
     /// ~/.local/share/mise/installs/<THIS>
-    pub installs_path: PathBuf,
+    installs_path: PathBuf,
     /// ~/.local/share/mise/downloads/<THIS>
-    pub downloads_path: PathBuf,
+    downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
     opts_source: Option<ToolOptionSource>,
     resolution: BackendResolution,
@@ -293,6 +293,32 @@ impl BackendArg {
             registry_version: None,
             // backend: Default::default(),
         }
+    }
+
+    /// `installs/<tool dir>`: where this tool's versions are installed.
+    pub fn installs_path(&self) -> &Path {
+        &self.installs_path
+    }
+
+    /// `cache/<tool dir>`: per-version caches and incomplete-install markers.
+    pub fn cache_path(&self) -> &Path {
+        &self.cache_path
+    }
+
+    /// `downloads/<tool dir>`: downloaded artifacts, per version.
+    pub fn downloads_path(&self) -> &Path {
+        &self.downloads_path
+    }
+
+    /// Point this tool at an install dir found elsewhere (a shared install
+    /// dir, or a manifest-mapped dir), instead of the one its name implies.
+    pub fn set_installs_path(&mut self, path: PathBuf) {
+        self.installs_path = path;
+    }
+
+    /// Stage downloads somewhere other than `downloads/<tool dir>`.
+    pub fn set_downloads_path(&mut self, path: PathBuf) {
+        self.downloads_path = path;
     }
 
     /// Returns the kebab-cased directory name used for this tool's install path.

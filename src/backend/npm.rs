@@ -826,7 +826,7 @@ impl NPMBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: TokioMutex::new(
-                CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
+                CacheManagerBuilder::new(ba.cache_path().join("latest_version.msgpack.z"))
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .build(),
             ),
@@ -2267,7 +2267,7 @@ pub(crate) fn test_backend(
         crate::args::BackendResolution::new(true),
     );
     if let Some(installs_path) = installs_path {
-        ba.installs_path = installs_path;
+        ba.set_installs_path(installs_path);
     }
     NPMBackend::from_arg(ba)
 }
@@ -3418,7 +3418,7 @@ pkg@1.2.0 '1.2.0'
             None,
             BackendResolution::new(true),
         );
-        ba.installs_path = tmp.path().join("installs/npm-pkg");
+        ba.set_installs_path(tmp.path().join("installs/npm-pkg"));
         let backend = NPMBackend::from_arg(ba);
         let request =
             ToolRequest::new(backend.ba().clone(), "1.0.0", ToolSource::Argument).unwrap();

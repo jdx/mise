@@ -426,7 +426,7 @@ impl ToolVersion {
             ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        let path = self.ba().installs_path.join(&pathname);
+        let path = self.ba().installs_path().join(&pathname);
 
         // handle non-symlinks on windows
         // TODO: make this a utility function in xx
@@ -472,7 +472,7 @@ impl ToolVersion {
         let Some(pathname) = self.runtime_pathname() else {
             return self.install_path();
         };
-        let path = self.ba().installs_path.join(&pathname);
+        let path = self.ba().installs_path().join(&pathname);
         let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
         if path.is_dir() && is_runtime_symlink(&path) {
             return path;
@@ -496,10 +496,10 @@ impl ToolVersion {
         self.install_path()
     }
     pub(crate) fn cache_path(&self) -> PathBuf {
-        self.ba().cache_path.join(self.tv_pathname())
+        self.ba().cache_path().join(self.tv_pathname())
     }
     pub(crate) fn download_path(&self) -> PathBuf {
-        self.request.ba().downloads_path.join(self.tv_pathname())
+        self.request.ba().downloads_path().join(self.tv_pathname())
     }
     pub(crate) async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
         self.latest_version_with_opts(config, &ResolveOptions::default())
@@ -944,7 +944,7 @@ impl ToolVersion {
         let backend = request.backend()?;
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
-            let path = backend.ba().installs_path.join(&pathname);
+            let path = backend.ba().installs_path().join(&pathname);
             let path = env::find_in_shared_installs(path, &backend.ba().tool_dir_name(), &pathname);
             if let Ok(Some(target)) = crate::file::resolve_symlink(&path)
                 && target.starts_with("./")
@@ -1236,7 +1236,7 @@ fn has_linked_version(ba: &BackendArg) -> bool {
     {
         return false;
     }
-    let installs_dir = &ba.installs_path;
+    let installs_dir = &ba.installs_path();
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
     };
@@ -1346,7 +1346,7 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = installs_path;
+        backend.set_installs_path(installs_path);
         backend
     }
 
@@ -1517,11 +1517,11 @@ mod tests {
     fn has_linked_version_detects_external_absolute_targets() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
-        fs::create_dir_all(&backend.installs_path)?;
+        fs::create_dir_all(backend.installs_path())?;
 
         let external_target = temp_dir.path().join("external").join("tool");
         fs::create_dir_all(&external_target)?;
-        crate::file::make_symlink_or_file(&external_target, &backend.installs_path.join("brew"))?;
+        crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("brew"))?;
 
         assert!(has_linked_version(&backend));
 
@@ -1532,7 +1532,7 @@ mod tests {
     fn has_linked_version_normalizes_absolute_targets_before_managed_check() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
-        fs::create_dir_all(&backend.installs_path)?;
+        fs::create_dir_all(backend.installs_path())?;
 
         let escaped_target = dirs::DATA
             .join("..")
@@ -1541,7 +1541,10 @@ mod tests {
         if let Some(parent) = escaped_target.parent() {
             fs::create_dir_all(parent)?;
         }
-        crate::file::make_symlink_or_file(&escaped_target, &backend.installs_path.join("escaped"))?;
+        crate::file::make_symlink_or_file(
+            &escaped_target,
+            &backend.installs_path().join("escaped"),
+        )?;
 
         assert!(has_linked_version(&backend));
 
@@ -1552,7 +1555,7 @@ mod tests {
     fn has_linked_version_ignores_mise_managed_absolute_targets() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
-        fs::create_dir_all(&backend.installs_path)?;
+        fs::create_dir_all(backend.installs_path())?;
 
         let mut managed_targets = vec![];
         let mut roots = vec![
@@ -1575,7 +1578,7 @@ mod tests {
                 .tempdir_in(&root)?;
             crate::file::make_symlink_or_file(
                 target.path(),
-                &backend.installs_path.join(format!("{name}-target")),
+                &backend.installs_path().join(format!("{name}-target")),
             )?;
             managed_targets.push(target);
         }
@@ -1589,11 +1592,11 @@ mod tests {
     fn has_linked_version_ignores_runtime_relative_targets() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
-        fs::create_dir_all(&backend.installs_path)?;
+        fs::create_dir_all(backend.installs_path())?;
 
         crate::file::make_symlink_or_file(
             Path::new("./1.0.0"),
-            &backend.installs_path.join("latest"),
+            &backend.installs_path().join("latest"),
         )?;
 
         assert!(!has_linked_version(&backend));
@@ -1620,11 +1623,11 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+        backend.set_installs_path(temp_dir.path().join("installs").join("dummy"));
 
-        let install_path = backend.installs_path.join("1.0.1");
+        let install_path = backend.installs_path().join("1.0.1");
         fs::create_dir_all(install_path.join("bin"))?;
-        fs::write(backend.installs_path.join("1.0"), "./1.0.1")?;
+        fs::write(backend.installs_path().join("1.0"), "./1.0.1")?;
 
         let request = ToolRequest::new(Arc::new(backend), "1.0", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
@@ -1655,9 +1658,9 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+        backend.set_installs_path(temp_dir.path().join("installs").join("dummy"));
 
-        let install_path = backend.installs_path.join("3.14.6");
+        let install_path = backend.installs_path().join("3.14.6");
         fs::create_dir_all(install_path.join("bin"))?;
 
         // Reproduce the stale state during `mise up` (#10347): the fuzzy runtime
@@ -1665,9 +1668,9 @@ mod tests {
         // 3.14.6 is the version just installed -- runtime symlinks are only rebuilt
         // after all installs finish. is_runtime_symlink() requires a "./" target; on
         // Windows runtime symlinks are stored as a file containing the target.
-        let old_path = backend.installs_path.join("3.13.9");
+        let old_path = backend.installs_path().join("3.13.9");
         fs::create_dir_all(old_path.join("bin"))?;
-        let runtime_link = backend.installs_path.join("3");
+        let runtime_link = backend.installs_path().join("3");
         #[cfg(unix)]
         std::os::unix::fs::symlink("./3.13.9", &runtime_link)?;
         #[cfg(windows)]
@@ -1719,7 +1722,7 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join("dummy-cache");
+        backend.set_installs_path(temp_dir.path().join("installs").join("dummy-cache"));
 
         let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.0".into());
