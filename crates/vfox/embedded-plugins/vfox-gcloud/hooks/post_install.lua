@@ -7,6 +7,7 @@ local cmd = require("cmd")
 local os = require("os")
 local log = require("log")
 local strings = require("strings")
+local components = require("components")
 
 --- Compare version strings
 --- Returns true if v1 >= v2
@@ -116,63 +117,69 @@ local function find_default_components_file()
     end
 end
 
-local function install_default_components(gcloud_bin)
+local function log_invalid(invalid)
+    for _, name in ipairs(invalid) do
+        log.info("Skipping invalid component name: " .. name)
+    end
+end
+
+local function file_components()
     local components_file = find_default_components_file()
     if not components_file then
-        return
+        return {}
     end
-
-    log.info("Installing default Cloud SDK components from " .. components_file)
-
     local contents = file.read(components_file)
     if not contents or contents == "" then
-        return
+        return {}
     end
+    log.info("Reading default Cloud SDK components from " .. components_file)
+    local list, invalid = components.from_file_contents(contents)
+    log_invalid(invalid)
+    return list
+end
 
-    local components = {}
-    for _, line in ipairs(strings.split(contents, "\n")) do
-        local trimmed = strings.trim_space(line)
-        if trimmed ~= "" and not string.find(trimmed, "^#") then
-            if string.match(trimmed, "^[%w%-_%.]+$") then
-                table.insert(components, trimmed)
-            else
-                log.info("Skipping invalid component name: " .. trimmed)
-            end
+--- Install the components requested by the `components` tool option and any
+--- `.default-cloud-sdk-components` file. Only missing ones are installed, so
+--- this is cheap when mise reruns PostInstall to add a component. A failure is
+--- an error for requested components (mise must not report them installed)
+--- and a warning for the default file.
+local function install_components(gcloud_bin, sdk_path, options)
+    local requested, invalid = components.from_options(options)
+    log_invalid(invalid)
+
+    local wanted, seen = {}, {}
+    for _, id in ipairs(requested) do
+        seen[id] = true
+        table.insert(wanted, id)
+    end
+    for _, id in ipairs(file_components()) do
+        if not seen[id] then
+            seen[id] = true
+            table.insert(wanted, id)
         end
     end
 
-    if #components == 0 then
+    local missing = components.missing(sdk_path, wanted)
+    if #missing == 0 then
         return
     end
 
-    local command = string.format('"%s" --quiet components install %s', gcloud_bin, table.concat(components, " "))
+    log.info("Installing Cloud SDK components: " .. table.concat(missing, " "))
+    local command = string.format('"%s" --quiet components install %s', gcloud_bin, table.concat(missing, " "))
     local ok, err = pcall(cmd.exec, command)
-    if not ok then
-        log.error("Failed to install default Cloud SDK components: " .. tostring(err))
+    if ok then
+        log.info("Cloud SDK components installed successfully")
         return
     end
-    log.info("Default Cloud SDK components installed successfully")
+    local still_missing = components.missing(sdk_path, requested)
+    if #still_missing > 0 then
+        error("Failed to install Cloud SDK components " .. table.concat(still_missing, ", ") .. ": " .. tostring(err))
+    end
+    log.error("Failed to install default Cloud SDK components: " .. tostring(err))
 end
 
-function PLUGIN:PostInstall(ctx)
-    local sdkInfo = ctx.sdkInfo[PLUGIN.name]
-    local root_path = sdkInfo.path
-    local version = sdkInfo.version or ""
-
-    -- The SDK extracts directly to the root path
-    local sdk_path = root_path
-    local install_script
-    if RUNTIME.osType == "windows" or RUNTIME.osType == "Windows" then
-        install_script = file.join_path(sdk_path, "install.bat")
-    else
-        install_script = file.join_path(sdk_path, "install.sh")
-    end
-
-    if not file.exists(install_script) then
-        -- Some versions might not have an install script, skip silently
-        return
-    end
-
+--- Run gcloud's installer on a freshly extracted SDK.
+local function run_install_script(sdk_path, install_script, version)
     -- Build install command arguments
     local args = {
         "--usage-reporting",
@@ -238,11 +245,42 @@ function PLUGIN:PostInstall(ctx)
     if not ok then
         error("Failed to run gcloud install script: " .. tostring(err))
     end
+end
+
+function PLUGIN:PostInstall(ctx)
+    local sdkInfo = ctx.sdkInfo[PLUGIN.name]
+    local root_path = sdkInfo.path
+    local version = sdkInfo.version or ""
+
+    -- The SDK extracts directly to the root path
+    local sdk_path = root_path
+    local install_script
+    if RUNTIME.osType == "windows" or RUNTIME.osType == "Windows" then
+        install_script = file.join_path(sdk_path, "install.bat")
+    else
+        install_script = file.join_path(sdk_path, "install.sh")
+    end
+
+    if not file.exists(install_script) then
+        -- Some versions might not have an install script, skip silently
+        return
+    end
+
+    -- mise reruns PostInstall on an existing SDK to add components, so only
+    -- run gcloud's installer the first time.
+    local installed_marker = file.join_path(sdk_path, ".mise-install-script-done")
+    if not file.exists(installed_marker) then
+        run_install_script(sdk_path, install_script, version)
+        local marker = io.open(installed_marker, "w")
+        if marker then
+            marker:close()
+        end
+    end
 
     -- Install default SDK components
     local gcloud_bin = file.join_path(sdk_path, "bin", "gcloud")
     if RUNTIME.osType == "windows" or RUNTIME.osType == "Windows" then
         gcloud_bin = gcloud_bin .. ".cmd"
     end
-    install_default_components(gcloud_bin)
+    install_components(gcloud_bin, sdk_path, ctx.options)
 end
