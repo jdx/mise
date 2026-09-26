@@ -42,6 +42,16 @@ mise plugins install --force pinned
 assert "$head_sha" "$v2_sha"
 assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
 
+# A branch pin also needs HEAD on the branch, not just at its commit.
+git -C "$plugin_repo" branch release "$v2_sha"
+pin release
+mise plugins install --force pinned
+assert "$head_sha" "$v2_sha"
+assert_not_contains "mise doctor 2>&1 || true" "plugin pinned"
+git -C "$MISE_DATA_DIR/plugins/pinned" -c advice.detachedHead=false checkout -q --detach
+assert_contains "mise doctor 2>&1 || true" "plugin pinned is checked out at ${v2_sha:0:7} rather than on branch release"
+git -C "$MISE_DATA_DIR/plugins/pinned" checkout -q release
+
 pin "$v1_sha"
 assert_contains "mise doctor 2>&1 || true" "but [plugins] pins $v1_sha"
 mise plugins install --force pinned

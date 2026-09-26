@@ -660,13 +660,26 @@ fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
         return Ok(None);
     };
     let head = git.current_sha()?;
-    if git.resolve_commit(&git_ref)?.as_deref() == Some(head.as_str()) {
-        return Ok(None);
-    }
     let head_short = head.get(..7).unwrap_or(&head);
-    Ok(Some(format!(
-        "is checked out at {head_short}, but [plugins] pins {git_ref}"
-    )))
+    if git.resolve_commit(&git_ref)?.as_deref() != Some(head.as_str()) {
+        return Ok(Some(format!(
+            "is checked out at {head_short}, but [plugins] pins {git_ref}"
+        )));
+    }
+    // A branch pin also needs HEAD on that branch, or `mise plugins update`
+    // won't follow it. Only local branches count, so upstream commits on the
+    // branch aren't reported.
+    let branch = git_ref.strip_prefix("refs/heads/").unwrap_or(&git_ref);
+    if git
+        .resolve_commit(&format!("refs/heads/{branch}"))?
+        .is_some()
+        && git.current_branch()? != branch
+    {
+        return Ok(Some(format!(
+            "is checked out at {head_short} rather than on branch {branch}, which [plugins] pins"
+        )));
+    }
+    Ok(None)
 }
 
 /// Strips credentials from a git URL before it is shown to the user, since
