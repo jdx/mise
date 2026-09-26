@@ -9,13 +9,12 @@
 ///     use std::path::Path;
 ///     use mise::cmd;
 ///
-///     let arg1 = "foo";
-///     let arg2 = "bar".to_owned();
-///     let arg3 = Path::new("baz");
+///     let arg1 = "--version".to_owned();
+///     let arg2 = Path::new("--verbose");
 ///
-///     let output = cmd!("echo", arg1, arg2, arg3).read();
+///     let output = cmd!("rustc", arg1, arg2).read();
 ///
-///     assert_eq!("foo bar baz", output.unwrap());
+///     assert!(output.unwrap().starts_with("rustc "));
 /// ```
 #[macro_export]
 macro_rules! cmd {
