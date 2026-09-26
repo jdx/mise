@@ -36,6 +36,7 @@ use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
 mod app_version;
 mod artifacts;
+mod bulk;
 mod fetch;
 mod flight;
 mod model;
