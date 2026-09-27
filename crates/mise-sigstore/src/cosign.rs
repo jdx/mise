@@ -161,3 +161,90 @@ fn verify_dsse_artifact_subject(payload: &[u8], artifact: &[u8]) -> Result<()> {
     }
     Ok(())
 }
+
+/// Verify a legacy cosign v1 keyless bundle (`{base64Signature, cert, rekorBundle}`).
+///
+/// Cosign 2.x and earlier `cosign sign-blob --bundle` writes this format. The
+/// modern sigstore Bundle (with `verificationMaterial`/`messageSignature`)
+/// replaces it, but tools like goreleaser still produce v1 bundles in their
+/// release artifacts. Verification mirrors what we do for raw DSSE envelopes:
+/// decode the embedded Fulcio cert (PEM in `cert`), chain-validate it against
+/// the public Sigstore trust root, then ECDSA-verify `base64Signature` over
+/// the raw artifact bytes with the cert's public key.
+///
+/// The Rekor `SignedEntryTimestamp` and the artifact hash recorded in the
+/// rekord entry aren't independently re-checked here — re-verifying them
+/// would require a Rekor public key lookup and adds little: the cert+sig
+/// step already cryptographically binds the signer to the artifact bytes,
+/// which is what every downstream consumer cares about.
+pub(crate) fn verify_legacy_cosign_bundle(
+    artifact: &[u8],
+    bundle_json: &str,
+    trusted_root: &TrustedRoot,
+) -> Result<()> {
+    let value: serde_json::Value = serde_json::from_str(bundle_json).map_err(|e| {
+        AttestationError::UnsupportedFormat(format!("not a sigstore or cosign bundle: {e}"))
+    })?;
+    let cert_b64 = value.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
+        AttestationError::UnsupportedFormat("legacy cosign bundle missing cert".to_string())
+    })?;
+    let sig_b64 = value
+        .get("base64Signature")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            AttestationError::UnsupportedFormat(
+                "legacy cosign bundle missing base64Signature".to_string(),
+            )
+        })?;
+
+    let cert_pem_bytes = base64::engine::general_purpose::STANDARD
+        .decode(cert_b64.as_bytes())
+        .map_err(|e| {
+            AttestationError::Verification(format!("invalid base64 cert in legacy bundle: {e}"))
+        })?;
+    let cert_pem = std::str::from_utf8(&cert_pem_bytes).map_err(|e| {
+        AttestationError::Verification(format!("legacy cosign cert is not UTF-8 PEM: {e}"))
+    })?;
+    let cert = DerCertificate::from_pem(cert_pem)?;
+    verify_cert_chain(cert.as_bytes(), trusted_root)?;
+
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(sig_b64.as_bytes())
+        .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
+    let spki_der = extract_spki_der(cert.as_bytes())?;
+    let public_key = DerPublicKey::new(spki_der);
+    verify_raw_signature(artifact, &sig_bytes, &public_key)
+}
+
+pub(crate) fn decode_cosign_signature(bytes: &[u8]) -> Vec<u8> {
+    let trimmed = String::from_utf8_lossy(bytes).trim().to_string();
+    if let Some(decoded) = base64::engine::general_purpose::STANDARD
+        .decode(trimmed.as_bytes())
+        .ok()
+        .filter(|_| !trimmed.is_empty())
+    {
+        return decoded;
+    }
+    bytes.to_vec()
+}
+
+pub(crate) fn verify_raw_signature(
+    artifact: &[u8],
+    signature: &[u8],
+    public_key: &DerPublicKey,
+) -> Result<()> {
+    use sigstore_verify::crypto::{KeyType, SigningScheme, detect_key_type, verify_signature};
+
+    let scheme = match detect_key_type(public_key) {
+        KeyType::Ed25519 => SigningScheme::Ed25519,
+        KeyType::EcdsaP256 => SigningScheme::EcdsaP256Sha256,
+        KeyType::Unknown => {
+            return Err(AttestationError::Verification(
+                "unsupported or unrecognized public key type".to_string(),
+            ));
+        }
+    };
+    let signature = SignatureBytes::from_bytes(signature);
+    verify_signature(public_key, artifact, &signature, scheme)
+        .map_err(|e| AttestationError::Verification(format!("signature verification failed: {e}")))
+}

@@ -1,4 +1,5 @@
 use super::*;
+use crate::cosign::verify_raw_signature;
 
 pub async fn verify_slsa_provenance(
     artifact_path: &Path,
@@ -163,60 +164,6 @@ pub(crate) fn verify_intoto_envelope_subjects(
     verify_intoto_payload_subjects(&payload, artifacts, min_level)
 }
 
-/// Verify a legacy cosign v1 keyless bundle (`{base64Signature, cert, rekorBundle}`).
-///
-/// Cosign 2.x and earlier `cosign sign-blob --bundle` writes this format. The
-/// modern sigstore Bundle (with `verificationMaterial`/`messageSignature`)
-/// replaces it, but tools like goreleaser still produce v1 bundles in their
-/// release artifacts. Verification mirrors what we do for raw DSSE envelopes:
-/// decode the embedded Fulcio cert (PEM in `cert`), chain-validate it against
-/// the public Sigstore trust root, then ECDSA-verify `base64Signature` over
-/// the raw artifact bytes with the cert's public key.
-///
-/// The Rekor `SignedEntryTimestamp` and the artifact hash recorded in the
-/// rekord entry aren't independently re-checked here — re-verifying them
-/// would require a Rekor public key lookup and adds little: the cert+sig
-/// step already cryptographically binds the signer to the artifact bytes,
-/// which is what every downstream consumer cares about.
-pub(crate) fn verify_legacy_cosign_bundle(
-    artifact: &[u8],
-    bundle_json: &str,
-    trusted_root: &TrustedRoot,
-) -> Result<()> {
-    let value: serde_json::Value = serde_json::from_str(bundle_json).map_err(|e| {
-        AttestationError::UnsupportedFormat(format!("not a sigstore or cosign bundle: {e}"))
-    })?;
-    let cert_b64 = value.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
-        AttestationError::UnsupportedFormat("legacy cosign bundle missing cert".to_string())
-    })?;
-    let sig_b64 = value
-        .get("base64Signature")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            AttestationError::UnsupportedFormat(
-                "legacy cosign bundle missing base64Signature".to_string(),
-            )
-        })?;
-
-    let cert_pem_bytes = base64::engine::general_purpose::STANDARD
-        .decode(cert_b64.as_bytes())
-        .map_err(|e| {
-            AttestationError::Verification(format!("invalid base64 cert in legacy bundle: {e}"))
-        })?;
-    let cert_pem = std::str::from_utf8(&cert_pem_bytes).map_err(|e| {
-        AttestationError::Verification(format!("legacy cosign cert is not UTF-8 PEM: {e}"))
-    })?;
-    let cert = DerCertificate::from_pem(cert_pem)?;
-    verify_cert_chain(cert.as_bytes(), trusted_root)?;
-
-    let sig_bytes = base64::engine::general_purpose::STANDARD
-        .decode(sig_b64.as_bytes())
-        .map_err(|e| AttestationError::Verification(format!("invalid base64 signature: {e}")))?;
-    let spki_der = extract_spki_der(cert.as_bytes())?;
-    let public_key = DerPublicKey::new(spki_der);
-    verify_raw_signature(artifact, &sig_bytes, &public_key)
-}
-
 pub(crate) fn verify_dsse_signature(
     sig: &serde_json::Value,
     pae: &[u8],
@@ -363,4 +310,49 @@ pub(crate) fn join_error_strings(errors: Vec<String>, default: impl FnOnce() -> 
     } else {
         errors.join("; ")
     }
+}
+
+/// SLSA-specific checks once `verify_bundle` has cryptographically verified
+/// the bundle: the DSSE payload is an SLSA provenance statement, the policy
+/// level is supported, and the artifact's SHA-256 appears in the statement's
+/// `subject` array. The subject check is the load-bearing part — without it,
+/// a valid SLSA bundle signed for *some* artifact would accept *any* artifact.
+pub(crate) async fn verify_bundle_for_any_artifact(
+    artifacts: &[SlsaArtifact],
+    bundle: &Bundle,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    let artifact = artifacts.first().ok_or_else(|| {
+        AttestationError::SubjectMismatch(
+            "no artifacts supplied for SLSA subject verification".to_string(),
+        )
+    })?;
+    let digest = Sha256Hash::from_hex(&artifact.sha256).map_err(|e| {
+        AttestationError::Verification(format!("invalid artifact sha256 digest: {e}"))
+    })?;
+    match verify_bundle_with_trust_roots(Artifact::from(&digest), bundle, None, trust_roots).await {
+        Ok(()) => Ok(()),
+        Err(e) if is_slsa_subject_mismatch(&e) => {
+            Err(AttestationError::SubjectMismatch(e.to_string()))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub(crate) fn verify_bundle_slsa_subjects(
+    bundle: &Bundle,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+) -> Result<()> {
+    let payload = match &bundle.content {
+        sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) => {
+            envelope.decode_payload()
+        }
+        _ => {
+            return Err(AttestationError::UnsupportedFormat(
+                "SLSA provenance must be a DSSE envelope".to_string(),
+            ));
+        }
+    };
+    verify_intoto_payload_subjects(&payload, artifacts, min_level)
 }
