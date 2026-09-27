@@ -2555,6 +2555,45 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
         .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
 }
 
+/// Resolutions made by [`desymlink_path_cached`], and how many times
+/// [`clear_desymlink_cache`] has run. A lookup caches its result only if no
+/// clear happened while it was resolving, so a resolution made before a clear
+/// cannot be stored after it.
+static DESYMLINKED: Lazy<Mutex<(u64, HashMap<PathBuf, PathBuf>)>> = Lazy::new(Default::default);
+
+/// [`desymlink_path`] with resolutions of existing absolute paths cached until
+/// [`clear_desymlink_cache`]. A path that does not exist yet is resolved on
+/// every call, since it may be created later in the process.
+pub fn desymlink_path_cached(p: &Path) -> PathBuf {
+    if !p.is_absolute() {
+        return desymlink_path(p);
+    }
+    let generation = {
+        let cache = DESYMLINKED.lock().unwrap();
+        if let Some(resolved) = cache.1.get(p) {
+            return resolved.clone();
+        }
+        cache.0
+    };
+    let resolved = desymlink_path(p);
+    if p.exists() {
+        let mut cache = DESYMLINKED.lock().unwrap();
+        if cache.0 == generation {
+            cache.1.insert(p.to_path_buf(), resolved.clone());
+        }
+    }
+    resolved
+}
+
+/// Forget every resolution [`desymlink_path_cached`] has made, so the next call
+/// follows symlinks as they are now. Config reloads call this: a symlink
+/// retargeted since the last load must not keep its old destination.
+pub fn clear_desymlink_cache() {
+    let mut cache = DESYMLINKED.lock().unwrap();
+    cache.0 += 1;
+    cache.1.clear();
+}
+
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     if cfg!(target_os = "macos") {
         cmd!("/bin/cp", "-cR", from, to).run()?;
@@ -3307,6 +3346,40 @@ esac
         symlink("../target/file", &link).unwrap();
 
         assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_cached_matches_uncached_and_rechecks_missing_paths() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::write(&target, "test").unwrap();
+        let link = root.path().join("link");
+        symlink(&target, &link).unwrap();
+        assert_eq!(desymlink_path_cached(&link), desymlink_path(&link));
+        assert_eq!(desymlink_path_cached(&link), target.canonicalize().unwrap());
+
+        // Clearing the cache follows a link that was retargeted since.
+        let other = root.path().join("other");
+        fs::write(&other, "test").unwrap();
+        fs::remove_file(&link).unwrap();
+        symlink(&other, &link).unwrap();
+        assert_eq!(desymlink_path_cached(&link), target.canonicalize().unwrap());
+        clear_desymlink_cache();
+        assert_eq!(desymlink_path_cached(&link), other.canonicalize().unwrap());
+
+        // A path that does not exist yet is not cached: once it becomes a
+        // link, the next call follows it.
+        let later = root.path().join("later");
+        let before = desymlink_path_cached(&later);
+        assert_eq!(before, desymlink_path(&later));
+        symlink(&target, &later).unwrap();
+        assert_eq!(
+            desymlink_path_cached(&later),
+            target.canonicalize().unwrap()
+        );
     }
 
     #[cfg(unix)]
