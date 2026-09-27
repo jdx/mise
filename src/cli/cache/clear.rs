@@ -1,5 +1,5 @@
+use crate::args::BackendArg;
 use crate::cache;
-use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all_with_retry};
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
@@ -48,14 +48,13 @@ impl CacheClear {
         let cache_dirs = match &self.tool {
             Some(tools) => tools
                 .iter()
-                .filter_map(|p| {
-                    let kebab = p.to_kebab_case();
-                    if kebab.is_empty() {
+                .flat_map(|p| {
+                    if p.to_kebab_case().is_empty() {
                         warn!("invalid tool name: {p}");
-                        None
-                    } else {
-                        Some(CACHE.join(kebab))
+                        return vec![];
                     }
+                    // A tool's caches follow the backend it resolves to.
+                    BackendArg::from(p.as_str()).cache_dirs()
                 })
                 .collect(),
             None => cache::cache_dirs()?,

@@ -1,7 +1,7 @@
+use crate::args::BackendArg;
 use crate::cache;
 use crate::cache::{PruneOptions, PruneResults};
 use crate::config::{Settings, SettingsExt};
-use crate::dirs::CACHE;
 use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;
 use eyre::Result;
@@ -52,14 +52,13 @@ impl CachePrune {
                 let cache_dirs = match &self.tool {
                     Some(tools) => tools
                         .iter()
-                        .filter_map(|tool| {
-                            let kebab = tool.to_kebab_case();
-                            if kebab.is_empty() {
+                        .flat_map(|tool| {
+                            if tool.to_kebab_case().is_empty() {
                                 warn!("invalid tool name: {tool}");
-                                None
-                            } else {
-                                Some(CACHE.join(kebab))
+                                return vec![];
                             }
+                            // A tool's caches follow the backend it resolves to.
+                            BackendArg::from(tool.as_str()).cache_dirs()
                         })
                         .collect(),
                     None => cache::cache_dirs()?,

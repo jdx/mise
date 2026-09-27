@@ -3400,7 +3400,7 @@ pub trait Backend: Debug + Send + Sync {
                         return Ok(Some(version));
                     }
                 }
-                let installed = file::dir_subdirs(&installs_path)
+                let mut installed = file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
@@ -3409,6 +3409,11 @@ pub trait Backend: Debug + Send + Sync {
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
+                if installed.is_empty() {
+                    // Versions kept in a legacy `installs/<short>` dir or under
+                    // another backend of a version-routed tool.
+                    installed = self.list_installed_versions();
+                }
                 // Prefer a stable install, but a tool that only publishes
                 // pre-releases (an npm package whose `latest` dist-tag is an rc)
                 // must still resolve `latest` to what is installed.

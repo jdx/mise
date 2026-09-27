@@ -892,7 +892,13 @@ pub(crate) fn legacy_install_path(ba: &BackendArg, pathname: &str) -> Option<Pat
         return None;
     }
     let dir_name = crate::backend::tool_directory_name(&ba.short);
-    let path = dirs::INSTALLS.join(&dir_name).join(pathname);
+    // A `--shared` or `--system` install made the same way lives under the
+    // short name in that dir.
+    let path = env::find_in_shared_installs(
+        dirs::INSTALLS.join(&dir_name).join(pathname),
+        &dir_name,
+        pathname,
+    );
     if !path.exists() || incomplete_marker(&dir_name, pathname).exists() {
         return None;
     }

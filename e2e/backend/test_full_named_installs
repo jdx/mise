@@ -43,7 +43,18 @@ echo "=== a legacy install whose backend still applies is read in place ==="
 mv "$INSTALLS/aqua-filo-sottile-age" "$INSTALLS/age"
 legacy_manifest "aqua:FiloSottile/age"
 assert_contains "MISE_OFFLINE=1 mise x age@1.2.1 -- age --version" "v1.2.1"
+# `latest` from config resolves to the installed version, legacy or not.
+echo 'tools.age = "latest"' >mise.toml
+assert_contains "MISE_OFFLINE=1 mise x -- age --version" "v1.2.1"
+rm mise.toml
 assert_directory_not_exists "$INSTALLS/aqua-filo-sottile-age"
+
+echo "=== so is one in a shared install dir ==="
+SHARED="$HOME/shared-installs"
+mkdir -p "$SHARED"
+mv "$INSTALLS/age" "$SHARED/age"
+assert_contains "MISE_SHARED_INSTALL_DIRS=$SHARED MISE_OFFLINE=1 mise x age@1.2.1 -- age --version" "v1.2.1"
+mv "$SHARED/age" "$INSTALLS/age"
 
 echo "=== uninstalling it cleans up the legacy directory ==="
 mise uninstall age@1.2.1

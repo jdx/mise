@@ -367,14 +367,33 @@ impl BackendArg {
     /// `MISE_BACKENDS_*` override carry their own backend and options, so they
     /// keep their own name, as does anything the registry doesn't list.
     fn stores_by_backend(&self) -> bool {
-        !self.short.contains(':')
-            && REGISTRY.contains_key(self.short.as_str())
-            && !self.has_env_backend_override()
-            && !(config::is_loaded()
-                && Config::get_()
-                    .all_aliases
-                    .get(&self.short)
-                    .is_some_and(|alias| alias.backend.is_some()))
+        if self.short.contains(':')
+            || !REGISTRY.contains_key(self.short.as_str())
+            || self.has_env_backend_override()
+        {
+            return false;
+        }
+        let aliased_backend = config::is_loaded()
+            && Config::get_()
+                .all_aliases
+                .get(&self.short)
+                .is_some_and(|alias| alias.backend.is_some());
+        !aliased_backend
+    }
+
+    /// Every `cache/` dir this tool's versions can use: its own, each backend
+    /// a version-routed tool sends versions to, and the short-named dir older
+    /// versions of mise used.
+    pub fn cache_dirs(&self) -> Vec<PathBuf> {
+        let mut cache_dirs = vec![self.cache_path().into_owned()];
+        let legacy = std::iter::once(self.short.clone());
+        for short in self.routed_storage_shorts().into_iter().chain(legacy) {
+            let dir = dirs::CACHE.join(backend::tool_directory_name(&short));
+            if !cache_dirs.contains(&dir) {
+                cache_dirs.push(dir);
+            }
+        }
+        cache_dirs
     }
 
     /// Every storage identity a version-routed registry tool (`min_version`,
