@@ -187,7 +187,11 @@ fn put_back_if_changed(
             return Ok(false);
         }
         fs::rename(dest, staged)?;
-        fs::rename(previous, dest)?;
+        if let Err(err) = fs::rename(previous, dest) {
+            // Leave rustup a working nightly, the new copy, rather than none.
+            let _ = fs::rename(staged, dest);
+            return Err(err);
+        }
     }
     Ok(true)
 }
