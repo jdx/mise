@@ -257,7 +257,7 @@ mod tests {
 
         let file = result.unwrap();
         let trs = file.to_tool_request_set().unwrap();
-        let tools: Vec<_> = trs.into_iter().collect();
+        let tools: Vec<_> = trs.into_tools().collect();
         assert_eq!(tools.len(), 1);
         let (ba, versions, _) = &tools[0];
         assert_eq!(ba.short, "python");

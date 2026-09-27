@@ -1,4 +1,4 @@
-pub(crate) use mise_util::hash::*;
+pub use mise_util::hash::*;
 
 #[cfg(test)]
 mod tests {

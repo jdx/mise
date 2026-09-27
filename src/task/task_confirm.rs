@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum TaskConfirm {
+pub enum TaskConfirm {
     Message(String),
     Options { message: String, default: String },
 }

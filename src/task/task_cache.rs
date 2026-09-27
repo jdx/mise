@@ -37,7 +37,7 @@ static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct TaskCacheConfig {
+pub struct TaskCacheConfig {
     pub enabled: bool,
     /// Report project files read or written outside the declared cache contract.
     pub audit: bool,
@@ -48,7 +48,7 @@ pub(crate) struct TaskCacheConfig {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage_rs::ValueEnum)]
-pub(crate) enum TaskCacheMode {
+pub enum TaskCacheMode {
     /// Read cached results and write new results.
     #[default]
     ReadWrite,
@@ -63,7 +63,7 @@ pub(crate) enum TaskCacheMode {
 }
 
 impl TaskCacheMode {
-    pub(crate) fn from_env() -> Result<Self> {
+    pub fn from_env() -> Result<Self> {
         let Some(value) = std::env::var_os("MISE_TASK_CACHE") else {
             return Ok(Self::default());
         };
@@ -78,7 +78,7 @@ impl TaskCacheMode {
         })
     }
 
-    pub(crate) fn enabled(self) -> bool {
+    pub fn enabled(self) -> bool {
         self != Self::Off
     }
 
@@ -157,22 +157,22 @@ pub(crate) struct TaskCacheHit {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TaskCacheEntry {
-    pub(crate) key: String,
+pub struct TaskCacheEntry {
+    pub key: String,
     #[serde(skip)]
     pub(crate) identity_verified: bool,
     pub(crate) artifact_checksum: Option<String>,
-    pub(crate) current: bool,
-    pub(crate) size_bytes: u64,
-    pub(crate) restored_bytes: u64,
-    pub(crate) execution_duration_ns: u64,
-    pub(crate) last_accessed: u64,
-    pub(crate) outputs: Vec<PathBuf>,
+    pub current: bool,
+    pub size_bytes: u64,
+    pub restored_bytes: u64,
+    pub execution_duration_ns: u64,
+    pub last_accessed: u64,
+    pub outputs: Vec<PathBuf>,
 }
 
-pub(crate) struct TaskCacheClearResult {
-    pub(crate) entries: usize,
-    pub(crate) size_bytes: u64,
+pub struct TaskCacheClearResult {
+    pub entries: usize,
+    pub size_bytes: u64,
 }
 
 pub(crate) enum TaskCacheMissReason {
@@ -197,7 +197,7 @@ impl fmt::Display for TaskCacheMissReason {
     }
 }
 
-pub(crate) struct TaskArtifactCache {
+pub struct TaskArtifactCache {
     root: PathBuf,
     cache_dir: PathBuf,
     store: Arc<dyn TaskCacheStore>,
@@ -942,7 +942,7 @@ fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: Option<&Path
     Ok(())
 }
 
-pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
+pub fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
     Settings::get().ensure_experimental("task artifact caching")?;
     let cache_dir = task_cache_dir();
     if !cache_dir.is_dir() {
@@ -1025,7 +1025,7 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
     Ok(entries)
 }
 
-pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
+pub fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
     let entries = task_cache_entries(task, root)?;
     let cache_dir = task_cache_dir();
     let identified_entries = entries.iter().filter(|entry| entry.identity_verified);

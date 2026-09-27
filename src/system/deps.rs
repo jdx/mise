@@ -25,7 +25,7 @@ use crate::system::packages::{self, PackageRequest, SystemPackageManager};
 
 /// A single capability a plugin requires before it can install.
 #[derive(Debug, Clone)]
-pub(crate) struct SystemDep {
+pub struct SystemDep {
     pub check: SystemDepCheck,
     /// Optional version constraint (only meaningful for `Bin`/`PkgConfig`).
     pub version: Option<VersionConstraint>,
@@ -43,7 +43,7 @@ pub(crate) struct SystemDep {
 
 /// How to detect whether a [`SystemDep`] is satisfied.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SystemDepCheck {
+pub enum SystemDepCheck {
     /// executable resolvable on `PATH`
     Bin(String),
     /// `pkg-config --exists <name>` (a `.pc` module)
@@ -76,7 +76,7 @@ impl SystemDepCheck {
 
 /// A version comparison operator for [`VersionConstraint`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VersionOp {
+pub enum VersionOp {
     AtLeast,
     Greater,
     AtMost,
@@ -104,7 +104,7 @@ impl VersionOp {
 /// resolve or order mise tool versions (see the semver rules in CLAUDE.md);
 /// it is the same class of comparison as [`crate::config::config_file::min_version`].
 #[derive(Debug, Clone)]
-pub(crate) struct VersionConstraint {
+pub struct VersionConstraint {
     pub op: VersionOp,
     pub version: Versioning,
 }
@@ -149,7 +149,7 @@ impl fmt::Display for VersionConstraint {
 
 impl SystemDep {
     /// Human-readable capability label, e.g. `bison >=3.0`, `pkg-config libxml-2.0`.
-    pub(crate) fn label(&self) -> String {
+    pub fn label(&self) -> String {
         let base = match &self.check {
             SystemDepCheck::Bin(name) => name.clone(),
             SystemDepCheck::PkgConfig(name) => format!("pkg-config {name}"),
@@ -180,7 +180,7 @@ impl fmt::Display for SystemDep {
 
 /// The result of probing one [`SystemDep`] on the host.
 #[derive(Debug, Clone)]
-pub(crate) struct DepStatus {
+pub struct DepStatus {
     pub dep: SystemDep,
     /// detected version, if a version was extracted
     pub found: Option<String>,
@@ -253,7 +253,7 @@ static CACHE: Lazy<Mutex<HashMap<String, DetectOutcome>>> =
 
 /// Detect all `deps`, memoized. Concurrency-safe; two calls with the same
 /// fingerprint reuse the first result.
-pub(crate) async fn detect(deps: &[SystemDep]) -> Vec<DepStatus> {
+pub async fn detect(deps: &[SystemDep]) -> Vec<DepStatus> {
     detect_inner(deps, true).await
 }
 

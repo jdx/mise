@@ -41,7 +41,7 @@ pub(crate) struct MiseEnvResponse {
 use xx::regex;
 
 #[derive(Debug)]
-pub(crate) struct VfoxPlugin {
+pub struct VfoxPlugin {
     pub name: String,
     pub full: Option<String>,
     pub plugin_path: PathBuf,

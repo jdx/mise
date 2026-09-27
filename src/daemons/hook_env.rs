@@ -20,7 +20,7 @@ struct Sessions {
     roots: BTreeMap<PathBuf, PathBuf>,
 }
 
-pub(crate) async fn emit(
+pub async fn emit(
     config: &Arc<Config>,
     ts: &Toolset,
     env: &EnvMap,

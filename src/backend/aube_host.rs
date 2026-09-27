@@ -106,7 +106,7 @@ pub(crate) fn init() {
 
 /// Handle aube's private trampoline argv before mise's own parser, tokio
 /// runtime, or naked-run rewrite touch the args. Returns `Some(exit_code)`.
-pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
+pub fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
     match embedded_cli_command(args)? {
         EmbeddedCli::NodeGypBootstrap => Some(run_node_gyp_bootstrap(args)),
         EmbeddedCli::AubeCli => Some(run_aube_cli()),

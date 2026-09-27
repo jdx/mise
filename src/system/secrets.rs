@@ -18,13 +18,13 @@ use crate::tera::{
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum SecretTomlConfig {
+pub enum SecretTomlConfig {
     Env(String),
     Options(SecretOptionsTomlConfig),
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct SecretOptionsTomlConfig {
+pub struct SecretOptionsTomlConfig {
     pub env: String,
     pub description: Option<String>,
     #[serde(default)]
@@ -41,7 +41,7 @@ pub(crate) struct SecretDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SecretState {
+pub enum SecretState {
     Available,
     Missing,
     Empty,
@@ -60,7 +60,7 @@ impl std::fmt::Display for SecretState {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct SecretStatus {
+pub struct SecretStatus {
     pub name: String,
     pub env: String,
     pub state: SecretState,
@@ -77,7 +77,7 @@ struct SecretResolution {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct SecretValues {
+pub struct SecretValues {
     resolution: Arc<Mutex<SecretResolution>>,
     prompt: bool,
 }
@@ -136,7 +136,7 @@ fn secrets_from_config_files(
     Ok(merged)
 }
 
-pub(crate) fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
+pub fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
     Ok(declarations_from_config(config)?
         .into_iter()
         .map(|declaration| SecretStatus {
@@ -148,7 +148,7 @@ pub(crate) fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
         .collect())
 }
 
-pub(crate) fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
+pub fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
     let declarations = declarations_from_config(config)?
         .into_iter()
         .map(|declaration| (declaration.name.clone(), declaration))
@@ -163,7 +163,7 @@ pub(crate) fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
 }
 
 impl SecretValues {
-    pub(crate) fn used_statuses(&self) -> Result<Vec<SecretStatus>> {
+    pub fn used_statuses(&self) -> Result<Vec<SecretStatus>> {
         let resolution = self
             .resolution
             .lock()

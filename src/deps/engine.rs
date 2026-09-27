@@ -142,7 +142,7 @@ use super::{DepsProvider, DepsProviderApplicability, FreshnessResult};
 
 /// Options for running deps steps
 #[derive(Debug, Default)]
-pub(crate) struct DepsOptions {
+pub struct DepsOptions {
     /// Only check if deps install is needed, don't run commands
     pub dry_run: bool,
     /// Force run all deps steps even if outputs are fresh
@@ -161,7 +161,7 @@ pub(crate) struct DepsOptions {
 
 /// Result of a deps step
 #[derive(Debug)]
-pub(crate) enum DepsStepResult {
+pub enum DepsStepResult {
     /// Step ran successfully
     Ran(String),
     /// Step would have run (dry-run mode), with reason why it's stale
@@ -176,7 +176,7 @@ pub(crate) enum DepsStepResult {
 
 /// Result of running all deps steps
 #[derive(Debug)]
-pub(crate) struct DepsResult {
+pub struct DepsResult {
     pub steps: Vec<DepsStepResult>,
 }
 
@@ -192,7 +192,7 @@ struct DepsJob {
 
 impl DepsResult {
     /// Returns true if any steps ran or would have run
-    pub(crate) fn had_work(&self) -> bool {
+    pub fn had_work(&self) -> bool {
         self.steps
             .iter()
             .any(|s| matches!(s, DepsStepResult::Ran(_) | DepsStepResult::WouldRun(_, _)))
@@ -200,13 +200,13 @@ impl DepsResult {
 }
 
 /// Engine that discovers and runs deps providers
-pub(crate) struct DepsEngine {
+pub struct DepsEngine {
     providers: Vec<Box<dyn DepsProvider>>,
 }
 
 impl DepsEngine {
     /// Create a new DepsEngine, discovering all configured providers.
-    pub(crate) fn new(config: &Config) -> Result<Self> {
+    pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
         // Inactive-only config is diagnostic state and cannot run.
         if providers
@@ -222,7 +222,7 @@ impl DepsEngine {
     ///
     /// Provider IDs are qualified with their config root (for example,
     /// `//apps/api:uv`) so the same provider name can be used in multiple roots.
-    pub(crate) fn new_monorepo(
+    pub fn new_monorepo(
         config: &Config,
         config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
     ) -> Result<Self> {
@@ -342,7 +342,7 @@ impl DepsEngine {
 
     /// Create a monorepo engine for task execution while preserving providers
     /// from the current project plus global and system configuration.
-    pub(crate) fn new_task_monorepo(
+    pub fn new_task_monorepo(
         config: &Config,
         config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
     ) -> Result<Self> {
@@ -515,12 +515,12 @@ impl DepsEngine {
     }
 
     /// List all discovered providers, including inactive providers.
-    pub(crate) fn list_providers(&self) -> Vec<&dyn DepsProvider> {
+    pub fn list_providers(&self) -> Vec<&dyn DepsProvider> {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
 
     /// Find a specific provider by ID
-    pub(crate) fn find_provider(&self, id: &str) -> Option<&dyn DepsProvider> {
+    pub fn find_provider(&self, id: &str) -> Option<&dyn DepsProvider> {
         self.providers
             .iter()
             .find(|p| p.id() == id)
@@ -528,7 +528,7 @@ impl DepsEngine {
     }
 
     /// Check freshness for a specific provider (public API for --explain)
-    pub(crate) fn check_provider_freshness(
+    pub fn check_provider_freshness(
         &self,
         provider: &dyn DepsProvider,
         effective_env: &BTreeMap<String, String>,
@@ -562,11 +562,7 @@ impl DepsEngine {
     }
 
     /// Reject explicitly selected providers that cannot run.
-    pub(crate) fn validate_selection(
-        &self,
-        only: Option<&[String]>,
-        skip: &[String],
-    ) -> Result<()> {
+    pub fn validate_selection(&self, only: Option<&[String]>, skip: &[String]) -> Result<()> {
         Self::validate_provider_selection(&self.providers, only, skip)
     }
 
@@ -593,7 +589,7 @@ impl DepsEngine {
     }
 
     /// Run all stale deps steps, respecting dependency ordering
-    pub(crate) async fn run(&self, opts: DepsOptions) -> Result<DepsResult> {
+    pub async fn run(&self, opts: DepsOptions) -> Result<DepsResult> {
         let mut results = vec![];
 
         Self::validate_provider_selection(&self.providers, opts.only.as_deref(), &opts.skip)?;
@@ -1204,7 +1200,7 @@ impl DepsEngine {
     }
 
     /// Execute a deps command (static version for parallel execution)
-    pub(crate) fn execute_command(
+    pub fn execute_command(
         cmd: &super::DepsCommand,
         toolset_env: &BTreeMap<String, String>,
         env_remove: &BTreeSet<String>,

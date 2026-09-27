@@ -79,7 +79,7 @@ enum Attempt {
     Failed,
 }
 
-pub(crate) struct WatchOptions {
+pub struct WatchOptions {
     /// Reconcile once and exit.
     pub once: bool,
     /// One JSON object per line instead of log lines.
@@ -87,7 +87,7 @@ pub(crate) struct WatchOptions {
 }
 
 /// Runs the watcher; returns the process exit code.
-pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
+pub async fn run(opts: WatchOptions) -> Result<i32> {
     let out = Output { json: opts.json };
     if !Settings::get().history.enabled {
         out.emit(
@@ -1094,7 +1094,7 @@ fn describe(paths: &[PathBuf]) -> String {
     }
 }
 
-pub(crate) fn humantime(duration: Duration) -> String {
+pub fn humantime(duration: Duration) -> String {
     let secs = duration.as_secs();
     if secs >= 3600 {
         format!("{}h", secs / 3600)
@@ -1813,7 +1813,7 @@ pub(crate) fn watch_lock_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("watch.lock")
 }
 
-pub(crate) fn noisy_path_in(state_dir: &Path) -> PathBuf {
+pub fn noisy_path_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("noisy.json")
 }
 
@@ -1822,7 +1822,7 @@ pub(crate) fn schedule_path_in(state_dir: &Path) -> PathBuf {
 }
 
 /// Whether a watcher currently holds the lock for this store.
-pub(crate) fn is_running(state_dir: &Path) -> bool {
+pub fn is_running(state_dir: &Path) -> bool {
     matches!(LockFile::at(&watch_lock_in(state_dir)).try_lock(), Ok(None))
 }
 

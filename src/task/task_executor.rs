@@ -57,17 +57,17 @@ type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
 const COMMAND_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_INPUT_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
-pub(crate) struct TaskRunContext<'a> {
-    pub(crate) task: &'a Task,
-    pub(crate) config: &'a Arc<Config>,
-    pub(crate) sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
-    pub(crate) completion_state: TaskCompletionState,
-    pub(crate) dependency_state: TaskDependencyState,
-    pub(crate) semaphore: Arc<Semaphore>,
-    pub(crate) permit: &'a mut Option<OwnedSemaphorePermit>,
-    pub(crate) allow_during_interruption: bool,
+pub struct TaskRunContext<'a> {
+    pub task: &'a Task,
+    pub config: &'a Arc<Config>,
+    pub sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
+    pub completion_state: TaskCompletionState,
+    pub dependency_state: TaskDependencyState,
+    pub semaphore: Arc<Semaphore>,
+    pub permit: &'a mut Option<OwnedSemaphorePermit>,
+    pub allow_during_interruption: bool,
     /// Context of this task's live OpenTelemetry span, when trace export is on.
-    pub(crate) otel_span_cx: Option<opentelemetry::trace::SpanContext>,
+    pub otel_span_cx: Option<opentelemetry::trace::SpanContext>,
 }
 
 #[derive(Clone, Copy)]
@@ -291,7 +291,7 @@ fn record_failed_task(failed: &FailedTasks, task: Task, status: Option<i32>) -> 
 }
 
 /// Configuration for TaskExecutor
-pub(crate) struct TaskExecutorConfig {
+pub struct TaskExecutorConfig {
     pub force: bool,
     pub cd: Option<PathBuf>,
     pub shell: Option<String>,
@@ -308,11 +308,11 @@ pub(crate) struct TaskExecutorConfig {
 }
 
 /// Executes tasks with proper context, environment, and output handling
-pub(crate) struct TaskExecutor {
+pub struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
     pub failed_tasks: FailedTasks,
-    pub(crate) cache_stats: Arc<StdMutex<TaskCacheStats>>,
+    pub cache_stats: Arc<StdMutex<TaskCacheStats>>,
     interrupted: AtomicBool,
 
     // CLI flags
@@ -333,17 +333,17 @@ pub(crate) struct TaskExecutor {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct TaskRunOutcome {
+pub struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct TaskCacheStats {
-    pub(crate) hits: u64,
-    pub(crate) misses: u64,
-    pub(crate) restored_bytes: u64,
-    pub(crate) time_saved: Duration,
+pub struct TaskCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub restored_bytes: u64,
+    pub time_saved: Duration,
 }
 
 impl TaskCacheStats {
@@ -359,7 +359,7 @@ impl TaskCacheStats {
 }
 
 impl TaskExecutor {
-    pub(crate) fn new(
+    pub fn new(
         context_builder: TaskContextBuilder,
         output_handler: OutputHandler,
         config: TaskExecutorConfig,
@@ -386,15 +386,15 @@ impl TaskExecutor {
         }
     }
 
-    pub(crate) fn is_stopping(&self) -> bool {
+    pub fn is_stopping(&self) -> bool {
         self.is_interrupted() || !self.failed_tasks.lock().unwrap().is_empty()
     }
 
-    pub(crate) fn is_interrupted(&self) -> bool {
+    pub fn is_interrupted(&self) -> bool {
         self.interrupted.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn mark_interrupted(&self) {
+    pub fn mark_interrupted(&self) {
         self.interrupted.store(true, Ordering::Relaxed);
     }
 
@@ -412,7 +412,7 @@ impl TaskExecutor {
     /// sibling, so a later failure is almost always collateral damage. The
     /// check and the push share one lock so two tasks failing at the same
     /// time can't both see an empty list and both claim to be the cause.
-    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
+    pub fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
         record_failed_task(&self.failed_tasks, task, status)
     }
 
@@ -515,7 +515,7 @@ impl TaskExecutor {
 
     /// Run a task, returning whether it did work and any stable artifact identity
     /// it produced or reused.
-    pub(crate) async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
+    pub async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
         let TaskRunContext {
             task,
             config,
@@ -2017,11 +2017,7 @@ impl TaskExecutor {
     /// Validate a task invocation before the scheduler starts any task commands.
     /// Runtime execution repeats this work so configuration changes made while
     /// dependencies run are still detected.
-    pub(crate) async fn preflight_task_usage(
-        &self,
-        config: &Arc<Config>,
-        task: &Task,
-    ) -> Result<()> {
+    pub async fn preflight_task_usage(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
         if task.should_bypass_usage_parser() {
             return Ok(());
         }

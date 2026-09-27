@@ -13,7 +13,7 @@ use tabled::Tabled;
 use versions::Version;
 
 #[derive(Debug, Serialize, Clone, Tabled, PartialEq, Eq, Hash)]
-pub(crate) struct OutdatedInfo {
+pub struct OutdatedInfo {
     pub name: String,
     #[serde(skip)]
     #[tabled(skip)]
@@ -40,7 +40,7 @@ pub(crate) struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    pub(crate) fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
+    pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
         let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
@@ -275,7 +275,7 @@ impl Display for OutdatedInfo {
     }
 }
 
-pub(crate) fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+pub fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
     let prefix = prefix.trim();
     if prefix.is_empty()
         || prefix_version.is_empty()
@@ -343,7 +343,7 @@ pub(crate) fn check_semver_bump(old: &str, new: &str) -> Option<String> {
 
 /// Represents a config file update needed when a CLI-specified version doesn't match
 /// the current config prefix.
-pub(crate) struct ConfigBump {
+pub struct ConfigBump {
     pub tool_name: String,
     pub config_path: std::path::PathBuf,
     pub old_version: String,
@@ -353,7 +353,7 @@ pub(crate) struct ConfigBump {
 
 /// Compute config bumps needed when CLI-specified versions don't match current config prefixes.
 /// Returns a list of bumps to apply (or preview in dry-run mode).
-pub(crate) fn compute_config_bumps(
+pub fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
 ) -> Vec<ConfigBump> {
@@ -365,7 +365,7 @@ pub(crate) fn compute_config_bumps(
 ///
 /// This lets callers that intentionally target a subset of the loaded config
 /// hierarchy avoid updating shadowed parent configs.
-pub(crate) fn compute_config_bumps_for_paths(
+pub fn compute_config_bumps_for_paths(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
     config_paths: &BTreeSet<PathBuf>,
@@ -448,7 +448,7 @@ pub(crate) fn compute_config_bumps_for_paths(
 }
 
 /// Apply config bumps by writing the new versions to their config files.
-pub(crate) fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
+pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     for bump in bumps {
         let Some(cf) = config.config_files.get(&bump.config_path) else {
             continue;
@@ -465,7 +465,7 @@ pub(crate) fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Resul
     Ok(())
 }
 
-pub(crate) fn is_outdated_version(current: &str, latest: &str) -> bool {
+pub fn is_outdated_version(current: &str, latest: &str) -> bool {
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
     } else {

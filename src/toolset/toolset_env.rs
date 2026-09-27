@@ -84,7 +84,7 @@ impl Toolset {
         path_env.to_string()
     }
 
-    pub(crate) async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         Ok(self.full_env_with_removals(config).await?.0)
     }
 
@@ -167,11 +167,11 @@ impl Toolset {
     }
 
     /// the full mise environment including all tool paths
-    pub(crate) async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
         Ok(self.env_with_path_and_removals(config).await?.0)
     }
 
-    pub(crate) async fn env_with_path_and_removals(
+    pub async fn env_with_path_and_removals(
         &self,
         config: &Arc<Config>,
     ) -> Result<(EnvMap, BTreeSet<String>)> {
@@ -214,7 +214,7 @@ impl Toolset {
     /// Get environment with split paths (user_paths and tool_paths separate)
     /// This method uses the env cache when available and returns paths separately
     /// for proper handling in hook_env.
-    pub(crate) async fn env_with_path_and_split(
+    pub async fn env_with_path_and_split(
         &self,
         config: &Arc<Config>,
     ) -> Result<(
@@ -282,10 +282,7 @@ impl Toolset {
     }
 
     /// Try to load environment from cache (returns full CachedEnv)
-    pub(crate) async fn try_load_env_cache_full(
-        &self,
-        config: &Arc<Config>,
-    ) -> Result<Option<CachedEnv>> {
+    pub async fn try_load_env_cache_full(&self, config: &Arc<Config>) -> Result<Option<CachedEnv>> {
         config.env_results().await?;
         let cache_key = self.compute_env_cache_key(config)?;
         CachedEnv::load(&cache_key)
@@ -436,10 +433,7 @@ impl Toolset {
         ))
     }
 
-    pub(crate) async fn env_from_tools(
-        &self,
-        config: &Arc<Config>,
-    ) -> Vec<(String, String, String)> {
+    pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
         let this = Arc::new(self.clone());
         let items: Vec<_> = self
             .list_current_installed_versions(config)
@@ -542,7 +536,7 @@ impl Toolset {
     }
 
     /// Resolve the complete environment, including tools-aware directives.
-    pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
+    pub async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
         let (mut env, add_paths) = self.env(config).await?;
         let non_tool_env = config.env_results().await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();

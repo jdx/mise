@@ -79,14 +79,14 @@ pub(crate) struct EditTomlTable {
 
 /// where a block's content comes from
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum BlockSource {
+pub enum BlockSource {
     Inline(String),
     /// absolute path, resolved against the declaring config file
     File(PathBuf),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum EditOp {
+pub enum EditOp {
     Block {
         source: BlockSource,
         template: bool,
@@ -99,7 +99,7 @@ pub(crate) enum EditOp {
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub(crate) enum LinePosition {
+pub enum LinePosition {
     Prepend,
     #[default]
     Append,
@@ -107,7 +107,7 @@ pub(crate) enum LinePosition {
 
 /// one edit, resolved against the config file that declared it
 #[derive(Debug, Clone)]
-pub(crate) struct EditRequest {
+pub struct EditRequest {
     /// target path as written in config (display)
     pub path_raw: String,
     /// absolute target path (`~` expanded)
@@ -126,19 +126,19 @@ pub(crate) struct EditRequest {
 
 impl EditRequest {
     /// short operation label for status tables and dry-run output
-    pub(crate) fn describe_op(&self) -> String {
+    pub fn describe_op(&self) -> String {
         match &self.op {
             EditOp::Block { .. } => format!("block:{}", self.id),
             EditOp::Line { .. } => format!("line:{}", self.id),
         }
     }
 
-    pub(crate) fn config_key(&self) -> String {
+    pub fn config_key(&self) -> String {
         format!("{}/{}", self.path_raw.trim_end_matches('/'), self.id)
     }
 }
 
-pub(crate) fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
+pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
     filters.is_empty()
         || filters.iter().any(|filter| {
             filter == &req.path_raw
@@ -160,7 +160,7 @@ pub(crate) fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
-pub(crate) fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
+pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
     let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for request in edits_from_config_files(config_files) {
@@ -528,7 +528,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 /// templates. Rendering only happens once every render-free outcome (symlink
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
-pub(crate) fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
+pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     if let EditOp::Block {
         source: BlockSource::File(p),
         ..
@@ -617,7 +617,7 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     }
 }
 
-pub(crate) struct ApplyOpts {
+pub struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     pub yes: bool,
@@ -632,7 +632,7 @@ pub(crate) struct ApplyOpts {
 /// are appended to `written` as each entry is applied, so a caller still
 /// sees what changed when a later entry fails; nothing is appended on a dry
 /// run.
-pub(crate) fn apply(
+pub fn apply(
     config: &Config,
     requests: &[EditRequest],
     opts: &ApplyOpts,
@@ -772,7 +772,7 @@ pub(crate) fn apply(
 /// Print unified patches for the changes required to converge edit entries.
 /// Template blocks are rendered because an exact diff requires their desired
 /// content, matching the trust and execution semantics of dotfiles status.
-pub(crate) fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
+pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
     let mut changed = false;
     let mut problems = vec![];
     for req in requests {
@@ -891,7 +891,7 @@ pub(crate) fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<(
     Ok(())
 }
 
-pub(crate) struct UnapplyOpts {
+pub struct UnapplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// plain line edits have no ownership marker, so removing them requires
@@ -900,7 +900,7 @@ pub(crate) struct UnapplyOpts {
     pub yes: bool,
 }
 
-pub(crate) struct UnapplyPlan<'a> {
+pub struct UnapplyPlan<'a> {
     req: &'a EditRequest,
     /// Exact target contents observed during planning. Template functions run
     /// before execution, so selected edits must still have this same state.
@@ -910,7 +910,7 @@ pub(crate) struct UnapplyPlan<'a> {
 /// Remove marker-delimited blocks and, with `--force`, exact line edits.
 /// Block markers are their ownership record. A plain line may have existed
 /// before apply, so stateless unapply refuses to guess without `--force`.
-pub(crate) fn plan_unapply<'a>(
+pub fn plan_unapply<'a>(
     requests: &'a [EditRequest],
     opts: &UnapplyOpts,
 ) -> Result<Vec<UnapplyPlan<'a>>> {
@@ -982,7 +982,7 @@ pub(crate) fn plan_unapply<'a>(
 
 /// Ensure template functions or another concurrent actor did not invalidate
 /// any edit ownership checks performed during planning.
-pub(crate) fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
+pub fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
     let mut checked = indexmap::IndexSet::new();
     let mut problems = vec![];
     for plan in todo {
@@ -1017,7 +1017,7 @@ pub(crate) fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+pub fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
     if todo.is_empty() {
         info!("edits: all edits are unapplied");
         return Ok(());
@@ -1138,7 +1138,7 @@ fn text_lines(text: &str) -> Vec<TextLine<'_>> {
 /// Simulate applying an edit to in-memory text for bootstrap dry-run config
 /// discovery. Template edits are intentionally not rendered during dry-runs
 /// because rendering may execute user commands.
-pub(crate) fn apply_dry_run_to_string(
+pub fn apply_dry_run_to_string(
     config: &Config,
     req: &EditRequest,
     text: &str,

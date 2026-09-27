@@ -1,1 +1,1 @@
-pub(crate) use mise_util::dirs::*;
+pub use mise_util::dirs::*;

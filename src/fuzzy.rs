@@ -1,1 +1,1 @@
-pub(crate) use mise_util::fuzzy::*;
+pub use mise_util::fuzzy::*;

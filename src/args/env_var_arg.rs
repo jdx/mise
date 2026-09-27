@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct EnvVarArg {
+pub struct EnvVarArg {
     pub key: String,
     pub value: Option<String>,
 }

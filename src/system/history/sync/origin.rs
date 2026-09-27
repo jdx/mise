@@ -19,7 +19,7 @@ use crate::system::history::checkpoint::Store;
 use crate::system::history::tracked::TrackedSet;
 use crate::ui::prompt;
 
-pub(crate) struct SetOptions {
+pub struct SetOptions {
     pub url: String,
     /// The branch asked for; `None` takes the repository's own default branch.
     pub branch: Option<String>,
@@ -31,7 +31,7 @@ pub(crate) struct SetOptions {
 const DEFAULT_BRANCH: &str = "main";
 
 /// Connects the setup repository.
-pub(crate) async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) -> Result<()> {
+pub async fn set(store: &Store, tracked: &TrackedSet, opts: &SetOptions) -> Result<()> {
     super::network::validate_url(&opts.url)?;
     let mut preview_lock = Some(run::lock(store)?);
     let repo = store
@@ -288,7 +288,7 @@ pub(super) fn refuse_missing_branch(remote: &Remote<'_>, branch: &str, url: &str
     );
 }
 
-pub(crate) fn report(outcome: &run::SyncOutcome) {
+pub fn report(outcome: &run::SyncOutcome) {
     match &outcome.published {
         Some(commit) => info!(
             "history: published {}",
@@ -430,7 +430,7 @@ fn reset_sync_state(repo: &crate::system::history::shadow::HistoryRepo) -> Resul
 
 /// Disconnects: the declaration is removed; local refs, state, and
 /// checkpoints stay.
-pub(crate) fn remove() -> Result<()> {
+pub fn remove() -> Result<()> {
     let state_dir: &std::path::Path = &crate::dirs::STATE;
     let _sync_lock = run::lock_wait(state_dir, run::STATUS_LOCK_WAIT)?;
     let mut status = run::read_status(state_dir)?;

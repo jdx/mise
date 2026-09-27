@@ -39,7 +39,7 @@ use versions::Versioning;
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct CondaPackageInfo {
+pub struct CondaPackageInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,

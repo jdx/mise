@@ -129,14 +129,14 @@ pub(crate) fn ensure_install_succeeded() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn has_previous_file(config: &Config, path: &Path) -> bool {
+pub fn has_previous_file(config: &Config, path: &Path) -> bool {
     path.exists()
         || monorepo_lockfile_migration_paths(config)
             .iter()
             .any(|(source, target)| target == path && source.exists())
 }
 
-pub(crate) fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
+pub fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
     let mut previous = Lockfile::read(path)?;
     let mut exists = path.exists();
     for (source, target) in monorepo_lockfile_migration_paths(config) {
@@ -249,11 +249,7 @@ pub(crate) type Tool = (crate::args::BackendArg, ToolVersion);
 ///
 /// Multiple requests for one short and shared dependency tables use the normal
 /// generator, which owns binding conflicts and dependency-table cleanup.
-pub(crate) fn is_current(
-    previous: &Lockfile,
-    tools: &[Tool],
-    platforms: &[Platform],
-) -> Result<bool> {
+pub fn is_current(previous: &Lockfile, tools: &[Tool], platforms: &[Platform]) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
         || previous.tools.len() != tools.len()
@@ -357,7 +353,7 @@ fn can_reuse(info: &PlatformInfo) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
-pub(crate) async fn generate(
+pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
     platforms: &[Platform],
@@ -612,7 +608,7 @@ pub(crate) async fn generate(
     Ok(candidate)
 }
 
-pub(crate) async fn populate_aube_locks(
+pub async fn populate_aube_locks(
     lockfile: &mut Lockfile,
     tools: &[Tool],
     report: Option<&dyn crate::ui::progress_report::SingleReport>,
@@ -674,7 +670,7 @@ pub(crate) async fn populate_aube_locks(
     Ok(())
 }
 
-pub(crate) async fn populate_uv_locks(
+pub async fn populate_uv_locks(
     config: &Arc<Config>,
     lockfile: &mut Lockfile,
     tools: &[Tool],

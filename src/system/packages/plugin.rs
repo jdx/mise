@@ -36,13 +36,13 @@ struct OwnedPackage {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PluginPrunePlan {
+pub struct PluginPrunePlan {
     pub remove: Vec<PackageRequest>,
     stale: Vec<String>,
 }
 
 impl PluginPrunePlan {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
@@ -85,7 +85,7 @@ impl PackagePluginState {
 }
 
 #[derive(Debug)]
-pub(crate) struct PackagePluginManager {
+pub struct PackagePluginManager {
     name: String,
     plugin: Arc<VfoxPlugin>,
     config: MisePluginTomlPackageManagerConfig,
@@ -93,7 +93,7 @@ pub(crate) struct PackagePluginManager {
 }
 
 impl PackagePluginManager {
-    pub(crate) fn new(name: String) -> Result<Self> {
+    pub fn new(name: String) -> Result<Self> {
         let plugin_path = crate::dirs::PLUGINS.join(name.to_kebab_case());
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;
@@ -174,7 +174,7 @@ impl PackagePluginManager {
         Self::save_state_at(&self.state_path(), state)
     }
 
-    pub(crate) fn supports_uninstall(&self) -> bool {
+    pub fn supports_uninstall(&self) -> bool {
         self.plugin
             .plugin_path
             .join("hooks/package_uninstall.lua")
@@ -354,10 +354,7 @@ impl PackagePluginManager {
         changed
     }
 
-    pub(crate) async fn prune_plan(
-        &self,
-        configured: &[PackageRequest],
-    ) -> Result<PluginPrunePlan> {
+    pub async fn prune_plan(&self, configured: &[PackageRequest]) -> Result<PluginPrunePlan> {
         let _lock = self.operation_lock()?;
         let state = self.load_state()?;
         let requests = state.prune_requests(configured);
@@ -387,7 +384,7 @@ impl PackagePluginManager {
         Ok(PluginPrunePlan { remove, stale })
     }
 
-    pub(crate) async fn apply_prune_plan(&self, plan: &PluginPrunePlan) -> Result<usize> {
+    pub async fn apply_prune_plan(&self, plan: &PluginPrunePlan) -> Result<usize> {
         let _lock = self.operation_lock()?;
         let config = Config::reset().await?;
         let configured =

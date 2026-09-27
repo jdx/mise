@@ -1239,7 +1239,8 @@ until a child defines its own. A child config's `includes` replaces both the def
 inherited `includes` for that directory.
 User-global config files form one config scope, as do system config files. Within each scope, the
 highest-precedence config that defines `task_config.includes` replaces lower-precedence includes and
-the default directories. User-global and system scopes remain independent. User-global tasks replace
+the default directories. A [conf.d folder](/configuration.html#conf-d-folders) is its own root in
+either case: its `includes` resolve inside the folder and replace only the folder's own defaults. User-global and system scopes remain independent. User-global tasks replace
 same-named system tasks without inheriting system task metadata, while system tasks with other names
 remain available.
 

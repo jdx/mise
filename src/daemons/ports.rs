@@ -35,7 +35,7 @@ pub(crate) enum PortRequest {
 /// the port so a later change to `base` or `stride` re-derives, while a change
 /// to the hash function leaves existing allocations alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PortClaim {
+pub struct PortClaim {
     pub port: u16,
     pub base: u16,
     /// Zero marks an explicit fixed port, which is recorded for collision
@@ -52,7 +52,7 @@ impl PortClaim {
         }
     }
 
-    pub(crate) fn is_auto(&self) -> bool {
+    pub fn is_auto(&self) -> bool {
         self.stride > 0
     }
 }

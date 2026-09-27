@@ -6,7 +6,7 @@ use std::{
 };
 
 #[derive(Debug)]
-pub(crate) struct Source {
+pub struct Source {
     _directory: tempfile::TempDir,
     pub bundle: PathBuf,
     pub revision: String,
@@ -41,7 +41,7 @@ async fn git_async(path: &Path, args: &[&str]) -> Result<String> {
         .to_string())
 }
 
-pub(crate) fn validate_origin(origin: &str) -> Result<()> {
+pub fn validate_origin(origin: &str) -> Result<()> {
     if origin.starts_with('-') || origin.chars().any(char::is_control) {
         bail!("invalid repository origin");
     }
@@ -74,7 +74,7 @@ pub(crate) fn validate_origin(origin: &str) -> Result<()> {
 }
 
 impl Source {
-    pub(crate) async fn fetch(origin: String) -> Result<Self> {
+    pub async fn fetch(origin: String) -> Result<Self> {
         validate_origin(&origin)?;
         let directory = tempfile::tempdir()?;
         let repo = directory.path().join("repo");
@@ -124,7 +124,7 @@ impl Source {
     }
 }
 
-pub(crate) fn global_directory() -> PathBuf {
+pub fn global_directory() -> PathBuf {
     crate::env::MISE_GLOBAL_CONFIG_FILE
         .as_deref()
         .and_then(Path::parent)
@@ -135,7 +135,7 @@ pub(crate) fn global_directory() -> PathBuf {
 /// The branch of a transferred bundle whose tree carries the setup
 /// repository marker (`.mise-history/format.toml`); `None` for an ordinary
 /// repository.
-pub(crate) fn history_branch(bundle: &Path, revision: &str) -> Result<Option<String>> {
+pub fn history_branch(bundle: &Path, revision: &str) -> Result<Option<String>> {
     let temporary = tempfile::tempdir()?;
     let checkout = temporary.path().join("checkout");
     let mut command = Command::new("git");
@@ -158,7 +158,7 @@ pub(crate) fn history_branch(bundle: &Path, revision: &str) -> Result<Option<Str
 /// Installs the transferred revision as the global configuration checkout.
 /// A dry run runs every check and says what it would do (clone, fast-forward,
 /// adopt) without writing anything persistent.
-pub(crate) fn install(
+pub fn install(
     bundle: &Path,
     origin: &str,
     revision: &str,

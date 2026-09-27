@@ -105,7 +105,7 @@ pub(crate) fn install_dependency_declarations(
 
 /// The configured and offline-resolved view of one tool's install dependencies.
 #[derive(Debug)]
-pub(crate) struct InstallDependencyContext {
+pub struct InstallDependencyContext {
     pub(crate) declarations: InstallDependencyDeclarations,
     pub(crate) requests: ToolRequestSet,
     pub(crate) toolset: Toolset,
@@ -181,7 +181,7 @@ impl InstallDependencyContext {
     }
 }
 
-pub(crate) struct InstallContext {
+pub struct InstallContext {
     pub config: Arc<Config>,
     pub ts: Arc<Toolset>,
     pub pr: Arc<dyn SingleReport>,
@@ -194,7 +194,7 @@ pub(crate) struct InstallContext {
     pub before_date: Option<Timestamp>,
     /// One install context belongs to exactly one tool request, so this cache is
     /// intentionally unkeyed. Every caller must use that same request.
-    pub(crate) dependency_context: OnceCell<InstallDependencyContext>,
+    pub dependency_context: OnceCell<InstallDependencyContext>,
 }
 
 impl InstallContext {

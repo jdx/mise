@@ -26,7 +26,7 @@ use crate::system::history::tracked::{TrackedSet, normalize_target};
 use crate::ui::table::MiseTable;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ApplyRequest {
+pub struct ApplyRequest {
     /// Only these local paths (empty: everything pending).
     pub paths: Vec<PathBuf>,
     pub dry_run: bool,
@@ -65,7 +65,7 @@ impl ApplyRequest {
 
 /// What an application did.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct ApplyOutcome {
+pub struct ApplyOutcome {
     /// Files written or removed.
     pub written: usize,
     /// Paths held for a decision (with their groups).
@@ -93,7 +93,7 @@ struct Step {
     desired_mode: Option<u32>,
 }
 
-pub(crate) async fn apply(
+pub async fn apply(
     store: &Store,
     tracked: &TrackedSet,
     req: &ApplyRequest,
@@ -1089,7 +1089,7 @@ pub(super) fn has_staged_changes(staged: &BTreeSet<PathBuf>, path: &Path) -> boo
 }
 
 /// The conflicts as rows for `mise dot status`.
-pub(crate) fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)> {
+pub fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)> {
     let roots = Roots::current();
     conflicts
         .iter()
@@ -1104,7 +1104,7 @@ pub(crate) fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)
         .collect()
 }
 
-pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
+pub fn resolution_advice(path: &str, reason: &str) -> String {
     if reason == super::reconcile::ConflictKind::Repository.describe() {
         "inspect the validation error, reconcile the repository with Git, then run `mise dot sync`"
             .into()

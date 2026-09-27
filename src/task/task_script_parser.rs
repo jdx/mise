@@ -1041,7 +1041,7 @@ impl TaskScriptParser {
     }
 }
 
-pub(crate) fn has_any_args_defined(spec: &usage::Spec) -> bool {
+pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
     !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() || !spec.cmd.subcommands.is_empty()
 }
 
@@ -1051,7 +1051,7 @@ pub(crate) fn has_any_args_defined(spec: &usage::Spec) -> bool {
 ///
 /// Note: before_help_long is excluded because populate_spec_metadata()
 /// sets it automatically for tasks with dependencies.
-pub(crate) fn has_any_usage_spec(spec: &usage::Spec) -> bool {
+pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
     has_any_args_defined(spec)
         || spec.about.is_some()
         || spec.about_long.is_some()

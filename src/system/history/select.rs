@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// One `variants = [{ … }]` element of a `[dotfiles]` track entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Variant {
+pub struct Variant {
     /// `"macos"`, `"linux/arm64"`, the `"unix"` family, or a list; empty = any.
     #[serde(default, deserialize_with = "deserialize_one_or_many")]
     pub os: Vec<String>,

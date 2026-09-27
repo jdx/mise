@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct ToolRequestSet {
+pub struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
     /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
@@ -24,7 +24,7 @@ pub(crate) struct ToolRequestSet {
 }
 
 impl ToolRequestSet {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -47,11 +47,11 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    pub(crate) fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
+    pub fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
         self.tools.keys().collect()
     }
 
-    pub(crate) fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
+    pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
         let fa = tr.ba();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());
@@ -60,15 +60,13 @@ impl ToolRequestSet {
         list.push(tr);
     }
 
-    pub(crate) fn iter(
-        &self,
-    ) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
         self.tools
             .iter()
             .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     }
 
-    pub(crate) fn into_iter(
+    pub fn into_tools(
         self,
     ) -> impl Iterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> {
         self.tools.into_iter().map(move |(ba, tvr)| {
@@ -77,7 +75,7 @@ impl ToolRequestSet {
         })
     }
 
-    pub(crate) fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
+    pub fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
         // add in the full names so something like cargo:cargo-binstall can be used in place of cargo-binstall
         for short in tools.clone().iter() {
             if let Some(rt) = REGISTRY.get(short.as_str()) {
@@ -123,7 +121,7 @@ impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolReque
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct ToolRequestSetBuilder {
+pub struct ToolRequestSetBuilder {
     /// cli tool args
     args: Vec<ToolArg>,
     /// default to latest version if no version is specified (for `mise x`)
@@ -375,7 +373,7 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
 }
 
 /// Returns the environment variable used to select a tool version for a shell session.
-pub(crate) fn tool_env_var_name(tool: &str) -> String {
+pub fn tool_env_var_name(tool: &str) -> String {
     format!("MISE_{}_VERSION", tool.to_shouty_snake_case())
 }
 
@@ -383,7 +381,7 @@ pub(crate) fn tool_env_var_name(tool: &str) -> String {
 ///
 /// Shell environment variable names cannot preserve the distinction between `-` and `_`.
 /// Since mise tool names conventionally use kebab-case, both spellings decode to `-`.
-pub(crate) fn tool_from_env_var_name(name: &str) -> Option<String> {
+pub fn tool_from_env_var_name(name: &str) -> Option<String> {
     if env::NON_TOOL_VERSION_ENV_VARS.contains(&name) {
         return None;
     }
@@ -398,7 +396,7 @@ pub(crate) fn tool_from_env_var_name(name: &str) -> Option<String> {
 /// maps to a tool. `short` is the unaliased backend short name (so
 /// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
 /// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
-pub(crate) fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
+pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
     env::vars_safe().filter_map(|(k, v)| {
         let short = tool_from_env_var_name(&k)?;
         Some((short, k, v))

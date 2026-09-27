@@ -1,13 +1,13 @@
 //! Project daemons: custom pitchfork definitions and embedded database presets.
-pub(crate) mod hook_env;
+pub mod hook_env;
 pub(crate) mod ports;
-pub(crate) mod presets;
-pub(crate) mod providers;
+pub mod presets;
+pub mod providers;
 mod providers_nats;
-pub(crate) mod prune;
-pub(crate) mod runtime;
-pub(crate) mod tasks;
-pub(crate) mod urls;
+pub mod prune;
+pub mod runtime;
+pub mod tasks;
+pub mod urls;
 
 use crate::config::config_file::ConfigFile;
 use crate::config::env_directive::EnvDirective;
@@ -32,7 +32,7 @@ pub(crate) const DAEMON_TASK_MARKER: &str = "MISE_DAEMON_TASK";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum Declaration {
+pub enum Declaration {
     Preset(String),
     Definition(toml::Table),
 }
@@ -43,7 +43,7 @@ pub(crate) enum Declaration {
 /// discarding the others; see [`DaemonSettings::merge`].
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DaemonSettings {
+pub struct DaemonSettings {
     /// Fixed pitchfork namespace for this project, replacing the hashed default.
     #[serde(default)]
     pub namespace: Option<String>,
@@ -75,13 +75,13 @@ impl DaemonSettings {
 /// The table form, matching `additionalProperties: false` in schema/mise.json.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GroupTable {
+pub struct GroupTable {
     daemons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum GroupDeclaration {
+pub enum GroupDeclaration {
     List(Vec<String>),
     Table(GroupTable),
 }
@@ -96,7 +96,7 @@ impl GroupDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Group {
+pub struct Group {
     pub name: String,
     pub source: PathBuf,
     pub root: PathBuf,
@@ -107,7 +107,7 @@ pub(crate) struct Group {
 }
 
 /// What a bare name resolves to for a project; see [`DaemonSet::resolve_bare`].
-pub(crate) enum BareName<'a> {
+pub enum BareName<'a> {
     /// A daemon this project or an ancestor declares. The caller qualifies it
     /// itself; what matters here is that the word is claimed, so no group of
     /// the same name elsewhere answers for it.
@@ -122,7 +122,7 @@ pub(crate) enum BareName<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Daemon {
+pub struct Daemon {
     /// Name inside its own project; the key in the owning project's pitchfork config.
     pub name: String,
     pub source: PathBuf,
@@ -150,7 +150,7 @@ pub(crate) struct Daemon {
 }
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct DaemonSet {
+pub struct DaemonSet {
     /// Keyed by local name for own daemons and by qualified ID for imported ones.
     pub daemons: IndexMap<String, Daemon>,
     /// Resolved pitchfork namespace for every project root in this set.
@@ -226,7 +226,7 @@ pub(crate) fn validate_namespace(namespace: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn state_dir(root: &Path) -> PathBuf {
+pub fn state_dir(root: &Path) -> PathBuf {
     crate::dirs::STATE
         .join("daemons")
         .join(crate::hash::hash_to_str(
@@ -264,7 +264,7 @@ pub(crate) fn legacy_lock_file_for_state_dir(dir: &Path) -> PathBuf {
 /// cannot deadlock against each other. Released together, which is what lets
 /// `mise daemons prune` delete state without any window for a `prepare()` to
 /// write into it.
-pub(crate) struct ProjectLock {
+pub struct ProjectLock {
     _sibling: fslock::LockFile,
     _legacy: fslock::LockFile,
 }
@@ -318,7 +318,7 @@ fn routed_claimant(imported: &[bool]) -> Option<usize> {
     }
 }
 
-pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
+pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut declarations = IndexMap::new();
     let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
     let mut group_declarations = IndexMap::new();
@@ -945,7 +945,7 @@ fn settings_for(settings: &IndexMap<PathBuf, DaemonSettings>, root: &Path) -> Da
 /// all of it: the invoking project's merged configuration knows about imports
 /// declared there, and each owning root's own configuration knows about the
 /// imports that project declares.
-pub(crate) fn ensure_not_blocked(
+pub fn ensure_not_blocked(
     set: &DaemonSet,
     starting: &DaemonSet,
     root: Option<&Path>,
@@ -1496,7 +1496,7 @@ impl DaemonSet {
             .collect()
     }
 
-    pub(crate) fn roots(&self) -> Vec<PathBuf> {
+    pub fn roots(&self) -> Vec<PathBuf> {
         self.daemons
             .values()
             .map(|d| d.root.clone())
@@ -1505,7 +1505,7 @@ impl DaemonSet {
             .collect()
     }
 
-    pub(crate) fn for_root(&self, root: &Path) -> Self {
+    pub fn for_root(&self, root: &Path) -> Self {
         Self {
             daemons: self
                 .daemons
@@ -1545,18 +1545,18 @@ impl DaemonSet {
     }
 
     /// The group named `name`. Call on a root-scoped set, where names are unique.
-    pub(crate) fn group(&self, name: &str) -> Option<&Group> {
+    pub fn group(&self, name: &str) -> Option<&Group> {
         self.groups.iter().find(|g| g.name == name)
     }
 
     /// Daemon names a declared group expands to, or None when `name` is not a group.
-    pub(crate) fn expand(&self, name: &str) -> Option<&[String]> {
+    pub fn expand(&self, name: &str) -> Option<&[String]> {
         self.group(name).map(|g| g.daemons.as_slice())
     }
 
     /// Resolve a local declaration or import alias to its qualified ID.
     /// A local name must not also select a same-named daemon from another root.
-    pub(crate) fn resolve_alias(&self, name: &str) -> String {
+    pub fn resolve_alias(&self, name: &str) -> String {
         self.imported_as(name)
             .map(str::to_string)
             .or_else(|| {
@@ -1583,7 +1583,7 @@ impl DaemonSet {
     /// them, so the nearest declaration wins. Within one project the two cannot
     /// collide: a group conflicting with a daemon of the same name there is
     /// rejected when configuration loads.
-    pub(crate) fn resolve_bare(&self, root: &Path, name: &str) -> Option<BareName<'_>> {
+    pub fn resolve_bare(&self, root: &Path, name: &str) -> Option<BareName<'_>> {
         for ancestor in root.ancestors() {
             // A daemon declared here claims the word, so the walk stops: an
             // ancestor's group of the same name does not reach past a nearer
@@ -1619,7 +1619,7 @@ impl DaemonSet {
     }
 
     /// The pitchfork namespace for a project root, when this set declares daemons for it.
-    pub(crate) fn namespace_for(&self, root: &Path) -> Option<&str> {
+    pub fn namespace_for(&self, root: &Path) -> Option<&str> {
         self.namespaces.get(root).map(String::as_str)
     }
 
@@ -1628,7 +1628,7 @@ impl DaemonSet {
     /// Only for deciding what this invocation may act on or show. Never pass the
     /// result to `prepare`: a root's generated pitchfork config is rewritten
     /// whole, so registering a reduced set deletes that project's other daemons.
-    pub(crate) fn restricted_to(&self, requested: &Self) -> Self {
+    pub fn restricted_to(&self, requested: &Self) -> Self {
         Self {
             daemons: self
                 .daemons
@@ -1665,7 +1665,7 @@ impl DaemonSet {
     /// The daemons these names select, together with their dependency closure.
     /// Bare dependencies resolve within the declaring daemon's namespace;
     /// qualified dependencies can select another loaded project's daemon.
-    pub(crate) fn with_dependencies(&self, names: &[String]) -> Self {
+    pub fn with_dependencies(&self, names: &[String]) -> Self {
         let qualified = |d: &Daemon| match self.namespace_for(&d.root) {
             Some(namespace) => format!("{namespace}/{}", d.name),
             None => d.name.clone(),
@@ -1723,7 +1723,7 @@ impl DaemonSet {
     /// Whether this set holds that exact daemon, matched by owning project and
     /// name. A name alone is unique only within one project, so two projects can
     /// each have an `api` and only one of them is the daemon in question.
-    pub(crate) fn contains(&self, daemon: &Daemon) -> bool {
+    pub fn contains(&self, daemon: &Daemon) -> bool {
         self.daemons
             .values()
             .any(|d| d.name == daemon.name && d.root == daemon.root)
@@ -1731,7 +1731,7 @@ impl DaemonSet {
 
     /// Look a daemon up by the name it carries inside its own project. Imported
     /// daemons are keyed by qualified ID, so the map key is not always the name.
-    pub(crate) fn find(&self, name: &str) -> Option<&Daemon> {
+    pub fn find(&self, name: &str) -> Option<&Daemon> {
         self.daemons.values().find(|d| d.name == name)
     }
 
@@ -1740,7 +1740,7 @@ impl DaemonSet {
     /// while `[daemons]` is parsed. The three paths that register a generated
     /// pitchfork configuration call it first: `mise daemons start`, a task that
     /// requires daemons, and the shell auto-lifecycle hook.
-    pub(crate) async fn validate_tasks(&self, config: &Arc<Config>) -> Result<()> {
+    pub async fn validate_tasks(&self, config: &Arc<Config>) -> Result<()> {
         if self.daemons.values().all(|d| d.task.is_none()) {
             return Ok(());
         }
@@ -2785,7 +2785,7 @@ mod tests {
             "[daemons.worker]\nproject = '../mirror'\n[daemons.api]\nrun = 'exec api'\ndepends = ['worker']\n",
         )]);
         let config_path = mirror.join(&*crate::env::MISE_DEFAULT_CONFIG_FILENAME);
-        // `is_trusted` trusts everything under `cfg!(test)`, except in paranoid
+        // `is_trusted` trusts everything in unit tests, except in paranoid
         // mode, where trust is bound to file contents and checked first. That is
         // the only way to exercise this gate without the bypass.
         paranoid_on(&serial);

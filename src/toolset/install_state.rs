@@ -7,7 +7,6 @@ use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
@@ -28,7 +27,7 @@ type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
 
 #[derive(Debug, Clone)]
-pub(crate) struct InstallStateTool {
+pub struct InstallStateTool {
     pub short: String,
     pub full: Option<String>,
     pub versions: Vec<String>,
@@ -194,7 +193,7 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
 /// which dominated startup on machines with many tools installed. Per-tool
 /// lookups load lazily via [`get_tool`]; enumerating callers get the full scan
 /// on first use of [`list_tools`].
-pub(crate) async fn init() -> Result<()> {
+pub async fn init() -> Result<()> {
     measure!("init_plugins", { init_plugins().await })?;
     Ok(())
 }
@@ -244,20 +243,49 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// `tool_dir_name` keys the incomplete markers. Install writes them under the
 /// tool's short name, which a manifest can map to a differently named dir.
 fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
-    // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its target is
-    // moved or deleted, and dropping it here is what made the version invisible to `mise ls` and
-    // unreachable to `mise uninstall` — occupying a name nothing would admit to. It is listed, not
-    // treated as installed: `is_version_installed` still resolves the path and still says no.
-    Ok(file::dir_subdirs_keeping_broken_links(dir)?
-        .into_iter()
-        .filter(|v| !v.starts_with('.'))
-        .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-        .filter(|v| !incomplete_marker(tool_dir_name, v).exists())
-        .sorted_by_cached_key(|v| {
-            let normalized = normalize_version_for_sort(v);
-            (Versioning::new(normalized), v.to_string())
-        })
-        .collect())
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    // One pass, deciding from the entry's own file type so a plain version
+    // directory costs no syscalls beyond the incomplete-marker check. Only links
+    // are resolved: a runtime symlink (`latest` -> `./1.2.3`) names another
+    // version, and on Windows those are files, which are never kept anyway.
+    let mut versions = vec![];
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            let path = entry.path();
+            if runtime_symlinks::is_runtime_symlink(&path) {
+                continue;
+            }
+            // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its
+            // target is moved or deleted, and dropping it here is what made the version invisible
+            // to `mise ls` and unreachable to `mise uninstall` — occupying a name nothing would
+            // admit to. It is listed, not treated as installed: `is_version_installed` still
+            // resolves the path and still says no.
+            if !path.is_dir() && path.exists() {
+                continue;
+            }
+        } else if !file_type.is_dir() {
+            continue;
+        }
+        if incomplete_marker(tool_dir_name, &name).exists() {
+            continue;
+        }
+        versions.push(name);
+    }
+    versions.sort_by_cached_key(|v| {
+        let normalized = normalize_version_for_sort(v);
+        (Versioning::new(normalized), v.to_string())
+    });
+    Ok(versions)
 }
 
 /// [`scan_versions`] for read-only shared install dirs, where a unreadable
@@ -693,7 +721,7 @@ fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugi
     }
 }
 
-pub(crate) fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
+pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
     try_list_plugins().expect("INSTALL_STATE_PLUGINS is None")
 }
 
@@ -744,11 +772,12 @@ pub(crate) fn get_tool_full(short: &str) -> Option<String> {
     with_tool(short, |t| t.full.clone()).flatten()
 }
 
-pub(crate) fn get_plugin_type(short: &str) -> Option<PluginType> {
-    #[cfg(test)]
-    let plugins = try_list_plugins()?;
-    #[cfg(not(test))]
-    let plugins = list_plugins();
+pub fn get_plugin_type(short: &str) -> Option<PluginType> {
+    let plugins = if mise_util::testing::in_tests() {
+        try_list_plugins()?
+    } else {
+        list_plugins()
+    };
     plugins.get(short).cloned()
 }
 
@@ -768,7 +797,7 @@ pub(crate) fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>
 /// [`try_list_tools`] for callers that only display or enumerate, where a
 /// warning is a better outcome than aborting. Never use this to decide what to
 /// delete.
-pub(crate) fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
+pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
     try_list_tools().unwrap_or_else(|err| {
         warn!("failed to scan installed tools: {err:#}");
         Arc::new(Default::default())
@@ -952,7 +981,7 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// so install, uninstall, and link use this logical identity while mutating the
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
-pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
+pub fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
     lock_tool_version_with_notice(short, v, &|_| {})
 }
 
@@ -973,7 +1002,7 @@ pub(crate) fn lock_tool_version_with_notice(
         .lock_with_notice(on_wait)
 }
 
-pub(crate) fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
+pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
     let incomplete_path = incomplete_file_path(short, v);
     match file::remove_file(&incomplete_path) {
         std::result::Result::Ok(()) => {
@@ -1432,5 +1461,38 @@ explicit_backend = true
         let _ = std::fs::remove_dir_all(marker.parent().unwrap().parent().unwrap());
 
         assert_eq!(versions, ["1.0.0"]);
+    }
+
+    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
+    /// what the scan keys on. `make_symlink` writes a junction there, so if that were not so,
+    /// `broken` would be dropped below — and the *live* junction would never have been listed
+    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
+    #[test]
+    fn scan_versions_keeps_links_that_lead_nowhere_but_not_runtime_symlinks() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("tool");
+        std::fs::create_dir_all(dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(dir.join(".hidden")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "x").unwrap();
+        let external = temp.path().join("external");
+        std::fs::create_dir_all(&external).unwrap();
+        crate::file::make_symlink(&external, &dir.join("linked")).unwrap();
+        crate::file::make_symlink(&temp.path().join("nowhere"), &dir.join("broken")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("./1.0.0", dir.join("1")).unwrap();
+
+        let tool_dir_name = format!(
+            "scan-links{}",
+            temp.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut versions = scan_versions(&dir, &tool_dir_name).unwrap();
+        versions.sort();
+
+        assert_eq!(versions, ["1.0.0", "broken", "linked"]);
+        assert!(
+            scan_versions(&temp.path().join("missing"), &tool_dir_name)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

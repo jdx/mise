@@ -5,13 +5,13 @@ use serde::Deserialize;
 /// A command that intercepts a binary name before delegating to the toolset.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum CommandWrapper {
+pub enum CommandWrapper {
     Command(String),
     Detailed(CommandWrapperOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub(crate) struct CommandWrapperOptions {
+pub struct CommandWrapperOptions {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -20,21 +20,21 @@ pub(crate) struct CommandWrapperOptions {
 }
 
 impl CommandWrapper {
-    pub(crate) fn command(&self) -> &str {
+    pub fn command(&self) -> &str {
         match self {
             Self::Command(command) => command,
             Self::Detailed(options) => &options.command,
         }
     }
 
-    pub(crate) fn args(&self) -> &[String] {
+    pub fn args(&self) -> &[String] {
         match self {
             Self::Command(_) => &[],
             Self::Detailed(options) => &options.args,
         }
     }
 
-    pub(crate) fn env(&self) -> &IndexMap<String, String> {
+    pub fn env(&self) -> &IndexMap<String, String> {
         static EMPTY: std::sync::LazyLock<IndexMap<String, String>> =
             std::sync::LazyLock::new(IndexMap::new);
         match self {

@@ -481,23 +481,23 @@ struct AquaSuggestionsCache {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct AquaSearchEntry {
+pub struct AquaSearchEntry {
     pub id: &'static str,
     backend_override: Option<&'static str>,
 }
 
 impl AquaSearchEntry {
-    pub(crate) fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         self.id.rsplit_once('/').map_or(self.id, |(_, name)| name)
     }
 
-    pub(crate) fn backend(&self) -> String {
+    pub fn backend(&self) -> String {
         self.backend_override
             .map(str::to_string)
             .unwrap_or_else(|| format!("aqua:{}", self.id))
     }
 
-    pub(crate) fn backend_matches(&self, query: &str) -> bool {
+    pub fn backend_matches(&self, query: &str) -> bool {
         query.strip_prefix("aqua:") == Some(self.id)
             || self.backend_override.is_some_and(|b| b == query)
     }
@@ -509,7 +509,7 @@ pub(crate) struct AquaSuggestion {
     pub backend: String,
 }
 
-pub(crate) fn aqua_search_entries() -> impl Iterator<Item = AquaSearchEntry> {
+pub fn aqua_search_entries() -> impl Iterator<Item = AquaSearchEntry> {
     super::standard_registry::search_entries().map(|(id, backend_override)| AquaSearchEntry {
         id,
         backend_override,

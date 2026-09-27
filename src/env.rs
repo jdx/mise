@@ -5,15 +5,15 @@ use crate::shell::ShellType;
 use crate::{args::ToolArg, file::display_path};
 use eyre::Context;
 use indexmap::IndexSet;
-pub(crate) use mise_util::env::*;
+pub use mise_util::env::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{path::Path, string::ToString};
 
-pub(crate) static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
-pub(crate) static MISE_SHELL: Lazy<Option<ShellType>> =
+pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
+pub static MISE_SHELL: Lazy<Option<ShellType>> =
     Lazy::new(|| detect_shell(var("MISE_SHELL").ok(), var("SHELL").ok(), &SHELL));
 
 /// Which shell mise should speak, from the environment.
@@ -50,7 +50,7 @@ fn detect_shell(
 
 // data subdirs
 
-pub(crate) static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
+pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
@@ -59,7 +59,7 @@ pub(crate) static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(
         .or(var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").ok())
         .unwrap_or_else(|| ".tool-versions".into())
 });
-pub(crate) static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
+pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_CONFIG_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_CONFIG_FILENAMES.first().cloned())
@@ -80,7 +80,7 @@ pub(crate) static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
             .map(|v| v.iter().cloned().collect())
             .unwrap_or_default(),
     });
-pub(crate) static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 
 /// The tri-state auto_env setting: MISE_AUTO_ENV env var > .miserc.toml > unset
 pub(crate) fn auto_env_setting() -> Option<bool> {
@@ -235,7 +235,7 @@ pub(crate) static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::
 pub(crate) static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 
 /// Whether terminal-width presentation output should be truncated.
-pub(crate) fn should_truncate() -> bool {
+pub fn should_truncate() -> bool {
     crate::config::Settings::get().truncate && !*AI_AGENT
 }
 
@@ -332,7 +332,7 @@ fn split_colon_list(value: &str) -> IndexSet<String> {
         .collect()
 }
 
-pub(crate) fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("cd {}", display_path(path));
     std::env::set_current_dir(path)

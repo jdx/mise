@@ -1,1 +1,1 @@
-pub(crate) use mise_util::windows_console::*;
+pub use mise_util::windows_console::*;

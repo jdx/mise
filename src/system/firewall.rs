@@ -27,7 +27,7 @@ const FIREWALLD_POLICY_DIR: &str = "/etc/firewalld/policies";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallBackend {
+pub enum FirewallBackend {
     #[default]
     Auto,
     Ufw,
@@ -57,7 +57,7 @@ impl FirewallBackend {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallState {
+pub enum FirewallState {
     #[default]
     Enabled,
     Disabled,
@@ -66,7 +66,7 @@ pub(crate) enum FirewallState {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallPolicy {
+pub enum FirewallPolicy {
     #[default]
     Allow,
     Deny,
@@ -100,7 +100,7 @@ impl FirewallPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallRuleState {
+pub enum FirewallRuleState {
     #[default]
     Present,
     Absent,
@@ -108,7 +108,7 @@ pub(crate) enum FirewallRuleState {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallDirection {
+pub enum FirewallDirection {
     #[default]
     Incoming,
     Outgoing,
@@ -116,7 +116,7 @@ pub(crate) enum FirewallDirection {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum FirewallAction {
+pub enum FirewallAction {
     #[default]
     Allow,
     Limit,
@@ -159,7 +159,7 @@ impl FirewallAction {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum FirewallProtocol {
+pub enum FirewallProtocol {
     Tcp,
     Udp,
     Sctp,
@@ -179,7 +179,7 @@ impl FirewallProtocol {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum FirewallPortToml {
+pub enum FirewallPortToml {
     Single(u16),
     Range(String),
 }
@@ -221,7 +221,7 @@ impl FirewallPort {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct FirewallRuleTomlConfig {
+pub struct FirewallRuleTomlConfig {
     pub name: String,
     #[serde(default)]
     pub state: FirewallRuleState,
@@ -237,7 +237,7 @@ pub(crate) struct FirewallRuleTomlConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct FirewallTomlConfig {
+pub struct FirewallTomlConfig {
     pub backend: Option<FirewallBackend>,
     pub state: Option<FirewallState>,
     pub default_incoming: Option<FirewallPolicy>,
@@ -266,7 +266,7 @@ pub(crate) struct FirewallRule {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct FirewallRequest {
+pub struct FirewallRequest {
     backend: FirewallBackend,
     state: FirewallState,
     default_incoming: FirewallPolicy,
@@ -305,7 +305,7 @@ struct FirewallStateFile {
     request: FirewallRequest,
 }
 
-pub(crate) fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
+pub fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
     let mut merged = None;
     // config_files is ordered local -> global; merge global -> local so a
     // more local scalar or same-named rule overrides its inherited value.
@@ -360,7 +360,7 @@ fn merge_toml_config(
     Ok(inherited)
 }
 
-pub(crate) fn request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
+pub fn request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
     let Some(mut request) = prepare_request_from_config(config)? else {
         return Ok(None);
     };
@@ -368,11 +368,11 @@ pub(crate) fn request_from_config(config: &Config) -> Result<Option<FirewallRequ
     Ok(Some(request))
 }
 
-pub(crate) fn status_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
+pub fn status_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
     request_from_config(config)
 }
 
-pub(crate) fn inspect_request(request: &mut FirewallRequest) -> Result<()> {
+pub fn inspect_request(request: &mut FirewallRequest) -> Result<()> {
     let input = serde_json::to_vec(request)?;
     let executable = std::env::current_exe()?.to_string_lossy().to_string();
     let output = crate::system::sudo::run_with_input_output(
@@ -552,7 +552,7 @@ impl FirewallRequest {
         Ok(())
     }
 
-    pub(crate) fn plans(&self) -> Vec<ResourcePlan> {
+    pub fn plans(&self) -> Vec<ResourcePlan> {
         let inspection = self.inspection.as_ref();
         let backend = inspection
             .and_then(|inspection| inspection.backend)
@@ -700,7 +700,7 @@ impl FirewallRule {
     }
 }
 
-pub(crate) fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> {
+pub fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> {
     let plan = request.plans();
     let changes = plan
         .iter()
@@ -779,7 +779,7 @@ fn firewall_change_is_unsafe(plan: &[ResourcePlan]) -> bool {
         .is_none_or(|resource| resource.action == ResourceAction::Unknown)
 }
 
-pub(crate) fn inspect_privileged_plan_from_stdin() -> Result<()> {
+pub fn inspect_privileged_plan_from_stdin() -> Result<()> {
     let request: FirewallRequest = serde_json::from_reader(std::io::stdin().lock())?;
     request.validate_safety()?;
     let inspection = inspect_privileged(&request);
@@ -787,7 +787,7 @@ pub(crate) fn inspect_privileged_plan_from_stdin() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     let request: FirewallRequest = serde_json::from_reader(std::io::stdin().lock())?;
     request.validate_safety()?;
     apply_privileged(&request)

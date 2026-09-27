@@ -9,7 +9,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::env;
 use crate::file::display_filename;
 
-pub(crate) use engine::{DepsEngine, DepsOptions, DepsStepResult};
+pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
 pub(crate) use rule::DepsConfig;
 pub(crate) use rule::DepsTemplateContext;
 
@@ -21,7 +21,7 @@ pub(crate) mod state;
 
 /// Result of a freshness check for a deps provider
 #[derive(Debug, Clone)]
-pub(crate) enum FreshnessResult {
+pub enum FreshnessResult {
     /// Outputs are up to date with sources
     Fresh,
     /// One or more output paths don't exist
@@ -36,7 +36,7 @@ pub(crate) enum FreshnessResult {
 
 /// Whether a configured deps provider can run in its current project.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DepsProviderApplicability {
+pub enum DepsProviderApplicability {
     Applicable,
     Inactive(String),
 }
@@ -91,12 +91,12 @@ impl DepsProviderApplicability {
 
 impl FreshnessResult {
     /// Returns true if the provider should be considered fresh (no work needed)
-    pub(crate) fn is_fresh(&self) -> bool {
+    pub fn is_fresh(&self) -> bool {
         matches!(self, FreshnessResult::Fresh | FreshnessResult::NoSources)
     }
 
     /// Human-readable reason string for display
-    pub(crate) fn reason(&self) -> &str {
+    pub fn reason(&self) -> &str {
         match self {
             FreshnessResult::Fresh => "outputs are up to date",
             FreshnessResult::OutputsMissing => "outputs missing",
@@ -109,7 +109,7 @@ impl FreshnessResult {
 
 /// A command to execute for dependency management
 #[derive(Debug, Clone)]
-pub(crate) struct DepsCommand {
+pub struct DepsCommand {
     /// True only for commands originating as inline shell text.
     pub inline: bool,
     /// The program to execute
@@ -197,7 +197,7 @@ impl DepsCommand {
 }
 
 /// Trait for deps providers that can check and install dependencies
-pub(crate) trait DepsProvider: Debug + Send + Sync {
+pub trait DepsProvider: Debug + Send + Sync {
     /// Access the shared base (project root + config)
     fn base(&self) -> &providers::ProviderBase;
 
@@ -292,7 +292,7 @@ pub(crate) trait DepsProvider: Debug + Send + Sync {
 }
 
 /// Warn if any auto-enabled deps providers are stale
-pub(crate) fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, String>) {
+pub fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, String>) {
     // Skip in shims or quiet mode
     if *env::__MISE_SHIM || Settings::get().quiet {
         return;
@@ -348,7 +348,7 @@ pub(crate) fn clear_output_stale(path: &PathBuf) {
 /// Detect which built-in deps providers are applicable for a given directory
 ///
 /// This checks if the lockfiles/config files for each provider exist.
-pub(crate) fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
+pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     use DepsProviderApplicability::Applicable;
 
     use providers::*;
@@ -438,7 +438,7 @@ pub(crate) fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
 ///
 /// If a `Config` is provided, looks up user-defined settings (env, dir, timeout)
 /// from the `[deps.<ecosystem>]` section. Falls back to defaults otherwise.
-pub(crate) fn create_provider(
+pub fn create_provider(
     ecosystem: &str,
     project_root: &Path,
     config: Option<&crate::config::Config>,

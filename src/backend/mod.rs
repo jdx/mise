@@ -59,9 +59,9 @@ use self::options::VersionOrder;
 
 pub(crate) mod aqua;
 pub(crate) mod asdf;
-pub(crate) mod asset_matcher;
-pub(crate) mod aube_host;
-pub(crate) mod backend_type;
+pub mod asset_matcher;
+pub mod aube_host;
+pub mod backend_type;
 pub(crate) mod cargo;
 pub(crate) mod conda;
 pub(crate) mod dotnet;
@@ -74,13 +74,13 @@ pub(crate) mod jq;
 pub(crate) mod npm;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
-pub(crate) mod packslip;
-pub(crate) mod pipx;
-pub(crate) mod platform_target;
+pub mod packslip;
+pub mod pipx;
+pub mod platform_target;
 mod platform_tokens;
 pub(crate) mod s3;
 pub(crate) mod spm;
-pub(crate) mod static_helpers;
+pub mod static_helpers;
 pub(crate) mod ubi;
 pub(crate) mod version_list;
 pub(crate) mod vfox;
@@ -114,7 +114,7 @@ static VERSION_LISTING_FAILURES: Lazy<std::sync::Mutex<HashMap<String, String>>>
     Lazy::new(Default::default);
 
 /// Remember that listing remote versions for `ba` failed.
-pub(crate) fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
+pub fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -122,7 +122,7 @@ pub(crate) fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report
 }
 
 /// The cause of the failed remote version listing for `ba`, if one was recorded.
-pub(crate) fn version_listing_failure(ba: &BackendArg) -> Option<String> {
+pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -307,7 +307,7 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn set_strict_metadata(strict: bool) {
+pub fn set_strict_metadata(strict: bool) {
     STRICT_METADATA.store(strict, Ordering::Relaxed);
 }
 
@@ -317,14 +317,14 @@ pub(crate) fn strict_metadata() -> bool {
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
-pub(crate) struct GitHubReleaseInfo {
+pub struct GitHubReleaseInfo {
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
 }
 
 /// Information about a tool version including optional metadata like creation time
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct VersionInfo {
+pub struct VersionInfo {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub created_at: Option<String>,
@@ -354,7 +354,7 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
-    pub(crate) fn created_at_timestamp(&self) -> Option<Timestamp> {
+    pub fn created_at_timestamp(&self) -> Option<Timestamp> {
         match &self.created_at {
             Some(ts) => {
                 let created = parse_into_timestamp(ts);
@@ -372,13 +372,13 @@ impl VersionInfo {
             .is_some_and(|created| created >= before)
     }
 
-    pub(crate) fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
         versions.iter().filter(|v| v.hidden_by_date(before)).count()
     }
 
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
-    pub(crate) fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
         versions
             .into_iter()
             .filter(|v| {
@@ -392,7 +392,7 @@ impl VersionInfo {
 /// Security feature information for a tool
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum SecurityFeature {
+pub enum SecurityFeature {
     Checksum {
         #[serde(skip_serializing_if = "Option::is_none")]
         algorithm: Option<String>,
@@ -429,7 +429,7 @@ static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
 /// recording it costs one Arc clone rather than a copy of every short.
 static TOOLS_SEEDED: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
+pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return Ok(memo_tools);
     }
@@ -533,7 +533,7 @@ fn ensure_installed_tools_loaded() {
     *tools = Some(Arc::new(next));
 }
 
-pub(crate) fn list() -> BackendList {
+pub fn list() -> BackendList {
     ensure_installed_tools_loaded();
     TOOLS
         .lock()
@@ -580,7 +580,7 @@ pub(crate) fn alias_backends() -> BackendList {
         .collect()
 }
 
-pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
+pub fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
     if ba.has_registry_version() {
@@ -615,7 +615,7 @@ pub(crate) fn remove(short: &str) {
     }
 }
 
-pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
     if *backend_type == BackendType::Pipx {
         return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
     }
@@ -638,7 +638,7 @@ fn is_disabled_backend_name(backend: &str) -> bool {
         .any(|disabled| disabled == backend)
 }
 
-pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
             CORE_PLUGINS
@@ -2174,7 +2174,7 @@ mod tests {
 }
 
 #[async_trait]
-pub(crate) trait Backend: Debug + Send + Sync {
+pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
     }
@@ -2841,6 +2841,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         check_symlink: bool,
     ) -> Result<bool> {
         Ok(self.is_version_installed(config, tv, check_symlink))
+    }
+
+    /// Bring an installed but unsatisfied version back in line with its
+    /// request without reinstalling it. Returns `false` when the backend cannot
+    /// repair in place, in which case mise reinstalls the version.
+    async fn repair_install(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Confirm a repaired install now satisfies its request, after the
+    /// tool-level `postinstall` script has run.
+    async fn verify_repaired_install(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<()> {
+        Ok(())
     }
 
     async fn is_install_satisfied_or_false(
@@ -3751,6 +3768,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // backend and tool-level hooks.
         ctx.dependency_context(&tv.request).await?;
 
+        // Repair in place before anything below removes the working install.
+        if !will_uninstall
+            && self.is_version_installed(&ctx.config, &tv, true)
+            && self.repair_install(&ctx, &tv).await?
+        {
+            self.finish_install_changes(&ctx, &tv).await?;
+            self.verify_repaired_install(&ctx, &tv).await?;
+            ctx.pr.finish_with_message("updated".to_string());
+            return Ok(tv);
+        }
+
         // Query backend for its operation plan and set up progress tracking
         let mut weights = self.install_operation_weights(&tv, &ctx).await;
         if will_uninstall {
@@ -3804,18 +3832,29 @@ pub(crate) trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
+        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
+        self.finish_install_changes(&ctx, &tv).await?;
+        ctx.pr.finish_with_message("installed".to_string());
+        Ok(tv)
+    }
+
+    /// Steps shared by a fresh install and an in-place repair once the tool's
+    /// files have changed.
+    async fn finish_install_changes(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<()> {
         // Touch the data directory to trigger updates in hook-env after PATH changes.
         if let Err(err) = file::touch_dir(&dirs::DATA) {
             trace!("error touching data directory: {:?}", err);
         }
-        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
                 .set_message("running custom postinstall hook".to_string());
-            self.run_postinstall_hook(&ctx, &tv, script).await?;
+            self.run_postinstall_hook(ctx, tv, script).await?;
         }
-        ctx.pr.finish_with_message("installed".to_string());
-        Ok(tv)
+        Ok(())
     }
 
     async fn run_postinstall_hook(
@@ -5110,6 +5149,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_resolves_dates_the_listing_left_out() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = partially_dated_backend("test-lazy-dates")
             .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
@@ -5132,6 +5172,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_resolves_dates_for_a_prefix_request() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-cutoff-prefix-path")
             .with_stable_result(None)
@@ -5166,6 +5207,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_reads_each_release_date_once() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = partially_dated_backend("test-lazy-dates-memo")
             .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
@@ -5188,6 +5230,7 @@ mod latest_version_tests {
 
     #[test]
     fn remembered_release_dates_evict_oldest_first() {
+        let _settings = crate::test::SettingsGuard::lock();
         let mut dates: OnDemandReleaseDates = (0..5)
             .map(|i| {
                 (
@@ -5208,6 +5251,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_retries_a_version_it_could_not_date() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // No date for 3.0.0: offline, an unreachable source and unparseable
         // metadata all look like this. Holding onto that answer would leave the
@@ -5230,6 +5274,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // An unreachable proxy or VCS host must not turn into a resolution
         // error for a request that resolved before the cutoff was checkable.
@@ -5251,6 +5296,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_keeps_versions_a_backend_cannot_date() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // No lazy dates: the default `fetch_version_created_at` returns None,
         // which has to leave the "undated versions are eligible" rule alone.
@@ -5269,6 +5315,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_cutoff_does_not_redate_versions_the_listing_dated() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-already-dated").with_stable_result(None);
         let before = parse_into_timestamp("2025-06-01").unwrap();
@@ -5288,6 +5335,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_explicit_latest_uses_latest_stable_version() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-stable");
 
@@ -5316,6 +5364,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_semver_order_preserves_latest_fast_path() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-order[version_order=semver]")
             .with_remote_versions(vec![
@@ -5350,6 +5399,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_semver_order_applies_to_latest_fallback() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-fallback")
             .with_stable_result(None)
@@ -5460,6 +5510,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_uses_stable_when_not_newer() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-latest-before-date-allowed").with_stable_result(Some("1.0.0"));
@@ -5485,6 +5536,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_falls_back_when_stable_is_newer() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend =
             LatestBackend::new("test-latest-before-date-newer").with_stable_result(Some("2.0.0"));
@@ -5510,6 +5562,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_falls_back_when_stable_metadata_is_missing() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-missing-metadata")
             .with_stable_result(Some("3.0.0"));
@@ -5535,6 +5588,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_date_filtered_latest_uses_stable_info_when_version_list_is_stale() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-stale-metadata")
             .with_stable_info(VersionInfo {
@@ -5564,6 +5618,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_unfiltered_latest_uses_stable_info_when_version_list_is_stale() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-unfiltered-latest-stale-metadata").with_stable_info(
             VersionInfo {
@@ -5594,6 +5649,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_permissive_cutoff_keeps_canonical_latest_missing_from_metadata() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-before-date-permissive")
             .with_stable_result(Some("3.0.0"));
@@ -5619,6 +5675,7 @@ mod latest_version_tests {
 
     #[test]
     fn test_latest_stable_candidate_rejects_unverified_cutoff_metadata() {
+        let _settings = crate::test::SettingsGuard::lock();
         let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
 
         assert!(!latest_stable_candidate_allowed_by_before_date(
@@ -5712,6 +5769,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_remote_version_cache_contexts_are_isolated() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-context-cache");
         let first = backend.get_remote_version_cache_with_context(Some("first"));
@@ -5743,6 +5801,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn registry_min_version_partitions_persisted_backend_lists() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let make_backend = |full: &str, version: &str| {
             let mut backend = LatestBackend::new("test-registry-min-version-cache")
@@ -5776,6 +5835,7 @@ mod latest_version_tests {
     /// entry, even though inline options are stripped from the cache directory.
     #[tokio::test]
     async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let version = |v: &str| VersionInfo {
             version: v.to_string(),
@@ -5819,6 +5879,7 @@ mod latest_version_tests {
     /// context here would take it away from every default installation of the tool.
     #[tokio::test]
     async fn test_declared_listing_keys_without_override_use_the_default_cache_entry() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-listing-opts-shared")
             .with_listing_keys(&["api_url", "version_prefix"])
@@ -5933,6 +5994,7 @@ mod latest_version_tests {
 
     #[test]
     fn test_latest_installed_version_ignores_real_latest_dir() {
+        let _settings = crate::test::SettingsGuard::lock();
         let temp_dir = tempfile::tempdir().unwrap();
         let mut ba = BackendArg::new_raw(
             "latest-real-dir".into(),
@@ -5967,6 +6029,7 @@ mod latest_version_tests {
 
     #[tokio::test]
     async fn test_inline_install_before_wins_over_config_entry() {
+        let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         // The test fixture has a `tiny` config entry without install_before.
         // Inline backend opts must still win when a config entry exists.
@@ -6257,7 +6320,7 @@ pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str>
     }
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
+pub fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
@@ -6417,7 +6480,7 @@ fn invalidate_postinstall_env() {
     POSTINSTALL_ENV_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
-pub(crate) async fn reset() -> Result<()> {
+pub async fn reset() -> Result<()> {
     install_state::reset();
     invalidate_postinstall_env();
     {

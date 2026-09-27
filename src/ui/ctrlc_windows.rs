@@ -76,7 +76,7 @@ fn install_handler() {
     }
 }
 
-pub(crate) async fn exit_signal() -> i32 {
+pub async fn exit_signal() -> i32 {
     loop {
         INTERRUPTED.notified().await;
         if SHOW_CURSOR.load(Ordering::Relaxed) {
@@ -99,18 +99,18 @@ pub(crate) async fn exit_signal() -> i32 {
     }
 }
 
-pub(crate) fn exit_on_ctrl_c(do_exit: bool) {
+pub fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
     mise_util::cancel::reset();
     install_handler();
 }
 
 /// Returns true if ctrl-c has been received
-pub(crate) fn is_cancelled() -> bool {
+pub fn is_cancelled() -> bool {
     mise_util::cancel::is_cancelled()
 }
 
 /// ensures cursor is displayed on ctrl-c
-pub(crate) fn show_cursor_after_ctrl_c() {
+pub fn show_cursor_after_ctrl_c() {
     SHOW_CURSOR.store(true, Ordering::Relaxed);
 }

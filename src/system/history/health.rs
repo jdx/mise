@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::store;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Health {
+pub struct Health {
     /// When this record was written (RFC 3339).
     #[serde(default)]
     pub updated_at: String,
@@ -25,7 +25,7 @@ pub(crate) struct Health {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct WatcherHealth {
+pub struct WatcherHealth {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,7 +46,7 @@ pub(crate) struct WatcherHealth {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ThrottledPath {
+pub struct ThrottledPath {
     pub path: String,
     pub interval_secs: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,7 +63,7 @@ pub(crate) fn path_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("health.json")
 }
 
-pub(crate) fn read(state_dir: &Path) -> Option<Health> {
+pub fn read(state_dir: &Path) -> Option<Health> {
     let text = std::fs::read_to_string(path_in(state_dir)).ok()?;
     serde_json::from_str(&text).ok()
 }
@@ -74,7 +74,7 @@ pub(crate) fn write(state_dir: &Path, health: &mut Health) -> Result<()> {
 }
 
 /// How old a record is, in seconds, if its timestamp parses.
-pub(crate) fn age_secs(health: &Health) -> Option<u64> {
+pub fn age_secs(health: &Health) -> Option<u64> {
     let updated = chrono::DateTime::parse_from_rfc3339(&health.updated_at).ok()?;
     let age = chrono::Utc::now().signed_duration_since(updated);
     u64::try_from(age.num_seconds()).ok()

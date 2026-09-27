@@ -14,7 +14,7 @@ use crate::toolset::ToolVersion;
 type LockfilesAfterInstall =
     fn(Arc<Config>, Vec<ToolVersion>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 
-pub(crate) struct Frontend {
+pub struct Frontend {
     /// `mise lock` for the versions an install just added.
     pub lockfiles_after_install: LockfilesAfterInstall,
     /// Every subcommand name and alias, for "did you mean" suggestions.
@@ -23,7 +23,7 @@ pub(crate) struct Frontend {
 
 static FRONTEND: OnceLock<Frontend> = OnceLock::new();
 
-pub(crate) fn register(frontend: Frontend) {
+pub fn register(frontend: Frontend) {
     let _ = FRONTEND.set(frontend);
 }
 

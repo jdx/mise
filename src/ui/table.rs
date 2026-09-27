@@ -32,7 +32,7 @@ pub(crate) fn term_size_settings() -> SettingMinWidth {
 ///
 /// The only entry point on purpose. `default_style` stays private so a table cannot be printed
 /// without this step, which is how the trailing spaces got there in the first place.
-pub(crate) fn print(table: &mut Table, no_headers: bool) -> Result<()> {
+pub fn print(table: &mut Table, no_headers: bool) -> Result<()> {
     default_style(table, no_headers);
     // One `miseprintln!`, not one per line: this way the newlines land exactly where
     // `miseprintln!("{table}")` used to put them, including for a table with no rows, and the only
@@ -50,13 +50,13 @@ pub(crate) fn print(table: &mut Table, no_headers: bool) -> Result<()> {
 fn default_style(table: &mut Table, no_headers: bool) {
     let header = |h: &_| style(h).italic().magenta().to_string();
 
-    if no_headers || !console::user_attended() || cfg!(test) {
+    if no_headers || !console::user_attended() || mise_util::testing::in_tests() {
         table.with(Remove::row(Rows::first()));
     } else {
         table.with(Modify::new(Rows::first()).with(Format::content(header)));
     }
     table.with(Style::empty());
-    if console::user_attended() && !cfg!(test) {
+    if console::user_attended() && !mise_util::testing::in_tests() {
         table.with(term_size_settings());
     }
     table
@@ -65,13 +65,13 @@ fn default_style(table: &mut Table, no_headers: bool) {
         .with(Modify::new(Columns::last()).with(Padding::zero()));
 }
 
-pub(crate) struct MiseTable {
+pub struct MiseTable {
     table: comfy_table::Table,
     truncate: bool,
 }
 
 impl MiseTable {
-    pub(crate) fn new(no_header: bool, headers: &[&str]) -> Self {
+    pub fn new(no_header: bool, headers: &[&str]) -> Self {
         let mut table = comfy_table::Table::new();
         table
             .load_style(comfy_table::presets::NOTHING)
@@ -100,7 +100,7 @@ impl MiseTable {
         }
     }
 
-    pub(crate) fn truncate(&mut self, truncate: bool) -> &mut Self {
+    pub fn truncate(&mut self, truncate: bool) -> &mut Self {
         self.truncate = truncate;
         self
     }
@@ -111,7 +111,7 @@ impl MiseTable {
             .fg(Color::Magenta)
     }
 
-    pub(crate) fn add_row(&mut self, row: impl Into<Row>) {
+    pub fn add_row(&mut self, row: impl Into<Row>) {
         let mut row = row.into();
         // Selected commands can disable compact rows through configuration, a
         // CLI override, or agent detection.
@@ -121,7 +121,7 @@ impl MiseTable {
         self.table.add_row(row);
     }
 
-    pub(crate) fn print(&self) -> Result<()> {
+    pub fn print(&self) -> Result<()> {
         let table = self.table.to_string();
         // trim first character, skipping color characters
         let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");

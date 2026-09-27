@@ -24,7 +24,7 @@ use tokio::process::Command;
 /// only means there is nothing to stop.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub(crate) struct State {
+pub struct State {
     pub root: PathBuf,
     pub profile: Vec<String>,
     pub namespace: String,
@@ -75,12 +75,12 @@ fn siblings_fingerprint(mine: &Path) -> String {
     crate::hash::hash_to_str(&seen)
 }
 
-pub(crate) struct Runtime {
+pub struct Runtime {
     pub bin: PathBuf,
     pub env: EnvMap,
 }
 
-pub(crate) fn read_state(root: &Path) -> Result<State> {
+pub fn read_state(root: &Path) -> Result<State> {
     let path = state_dir(root).join("state.json");
     if !path.exists() {
         return Ok(State {
@@ -192,7 +192,7 @@ pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
     Ok(true)
 }
 
-pub(crate) async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Config>> {
+pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Config>> {
     let (paths, idiomatic) = crate::config::load_config_hierarchy_from_dir(root).await?;
     let files = crate::config::load_config_files_from_paths(&paths, &idiomatic).await?;
     Ok(config.with_config_files(files))
@@ -234,7 +234,7 @@ pub(crate) async fn toolset_resolved(
         .await
 }
 
-pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
+pub async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
     let mut config = config.clone();
     let mut ts = toolset_resolved(&config, install).await?;
     if install {
@@ -247,7 +247,7 @@ pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<
 }
 
 impl Runtime {
-    pub(crate) async fn from_toolset(
+    pub async fn from_toolset(
         config: &Arc<Config>,
         ts: &Toolset,
         fallback: Option<&Path>,
@@ -313,14 +313,14 @@ impl Runtime {
         Ok(())
     }
 
-    pub(crate) async fn status(&self, root: &Path, id: &str) -> Result<serde_json::Value> {
+    pub async fn status(&self, root: &Path, id: &str) -> Result<serde_json::Value> {
         let out = self
             .output(root, &["status".into(), id.into(), "--json".into()])
             .await?;
         Ok(serde_json::from_str(&out)?)
     }
 
-    pub(crate) async fn supervisor_up(&self, root: &Path) -> Result<bool> {
+    pub async fn supervisor_up(&self, root: &Path) -> Result<bool> {
         let out = self
             .output(
                 root,
@@ -335,7 +335,7 @@ impl Runtime {
         }
     }
 
-    pub(crate) async fn active(&self, root: &Path, state: &State) -> Result<bool> {
+    pub async fn active(&self, root: &Path, state: &State) -> Result<bool> {
         for id in &state.ids {
             if let Ok(value) = self.status(root, id).await
                 && matches!(
@@ -441,7 +441,7 @@ impl Runtime {
     /// one the configuration was read under, since that is what the rendered
     /// definitions reflect; the flag only says who is asking, so a profile
     /// conflict can be explained in terms of the two projects involved.
-    pub(crate) async fn prepare(
+    pub async fn prepare(
         &self,
         root: &Path,
         set: &DaemonSet,
@@ -616,7 +616,7 @@ impl Runtime {
         Ok((state, lock))
     }
 
-    pub(crate) async fn exec(&self, root: &Path, args: Vec<String>) -> Result<()> {
+    pub async fn exec(&self, root: &Path, args: Vec<String>) -> Result<()> {
         let mut runner = CmdLineRunner::new(&self.bin)
             .args(args)
             .envs(&self.env)
@@ -653,7 +653,7 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
     Ok(explicit.into())
 }
 
-pub(crate) fn namespace(root: &Path) -> Result<String> {
+pub fn namespace(root: &Path) -> Result<String> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let mut has_native = false;
     for name in [
@@ -802,11 +802,7 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
     Ok(header + &toml::to_string_pretty(&doc)?)
 }
 
-pub(crate) async fn validate_tools(
-    set: &DaemonSet,
-    config: &Arc<Config>,
-    ts: &Toolset,
-) -> Result<()> {
+pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset) -> Result<()> {
     for daemon in set.daemons.values() {
         // Imported daemons resolve their tool against the project that declares
         // them, which happens when that root is prepared.

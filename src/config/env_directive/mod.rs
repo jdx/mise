@@ -108,11 +108,11 @@ impl serde::Serialize for RequiredValue {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct EnvDirectiveOptions {
+pub struct EnvDirectiveOptions {
     #[serde(default)]
     pub(crate) tools: bool,
     #[serde(default)]
-    pub(crate) redact: Option<bool>,
+    pub redact: Option<bool>,
     #[serde(default)]
     pub(crate) required: RequiredValue,
     #[serde(default)]
@@ -120,7 +120,7 @@ pub(crate) struct EnvDirectiveOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum EnvDirective {
+pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
     /// use a fallback value if the key is not already set
@@ -232,7 +232,7 @@ impl Display for EnvDirective {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) enum AgeFormat {
+pub enum AgeFormat {
     #[serde(rename = "zstd")]
     Zstd,
     #[serde(rename = "raw")]
@@ -241,7 +241,7 @@ pub(crate) enum AgeFormat {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct EnvResults {
+pub struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
     pub vars: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,

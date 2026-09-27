@@ -25,7 +25,7 @@ type EnvResolutionResult = (
 /// - Toolset caching for monorepo tasks
 /// - Environment resolution with config file contexts
 /// - Tool request set caching
-pub(crate) struct TaskContextBuilder {
+pub struct TaskContextBuilder {
     toolset_cache: RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
     tool_request_set_cache: RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
     env_resolution_cache: RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
@@ -45,7 +45,7 @@ impl Clone for TaskContextBuilder {
 }
 
 impl TaskContextBuilder {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             toolset_cache: RwLock::new(IndexMap::new()),
             tool_request_set_cache: RwLock::new(IndexMap::new()),

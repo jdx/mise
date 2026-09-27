@@ -27,11 +27,11 @@ use url::Url;
 static BAKED_REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
 
 #[cfg(any(test, debug_assertions))]
-pub(crate) fn baked_registry() -> &'static Registry {
+pub fn baked_registry() -> &'static Registry {
     &BAKED_REGISTRY
 }
 
-pub(crate) static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
+pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     if !Settings::get().registry_floating {
         return &BAKED_REGISTRY;
     }
@@ -60,7 +60,7 @@ const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
 const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
 const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 
-pub(crate) struct Registry {
+pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
     lookup: RegistryLookup,
     missing_version_order: bool,
@@ -72,7 +72,7 @@ enum RegistryLookup {
 }
 
 impl Registry {
-    pub(crate) fn get(&self, name: &str) -> Option<&'static RegistryTool> {
+    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
         self.lookup.get(name).map(|index| &self.entries[*index].1)
     }
 
@@ -80,7 +80,7 @@ impl Registry {
         self.lookup.get(name).is_some()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
         self.entries.iter().map(|(name, tool)| (*name, tool))
     }
 
@@ -121,7 +121,7 @@ impl RegistryLookup {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryTool {
+pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
     /// Project homepage or repository, when the one inferred from the backends is wrong
@@ -139,7 +139,7 @@ pub(crate) struct RegistryTool {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryIdiomaticFile {
+pub struct RegistryIdiomaticFile {
     pub path: &'static str,
     pub version_regex: Option<&'static str>,
     pub version_json_path: Option<&'static str>,
@@ -160,17 +160,20 @@ impl RegistryIdiomaticFile {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryToolTest {
+pub struct RegistryToolTest {
     pub cmd: &'static str,
     pub expected: &'static str,
     pub tools: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegistryBackend {
+pub struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub min_version: Option<&'static str>,
+    /// Exclusive upper bound, for a backend that only serves older releases
+    /// (e.g. a frozen 1.x line published separately from later majors).
+    pub max_version: Option<&'static str>,
     /// The first version whose release assets carry GitHub attestations. From
     /// it on, a missing attestation is a downgrade, not a tool that doesn't
     /// publish them. Only the one version being installed is compared, never
@@ -195,20 +198,30 @@ impl RegistryBackend {
     }
 
     fn supports_version(&self, request: &str) -> bool {
-        let Some(minimum) = self.min_version else {
+        if self.min_version.is_none() && self.max_version.is_none() {
             return true;
-        };
-        // Validated when loading both bundled and floating registries. This
-        // boundary is explicitly restricted to semver tools; it never orders
-        // backend version lists or interprets opaque lockfile versions.
-        let minimum = semver::Version::parse(minimum).expect("validated registry min_version");
+        }
+        // Validated when loading both bundled and floating registries. These
+        // boundaries are explicitly restricted to semver tools; they never order
+        // backend version lists or interpret opaque lockfile versions.
+        let minimum = self
+            .min_version
+            .map(|v| semver::Version::parse(v).expect("validated registry min_version"));
+        let maximum = self
+            .max_version
+            .map(|v| semver::Version::parse(v).expect("validated registry max_version"));
         let request = request.strip_prefix("prefix:").unwrap_or(request);
         let request = request.trim_start_matches(['v', 'V']);
         if let Ok(version) = semver::Version::parse(request) {
-            return !version.cmp_precedence(&minimum).is_lt();
+            return minimum
+                .as_ref()
+                .is_none_or(|minimum| !version.cmp_precedence(minimum).is_lt())
+                && maximum
+                    .as_ref()
+                    .is_none_or(|maximum| version.cmp_precedence(maximum).is_lt());
         }
-        // A numeric prefix is excluded only when the entire prefix is below
-        // the boundary. Let the backend resolve prefixes that overlap it.
+        // A numeric prefix is excluded only when the entire prefix is outside
+        // the bounds. Let the backend resolve prefixes that overlap a boundary.
         let parts = request.split('.').collect::<Vec<_>>();
         if !(1..=2).contains(&parts.len()) {
             return true;
@@ -228,15 +241,28 @@ impl RegistryBackend {
         else {
             return true;
         };
-        let minimum_parts = [minimum.major, minimum.minor];
-        for (part, minimum) in parts.into_iter().zip(minimum_parts) {
-            match part.cmp(&minimum) {
-                std::cmp::Ordering::Less => return false,
-                std::cmp::Ordering::Greater => return true,
-                std::cmp::Ordering::Equal => {}
+        let below_minimum = minimum.is_some_and(|minimum| {
+            let minimum_parts = [minimum.major, minimum.minor];
+            for (part, minimum) in parts.iter().zip(minimum_parts) {
+                match part.cmp(&minimum) {
+                    std::cmp::Ordering::Less => return true,
+                    std::cmp::Ordering::Greater => return false,
+                    std::cmp::Ordering::Equal => {}
+                }
             }
-        }
-        true
+            false
+        });
+        // The prefix's lowest release (`1.58` -> 1.58.0) at or above the
+        // maximum puts it out of range. Pre-releases of the boundary version
+        // (`2.0.0-rc.1` under `2`) are deliberately not counted: routing `2`
+        // to a backend capped at 2.0.0 would keep a lock on that backend when
+        // a config moves from `1` to `2`, asking it for releases it never
+        // publishes. An exact pre-release is still routed by its own version.
+        let at_or_above_maximum = maximum.is_some_and(|maximum| {
+            let lowest = semver::Version::new(parts[0], parts.get(1).copied().unwrap_or(0), 0);
+            !lowest.cmp_precedence(&maximum).is_lt()
+        });
+        !below_minimum && !at_or_above_maximum
     }
 }
 
@@ -258,7 +284,7 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
 
 /// Refresh the floating mise registry before anything initializes [`REGISTRY`].
 /// Fast and offline commands use the cached archive (or the baked registry) without networking.
-pub(crate) async fn refresh() {
+pub async fn refresh() {
     let settings = Settings::get();
     if !settings.registry_floating || settings.prefer_offline() {
         return;
@@ -447,8 +473,11 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
     };
 
     ensure!(
-        version_order == VersionOrder::Semver || backends.iter().all(|b| b.min_version.is_none()),
-        "backend min_version requires version_order = \"semver\""
+        version_order == VersionOrder::Semver
+            || backends
+                .iter()
+                .all(|b| b.min_version.is_none() && b.max_version.is_none()),
+        "backend min_version and max_version require version_order = \"semver\""
     );
 
     let aliases = string_array(table.get("aliases"), "aliases")?;
@@ -576,6 +605,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
             full: leak_string(full.clone()),
             platforms: &[],
             min_version: None,
+            max_version: None,
             attestations_since: None,
             options: &[],
         }),
@@ -585,17 +615,30 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                 .and_then(toml::Value::as_str)
                 .ok_or_else(|| eyre::eyre!("backend full must be a string"))?;
             let platforms = string_array(table.get("platforms"), "backend platforms")?;
-            let min_version = table
-                .get("min_version")
-                .map(|value| {
-                    let value = value
-                        .as_str()
-                        .ok_or_else(|| eyre::eyre!("backend min_version must be a string"))?;
-                    semver::Version::parse(value)
-                        .wrap_err("backend min_version must be a semantic version")?;
-                    Ok::<_, eyre::Report>(leak_string(value.to_string()))
-                })
-                .transpose()?;
+            let version_bound = |key: &str| {
+                table
+                    .get(key)
+                    .map(|value| {
+                        let value = value
+                            .as_str()
+                            .ok_or_else(|| eyre::eyre!("backend {key} must be a string"))?;
+                        let version = semver::Version::parse(value).wrap_err_with(|| {
+                            format!("backend {key} must be a semantic version")
+                        })?;
+                        Ok::<_, eyre::Report>((leak_string(value.to_string()), version))
+                    })
+                    .transpose()
+            };
+            let min_version = version_bound("min_version")?;
+            let max_version = version_bound("max_version")?;
+            if let (Some((_, minimum)), Some((_, maximum))) = (&min_version, &max_version) {
+                ensure!(
+                    minimum.cmp_precedence(maximum).is_lt(),
+                    "backend min_version must be lower than max_version"
+                );
+            }
+            let min_version = min_version.map(|(value, _)| value);
+            let max_version = max_version.map(|(value, _)| value);
             let attestations_since = table
                 .get("attestations_since")
                 .map(|value| {
@@ -630,6 +673,7 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                 full: leak_string(full.to_string()),
                 platforms: leak_vec(platforms),
                 min_version,
+                max_version,
                 attestations_since,
                 options: leak_vec(options),
             })
@@ -710,7 +754,7 @@ impl RegistryTool {
         })
     }
 
-    pub(crate) fn backends(&self) -> Vec<&'static str> {
+    pub fn backends(&self) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
         let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
@@ -770,7 +814,7 @@ impl RegistryTool {
 
     /// Filter only requests known to be older than a backend's introduction.
     /// Channels and unresolved aliases retain the ordinary backend priority.
-    pub(crate) fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {
+    pub fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {
         self.backends()
             .into_iter()
             .filter(|full| version.is_none_or(|v| self.backend_supports_version(full, v)))
@@ -782,7 +826,7 @@ impl RegistryTool {
             .is_none_or(|backend| backend.supports_version(version))
     }
 
-    pub(crate) fn is_supported_os(&self) -> bool {
+    pub fn is_supported_os(&self) -> bool {
         self.os.is_empty() || self.os.contains(&OS)
     }
 
@@ -943,7 +987,7 @@ pub(crate) fn normalize_remote(remote: &str) -> eyre::Result<String> {
     Ok(format!("{host}{path}"))
 }
 
-pub(crate) fn full_to_url(full: &str) -> String {
+pub fn full_to_url(full: &str) -> String {
     if let Some(source) = full.strip_prefix("vfox:packslip:") {
         return format!("packslip:{source}");
     }
@@ -981,7 +1025,7 @@ impl Display for RegistryTool {
 /// individual tools. `Some(empty)` is an explicit empty allowlist and disables
 /// every tool. When an allowlist is configured, it is authoritative and
 /// `disable_tools` is not applied.
-pub(crate) fn tool_enabled<T: Ord>(
+pub fn tool_enabled<T: Ord>(
     enable_tools: Option<&BTreeSet<T>>,
     disable_tools: &BTreeSet<T>,
     name: &T,
@@ -1003,6 +1047,7 @@ mod tests {
             full: "packslip:github.com/example/tool",
             platforms: &[],
             min_version: Some("1.58.1"),
+            max_version: None,
             attestations_since: None,
             options: &[],
         };
@@ -1041,11 +1086,136 @@ mod tests {
     }
 
     #[test]
+    fn registry_max_version_boundaries() {
+        let backend = super::RegistryBackend {
+            full: "aqua:example/tool-legacy",
+            platforms: &[],
+            min_version: None,
+            max_version: Some("2.0.0"),
+            attestations_since: None,
+            options: &[],
+        };
+        for request in [
+            "2",
+            "2.0",
+            "prefix:2",
+            "2.0.0",
+            "v2.0.0",
+            "V2.0.0",
+            "2.5.1",
+            "2.0.0+build.1",
+            "3",
+            "10.1",
+        ] {
+            assert!(!backend.supports_version(request), "{request}");
+        }
+        for request in [
+            "0",
+            "1",
+            "1.9",
+            "prefix:1.22",
+            "1.9.9",
+            "1.22.22",
+            // Precedes 2.0.0 under semver, like `min_version` excludes
+            // `1.58.1-rc.1` from a backend starting at 1.58.1.
+            "2.0.0-rc.1",
+            "latest",
+            "nightly",
+            "ref:main",
+            "lts/iron",
+            "2.0.0.1",
+            "02",
+            "",
+        ] {
+            assert!(backend.supports_version(request), "{request}");
+        }
+
+        // The boundary's pre-releases are routed by exact version only: the
+        // prefix `2` goes to the next backend even though `2.0.0-rc.1` sorts
+        // below the maximum, so a lock on this backend doesn't follow `2`.
+        assert!(backend.supports_version("2.0.0-rc.1"));
+        assert!(!backend.supports_version("2"));
+
+        // A prefix overlapping the boundary keeps the backend.
+        let backend = super::RegistryBackend {
+            max_version: Some("1.58.1"),
+            ..backend
+        };
+        for request in ["1", "1.58", "1.58.0"] {
+            assert!(backend.supports_version(request), "{request}");
+        }
+        for request in ["1.58.1", "1.59", "2"] {
+            assert!(!backend.supports_version(request), "{request}");
+        }
+
+        let bounded = super::RegistryBackend {
+            min_version: Some("1.0.0"),
+            max_version: Some("2.0.0"),
+            ..backend
+        };
+        for request in ["1", "1.5", "1.9.9"] {
+            assert!(bounded.supports_version(request), "{request}");
+        }
+        for request in ["0", "0.9.9", "2", "2.0.0"] {
+            assert!(!bounded.supports_version(request), "{request}");
+        }
+    }
+
+    #[test]
+    fn registry_max_version_parsing_and_validation() {
+        use super::*;
+        let parse = |order: &str, legacy: &str| {
+            let source = format!(
+                r#"
+version_order = "{order}"
+backends = [
+  {{ full = "aqua:example/tool-next", min_version = "2.0.0" }},
+  {{ full = "aqua:example/tool-legacy", {legacy} }},
+]
+"#
+            );
+            parse_registry_tool("example", &toml::from_str::<toml::Value>(&source).unwrap())
+        };
+        let (tool, _) = parse("semver", r#"max_version = "2.0.0""#).unwrap();
+        assert_eq!(tool.backends[1].max_version, Some("2.0.0"));
+        assert_eq!(tool.backends[0].max_version, None);
+        assert_eq!(
+            tool.backends_for_version(Some("1")),
+            ["aqua:example/tool-legacy"]
+        );
+        assert_eq!(
+            tool.backends_for_version(Some("4.1.0")),
+            ["aqua:example/tool-next"]
+        );
+        assert_eq!(
+            tool.backends_for_version(Some("latest")),
+            ["aqua:example/tool-next", "aqua:example/tool-legacy"]
+        );
+        // What keeps a lock on the legacy backend from serving a newer request.
+        assert!(!tool.backend_supports_version("aqua:example/tool-legacy", "4"));
+        assert!(tool.backend_supports_version("aqua:example/tool-legacy", "1.22.22"));
+
+        assert!(parse("semver", r#"min_version = "1.0.0", max_version = "2.0.0""#).is_ok());
+        for legacy in [
+            r#"min_version = "2.0.0", max_version = "2.0.0""#,
+            r#"min_version = "3.0.0", max_version = "2.0.0""#,
+            r#"max_version = "latest""#,
+            r#"max_version = "2""#,
+            r#"max_version = "02.0.0""#,
+            "max_version = 2",
+        ] {
+            assert!(parse("semver", legacy).is_err(), "{legacy}");
+        }
+        assert!(parse("source", r#"max_version = "2.0.0""#).is_err());
+    }
+
+    #[test]
     fn registry_attestations_since_boundaries() {
         let backend = super::RegistryBackend {
             full: "github:example/tool",
             platforms: &[],
             min_version: None,
+            max_version: None,
             attestations_since: Some("2.50.0"),
             options: &[],
         };
@@ -1142,8 +1312,12 @@ backends = [
     fn registry_min_version_schema_matches_semver_identifiers() {
         let schema: serde_json::Value =
             serde_json::from_str(include_str!("../schema/mise-registry-tool.json")).unwrap();
-        let pattern = schema["properties"]["backends"]["items"]["oneOf"][1]
-            ["properties"]["min_version"]["pattern"].as_str().unwrap();
+        let properties = &schema["properties"]["backends"]["items"]["oneOf"][1]["properties"];
+        assert_eq!(
+            properties["max_version"]["pattern"],
+            properties["min_version"]["pattern"]
+        );
+        let pattern = properties["min_version"]["pattern"].as_str().unwrap();
         let pattern = regex::Regex::new(pattern).unwrap();
         for (version, valid) in [
             ("1.58.1", true),
@@ -1648,6 +1822,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "aqua:first/tool",
                 platforms: &["macos"],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },
@@ -1655,6 +1830,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "github:second/tool",
                 platforms: &["macos-x64"],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },
@@ -1662,6 +1838,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "cargo:third-tool",
                 platforms: &[],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },
@@ -1669,6 +1846,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "npm:excluded-tool",
                 platforms: &["linux"],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },
@@ -1689,6 +1867,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             full: "github:owner/repo",
             platforms: &["darwin-amd64"],
             min_version: None,
+            max_version: None,
             attestations_since: None,
             options: &[],
         };
@@ -1719,6 +1898,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             full: "github:owner/repo",
             platforms: &[],
             min_version: None,
+            max_version: None,
             attestations_since: None,
             options: OPTIONS,
         }];
@@ -1764,6 +1944,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "aqua:owner/repo",
                 platforms: &[],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },
@@ -1771,6 +1952,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
                 full: "npm:package",
                 platforms: &[],
                 min_version: None,
+                max_version: None,
                 attestations_since: None,
                 options: &[],
             },

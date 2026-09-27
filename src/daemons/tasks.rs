@@ -16,7 +16,7 @@ use std::sync::Arc;
 /// Whether a task asks for any daemon. `false` and an empty list ask for none,
 /// so such a task never touches daemon configuration and must not be judged
 /// against it.
-pub(crate) fn declares_daemons(task: &Task) -> bool {
+pub fn declares_daemons(task: &Task) -> bool {
     match &task.daemons {
         None | Some(crate::task::TaskDaemons::All(false)) => false,
         Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),
@@ -111,7 +111,7 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// dependency task can live in a different subproject, and two subprojects may
 /// each declare a daemon of the same name; each task's names are therefore
 /// looked up in its own configuration hierarchy.
-pub(crate) async fn start(
+pub async fn start(
     config: &Arc<Config>,
     tasks: &[Task],
     dry_run: bool,

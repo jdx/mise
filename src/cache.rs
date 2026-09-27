@@ -8,7 +8,7 @@ use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::toolset::env_cache::CachedEnv;
 
-pub(crate) use mise_util::cache::*;
+pub use mise_util::cache::*;
 
 /// Register this build's identity as the base of every cache key. Runs in
 /// `main` and in the test harness before anything opens a cache.
@@ -27,7 +27,7 @@ pub(crate) fn register_base_cache_keys() {
 }
 
 /// Returns every cache root maintained by whole-cache clear and prune operations.
-pub(crate) fn cache_dirs() -> Result<Vec<PathBuf>> {
+pub fn cache_dirs() -> Result<Vec<PathBuf>> {
     cache_dirs_with_task_cache(crate::task::task_cache::task_cache_dir())
 }
 
@@ -47,7 +47,7 @@ fn cache_dirs_with_task_cache(task_cache_dir: PathBuf) -> Result<Vec<PathBuf>> {
 ///
 /// Each external root keeps its own marker so one project's task cache cannot
 /// suppress automatic pruning for another project that shares `MISE_CACHE_DIR`.
-pub(crate) fn auto_prune() -> Result<()> {
+pub fn auto_prune() -> Result<()> {
     if !rand::random::<u8>().is_multiple_of(100) {
         return Ok(()); // only prune 1% of the time
     }

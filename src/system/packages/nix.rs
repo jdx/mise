@@ -14,14 +14,14 @@ pub(crate) struct NixManager;
 /// Bootstrap accepts attribute paths and explicit flake references, not Nix
 /// expressions, store paths, or output selectors. Nix owns source resolution.
 #[derive(Debug)]
-pub(crate) struct Installable<'a> {
+pub struct Installable<'a> {
     pub source: &'a str,
     pub attribute: &'a str,
     pub explicit: bool,
 }
 
 impl<'a> Installable<'a> {
-    pub(crate) fn parse(name: &'a str) -> Result<Self> {
+    pub fn parse(name: &'a str) -> Result<Self> {
         if name.chars().any(char::is_control) {
             bail!("Nix package references must not contain control characters");
         }
@@ -69,7 +69,7 @@ fn valid_attribute(attribute: &str) -> bool {
     })
 }
 
-pub(crate) fn nix_string(value: &str) -> String {
+pub fn nix_string(value: &str) -> String {
     format!(
         "\"{}\"",
         value

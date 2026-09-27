@@ -41,7 +41,7 @@ use crate::system::secrets::SecretValues;
 use crate::ui::prompt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FileMode {
+pub enum FileMode {
     /// symlink the target to the source — a file or the directory itself
     Symlink,
     /// source is a directory: recreate its directory structure under the
@@ -67,7 +67,7 @@ pub(crate) enum FileMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FileManifest {
+pub enum FileManifest {
     Git,
 }
 
@@ -81,7 +81,7 @@ impl FileManifest {
 }
 
 impl FileMode {
-    pub(crate) fn parse(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "symlink" => Some(Self::Symlink),
             "symlink-each" => Some(Self::SymlinkEach),
@@ -93,7 +93,7 @@ impl FileMode {
         }
     }
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Symlink => "symlink",
             Self::SymlinkEach => "symlink-each",
@@ -108,7 +108,7 @@ impl FileMode {
 
     /// Whether requests in this mode read a source path. Inline content,
     /// permissions-only entries, and absent targets have none.
-    pub(crate) fn has_source(self) -> bool {
+    pub fn has_source(self) -> bool {
         !matches!(self, Self::Content | Self::Permissions | Self::Absent)
     }
 }
@@ -158,7 +158,7 @@ fn warn_permissions_ignored() {
 /// whether the file's saved version is shared with other machines, and
 /// whether it enters remote backups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FilePolicy {
+pub struct FilePolicy {
     pub autosave: bool,
     pub encrypt: bool,
     /// Which fields the declaration wrote, so a later layer repeating it
@@ -168,7 +168,7 @@ pub(crate) struct FilePolicy {
 
 /// The fields a `[dotfiles]` declaration wrote explicitly.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ExplicitFields {
+pub struct ExplicitFields {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: bool,
@@ -180,7 +180,7 @@ pub(crate) struct ExplicitFields {
 impl FilePolicy {
     /// Policy defaults do not enroll a deployment. Only explicit Track
     /// declarations observe files, regardless of how those files are deployed.
-    pub(crate) fn for_mode(_mode: FileMode) -> Self {
+    pub fn for_mode(_mode: FileMode) -> Self {
         Self {
             autosave: true,
             encrypt: false,
@@ -193,7 +193,7 @@ impl FilePolicy {
 /// of silently ignored so failed enrollment is never mistaken for
 /// protection.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct InvalidDeclaration {
+pub struct InvalidDeclaration {
     pub target: String,
     pub config: PathBuf,
     pub reason: String,
@@ -210,7 +210,7 @@ pub(crate) struct InvalidDeclaration {
 /// ignored by policy and always was — loses nothing at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Ignored {
+pub enum Ignored {
     /// mise could not read it: a pattern that is not a glob, a mode it
     /// does not know, an encryption declaration that cannot hold.
     Unreadable,
@@ -245,7 +245,7 @@ fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause:
 }
 
 /// The declarations ignored while loading `[dotfiles]` in this process.
-pub(crate) fn invalid_declarations() -> Vec<InvalidDeclaration> {
+pub fn invalid_declarations() -> Vec<InvalidDeclaration> {
     INVALID_DECLARATIONS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -463,7 +463,7 @@ impl FileRequest {
 
 /// one file entry, resolved against the config file that declared it
 #[derive(Debug, Clone)]
-pub(crate) struct FileRequest {
+pub struct FileRequest {
     /// target path as written in config (display/merge key)
     pub target_raw: String,
     /// absolute, lexically normalized target path (`~` expanded)
@@ -573,7 +573,7 @@ enum EmptyRenderTarget {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum FileState {
+pub enum FileState {
     Applied,
     Missing,
     /// target exists but doesn't match — the reason is human-readable
@@ -586,7 +586,7 @@ pub(crate) enum FileState {
 /// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
-pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     Ok(composed_files_from_config(config)?
         .into_iter()
         .filter(|request| request.enabled)
@@ -595,7 +595,7 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 
 /// Keep disabled declarations so explicit tracking removal remains observable
 /// when the prior enrollment exists in Git rather than local configuration.
-pub(crate) fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     let trusted_roots = global_composed_roots(config);
     for config_files in config.bootstrap_config_maps() {
@@ -674,7 +674,7 @@ fn global_composed_roots(config: &Config) -> Vec<PathBuf> {
 /// Directory copies and `symlink-each` entries may share directories, but no
 /// two entries may own the same leaf or require a directory where another
 /// entry places a leaf.
-pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()> {
+pub fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()> {
     let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
     let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
     let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
@@ -1096,7 +1096,7 @@ pub(crate) fn validate_absent_edit_targets(
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
-pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
+pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
     files_from_config_files_with_tracking_roots(config_files, None)
 }
 
@@ -1801,14 +1801,14 @@ fn merge_file_entry(
 /// when set, else `dotfiles.relative_symlinks`. Only symlink modes link, and
 /// never on Windows, where a directory link is a junction and has no
 /// relative form.
-pub(crate) fn relative_symlinks(mode: FileMode, declared: Option<bool>) -> bool {
+pub fn relative_symlinks(mode: FileMode, declared: Option<bool>) -> bool {
     cfg!(unix)
         && matches!(mode, FileMode::Symlink | FileMode::SymlinkEach)
         && declared.unwrap_or_else(|| Settings::get().dotfiles.relative_symlinks)
 }
 
 /// Resolve the default deployment mode, warning and using symlinks for unsupported values.
-pub(crate) fn default_mode() -> FileMode {
+pub fn default_mode() -> FileMode {
     let settings = Settings::get();
     let mode = settings.dotfiles.default_mode.as_str();
     match FileMode::parse(mode) {
@@ -1827,7 +1827,7 @@ pub(crate) fn dotfiles_root() -> PathBuf {
     file::replace_path(&Settings::get().dotfiles.root)
 }
 
-pub(crate) fn implied_source(target: &Path) -> Result<PathBuf> {
+pub fn implied_source(target: &Path) -> Result<PathBuf> {
     let home: &Path = &dirs::HOME;
     let rel = target.strip_prefix(home).map_err(|_| {
         eyre::eyre!(
@@ -1841,7 +1841,7 @@ pub(crate) fn implied_source(target: &Path) -> Result<PathBuf> {
     Ok(dotfiles_root().join(rel))
 }
 
-pub(crate) fn source_is_implied(req: &FileRequest) -> bool {
+pub fn source_is_implied(req: &FileRequest) -> bool {
     if !req.mode.has_source() {
         return false;
     }
@@ -1851,7 +1851,7 @@ pub(crate) fn source_is_implied(req: &FileRequest) -> bool {
     }
 }
 
-pub(crate) fn resolve_target_arg(target: &str) -> PathBuf {
+pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
@@ -1869,7 +1869,7 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     normalized
 }
 
-pub(crate) fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
+pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
     filters.is_empty()
         || filters.iter().any(|filter| {
             filter == req_raw || {
@@ -1879,7 +1879,7 @@ pub(crate) fn matches_target(req_target: &Path, req_raw: &str, filters: &[String
         })
 }
 
-pub(crate) fn copy_path(source: &Path, target: &Path) -> Result<()> {
+pub fn copy_path(source: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
     }
@@ -2169,11 +2169,7 @@ where
 /// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
-pub(crate) fn check(
-    config: &Config,
-    req: &FileRequest,
-    secrets: &SecretValues,
-) -> Result<FileState> {
+pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Result<FileState> {
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
@@ -2322,7 +2318,7 @@ fn check_permissions_only(req: &FileRequest) -> Result<FileState> {
 
 /// Why an applied permissions-only entry changed nothing: its target does not
 /// exist. Status shows this next to `applied`.
-pub(crate) fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
+pub fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
     (req.mode == FileMode::Permissions
         && std::fs::symlink_metadata(&req.target)
             .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound))
@@ -2561,7 +2557,7 @@ pub(crate) fn render_template_for_oci(config: &Config, req: &FileRequest) -> Res
 /// Render every configured dotfile template before a full bootstrap can
 /// mutate anything. Secret values are cached, but templates are rendered again
 /// when applied so hooks can update dynamic inputs such as files or commands.
-pub(crate) fn preflight_templates(
+pub fn preflight_templates(
     config: &Config,
     requests: &[FileRequest],
     secrets: &SecretValues,
@@ -3783,7 +3779,7 @@ fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
 
 /// Capture only the files selected by a Git manifest, preserving the source
 /// repository and any untracked files around them.
-pub(crate) fn capture_git_manifest(req: &FileRequest) -> Result<()> {
+pub fn capture_git_manifest(req: &FileRequest) -> Result<()> {
     for entry in git_tracked_paths(&req.source)? {
         if entry.is_gitlink || entry.is_symlink || is_excluded(&entry.path, &req.exclude) {
             continue;
@@ -3812,7 +3808,7 @@ fn path_buf_from_git_bytes(path: &[u8]) -> PathBuf {
     String::from_utf8_lossy(path).into_owned().into()
 }
 
-pub(crate) struct ApplyOpts {
+pub struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// replace conflicting targets (existing real files where a symlink
@@ -3822,7 +3818,7 @@ pub(crate) struct ApplyOpts {
     pub yes: bool,
 }
 
-pub(crate) struct ApplyPlan<'a> {
+pub struct ApplyPlan<'a> {
     todo: Vec<(&'a FileRequest, Option<String>)>,
     record_symlink_each: Vec<&'a FileRequest>,
     /// converged templates whose ownership record is missing or stale, with
@@ -3847,7 +3843,7 @@ pub(crate) struct ApplyPlan<'a> {
 /// written or removed are appended to `written` as each entry is applied,
 /// so a caller still sees what changed when a later entry fails; nothing is
 /// appended on a dry run.
-pub(crate) fn apply(
+pub fn apply(
     config: &Config,
     requests: &[FileRequest],
     opts: &ApplyOpts,
@@ -3862,7 +3858,7 @@ pub(crate) fn apply(
     )
 }
 
-pub(crate) fn execute_apply(
+pub fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
     opts: &ApplyOpts,
@@ -4011,7 +4007,7 @@ pub(crate) fn plan_apply<'a>(
 /// Plan an apply against the requests that will be active when it executes.
 /// This is used by transactional config updates that apply before saving the
 /// prospective configuration.
-pub(crate) fn plan_apply_with_active<'a>(
+pub fn plan_apply_with_active<'a>(
     config: &Config,
     requests: &'a [FileRequest],
     active_requests: &[FileRequest],
@@ -4226,7 +4222,7 @@ fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) ->
     Ok(())
 }
 
-pub(crate) struct UnapplyOpts {
+pub struct UnapplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// remove targets whose ownership cannot be verified from their current
@@ -4236,7 +4232,7 @@ pub(crate) struct UnapplyOpts {
 }
 
 #[derive(Debug)]
-pub(crate) struct UnapplyPlan<'a> {
+pub struct UnapplyPlan<'a> {
     req: &'a FileRequest,
     paths: Vec<PathBuf>,
     /// directory-walking modes share their target with unmanaged files, so
@@ -4253,7 +4249,7 @@ pub(crate) struct UnapplyPlan<'a> {
 /// directories that may contain unmanaged files. Symlinks carry their own
 /// ownership evidence. Copies and templates must still match their source
 /// unless `--force` was given.
-pub(crate) fn plan_unapply<'a>(
+pub fn plan_unapply<'a>(
     requests: &'a [FileRequest],
     opts: &UnapplyOpts,
 ) -> Result<Vec<UnapplyPlan<'a>>> {
@@ -4277,7 +4273,7 @@ pub(crate) fn plan_unapply<'a>(
 
 /// Resolve checks that may execute user-authored template functions. This runs
 /// only after interactive confirmation, but still before any mutation.
-pub(crate) fn resolve_unapply(
+pub fn resolve_unapply(
     config: &Config,
     plans: &mut Vec<UnapplyPlan<'_>>,
     opts: &UnapplyOpts,
@@ -4346,7 +4342,7 @@ pub(crate) fn resolve_unapply(
     Ok(())
 }
 
-pub(crate) fn execute_unapply(
+pub fn execute_unapply(
     config: &Config,
     plans: &[UnapplyPlan<'_>],
     opts: &UnapplyOpts,
@@ -5067,7 +5063,7 @@ fn print_content_diff(
 /// Print the changes required to converge whole-file dotfile entries.
 /// Templates are rendered because a meaningful diff requires their desired
 /// content, matching the trust and execution semantics of dotfiles status.
-pub(crate) fn print_diffs(
+pub fn print_diffs(
     config: &Config,
     requests: &[FileRequest],
     secrets: &SecretValues,

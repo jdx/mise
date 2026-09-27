@@ -45,7 +45,7 @@ const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
 
 #[derive(Debug)]
-pub(crate) struct PIPXBackend {
+pub struct PIPXBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -1012,7 +1012,7 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub(crate) async fn reinstall_all(
+    pub async fn reinstall_all(
         config: &Arc<Config>,
         invocation_locked: bool,
         use_locked_version: bool,

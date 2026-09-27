@@ -7,9 +7,7 @@ use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-pub(crate) trait NativeGraph:
-    Clone + std::fmt::Debug + Serialize + DeserializeOwned
-{
+pub trait NativeGraph: Clone + std::fmt::Debug + Serialize + DeserializeOwned {
     const GRAPH_FILE: &'static str;
     fn graph_text(&self) -> Result<String>;
     fn files(&self) -> Result<Vec<(&'static str, String)>>;
@@ -17,7 +15,7 @@ pub(crate) trait NativeGraph:
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum GraphRef<T> {
+pub enum GraphRef<T> {
     Inline {
         graph: T,
         dir: Option<PathBuf>,
@@ -240,7 +238,7 @@ pub(crate) fn absolute(path: &Path) -> PathBuf {
     }
 }
 
-pub(crate) fn sidecar_root(lockfile: &Path) -> PathBuf {
+pub fn sidecar_root(lockfile: &Path) -> PathBuf {
     let dir = lockfile.parent().unwrap_or(Path::new("."));
     let mut root = match dir.file_name().and_then(|s| s.to_str()) {
         Some(".mise") => dir.join("locks"),

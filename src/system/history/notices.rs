@@ -151,7 +151,7 @@ fn guard(path: &Path) -> Result<fslock::LockFile> {
 /// Best effort by design: a notice that cannot be read is not worth
 /// failing the command the user actually asked for, and one said twice
 /// is better than one never said.
-pub(crate) fn drain() {
+pub fn drain() {
     drain_in(&super::store::state_dir());
 }
 

@@ -10,7 +10,7 @@ use eyre::bail;
 use xx::regex;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct ToolArg {
+pub struct ToolArg {
     pub short: String,
     pub ba: Arc<BackendArg>,
     pub version: Option<String>,
@@ -19,7 +19,7 @@ pub(crate) struct ToolArg {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum ToolVersionType {
+pub enum ToolVersionType {
     Path(PathBuf),
     Prefix(String),
     Ref(String, String),
@@ -100,7 +100,7 @@ impl ToolArg {
     ///
     /// We can detect this, and we know what they meant, so make it work the way
     /// they expected.
-    pub(crate) fn double_tool_condition(tools: &[ToolArg]) -> eyre::Result<Vec<ToolArg>> {
+    pub fn double_tool_condition(tools: &[ToolArg]) -> eyre::Result<Vec<ToolArg>> {
         let mut tools = tools.to_vec();
         if tools.len() == 2 {
             let re = regex!(r"^\d+(\.\d+)*$");
@@ -122,7 +122,7 @@ impl ToolArg {
         Ok(tools)
     }
 
-    pub(crate) fn with_version(self, version: &str) -> Self {
+    pub fn with_version(self, version: &str) -> Self {
         let request = ToolRequest::new(self.ba.clone(), version, ToolSource::Argument).unwrap();
         Self {
             ba: request.ba().clone(),
@@ -133,7 +133,7 @@ impl ToolArg {
         }
     }
 
-    pub(crate) fn style(&self) -> String {
+    pub fn style(&self) -> String {
         let version = self
             .tvr
             .as_ref()

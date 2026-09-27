@@ -28,7 +28,7 @@ use crate::ui::progress_report::SingleReport;
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
-pub(crate) struct Reference {
+pub struct Reference {
     pub registry: String,
     pub repository: String,
     pub tag: String,
@@ -43,7 +43,7 @@ impl Reference {
     ///
     /// Digest references (`name@sha256:…`) are handled before tag parsing so
     /// the `:` inside the digest isn't mistaken for a tag separator.
-    pub(crate) fn parse(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self> {
         // Split off `@sha256:...` (or any `@digest`) first — in the registry
         // v2 URL scheme the full `sha256:hex` string takes the place of the
         // tag for GET /v2/<name>/manifests/<reference>.
@@ -95,7 +95,7 @@ impl Reference {
     /// Compare the actual registry endpoint, so Docker Hub's public and API
     /// hostnames identify the same repository. Tags and digests do not affect
     /// where a repository's blobs live.
-    pub(crate) fn same_repository(&self, other: &Self) -> bool {
+    pub fn same_repository(&self, other: &Self) -> bool {
         self.repository == other.repository && self.registry_url() == other.registry_url()
     }
 
@@ -757,7 +757,7 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
 /// (index-aligned with `manifest.layers`). Used as the layer-reuse cache for
 /// `mise oci push`.
 #[derive(Debug, Clone)]
-pub(crate) struct RemoteImage {
+pub struct RemoteImage {
     pub manifest: ImageManifest,
     pub diff_ids: Vec<String>,
     pub config: serde_json::Value,
@@ -769,7 +769,7 @@ pub(crate) struct RemoteImage {
 /// or points at an image index rather than a single manifest. Other errors
 /// propagate — the caller treats them as a cache miss with a warning, since
 /// a broken cache lookup should never fail a push.
-pub(crate) async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> {
+pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> {
     let r = Reference::parse(reference)?;
     let base_url = r.registry_url();
     let mut session = AuthSession::new(r.clone(), "pull").await?;
@@ -893,7 +893,7 @@ pub(crate) async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteI
 // ---------------------------------------------------------------------------
 
 /// Summary of a completed push, for CLI reporting.
-pub(crate) struct PushSummary {
+pub struct PushSummary {
     pub manifest_digest: String,
     pub uploaded: usize,
     pub skipped: usize,
@@ -926,7 +926,7 @@ pub(crate) const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.nam
 /// the existing index's other-platform entries are preserved, so runners
 /// of different architectures can each push the same tag and end up with
 /// a multi-arch image.
-pub(crate) async fn push_image(
+pub async fn push_image(
     image_dir: &Path,
     reference: &str,
     update_index: bool,

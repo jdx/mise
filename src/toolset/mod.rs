@@ -11,14 +11,14 @@ use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
-pub(crate) use builder::{ConfigScope, ToolsetBuilder};
+pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
 use eyre::{Result, bail};
 use helpers::TVTuple;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
-pub(crate) use outdated_info::is_outdated_version;
+pub use outdated_info::is_outdated_version;
 use petgraph::Direction;
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
@@ -32,28 +32,28 @@ use std::{
 };
 use tokio::sync::OnceCell;
 
-pub(crate) use install_options::InstallOptions;
-pub(crate) use tool_deps::ensure_compatible_install_requests;
-pub(crate) use tool_request::ToolRequest;
-pub(crate) use tool_request_set::{
+pub use install_options::InstallOptions;
+pub use tool_deps::ensure_compatible_install_requests;
+pub use tool_request::ToolRequest;
+pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
 };
-pub(crate) use tool_source::ToolSource;
-pub(crate) use tool_version::resolve_sub_base;
-pub(crate) use tool_version::{ResolveOptions, ToolVersion};
+pub use tool_source::ToolSource;
+pub use tool_version::resolve_sub_base;
+pub use tool_version::{ResolveOptions, ToolVersion};
 pub(crate) use tool_version_list::ToolVersionList;
-pub(crate) use tool_version_options::{
+pub use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
     ToolOptions, ToolVersionOptions, parse_tool_options, scalar_value_to_string,
     try_parse_tool_options,
 };
 
 mod builder;
-pub(crate) mod env_cache;
+pub mod env_cache;
 mod helpers;
 mod install_options;
-pub(crate) mod install_state;
-pub(crate) mod outdated_info;
+pub mod install_state;
+pub mod outdated_info;
 mod tool_deps;
 pub(crate) mod tool_request;
 mod tool_request_set;
@@ -84,21 +84,21 @@ pub(crate) enum ToolInfos {
 /// the idea is that we start with an empty toolset, then
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
-pub(crate) struct Toolset {
+pub struct Toolset {
     pub versions: IndexMap<Arc<BackendArg>, ToolVersionList>,
     pub source: Option<ToolSource>,
     tera_ctx: OnceCell<tera::Context>,
 }
 
 impl Toolset {
-    pub(crate) fn new(source: ToolSource) -> Self {
+    pub fn new(source: ToolSource) -> Self {
         Self {
             source: Some(source),
             ..Default::default()
         }
     }
 
-    pub(crate) fn add_version(&mut self, tvr: ToolRequest) {
+    pub fn add_version(&mut self, tvr: ToolRequest) {
         let ba = tvr.ba();
         if self.is_disabled(ba) {
             return;
@@ -195,7 +195,7 @@ impl Toolset {
         Ok(())
     }
 
-    pub(crate) fn list_missing_plugins(&self) -> Vec<String> {
+    pub fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
             .iter()
             .filter(|(_, tvl)| {
@@ -225,7 +225,7 @@ impl Toolset {
     }
 
     /// Lists versions whose complete backend-managed install state is unsatisfied.
-    pub(crate) async fn list_missing_versions_for_install(
+    pub async fn list_missing_versions_for_install(
         &self,
         config: &Arc<Config>,
     ) -> Vec<ToolVersion> {
@@ -263,10 +263,7 @@ impl Toolset {
         })
     }
 
-    pub(crate) async fn list_installed_versions(
-        &self,
-        _config: &Arc<Config>,
-    ) -> Result<Vec<TVTuple>> {
+    pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
         // Surface an unreadable installs dir as an error rather than as an empty
         // list. Shim rebuilding derives its desired set from this and deletes
         // every shim it cannot account for, so "scan failed" must not be
@@ -350,20 +347,20 @@ impl Toolset {
     /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
     /// first time one of its bootstrap shims runs, so environments mise builds for this
     /// toolset have to make those shims reachable behind the real tool paths.
-    pub(crate) fn has_lazy_declarations(&self) -> bool {
+    pub fn has_lazy_declarations(&self) -> bool {
         self.list_current_requests()
             .iter()
             .any(|request| request.options().lazy == Some(true))
     }
 
-    pub(crate) fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
         self.versions
             .iter()
             .flat_map(|(ba, tvl)| eyre::Ok((ba.backend()?, tvl)))
             .collect()
     }
 
-    pub(crate) fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         trace!("list_current_versions");
         self.list_versions_by_plugin()
             .iter()
@@ -371,7 +368,7 @@ impl Toolset {
             .collect()
     }
 
-    pub(crate) async fn list_all_versions(
+    pub async fn list_all_versions(
         &self,
         config: &Arc<Config>,
     ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -385,7 +382,7 @@ impl Toolset {
         Ok(versions)
     }
 
-    pub(crate) fn list_current_installed_versions(
+    pub fn list_current_installed_versions(
         &self,
         config: &Arc<Config>,
     ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
@@ -395,7 +392,7 @@ impl Toolset {
             .collect()
     }
 
-    pub(crate) async fn list_outdated_versions(
+    pub async fn list_outdated_versions(
         &self,
         config: &Arc<Config>,
         bump: bool,
@@ -405,7 +402,7 @@ impl Toolset {
             .await
     }
 
-    pub(crate) async fn list_outdated_versions_filtered(
+    pub async fn list_outdated_versions_filtered(
         &self,
         config: &Arc<Config>,
         bump: bool,
@@ -424,7 +421,7 @@ impl Toolset {
         .await
     }
 
-    pub(crate) async fn list_outdated_versions_with_progress(
+    pub async fn list_outdated_versions_with_progress(
         &self,
         config: &Arc<Config>,
         bump: bool,
@@ -691,7 +688,7 @@ impl Toolset {
         Ok(())
     }
 
-    pub(crate) async fn which(
+    pub async fn which(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -740,7 +737,7 @@ impl Toolset {
         None
     }
 
-    pub(crate) async fn list_rtvs_with_bin(
+    pub async fn list_rtvs_with_bin(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -758,12 +755,12 @@ impl Toolset {
         Ok(rtvs)
     }
 
-    pub(crate) async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
+    pub async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
         let missing_versions = self.list_missing_versions(config).await;
         self.notify_missing_versions(missing_versions);
     }
 
-    pub(crate) fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
+    pub fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
         if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
             return;
         }
@@ -825,7 +822,7 @@ impl Display for Toolset {
 impl From<ToolRequestSet> for Toolset {
     fn from(trs: ToolRequestSet) -> Self {
         let mut ts = Toolset::default();
-        for (ba, versions, source) in trs.into_iter() {
+        for (ba, versions, source) in trs.into_tools() {
             ts.source = Some(source.clone());
             let mut tvl = ToolVersionList::new(ba.clone(), source);
             for tr in versions {
@@ -844,7 +841,7 @@ impl From<ToolRequestSet> for Toolset {
 /// exist so `mise prune --dry-run` can say *which* config keeps a version
 /// alive, since the decision to remove one is otherwise made by absence and
 /// leaves nothing to point at (discussion #9045).
-pub(crate) type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
+pub type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
 
 /// Get all tool versions that are needed by tracked config files.
 /// This is used by both `mise prune` and `mise upgrade` to avoid
@@ -865,7 +862,7 @@ pub(crate) async fn get_versions_needed_by_tracked_configs(
 
 /// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
 /// for the provided config paths.
-pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
+pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
@@ -926,9 +923,7 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
 /// executed. Returns (short_name, tv_pathname) pairs like
 /// [`get_versions_needed_by_tracked_configs`] so `mise prune` and
 /// `mise upgrade` do not delete versions still referenced by a stub.
-pub(crate) async fn get_versions_needed_by_tracked_stubs(
-    config: &Arc<Config>,
-) -> Result<NeededVersions> {
+pub async fn get_versions_needed_by_tracked_stubs(config: &Arc<Config>) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
     // Like prune's tracked-config resolution, only installed versions need
     // protecting, so resolve offline to avoid pointless remote lookups.
@@ -974,7 +969,7 @@ pub(crate) async fn get_versions_needed_by_tracked_stubs(
     Ok(needed)
 }
 
-pub(crate) async fn prunable_tools(
+pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -985,7 +980,7 @@ pub(crate) async fn prunable_tools(
 /// still need. Pruning removes what none of them named, so the versions that
 /// were kept — and the files that kept them — are the only evidence available
 /// for explaining a removal.
-pub(crate) async fn prunable_tools_with_sources(
+pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<(Vec<(Arc<dyn Backend>, ToolVersion)>, NeededVersions)> {

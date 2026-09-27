@@ -61,7 +61,7 @@ pub(crate) fn file_recipients() -> Result<Vec<String>> {
 /// `[history.origin]`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OriginTomlConfig {
+pub struct OriginTomlConfig {
     pub url: String,
     #[serde(default = "default_branch")]
     pub branch: String,
@@ -122,7 +122,7 @@ fn nonempty_command(command: String) -> Option<String> {
 }
 
 /// The effective `[history.origin]`: the last layer that declares one.
-pub(crate) fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
+pub fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
     let mut found = None;
     for (path, layer) in layers()? {
         if let Some(origin) = layer.origin {
@@ -164,7 +164,7 @@ fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
 /// The effective reload map: glob -> command, a later layer overriding an
 /// earlier one for the same glob. Read from the trusted layers only, and
 /// resolved before an operation begins so nothing it writes can change it.
-pub(crate) fn reload_commands() -> Result<IndexMap<String, String>> {
+pub fn reload_commands() -> Result<IndexMap<String, String>> {
     let mut commands = IndexMap::new();
     for (path, layer) in layers()? {
         if !crate::config::config_file::is_trusted(&path) {
@@ -188,7 +188,7 @@ pub(crate) fn reload_commands() -> Result<IndexMap<String, String>> {
 /// and the last match wins, so `!glob` re-includes what an earlier glob
 /// excluded and a repeated glob excludes again what a `!glob` in between
 /// re-included.
-pub(crate) fn exclude_globs() -> Result<Vec<String>> {
+pub fn exclude_globs() -> Result<Vec<String>> {
     let mut globs: Vec<String> = vec![];
     for (_, layer) in layers()? {
         globs.extend(layer.exclude.iter().cloned());

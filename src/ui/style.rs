@@ -1,1 +1,1 @@
-pub(crate) use mise_util::style::*;
+pub use mise_util::style::*;
