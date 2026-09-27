@@ -7,16 +7,30 @@ use toml::Table;
 
 use crate::config::Settings;
 use crate::registry::REGISTRY;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 
 pub(crate) type Shorthands = HashMap<String, Vec<String>>;
 
 pub(crate) fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
     if !settings.disable_default_registry {
+        // Only asdf and vfox backends become shorthands, and few registry tools
+        // list one. `backends()` also checks each tool for a MISE_BACKENDS_*
+        // override, which costs more than everything else here across the
+        // whole registry, so skip tools without such a backend unless an
+        // override is set.
+        let has_backend_overrides =
+            env::vars_safe().any(|(key, _)| key.starts_with("MISE_BACKENDS_"));
         shorthands.extend(
             REGISTRY
                 .iter()
+                .filter(|(_, rt)| {
+                    has_backend_overrides
+                        || rt
+                            .backends
+                            .iter()
+                            .any(|b| b.full.starts_with("asdf:") || b.full.starts_with("vfox:"))
+                })
                 .map(|(id, rt)| {
                     (
                         id.to_string(),
@@ -93,6 +107,33 @@ mod tests {
         assert_str_eq!(shorthands["tinytex"][0], "vfox:jdx/vfox-tinytex");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
+    }
+
+    #[tokio::test]
+    async fn test_get_shorthands_matches_every_registry_tool() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        Settings::reset(None);
+        let mut settings = Settings::get().deref().clone();
+        settings.shorthands_file = None;
+        // Every registry tool, the way shorthands were built before tools
+        // without an asdf or vfox backend were skipped.
+        let expected: Shorthands = REGISTRY
+            .iter()
+            .map(|(id, rt)| {
+                (
+                    id.to_string(),
+                    rt.backends()
+                        .iter()
+                        .filter(|f| f.starts_with("asdf:") || f.starts_with("vfox:"))
+                        .map(|f| f.to_string())
+                        .collect_vec(),
+                )
+            })
+            .filter(|(_, fulls)| !fulls.is_empty())
+            .collect();
+        assert!(!expected.is_empty());
+        assert_eq!(get_shorthands(&settings), expected);
     }
 
     #[tokio::test]
