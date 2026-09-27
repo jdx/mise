@@ -138,7 +138,7 @@ pub(crate) fn verify_public_key_bundle(
     Ok(())
 }
 
-fn verify_dsse_artifact_subject(payload: &[u8], artifact: &[u8]) -> Result<()> {
+pub(crate) fn verify_dsse_artifact_subject(payload: &[u8], artifact: &[u8]) -> Result<()> {
     let statement: serde_json::Value = serde_json::from_slice(payload)
         .map_err(|e| AttestationError::Verification(format!("invalid DSSE payload: {e}")))?;
     let artifact_digest = hex::encode(Sha256::digest(artifact));
