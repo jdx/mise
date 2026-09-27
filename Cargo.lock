@@ -6700,15 +6700,9 @@ version = "0.1.0"
 name = "mise-brew-metadata"
 version = "0.1.0"
 dependencies = [
- "ctor",
  "eyre",
- "log",
- "mise-settings",
- "mise-util",
- "mockito",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
