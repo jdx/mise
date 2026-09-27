@@ -33,7 +33,13 @@ pub(crate) fn is_transient(error: &eyre::Report) -> bool {
         return false;
     }
     error.chain().any(|source| {
-        let Some(error) = source.downcast_ref::<reqwest::Error>() else {
+        let error = source.downcast_ref::<reqwest::Error>().or_else(|| {
+            source
+                .downcast_ref::<std::io::Error>()
+                .and_then(std::io::Error::get_ref)
+                .and_then(|inner| inner.downcast_ref::<reqwest::Error>())
+        });
+        let Some(error) = error else {
             return false;
         };
         if error.is_timeout() || error.is_connect() || error.is_body() {

@@ -27,6 +27,18 @@ fn dns_errors_are_not_transient() {
     assert!(!is_transient(&error));
 }
 
+#[tokio::test]
+async fn retries_reqwest_errors_wrapped_by_blob_stream_io() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    drop(listener);
+
+    let request_error = reqwest::Client::new().get(url).send().await.unwrap_err();
+    assert!(request_error.is_connect());
+    let wrapped = eyre::Report::new(std::io::Error::other(request_error));
+    assert!(is_transient(&wrapped));
+}
+
 #[test]
 fn cache_digest_verifies_its_declared_algorithm() {
     let bytes = b"remote cache blob";
