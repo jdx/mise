@@ -378,6 +378,9 @@ impl Toolset {
             .into_iter()
             .chain(self.list_installed_versions(config).await?)
             .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
+            // A shorthand and the backend it resolves to share an install dir;
+            // keep the entry that came first (the configured one).
+            .unique_by(|(_, tv)| tv.install_path())
             .collect();
         Ok(versions)
     }

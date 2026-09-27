@@ -2767,7 +2767,7 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        install_state::list_versions(&self.ba().short)
+        install_state::list_versions_for(self.ba())
     }
     fn is_version_installed(
         &self,
@@ -3378,7 +3378,7 @@ pub trait Backend: Debug + Send + Sync {
                 // path, even when the only installed versions live in a system or
                 // shared directory. Install state has already applied that fallback
                 // and records the directory that supplied the tool.
-                let installs_path = install_state::get_tool(&self.ba().short)
+                let installs_path = install_state::get_tool(&self.ba().storage_short())
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
@@ -4114,13 +4114,23 @@ pub trait Backend: Debug + Send + Sync {
             }
             remove_all_with_progress(dir, pr)
         };
-        rmdir(&tv.install_path())?;
+        let install_path = tv.install_path();
+        rmdir(&install_path)?;
         if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
         if !dryrun {
             self.cleanup_empty_installs_dir();
+            // A version read through from a legacy `installs/<short>` dir leaves
+            // that dir's runtime symlinks pointing at it.
+            if let Some(dir) = install_path.parent()
+                && dir != self.ba().installs_path().as_ref()
+                && dir.starts_with(*dirs::INSTALLS)
+            {
+                crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir)?;
+                cleanup_empty_tool_dir(dir);
+            }
         }
         Ok(())
     }
@@ -4262,16 +4272,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn cleanup_empty_installs_dir(&self) {
-        let installs_path = &self.ba().installs_path();
-        if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
-            let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
-            if installs_path
-                .read_dir()
-                .is_ok_and(|mut entries| entries.next().is_none())
-            {
-                let _ = remove_all_with_warning(installs_path);
-            }
-        }
+        cleanup_empty_tool_dir(&self.ba().installs_path());
     }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         install_state::incomplete_file_path(tv.ba(), &tv.tv_pathname())
@@ -6311,6 +6312,20 @@ fn fuzzy_match_versions_by(
             false
         })
         .collect()
+}
+
+/// Remove a tool's installs dir once no versions are left in it, along with
+/// the metadata that only described them.
+fn cleanup_empty_tool_dir(installs_path: &Path) {
+    if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+        let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
+        if installs_path
+            .read_dir()
+            .is_ok_and(|mut entries| entries.next().is_none())
+        {
+            let _ = remove_all_with_warning(installs_path);
+        }
+    }
 }
 
 /// Derive the directory namespace from the configured tool spelling.

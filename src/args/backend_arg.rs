@@ -13,12 +13,14 @@ use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::ToShoutySnakeCase;
-use std::collections::HashSet;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{LazyLock, Mutex};
 
 /// Metadata about how a backend was resolved.
 /// This struct is designed for extensibility - additional fields can be added
@@ -45,18 +47,32 @@ pub struct BackendArg {
     full: Option<String>,
     /// the name of the tool within the backend, e.g.: "node", "prettier", "eza", "vfox-nodejs"
     pub tool_name: String,
-    /// ~/.local/share/mise/cache/<THIS>
-    cache_path: PathBuf,
-    /// ~/.local/share/mise/installs/<THIS>
-    installs_path: PathBuf,
-    /// ~/.local/share/mise/downloads/<THIS>
-    downloads_path: PathBuf,
+    /// `installs/<THIS>` when it isn't the storage dir (a shared or
+    /// manifest-mapped install dir).
+    installs_path_override: Option<PathBuf>,
+    /// `downloads/<THIS>` when downloads are staged elsewhere.
+    downloads_path_override: Option<PathBuf>,
     pub opts: Option<ToolVersionOptions>,
     opts_source: Option<ToolOptionSource>,
     resolution: BackendResolution,
     registry_version: Option<String>,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
+}
+
+/// Everything `BackendArg::full()` reads from the arg itself; the rest comes
+/// from config, lockfiles and the registry.
+type StorageKey = (String, Option<String>, bool, Option<String>);
+
+/// `BackendArg::storage_short` once config is loaded. Resolving `full()` can
+/// read lockfiles, and paths are read constantly.
+static STORAGE_SHORTS: LazyLock<Mutex<HashMap<StorageKey, String>>> =
+    LazyLock::new(Default::default);
+
+/// Forget cached storage identities: a lockfile or config change can move a
+/// shorthand to another backend.
+pub(crate) fn clear_storage_cache() {
+    STORAGE_SHORTS.lock().unwrap().clear();
 }
 
 impl<A: AsRef<str>> From<A> for BackendArg {
@@ -102,8 +118,13 @@ impl From<InstallStateTool> for BackendArg {
         );
         tool.opts = opts;
         tool.opts_source = opts_source;
-        if let Some(installs_path) = ist.installs_path {
-            tool.installs_path = installs_path;
+        // Only a dir other than `installs/<short>` redirects the tool (a shared
+        // or manifest-mapped dir). A legacy `installs/<short>` is read through
+        // per version, so versions stored under the backend's own dir resolve.
+        if let Some(installs_path) = ist.installs_path
+            && installs_path != dirs::INSTALLS.join(backend::tool_directory_name(&tool.short))
+        {
+            tool.set_installs_path(installs_path);
         }
         tool
     }
@@ -215,6 +236,28 @@ fn parse_backend_components_fallible(
     Ok((short, tool_name.to_string(), opts))
 }
 
+/// [`BackendArg::storage_short`] for a bare `short` resolved to `full`.
+fn storage_short_for(short: &str, full: &str) -> String {
+    let full_named = full
+        .split_once(':')
+        .and_then(|(backend, _)| backend.parse::<BackendType>().ok())
+        .is_some_and(|backend_type| {
+            !matches!(
+                backend_type,
+                BackendType::Core
+                    | BackendType::Asdf
+                    | BackendType::Vfox
+                    | BackendType::VfoxBackend(_)
+                    | BackendType::Unknown
+            )
+        });
+    if full_named {
+        strip_opts(full)
+    } else {
+        short.to_string()
+    }
+}
+
 fn plugin_backend_type(identifier: &str) -> Option<BackendType> {
     let (plugin_name, _tool_name) = identifier.split_once(':')?;
     if config::is_loaded() {
@@ -277,16 +320,13 @@ impl BackendArg {
         resolution: BackendResolution,
     ) -> Self {
         let short = unalias_backend(&short).into_owned();
-        // Keep each explicitly configured spelling in its own directory namespace.
-        let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
             tool_name,
             short,
             full,
-            cache_path: dirs::CACHE.join(&pathname),
-            installs_path: dirs::INSTALLS.join(&pathname),
-            downloads_path: dirs::DOWNLOADS.join(&pathname),
+            installs_path_override: None,
+            downloads_path_override: None,
             opts,
             opts_source,
             resolution,
@@ -295,36 +335,106 @@ impl BackendArg {
         }
     }
 
+    /// The identifier this tool's directories under `installs/`, `cache/`
+    /// and `downloads/` are named after. A registry shorthand is stored under
+    /// the backend it resolves to, so it shares directories with that
+    /// backend's explicit identifier and each backend keeps its own versions.
+    /// Core tools and asdf/vfox plugins keep their short name.
+    pub(crate) fn storage_short(&self) -> String {
+        if !self.stores_by_backend() {
+            return self.short.clone();
+        }
+        // Before config loads, `full()` can't see lockfiles or aliases yet.
+        if !config::is_loaded() {
+            return storage_short_for(&self.short, &self.full_without_opts());
+        }
+        let key = (
+            self.short.clone(),
+            self.full.clone(),
+            self.resolution.explicit,
+            self.registry_version.clone(),
+        );
+        if let Some(short) = STORAGE_SHORTS.lock().unwrap().get(&key) {
+            return short.clone();
+        }
+        let short = storage_short_for(&self.short, &self.full_without_opts());
+        STORAGE_SHORTS.lock().unwrap().insert(key, short.clone());
+        short
+    }
+
+    /// Whether this arg is a registry shorthand, whose directories are named
+    /// after the backend it resolves to. An alias with its own backend and a
+    /// `MISE_BACKENDS_*` override carry their own backend and options, so they
+    /// keep their own name, as does anything the registry doesn't list.
+    fn stores_by_backend(&self) -> bool {
+        !self.short.contains(':')
+            && REGISTRY.contains_key(self.short.as_str())
+            && !self.has_env_backend_override()
+            && !(config::is_loaded()
+                && Config::get_()
+                    .all_aliases
+                    .get(&self.short)
+                    .is_some_and(|alias| alias.backend.is_some()))
+    }
+
+    /// Every storage identity a version-routed registry tool (`min_version`)
+    /// can put a version under, one per backend. Empty for other tools.
+    pub(crate) fn routed_storage_shorts(&self) -> Vec<String> {
+        if !self.stores_by_backend() {
+            return vec![];
+        }
+        let Some(tool) = self.registry_tool().filter(|tool| tool.routes_by_version()) else {
+            return vec![];
+        };
+        let mut shorts = tool
+            .backends()
+            .into_iter()
+            .map(|full| storage_short_for(&self.short, full))
+            .collect::<Vec<_>>();
+        shorts.dedup();
+        shorts
+    }
+
+    fn storage_dir(&self) -> String {
+        backend::tool_directory_name(&self.storage_short())
+    }
+
     /// `installs/<tool dir>`: where this tool's versions are installed.
-    pub fn installs_path(&self) -> &Path {
-        &self.installs_path
+    pub fn installs_path(&self) -> Cow<'_, Path> {
+        match &self.installs_path_override {
+            Some(path) => Cow::Borrowed(path),
+            None => Cow::Owned(dirs::INSTALLS.join(self.storage_dir())),
+        }
     }
 
     /// `cache/<tool dir>`: per-version caches and incomplete-install markers.
-    pub fn cache_path(&self) -> &Path {
-        &self.cache_path
+    pub fn cache_path(&self) -> Cow<'_, Path> {
+        Cow::Owned(dirs::CACHE.join(self.storage_dir()))
     }
 
     /// `downloads/<tool dir>`: downloaded artifacts, per version.
-    pub fn downloads_path(&self) -> &Path {
-        &self.downloads_path
+    pub fn downloads_path(&self) -> Cow<'_, Path> {
+        match &self.downloads_path_override {
+            Some(path) => Cow::Borrowed(path),
+            None => Cow::Owned(dirs::DOWNLOADS.join(self.storage_dir())),
+        }
     }
 
     /// Point this tool at an install dir found elsewhere (a shared install
     /// dir, or a manifest-mapped dir), instead of the one its name implies.
     pub fn set_installs_path(&mut self, path: PathBuf) {
-        self.installs_path = path;
+        self.installs_path_override = Some(path);
     }
 
     /// Stage downloads somewhere other than `downloads/<tool dir>`.
     pub fn set_downloads_path(&mut self, path: PathBuf) {
-        self.downloads_path = path;
+        self.downloads_path_override = Some(path);
     }
 
     /// Returns the kebab-cased directory name used for this tool's install path.
     /// This is the canonical name used on the filesystem (e.g. "github-user-repo").
     pub(crate) fn tool_dir_name(&self) -> String {
-        self.installs_path
+        self.installs_path()
             .file_name()
             .unwrap()
             .to_string_lossy()
@@ -678,7 +788,7 @@ impl BackendArg {
             || self.has_env_backend_override()
             || !self
                 .registry_tool()
-                .is_some_and(|tool| tool.backends.iter().any(|b| b.min_version.is_some()))
+                .is_some_and(|tool| tool.routes_by_version())
         {
             return None;
         }
@@ -1165,7 +1275,7 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let t = |s: &str, expected| {
             let fa: BackendArg = s.into();
-            let actual = fa.installs_path.to_string_lossy();
+            let actual = fa.installs_path().to_string_lossy().to_string();
             let expected = dirs::INSTALLS.join(expected);
             assert_str_eq!(actual, expected.to_string_lossy());
         };
@@ -1339,7 +1449,7 @@ fn pypi_and_pipx_use_distinct_tool_identities() {
     assert_eq!(legacy.short, "pipx:black");
     assert_eq!(preferred.full(), "pypi:black");
     assert_eq!(legacy.full(), "pipx:black");
-    assert_ne!(preferred.installs_path, legacy.installs_path);
+    assert_ne!(preferred.installs_path(), legacy.installs_path());
     assert_eq!(preferred.tool_dir_name(), "pypi-black");
     assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
     assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);

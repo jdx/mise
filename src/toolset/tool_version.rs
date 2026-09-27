@@ -443,11 +443,17 @@ impl ToolVersion {
             }
         }
 
-        // Check shared install directories if the primary path doesn't exist
+        // Check shared install directories if the primary path doesn't exist,
+        // then an install made before the tool was stored under its backend.
         let path = if matches!(&self.request, ToolRequest::Path { .. }) {
             path
         } else {
-            env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
+            let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
+            if path.exists() {
+                path
+            } else {
+                install_state::legacy_install_path(self.ba(), &pathname).unwrap_or(path)
+            }
         };
 
         // Only cache the resolved path if it actually exists on disk. Otherwise

@@ -768,6 +768,12 @@ impl RegistryTool {
             .collect()
     }
 
+    /// Whether the backend depends on the requested version (`min_version`),
+    /// so one tool's versions can come from different backends.
+    pub fn routes_by_version(&self) -> bool {
+        self.backends.iter().any(|b| b.min_version.is_some())
+    }
+
     /// Filter only requests known to be older than a backend's introduction.
     /// Channels and unresolved aliases retain the ordinary backend priority.
     pub fn backends_for_version(&self, version: Option<&str>) -> Vec<&'static str> {

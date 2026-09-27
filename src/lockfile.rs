@@ -62,6 +62,8 @@ const DEFAULT_LOCKFILE_DOC_URL: &str = "https://mise.jdx.dev/dev-tools/mise-lock
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
 pub fn invalidate_caches() {
+    // A lockfile can move a shorthand to another backend's storage.
+    crate::args::clear_storage_cache();
     if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
         cache.clear();
     }
