@@ -3382,8 +3382,15 @@ pub trait Backend: Debug + Send + Sync {
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
+                // Versions can also live in a legacy `installs/<short>` dir or
+                // under another backend of a version-routed tool, so neither
+                // this dir's `latest` link nor its listing covers them all.
+                let ba = self.ba();
+                let stored_elsewhere =
+                    ba.storage_short() != ba.short || !ba.routed_storage_shorts().is_empty();
                 let installed_symlink = installs_path.join("latest");
-                if installed_symlink.exists()
+                if !stored_elsewhere
+                    && installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
                     let version = target
@@ -3400,20 +3407,22 @@ pub trait Backend: Debug + Send + Sync {
                         return Ok(Some(version));
                     }
                 }
-                let mut installed = file::dir_subdirs(&installs_path)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
-                    .filter(|v| v != "latest")
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .collect_vec();
-                if installed.is_empty() {
-                    // Versions kept in a legacy `installs/<short>` dir or under
-                    // another backend of a version-routed tool.
-                    installed = self.list_installed_versions();
-                }
+                let installed = if stored_elsewhere {
+                    self.list_installed_versions()
+                        .into_iter()
+                        .filter(|v| v != "latest")
+                        .collect_vec()
+                } else {
+                    file::dir_subdirs(&installs_path)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|v| !v.starts_with('.'))
+                        .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
+                        .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
+                        .filter(|v| v != "latest")
+                        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                        .collect_vec()
+                };
                 // Prefer a stable install, but a tool that only publishes
                 // pre-releases (an npm package whose `latest` dist-tag is an rc)
                 // must still resolve `latest` to what is installed.

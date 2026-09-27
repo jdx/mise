@@ -49,6 +49,14 @@ assert_contains "MISE_OFFLINE=1 mise x -- age --version" "v1.2.1"
 rm mise.toml
 assert_directory_not_exists "$INSTALLS/aqua-filo-sottile-age"
 
+echo "=== latest covers legacy installs newer than the backend's own ==="
+mise install age@1.2.0
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.0"
+echo 'tools.age = "latest"' >mise.toml
+assert_contains "MISE_OFFLINE=1 mise x -- age --version" "v1.2.1"
+rm mise.toml
+mise uninstall age@1.2.0
+
 echo "=== so is one in a shared install dir ==="
 SHARED="$HOME/shared-installs"
 mkdir -p "$SHARED"
