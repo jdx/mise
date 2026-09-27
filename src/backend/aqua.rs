@@ -51,6 +51,9 @@ pub(crate) struct AquaBackend {
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
     verification_target: Option<PlatformTarget>,
+    /// The tool's `libc` option, set on the copy that installs or locks it. See
+    /// [`AquaBackend::with_tool_libc`].
+    tool_libc: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +83,21 @@ impl<'a> AquaOptions<'a> {
         self.values.bool("symlink_bins")
     }
 
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`. It makes Linux asset
+    /// selection strict for this tool, like the `libc` setting does for every tool.
+    fn libc(&self) -> Result<Option<&'static str>> {
+        let Some(value) = self.values.raw().opts.get("libc") else {
+            return Ok(None);
+        };
+        match value.as_str() {
+            Some("gnu" | "glibc") => Ok(Some("gnu")),
+            Some("musl") => Ok(Some("musl")),
+            _ => bail!(
+                "invalid aqua `libc` option {value}: expected \"glibc\", \"gnu\", or \"musl\""
+            ),
+        }
+    }
+
     fn var(&self, name: &str) -> Result<Option<String>> {
         self.canonical_var_options()?
             .get(name)
@@ -88,19 +106,25 @@ impl<'a> AquaOptions<'a> {
     }
 
     fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
-        Ok(self
+        let mut options: BTreeMap<String, String> = self
             .canonical_var_options()?
             .into_iter()
             .filter_map(|(key, value)| {
                 toml_value_to_string(value).map(|value| (format!("vars.{key}"), value))
             })
-            .collect())
+            .collect();
+        if let Some(libc) = self.libc()? {
+            options.insert("libc".to_string(), libc.to_string());
+        }
+        Ok(options)
     }
 
     fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
         let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+            if matches!(key.as_str(), "symlink_bins" | "libc")
+                || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            {
                 continue;
             }
 
@@ -314,7 +338,7 @@ impl Backend for AquaBackend {
 
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
             let (version, versioned_pkg) = match versioned_package_from_tag(
@@ -379,6 +403,9 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        if let Some(backend) = self.with_tool_libc(&tv)? {
+            return backend.install_version_(ctx, tv).await;
+        }
         let ResolvedPackage {
             platform_key,
             existing_platform,
@@ -410,7 +437,10 @@ impl Backend for AquaBackend {
                             asset_name_matches_expected(
                                 &cached_filename,
                                 expected,
-                                libc_asset_preference(&PlatformTarget::from_current()),
+                                libc_asset_preference(
+                                    &PlatformTarget::from_current(),
+                                    self.tool_libc,
+                                ),
                             )
                         })
                 });
@@ -662,6 +692,9 @@ impl Backend for AquaBackend {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        if let Some(backend) = self.with_tool_libc(tv)? {
+            return backend.resolve_lock_info(tv, target).await;
+        }
         let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
@@ -698,9 +731,13 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
-        let target_libc = Self::target_variant_libc(target);
+        let target_libc = Self::target_variant_libc(target, self.tool_libc);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
+        let pkg = Self::apply_aqua_libc_replacement(
+            pkg,
+            target_os,
+            Self::target_libc(target, self.tool_libc),
+        );
         let mut pkg = Self::apply_var_options(pkg, &opts)?;
 
         // Apply version prefix if present
@@ -875,6 +912,7 @@ impl Backend for AquaBackend {
         {
             let mut verifier = Self::from_arg(self.ba.as_ref().clone());
             verifier.verification_target = Some(target.clone());
+            verifier.tool_libc = self.tool_libc;
             match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
@@ -1016,13 +1054,18 @@ impl AquaBackend {
         pkg: AquaPackage,
         versions: &[&str],
     ) -> Result<AquaPackage> {
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
-        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
+        let tool_libc = opts.libc()?;
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, tool_libc);
+        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
+        let pkg = Self::apply_aqua_libc_replacement(
+            pkg,
+            target_os,
+            Self::target_libc(&target, tool_libc),
+        );
         Self::apply_var_options(pkg, &opts)
     }
 
@@ -1042,8 +1085,11 @@ impl AquaBackend {
         (target_os, target_arch)
     }
 
-    fn target_libc(target: &PlatformTarget) -> Option<String> {
-        target.libc().map(str::to_string).or_else(|| {
+    /// The libc to select assets for. A libc in the target platform wins (a musl host, or a
+    /// `linux-x64-musl` lockfile platform), then the tool's `libc` option, then the `libc`
+    /// setting on the current platform.
+    fn target_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        target.libc().or(tool_libc).map(str::to_string).or_else(|| {
             if target.is_current() {
                 Settings::get().libc().map(str::to_string)
             } else {
@@ -1052,22 +1098,26 @@ impl AquaBackend {
         })
     }
 
-    fn target_variant_libc(target: &PlatformTarget) -> Option<String> {
+    fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
         if target.os_name() != "linux" {
             return None;
         }
-        let settings_libc = if target.is_current() {
-            Settings::get().libc().map(str::to_string)
-        } else {
-            None
-        };
-        Some(
-            target
-                .libc()
-                .map(str::to_string)
-                .or(settings_libc)
-                .unwrap_or_else(|| "gnu".to_string()),
-        )
+        Some(Self::target_libc(target, tool_libc).unwrap_or_else(|| "gnu".to_string()))
+    }
+
+    /// A copy of `self` that carries `tv`'s `libc` option, or `None` when `self` already
+    /// does. Install and lock run on that copy so every asset they look up, including
+    /// checksum, signature and provenance files, agrees on one libc.
+    fn with_tool_libc(&self, tv: &ToolVersion) -> Result<Option<Self>> {
+        let raw_opts = tv.request.options();
+        let tool_libc = AquaOptions::new(&raw_opts).libc()?;
+        if tool_libc == self.tool_libc {
+            return Ok(None);
+        }
+        let mut backend = Self::from_arg(self.ba.as_ref().clone());
+        backend.verification_target = self.verification_target.clone();
+        backend.tool_libc = tool_libc;
+        Ok(Some(backend))
     }
 
     fn apply_aqua_libc_replacement(
@@ -2098,6 +2148,7 @@ impl AquaBackend {
             id: id.to_string(),
             ba: Arc::new(ba),
             verification_target: None,
+            tool_libc: None,
             // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
             // by the inline `prerelease` opt, so previously cached lists could be
             // missing pre-release tags needed at install/lock time. The new cache
@@ -2181,7 +2232,7 @@ impl AquaBackend {
 
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
         match marked_release_version_info(
             &pkg,
             &release,
@@ -2214,7 +2265,7 @@ impl AquaBackend {
                         let tags = get_tags(&pkg).await?;
                         let target = PlatformTarget::from_current();
                         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-                        let target_libc = Self::target_variant_libc(&target);
+                        let target_libc = Self::target_variant_libc(&target, None);
                         for tag in tags.into_iter().rev() {
                             let (version, _) = match versioned_package_from_tag(
                                 &pkg,
@@ -2341,8 +2392,13 @@ impl AquaBackend {
         // Aqua metadata sometimes names only one libc variant even when the release
         // publishes both. Prefer the target libc sibling while retaining the exact
         // metadata asset as a fallback for unqualified Linux targets.
-        self.github_release_asset_matching(pkg, v, asset_strs, libc_asset_preference(target))
-            .await
+        self.github_release_asset_matching(
+            pkg,
+            v,
+            asset_strs,
+            libc_asset_preference(target, self.tool_libc),
+        )
+        .await
     }
 
     /// Returns `(browser_download_url, api_asset_url, digest)`.
@@ -4713,6 +4769,41 @@ packages:
     }
 
     #[test]
+    fn test_libc_option_is_not_an_aqua_var() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("glibc".into()));
+
+        let aqua_opts = AquaOptions::new(&opts);
+        assert_eq!(aqua_opts.libc().unwrap(), Some("gnu"));
+        assert_eq!(aqua_opts.var("libc").unwrap(), None);
+        let lock_opts = aqua_opts.lockfile_options().unwrap();
+        assert_eq!(lock_opts.get("libc"), Some(&"gnu".to_string()));
+        assert!(!lock_opts.contains_key("vars.libc"));
+
+        // A registry var that happens to be named `libc` is still reachable.
+        opts.opts.shift_remove("libc");
+        opts.opts
+            .insert("vars.libc".to_string(), toml::Value::String("x".into()));
+        let aqua_opts = AquaOptions::new(&opts);
+        assert_eq!(aqua_opts.libc().unwrap(), None);
+        assert_eq!(aqua_opts.var("libc").unwrap(), Some("x".to_string()));
+    }
+
+    #[test]
+    fn test_libc_option_rejects_unknown_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("uclibc".into()));
+
+        let err = AquaOptions::new(&opts).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid aqua `libc` option"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn test_lockfile_options_canonicalize_equivalent_aqua_vars() {
         let mut top_level = ToolVersionOptions::default();
         top_level.opts.insert(
@@ -5175,7 +5266,7 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
     let target = PlatformTarget::from_current();
     let (target_os, target_arch) = AquaBackend::to_aqua_platform(&target);
-    let target_libc = AquaBackend::target_variant_libc(&target);
+    let target_libc = AquaBackend::target_variant_libc(&target, None);
     Ok(
         versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
             .map(|(version, _)| version),
@@ -5386,11 +5477,11 @@ enum LibcAssetPreference {
     MuslStrict,
 }
 
-fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
+fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> LibcAssetPreference {
     if target.os_name() != "linux" {
         return LibcAssetPreference::Exact;
     }
-    match AquaBackend::target_libc(target).as_deref() {
+    match AquaBackend::target_libc(target, tool_libc).as_deref() {
         Some("gnu") => LibcAssetPreference::GlibcStrict,
         Some("musl") => LibcAssetPreference::MuslStrict,
         _ => LibcAssetPreference::GlibcWithFallback,
@@ -5520,6 +5611,7 @@ fn to_aqua_arch(arch: &str) -> &str {
 #[cfg(test)]
 mod lock_candidate_tests {
     use crate::github::GithubAsset;
+    use crate::platform::Platform;
 
     use super::*;
 
@@ -6267,6 +6359,57 @@ no_asset: true
         assert!(
             select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn test_libc_asset_preference_uses_tool_libc() {
+        let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
+        assert_eq!(
+            libc_asset_preference(&linux, Some("musl")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert_eq!(
+            libc_asset_preference(&linux, Some("gnu")),
+            LibcAssetPreference::GlibcStrict
+        );
+
+        // The target platform's own libc wins: a gnu build cannot run on a musl target.
+        let linux_musl = PlatformTarget::new(Platform::parse("linux-arm64-musl").unwrap());
+        assert_eq!(
+            libc_asset_preference(&linux_musl, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+
+        let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        assert_eq!(
+            libc_asset_preference(&macos, Some("musl")),
+            LibcAssetPreference::Exact
+        );
+        assert_eq!(AquaBackend::target_variant_libc(&macos, Some("musl")), None);
+    }
+
+    #[test]
+    fn test_tool_libc_musl_keeps_registry_musl_asset() {
+        // domcyrus/rustnet: the registry names the static musl build, and the release also
+        // ships a gnu build that links libpcap dynamically.
+        let assets = vec![
+            asset("rustnet-v1.6.0-aarch64-unknown-linux-gnu.tar.gz"),
+            asset("rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"),
+        ];
+        let asset_strs =
+            IndexSet::from(["rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz".to_string()]);
+        let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
+
+        let selected = select_github_release_asset(
+            &assets,
+            &asset_strs,
+            libc_asset_preference(&linux, Some("musl")),
+        )
+        .unwrap();
+        assert_eq!(
+            selected.name,
+            "rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"
         );
     }
 
