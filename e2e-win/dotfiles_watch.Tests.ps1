@@ -77,43 +77,55 @@ if ([W.C]::IsWindowVisible($window)) { exit 3 } else { exit 6 }
         # still running, then waits for all of them to exit. An orphan still
         # names its dead parent's pid, so it is found too; start times keep a
         # reused pid, and whatever that new process started, out.
+        #
+        # The tree is walked again after every kill: a watcher can start a
+        # `git` between one walk and the kill, and only a walk that finds
+        # nothing running says the tree is gone. Everything found stays
+        # known, so a process whose parent has since died is still reached.
         function script:Stop-Tree([object[]]$Roots, [int]$TimeoutSec = 30) {
-            $all = @(Get-CimInstance Win32_Process)
-            $tree = @{}
-            $pending = [System.Collections.Generic.Queue[object]]::new()
-            foreach ($root in $Roots) { if ($null -ne $root) { $pending.Enqueue($root) } }
-            while ($pending.Count -gt 0) {
-                $node = $pending.Dequeue()
-                if ($tree.ContainsKey($node.Id)) { continue }
-                $tree[$node.Id] = $node
-                # the pid's next owner, if it has one: what started after it
-                # is that process's, not this one's
-                $next = $all | Where-Object {
-                    $_.ProcessId -eq $node.Id -and $_.CreationDate -gt $node.StartTime.AddSeconds(1)
-                } | Select-Object -First 1
-                foreach ($child in $all) {
-                    if ($child.ParentProcessId -ne $node.Id) { continue }
-                    if ($child.CreationDate -lt $node.StartTime) { continue }
-                    if ($next -and $child.CreationDate -ge $next.CreationDate) { continue }
-                    $pending.Enqueue([pscustomobject]@{
-                            Id = [int]$child.ProcessId; StartTime = $child.CreationDate })
-                }
-            }
+            $known = @{}
+            foreach ($root in $Roots) { if ($null -ne $root) { $known[$root.Id] = $root } }
             $isTree = {
-                $member = $tree[[int]$_.ProcessId]
+                $member = $known[[int]$_.ProcessId]
                 $null -ne $member -and [int]$_.ProcessId -ne $PID -and
                 [math]::Abs(($_.CreationDate - $member.StartTime).TotalSeconds) -lt 1
             }
-            $live = @($all | Where-Object $isTree |
-                    ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction Ignore })
-            if ($live.Count -eq 0) { return $true }
-            $live | Stop-Process -Force -ErrorAction Ignore
-            $live | Wait-Process -Timeout $TimeoutSec -ErrorAction Ignore
-            $left = @(Get-CimInstance Win32_Process | Where-Object $isTree)
-            foreach ($process in $left) {
+            $deadline = (Get-Date).AddSeconds($TimeoutSec)
+            while ($true) {
+                $all = @(Get-CimInstance Win32_Process)
+                $walked = @{}
+                $pending = [System.Collections.Generic.Queue[object]]::new()
+                foreach ($member in @($known.Values)) { $pending.Enqueue($member) }
+                while ($pending.Count -gt 0) {
+                    $node = $pending.Dequeue()
+                    if ($walked.ContainsKey($node.Id)) { continue }
+                    $walked[$node.Id] = $true
+                    if (-not $known.ContainsKey($node.Id)) { $known[$node.Id] = $node }
+                    # the pid's next owner, if it has one: what started after
+                    # it is that process's, not this one's
+                    $next = $all | Where-Object {
+                        $_.ProcessId -eq $node.Id -and $_.CreationDate -gt $node.StartTime.AddSeconds(1)
+                    } | Select-Object -First 1
+                    foreach ($child in $all) {
+                        if ($child.ParentProcessId -ne $node.Id) { continue }
+                        if ($child.CreationDate -lt $node.StartTime) { continue }
+                        if ($next -and $child.CreationDate -ge $next.CreationDate) { continue }
+                        $pending.Enqueue([pscustomobject]@{
+                                Id = [int]$child.ProcessId; StartTime = $child.CreationDate })
+                    }
+                }
+                $live = @($all | Where-Object $isTree |
+                        ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction Ignore })
+                if ($live.Count -eq 0) { return $true }
+                $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+                if ($remaining -le 0) { break }
+                $live | Stop-Process -Force -ErrorAction Ignore
+                $live | Wait-Process -Timeout $remaining -ErrorAction Ignore
+            }
+            foreach ($process in $all | Where-Object $isTree) {
                 Write-Warning "still running: $($process.ProcessId) $($process.CommandLine)"
             }
-            return $left.Count -eq 0
+            return $false
         }
     }
 
