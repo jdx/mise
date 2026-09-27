@@ -986,7 +986,7 @@ impl Builder {
 /// Coordinate source checks and packaging with installation transactions.
 fn lock_tool_install(tv: &ToolVersion) -> Result<fslock::LockFile> {
     crate::toolset::install_state::lock_tool_version_with_notice(
-        &tv.ba().short,
+        tv.ba(),
         &tv.tv_pathname(),
         &|pid| {
             info!(

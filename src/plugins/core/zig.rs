@@ -218,7 +218,7 @@ impl ZigPlugin {
     }
 
     async fn get_community_mirrors(&self) -> Option<Vec<String>> {
-        let cache_path = self.ba.cache_path.join(MIRRORS_FILENAME);
+        let cache_path = self.ba.cache_path().join(MIRRORS_FILENAME);
         let recent_cache =
             file::modified_duration(&cache_path).is_ok_and(|updated_at| updated_at < DAILY);
         if !recent_cache {

@@ -88,7 +88,7 @@ pub(crate) async fn install(
     let previous = installed(path)?;
     let mut ba = BackendArg::from(format!("packslip:{}", source.project).as_str());
     // Each attempt owns its downloads, including concurrent aliases of a plugin.
-    ba.downloads_path = staging.path().join("downloads");
+    ba.set_downloads_path(staging.path().join("downloads"));
     let backend = PackslipBackend::from_arg(ba.clone());
     let request = ToolRequest::new(Arc::new(ba), &source.request, ToolSource::Argument)?;
     pr.set_message(format!("resolve {}", source.url()));
