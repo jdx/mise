@@ -1,4 +1,4 @@
-import { Command, commands } from "./cli_commands";
+import { type Command, commands } from "./cli_commands.ts";
 
 // Shared between the VitePress config and the llms.txt generator
 // (docs/.vitepress/llms.ts), so both describe the same set of pages.

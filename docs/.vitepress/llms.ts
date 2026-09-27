@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sidebar, type SidebarItem } from "./sidebar";
+import { sidebar, type SidebarItem } from "./sidebar.ts";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
 const docsDir = resolve(configDir, "..");
