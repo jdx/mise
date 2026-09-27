@@ -17,7 +17,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
-use packslip::forge::Check;
+use packslip::forge::{Check, ForgePin};
 use packslip::model::{
     Artifact, Host, ReleaseListStatement, ReleaseRef, Selection, Statement, is_bare_format,
     repository, repository_subpath, tag_version,
@@ -676,9 +676,9 @@ async fn verify_project_release_list(
     bundle: &str,
     pin: &Pin,
     require_log: bool,
-) -> Result<ReleaseListStatement> {
+) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
     let Some(forge) = pin.forge(project, [], bundle).await? else {
-        return verify_release_list(bundle, pin, require_log);
+        return Ok((verify_release_list(bundle, pin, require_log)?, None));
     };
     file::run_blocking(|| {
         let root = packslip::sigstore::trusted_root(None).map_err(|e| eyre!("{e}"))?;
@@ -688,7 +688,7 @@ async fn verify_project_release_list(
         };
         let verified = forge.verify_list(bundle, options)?;
         check_list_current(&verified.verified.list)?;
-        Ok(verified.verified.list)
+        Ok((verified.verified.list, verified.check.pin))
     })
 }
 
@@ -787,8 +787,12 @@ fn verified_age_allowed(
 /// Refuse a list whose sequence is below one already accepted for the
 /// project, and remember the highest seen. The crate verifies the list
 /// and its expiry; this is the consumer's part, kept with the pins.
-fn check_sequence(project: &str, list: &ReleaseListStatement) -> Result<()> {
-    crate::packslip_pins::check_sequence(project, list.predicate.sequence)
+fn check_sequence(
+    project: &str,
+    list: &ReleaseListStatement,
+    forge: Option<&ForgePin>,
+) -> Result<()> {
+    crate::packslip_pins::check_sequence(project, list.predicate.sequence, forge)
 }
 
 /// Where a release's packslip is.
@@ -796,6 +800,45 @@ struct Located {
     url: String,
     /// The digest a signed release list recorded for the bundle, if any.
     digest: Option<String>,
+    /// Whether the GitHub repository keeps no signed list. Checked again once
+    /// the bundle verifies: its certificate's repository ID shows whether a
+    /// list was accepted for the repository under a name it had before.
+    list_missing: bool,
+}
+
+/// What the vendor's own signed list says about a version.
+enum Vendor {
+    /// The list names the version.
+    Listed(Located),
+    /// The list does not name the version.
+    Unlisted,
+    /// The GitHub repository keeps no list.
+    NoList,
+}
+
+impl Vendor {
+    fn digest(self) -> Option<String> {
+        match self {
+            Vendor::Listed(located) => located.digest,
+            Vendor::Unlisted | Vendor::NoList => None,
+        }
+    }
+
+    fn list_missing(&self) -> bool {
+        matches!(self, Vendor::NoList)
+    }
+}
+
+/// A GitHub repository that keeps no signed list may not have kept one
+/// under any name: now that a verified certificate gives the repository's
+/// ID, a list accepted before a rename counts.
+fn check_list_still_missing(project: &str, located: &Located, check: Option<&Check>) -> Result<()> {
+    match check.and_then(|check| check.pin.as_ref()) {
+        Some(forge) if located.list_missing => {
+            packslip_pins::check_missing_list(project, Some(forge))
+        }
+        _ => Ok(()),
+    }
 }
 
 impl PackslipBackend {
@@ -871,16 +914,17 @@ impl PackslipBackend {
         let text = HTTP_FETCH.get_text(&url).await.wrap_err_with(|| {
             format!("fetching the release list of packslip:{project} from {url}")
         })?;
-        let list = verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
-            .await
-            .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
+        let (list, forge) =
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+                .await
+                .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
             bail!(
                 "the release list at {url} is for {}, not {project}",
                 list.predicate.project
             );
         }
-        check_sequence(project, &list)?;
+        check_sequence(project, &list, forge.as_ref())?;
         Ok(list)
     }
 
@@ -915,7 +959,7 @@ impl PackslipBackend {
         {
             Ok(text) => text,
             Err(err) if crate::http::error_code(&err) == Some(404) => {
-                packslip_pins::check_missing_list(project)?;
+                packslip_pins::check_missing_list(project, None)?;
                 return Ok(None);
             }
             Err(err) => {
@@ -923,16 +967,17 @@ impl PackslipBackend {
                     .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
             }
         };
-        let list = verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
-            .await
-            .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
+        let (list, forge) =
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+                .await
+                .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
             bail!(
                 "the release list in github.com/{repo} is for {}, not {project}",
                 list.predicate.project
             );
         }
-        check_sequence(project, &list)?;
+        check_sequence(project, &list, forge.as_ref())?;
         Ok(Some(list))
     }
 
@@ -947,10 +992,10 @@ impl PackslipBackend {
         tv: &ToolVersion,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
-    ) -> Result<Option<Located>> {
+    ) -> Result<Vendor> {
         if let Some(repo) = Self::repo(project) {
             let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
-                return Ok(None);
+                return Ok(Vendor::NoList);
             };
             let Some(entry) = list
                 .predicate
@@ -958,12 +1003,13 @@ impl PackslipBackend {
                 .iter()
                 .find(|r| r.version == tv.version)
             else {
-                return Ok(None);
+                return Ok(Vendor::Unlisted);
             };
             refuse_if_withdrawn(project, &tv.version, entry)?;
-            return Ok(Some(Located {
+            return Ok(Vendor::Listed(Located {
                 url: entry.packslip.clone(),
                 digest: list.digest_of(&entry.packslip).map(str::to_string),
+                list_missing: false,
             }));
         }
         let list = self.release_list(project, pin, opts).await?;
@@ -979,9 +1025,10 @@ impl PackslipBackend {
             );
         };
         refuse_if_withdrawn(project, &tv.version, entry)?;
-        Ok(Some(Located {
+        Ok(Vendor::Listed(Located {
             url: entry.packslip.clone(),
             digest: list.digest_of(&entry.packslip).map(str::to_string),
+            list_missing: false,
         }))
     }
 
@@ -992,7 +1039,9 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Located> {
-        if let Some(located) = self.vendor_entry(project, tv, pin, opts).await? {
+        let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+        let list_missing = vendor.list_missing();
+        if let Vendor::Listed(located) = vendor {
             return Ok(located);
         }
         // No signed list names the manifest, so the release asset is the
@@ -1031,6 +1080,7 @@ impl PackslipBackend {
             // asset's API endpoint is already in hand here.
             url: github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await,
             digest: None,
+            list_missing,
         })
     }
 
@@ -1051,7 +1101,7 @@ impl PackslipBackend {
         // With a stamp in hand the manifest is already named, so the vendor is
         // asked only for withdrawals and its digest pin. Requiring the original
         // release asset here would refuse a stamped mirror that install accepts.
-        let (url, vendor_digest) = match stamp {
+        let (located, vendor_digest) = match stamp {
             Some(stamp) => {
                 if stamp.digest.is_none() {
                     bail!(
@@ -1061,19 +1111,21 @@ impl PackslipBackend {
                         stamp.entry.packslip
                     );
                 }
-                (
-                    stamp.entry.packslip.clone(),
-                    self.vendor_entry(project, tv, pin, opts)
-                        .await?
-                        .and_then(|vendor| vendor.digest),
-                )
+                let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+                let located = Located {
+                    url: stamp.entry.packslip.clone(),
+                    digest: None,
+                    list_missing: vendor.list_missing(),
+                };
+                (located, vendor.digest())
             }
             None => {
-                let vendor = self.locate_bundle(project, tv, pin, opts).await?;
-                (vendor.url, vendor.digest)
+                let mut located = self.locate_bundle(project, tv, pin, opts).await?;
+                let digest = located.digest.take();
+                (located, digest)
             }
         };
-        let text = crate::packslip::fetch_text(&url).await?;
+        let text = crate::packslip::fetch_text(&located.url).await?;
         let actual = hex::encode(Sha256::digest(text.as_bytes()));
         for expected in vendor_digest
             .iter()
@@ -1090,6 +1142,7 @@ impl PackslipBackend {
             .forge(project, tv.lock_platforms.values(), &text)
             .await?;
         let accepted = verify_bundle(&text, pin, forge.as_ref(), !opts.allow_unlogged(), &[])?;
+        check_list_still_missing(project, &located, accepted.check.as_ref())?;
         let verified = &accepted.verified;
         if (verified.project != project && accepted.check.is_none())
             || verified.version != tv.version
@@ -1404,8 +1457,9 @@ impl PackslipBackend {
                     Located {
                         url: stamp.entry.packslip.clone(),
                         digest: Some(digest),
+                        list_missing: vendor.list_missing(),
                     },
-                    vendor.and_then(|v| v.digest),
+                    vendor.digest(),
                 )
             }
             // Without a stamp the located bundle is the vendor's own, so its
@@ -1441,6 +1495,7 @@ impl PackslipBackend {
         let statement: Statement = serde_json::from_slice(&payload)?;
         accepted.check_project(&project)?;
         let check = accepted.check.as_ref();
+        check_list_still_missing(&project, &located, check)?;
         let verified = &accepted.verified;
         if verified.version != tv.version {
             bail!(

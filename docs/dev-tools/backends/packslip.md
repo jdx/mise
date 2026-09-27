@@ -229,13 +229,17 @@ under the new name:
 
 mise warns once that the project is now `github.com/new/tool`; change the
 configuration to the new name when convenient. The signer pin and `mise.lock`
-commitment follow the repository, so no `mise packslip forget` is needed.
+commitment follow the repository, so no `mise packslip forget` is needed. The
+same holds when the configuration changes to the new name first: the pin the old
+name set still applies, and moves to the new name.
 
 Two changes are refused instead:
 
 - **A transfer to another owner.** Trust in the old owner does not extend to the
-  new one. After confirming the transfer, name the repository as it is called
-  now, such as `packslip:github.com/new-owner/tool`.
+  new one. After confirming the transfer, run `mise packslip forget` for the
+  old name and name the repository as it is called now, such as
+  `packslip:github.com/new-owner/tool`. The pin is found by the repository's ID
+  under either name, so the new name alone does not reset it.
 - **A different repository under the same name**, which is what a deleted
   repository whose name someone else took looks like. The error says so; if the
   vendor re-created the repository itself, run `mise packslip forget` for the

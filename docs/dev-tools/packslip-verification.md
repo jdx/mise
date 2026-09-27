@@ -78,7 +78,11 @@ mise rejects expired signed lists and sequences below the highest it has
 accepted for the project. Once it has accepted a supplementary GitHub list,
 that list disappearing is an error. This prevents a missing list from silently
 undoing a withdrawal. The remembered list state is stored alongside the
-[signer pin](#signer-continuity).
+[signer pin](#signer-continuity), and for a GitHub or GitLab project it follows
+the repository ID through a
+[rename](#renamed-transferred-and-re-created-repositories) the way the pin does:
+a list accepted under the old name still sets the lowest sequence, and still may
+not disappear, under the new one.
 
 With [minimum release age](/configuration/settings.html#minimum_release_age)
 enabled, discovery timestamps help filter candidates. Before downloading an
@@ -170,7 +174,7 @@ both with the signer, and compares each release's IDs with the pin:
 | What happened to the name                          | Result                                                                                                                    |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Renamed or moved within the same owner             | Installs. mise warns once that the project has a new name, and the pin follows it to that name.                           |
-| Transferred to another owner                       | Refused. Trusting the old owner says nothing about the new one; name the new owner's repository to accept it.             |
+| Transferred to another owner                       | Refused. Trusting the old owner says nothing about the new one; forget the pin and name the new owner's repository.       |
 | Deleted and re-created, by anyone, under that name | Refused once the original is pinned, even though the name and workflow path match: the new repository has a different ID. |
 
 Signer continuity then compares the workflow's path inside the repository, so
@@ -178,6 +182,15 @@ Signer continuity then compares the workflow's path inside the repository, so
 `github.com/new/tool/.github/workflows/release.yml`. Releases published before a
 rename are signed under the old name and still install when the config names the
 new one.
+
+The pin is found by the repository ID in the release's certificate, whichever
+name changed first. A config switched to the new name before any release signed
+under it was accepted, or a pins file from a machine that never saw the rename,
+still holds the release to the pin recorded under the old name: its signer,
+owner, provenance, and attestor, as if the name had not changed. Once the release
+is accepted, the pin and its release-list state move to the new name, so a
+repository keeps one pin. A refusal names the pin as it is recorded, which is the
+name to give `mise packslip forget`.
 
 With no pin for the project yet, and a release signed under another name, mise
 asks the forge what the requested name resolves to. GitHub's

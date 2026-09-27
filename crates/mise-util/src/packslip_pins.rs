@@ -4,11 +4,11 @@
 //! get weaker without a person's say-so. The file lives in the state dir;
 //! it is this machine's memory, not something to sync.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, WrapErr, bail};
-use packslip::forge::{Check, ForgePin};
+use eyre::{Report, Result, WrapErr, bail, eyre};
+use packslip::forge::{self, Check, Expected, ForgePin, IdentityError};
 use serde::{Deserialize, Serialize};
 
 use crate::{dirs, file};
@@ -54,6 +54,96 @@ struct Pins {
     /// mirror cannot show an older list than this machine has seen.
     #[serde(default)]
     sequences: BTreeMap<String, u64>,
+    /// For a GitHub or GitLab project, the forge identity of the release
+    /// list whose sequence is recorded under the same name, so that the
+    /// sequence follows the repository through a rename the way a pin does.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    list_forges: BTreeMap<String, ForgePin>,
+}
+
+/// Whether two forge identities are the same repository, and in a GitHub
+/// monorepo the same tool in it: the same forge, repository ID and subpath.
+/// A rename changes none of them.
+fn same_repository(a: &ForgePin, b: &ForgePin) -> bool {
+    fn host(project: &str) -> &str {
+        project.split('/').next().unwrap_or_default()
+    }
+    a.repository_id == b.repository_id
+        && host(&a.project) == host(&b.project)
+        && packslip::model::repository_subpath(&a.project)
+            == packslip::model::repository_subpath(&b.project)
+}
+
+impl Pins {
+    /// Every forge identity recorded, a pin's or a release list's, with the
+    /// name it is recorded under.
+    fn forges(&self) -> impl Iterator<Item = (&str, &ForgePin)> {
+        let pins = self
+            .pins
+            .iter()
+            .filter_map(|(key, pin)| Some((key.as_str(), pin.forge.as_ref()?)));
+        let lists = self
+            .list_forges
+            .iter()
+            .map(|(key, forge)| (key.as_str(), forge));
+        pins.chain(lists)
+    }
+
+    /// The names whose pins and release-list sequences speak for `project`:
+    /// its own, and any other a rename left them under. Another name is the
+    /// same repository by its forge ID: the one a verified certificate shows
+    /// (`verified`), or, with none, the IDs recorded under `project`'s own
+    /// name or for a release last signed as `project`. A name can only be
+    /// added, never taken away, so what is found here is held to in full.
+    fn repository_keys(&self, project: &str, verified: Option<&ForgePin>) -> BTreeSet<String> {
+        let mut keys = BTreeSet::from([project.to_string()]);
+        let ids: Vec<&ForgePin> = match verified {
+            Some(verified) => vec![verified],
+            None => self
+                .forges()
+                .filter(|(key, forge)| *key == project || forge.project == project)
+                .map(|(_, forge)| forge)
+                .collect(),
+        };
+        for (key, forge) in self.forges() {
+            if ids.iter().any(|id| same_repository(id, forge)) {
+                keys.insert(key.to_string());
+            }
+        }
+        keys
+    }
+
+    /// The names of the pins that speak for `project`, its own first: every
+    /// one of [`Self::repository_keys`] that has a pin, and one recorded for
+    /// a release last signed as `project`, which is how a config that
+    /// followed a rename finds the pin the old name set.
+    fn pin_keys(&self, project: &str, verified: Option<&ForgePin>) -> Vec<String> {
+        let mut keys = self.repository_keys(project, verified);
+        keys.extend(
+            self.pins
+                .iter()
+                .filter(|(_, pin)| pin.forge.as_ref().is_some_and(|f| f.project == project))
+                .map(|(key, _)| key.clone()),
+        );
+        let mut keys: Vec<String> = keys
+            .into_iter()
+            .filter(|key| self.pins.contains_key(key))
+            .collect();
+        keys.sort_by_key(|key| key.as_str() != project);
+        keys
+    }
+
+    /// Move what a release list left under `from` to `to`, keeping the
+    /// higher sequence, so a pin that follows a rename takes it along.
+    fn move_list(&mut self, from: &str, to: &str) {
+        if let Some(sequence) = self.sequences.remove(from) {
+            let to = self.sequences.entry(to.to_string()).or_default();
+            *to = (*to).max(sequence);
+        }
+        if let Some(forge) = self.list_forges.remove(from) {
+            self.list_forges.entry(to.to_string()).or_insert(forge);
+        }
+    }
 }
 
 /// Hold the file lock for a read-modify-write of the pins file, so two
@@ -149,43 +239,58 @@ pub fn same_workflow(a: &str, b: &str) -> bool {
     matches!((path(a), path(b)), (Some(a), Some(b)) if a == b)
 }
 
-/// The pin for `project`: its own, or one recorded under an older name for
-/// a repository that was accepted as `project` after a rename, so that
-/// following the rename in a config keeps what was pinned.
-fn find<'a>(pins: &'a Pins, project: &str) -> Option<&'a Pin> {
-    pins.pins.get(project).or_else(|| {
-        pins.pins
-            .values()
-            .find(|pin| pin.forge.as_ref().is_some_and(|f| f.project == project))
-    })
-}
-
 /// The forge identity pinned for `project`, if any.
 pub fn forge_pin(project: &str) -> Result<Option<ForgePin>> {
     forge_pin_at(&pins_file(), project)
 }
 
 pub fn forge_pin_at(path: &Path, project: &str) -> Result<Option<ForgePin>> {
-    Ok(find(&load(path)?, project).and_then(|pin| pin.forge.clone()))
+    let pins = load(path)?;
+    Ok(pins
+        .pin_keys(project, None)
+        .first()
+        .and_then(|key| pins.pins[key].forge.clone()))
 }
 
 /// Compare what a release showed with the project's pin, refusing what
 /// the specification calls a downgrade. Writes nothing: a release is
 /// recorded with [`record`] only once everything else about it has been
 /// accepted, so a refused install never leaves a pin behind.
+///
+/// The pin is the project's own, or one a rename left under another name:
+/// the certificate's repository ID finds it, whether the config or the
+/// release was the first to use the new name, and it is held to in full.
 pub fn check(project: &str, observed: Observed<'_>) -> Result<()> {
     check_at(&pins_file(), project, observed)
 }
 
 pub fn check_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<()> {
     let pins = load(path)?;
-    match find(&pins, project) {
-        Some(pin) => check_against(pin, project, observed),
-        None => Ok(()),
+    let verified = observed.forge.and_then(|check| check.pin.as_ref());
+    for key in pins.pin_keys(project, verified) {
+        check_against(&pins.pins[&key], &key, project, observed)?;
     }
+    Ok(())
 }
 
-fn check_against(pin: &Pin, project: &str, observed: Observed<'_>) -> Result<()> {
+/// Hold a release to one pin, recorded under `key`, which is `project` or
+/// the name a rename left the pin under.
+fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) -> Result<()> {
+    // A pin found by the repository's ID holds the release to the owner it
+    // recorded as well, as one found by name does: the repository is the
+    // same one, but a transfer is not a rename.
+    if let (Some(pinned), Some(check)) = (&pin.forge, observed.forge)
+        && let Some(signed) = &check.pin
+    {
+        forge::check(
+            &Expected::new(project).pinned(Some(pinned)),
+            &signed.project,
+            observed.key_id,
+            observed.issuer,
+            check.source.as_ref(),
+        )
+        .map_err(|err| forge_refusal(project, key, err))?;
+    }
     let signer = signer_of(observed.scheme, observed.key_id);
     let mut problems = Vec::new();
     let same_signer = pin.signer == signer
@@ -208,16 +313,45 @@ fn check_against(pin: &Pin, project: &str, observed: Observed<'_>) -> Result<()>
     }
     if !problems.is_empty() {
         bail!(
-            "packslip:{project}: this release {}.\n\nIf the vendor announced the change, run `mise packslip forget {project}` and install again; the next release accepted sets the pin.",
-            problems.join(", and ")
+            "packslip:{project}: this release {}{}.\n\nIf the vendor announced the change, run `mise packslip forget {key}` and install again; the next release accepted sets the pin.",
+            problems.join(", and "),
+            pinned_as(key, project)
         );
     }
     Ok(())
 }
 
+/// Where a pin found under another name was recorded, for a refusal.
+fn pinned_as(key: &str, project: &str) -> String {
+    if key == project {
+        String::new()
+    } else {
+        format!(" (mise pinned the repository as packslip:{key}, before it was renamed)")
+    }
+}
+
+/// A release that is not the repository a pin recorded, or is it under
+/// another owner.
+fn forge_refusal(project: &str, key: &str, err: IdentityError) -> Report {
+    let forget = format!("run `mise packslip forget {key}` and install again");
+    match err {
+        IdentityError::Transferred { signed, .. } => eyre!(
+            "packslip:{project}: this release was signed by {signed}, the repository mise pinned as packslip:{key}, but under another owner. \
+             mise follows a repository that was renamed, but not one that changed hands, since trusting the old owner says nothing about the new one.\n\n\
+             If you trust its new owner, {forget}."
+        ),
+        err => eyre!(
+            "packslip:{project}: this release is not from the repository mise pinned as packslip:{key}: {err}.\n\n\
+             If the vendor announced the change, {forget}."
+        ),
+    }
+}
+
 /// Set the project's pin from an accepted release, or strengthen it: what
 /// got stronger is remembered, what stayed the same is left alone. Checks
 /// again under the lock, since the file may have changed since [`check`].
+/// A pin a rename left under another name moves to `project`, with its
+/// release list's sequence, so one repository keeps one pin.
 pub fn record(project: &str, observed: Observed<'_>) -> Result<Pin> {
     record_at(&pins_file(), project, observed)
 }
@@ -227,7 +361,8 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
     let mut pins = load(path)?;
     let signer = signer_of(observed.scheme, observed.key_id);
     let forge = observed.forge.and_then(|check| check.pin.clone());
-    let Some(pin) = find(&pins, project).cloned() else {
+    let keys = pins.pin_keys(project, forge.as_ref());
+    let Some(first) = keys.first() else {
         let pin = Pin {
             scheme: observed.scheme.to_string(),
             signer,
@@ -242,7 +377,11 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         save(path, &pins)?;
         return Ok(pin);
     };
-    check_against(&pin, project, observed)?;
+    for key in &keys {
+        check_against(&pins.pins[key], key, project, observed)?;
+    }
+    let pin = &pins.pins[first];
+    let any = |floor: fn(&Pin) -> bool| keys.iter().any(|key| floor(&pins.pins[key]));
     let updated = Pin {
         // A forge check that passed says this is the pinned workflow, perhaps
         // under the repository's new name: remember it as it is called now.
@@ -253,12 +392,17 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         },
         issuer: observed.issuer.map(str::to_string).or(pin.issuer.clone()),
         attested_by: observed.attested_by.to_string(),
-        provenance: pin.provenance || observed.provenance,
-        unlogged: pin.unlogged || !observed.logged,
+        provenance: observed.provenance || any(|pin| pin.provenance),
+        unlogged: !observed.logged || any(|pin| pin.unlogged),
         forge: forge.or(pin.forge.clone()),
         ..pin.clone()
     };
-    if pins.pins.get(project) != Some(&updated) {
+    let moved: Vec<&String> = keys.iter().filter(|key| key.as_str() != project).collect();
+    if !moved.is_empty() || pins.pins.get(project) != Some(&updated) {
+        for key in moved {
+            pins.pins.remove(key);
+            pins.move_list(key, project);
+        }
         pins.pins.insert(project.to_string(), updated.clone());
         save(path, &pins)?;
     }
@@ -266,39 +410,81 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
 }
 
 /// Refuse a release list whose sequence is below one already accepted for
-/// the project, and remember the highest seen.
-pub fn check_sequence(project: &str, sequence: u64) -> Result<()> {
-    check_sequence_at(&pins_file(), project, sequence)
+/// the project, and remember the highest seen. `forge` is the repository a
+/// GitHub or GitLab project's list was verified as signed by: a sequence
+/// accepted under another name for it counts, and moves to `project`.
+pub fn check_sequence(project: &str, sequence: u64, forge: Option<&ForgePin>) -> Result<()> {
+    check_sequence_at(&pins_file(), project, sequence, forge)
 }
 
-pub fn check_sequence_at(path: &Path, project: &str, sequence: u64) -> Result<()> {
+pub fn check_sequence_at(
+    path: &Path,
+    project: &str,
+    sequence: u64,
+    forge: Option<&ForgePin>,
+) -> Result<()> {
     let _lock = locked(path)?;
     let mut pins = load(path)?;
-    if let Some(last) = pins.sequences.get(project).copied()
+    let keys = pins.repository_keys(project, forge);
+    if let Some((key, last)) = keys
+        .iter()
+        .filter_map(|key| Some((key, *pins.sequences.get(key)?)))
+        .max_by_key(|(_, last)| *last)
         && sequence < last
     {
         bail!(
-            "the release list of packslip:{project} has sequence {sequence}, but sequence {last} was already accepted; refusing to go back"
+            "the release list of packslip:{project} has sequence {sequence}, but sequence {last} was already accepted{}; refusing to go back",
+            accepted_as(key, project)
         );
     }
-    if pins.sequences.get(project) != Some(&sequence) {
+    let mut changed = pins.sequences.get(project) != Some(&sequence);
+    // Without the repository's ID from the list itself, a sequence found by
+    // an ID recorded before still counts, but stays where it is.
+    if let Some(forge) = forge {
+        for key in keys.iter().filter(|key| key.as_str() != project) {
+            changed |= pins.sequences.remove(key).is_some();
+            changed |= pins.list_forges.remove(key).is_some();
+        }
+        changed |= pins.list_forges.get(project) != Some(forge);
+        pins.list_forges.insert(project.to_string(), forge.clone());
+    }
+    if changed {
         pins.sequences.insert(project.to_string(), sequence);
         save(path, &pins)?;
     }
     Ok(())
 }
 
-/// An absent supplementary list is allowed only before this machine has
-/// accepted one. Its disappearance must not undo signed withdrawals.
-pub fn check_missing_list(project: &str) -> Result<()> {
-    check_missing_list_at(&pins_file(), project)
+/// Under which name a release list was accepted, for a refusal.
+fn accepted_as(key: &str, project: &str) -> String {
+    if key == project {
+        String::new()
+    } else {
+        format!(" as packslip:{key}, the same repository before it was renamed")
+    }
 }
 
-fn check_missing_list_at(path: &Path, project: &str) -> Result<()> {
+/// An absent supplementary list is allowed only before this machine has
+/// accepted one for the repository, under this name or another a rename
+/// gave it. Its disappearance must not undo signed withdrawals. `forge`
+/// is the repository a release was verified as signed by, once one was:
+/// without it, only a repository ID recorded under this name links the
+/// names.
+pub fn check_missing_list(project: &str, forge: Option<&ForgePin>) -> Result<()> {
+    check_missing_list_at(&pins_file(), project, forge)
+}
+
+pub fn check_missing_list_at(path: &Path, project: &str, forge: Option<&ForgePin>) -> Result<()> {
     let _lock = locked(path)?;
-    if load(path)?.sequences.contains_key(project) {
+    let pins = load(path)?;
+    if let Some(key) = pins
+        .repository_keys(project, forge)
+        .into_iter()
+        .find(|key| pins.sequences.contains_key(key))
+    {
         bail!(
-            "the signed release list of packslip:{project} disappeared; restore the list or explicitly forget this project's packslip pin"
+            "the signed release list of packslip:{project} disappeared, but one was accepted{}; restore the list or run `mise packslip forget {key}`",
+            accepted_as(&key, project)
         );
     }
     Ok(())
@@ -306,7 +492,11 @@ fn check_missing_list_at(path: &Path, project: &str) -> Result<()> {
 
 /// Every pin, by project.
 pub fn list() -> Result<BTreeMap<String, Pin>> {
-    Ok(load(&pins_file())?.pins)
+    list_at(&pins_file())
+}
+
+pub fn list_at(path: &Path) -> Result<BTreeMap<String, Pin>> {
+    Ok(load(path)?.pins)
 }
 
 /// Drop a project's pin and sequence, so the next release accepted sets
@@ -318,13 +508,16 @@ pub fn forget(project: &str) -> Result<bool> {
 pub fn forget_at(path: &Path, project: &str) -> Result<bool> {
     let _lock = locked(path)?;
     let mut pins = load(path)?;
-    let before = pins.pins.len();
-    // A pin found for the project under an older name goes too, or `find`
-    // would keep answering with it.
-    pins.pins.retain(|name, pin| {
-        name != project && pin.forge.as_ref().is_none_or(|f| f.project != project)
-    });
-    let had = (pins.pins.len() != before) | pins.sequences.remove(project).is_some();
+    // What a rename left under another name goes too, or the next install
+    // would find it again by the repository's ID.
+    let mut keys = pins.repository_keys(project, None);
+    keys.extend(pins.pin_keys(project, None));
+    let mut had = false;
+    for key in &keys {
+        had |= pins.pins.remove(key).is_some();
+        had |= pins.sequences.remove(key).is_some();
+        pins.list_forges.remove(key);
+    }
     if had {
         save(path, &pins)?;
     }
@@ -357,12 +550,12 @@ mod tests {
     fn an_accepted_list_cannot_disappear_until_forgotten() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
-        check_missing_list_at(&path, "github.com/o/r").unwrap();
-        check_sequence_at(&path, "github.com/o/r", 0).unwrap();
-        assert!(check_missing_list_at(&path, "github.com/o/r").is_err());
-        check_missing_list_at(&path, "github.com/o/other").unwrap();
+        check_missing_list_at(&path, "github.com/o/r", None).unwrap();
+        check_sequence_at(&path, "github.com/o/r", 0, None).unwrap();
+        assert!(check_missing_list_at(&path, "github.com/o/r", None).is_err());
+        check_missing_list_at(&path, "github.com/o/other", None).unwrap();
         assert!(forget_at(&path, "github.com/o/r").unwrap());
-        check_missing_list_at(&path, "github.com/o/r").unwrap();
+        check_missing_list_at(&path, "github.com/o/r", None).unwrap();
     }
 
     #[test]
@@ -483,14 +676,14 @@ mod tests {
     fn sequences_only_go_up() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
-        check_sequence_at(&path, "t.example.com", 3).unwrap();
-        check_sequence_at(&path, "t.example.com", 5).unwrap();
-        let err = check_sequence_at(&path, "t.example.com", 4).unwrap_err();
+        check_sequence_at(&path, "t.example.com", 3, None).unwrap();
+        check_sequence_at(&path, "t.example.com", 5, None).unwrap();
+        let err = check_sequence_at(&path, "t.example.com", 4, None).unwrap_err();
         assert!(err.to_string().contains("refusing to go back"), "{err}");
-        check_sequence_at(&path, "t.example.com", 5).unwrap();
-        check_sequence_at(&path, "other.example.com", 1).unwrap();
+        check_sequence_at(&path, "t.example.com", 5, None).unwrap();
+        check_sequence_at(&path, "other.example.com", 1, None).unwrap();
         assert!(forget_at(&path, "t.example.com").unwrap());
-        check_sequence_at(&path, "t.example.com", 1).unwrap();
+        check_sequence_at(&path, "t.example.com", 1, None).unwrap();
     }
 
     #[test]
@@ -599,5 +792,107 @@ pinned_at = "2026-09-01T00:00:00Z"
         ));
         assert!(!same_workflow("sigstore-key:5A0A", "sigstore-key:5A0A"));
         assert!(!same_workflow("alice@example.com", "alice@example.com"));
+    }
+
+    fn repo(project: &str, id: &str) -> ForgePin {
+        ForgePin::new(project, id, Some("7".into()))
+    }
+
+    #[test]
+    fn a_release_list_sequence_follows_the_repository_through_a_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/new");
+        check_sequence_at(&path, old, 5, Some(&repo(old, "42"))).unwrap();
+        // The config follows the rename: an older list signed under the new
+        // name is still older.
+        let err = check_sequence_at(&path, new, 4, Some(&repo(new, "42"))).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("sequence 5 was already accepted as packslip:github.com/o/old"),
+            "{err}"
+        );
+        check_sequence_at(&path, new, 6, Some(&repo(new, "42"))).unwrap();
+        let pins = load(&path).unwrap();
+        assert_eq!(
+            pins.sequences,
+            BTreeMap::from([(new.to_string(), 6)]),
+            "one sequence per repository"
+        );
+        assert_eq!(pins.list_forges[new], repo(new, "42"));
+        // And back again: a config still naming the old one is held to it.
+        let err = check_sequence_at(&path, old, 5, Some(&repo(new, "42"))).unwrap_err();
+        assert!(err.to_string().contains("refusing to go back"), "{err}");
+        // Another repository, or another tool of a monorepo, has its own.
+        check_sequence_at(
+            &path,
+            "github.com/o/other",
+            1,
+            Some(&repo("github.com/o/other", "43")),
+        )
+        .unwrap();
+        check_sequence_at(
+            &path,
+            "github.com/o/new/tool",
+            1,
+            Some(&repo("github.com/o/new/tool", "42")),
+        )
+        .unwrap();
+        check_sequence_at(
+            &path,
+            "gitlab.com/o/new",
+            1,
+            Some(&repo("gitlab.com/o/new", "42")),
+        )
+        .unwrap();
+        // Without the list's own forge identity, a sequence found through an
+        // ID recorded under the name still counts, and stays where it is.
+        let err = check_sequence_at(&path, new, 1, None).unwrap_err();
+        assert!(err.to_string().contains("refusing to go back"), "{err}");
+        // Forgetting the name it is recorded under, which a refusal gives,
+        // lets an older list in.
+        assert!(forget_at(&path, new).unwrap());
+        check_sequence_at(&path, new, 1, Some(&repo(new, "42"))).unwrap();
+    }
+
+    #[test]
+    fn a_release_list_accepted_under_another_name_cannot_disappear() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/new");
+        check_sequence_at(&path, old, 0, Some(&repo(old, "42"))).unwrap();
+        // Nothing under the new name says it is the old repository until a
+        // release shows its ID...
+        check_missing_list_at(&path, new, None).unwrap();
+        let err = check_missing_list_at(&path, new, Some(&repo(new, "42"))).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("one was accepted as packslip:github.com/o/old"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("mise packslip forget github.com/o/old"),
+            "{msg}"
+        );
+        check_missing_list_at(&path, new, Some(&repo(new, "43"))).unwrap();
+        assert!(check_missing_list_at(&path, old, None).is_err());
+        // ...or a pin records a release signed under it.
+        let mut pins = load(&path).unwrap();
+        pins.pins.insert(
+            old.into(),
+            Pin {
+                scheme: "sigstore-oidc".into(),
+                signer: WORKFLOW.into(),
+                issuer: None,
+                attested_by: "vendor".into(),
+                provenance: false,
+                unlogged: false,
+                pinned_at: "2026-09-01T00:00:00Z".into(),
+                forge: Some(repo(new, "42")),
+            },
+        );
+        pins.list_forges.clear();
+        save(&path, &pins).unwrap();
+        assert!(check_missing_list_at(&path, new, None).is_err());
     }
 }

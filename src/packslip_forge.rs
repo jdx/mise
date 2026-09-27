@@ -216,7 +216,7 @@ impl ForgeExpect {
     }
 
     fn identity_error(&self, err: IdentityError) -> Report {
-        identity_error(&self.project, err)
+        identity_error(&self.project, !self.pins.is_empty(), err)
     }
 }
 
@@ -229,7 +229,9 @@ fn id_kind(project: &str) -> &'static str {
     }
 }
 
-fn identity_error(requested: &str, err: IdentityError) -> Report {
+/// `pinned` says whether mise pinned the requested project, which a
+/// transfer's new name would still be held to.
+fn identity_error(requested: &str, pinned: bool, err: IdentityError) -> Report {
     match err {
         IdentityError::DifferentRepository {
             project,
@@ -252,11 +254,19 @@ fn identity_error(requested: &str, err: IdentityError) -> Report {
         }
         IdentityError::Transferred {
             requested, signed, ..
-        } => eyre!(
-            "packslip:{requested}: this release was signed by {signed}, the same repository under another owner. \
-             mise follows a repository that was renamed, but not one that changed hands, since trusting the old owner says nothing about the new one.\n\n\
-             If {signed} is where the repository lives now and you trust its owner, change the tool to packslip:{signed}."
-        ),
+        } => {
+            // The pin is found by the repository's ID under the new name too.
+            let forget = if pinned {
+                format!(", and run `mise packslip forget {requested}`")
+            } else {
+                String::new()
+            };
+            eyre!(
+                "packslip:{requested}: this release was signed by {signed}, the same repository under another owner. \
+                 mise follows a repository that was renamed, but not one that changed hands, since trusting the old owner says nothing about the new one.\n\n\
+                 If {signed} is where the repository lives now and you trust its owner, change the tool to packslip:{signed}{forget}."
+            )
+        }
         err => eyre!("{err}"),
     }
 }
@@ -289,6 +299,7 @@ mod tests {
     /// certificate records repository ID 922514152 and owner ID 216188.
     const HK: &str = include_str!("../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
     const HK_SIGNER: &str = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml";
+    const JDX_ID: &str = "216188";
 
     fn verify(expect: &ForgeExpect) -> eyre::Result<ForgeVerified<Verified>> {
         let root = packslip::sigstore::trusted_root(None).unwrap();
@@ -421,12 +432,19 @@ mod tests {
             "{msg}"
         );
         assert!(
-            msg.contains("change the tool to packslip:github.com/jdx/hk"),
+            msg.contains("change the tool to packslip:github.com/jdx/hk."),
             "{msg}"
         );
         let moved = ForgePin::new("github.com/acme/hk", "922514152", Some("999".into()));
         let err = verify(&expect("github.com/acme/hk", vec![moved], None)).unwrap_err();
         assert!(err.to_string().contains("under another owner"), "{err}");
+        // The pin would hold the new name to the old owner too.
+        assert!(
+            err.to_string().contains(
+                "change the tool to packslip:github.com/jdx/hk, and run `mise packslip forget github.com/acme/hk`"
+            ),
+            "{err}"
+        );
     }
 
     #[test]
@@ -504,5 +522,181 @@ mod tests {
     fn the_claimed_project_is_read_before_verification() {
         assert_eq!(claimed_project(HK).as_deref(), Some("github.com/jdx/hk"));
         assert_eq!(claimed_project("not a bundle"), None);
+    }
+
+    /// What the hk release showed, with `check` the forge check it passed.
+    fn hk_observed(check: Option<&Check>, provenance: bool) -> packslip_pins::Observed<'_> {
+        packslip_pins::Observed {
+            scheme: "sigstore-oidc",
+            key_id: "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+            issuer: Some("https://token.actions.githubusercontent.com"),
+            attested_by: "vendor",
+            provenance,
+            logged: true,
+            forge: check,
+        }
+    }
+
+    /// A pins file with one pin for jdx/hk's repository under `key`, as a
+    /// machine that installed it before a rename to jdx/hk wrote it, and a
+    /// release-list sequence under the same name.
+    fn pins_under(
+        key: &str,
+        workflow: &str,
+        owner_id: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        crate::file::write(
+            &path,
+            format!(
+                r#"[pins."{key}"]
+scheme = "sigstore-oidc"
+signer = "https://{key}/.github/workflows/{workflow}"
+issuer = "https://token.actions.githubusercontent.com"
+attested_by = "vendor"
+provenance = true
+unlogged = false
+pinned_at = "2026-09-01T00:00:00Z"
+
+[pins."{key}".forge]
+project = "{key}"
+repository_id = "922514152"
+owner_id = "{owner_id}"
+
+[sequences]
+"{key}" = 7
+"#
+            ),
+        )
+        .unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn a_config_that_follows_a_rename_first_keeps_the_pin() {
+        // The config (or another machine's) says jdx/hk while this machine
+        // pinned the repository as jdx/old-hk, before any release signed
+        // under the new name was accepted. The release's repository ID finds
+        // the pin: it is not a first install.
+        let (_dir, path) = pins_under("github.com/jdx/old-hk", "release.yml", JDX_ID);
+        let check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        assert_eq!(check.continuity, Continuity::Same);
+        let err =
+            packslip_pins::check_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), false))
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("drops the build provenance"), "{msg}");
+        assert!(
+            msg.contains("mise pinned the repository as packslip:github.com/jdx/old-hk"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("mise packslip forget github.com/jdx/old-hk"),
+            "{msg}"
+        );
+        assert!(
+            packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), false))
+                .is_err()
+        );
+
+        // What the pin requires, it accepts, and the pin moves to the new
+        // name with everything it had: one pin for the repository.
+        let pin =
+            packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), true))
+                .unwrap();
+        let pins = packslip_pins::list_at(&path).unwrap();
+        assert_eq!(
+            pins.keys().collect::<Vec<_>>(),
+            ["github.com/jdx/hk"],
+            "no duplicate pin"
+        );
+        assert_eq!(pins["github.com/jdx/hk"], pin);
+        assert_eq!(pin.pinned_at, "2026-09-01T00:00:00Z");
+        assert!(pin.provenance);
+        assert_eq!(pin.forge, Some(hk_pin("github.com/jdx/hk")));
+        // Its release-list sequence came along.
+        let err =
+            packslip_pins::check_sequence_at(&path, "github.com/jdx/hk", 6, None).unwrap_err();
+        assert!(
+            err.to_string().contains("sequence 7 was already accepted"),
+            "{err}"
+        );
+        assert!(packslip_pins::check_missing_list_at(&path, "github.com/jdx/hk", None).is_err());
+        // And the name the pin had is still held to it.
+        assert!(
+            packslip_pins::check_at(
+                &path,
+                "github.com/jdx/old-hk",
+                hk_observed(Some(&check), false),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_pin_found_by_repository_id_still_refuses_another_signer() {
+        let (_dir, path) = pins_under("github.com/jdx/old-hk", "other.yml", JDX_ID);
+        let check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        let err =
+            packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), true))
+                .unwrap_err();
+        assert!(
+            err.to_string().contains("signed what mise accepted before"),
+            "{err}"
+        );
+        let pins = packslip_pins::list_at(&path).unwrap();
+        assert_eq!(
+            pins.keys().collect::<Vec<_>>(),
+            ["github.com/jdx/old-hk"],
+            "a refusal moves nothing"
+        );
+    }
+
+    #[test]
+    fn a_pin_found_by_repository_id_still_refuses_a_transfer() {
+        // The pin recorded the repository under owner 999; the release is
+        // signed by it under jdx (216188).
+        let (_dir, path) = pins_under("github.com/acme/hk", "release.yml", "999");
+        let check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        let err =
+            packslip_pins::check_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), true))
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(
+                "the repository mise pinned as packslip:github.com/acme/hk, but under another owner"
+            ),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("mise packslip forget github.com/acme/hk"),
+            "{msg}"
+        );
+        assert!(
+            packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), true))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn another_tool_of_the_same_repository_keeps_its_own_pin() {
+        let (_dir, path) = pins_under("github.com/jdx/hk/other", "other.yml", JDX_ID);
+        let check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), false))
+            .unwrap();
+        let pins = packslip_pins::list_at(&path).unwrap();
+        assert_eq!(
+            pins.keys().collect::<Vec<_>>(),
+            ["github.com/jdx/hk", "github.com/jdx/hk/other"]
+        );
     }
 }
