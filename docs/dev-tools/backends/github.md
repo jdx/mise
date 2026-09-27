@@ -518,7 +518,7 @@ and OIDC issuer for the publishing workflow:
 ```
 
 The identity must match the workflow ref in the certificate exactly. The
-`{{version}}` template uses the resolved tool version. Without both
+<span v-pre>`{{version}}`</span> template uses the resolved tool version. Without both
 options, mise skips SLSA provenance and can use other available verification.
 If the lockfile requires SLSA, missing signer options cause an error.
 SLSA lockfile entries recheck the signer on every installation.
