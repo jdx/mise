@@ -1,5 +1,5 @@
-use super::model::{CaskConflicts, CaskDependencies, CaskUrlSpecs};
 use super::*;
+use mise_brew_metadata::cask::{CaskConflicts, CaskDependencies, CaskUrlSpecs};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Mutex;
