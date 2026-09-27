@@ -6,7 +6,12 @@ retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" 
 
 [profile.ci]
 inherits = "default"
-retries = 0
+# Once every few runs the macOS runner stalls a single test process for 1-3s.
+# It hits a different test each time, usually one that finishes in ~10ms, and
+# the 1s ceiling kills it. One retry absorbs the stall: a test whose own work
+# is over budget still times out on both attempts and fails, and a test that
+# passes only on retry is still listed as FLAKY in the summary.
+retries = { backoff = "fixed", count = 1, delay = "1s" }
 
 # These tests construct, render, or traverse the entire CLI command graph. Keep
 # their regression coverage in-process, but still enforce a strict per-test ceiling.
