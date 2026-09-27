@@ -142,10 +142,10 @@ checks but does not fetch and verify the linked build provenance.
 
 mise preserves trust in two places:
 
-| State                                                                                | What it records                                                                                                                                 |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packslip/pins.toml` under the [state directory](/directories.html#local-state-mise) | Previously accepted signers, signing scheme, vendor versus repackager status, provenance-link presence, and release-list continuity.            |
-| `mise.lock`                                                                          | The project's signer and attestor commitment alongside each platform's artifact URL and checksum, including on another machine's first install. |
+| State                                                                                | What it records                                                                                                                                                      |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packslip/pins.toml` under the [state directory](/directories.html#local-state-mise) | Previously accepted signers, signing scheme, vendor versus repackager status, provenance-link presence, forge repository and owner IDs, and release-list continuity. |
+| `mise.lock`                                                                          | The project's signer, attestor, and forge-ID commitment alongside each platform's artifact URL and checksum, including on another machine's first install.           |
 
 For a keyless signer, continuity compares the workflow path without its tag or
 branch ref. A new release tag of the same workflow is the same signer. A new
@@ -159,6 +159,38 @@ commitments from a project lockfile.
 See [signer changes](/dev-tools/backends/packslip.html#pinned-signers) for
 inspection and reset commands, including how explicit options and lockfile
 commitments affect a rotation.
+
+### Renamed, transferred, and re-created repositories
+
+A GitHub or GitLab project's name locates it, but the forge's repository ID
+identifies it. GitHub Actions and GitLab CI signing certificates record that ID
+and the owner's ID, and neither changes when a repository is renamed. mise pins
+both with the signer, and compares each release's IDs with the pin:
+
+| What happened to the name                          | Result                                                                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Renamed or moved within the same owner             | Installs. mise warns once that the project has a new name, and the pin follows it to that name.                           |
+| Transferred to another owner                       | Refused. Trusting the old owner says nothing about the new one; name the new owner's repository to accept it.             |
+| Deleted and re-created, by anyone, under that name | Refused once the original is pinned, even though the name and workflow path match: the new repository has a different ID. |
+
+Signer continuity then compares the workflow's path inside the repository, so
+`github.com/old/tool/.github/workflows/release.yml` continues as
+`github.com/new/tool/.github/workflows/release.yml`. Releases published before a
+rename are signed under the old name and still install when the config names the
+new one.
+
+With no pin for the project yet, and a release signed under another name, mise
+asks the forge what the requested name resolves to. GitHub's
+`GET /repos/{owner}/{repo}` answers a renamed repository's old name with its new
+name and unchanged ID. If the forge cannot be asked, for example offline or when
+rate-limited, mise compares names only, as before, and refuses the release.
+
+This is still trust on first use. The first install on a machine with no pin and
+no lockfile entry accepts whichever repository the name belongs to at that
+moment, so a name taken over before that install is not detected. Commit
+`mise.lock` so every machine starts from the IDs the project accepted.
+Pins and lockfile entries written before mise recorded the IDs keep working and
+gain them from the next successful install.
 
 ## Stamps
 
@@ -208,6 +240,8 @@ separate identity policy are not supported here.
 | Failure                                          | Next step                                                                                              |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Signer or signing scheme changed                 | Compare the old pin and lockfile commitment with the publisher's announced rotation                    |
+| Repository moved to another owner                | Confirm the transfer with the project, then name the repository as it is called now                    |
+| Name belongs to a different repository           | Treat it as a possible takeover; forget the pin only if the vendor re-created the repository itself    |
 | Signed list expired, rolled back, or disappeared | Check the publisher or stamper's current list; removing local state would discard the continuity check |
 | Release withdrawn or lacks a required stamp      | Select a release allowed by the configured policy                                                      |
 | Bundle or artifact digest mismatch               | Check the release source or mirror; do not accept new bytes merely to clear the error                  |

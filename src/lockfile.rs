@@ -566,6 +566,15 @@ pub struct PlatformInfo {
     /// `repackager` when the packslip was a repackager's, not the vendor's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attested_by: Option<String>,
+    /// For a GitHub or GitLab packslip, the forge's repository ID from the
+    /// signing certificate. A rename keeps it, so the commitment follows the
+    /// repository; a new repository under the same name has another.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_id: Option<String>,
+    /// The forge's ID of the repository's owner from the same certificate,
+    /// which a transfer to another owner changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_owner_id: Option<String>,
     /// Ordered release artifacts extracted into the primary artifact's install directory.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub additional_artifacts: Vec<ArtifactInfo>,
@@ -596,6 +605,8 @@ impl PlatformInfo {
             && self.provenance_verified.is_none()
             && self.signer.is_none()
             && self.attested_by.is_none()
+            && self.repository_id.is_none()
+            && self.repository_owner_id.is_none()
             && self.additional_artifacts.is_empty()
     }
 
@@ -617,6 +628,8 @@ impl PlatformInfo {
             // The signer describes the release, not the artifact, so it stays.
             signer: self.signer.clone(),
             attested_by: self.attested_by.clone(),
+            repository_id: self.repository_id.clone(),
+            repository_owner_id: self.repository_owner_id.clone(),
             additional_artifacts: Default::default(),
         }
     }
@@ -710,6 +723,17 @@ impl PlatformInfo {
                 self.attested_by.clone()
             } else {
                 other.attested_by.clone()
+            },
+            // The forge IDs come from the same certificate as the signer.
+            repository_id: if self.signer.is_some() {
+                self.repository_id.clone()
+            } else {
+                other.repository_id.clone()
+            },
+            repository_owner_id: if self.signer.is_some() {
+                self.repository_owner_id.clone()
+            } else {
+                other.repository_owner_id.clone()
             },
             additional_artifacts: if artifact_changed {
                 self.additional_artifacts.clone()
@@ -826,6 +850,14 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
+                let repository_id = match t.remove("repository_id") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let repository_owner_id = match t.remove("repository_owner_id") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
                 let additional_artifacts = match t.remove("additional_artifacts") {
                     Some(toml::Value::Array(values)) => values
                         .into_iter()
@@ -846,6 +878,8 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     github_attestations,
                     signer,
                     attested_by,
+                    repository_id,
+                    repository_owner_id,
                     additional_artifacts,
                 })
             }
@@ -915,6 +949,12 @@ impl From<PlatformInfo> for toml::Value {
         if let Some(attested_by) = platform_info.attested_by {
             table.insert("attested_by".to_string(), attested_by.into());
         }
+        if let Some(id) = platform_info.repository_id {
+            table.insert("repository_id".to_string(), id.into());
+        }
+        if let Some(id) = platform_info.repository_owner_id {
+            table.insert("repository_owner_id".to_string(), id.into());
+        }
         toml::Value::Table(table)
     }
 }
@@ -929,10 +969,26 @@ mod signer_round_trip {
             checksum: Some("sha256:ab".into()),
             signer: Some("sigstore-oidc:https://github.com/o/r/.github/workflows/r.yml".into()),
             attested_by: Some("repackager".into()),
+            repository_id: Some("922514152".into()),
+            repository_owner_id: Some("216188".into()),
             ..Default::default()
         };
         let value: toml::Value = info.clone().into();
         assert_eq!(PlatformInfo::try_from(value).unwrap(), info);
+        assert_eq!(
+            info.without_artifact_data().repository_id,
+            info.repository_id,
+            "the forge IDs describe the release, like the signer"
+        );
+        // An entry written before mise recorded forge IDs still reads.
+        let legacy = toml::Value::Table(toml::toml! {
+            checksum = "sha256:ab"
+            signer = "sigstore-oidc:https://github.com/o/r/.github/workflows/r.yml"
+        });
+        let legacy = PlatformInfo::try_from(legacy).unwrap();
+        assert_eq!(legacy.signer, info.signer);
+        assert_eq!(legacy.repository_id, None);
+        assert_eq!(legacy.repository_owner_id, None);
         assert!(!info.is_empty());
         assert_eq!(info.without_artifact_data().signer, info.signer);
         let bad = toml::Value::Table(toml::toml! { attested_by = "someone" });
@@ -946,6 +1002,11 @@ mod signer_round_trip {
         };
         assert_eq!(vendor.merge_with(&info).attested_by, None);
         assert_eq!(
+            vendor.merge_with(&info).repository_id,
+            None,
+            "the forge IDs follow the signer they were signed with"
+        );
+        assert_eq!(
             vendor.merge_with(&info).signer.as_deref(),
             Some("sigstore-oidc:w")
         );
@@ -954,6 +1015,10 @@ mod signer_round_trip {
             unsigned.merge_with(&info).attested_by.as_deref(),
             Some("repackager"),
             "an entry naming no signer inherits both"
+        );
+        assert_eq!(
+            unsigned.merge_with(&info).repository_id.as_deref(),
+            Some("922514152")
         );
     }
 }
@@ -1645,6 +1710,16 @@ impl Lockfile {
                         platform_info.attested_by
                     } else {
                         existing.attested_by.clone()
+                    },
+                    repository_id: if platform_info.signer.is_some() {
+                        platform_info.repository_id
+                    } else {
+                        existing.repository_id.clone()
+                    },
+                    repository_owner_id: if platform_info.signer.is_some() {
+                        platform_info.repository_owner_id
+                    } else {
+                        existing.repository_owner_id.clone()
                     },
                     signer: platform_info.signer.or_else(|| existing.signer.clone()),
                     additional_artifacts: if preserve_artifact_fields {

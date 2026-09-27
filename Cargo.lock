@@ -7481,9 +7481,8 @@ dependencies = [
 
 [[package]]
 name = "packslip"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cb4ede4ea05126e51fb8d3c0aa38fcd6fb642154b80dc7bc3d3836efd7639f1"
+version = "1.3.0"
+source = "git+https://github.com/jdx/packslip?rev=1fc624118f30e2369ebecfa48857c829910f54c4#1fc624118f30e2369ebecfa48857c829910f54c4"
 dependencies = [
  "base64 0.23.1",
  "blake2 0.11.0",
@@ -7501,6 +7500,7 @@ dependencies = [
  "sigstore-verify",
  "thiserror 2.0.20",
  "tokio",
+ "x509-cert 0.2.5",
 ]
 
 [[package]]

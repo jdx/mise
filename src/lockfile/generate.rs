@@ -749,6 +749,29 @@ pub async fn populate_uv_locks(
     Ok(())
 }
 
+/// Whether a newly resolved Packslip entry is signed by the signer the old
+/// one committed to. That is the same signer string, or, when both entries
+/// record the same forge repository and owner IDs, the same workflow of that
+/// repository under the name it has now. A repository ID that changed is a
+/// different repository, even under the same name.
+fn packslip_signer_continues(old: &PlatformInfo, new: &PlatformInfo) -> bool {
+    let (Some(old_signer), Some(new_signer)) = (&old.signer, &new.signer) else {
+        return old.signer.is_none();
+    };
+    if let (Some(before), Some(now)) = (&old.repository_id, &new.repository_id)
+        && before != now
+    {
+        return false;
+    }
+    if old_signer == new_signer {
+        return true;
+    }
+    let same_repository = old.repository_id.is_some() && old.repository_id == new.repository_id;
+    let same_owner =
+        old.repository_owner_id.is_some() && old.repository_owner_id == new.repository_owner_id;
+    same_repository && same_owner && crate::packslip_pins::same_workflow(old_signer, new_signer)
+}
+
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
     // A verified Packslip signer is the replacement trust baseline for an
     // artifact authenticated by its signed release manifest. Older incremental
@@ -766,8 +789,8 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
     }
-    if let Some(signer) = &old.signer
-        && (new.signer.as_ref() != Some(signer) || new.attested_by != old.attested_by)
+    if old.signer.is_some()
+        && (!packslip_signer_continues(old, new) || new.attested_by != old.attested_by)
     {
         bail!(
             "lockfile generation would change the recorded signer; previous files were preserved"
@@ -1456,6 +1479,60 @@ mod tests {
             ..old
         };
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+    }
+
+    #[test]
+    fn packslip_signer_follows_the_repository_id_across_a_rename() {
+        let signer = |repo: &str| {
+            Some(format!(
+                "sigstore-oidc:https://github.com/{repo}/.github/workflows/release.yml"
+            ))
+        };
+        let old = PlatformInfo {
+            signer: signer("old/tool"),
+            repository_id: Some("42".into()),
+            repository_owner_id: Some("7".into()),
+            ..Default::default()
+        };
+        let renamed = PlatformInfo {
+            signer: signer("new/tool"),
+            ..old.clone()
+        };
+        let backend = "packslip:github.com/old/tool";
+        assert!(ensure_no_downgrade(&old, &renamed, backend).is_ok());
+        assert!(ensure_no_downgrade(&old, &old, backend).is_ok());
+
+        // A recreated name keeps the signer string but not the repository.
+        let squatted = PlatformInfo {
+            repository_id: Some("43".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &squatted, backend).is_err());
+        // Another owner is a transfer, not a rename.
+        let transferred = PlatformInfo {
+            signer: signer("acme/tool"),
+            repository_owner_id: Some("8".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &transferred, backend).is_err());
+        // Another workflow of the same repository is another signer.
+        let other_workflow = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/new/tool/.github/workflows/other.yml".into(),
+            ),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &other_workflow, backend).is_err());
+
+        // An entry locked before mise recorded forge IDs keeps the exact
+        // signer comparison, and gains the IDs from the next resolution.
+        let legacy = PlatformInfo {
+            repository_id: None,
+            repository_owner_id: None,
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&legacy, &old, backend).is_ok());
+        assert!(ensure_no_downgrade(&legacy, &renamed, backend).is_err());
     }
 
     #[test]

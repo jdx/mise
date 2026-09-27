@@ -535,6 +535,7 @@ A platform entry is written under a quoted key such as
 - **`url_api`** (optional): API download URL, for sources that require authenticated asset requests
 - **`provenance`**: Verification method successfully used for the artifact
 - **`signer`** and **`attested_by`**: Packslip identity commitments
+- **`repository_id`** and **`repository_owner_id`**: For a Packslip project on GitHub or GitLab, the forge's repository and owner IDs from the signing certificate, so the commitment [follows a renamed repository](/dev-tools/backends/packslip.html#renamed-repositories) and refuses a different one under the same name
 
 ### Tool Entry Fields
 
