@@ -3333,6 +3333,28 @@ esac
 
     #[cfg(unix)]
     #[test]
+    fn test_desymlink_path_cached_matches_uncached_and_rechecks_missing_paths() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::write(&target, "test").unwrap();
+        let link = root.path().join("link");
+        symlink(&target, &link).unwrap();
+        assert_eq!(desymlink_path_cached(&link), desymlink_path(&link));
+        assert_eq!(desymlink_path_cached(&link), target.canonicalize().unwrap());
+
+        // A path that does not exist yet is not cached: once it becomes a
+        // link, the next call follows it.
+        let later = root.path().join("later");
+        let before = desymlink_path_cached(&later);
+        assert_eq!(before, desymlink_path(&later));
+        symlink(&target, &later).unwrap();
+        assert_eq!(desymlink_path_cached(&later), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn test_desymlink_path_normalizes_broken_relative_target() {
         use std::os::unix::fs::symlink;
 
