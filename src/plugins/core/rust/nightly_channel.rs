@@ -25,10 +25,11 @@ use super::parse_nightly_manifest;
 use crate::file;
 
 const CHANNEL_MANIFEST: &str = "lib/rustlib/multirust-channel-manifest.toml";
+const COMPONENTS: &str = "lib/rustlib/components";
 
 /// Makes `toolchains/<alias>` a copy of `toolchains/<dated>` unless rustup
-/// already has that toolchain at the same or a newer nightly. Returns whether
-/// the alias was written.
+/// already has a newer nightly there, or the same nightly with every component
+/// and target the dated toolchain has. Returns whether the alias was written.
 pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<bool> {
     let source = toolchains.join(dated);
     let alias_path = toolchains.join(alias);
@@ -44,6 +45,10 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
             // Both are validated `nightly-YYYY-MM-DD` names, so string order is
             // date order.
             Some(existing) if existing < dated_version => {}
+            // Reinstalling the same nightly with more components or targets
+            // adds them to the dated toolchain only.
+            Some(existing)
+                if existing == dated_version && !has_components_of(&alias_path, &source) => {}
             Some(existing) => {
                 debug!("rustup {alias} is already at {existing}");
                 return Ok(false);
@@ -67,19 +72,11 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         .tempdir_in(toolchains)?;
     let staged = staging.path().join(alias);
     clone_toolchain(&source, &staged, true)?;
-    let previous = staging.path().join("previous");
-    let replacing = alias_path.exists();
-    if replacing {
-        fs::rename(&alias_path, &previous)?;
-    }
-    if let Err(err) = fs::rename(&staged, &alias_path) {
-        if replacing {
-            // Put rustup's old toolchain back rather than deleting it with the
-            // staging directory.
-            let _ = fs::rename(&previous, &alias_path);
-        }
-        return Err(err)
-            .wrap_err_with(|| format!("failed to move {}", file::display_path(&alias_path)));
+    if alias_path.exists() {
+        replace_dir(&staged, &alias_path, &staging.path().join("previous"))?;
+    } else {
+        fs::rename(&staged, &alias_path)
+            .wrap_err_with(|| format!("failed to move {}", file::display_path(&alias_path)))?;
     }
 
     // rustup skips `rustup update` when this hash matches the channel's, which
@@ -91,6 +88,81 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         }
     }
     Ok(true)
+}
+
+/// Moves `staged` to `dest`, leaving the old `dest` at `previous`. Where the
+/// OS can swap two paths atomically, `dest` never goes missing, so a
+/// concurrent `cargo +nightly` or an interrupted mise always sees a toolchain.
+fn replace_dir(staged: &Path, dest: &Path, previous: &Path) -> Result<()> {
+    match exchange(staged, dest) {
+        Ok(()) => return Ok(fs::rename(staged, previous)?),
+        Err(err) => debug!("atomic swap unavailable, renaming instead: {err}"),
+    }
+    fs::rename(dest, previous)?;
+    if let Err(err) = fs::rename(staged, dest) {
+        // Put rustup's old toolchain back rather than deleting it with the
+        // staging directory.
+        let _ = fs::rename(previous, dest);
+        return Err(err).wrap_err_with(|| format!("failed to move {}", file::display_path(dest)));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn exchange(a: &Path, b: &Path) -> io::Result<()> {
+    use nix::libc;
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let a = CString::new(a.as_os_str().as_bytes())?;
+    let b = CString::new(b.as_os_str().as_bytes())?;
+    // The raw syscall works on musl builds, which lack a renameat2 wrapper.
+    // SAFETY: both paths are NUL-terminated and outlive the call.
+    let res = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if res == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn exchange(a: &Path, b: &Path) -> io::Result<()> {
+    use nix::libc;
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let a = CString::new(a.as_os_str().as_bytes())?;
+    let b = CString::new(b.as_os_str().as_bytes())?;
+    // SAFETY: both paths are NUL-terminated and outlive the call.
+    let res = unsafe { libc::renamex_np(a.as_ptr(), b.as_ptr(), libc::RENAME_SWAP) };
+    if res == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn exchange(_a: &Path, _b: &Path) -> io::Result<()> {
+    Err(io::ErrorKind::Unsupported.into())
+}
+
+/// Whether `toolchain` has every component and target listed for `source`.
+fn has_components_of(toolchain: &Path, source: &Path) -> bool {
+    let read = |root: &Path| fs::read_to_string(root.join(COMPONENTS)).unwrap_or_default();
+    let installed = read(toolchain);
+    let installed: std::collections::BTreeSet<&str> = installed.lines().collect();
+    read(source).lines().all(|line| installed.contains(line))
 }
 
 fn toolchain_nightly(toolchain: &Path) -> Option<String> {
@@ -118,7 +190,7 @@ fn clone_toolchain(source: &Path, dest: &Path, try_reflink: bool) -> Result<()> 
         if file_type.is_dir() {
             fs::create_dir(&target)?;
         } else if file_type.is_symlink() {
-            file::make_symlink(&fs::read_link(entry.path())?, &target)?;
+            copy_symlink(entry.path(), &target)?;
         } else {
             if reflink {
                 if reflink_copy::reflink(entry.path(), &target).is_ok() {
@@ -142,6 +214,22 @@ fn clone_toolchain(source: &Path, dest: &Path, try_reflink: bool) -> Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn copy_symlink(link: &Path, target: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(fs::read_link(link)?, target)
+}
+
+#[cfg(windows)]
+fn copy_symlink(link: &Path, target: &Path) -> io::Result<()> {
+    let destination = fs::read_link(link)?;
+    // `link.is_dir()` follows the link, so it reports what it points at.
+    if link.is_dir() {
+        std::os::windows::fs::symlink_dir(destination, target)
+    } else {
+        std::os::windows::fs::symlink_file(destination, target)
+    }
 }
 
 #[cfg(test)]
@@ -267,6 +355,47 @@ mod tests {
             "rustc 2026-09-26"
         );
         assert!(!update_hash.exists());
+    }
+
+    #[test]
+    fn refresh_replaces_a_same_date_alias_missing_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let toolchains = dir.path().join("toolchains");
+        write_toolchain(&toolchains, &dated("2026-09-26"), "2026-09-26");
+        write_toolchain(&toolchains, &alias(), "2026-09-26");
+        assert!(!refresh(&toolchains, &dated("2026-09-26"), &alias()).unwrap());
+
+        fs::write(
+            toolchains.join(dated("2026-09-26")).join(COMPONENTS),
+            "rustc\nrust-src\n",
+        )
+        .unwrap();
+        assert!(refresh(&toolchains, &dated("2026-09-26"), &alias()).unwrap());
+
+        assert_eq!(
+            fs::read_to_string(toolchains.join(alias()).join(COMPONENTS)).unwrap(),
+            "rustc\nrust-src\n"
+        );
+    }
+
+    #[test]
+    fn replace_dir_keeps_the_previous_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (staged, dest, previous) = (
+            dir.path().join("staged"),
+            dir.path().join("dest"),
+            dir.path().join("previous"),
+        );
+        fs::create_dir(&staged).unwrap();
+        fs::write(staged.join("new"), "").unwrap();
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("old"), "").unwrap();
+
+        replace_dir(&staged, &dest, &previous).unwrap();
+
+        assert!(dest.join("new").exists());
+        assert!(previous.join("old").exists());
+        assert!(!staged.exists());
     }
 
     #[test]
