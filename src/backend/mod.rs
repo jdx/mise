@@ -1688,8 +1688,8 @@ mod tests {
     }
 
     /// The regex-based matcher [`fuzzy_version_matches`] replaced, kept to show
-    /// the two agree.
-    fn fuzzy_version_matches_by_regex(query: &str, version: &str) -> bool {
+    /// the two agree. Returns a matcher for `query` so each regex compiles once.
+    fn fuzzy_version_matcher_by_regex(query: &str) -> impl Fn(&str) -> bool {
         let escaped_query = regex::escape(query);
         let query_pattern = if query == "latest" {
             "v?[0-9].*".to_string()
@@ -1712,19 +1712,20 @@ mod tests {
         } else {
             Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
         };
-        if query_regex.is_match(version) {
-            return true;
-        }
-        if query.starts_with('v') || query.starts_with('V') {
+        let without_v_regex = (query.starts_with('v') || query.starts_with('V')).then(|| {
             let without_v = regex::escape(&query[1..]);
-            let re = if query.ends_with('-') {
+            if query.ends_with('-') {
                 Regex::new(&format!("^{without_v}.*$")).unwrap()
             } else {
                 Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
-            };
-            return re.is_match(version);
+            }
+        });
+        move |version| {
+            query_regex.is_match(version)
+                || without_v_regex
+                    .as_ref()
+                    .is_some_and(|re| re.is_match(version))
         }
-        false
     }
 
     #[test]
@@ -1804,10 +1805,11 @@ mod tests {
             "1.2+b.4",
         ];
         for query in queries {
+            let by_regex = fuzzy_version_matcher_by_regex(query);
             for version in versions {
                 assert_eq!(
                     fuzzy_version_matches(query, version),
-                    fuzzy_version_matches_by_regex(query, version),
+                    by_regex(version),
                     "query {query:?} version {version:?}"
                 );
             }
