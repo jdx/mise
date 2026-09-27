@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# `--no-timings` hides every "Finished in …" line: each task's and the run's
+# total. `task.timings = false` hides only the per-task lines.
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo a-out'
+[tasks.b]
+run = 'echo b-out'
+[tasks.nested]
+run = 'mise run a ::: b'
+EOF
+
+# parallel tasks default to prefix output, which times each task and the run
+assert_contains "mise run a ::: b 2>&1" "[a] Finished in"
+assert_contains "mise run a ::: b 2>&1" "[b] Finished in"
+
+assert_not_contains "mise run --no-timings a ::: b 2>&1" "Finished in"
+assert_contains "mise run --no-timings a ::: b 2>&1" "[a] a-out"
+
+# --no-timings wins when the per-task lines are forced on
+assert_not_contains "MISE_TASK_TIMINGS=1 mise run --no-timings a ::: b 2>&1" "Finished in"
+assert_not_contains "mise run --timings --no-timings a ::: b 2>&1" "Finished in"
+# and reaches the tasks of a nested run
+assert_not_contains "mise run --timings --no-timings nested 2>&1" "] Finished in"
+
+# task.timings = false keeps the run's total
+assert_not_contains "MISE_TASK_TIMINGS=0 mise run a ::: b 2>&1" "] Finished in"
+assert_contains "MISE_TASK_TIMINGS=0 mise run a ::: b 2>&1" "Finished in"
