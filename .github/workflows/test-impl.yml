@@ -204,7 +204,7 @@ jobs:
               path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       # build-ubuntu produced this commit's binary, downloaded above.
       - run: mise run render
         env:

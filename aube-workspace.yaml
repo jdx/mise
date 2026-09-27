@@ -1,0 +1,3 @@
+allowBuilds:
+  # Its postinstall only prints a funding banner.
+  core-js-pure: false
