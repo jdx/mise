@@ -135,6 +135,68 @@ echo SAME_DIRECTORY_REAL_TOOL
         }
     }
 
+    It 'native shim skips a second native shim copy instead of alternating with it' {
+        # Two copies of mise-shim.exe on PATH (a shim dir plus WinGet\Links). Each one used
+        # to skip only itself, so a -> mise x -> b -> mise x -> a ... never ended.
+        $shimA = Join-Path $TestDrive "alternating-shims-a"
+        $shimB = Join-Path $TestDrive "alternating-shims-b"
+        foreach ($dir in $shimA, $shimB) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            Copy-Item (Join-Path $PSScriptRoot "..\target\debug\mise-shim.exe") `
+                (Join-Path $dir "mytool.exe")
+        }
+        # A job object lets a regression be killed as a whole tree rather than hang CI.
+        if (-not ('MiseShimLoopJob' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MiseShimLoopJob {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateJobObjectW(IntPtr attributes, IntPtr name);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr handle);
+}
+'@
+        }
+
+        $previousPath = $env:PATH
+        $job = [MiseShimLoopJob]::CreateJobObjectW([IntPtr]::Zero, [IntPtr]::Zero)
+        try {
+            $env:PATH = "$shimA;$shimB;$($script:toolDir);$($script:originalEnvPath)"
+            # cmd waits on stdin so the shim starts only after cmd has joined the job.
+            $psi = [System.Diagnostics.ProcessStartInfo]::new($env:ComSpec,
+                "/d /c `"set /p _= & `"$(Join-Path $shimA 'mytool.exe')`"`"")
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $process = [System.Diagnostics.Process]::Start($psi)
+            [MiseShimLoopJob]::AssignProcessToJobObject($job, $process.Handle) | Should -BeTrue
+            $stdout = $process.StandardOutput.ReadToEndAsync()
+            $stderr = $process.StandardError.ReadToEndAsync()
+            $process.StandardInput.WriteLine()
+            $process.StandardInput.Close()
+
+            $exited = $process.WaitForExit(60000)
+            if (-not $exited) {
+                [MiseShimLoopJob]::TerminateJobObject($job, 1) | Out-Null
+                $process.WaitForExit()
+            }
+            $exited | Should -BeTrue -Because "the two shims alternated: $($stderr.Result)"
+            $process.ExitCode | Should -Be 0 -Because $stderr.Result
+            $result = $stdout.Result -split "`r?`n"
+            $result | Should -Contain "REAL_TOOL_OUTPUT"
+            $result | Should -Not -Contain "SHIM_PATH_LEAKED"
+        } finally {
+            [MiseShimLoopJob]::CloseHandle($job) | Out-Null
+            $env:PATH = $previousPath
+        }
+    }
+
     It 'file shim resolves a real tool when MISE_DATA_DIR is filtered out' {
         $customShimPath = Join-Path $TestDrive "file-shims"
         New-Item -ItemType Directory -Path $customShimPath -Force | Out-Null
