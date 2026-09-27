@@ -100,8 +100,9 @@ impl BackendsSwitch {
                 .or_default()
                 .push(switch);
         }
-        // Each switched (tool, version), with the backend it moved from.
-        let mut switched: BTreeMap<(String, String), String> = BTreeMap::new();
+        // Each switched (tool, version), with every backend it moved from:
+        // lockfiles in scope can pin the same version to different ones.
+        let mut switched: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
         let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
@@ -174,11 +175,12 @@ impl BackendsSwitch {
                 if !moved.is_empty() {
                     tools.insert(switch.short.clone());
                 }
-                switched.extend(
-                    moved
-                        .into_iter()
-                        .map(|(v, _, _)| ((switch.short.clone(), v), switch.from.clone())),
-                );
+                for (v, _, _) in moved {
+                    switched
+                        .entry((switch.short.clone(), v))
+                        .or_default()
+                        .insert(switch.from.clone());
+                }
             }
             // A lockfile where nothing moved is left alone: not rewritten,
             // relocked, or snapshotted.
@@ -378,16 +380,21 @@ impl BackendsSwitch {
     /// installs in their own dir; an install shared with the old backend
     /// (plugins, legacy `installs/<short>`) is replaced, so it can't keep
     /// satisfying the new lock entry.
-    async fn reinstall(&self, switched: &BTreeMap<(String, String), String>) -> Result<()> {
+    async fn reinstall(
+        &self,
+        switched: &BTreeMap<(String, String), BTreeSet<String>>,
+    ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
         for (_, tv) in self.scoped_versions(&config).await? {
             let Some(from) = switched.get(&(tv.short().to_string(), tv.version.clone())) else {
                 continue;
             };
-            if tv.backend()?.is_version_installed(&config, &tv, false)
-                || Self::installed_from(&config, &tv, from)?
-            {
+            let mut installed = tv.backend()?.is_version_installed(&config, &tv, false);
+            for from in from {
+                installed = installed || Self::installed_from(&config, &tv, from)?;
+            }
+            if installed {
                 requests.push(tv.request);
             }
         }
