@@ -209,19 +209,13 @@ mise env --redacted --values
 Redactions work by intercepting task output line-by-line, so they require a non-`raw` output mode.
 Tasks with `raw = true` bypass this interception (stdout/stderr are passed directly to the terminal), so redactions cannot be applied.
 
-By default, `mise run` uses the `replacing` output mode which shows a progress spinner rather than full output.
-In CI environments, you may want to use `prefix` or `interleave` output instead so you can see full task logs
-while still having redactions applied:
+By default, `mise run` uses the `prefix` output mode when tasks run in parallel (`jobs` > 1), and `interleave`
+when `jobs` is 1 or all tasks run sequentially. Both print full task output with redactions applied.
+The `replacing` and `timed` modes do not print every line, so if you use one of them, switch to `prefix` or
+`interleave` in CI environments to see full task logs while still having redactions applied:
 
 ```bash
 MISE_TASK_OUTPUT=prefix mise run mytask
-```
-
-Or set it globally in your config:
-
-```toml
-[settings]
-task.output = "prefix"
 ```
 
 :::
