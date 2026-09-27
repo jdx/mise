@@ -130,6 +130,8 @@ signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/releas
 checksum = "sha256:7896047bcbf2b21bc278c0a766d6d8a200ca1e4a37d261552e7e97788be0d3d5"
 url = "https://github.com/aubepkg/aube/releases/download/v2.4.0/aube-v2.4.0-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
+repository_id = "1214542327"
+repository_owner_id = "324215402"
 
 [tools.aube."platforms.linux-x64-baseline"]
 checksum = "sha256:7896047bcbf2b21bc278c0a766d6d8a200ca1e4a37d261552e7e97788be0d3d5"
@@ -284,6 +286,8 @@ signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/rele
 checksum = "sha256:522e205e23c0ea7bb6752cf9eb22d8a16cf973ae3d7b807a91d826195d3edcdc"
 url = "https://github.com/jdx/communique/releases/download/v1.4.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
+repository_id = "1155542902"
+repository_owner_id = "216188"
 
 [tools.communique."platforms.linux-x64-baseline"]
 checksum = "sha256:522e205e23c0ea7bb6752cf9eb22d8a16cf973ae3d7b807a91d826195d3edcdc"
@@ -443,6 +447,8 @@ signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 checksum = "sha256:7a7b28741d16f777d8be90fbcd8523996ee95c2d5222d5b173652d9b37e31969"
 url = "https://github.com/jdx/hk/releases/download/v2.1.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
+repository_id = "922514152"
+repository_owner_id = "216188"
 
 [tools.hk."platforms.linux-x64-baseline"]
 checksum = "sha256:7a7b28741d16f777d8be90fbcd8523996ee95c2d5222d5b173652d9b37e31969"
@@ -602,6 +608,8 @@ signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/re
 checksum = "sha256:c41238298b30d7c7da53dfe850f06036dd103b65865cc9dc986077eaf3e565d2"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.19.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
+repository_id = "1340721957"
+repository_owner_id = "216188"
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
 checksum = "sha256:c41238298b30d7c7da53dfe850f06036dd103b65865cc9dc986077eaf3e565d2"
@@ -1040,6 +1048,8 @@ signer = "sigstore-oidc:https://github.com/jdx/usage/.github/workflows/publish-c
 checksum = "sha256:afa6cb0e76f88cc6392aeecf21bbcd869747d4eeb60ab84c98d6e6178edc359a"
 url = "https://github.com/jdx/usage/releases/download/v6.11.1/usage-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/usage/.github/workflows/publish-cli.yml"
+repository_id = "677629099"
+repository_owner_id = "216188"
 
 [tools.usage."platforms.linux-x64-baseline"]
 checksum = "sha256:afa6cb0e76f88cc6392aeecf21bbcd869747d4eeb60ab84c98d6e6178edc359a"
