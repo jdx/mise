@@ -839,13 +839,14 @@ pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
     // For a version-routed tool, a version is only this tool's where the
     // registry routes it today; a copy left under another backend after a
     // boundary moved would resolve to a path that doesn't exist.
+    // An arg pinned to one backend (e.g. restored from a lockfile) doesn't
+    // route by version: its versions are the ones in its own dir.
     let routed_here = |store: &str, v: &str| {
         routed.is_empty()
             || ba
                 .with_registry_version(v)
-                .map(|ba| ba.storage_short())
-                .as_deref()
-                == Some(store)
+                .map_or_else(|| storage.clone(), |ba| ba.storage_short())
+                == store
     };
     let mut versions = list_versions(&storage)
         .into_iter()
