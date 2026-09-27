@@ -4148,6 +4148,7 @@ pub trait Backend: Debug + Send + Sync {
             // A version read through from a legacy `installs/<short>` dir leaves
             // that dir's runtime symlinks pointing at it.
             if let Some(dir) = install_path.parent()
+                && dir != tv.ba().installs_path().as_ref()
                 && dir != self.ba().installs_path().as_ref()
                 && dir.starts_with(*dirs::INSTALLS)
             {
@@ -4240,15 +4241,18 @@ pub trait Backend: Debug + Send + Sync {
         let old_install_path = tv.install_path();
         let _ = remove_all_with_warning(&old_install_path);
         // Replacing an install read through from a legacy `installs/<short>`
-        // dir installs under the backend's own dir. Pin that destination, like
-        // a forced install redirected away from a shared dir: resolving it again
-        // could land on a shared or leftover short-named copy.
-        if let Some(dir) = old_install_path.parent()
-            && dir != self.ba().installs_path().as_ref()
+        // dir installs under the tool's own dir. Pin that destination, like a
+        // forced install redirected away from a shared dir: resolving it again
+        // could land on a shared or leftover short-named copy. The tool's dir
+        // comes from `tv`, not this backend, which a core tool reached through
+        // an alias shares with other names.
+        let primary = tv.ba().installs_path().join(tv.tv_pathname());
+        if tv.install_path.is_none()
+            && old_install_path != primary
+            && let Some(dir) = old_install_path.parent()
             && dir.starts_with(*dirs::INSTALLS)
-            && tv.install_path.is_none()
         {
-            tv.pin_install_path(self.ba().installs_path().join(tv.tv_pathname()));
+            tv.pin_install_path(primary);
             let _ = crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir);
             cleanup_empty_tool_dir(dir);
         }
