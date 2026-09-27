@@ -1839,6 +1839,37 @@ mod tests {
     }
 
     #[test]
+    fn signed_public_key_dsse_bundle_binds_artifact() {
+        // The signed payload and public key are test fixtures. Reuse a real
+        // inclusion proof for structural bundle validation; this path checks
+        // the pinned key's signature, not the proof's cryptographic validity.
+        let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/github_build_provenance_jdx_mise.json"
+        ))
+        .unwrap();
+        let material = fixture["verificationMaterial"].as_object_mut().unwrap();
+        material.remove("certificate");
+        material.insert("publicKey".to_string(), serde_json::json!({"hint": "test"}));
+        fixture["dsseEnvelope"] = serde_json::json!({
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoiYXJ0aWZhY3QiLCJkaWdlc3QiOnsic2hhMjU2IjoiYzdjNWMxZDcwYzVkZWM0NDE2YWI2MTU4YWZkMGIyMjNlZjQwYzI5YjFkYzFmOTdlZDk0MjhiOTRkNGNhZGIxYyJ9fV19",
+            "signatures": [{"sig": "/A10dkD75B7Iem/dSefYsil3K6CM1Pm6Dz4KBapWRO8HuxwOzBTvDX5w3tsD3/5jcxF+KRD/egbHkno4wr8ZBA=="}]
+        });
+        let bundle = Bundle::from_json(&fixture.to_string()).unwrap();
+        let key = DerPublicKey::from_pem(
+            "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAenAN5yDEkIVZOtHA1FJ9zb2Jy2hZAXAnayUfH4goans=\n-----END PUBLIC KEY-----\n",
+        )
+        .unwrap();
+
+        verify_public_key_bundle(b"artifact", &bundle, &key).unwrap();
+        let err = verify_public_key_bundle(b"different artifact", &bundle, &key).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("DSSE subject digest does not match artifact")
+        );
+    }
+
+    #[test]
     fn select_tuf_config_default_uses_production_url() {
         // No override → canonical Sigstore public-good TUF URL (default behavior).
         assert_eq!(select_tuf_config(None).url, DEFAULT_TUF_URL);
