@@ -377,8 +377,9 @@ impl BackendArg {
                     .is_some_and(|alias| alias.backend.is_some()))
     }
 
-    /// Every storage identity a version-routed registry tool (`min_version`)
-    /// can put a version under, one per backend. Empty for other tools.
+    /// Every storage identity a version-routed registry tool (`min_version`,
+    /// `max_version`) can put a version under, one per backend. Empty for
+    /// other tools.
     pub(crate) fn routed_storage_shorts(&self) -> Vec<String> {
         if !self.stores_by_backend() {
             return vec![];
@@ -555,9 +556,10 @@ impl BackendArg {
         }
 
         // A version-scoped registry lookup with no eligible backend must not
-        // revive the backend recorded by another installed version.
+        // revive the backend recorded by another installed version, nor
+        // resolve a core plugin by name outside the registry's bounds.
         if self.has_registry_version() {
-            return BackendType::Core;
+            return BackendType::Unknown;
         }
 
         // Legacy install state may have a backend type without a full

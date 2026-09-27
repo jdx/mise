@@ -19,8 +19,9 @@
 use std::path::Path;
 
 use eyre::bail;
+use log::debug;
 
-use crate::result::Result;
+use eyre::Result;
 
 const PLACEHOLDER_PREFIX: &str = "@@HOMEBREW_PREFIX@@";
 const PLACEHOLDER_CELLAR: &str = "@@HOMEBREW_CELLAR@@";
@@ -54,11 +55,11 @@ pub(super) struct LinkageOpts {
 }
 
 impl LinkageOpts {
-    pub(super) fn for_formula(name: &str) -> Self {
+    pub(super) fn for_formula(name: &str, prefix: &Path) -> Self {
         let is_gcc = name == "gcc" || name.starts_with("gcc@");
         LinkageOpts {
-            prefix: super::prefix::prefix().to_string_lossy().to_string(),
-            cellar: super::prefix::cellar().to_string_lossy().to_string(),
+            prefix: prefix.to_string_lossy().to_string(),
+            cellar: prefix.join("Cellar").to_string_lossy().to_string(),
             gcc_current: !is_gcc,
         }
     }
@@ -451,7 +452,7 @@ pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> R
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const PREFIX: &str = "/home/linuxbrew/.linuxbrew";
@@ -466,7 +467,7 @@ mod tests {
 
     /// minimal 64-bit LE ET_DYN ELF: PHDR + INTERP + LOAD + DYNAMIC headers,
     /// an interpreter string, a dynamic section with an rpath, and a dynstr
-    fn synthetic_elf(interp: &str, rpath: &str) -> Vec<u8> {
+    pub(crate) fn synthetic_elf(interp: &str, rpath: &str) -> Vec<u8> {
         let phnum = 4;
         let phoff = EHDR_SIZE;
         let interp_off = phoff + phnum * PHDR_SIZE;
@@ -524,7 +525,7 @@ mod tests {
         elf
     }
 
-    fn read_linkage(content: &[u8]) -> (String, String) {
+    pub(crate) fn read_linkage(content: &[u8]) -> (String, String) {
         let phdrs = read_phdrs(content).unwrap();
         let interp = phdrs.iter().find(|p| p.p_type == PT_INTERP).unwrap();
         let interp_str = read_cstr(content, interp.p_offset as usize).unwrap();

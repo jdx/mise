@@ -53,6 +53,12 @@ fn load_global_miserc_settings() -> MisercSettings {
 /// MISE_ENV or other early settings are accessed.
 pub fn init() -> Result<()> {
     let _ = invocation_cwd();
+    // `main` initializes this before its hook-env fast path, and `cli::run`
+    // calls again when that path falls through; a second load would only be
+    // discarded.
+    if MISERC.get().is_some() {
+        return Ok(());
+    }
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);
     // Discard any files tracked via hash_file/file_size/last_modified during miserc

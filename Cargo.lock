@@ -6609,6 +6609,8 @@ dependencies = [
  "log",
  "miette",
  "minisign-verify",
+ "mise-brew-metadata",
+ "mise-brew-relocation",
  "mise-cache-core",
  "mise-interactive-config",
  "mise-settings",
@@ -6693,6 +6695,26 @@ dependencies = [
 [[package]]
 name = "mise-agent-env"
 version = "0.1.0"
+
+[[package]]
+name = "mise-brew-metadata"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mise-brew-relocation"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "log",
+ "tempfile",
+ "walkdir",
+ "zip 8.6.0",
+]
 
 [[package]]
 name = "mise-cache-core"

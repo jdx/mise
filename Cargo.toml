@@ -2,7 +2,9 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-brew-relocation",
   "crates/mise-agent-env",
+  "crates/mise-brew-metadata",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -138,6 +140,7 @@ futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
+mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -281,6 +284,7 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = [
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
+mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
 self_update = { version = "1", optional = true, default-features = false, features = [
   "archive-tar",
