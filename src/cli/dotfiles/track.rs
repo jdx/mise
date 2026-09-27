@@ -91,6 +91,7 @@ impl DotfilesTrack {
         // only if something changed
         let mut retracked: Vec<String> = vec![];
         let mut manual = vec![];
+        let mut has_autosave = false;
         // what each path expands to, sized up before anything is written:
         // one walk of every target of this run beside the entries already
         // tracked, so nested targets partition instead of the outer one
@@ -131,6 +132,11 @@ impl DotfilesTrack {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
                 .collect::<PathBuf>();
+            // Deduplicate normalized paths before editing declarations, so a later spelling
+            // of the same target cannot be classified from this run's edits.
+            if resolved.iter().any(|(previous, _)| previous == &target) {
+                continue;
+            }
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
@@ -288,6 +294,7 @@ impl DotfilesTrack {
             }
             locations.insert(target_key.clone(), config_path);
             let policy = self.policy(existing);
+            has_autosave |= policy.autosave;
             if !policy.autosave && !retrack {
                 manual.push(target_key.clone());
             }
@@ -466,7 +473,7 @@ impl DotfilesTrack {
                 manual.join(", ")
             );
         }
-        if !only_retracks && manual.len() < declared.len() - retracked.len() {
+        if has_autosave {
             crate::cli::dotfiles::capture_health::report().await;
         }
         Ok(())
@@ -846,11 +853,18 @@ pub(crate) fn normalized_target(target: &Path) -> String {
 /// writing it would change nothing but formatting. A declaration that
 /// cannot be compared counts as different, and is rewritten as before.
 fn same_declaration(previous: &Item, entry: &InlineTable) -> bool {
-    let Ok(previous) = previous.clone().into_value() else {
+    let Some(table) = previous.as_table_like() else {
         return false;
     };
+    let mut previous = InlineTable::new();
+    for (key, item) in table.iter() {
+        let Some(value) = item.as_value() else {
+            return false;
+        };
+        previous.insert(key, value.clone());
+    }
     let parse = |value: &Value| toml::from_str::<toml::Table>(&format!("v = {value}")).ok();
-    parse(&previous)
+    parse(&Value::InlineTable(previous))
         .is_some_and(|previous| Some(previous) == parse(&Value::InlineTable(entry.clone())))
 }
 
