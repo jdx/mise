@@ -1249,7 +1249,7 @@ impl AquaBackend {
         if all_pkgs.iter().any(|p| {
             p.slsa_provenance
                 .as_ref()
-                .is_some_and(|s| s.enabled.unwrap_or(true))
+                .is_some_and(|s| s.enabled.unwrap_or(true) && s.has_signer_identity())
         }) {
             features.push(SecurityFeature::Slsa { level: None });
         }
@@ -1373,6 +1373,7 @@ impl AquaBackend {
             && settings.aqua.slsa
             && let Some(slsa) = &pkg.slsa_provenance
             && slsa.enabled != Some(false)
+            && slsa.has_signer_identity()
         {
             return Some(ProvenanceType::Slsa { url: None });
         }
@@ -1765,6 +1766,35 @@ impl AquaBackend {
         }
     }
 
+    fn slsa_signer_identity(
+        &self,
+        pkg: &AquaPackage,
+        version: &str,
+    ) -> Result<Option<(String, String)>> {
+        let Some(slsa) = pkg
+            .slsa_provenance
+            .as_ref()
+            .filter(|s| s.has_signer_identity())
+        else {
+            return Ok(None);
+        };
+        let identity = pkg.parse_aqua_str(
+            slsa.signer_identity.as_deref().unwrap(),
+            version,
+            &Default::default(),
+            self.verification_os(),
+            self.verification_arch(),
+        )?;
+        let issuer = pkg.parse_aqua_str(
+            slsa.signer_issuer.as_deref().unwrap(),
+            version,
+            &Default::default(),
+            self.verification_os(),
+            self.verification_arch(),
+        )?;
+        Ok(Some((identity, issuer)))
+    }
+
     /// Download SLSA provenance file and verify against an already-downloaded artifact.
     /// Returns the provenance download URL on success.
     async fn run_slsa_check(
@@ -1775,6 +1805,13 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
+        let (identity, issuer) = self.slsa_signer_identity(pkg, v)?.ok_or_else(|| {
+            eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
+        })?;
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+        };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
             .resolve_slsa_url(
@@ -1791,8 +1828,13 @@ impl AquaBackend {
         HTTP.download_file(&download_url, &provenance_path, pr)
             .await?;
 
-        match crate::github::sigstore::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
-            .await
+        match crate::github::sigstore::verify_slsa_provenance(
+            artifact_path,
+            &provenance_path,
+            1u8,
+            signer,
+        )
+        .await
         {
             Ok(true) => {
                 debug!("SLSA provenance verified");
@@ -1804,7 +1846,7 @@ impl AquaBackend {
                     "SLSA provenance did not cover downloaded artifact; trying archive content subjects: {e}"
                 );
                 match self
-                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v)
+                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v, signer)
                     .await?
                 {
                     true => Ok(provenance_url),
@@ -1821,6 +1863,7 @@ impl AquaBackend {
         provenance_path: &Path,
         pkg: &AquaPackage,
         v: &str,
+        signer: crate::github::sigstore::SlsaSignerIdentity<'_>,
     ) -> Result<bool> {
         let format = pkg.format(v, self.verification_os(), self.verification_arch())?;
         let format = Self::effective_extraction_format(pkg, format)?;
@@ -1841,9 +1884,14 @@ impl AquaBackend {
                 sha256: content.sha256,
             })
             .collect::<Vec<_>>();
-        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
-            .await
-            .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
+        crate::github::sigstore::verify_slsa_provenance_artifacts(
+            provenance_path,
+            &artifacts,
+            1u8,
+            signer,
+        )
+        .await
+        .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
@@ -2660,9 +2708,8 @@ impl AquaBackend {
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
-        // Skip provenance verification if the lockfile already has both a checksum and
-        // provenance entry for this platform — the artifact integrity is already guaranteed
-        // by the checksum, so re-verifying attestations would just be redundant API calls.
+        // Reuse checksum-backed non-SLSA provenance. SLSA locks always re-verify
+        // the certificate against the current expected signer identity.
         // However, still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
@@ -2681,7 +2728,24 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        if has_lockfile_integrity && !force_verify {
+        if locked_provenance
+            .as_ref()
+            .is_some_and(ProvenanceType::is_slsa)
+            && !pkg
+                .slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.has_signer_identity())
+        {
+            return Err(eyre!(
+                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Add the expected signer or refresh the lockfile."
+            ));
+        }
+        if has_lockfile_integrity
+            && !force_verify
+            && !locked_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(
@@ -3028,6 +3092,10 @@ impl AquaBackend {
         if let Some(slsa) = &pkg.slsa_provenance {
             if slsa.enabled == Some(false) {
                 debug!("slsa is disabled for {tv}");
+                return Ok(());
+            }
+            if !slsa.has_signer_identity() {
+                debug!("skipping SLSA for {tv}: Aqua registry has no expected signer identity");
                 return Ok(());
             }
 
@@ -6072,6 +6140,8 @@ version_overrides:
     slsa_provenance:
       type: github_release
       asset: multiple.intoto.jsonl
+      signer_identity: https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0
+      signer_issuer: https://token.actions.githubusercontent.com
     minisign:
       type: github_release
       asset: tool.minisig
@@ -6087,6 +6157,24 @@ version_overrides:
                     public_key: Some("RWQexample".to_string())
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn security_features_skip_slsa_without_signer() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+slsa_provenance:
+  type: github_release
+  asset: provenance.intoto.jsonl
+"#,
+        );
+        assert!(
+            !AquaBackend::security_features(&pkg, &[])
+                .contains(&SecurityFeature::Slsa { level: None })
         );
     }
 

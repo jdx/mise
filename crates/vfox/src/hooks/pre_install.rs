@@ -120,6 +120,8 @@ pub struct PreInstallAttestation {
     // SLSA
     pub slsa_provenance_path: Option<PathBuf>,
     pub slsa_min_level: Option<u8>,
+    pub slsa_signer_identity: Option<String>,
+    pub slsa_signer_issuer: Option<String>,
 }
 
 impl FromLua for PreInstallAttestation {
@@ -141,6 +143,8 @@ impl FromLua for PreInstallAttestation {
                         .get::<Option<PathBuf>>("cosign_public_key_path")?,
                     slsa_provenance_path: table.get::<Option<PathBuf>>("slsa_provenance_path")?,
                     slsa_min_level: table.get::<Option<u8>>("slsa_min_level")?,
+                    slsa_signer_identity: table.get::<Option<String>>("slsa_signer_identity")?,
+                    slsa_signer_issuer: table.get::<Option<String>>("slsa_signer_issuer")?,
                 })
             }
             _ => Err(LuaError::FromLuaConversionError {
@@ -217,6 +221,26 @@ fn validate_slsa_attestation_params(table: &Table) -> std::result::Result<(), Lu
             message: Some(
                 "slsa_min_level requires slsa_provenance_path for attestation".to_string(),
             ),
+        });
+    }
+
+    if table.contains_key("slsa_signer_identity")? != table.contains_key("slsa_signer_issuer")? {
+        return Err(LuaError::FromLuaConversionError {
+            from: "table",
+            to: "PreInstallAttestation".into(),
+            message: Some(
+                "slsa_signer_identity and slsa_signer_issuer must be set together".to_string(),
+            ),
+        });
+    }
+
+    if (table.contains_key("slsa_signer_identity")? || table.contains_key("slsa_signer_issuer")?)
+        && !table.contains_key("slsa_provenance_path")?
+    {
+        return Err(LuaError::FromLuaConversionError {
+            from: "table",
+            to: "PreInstallAttestation".into(),
+            message: Some("SLSA signer fields require slsa_provenance_path".to_string()),
         });
     }
 
@@ -427,6 +451,51 @@ mod tests {
         assert!(
             err.contains("slsa_min_level requires slsa_provenance_path"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    async fn test_slsa_signer_fields_must_be_paired() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("slsa_provenance_path", "/tmp/provenance.jsonl")
+            .unwrap();
+        table
+            .set(
+                "slsa_signer_identity",
+                "https://github.com/example/workflow@refs/heads/main",
+            )
+            .unwrap();
+        let err = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("slsa_signer_identity and slsa_signer_issuer must be set together"));
+    }
+
+    #[test]
+    async fn test_slsa_signer_fields_are_parsed() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("slsa_provenance_path", "/tmp/provenance.jsonl")
+            .unwrap();
+        table
+            .set(
+                "slsa_signer_identity",
+                "https://github.com/example/workflow@refs/heads/main",
+            )
+            .unwrap();
+        table
+            .set(
+                "slsa_signer_issuer",
+                "https://token.actions.githubusercontent.com",
+            )
+            .unwrap();
+        let attestation = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua).unwrap();
+        assert_eq!(
+            attestation.slsa_signer_issuer.as_deref(),
+            Some("https://token.actions.githubusercontent.com")
         );
     }
 

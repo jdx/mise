@@ -387,15 +387,20 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // Skip provenance verification if the lockfile already has a provenance entry for
-        // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
-        // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
+        // Reuse non-SLSA lockfile provenance, but re-verify SLSA so the configured
+        // signer is checked even when a checksum is available. Unlike aqua/github,
+        // the vfox backend doesn't populate PlatformInfo.checksum.
         let platform_key = self.get_platform_key();
         let has_lockfile_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|pi| pi.provenance.is_some());
-        vfox.skip_verification = has_lockfile_provenance;
+        let locked_slsa = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.provenance.as_ref())
+            .is_some_and(ProvenanceType::is_slsa);
+        vfox.skip_verification = has_lockfile_provenance && !locked_slsa;
 
         // Save expected provenance before take() so we can detect type changes afterward,
         // then clear it so we can detect whether install re-sets it.
@@ -424,9 +429,10 @@ impl Backend for VfoxBackend {
             pi.provenance = Some(provenance);
         } else if let Some(ref expected) = expected_provenance
             && result.checksum_verified
+            && !expected.is_slsa()
         {
-            // Attestation didn't run or produced no result, but the plugin's checksums
-            // verified integrity. Restore expected provenance so the enforce check passes.
+            // For non-SLSA attestations, the verified checksum permits reuse of
+            // lockfile provenance when attestation verification was skipped.
             // When the plugin has no checksums, we leave got=None so the enforce check
             // catches the missing attestation as a potential downgrade.
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
@@ -443,6 +449,13 @@ impl Backend for VfoxBackend {
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
             if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                if expected.is_slsa() {
+                    return Err(eyre!(
+                        "Lockfile requires SLSA provenance for {tv}, but the vfox plugin did not verify it. \
+                         Add slsa_signer_identity and slsa_signer_issuer to the plugin's \
+                         PreInstall attestation, or refresh the lockfile after choosing another verification method."
+                    ));
+                }
                 let got_str = got
                     .map(|g| g.to_string())
                     .unwrap_or_else(|| "no verification".to_string());
