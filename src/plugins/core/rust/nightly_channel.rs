@@ -27,9 +27,11 @@ use crate::file;
 
 const CHANNEL_MANIFEST: &str = "lib/rustlib/multirust-channel-manifest.toml";
 const COMPONENTS: &str = "lib/rustlib/components";
-/// The components mise copied into rustup's `nightly`, so later refreshes can
-/// tell them apart from ones added through rustup. rustup ignores this file.
-const SEEDED_COMPONENTS: &str = ".mise-seeded-components";
+/// Records the modification time of rustup's `components` file when mise wrote
+/// the copy. rustup rewrites that file on every component or target change, so
+/// a matching time means everything in the copy came from mise. rustup ignores
+/// this file.
+const SEEDED_MARKER: &str = ".mise-seeded";
 
 /// Makes `toolchains/<alias>` a copy of `toolchains/<dated>` when it is
 /// missing, or when it is an older nightly (or the same nightly lacking some of
@@ -86,10 +88,9 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         .tempdir_in(toolchains)?;
     let staged = staging.path().join(alias);
     clone_toolchain(&source, &staged, true)?;
-    fs::write(
-        staged.join(SEEDED_COMPONENTS),
-        fs::read(source.join(COMPONENTS)).unwrap_or_default(),
-    )?;
+    if let Some(mtime) = components_mtime(&staged) {
+        fs::write(staged.join(SEEDED_MARKER), mtime.to_string())?;
+    }
     if alias_path.exists() {
         if !replace_if_unchanged(staging, alias, &alias_path, &observed)? {
             debug!("leaving rustup {alias} alone: rustup changed it while mise was copying");
@@ -238,10 +239,10 @@ fn exchange(_a: &Path, _b: &Path) -> io::Result<()> {
     Err(io::ErrorKind::Unsupported.into())
 }
 
-/// The components and targets listed in `root/relative`. rustup lists targets
-/// as `rust-std-<target>` components.
-fn read_components(root: &Path, relative: &str) -> BTreeSet<String> {
-    fs::read_to_string(root.join(relative))
+/// The components and targets `toolchain` has. rustup lists targets as
+/// `rust-std-<target>` components.
+fn read_components(toolchain: &Path) -> BTreeSet<String> {
+    fs::read_to_string(toolchain.join(COMPONENTS))
         .unwrap_or_default()
         .lines()
         .map(String::from)
@@ -250,19 +251,35 @@ fn read_components(root: &Path, relative: &str) -> BTreeSet<String> {
 
 /// Whether `toolchain` has every component and target listed for `source`.
 fn has_components_of(toolchain: &Path, source: &Path) -> bool {
-    read_components(source, COMPONENTS).is_subset(&read_components(toolchain, COMPONENTS))
+    read_components(source).is_subset(&read_components(toolchain))
 }
 
 /// Whether replacing `alias` with a copy of `source` keeps every component
-/// added to it through rustup. Components mise seeded, for example under an
-/// earlier profile, may be dropped; a rustup-installed nightly that mise never
-/// seeded counts all of its components as added through rustup.
+/// added to it through rustup. A copy rustup has not touched since mise wrote
+/// it holds only what mise put there, which may be dropped, for example after
+/// a profile change. Otherwise, including for a nightly rustup installed
+/// itself, every component it has must be in `source`.
 fn keeps_rustup_additions(alias: &Path, source: &Path) -> bool {
-    let seeded = read_components(alias, SEEDED_COMPONENTS);
-    let available = read_components(source, COMPONENTS);
-    read_components(alias, COMPONENTS)
-        .difference(&seeded)
-        .all(|component| available.contains(component))
+    let seeded = fs::read_to_string(alias.join(SEEDED_MARKER))
+        .ok()
+        .and_then(|mtime| mtime.trim().parse::<u128>().ok());
+    if seeded.is_some() && seeded == components_mtime(alias) {
+        return true;
+    }
+    has_components_of(source, alias)
+}
+
+fn components_mtime(toolchain: &Path) -> Option<u128> {
+    let modified = fs::metadata(toolchain.join(COMPONENTS))
+        .ok()?
+        .modified()
+        .ok()?;
+    Some(
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos(),
+    )
 }
 
 fn toolchain_nightly(toolchain: &Path) -> Option<String> {
@@ -362,6 +379,20 @@ mod tests {
 
     fn alias() -> String {
         format!("nightly-{HOST}")
+    }
+
+    /// Rewrites a toolchain's components file the way `rustup component add`
+    /// and `remove` do, with a modification time distinct from any before.
+    fn rustup_writes_components(toolchain: &Path, components: &str) {
+        let path = toolchain.join(COMPONENTS);
+        let before = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, components).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(before + std::time::Duration::from_secs(1))
+            .unwrap();
     }
 
     #[test]
@@ -575,12 +606,33 @@ mod tests {
         write_toolchain(&toolchains, &dated("2026-09-25"), "2026-09-25");
         assert!(refresh(&toolchains, &dated("2026-09-25"), &alias()).unwrap());
         // `rustup component add clippy --toolchain nightly`
+        rustup_writes_components(&toolchains.join(alias()), "rustc\nclippy-preview\n");
+
+        write_toolchain(&toolchains, &dated("2026-09-26"), "2026-09-26");
+        assert!(!refresh(&toolchains, &dated("2026-09-26"), &alias()).unwrap());
+        assert_eq!(
+            toolchain_nightly(&toolchains.join(alias())).as_deref(),
+            Some("nightly-2026-09-25")
+        );
+    }
+
+    #[test]
+    fn refresh_keeps_a_component_removed_and_re_added_through_rustup() {
+        let dir = tempfile::tempdir().unwrap();
+        let toolchains = dir.path().join("toolchains");
+        write_toolchain(&toolchains, &dated("2026-09-25"), "2026-09-25");
         fs::write(
-            toolchains.join(alias()).join(COMPONENTS),
-            "rustc\nclippy-preview\n",
+            toolchains.join(dated("2026-09-25")).join(COMPONENTS),
+            "rustc\nrust-docs\n",
         )
         .unwrap();
+        assert!(refresh(&toolchains, &dated("2026-09-25"), &alias()).unwrap());
+        // `rustup component remove rust-docs`, then `rustup component add
+        // rust-docs`: the same components mise seeded, now chosen by the user.
+        rustup_writes_components(&toolchains.join(alias()), "rustc\n");
+        rustup_writes_components(&toolchains.join(alias()), "rustc\nrust-docs\n");
 
+        // A later minimal-profile nightly lacks rust-docs.
         write_toolchain(&toolchains, &dated("2026-09-26"), "2026-09-26");
         assert!(!refresh(&toolchains, &dated("2026-09-26"), &alias()).unwrap());
         assert_eq!(
