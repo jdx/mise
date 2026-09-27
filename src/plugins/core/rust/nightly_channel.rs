@@ -159,13 +159,35 @@ fn replace_if_unchanged(
         }
         return Err(err);
     }
-    // After an atomic swap the replaced toolchain is at `staged`. If rustup
-    // finished a change after the check above, swap it back.
-    if staged.exists() && AliasState::read(&staged) != *observed {
-        if let Err(err) = exchange(&staged, dest) {
-            return Err(keep(staging, err.into(), alias));
+    match put_back_if_changed(&staged, &previous, dest, observed) {
+        Ok(put_back) => Ok(!put_back),
+        Err(err) => {
+            let name = if previous.exists() { "previous" } else { alias };
+            Err(keep(staging, err.into(), name))
         }
-        return Ok(false);
+    }
+}
+
+/// Puts rustup's replaced toolchain back at `dest` if rustup finished a change
+/// to it after `observed` was read. It is at `staged` after an atomic swap and
+/// at `previous` after the rename fallback. Returns whether it was put back.
+fn put_back_if_changed(
+    staged: &Path,
+    previous: &Path,
+    dest: &Path,
+    observed: &AliasState,
+) -> io::Result<bool> {
+    if staged.exists() {
+        if AliasState::read(staged) == *observed {
+            return Ok(false);
+        }
+        exchange(staged, dest)?;
+    } else {
+        if AliasState::read(previous) == *observed {
+            return Ok(false);
+        }
+        fs::rename(dest, staged)?;
+        fs::rename(previous, dest)?;
     }
     Ok(true)
 }
@@ -555,6 +577,57 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dest.join(COMPONENTS)).unwrap(),
             "rustc\nrust-src\n"
+        );
+    }
+
+    #[test]
+    fn put_back_if_changed_restores_after_the_rename_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        write_toolchain(dir.path(), "previous", "2026-07-04");
+        let observed = AliasState::read(&dir.path().join("previous"));
+        write_toolchain(dir.path(), "dest", "2026-09-26");
+        // rustup finished `component add` just before the old toolchain was
+        // moved aside.
+        fs::write(
+            dir.path().join("previous").join(COMPONENTS),
+            "rustc\nrust-src\n",
+        )
+        .unwrap();
+        let (staged, previous, dest) = (
+            dir.path().join("staged"),
+            dir.path().join("previous"),
+            dir.path().join("dest"),
+        );
+
+        assert!(put_back_if_changed(&staged, &previous, &dest, &observed).unwrap());
+
+        assert_eq!(
+            fs::read_to_string(dest.join(COMPONENTS)).unwrap(),
+            "rustc\nrust-src\n"
+        );
+        assert!(!previous.exists());
+    }
+
+    #[test]
+    fn put_back_if_changed_keeps_an_unchanged_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        write_toolchain(dir.path(), "previous", "2026-07-04");
+        write_toolchain(dir.path(), "dest", "2026-09-26");
+        let observed = AliasState::read(&dir.path().join("previous"));
+        let dest = dir.path().join("dest");
+
+        assert!(
+            !put_back_if_changed(
+                &dir.path().join("staged"),
+                &dir.path().join("previous"),
+                &dest,
+                &observed
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            toolchain_nightly(&dest).as_deref(),
+            Some("nightly-2026-09-26")
         );
     }
 
