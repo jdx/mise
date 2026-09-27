@@ -467,10 +467,10 @@ impl ToolVersion {
         path
     }
 
-    /// Drop the cached install path, e.g. after removing an install read
-    /// through from elsewhere, so the next lookup resolves the destination.
-    pub(crate) fn forget_install_path(&self) {
-        INSTALL_PATH_CACHE.remove(self);
+    /// Make `path` this version's install path from now on, e.g. the
+    /// destination that replaces an install read through from elsewhere.
+    pub(crate) fn pin_install_path(&self, path: PathBuf) {
+        INSTALL_PATH_CACHE.insert(self.clone(), path);
     }
 
     pub(crate) fn install_env(&self) -> IndexMap<String, EnvValue> {
