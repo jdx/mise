@@ -4145,10 +4145,11 @@ pub trait Backend: Debug + Send + Sync {
         rmdir(&tv.cache_path())?;
         if !dryrun {
             self.cleanup_empty_installs_dir();
-            // A version read through from a legacy `installs/<short>` dir leaves
-            // that dir's runtime symlinks pointing at it.
+            // The dir the version was removed from can differ from this backend's:
+            // a legacy `installs/<short>` it was read through from, or the dir of a
+            // core tool reached through an alias. Its runtime symlinks still point
+            // at the removed version.
             if let Some(dir) = install_path.parent()
-                && dir != tv.ba().installs_path().as_ref()
                 && dir != self.ba().installs_path().as_ref()
                 && dir.starts_with(*dirs::INSTALLS)
             {
