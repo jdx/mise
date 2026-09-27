@@ -2555,26 +2555,33 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
         .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
 }
 
-/// [`desymlink_path`] with resolutions of existing absolute paths cached for the
-/// current process, like [`canonicalize_cached`]. A path that does not exist yet
-/// is resolved on every call, since it may be created later in the process.
-pub fn desymlink_path_cached(p: &Path) -> PathBuf {
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+static DESYMLINKED: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
 
+/// [`desymlink_path`] with resolutions of existing absolute paths cached until
+/// [`clear_desymlink_cache`]. A path that does not exist yet is resolved on
+/// every call, since it may be created later in the process.
+pub fn desymlink_path_cached(p: &Path) -> PathBuf {
     if !p.is_absolute() {
         return desymlink_path(p);
     }
-    if let Some(resolved) = CACHE.lock().unwrap().get(p).cloned() {
+    if let Some(resolved) = DESYMLINKED.lock().unwrap().get(p).cloned() {
         return resolved;
     }
     let resolved = desymlink_path(p);
     if p.exists() {
-        CACHE
+        DESYMLINKED
             .lock()
             .unwrap()
             .insert(p.to_path_buf(), resolved.clone());
     }
     resolved
+}
+
+/// Forget every resolution [`desymlink_path_cached`] has made, so the next call
+/// follows symlinks as they are now. Config reloads call this: a symlink
+/// retargeted since the last load must not keep its old destination.
+pub fn clear_desymlink_cache() {
+    DESYMLINKED.lock().unwrap().clear();
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
@@ -3344,13 +3351,25 @@ esac
         assert_eq!(desymlink_path_cached(&link), desymlink_path(&link));
         assert_eq!(desymlink_path_cached(&link), target.canonicalize().unwrap());
 
+        // Clearing the cache follows a link that was retargeted since.
+        let other = root.path().join("other");
+        fs::write(&other, "test").unwrap();
+        fs::remove_file(&link).unwrap();
+        symlink(&other, &link).unwrap();
+        assert_eq!(desymlink_path_cached(&link), target.canonicalize().unwrap());
+        clear_desymlink_cache();
+        assert_eq!(desymlink_path_cached(&link), other.canonicalize().unwrap());
+
         // A path that does not exist yet is not cached: once it becomes a
         // link, the next call follows it.
         let later = root.path().join("later");
         let before = desymlink_path_cached(&later);
         assert_eq!(before, desymlink_path(&later));
         symlink(&target, &later).unwrap();
-        assert_eq!(desymlink_path_cached(&later), target.canonicalize().unwrap());
+        assert_eq!(
+            desymlink_path_cached(&later),
+            target.canonicalize().unwrap()
+        );
     }
 
     #[cfg(unix)]

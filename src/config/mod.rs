@@ -253,6 +253,9 @@ impl Config {
                 _CONFIG.write().unwrap().take();
                 *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
                 *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+                // Global-config membership follows symlinks, which may have
+                // been retargeted since the last load.
+                file::clear_desymlink_cache();
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
                 crate::task::reset();
