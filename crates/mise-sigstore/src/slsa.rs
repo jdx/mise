@@ -5,12 +5,14 @@ pub async fn verify_slsa_provenance(
     artifact_path: &Path,
     provenance_path: &Path,
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
 ) -> Result<bool> {
     let artifact = tokio::fs::read(artifact_path).await?;
     verify_slsa_provenance_artifacts(
         provenance_path,
         &[SlsaArtifact::from_bytes(String::new(), &artifact)],
         min_level,
+        signer,
     )
     .await
 }
@@ -19,7 +21,13 @@ pub async fn verify_slsa_provenance_artifacts(
     provenance_path: &Path,
     artifacts: &[SlsaArtifact],
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
 ) -> Result<bool> {
+    if signer.identity.is_empty() || signer.issuer.is_empty() {
+        return Err(AttestationError::Verification(
+            "SLSA signer identity and OIDC issuer must be set".to_string(),
+        ));
+    }
     if artifacts.is_empty() {
         return Err(AttestationError::SubjectMismatch(
             "no artifacts supplied for SLSA subject verification".to_string(),
@@ -44,7 +52,9 @@ pub async fn verify_slsa_provenance_artifacts(
         // Bundle::from_json failure falls through to the DSSE envelope path.
         if let Ok(bundle) = Bundle::from_json(candidate) {
             let result =
-                match verify_bundle_for_any_artifact(artifacts, &bundle, &mut trust_roots).await {
+                match verify_bundle_for_any_artifact(artifacts, &bundle, signer, &mut trust_roots)
+                    .await
+                {
                     Ok(()) => verify_bundle_slsa_subjects(&bundle, artifacts, min_level),
                     Err(e) => Err(e),
                 };
@@ -62,7 +72,9 @@ pub async fn verify_slsa_provenance_artifacts(
         // Sigstore trust root since slsa-github-generator certs are issued by
         // Sigstore Fulcio.
         let result = match trust_roots.sigstore_root().await {
-            Ok(root) => verify_intoto_envelope_subjects(candidate, artifacts, min_level, root),
+            Ok(root) => {
+                verify_intoto_envelope_subjects(candidate, artifacts, min_level, signer, root)
+            }
             Err(e) => Err(e),
         };
         match result {
@@ -81,12 +93,14 @@ pub(crate) fn verify_intoto_envelope(
     line: &str,
     artifact: &[u8],
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     verify_intoto_envelope_subjects(
         line,
         &[SlsaArtifact::from_bytes(String::new(), artifact)],
         min_level,
+        signer,
         trusted_root,
     )
 }
@@ -95,6 +109,7 @@ pub(crate) fn verify_intoto_envelope_subjects(
     line: &str,
     artifacts: &[SlsaArtifact],
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     let envelope: serde_json::Value = serde_json::from_str(line).map_err(|e| {
@@ -146,7 +161,7 @@ pub(crate) fn verify_intoto_envelope_subjects(
     let mut sig_errors = Vec::new();
     let mut verified = false;
     for sig in signatures {
-        match verify_dsse_signature(sig, &pae, trusted_root) {
+        match verify_dsse_signature(sig, &pae, signer, trusted_root) {
             Ok(()) => {
                 verified = true;
                 break;
@@ -167,6 +182,7 @@ pub(crate) fn verify_intoto_envelope_subjects(
 pub(crate) fn verify_dsse_signature(
     sig: &serde_json::Value,
     pae: &[u8],
+    signer: SlsaSignerIdentity<'_>,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     let cert_pem = sig.get("cert").and_then(|v| v.as_str()).ok_or_else(|| {
@@ -181,6 +197,7 @@ pub(crate) fn verify_dsse_signature(
     let cert = DerCertificate::from_pem(cert_pem)?;
     // Chain-validate the embedded cert before trusting its public key.
     verify_cert_chain(cert.as_bytes(), trusted_root)?;
+    verify_slsa_signer_certificate(cert.as_bytes(), signer)?;
     let spki_der = extract_spki_der(cert.as_bytes())?;
     let public_key = DerPublicKey::new(spki_der);
     verify_raw_signature(pae, &sig_bytes, &public_key)
@@ -320,6 +337,7 @@ pub(crate) fn join_error_strings(errors: Vec<String>, default: impl FnOnce() -> 
 pub(crate) async fn verify_bundle_for_any_artifact(
     artifacts: &[SlsaArtifact],
     bundle: &Bundle,
+    signer: SlsaSignerIdentity<'_>,
     trust_roots: &mut TrustRoots,
 ) -> Result<()> {
     let artifact = artifacts.first().ok_or_else(|| {
@@ -330,7 +348,8 @@ pub(crate) async fn verify_bundle_for_any_artifact(
     let digest = Sha256Hash::from_hex(&artifact.sha256).map_err(|e| {
         AttestationError::Verification(format!("invalid artifact sha256 digest: {e}"))
     })?;
-    match verify_bundle_with_trust_roots(Artifact::from(&digest), bundle, None, trust_roots).await {
+    match verify_bundle_with_slsa_signer(Artifact::from(&digest), bundle, signer, trust_roots).await
+    {
         Ok(()) => Ok(()),
         Err(e) if is_slsa_subject_mismatch(&e) => {
             Err(AttestationError::SubjectMismatch(e.to_string()))

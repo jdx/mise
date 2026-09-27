@@ -84,6 +84,49 @@ pub(crate) fn certificate_uri_sans(cert: &x509_cert::Certificate) -> Vec<String>
         .collect()
 }
 
+/// Check the signer named by a verified Fulcio certificate. Chain and
+/// signature validation must run before this policy check.
+pub(crate) fn verify_slsa_signer_certificate(
+    cert_der: &[u8],
+    expected: SlsaSignerIdentity<'_>,
+) -> Result<()> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+
+    let cert = Certificate::from_der(cert_der).map_err(|e| {
+        AttestationError::Verification(format!("failed to parse SLSA signer certificate: {e}"))
+    })?;
+    if !certificate_uri_sans(&cert)
+        .iter()
+        .any(|identity| identity == expected.identity)
+    {
+        return Err(AttestationError::WorkflowMismatch(format!(
+            "SLSA signer identity does not match {:?}",
+            expected.identity
+        )));
+    }
+
+    // Fulcio's OIDC issuer extension is a raw UTF-8 URL in older and current
+    // GitHub Actions certificates.
+    const FULCIO_OIDC_ISSUER_OID: &str = "1.3.6.1.4.1.57264.1.1";
+    let issuer = cert
+        .tbs_certificate()
+        .extensions()
+        .and_then(|extensions| {
+            extensions
+                .iter()
+                .find(|ext| ext.extn_id.to_string() == FULCIO_OIDC_ISSUER_OID)
+        })
+        .and_then(|ext| std::str::from_utf8(ext.extn_value.as_bytes()).ok());
+    if issuer != Some(expected.issuer) {
+        return Err(AttestationError::WorkflowMismatch(format!(
+            "SLSA OIDC issuer does not match {:?}",
+            expected.issuer
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn release_statement_repository(payload: &[u8]) -> Option<String> {
     let statement: serde_json::Value = serde_json::from_slice(payload).ok()?;
     if !statement

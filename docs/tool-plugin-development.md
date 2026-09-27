@@ -120,7 +120,9 @@ local attestation = {
 
 Assign this table to the `attestation` field in `PreInstall`'s response. Other supported
 fields include `cosign_sig_or_bundle_path` with optional `cosign_public_key_path`, and
-`slsa_provenance_path` with optional `slsa_min_level`. Supply real verification inputs for
+`slsa_provenance_path` with optional `slsa_min_level`, plus `slsa_signer_identity` (the exact
+Fulcio certificate URI subject, including workflow ref) and `slsa_signer_issuer` (the exact OIDC
+issuer). SLSA is skipped when signer fields are absent. Supply real verification inputs for
 the chosen method. Do not combine unrelated placeholder methods into one example.
 
 mise's lifecycle processes the main artifact; do not rely on upstream vfox `addition`

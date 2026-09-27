@@ -90,6 +90,19 @@ pub(crate) async fn verify_bundle_with_trust_roots<'a>(
     verify_bundle(artifact, bundle, signer_workflow, trusted_root)
 }
 
+pub(crate) async fn verify_bundle_with_slsa_signer<'a>(
+    artifact: Artifact<'a>,
+    bundle: &Bundle,
+    signer: SlsaSignerIdentity<'_>,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    verify_bundle_with_trust_roots(artifact, bundle, None, trust_roots).await?;
+    let cert = bundle.signing_certificate().ok_or_else(|| {
+        AttestationError::Verification("SLSA bundle is missing a signer certificate".to_string())
+    })?;
+    verify_slsa_signer_certificate(cert.as_bytes(), signer)
+}
+
 pub(crate) async fn verify_github_bundle_with_tuf_retry<'a>(
     artifact: Artifact<'a>,
     bundle: &Bundle,

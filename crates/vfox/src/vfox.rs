@@ -899,18 +899,27 @@ impl Vfox {
             }
 
             if let Some(provenance_path) = &attestation.slsa_provenance_path {
-                let min_level = attestation.slsa_min_level.unwrap_or(1u8);
-                mise_sigstore::verify_slsa_provenance(file, provenance_path, min_level).await?;
-                // SLSA has mid-tier recording priority: record it unless GitHub
-                // attestation (higher priority) was already recorded.
-                // Note: if Cosign also passed, SLSA supersedes it (SLSA > Cosign).
-                if !matches!(
-                    verified,
-                    Some(VerifiedAttestation::GithubAttestations { .. })
+                if let (Some(identity), Some(issuer)) = (
+                    attestation.slsa_signer_identity.as_deref(),
+                    attestation.slsa_signer_issuer.as_deref(),
                 ) {
-                    verified = Some(VerifiedAttestation::Slsa {
-                        provenance_path: provenance_path.clone(),
-                    });
+                    let min_level = attestation.slsa_min_level.unwrap_or(1u8);
+                    let signer = mise_sigstore::SlsaSignerIdentity { identity, issuer };
+                    mise_sigstore::verify_slsa_provenance(file, provenance_path, min_level, signer)
+                        .await?;
+                    // SLSA has mid-tier recording priority: record it unless GitHub
+                    // attestation (higher priority) was already recorded.
+                    // Note: if Cosign also passed, SLSA supersedes it (SLSA > Cosign).
+                    if !matches!(
+                        verified,
+                        Some(VerifiedAttestation::GithubAttestations { .. })
+                    ) {
+                        verified = Some(VerifiedAttestation::Slsa {
+                            provenance_path: provenance_path.clone(),
+                        });
+                    }
+                } else {
+                    debug!("skipping SLSA provenance without expected signer identity and issuer");
                 }
             }
         }
@@ -975,7 +984,10 @@ fn attestation_to_verified(att: PreInstallAttestation) -> Option<VerifiedAttesta
         });
     }
     // SLSA is second priority
-    if let Some(provenance_path) = att.slsa_provenance_path {
+    if let Some(provenance_path) = att.slsa_provenance_path
+        && att.slsa_signer_identity.is_some()
+        && att.slsa_signer_issuer.is_some()
+    {
         return Some(VerifiedAttestation::Slsa { provenance_path });
     }
     // Cosign is third priority
@@ -1041,6 +1053,22 @@ fn ensure_checksum(file: &Path, algo: &str, expected: &str, actual: &str) -> Res
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[test]
+    fn slsa_detection_requires_signer_fields() {
+        let attestation = PreInstallAttestation {
+            github_owner: None,
+            github_repo: None,
+            github_signer_workflow: None,
+            cosign_sig_or_bundle_path: None,
+            cosign_public_key_path: None,
+            slsa_provenance_path: Some(PathBuf::from("provenance.intoto.jsonl")),
+            slsa_min_level: None,
+            slsa_signer_identity: None,
+            slsa_signer_issuer: None,
+        };
+        assert!(attestation_to_verified(attestation).is_none());
+    }
 
     impl Vfox {
         pub fn test() -> Self {
