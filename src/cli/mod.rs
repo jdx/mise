@@ -5,6 +5,7 @@ use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate};
+use confique::Layer as _;
 use eyre::{Report, bail};
 use futures_util::future::LocalBoxFuture;
 use std::path::PathBuf;
@@ -30,7 +31,7 @@ fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<Settings
         None => None,
         Some(value) => unreachable!("{key} resolved as {}", value.type_name()),
     };
-    let mut s = <SettingsPartial as confique::Layer>::empty();
+    let mut s = SettingsPartial::empty();
     s.truncate = get_bool("truncate");
     s.task.remote_no_cache = get_bool("task.remote_no_cache");
     Ok(s)
@@ -921,8 +922,8 @@ pub(crate) fn register_frontend() {
 }
 
 impl Cli {
-    /// The settings layer the global flags set on top of `command_local`, for
-    /// `Settings::add_cli_matches`.
+    /// The settings layer the global flags set on top of `command_local`,
+    /// for `Settings::add_cli_matches`.
     fn settings_layer(&self, command_local: SettingsPartial) -> SettingsPartial {
         let mut s = command_local;
         if self.raw {
@@ -1030,9 +1031,7 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(
-                cli.settings_layer(<SettingsPartial as confique::Layer>::empty()),
-            )?;
+            Settings::init_package_query(cli.settings_layer(SettingsPartial::empty()))?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
