@@ -61,6 +61,11 @@ The configuration remains `nightly`, while mise resolves the current Rust channe
 `nightly-YYYY-MM-DD` toolchain for installation and lockfiles. This keeps the configured channel rolling while making
 locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to advance the locked nightly.
 
+So that `cargo +nightly` keeps working, mise also gives rustup a `nightly` toolchain matching the dated one when rustup's
+`nightly` is missing or older. Its files are reflinked, or hardlinked on filesystems without copy-on-write clones, so it
+takes almost no extra disk space. After that it belongs to rustup: `rustup update nightly` can move it forward without
+changing the dated toolchain mise installed.
+
 To keep a specific nightly instead, configure its date explicitly:
 
 ```sh

@@ -195,6 +195,7 @@ rattler_package_streaming = { version = "0.27", default-features = false }
 rattler_virtual_packages = { version = "7", default-features = false }
 regex = "1"
 plist = "1"
+reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "form",
