@@ -520,7 +520,8 @@ url = "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz"
 New lockfiles use the current versioned format. Older lockfiles retain their format
 during ordinary updates to avoid making them unreadable by collaborators using an
 older mise. Run `mise lock --upgrade` to upgrade explicitly and record forge
-repository IDs in version 3. Version 1 records each
+repository IDs in version 3. Older revisions omit those IDs and warn when a
+Packslip release provides them. Version 1 records each
 original tool request in the concrete entry it resolved to. Version 2 references native
 aube and uv dependency graphs in sidecar directories. Version 3 records forge repository
 IDs for Packslip signatures. Older mise versions reject newer lockfile versions.

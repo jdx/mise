@@ -1214,6 +1214,12 @@ impl Lockfile {
         let content = file::read_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         let mut table: toml::Table = toml::from_str(&content)?;
+        if table.is_empty() {
+            return Ok(Lockfile {
+                generated_header_url,
+                ..Default::default()
+            });
+        }
         let lockfile_version = table
             .remove("lockfile_version")
             .map(|value| value.try_into())
@@ -1355,6 +1361,18 @@ impl Lockfile {
         let path = target.as_path();
 
         let mut lockfile = toml::Table::new();
+        if self.lockfile_version < FORGE_IDS_LOCKFILE_VERSION
+            && self.tools.values().flatten().any(|tool| {
+                tool.platforms
+                    .values()
+                    .any(|info| info.repository_id.is_some() || info.repository_owner_id.is_some())
+            })
+        {
+            warn!(
+                "forge repository IDs require lockfile revision {FORGE_IDS_LOCKFILE_VERSION}; omitting them from revision {}. Run `mise lock --upgrade` to record them",
+                self.lockfile_version
+            );
+        }
 
         if self.lockfile_version > 0 {
             lockfile.insert(
@@ -5462,6 +5480,15 @@ mod tests {
         let ids = &reloaded.tools["example"][0].platforms["linux-x64"];
         assert_eq!(ids.repository_id.as_deref(), Some("922514152"));
         assert_eq!(ids.repository_owner_id.as_deref(), Some("216188"));
+    }
+
+    #[test]
+    fn empty_lockfile_uses_current_revision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(&path, "").unwrap();
+        let lockfile = Lockfile::read(&path).unwrap();
+        assert_eq!(lockfile.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     }
 
     #[test]
