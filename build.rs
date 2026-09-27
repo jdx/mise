@@ -30,6 +30,7 @@ fn main() -> Result<()> {
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
     built::write_built_file()?;
+    link_without_pie();
     build_notification_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
@@ -37,6 +38,22 @@ fn main() -> Result<()> {
     codegen_registry(&aqua_registry.packages);
     codegen_aqua_standard_registry(&aqua_registry)?;
     Ok(())
+}
+
+/// Release builds for Linux GNU set `MISE_NO_PIE=1` (see scripts/build-tarball.sh)
+/// to link the `mise` executable at a fixed address. As a position-independent
+/// executable, mise makes the dynamic loader patch about 300k pointers on every
+/// launch, which copies roughly 2k pages and dominates the startup of short
+/// commands such as `hook-env`. Linked non-PIE, those pointers are final in the
+/// file. Dependencies are still compiled position-independent; the flag reaches
+/// only bin targets, so no shared library is linked with it.
+fn link_without_pie() {
+    println!("cargo:rerun-if-env-changed=MISE_NO_PIE");
+    let linux_gnu = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux")
+        && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu");
+    if linux_gnu && env::var("MISE_NO_PIE").as_deref() == Ok("1") {
+        println!("cargo:rustc-link-arg-bins=-no-pie");
+    }
 }
 
 fn build_notification_helper() -> Result<()> {
