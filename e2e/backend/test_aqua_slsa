@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test native SLSA verification for aqua packages
+# Test that unconfigured Aqua SLSA provenance is skipped
 
 set -euo pipefail
 
@@ -7,22 +7,17 @@ export MISE_EXPERIMENTAL=1
 export MISE_AQUA_SLSA=true
 export MISE_AQUA_COSIGN=false
 
-echo "=== Testing Native SLSA Verification ==="
+echo "=== Testing Aqua SLSA Without Signer Metadata ==="
 
-# Test: Install sops which has SLSA provenance configured
-echo "Installing sops with native SLSA verification..."
+# Sops has an SLSA provenance source, but no expected signer metadata.
+echo "Installing sops without an SLSA signer identity..."
 
-# Capture the installation output to verify the native verification is being used
+# Capture installation output to verify SLSA is skipped.
 output=$(mise install --verbose aqua:getsops/sops@3.9.0 2>&1)
 echo "$output"
 
-# Verify the native SLSA verification was used
 if echo "$output" | grep -q "verify slsa"; then
-  echo "✅ Native SLSA verification was used"
-else
-  echo "❌ ERROR: SLSA verification message not found in output"
-  echo "Output was:"
-  echo "$output"
+  echo "SLSA verification ran without a configured signer identity"
   exit 1
 fi
 
@@ -34,4 +29,4 @@ echo "✓ sops installed and working correctly"
 mise uninstall aqua:getsops/sops@3.9.0 || true
 
 echo ""
-echo "=== Native SLSA Verification Test Passed ✓ ==="
+echo "=== Unconfigured Aqua SLSA Was Skipped ✓ ==="

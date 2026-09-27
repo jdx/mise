@@ -507,6 +507,22 @@ and available. If `mise.lock` already records `github-attestations` provenance
 for the tool, re-run `mise lock` after disabling this option so the lockfile no
 longer requires a verifier that the tool config has turned off.
 
+### `slsa_signer_identity` and `slsa_signer_issuer`
+
+To verify SLSA release provenance, set the expected Fulcio certificate URI subject
+and OIDC issuer for the publishing workflow:
+
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", slsa_signer_identity = "https://github.com/myorg/mytool/.github/workflows/release.yml@refs/tags/v{{version}}", slsa_signer_issuer = "https://token.actions.githubusercontent.com" }
+```
+
+The identity must match the workflow ref in the certificate exactly. The
+<span v-pre>`{{version}}`</span> template uses the resolved tool version. Without both
+options, mise skips SLSA provenance and can use other available verification.
+If the lockfile requires SLSA, missing signer options cause an error.
+SLSA lockfile entries recheck the signer on every installation.
+
 ### `prerelease`
 
 By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:

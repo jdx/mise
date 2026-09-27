@@ -31,7 +31,7 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, SlsaArtifact};
+pub use mise_sigstore::{AttestationError, SlsaArtifact, SlsaSignerIdentity};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -468,18 +468,27 @@ pub async fn verify_slsa_provenance(
     artifact_path: &Path,
     provenance_path: &Path,
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
     if !mise_settings::Settings::get().generate_lockfiles() {
-        return mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level)
-            .await;
+        return mise_sigstore::verify_slsa_provenance(
+            artifact_path,
+            provenance_path,
+            min_level,
+            signer,
+        )
+        .await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
-    let key = format!("slsa:{artifact_digest}:{provenance_digest}:{min_level}");
+    let key = format!(
+        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}",
+        signer.identity, signer.issuer
+    );
     shared_verification(
         key,
-        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level),
+        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level, signer),
     )
     .await
 }
@@ -488,9 +497,11 @@ pub async fn verify_slsa_provenance_artifacts(
     provenance_path: &Path,
     artifacts: &[SlsaArtifact],
     min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level).await
+    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level, signer)
+        .await
 }
 
 pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
