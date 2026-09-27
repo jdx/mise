@@ -169,6 +169,44 @@ struct ResolvedPackage {
     v_prefixed: Option<String>,
 }
 
+/// The versions an aqua fuzzy `query` selects. Resolution runs this for every
+/// aqua tool, so only `latest`, which has a fixed pattern, uses a regex; any
+/// other query is matched as a literal, optionally followed by `-` or `.` and
+/// at least one more character.
+fn aqua_fuzzy_match(versions: Vec<String>, query: &str, filter_prereleases: bool) -> Vec<String> {
+    static LATEST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
+    let latest = query == "latest";
+    let exact = if latest {
+        r"\D*[0-9].*".to_string()
+    } else {
+        regex::escape(query)
+    };
+    let matches = |v: &str| {
+        if latest {
+            return LATEST.is_match(v);
+        }
+        v.strip_prefix(query).is_some_and(|rest| {
+            rest.is_empty()
+                || rest
+                    .strip_prefix(['-', '.'])
+                    .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
+        })
+    };
+    versions
+        .into_iter()
+        .filter(|v| {
+            if exact == *v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            matches(v)
+        })
+        .collect()
+}
+
 #[async_trait]
 impl Backend for AquaBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
@@ -614,40 +652,7 @@ impl Backend for AquaBackend {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
-        // Resolution runs this for every aqua tool, so only `latest`, which has
-        // a fixed pattern, uses a regex; a query is matched as a literal
-        // followed by `-` or `.` and at least one more character.
-        static LATEST: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
-        let latest = query == "latest";
-        let exact = if latest {
-            r"\D*[0-9].*".to_string()
-        } else {
-            regex::escape(query)
-        };
-        let matches = |v: &str| {
-            if latest {
-                return LATEST.is_match(v);
-            }
-            v.strip_prefix(query).is_some_and(|rest| {
-                rest.is_empty()
-                    || rest
-                        .strip_prefix(['-', '.'])
-                        .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
-            })
-        };
-        versions
-            .into_iter()
-            .filter(|v| {
-                if exact == *v {
-                    return true;
-                }
-                if filter_prereleases && VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                matches(v)
-            })
-            .collect()
+        aqua_fuzzy_match(versions, query, filter_prereleases)
     }
 
     /// Resolve platform-specific lock information for any target platform.
@@ -3754,6 +3759,94 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
+
+    /// The regex filter [`aqua_fuzzy_match`] replaced, kept to show the two agree.
+    fn aqua_fuzzy_match_by_regex(
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "\\D*[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_aqua_fuzzy_match_agrees_with_the_regex_it_replaced() {
+        let queries = [
+            "latest",
+            "1",
+            "1.2",
+            "1.2.3",
+            "v1",
+            "v1.2",
+            "go1.2",
+            "jq-1",
+            "jq-",
+            "",
+            "1.2-rc1",
+            "1+x",
+            "a.b",
+            "é",
+            "1\n",
+            r"\D*[0-9].*",
+        ];
+        let versions: Vec<String> = [
+            "",
+            "1",
+            "1.2",
+            "1.2.3",
+            "1.20",
+            "1.2-rc1",
+            "1.2-dev.5",
+            "1.2+build",
+            "1.2.",
+            "1.2-",
+            "1.2.\n",
+            "v1.2",
+            "v1.2.3",
+            "go1.2.3",
+            "jq-1.7",
+            "jq-1.7-rc1",
+            "latest",
+            "x",
+            "é-1",
+            "٣1.0",
+            "a٣1",
+            "\n1",
+            "1\n",
+            "1.2+b.4",
+            r"\D*[0-9].*",
+            "a.b.c",
+        ]
+        .map(String::from)
+        .to_vec();
+        for query in queries {
+            for filter_prereleases in [true, false] {
+                assert_eq!(
+                    aqua_fuzzy_match(versions.clone(), query, filter_prereleases),
+                    aqua_fuzzy_match_by_regex(versions.clone(), query, filter_prereleases),
+                    "query {query:?} filter_prereleases {filter_prereleases}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn aqua_uses_go_arch_name_for_32_bit_arm() {
