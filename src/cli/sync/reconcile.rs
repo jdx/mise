@@ -256,11 +256,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source_root = dir.path().join("source");
         let target = source_root.join("1.0.0");
-        let mut tool = BackendArg::from("node");
-        tool.short = format!(
+        // A unique tool name keeps this lock (keyed by the tool's cache dir)
+        // away from any real install.
+        let mut tool = BackendArg::from(format!(
             "sync-lock-test-{}",
             dir.path().file_name().unwrap().to_string_lossy()
-        );
+        ));
         tool.set_installs_path(dir.path().join("installs"));
         file::create_dir_all(&target).unwrap();
 
