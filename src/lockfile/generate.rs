@@ -753,13 +753,15 @@ pub async fn populate_uv_locks(
 /// one committed to. That is the same signer string, or, when both entries
 /// record the same forge repository and owner IDs, the same workflow of that
 /// repository under the name it has now. A repository ID that changed is a
-/// different repository, even under the same name.
+/// different repository, and an owner ID that changed is a transfer, even
+/// under the same name and signer: install refuses both, and so does this.
 fn packslip_signer_continues(old: &PlatformInfo, new: &PlatformInfo) -> bool {
     let (Some(old_signer), Some(new_signer)) = (&old.signer, &new.signer) else {
         return old.signer.is_none();
     };
-    if let (Some(before), Some(now)) = (&old.repository_id, &new.repository_id)
-        && before != now
+    let changed = |before: &Option<String>, now: &Option<String>| matches!((before, now), (Some(before), Some(now)) if before != now);
+    if changed(&old.repository_id, &new.repository_id)
+        || changed(&old.repository_owner_id, &new.repository_owner_id)
     {
         return false;
     }
@@ -1515,6 +1517,13 @@ mod tests {
             ..old.clone()
         };
         assert!(ensure_no_downgrade(&old, &transferred, backend).is_err());
+        // Even under the same name and signer: the owner commitment does not
+        // change without a transfer someone accepted.
+        let retaken = PlatformInfo {
+            repository_owner_id: Some("8".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &retaken, backend).is_err());
         // Another workflow of the same repository is another signer.
         let other_workflow = PlatformInfo {
             signer: Some(
