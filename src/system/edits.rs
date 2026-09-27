@@ -27,7 +27,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -79,14 +79,14 @@ pub(crate) struct EditTomlTable {
 
 /// where a block's content comes from
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum BlockSource {
+pub enum BlockSource {
     Inline(String),
     /// absolute path, resolved against the declaring config file
     File(PathBuf),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum EditOp {
+pub enum EditOp {
     Block {
         source: BlockSource,
         template: bool,
@@ -99,7 +99,7 @@ pub(crate) enum EditOp {
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub(crate) enum LinePosition {
+pub enum LinePosition {
     Prepend,
     #[default]
     Append,
@@ -107,7 +107,7 @@ pub(crate) enum LinePosition {
 
 /// one edit, resolved against the config file that declared it
 #[derive(Debug, Clone)]
-pub(crate) struct EditRequest {
+pub struct EditRequest {
     /// target path as written in config (display)
     pub path_raw: String,
     /// absolute target path (`~` expanded)
@@ -126,19 +126,19 @@ pub(crate) struct EditRequest {
 
 impl EditRequest {
     /// short operation label for status tables and dry-run output
-    pub(crate) fn describe_op(&self) -> String {
+    pub fn describe_op(&self) -> String {
         match &self.op {
             EditOp::Block { .. } => format!("block:{}", self.id),
             EditOp::Line { .. } => format!("line:{}", self.id),
         }
     }
 
-    pub(crate) fn config_key(&self) -> String {
+    pub fn config_key(&self) -> String {
         format!("{}/{}", self.path_raw.trim_end_matches('/'), self.id)
     }
 }
 
-pub(crate) fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
+pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
     filters.is_empty()
         || filters.iter().any(|filter| {
             filter == &req.path_raw
@@ -160,7 +160,7 @@ pub(crate) fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
-pub(crate) fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
+pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
     let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for request in edits_from_config_files(config_files) {
@@ -180,7 +180,16 @@ pub(crate) fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
             composed.insert(key, request);
         }
     }
-    Ok(composed.into_values().collect())
+    let edits = composed.into_values().collect::<Vec<_>>();
+    // every command that applies or reports edits loads them here, so the
+    // contradiction is refused before either kind of entry is applied
+    if !edits.is_empty() {
+        crate::system::files::validate_absent_edit_targets(
+            &crate::system::files::files_from_config(config)?,
+            &edits,
+        )?;
+    }
+    Ok(edits)
 }
 
 /// Returns whether sibling declarations produce the same file edit.
@@ -227,7 +236,11 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
         toml::Value::Table(table) => {
             let is_whole_file_table = table.is_empty()
                 || table.contains_key("mode")
-                || (table.contains_key("source") || table.contains_key("content"))
+                || table.contains_key("remove_empty")
+                || (table.contains_key("source")
+                    || table.contains_key("content")
+                    || table.contains_key("permissions")
+                    || table.contains_key("dot_prefix"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -235,6 +248,16 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
                     && !table.contains_key("position");
             if is_whole_file_table {
                 return None;
+            }
+            // an edit owns lines in a file, not the file itself; dropping
+            // the key silently would leave the declared mode unapplied
+            for key in ["permissions", "dot_prefix"] {
+                if table.contains_key(key) {
+                    warn!(
+                        "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not block or line edits, ignoring entry"
+                    );
+                    return None;
+                }
             }
         }
         _ => return None,
@@ -505,7 +528,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 /// templates. Rendering only happens once every render-free outcome (symlink
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
-pub(crate) fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
+pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
     if let EditOp::Block {
         source: BlockSource::File(p),
         ..
@@ -594,7 +617,7 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     }
 }
 
-pub(crate) struct ApplyOpts {
+pub struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     pub yes: bool,
@@ -605,8 +628,16 @@ pub(crate) struct ApplyOpts {
 /// Apply all edits that aren't already in the desired state. Edits never
 /// replace files, so there is no --force here — but corrupted markers and
 /// symlink targets are reported as errors rather than guessed at. Returns
-/// `false` when the user declines the confirmation prompt.
-pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Result<bool> {
+/// `false` when the user declines the confirmation prompt. The paths edited
+/// are appended to `written` as each entry is applied, so a caller still
+/// sees what changed when a later entry fails; nothing is appended on a dry
+/// run.
+pub fn apply(
+    config: &Config,
+    requests: &[EditRequest],
+    opts: &ApplyOpts,
+    written: &mut Vec<PathBuf>,
+) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     for req in requests {
@@ -726,7 +757,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
     }
     for (req, desired) in &todo {
         let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
-        apply_one(req, desired.as_deref())?;
+        apply_one(req, desired.as_deref(), written)?;
         journal::commit_changes(pending);
     }
     let applied = todo
@@ -741,7 +772,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
 /// Print unified patches for the changes required to converge edit entries.
 /// Template blocks are rendered because an exact diff requires their desired
 /// content, matching the trust and execution semantics of dotfiles status.
-pub(crate) fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
+pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
     let mut changed = false;
     let mut problems = vec![];
     for req in requests {
@@ -860,7 +891,7 @@ pub(crate) fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<(
     Ok(())
 }
 
-pub(crate) struct UnapplyOpts {
+pub struct UnapplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// plain line edits have no ownership marker, so removing them requires
@@ -869,7 +900,7 @@ pub(crate) struct UnapplyOpts {
     pub yes: bool,
 }
 
-pub(crate) struct UnapplyPlan<'a> {
+pub struct UnapplyPlan<'a> {
     req: &'a EditRequest,
     /// Exact target contents observed during planning. Template functions run
     /// before execution, so selected edits must still have this same state.
@@ -879,7 +910,7 @@ pub(crate) struct UnapplyPlan<'a> {
 /// Remove marker-delimited blocks and, with `--force`, exact line edits.
 /// Block markers are their ownership record. A plain line may have existed
 /// before apply, so stateless unapply refuses to guess without `--force`.
-pub(crate) fn plan_unapply<'a>(
+pub fn plan_unapply<'a>(
     requests: &'a [EditRequest],
     opts: &UnapplyOpts,
 ) -> Result<Vec<UnapplyPlan<'a>>> {
@@ -951,7 +982,7 @@ pub(crate) fn plan_unapply<'a>(
 
 /// Ensure template functions or another concurrent actor did not invalidate
 /// any edit ownership checks performed during planning.
-pub(crate) fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
+pub fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
     let mut checked = indexmap::IndexSet::new();
     let mut problems = vec![];
     for plan in todo {
@@ -986,7 +1017,7 @@ pub(crate) fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+pub fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
     if todo.is_empty() {
         info!("edits: all edits are unapplied");
         return Ok(());
@@ -1107,7 +1138,7 @@ fn text_lines(text: &str) -> Vec<TextLine<'_>> {
 /// Simulate applying an edit to in-memory text for bootstrap dry-run config
 /// discovery. Template edits are intentionally not rendered during dry-runs
 /// because rendering may execute user commands.
-pub(crate) fn apply_dry_run_to_string(
+pub fn apply_dry_run_to_string(
     config: &Config,
     req: &EditRequest,
     text: &str,
@@ -1130,19 +1161,39 @@ fn edit_paths(path: &Path) -> Vec<(PathBuf, Capture)> {
     paths
 }
 
-fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
+/// Write one edit, appending its path to `written` at the point the file is
+/// first mutated. An existing file is truncated in place (preserving its
+/// permissions), so it is recorded once it has been opened for truncation:
+/// an open that fails (a read-only file or filesystem) changes nothing and
+/// records nothing, while a write that fails after it still leaves the file
+/// changed — the journal preimage is only restored by a later recovery run.
+/// A new file is recorded once it exists, even if the write that created it
+/// then failed.
+fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
+    use std::io::Write;
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
     }
-    let text = if req.path.exists() {
+    let existed = req.path.exists();
+    let text = if existed {
         file::read_to_string(&req.path)?
     } else {
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
-    // file::write truncates in place, preserving the file's permissions
-    file::write(&req.path, &out)?;
+    let failed = || format!("failed write: {}", req.path.display_user());
+    if existed {
+        let mut target = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&req.path)
+            .wrap_err_with(failed)?;
+        written.push(req.path.clone());
+        target.write_all(out.as_bytes()).wrap_err_with(failed)?;
+    } else {
+        crate::system::files::create_recorded(&req.path, written, || file::write(&req.path, &out))?;
+    }
     Ok(())
 }
 
@@ -1207,6 +1258,52 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_one_records_an_existing_file_only_once_it_is_opened_for_writing() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join(".zshrc");
+        file::write(&path, "before\n")?;
+        let req = EditRequest {
+            path_raw: path.to_string_lossy().to_string(),
+            path: path.clone(),
+            id: "activate".into(),
+            op: EditOp::Line {
+                line: "eval \"$(mise activate zsh)\"".into(),
+                position: LinePosition::Append,
+            },
+            base: dir.path().to_path_buf(),
+            config_path: dir.path().join("mise.toml"),
+            origin: ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: None,
+            },
+        };
+
+        // a writable file is recorded and edited
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert_eq!(written, vec![path.clone()]);
+        assert!(file::read_to_string(&path)?.contains("mise activate"));
+
+        // a read-only file cannot be opened for truncation: nothing changes
+        // and nothing is recorded (root can open it regardless, so the case
+        // is skipped there)
+        file::write(&path, "before\n")?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444))?;
+        if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            return Ok(());
+        }
+        let mut written = vec![];
+        assert!(apply_one(&req, None, &mut written).is_err());
+        assert!(written.is_empty());
+        assert_eq!(file::read_to_string(&path)?, "before\n");
+        Ok(())
+    }
 
     #[test]
     fn test_infer_comment() {

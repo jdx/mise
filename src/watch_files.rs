@@ -1,5 +1,5 @@
 use crate::cmd::cmd;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::toolset::Toolset;
 use eyre::Result;
@@ -13,7 +13,7 @@ use std::{collections::BTreeSet, sync::Arc};
 #[derive(
     Debug, Clone, serde::Serialize, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq, Hash,
 )]
-pub(crate) struct WatchFile {
+pub struct WatchFile {
     pub patterns: Vec<String>,
     #[serde(default)]
     pub run: Option<String>,
@@ -30,7 +30,7 @@ pub(crate) fn add_modified_file(file: PathBuf) {
     set.insert(file);
 }
 
-pub(crate) async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
+pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
     let files = {
         let mut mu = MODIFIED_FILES.lock().unwrap();
         mu.take().unwrap_or_default()

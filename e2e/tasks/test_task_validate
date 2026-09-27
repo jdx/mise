@@ -463,3 +463,30 @@ assert_contains "mise tasks validate" "✓ All 4 task(s) validated successfully"
 
 # Clean up
 rm -rf mise-tasks
+
+# Test that a file task whose #USAGE spec does not parse fails validation. Loading the task
+# falls back to an empty spec, which would otherwise make the spec look valid.
+rm -f mise.toml
+touch mise.toml
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/bad-usage
+#!/usr/bin/env bash
+#USAGE arg "<x" {{{
+echo hi
+SCRIPT
+chmod +x mise-tasks/bad-usage
+
+assert_fail "mise tasks validate --errors-only"
+assert_contains "mise tasks validate --errors-only 2>&1 || true" "usage-parse-error"
+assert_contains "mise tasks validate --errors-only 2>&1 || true" "invalid usage spec in task file"
+assert_contains "mise tasks validate --json 2>&1 || true" '"severity": "error"'
+
+# A KDL bool written as `true` instead of `#true` is also a spec error
+cat <<'SCRIPT' >mise-tasks/bad-usage
+#!/usr/bin/env bash
+#USAGE flag "--v" default=true
+echo hi
+SCRIPT
+
+assert_fail "mise tasks validate --errors-only"
+assert_contains "mise tasks validate --errors-only 2>&1 || true" "usage-parse-error"

@@ -8,6 +8,9 @@ assert "mise registry gh --json | jq -r '.short'" "gh"
 assert "mise registry gh --json | jq -r '.backends[0]'" "aqua:cli/cli"
 assert_contains "mise registry --json | jq -r '.[].short'" "gh"
 assert "mise registry --json | jq -r '.[] | select(.short == \"gh\") | .backends[0]'" "aqua:cli/cli"
+# A registry url is included when set and omitted otherwise.
+assert "mise registry dart --json | jq -r '.url'" "https://dart.dev"
+assert "mise registry gh --json | jq -r 'has(\"url\")'" "false"
 
 # --security requires JSON output and adds a security array per tool.
 assert "mise registry bun --json --security | jq -r 'if .security then \"has\" else \"none\" end'" "has"

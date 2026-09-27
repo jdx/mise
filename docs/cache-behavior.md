@@ -109,8 +109,9 @@ mise cache prune --dry-run
 mise cache prune
 ```
 
-Environment entries use their own TTL during pruning. Set `cache_prune_age = "0s"` to disable
-automatic age-based pruning. Preview an explicit prune command before relying on its effect.
+Environment entries use their own TTL during pruning, so they expire whatever the prune age is.
+Set `cache_prune_age = "0s"` to turn age-based pruning off: the occasional sweep and
+`mise cache prune` both stop for it. Preview an explicit prune command before relying on its effect.
 
 For [CI](/continuous-integration.html), caching installed tools usually saves the most work.
 Metadata caches can still help repeated jobs; choose cache keys for the runner platform and

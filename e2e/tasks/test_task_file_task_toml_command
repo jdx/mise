@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+
+# A `[tasks.<name>]` block that declares a command claims the discovered scripts
+# that name reaches -- the script named exactly, or every script sharing the
+# stem -- when it outranks the config that selected the script's include.
+# Otherwise it overlays metadata onto the script instead.
+
+mkdir -p mise-tasks mytasks scripts .mise .config
+
+cat <<'EOF' >mise-tasks/hello.sh
+#!/usr/bin/env bash
+echo script-ran
+EOF
+chmod +x mise-tasks/hello.sh
+
+cat <<'EOF' >mise-tasks/meta.sh
+#!/usr/bin/env bash
+echo "GREETING=${GREETING:-unset}"
+EOF
+chmod +x mise-tasks/meta.sh
+
+cat <<'EOF' >mise-tasks/bare
+#!/usr/bin/env bash
+echo bare-script-ran
+EOF
+chmod +x mise-tasks/bare
+
+cat <<'EOF' >mise-tasks/other.sh
+#!/usr/bin/env bash
+echo other-script-ran
+EOF
+chmod +x mise-tasks/other.sh
+
+cat <<'EOF' >mise-tasks/redirected.sh
+#!/usr/bin/env bash
+echo redirected-script-ran
+EOF
+chmod +x mise-tasks/redirected.sh
+
+cat <<'EOF' >scripts/elsewhere.sh
+#!/usr/bin/env bash
+echo elsewhere-ran
+EOF
+chmod +x scripts/elsewhere.sh
+
+cat <<'EOF' >mytasks/low.sh
+#!/usr/bin/env bash
+echo "low-script-ran GREETING=${GREETING:-unset}"
+EOF
+chmod +x mytasks/low.sh
+
+cat <<'EOF' >mytasks/refused.sh
+#!/usr/bin/env bash
+echo "refused-script-ran NOTE=${NOTE:-unset}"
+EOF
+chmod +x mytasks/refused.sh
+
+# `.mise/config.toml` is the config that selects the include list, and it ranks
+# below `mise.toml` but above `.config/mise.toml`.
+cat <<'EOF' >.mise/config.toml
+[task_config]
+includes = ["mise-tasks", "mytasks"]
+EOF
+
+cat <<'EOF' >.config/mise.toml
+[tasks."low.sh"]
+description = "decorated from a lower config"
+run = "echo lower-inline-ran"
+env = { GREETING = "hi" }
+
+# The block that replaces mise-tasks/hello.sh is in mise.toml, above this one,
+# so this is the lower of the two definitions naming that script.
+[tasks.hello]
+description = "stem block from a lower config"
+
+# Spelled with the stem rather than the script's name, but equally below the
+# config that selected the include.
+[tasks.refused]
+run = "echo refused-command-ran"
+env = { NOTE = "decorated" }
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks."hello.sh"]
+run = "echo inline-ran"
+
+[tasks."meta.sh"]
+description = "overlaid description"
+env = { GREETING = "from-toml" }
+
+[tasks.bare]
+run = "echo inline-bare-ran"
+
+[tasks.other]
+run = "echo inline-other-ran"
+
+[tasks."redirected.sh"]
+file = "scripts/elsewhere.sh"
+EOF
+
+# The block replaces the script rather than being silently discarded, and the
+# task is still reachable by its extension-stripped name without running twice.
+assert "mise run hello" "inline-ran"
+assert "mise run hello.sh" "inline-ran"
+assert_not_contains "mise run hello" "script-ran"
+
+# A block with no command still contributes metadata to the script.
+assert_contains "mise tasks" "overlaid description"
+assert "mise run meta" "GREETING=from-toml"
+
+# An extensionless script is matched by its plain name, so the same rule applies.
+assert "mise run bare" "inline-bare-ran"
+
+# The extension-stripped spelling claims the script it names, so both spellings
+# do the same thing and the script is not left behind under either.
+assert "mise run other" "inline-other-ran"
+assert_fail "mise run other.sh"
+
+# "file" counts as a command too, so the block points the task elsewhere.
+assert "mise run redirected" "elsewhere-ran"
+
+# A block from a config that ranks below the one selecting the include does not
+# get to take the script over, so it only decorates it -- the same rule inline
+# blocks already follow for tasks from included TOML files.
+assert "mise run low" "low-script-ran GREETING=hi"
+assert_contains "mise tasks" "decorated from a lower config"
+
+# A replacement stands in for the script under its name, so a block spelling
+# that name by its stem resolves to it instead of landing beside it as a task of
+# its own that "mise run hello" would prefer and that runs nothing. Coming from
+# a config below the one that replaced the script, it adds nothing -- the rule
+# a second block naming one script already follows.
+assert "mise run hello" "inline-ran"
+assert_not_contains "mise tasks" "stem block from a lower config"
+assert_not_contains "mise tasks ls --no-header" "hello.sh"
+
+# A command spelled with the stem is refused on the same terms as one spelled
+# with the script's name: it decorates the script rather than standing up a task
+# beside it that "mise run refused" would pick instead.
+assert "mise run refused" "refused-script-ran NOTE=decorated"
+assert_not_contains "mise run refused" "refused-command-ran"

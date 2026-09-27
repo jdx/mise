@@ -6,13 +6,13 @@ use crate::system::history::tracked::{global_config_dir, normalize};
 pub(crate) const MARKER_PATH: &str = ".mise-history/format.toml";
 
 #[derive(Clone, Debug)]
-pub(crate) struct Roots {
+pub struct Roots {
     pub home: PathBuf,
     pub config_dir: PathBuf,
 }
 
 impl Roots {
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         Self {
             home: normalize(&crate::dirs::HOME),
             config_dir: normalize(&global_config_dir()),
@@ -40,7 +40,19 @@ impl Roots {
         is_safe_branch_path(&path).then_some(path)
     }
 
-    pub(crate) fn locate(&self, branch_path: &str) -> Located {
+    /// The root a local path is mapped under, with the same precedence as
+    /// [`Self::branch_path`]: the configuration directory first, then home.
+    pub(crate) fn root_of(&self, local: &Path) -> Option<&Path> {
+        if local.starts_with(&self.config_dir) {
+            Some(&self.config_dir)
+        } else if local.starts_with(&self.home) {
+            Some(&self.home)
+        } else {
+            None
+        }
+    }
+
+    pub fn locate(&self, branch_path: &str) -> Located {
         if !is_safe_branch_path(branch_path) {
             return Located::Unmapped;
         }
@@ -70,7 +82,7 @@ impl Roots {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Located {
+pub enum Located {
     Config(PathBuf),
     Tracked {
         path: PathBuf,
@@ -81,7 +93,7 @@ pub(crate) enum Located {
 }
 
 impl Located {
-    pub(crate) fn path(&self) -> Option<&Path> {
+    pub fn path(&self) -> Option<&Path> {
         match self {
             Self::Config(path) | Self::Tracked { path, .. } => Some(path),
             Self::Marker | Self::Unmapped => None,

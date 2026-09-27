@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# A template with remove_empty = true removes its target when it renders
+# empty, but only a target that still holds what mise last wrote.
+require_cmd git
+
+target="$HOME/.config/app/work.toml"
+mkdir -p dotfiles
+cat <<'EOF' >dotfiles/work.toml.tera
+{% if env.WORK == "1" %}
+work = true
+{% endif %}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+
+# a render with content writes the file as usual
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_contains "cat $target" "work = true"
+assert_contains "WORK=1 mise dot status" "applied"
+
+# flipping the variable makes the render empty: status and diff show the removal
+assert_contains "mise dot status" "template renders empty, target will be removed"
+assert "mise dot status --json | jq -r '.files[0].state'" "differs"
+assert_contains "mise dot status --json | jq -r '.files[0].reason'" "will be removed"
+assert_contains "mise dot diff" "template renders empty: remove ~/.config/app/work.toml"
+assert_contains "mise dot diff" "-work = true"
+# a dry run never removes
+assert_succeed "mise dot apply --dry-run"
+assert_succeed "test -f $target"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert_contains "mise dot status" "applied"
+# applying again has nothing to do
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+
+# flipping back recreates it
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_contains "cat $target" "work = true"
+
+# a target edited since mise wrote it is a conflict and is kept
+echo "mine = 1" >>"$target"
+assert_contains "mise dot status" "changed since mise last wrote it"
+assert_contains "mise dot diff" "is kept unless applied with --force"
+assert_not_contains "mise dot diff" "template renders empty: remove"
+assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+assert_contains "cat $target" "mine = 1"
+# --force removes it
+assert_succeed "mise dot apply --yes --force"
+assert_fail "test -e $target"
+
+# a whitespace-only render counts as empty, and a whitespace-only target is
+# removed without a record
+printf '  \n\t\n' >dotfiles/blank.tera
+printf '\n \n' >"$HOME/.blank"
+cat <<'EOF' >>mise.toml
+"~/.blank" = { source = "dotfiles/blank.tera", mode = "template", remove_empty = true }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.blank"
+
+# the ownership record lives in the state directory: a machine that never
+# wrote the file has none, so its content is not mise's to remove
+rm -rf "$MISE_STATE_DIR/dotfiles/targets"
+# ~/.config/app went with the removal: mise created it and it was left empty
+assert_fail "test -e $HOME/.config/app"
+mkdir -p "$HOME/.config/app"
+echo "work = true" >"$target"
+assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+assert_contains "cat $target" "work = true"
+rm "$target"
+
+# a target that already holds the rendered content gets a record from a
+# converged apply, so turning the render empty later removes it without --force
+assert_succeed "WORK=1 mise dot apply --yes"
+rm -rf "$MISE_STATE_DIR/dotfiles/targets"
+assert_succeed "WORK=1 mise dot apply --yes"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "1"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+
+# a tracked target removed by an apply comes back with undo and rollback
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_succeed "mise dot track ~/.config/app/work.toml"
+before="$(mise dot history --json | jq -r '.[0].uuid')"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert_succeed "mise dot undo --yes"
+assert_contains "cat $target" "work = true"
+# the restored file is still what mise last wrote, so it goes without --force
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert_succeed "mise dot rollback ~/.config/app/work.toml --to $before --yes"
+assert_contains "cat $target" "work = true"
+
+# unapply gives up ownership even when the target is already gone
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "1"
+assert_succeed "mise dot unapply ~/.config/app/work.toml --yes"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "0"
+
+# permissions apply when the template writes the file, removal when it is empty
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", permissions = "0600", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+assert "stat -c %a $target" "600"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+# a target mise cannot read cannot be proven its own, but --force removes it
+assert_succeed "WORK=1 mise dot apply --yes"
+chmod 000 "$target"
+if cat "$target" >/dev/null 2>&1; then
+  # root still reads it, so its content proves it is mise's own
+  assert_contains "mise dot status" "template renders empty, target will be removed"
+  assert_succeed "mise dot apply --yes"
+else
+  assert_contains "mise dot status" "cannot be read to confirm mise wrote it"
+  assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+  assert_succeed "mise dot apply --yes --force"
+fi
+assert_fail "test -e $target"
+
+# remove_empty is only valid on template entries
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.copied" = { source = "dotfiles/blank.tera", mode = "copy", remove_empty = true }
+EOF
+assert_contains "mise dot status 2>&1" 'remove_empty requires mode = "template"'
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.copied"

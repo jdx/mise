@@ -20,7 +20,7 @@ static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 /// a decision to someone who never made one. Carrying it in the return type is
 /// what keeps that from being expressible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs)]
-pub(crate) enum Confirmation {
+pub enum Confirmation {
     Yes,
     No,
     /// The prompt was displayed, but stdin reached EOF before an answer was
@@ -66,11 +66,11 @@ fn restore_cursor() {
     let _ = console::Term::stderr().show_cursor();
 }
 
-pub(crate) fn confirm<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
+pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
     confirm_with_default(message, true)
 }
 
-pub(crate) fn confirm_with_default<S: Into<String>>(
+pub fn confirm_with_default<S: Into<String>>(
     message: S,
     default_yes: bool,
 ) -> eyre::Result<Confirmation> {
@@ -152,7 +152,7 @@ fn default_answer(default_yes: bool) -> Confirmation {
     }
 }
 
-pub(crate) fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
+pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 

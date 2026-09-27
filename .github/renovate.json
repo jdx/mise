@@ -51,6 +51,15 @@
       }
     },
     {
+      "description": "usage crates are released together and depend on each other's internals (usage-rs 6.11.0 broke against usage-argv 6.11.1); bump them together, without the release-age delay the shared preset only waives for usage-cli and usage-lib.",
+      "matchPackageNames": ["/^usage-/"],
+      "matchManagers": ["cargo"],
+      "groupName": "jdx crates",
+      "groupSlug": "jdx-crates",
+      "minimumReleaseAge": null,
+      "schedule": ["at any time"]
+    },
+    {
       "description": "Sigstore crates are versioned together; bump together.",
       "matchPackageNames": ["/^sigstore-/"],
       "matchManagers": ["cargo"],

@@ -57,6 +57,11 @@ mise creates a service definition for your platform:
 | macOS    | `~/Library/LaunchAgents/dev.mise.<name>.plist`                                        | `launchctl`        |
 | Windows  | Scheduled Task `mise\<name>` (definition kept under `$MISE_STATE_DIR/user-services/`) | `schtasks`         |
 
+For a development stack, a user service can keep the Pitchfork supervisor
+available while Pitchfork manages individual project daemons. Follow the
+[development stack guide](/daemons/development-stack.html#keep-the-supervisor-available-at-login)
+for the command, tool installation, and migration from `pitchfork boot enable`.
+
 ### User service options
 
 - `command`: the command line to run. `~` and `~/` are expanded. Required

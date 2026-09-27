@@ -53,3 +53,15 @@ EOF
 
 assert "mise bin-paths" "$MISE_DATA_DIR/installs/aqua-casey-just/1.46/.mise-bins"
 assert "mise which just" "$MISE_DATA_DIR/installs/aqua-casey-just/1.46/.mise-bins/just"
+
+# Registry files listed by name only (no `src`) must still be linked into .mise-bins.
+cat <<EOF >mise.toml
+[tools]
+"aqua:mvdan/sh" = { version = "3.12.0", symlink_bins = true }
+EOF
+
+assert "mise install"
+
+shfmt_root="$(mise where aqua:mvdan/sh@3.12.0)"
+assert "mise which shfmt" "$shfmt_root/.mise-bins/shfmt"
+assert "mise x -- shfmt --version" "v3.12.0"

@@ -9,7 +9,7 @@
 
 name: mise
 title: mise-en-place
-version: "2026.9.11"
+version: "2026.9.14"
 summary: Dev tools, env vars, and tasks in one CLI
 description: |
   mise-en-place prepares your development environment before each command runs.
@@ -23,7 +23,7 @@ description: |
 license: MIT
 website: https://mise.jdx.dev
 source-code: https://github.com/jdx/mise.git
-issues: https://github.com/jdx/mise/discussions
+issues: https://github.com/jdx/mise/issues
 contact:
   - https://github.com/jdx/mise/discussions
   - https://phanective.org

@@ -4,19 +4,19 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::args::BackendArg;
 use crate::backend::options::BackendOptions;
 use crate::backend::{
     Backend, VersionInfo, normalize_idiomatic_contents, platform_target::PlatformTarget,
 };
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::OS;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;

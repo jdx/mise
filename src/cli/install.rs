@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::args::ToolArg;
 use crate::config::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::split_install_result;
 use crate::hooks::Hooks;
 use crate::install_before::resolve_cli_minimum_release_age;
@@ -162,6 +162,7 @@ impl Install {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let task_requests = self.collect_task_tool_requests(&config).await?;
+        crate::plugins::warn_plugin_drift(&config);
         match &self.tool {
             Some(runtime) => {
                 let original_tool_args = env::TOOL_ARGS.read().unwrap().clone();
@@ -486,6 +487,7 @@ impl Install {
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
+                latest_versions_for_all_requests: false,
                 resolve_rolling_channels: false,
                 prefer_exact_version: false,
                 before_date: self.get_before_date()?,
@@ -809,7 +811,7 @@ fn extend_toolset(toolset: &mut Toolset, additional: &[ToolRequest]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     fn request(version: &str, options: &str, source: ToolSource) -> ToolRequest {

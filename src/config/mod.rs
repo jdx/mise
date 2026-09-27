@@ -3,7 +3,7 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
-pub(crate) use settings::{CompilePurpose, Settings};
+pub use settings::{CompilePurpose, Settings, SettingsExt};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
@@ -14,9 +14,8 @@ use std::time::{Duration, SystemTime};
 use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
+use crate::args::{BackendArg, split_bracketed_opts};
 use crate::backend::ABackend;
-use crate::cli::args::{BackendArg, split_bracketed_opts};
-use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig, Tasks};
@@ -44,29 +43,30 @@ use crate::toolset::{
     ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
+use crate::version;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
 pub(crate) mod command_wrapper;
-pub(crate) mod config_file;
-pub(crate) mod doctor;
-pub(crate) mod env_directive;
-pub(crate) mod miserc;
+pub mod config_file;
+pub mod doctor;
+pub mod edit;
+pub mod env_directive;
+pub mod miserc;
 pub(crate) mod provenance;
-pub(crate) mod settings;
-pub(crate) mod tracking;
+pub mod settings;
+pub mod tracking;
 
 use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
-use crate::redactions::Redactor;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
-pub(crate) use command_wrapper::CommandWrapper;
+pub use command_wrapper::CommandWrapper;
 
 type AliasMap = IndexMap<String, Alias>;
-pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
+pub type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub(crate) type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 type RemoteTaskIncludeKey = (String, Option<String>);
 type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
@@ -104,7 +104,7 @@ mod remote_task_include_tests {
         assert_eq!(artifacts.len(), 1);
     }
 }
-pub(crate) struct MonorepoUnion {
+pub struct MonorepoUnion {
     pub config_files: ConfigMap,
     pub tool_request_set: ToolRequestSet,
     pub repo_urls: HashMap<String, String>,
@@ -138,7 +138,7 @@ struct BootstrapConfigMap {
     vars_results: EnvResults,
 }
 
-pub(crate) struct Config {
+pub struct Config {
     pub config_files: ConfigMap,
     bootstrap_config_maps: Vec<BootstrapConfigMap>,
     pub project_root: Option<PathBuf>,
@@ -173,22 +173,13 @@ pub(crate) struct Config {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Alias {
+pub struct Alias {
     pub backend: Option<String>,
     pub versions: IndexMap<String, String>,
 }
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
-static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
-
-/// Redact registered secrets without needing a loaded `Config`.
-///
-/// The patterns live in a global, and some of the places a secret can surface
-/// have no `Config` to hand: `Display for CmdLineRunner` is rendered into
-/// `eyre` errors that are printed long after any config went out of scope.
-pub(crate) fn redact_global(input: &str) -> String {
-    _REDACTOR.lock().unwrap().redact(input)
-}
+use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
 const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
 const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
@@ -242,7 +233,7 @@ impl Config {
         })
     }
 
-    pub(crate) async fn get() -> Result<Arc<Self>> {
+    pub async fn get() -> Result<Arc<Self>> {
         if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());
         }
@@ -254,7 +245,7 @@ impl Config {
     pub(crate) fn get_() -> Arc<Self> {
         (*_CONFIG.read().unwrap()).clone().unwrap()
     }
-    pub(crate) async fn reset() -> Result<Arc<Self>> {
+    pub async fn reset() -> Result<Arc<Self>> {
         backend::reset().await?;
         timeout::run_with_timeout_async(
             async || {
@@ -274,7 +265,7 @@ impl Config {
         Config::load().await
     }
 
-    pub(crate) fn with_config_files(&self, config_files: ConfigMap) -> Arc<Self> {
+    pub fn with_config_files(&self, config_files: ConfigMap) -> Arc<Self> {
         let project_root = get_project_root(&config_files).or_else(|| self.project_root.clone());
         let repo_urls = load_plugins(&config_files).unwrap_or_else(|_| self.repo_urls.clone());
         Arc::new(Self {
@@ -313,7 +304,7 @@ impl Config {
             .clone()
     }
 
-    pub(crate) fn with_tool_request_set(&self, tool_request_set: ToolRequestSet) -> Arc<Self> {
+    pub fn with_tool_request_set(&self, tool_request_set: ToolRequestSet) -> Arc<Self> {
         let config = self.with_config_files(self.config_files.clone());
         config.tool_request_set.set(tool_request_set).unwrap();
         config
@@ -343,7 +334,7 @@ impl Config {
         Ok(config)
     }
 
-    async fn load_from_config_files(
+    pub(crate) async fn load_from_config_files(
         config_files: ConfigMap,
         global_only: bool,
     ) -> Result<Arc<Self>> {
@@ -471,13 +462,36 @@ impl Config {
         Ok(config)
     }
 
+    /// Build the config view that remains when `environments` are deselected.
+    ///
+    /// Comparing the desired state with and without an environment is what lets
+    /// `mise bootstrap unapply` remove a module's resources without recording
+    /// what an earlier run applied, and keeps a resource the base configuration
+    /// or another selected environment still declares.
+    pub(crate) fn without_environments(&self, environments: &[String]) -> Arc<Self> {
+        let declared_by_environment = |path: &Path| {
+            environments_for_config_path(path)
+                .iter()
+                .any(|environment| environments.iter().any(|name| name == environment))
+        };
+        let mut config_files = self.config_files.clone();
+        config_files.retain(|path, _| !declared_by_environment(path));
+        let mut config = self.with_config_files(config_files);
+        let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
+        for map in &mut config_mut.bootstrap_config_maps {
+            map.config_files
+                .retain(|path, _| !declared_by_environment(path));
+        }
+        config
+    }
+
     /// Build the config view used to preview hooks introduced by dotfiles.
     ///
     /// This deliberately avoids the normal config loader: resolving vars or env can execute
     /// templates, source scripts, or modules, which a dry-run must not do. Literal vars are
     /// folded with normal config precedence; already-resolved dynamic vars are retained only
     /// when their declaring config file is unchanged.
-    pub(crate) fn with_bootstrap_dry_run_config_files(
+    pub fn with_bootstrap_dry_run_config_files(
         &self,
         config_files: ConfigMap,
     ) -> Result<Arc<Self>> {
@@ -555,9 +569,7 @@ impl Config {
     }
 
     /// Returns the independently selected bootstrap roots with their active config files.
-    pub(crate) fn selected_bootstrap_config_maps(
-        &self,
-    ) -> impl Iterator<Item = (&Path, &ConfigMap)> {
+    pub fn selected_bootstrap_config_maps(&self) -> impl Iterator<Item = (&Path, &ConfigMap)> {
         self.bootstrap_config_maps.iter().filter_map(|config| {
             config
                 .config_root
@@ -574,7 +586,7 @@ impl Config {
             .map(|config| &config.tera_ctx)
             .unwrap_or(&self.tera_ctx)
     }
-    pub(crate) async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
+    pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
             .env_with_sources()
             .await?
@@ -606,12 +618,12 @@ impl Config {
             .collect())
     }
 
-    pub(crate) async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
+    pub async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
             .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
             .await
     }
-    pub(crate) async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
+    pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
         self.env
             .get_or_try_init(|| async { self.load_env(true).await })
             .await
@@ -623,10 +635,10 @@ impl Config {
     pub(crate) fn vars_results_cached(&self) -> Option<&EnvResults> {
         self.vars_results.get()
     }
-    pub(crate) async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
+    pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
-    pub(crate) fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
+    pub fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
         self.daemons
             .get_or_try_init(|| crate::daemons::load(&self.config_files))
     }
@@ -637,21 +649,21 @@ impl Config {
     /// seeds the answer here, keeping tool requests and exported environment to
     /// the daemons that project will actually register. Seeding after the daemons
     /// have been read does nothing, which is why callers seed on a fresh config.
-    pub(crate) fn seed_daemons(&self, set: crate::daemons::DaemonSet) {
+    pub fn seed_daemons(&self, set: crate::daemons::DaemonSet) {
         let _ = self.daemons.set(set);
     }
 
-    pub(crate) async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
+    pub async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
             .await
     }
 
-    pub(crate) async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
+    pub async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
         self.get_toolset_with_opts(&ResolveOptions::default()).await
     }
 
-    pub(crate) async fn get_toolset_with_opts(
+    pub async fn get_toolset_with_opts(
         self: &Arc<Self>,
         opts: &ResolveOptions,
     ) -> Result<&Toolset> {
@@ -721,7 +733,30 @@ impl Config {
         })
     }
 
-    pub(crate) fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
+    /// The source a `[plugins]` entry names for `plugin_name`, if any.
+    ///
+    /// Unlike [`Self::get_repo_url`], this ignores registry shorthands, so it
+    /// only returns a source the user configured explicitly.
+    pub fn configured_plugin_url(&self, plugin_name: &str) -> Option<String> {
+        let url = self.repo_urls.get(plugin_name).or_else(|| {
+            self.repo_urls
+                .iter()
+                .find(|(key, _)| {
+                    key.split_once(':')
+                        .is_some_and(|(_, name)| name == plugin_name)
+                })
+                .map(|(_, url)| url)
+        })?;
+        Some(
+            if Path::new(url).is_absolute() || url.starts_with("file://") {
+                url.clone()
+            } else {
+                plugin_entry_to_url(url)
+            },
+        )
+    }
+
+    pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
             && (Path::new(url).is_absolute()
                 || url.starts_with("file://")
@@ -752,7 +787,7 @@ impl Config {
                 {
                     url.clone()
                 } else {
-                    registry::full_to_url(url)
+                    plugin_entry_to_url(url)
                 },
             );
         }
@@ -762,7 +797,7 @@ impl Config {
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {
                 if registry::url_like(plugin_name) || plugin_name.split('/').count() == 2 {
-                    Some(registry::full_to_url(plugin_name))
+                    Some(plugin_entry_to_url(plugin_name))
                 } else {
                     None
                 }
@@ -773,7 +808,7 @@ impl Config {
         find_monorepo_root(&self.config_files).is_some()
     }
 
-    pub(crate) fn monorepo_root(&self) -> Option<PathBuf> {
+    pub fn monorepo_root(&self) -> Option<PathBuf> {
         find_monorepo_root(&self.config_files)
     }
 
@@ -790,7 +825,7 @@ impl Config {
 
     /// Discovers the provider-neutral workspace project graph and applies the
     /// explicit overrides from the active monorepo root.
-    pub(crate) fn workspace_project_graph(
+    pub fn workspace_project_graph(
         &self,
     ) -> Result<Arc<crate::task::workspace::WorkspaceProjectGraph>> {
         let graph = self.workspace_project_graph_for_task_loading()?;
@@ -801,7 +836,7 @@ impl Config {
     }
 
     /// Resolves workspace-global task inputs using the active monorepo root context.
-    pub(crate) async fn monorepo_global_task_inputs(self: &Arc<Self>) -> Result<Vec<String>> {
+    pub async fn monorepo_global_task_inputs(self: &Arc<Self>) -> Result<Vec<String>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
         let monorepo_root = monorepo_config.root;
@@ -856,34 +891,15 @@ impl Config {
     /// Lockfile discovery is intentionally lenient: it only requires
     /// `[monorepo].config_roots` to match directories, because legacy lockfiles
     /// can exist in roots whose live config is idiomatic-only or was removed.
-    pub(crate) fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
-        let config = find_monorepo_config(&self.config_files)?;
-        let setting = config.monorepo.lockfile;
-        if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
-            return None;
-        }
-        let monorepo_root = config.root;
-
-        // An explicit opt-in always routes descendant configs to the root
-        // lockfile, even when config_roots cannot be resolved. Avoid expanding
-        // config_roots here because this method is called for every tool during
-        // lockfile resolution, including on every shim invocation. Commands
-        // that migrate legacy lockfiles validate config_roots separately.
-        if setting == Some(true) {
-            return Some(monorepo_root);
-        }
-
-        match self.monorepo_config_root_dirs(None) {
-            Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
-            Ok(_) | Err(_) => None,
-        }
+    pub fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
+        monorepo_lockfile_root_for(&self.config_files)
     }
 
     /// Returns true when lockfile creation is enabled by a TOML settings file.
     ///
     /// `MISE_LOCKFILE=1` predates automatic creation and continues to mean
     /// "read and maintain existing lockfiles" for backwards compatibility.
-    pub(crate) fn lockfile_creation_enabled(&self) -> bool {
+    pub fn lockfile_creation_enabled(&self) -> bool {
         Settings::get().lockfile_creation_enabled()
             && self.config_files.values().any(|cf| {
                 cf.settings()
@@ -911,31 +927,10 @@ impl Config {
         &self,
         filenames: Option<&[String]>,
     ) -> Result<Vec<PathBuf>> {
-        let monorepo_config = find_monorepo_config(&self.config_files)
-            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config.root;
-        let patterns = monorepo_config
-            .monorepo
-            .config_roots
-            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
-        if patterns.is_empty() {
-            bail!("[monorepo].config_roots is required for monorepo operations");
-        }
-        let roots = match filenames {
-            Some(filenames) => {
-                expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
-            }
-            None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
-        };
-        if roots.is_empty() {
-            bail!("[monorepo].config_roots did not match any config roots");
-        }
-        Ok(roots)
+        monorepo_config_root_dirs_for(&self.config_files, filenames)
     }
 
-    pub(crate) async fn monorepo_union_tool_request_set(
-        self: &Arc<Self>,
-    ) -> Result<ToolRequestSet> {
+    pub async fn monorepo_union_tool_request_set(self: &Arc<Self>) -> Result<ToolRequestSet> {
         Ok(self.monorepo_union().await?.tool_request_set)
     }
 
@@ -948,11 +943,11 @@ impl Config {
     /// requests for the root lockfile would then drop the root's request:
     /// `mise lock --upgrade` migrated a v0 monorepo lockfile without binding
     /// the root's request and pruned its locked version.
-    pub(crate) async fn monorepo_lockfile_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
+    pub async fn monorepo_lockfile_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
         self.monorepo_union_with_root_toolset(true).await
     }
 
-    pub(crate) async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
+    pub async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
         self.monorepo_union_with_root_toolset(false).await
     }
 
@@ -1022,11 +1017,11 @@ impl Config {
         })
     }
 
-    pub(crate) async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
+    pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }
 
-    pub(crate) async fn tasks_with_context(
+    pub async fn tasks_with_context(
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
@@ -1064,7 +1059,7 @@ impl Config {
     /// always wins over another task's alias, so a `tests` task aliased to
     /// `test` in a parent config cannot shadow a `test` task defined closer to
     /// the current directory (#13219).
-    pub(crate) async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
+    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
         let mut map: BTreeMap<String, Task> = tasks
             .values()
@@ -1076,7 +1071,7 @@ impl Config {
         Ok(map)
     }
 
-    pub(crate) async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
+    pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
         if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short)
             && let Some(alias) = plugin_aliases.versions.get(v)
         {
@@ -1273,7 +1268,11 @@ impl Config {
         Ok(tasks)
     }
 
-    pub(crate) async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+    pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+        config_file::with_global_ignored_config_paths(self.load_tracked_config_files()).await
+    }
+
+    async fn load_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         let mut idiomatic_settings_by_root =
             BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();
@@ -1347,7 +1346,7 @@ impl Config {
         Ok(config_files)
     }
 
-    pub(crate) fn global_config(&self) -> Result<MiseToml> {
+    pub fn global_config(&self) -> Result<MiseToml> {
         let settings_path = global_config_path();
         match settings_path.exists() {
             false => {
@@ -1379,16 +1378,14 @@ impl Config {
             let min = style::eyellow(required);
             let cur = style::eyellow(cur);
             let msg = format!("mise version {min} is required, but you are using {cur}");
-            bail!(crate::cli::self_update::append_self_update_instructions(
-                msg
-            ));
+            bail!(crate::upgrade_hint::append_self_update_instructions(msg));
         } else if let Some(recommended) = spec.soft_violation(cur) {
             let min = style::eyellow(recommended);
             let cur = style::eyellow(cur);
             let msg = format!("mise version {min} is recommended, but you are using {cur}");
             warn!(
                 "{}",
-                crate::cli::self_update::append_self_update_instructions(msg)
+                crate::upgrade_hint::append_self_update_instructions(msg)
             );
         }
         Ok(())
@@ -1620,7 +1617,7 @@ impl Config {
             .collect())
     }
 
-    pub(crate) async fn watch_files(self: &Arc<Self>) -> Result<BTreeSet<WatchFilePattern>> {
+    pub async fn watch_files(self: &Arc<Self>) -> Result<BTreeSet<WatchFilePattern>> {
         let env_results = self.env_results().await?;
         Ok(self
             .config_files
@@ -1661,7 +1658,7 @@ impl Config {
             .collect())
     }
 
-    pub(crate) fn redaction_keys(&self) -> Vec<String> {
+    pub fn redaction_keys(&self) -> Vec<String> {
         self.config_files
             .values()
             .flat_map(|cf| cf.redactions().0.iter())
@@ -1708,7 +1705,7 @@ impl Config {
     }
 
     /// Redact sensitive values from a string using Aho-Corasick for efficiency.
-    pub(crate) fn redact(&self, input: &str) -> String {
+    pub fn redact(&self, input: &str) -> String {
         _REDACTOR.lock().unwrap().redact(input)
     }
 }
@@ -1812,6 +1809,98 @@ struct ResolvedMonorepoConfig {
 /// environment overlay can override `monorepo_root` without becoming a separate root.
 /// This preserves nearest-root behavior for nested monorepos while resolving sibling
 /// overlays as one logical root configuration.
+fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
+    let config = find_monorepo_config(config_files)?;
+    let setting = config.monorepo.lockfile;
+    if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
+        return None;
+    }
+    let monorepo_root = config.root;
+
+    // An explicit opt-in always routes descendant configs to the root
+    // lockfile, even when config_roots cannot be resolved. Avoid expanding
+    // config_roots here because this method is called for every tool during
+    // lockfile resolution, including on every shim invocation. Commands
+    // that migrate legacy lockfiles validate config_roots separately.
+    if setting == Some(true) {
+        return Some(monorepo_root);
+    }
+
+    match monorepo_config_root_dirs_for(config_files, None) {
+        Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
+        Ok(_) | Err(_) => None,
+    }
+}
+
+fn monorepo_config_root_dirs_for(
+    config_files: &ConfigMap,
+    filenames: Option<&[String]>,
+) -> Result<Vec<PathBuf>> {
+    let monorepo_config = find_monorepo_config(config_files)
+        .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+    let monorepo_root = monorepo_config.root;
+    let patterns = monorepo_config
+        .monorepo
+        .config_roots
+        .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
+    if patterns.is_empty() {
+        bail!("[monorepo].config_roots is required for monorepo operations");
+    }
+    let roots = match filenames {
+        Some(filenames) => {
+            expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
+        }
+        None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
+    };
+    if roots.is_empty() {
+        bail!("[monorepo].config_roots did not match any config roots");
+    }
+    Ok(roots)
+}
+
+static MONOREPO_LOCKFILE_ROOT_FROM_DIR: Lazy<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
+    Lazy::new(Default::default);
+
+/// The monorepo lockfile root that applies to `dir`, from the project configs
+/// in it and its ancestors rather than from the current directory's config.
+/// A tool stub uses this so its lockfile does not depend on where it is run.
+pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
+    if let Some(root) = MONOREPO_LOCKFILE_ROOT_FROM_DIR.lock().unwrap().get(dir) {
+        return root.clone();
+    }
+    let paranoid = Settings::try_get().is_ok_and(|settings| settings.paranoid);
+    let mut config_files = ConfigMap::new();
+    for ancestor in all_dirs_from(dir).unwrap_or_default() {
+        for path in config_paths_in_dir(&ancestor) {
+            // The same committed layers the stub's lockfile is chosen from.
+            if path.extension().is_none_or(|ext| ext != "toml")
+                || lockfile::is_local_config(&path)
+                || lockfile::extract_env_from_config_path(&path).is_some()
+                || is_global_config(&path)
+                || (paranoid && !config_file::is_path_trusted(&path))
+            {
+                continue;
+            }
+            // Only the static monorepo declarations are read, so the config
+            // is decoded without a trust check: nothing in it is evaluated,
+            // and a stub run must not prompt for or record trust. An
+            // unreadable config just cannot declare a root.
+            let Ok(body) = file::read_to_string(&path) else {
+                continue;
+            };
+            if let Ok(cf) = MiseToml::for_monorepo_inspection(&body, &path) {
+                config_files.insert(path, Arc::new(cf));
+            }
+        }
+    }
+    let root = monorepo_lockfile_root_for(&config_files);
+    MONOREPO_LOCKFILE_ROOT_FROM_DIR
+        .lock()
+        .unwrap()
+        .insert(dir.to_path_buf(), root.clone());
+    root
+}
+
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
     config_files
         .values()
@@ -1880,8 +1969,9 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         BOOTSTRAP_CONFIG_ROOTS_WARN_AT,
         BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT,
         "bootstrap.config_roots",
-        "`[bootstrap].config_roots` in {} is deprecated. Composing bootstrap configuration across independent roots needs more design; move bootstrap declarations into global or system configuration.",
-        display_path(declaring_config)
+        "`[bootstrap].config_roots` in {} is deprecated. Move each selected root into a conf.d folder instead (or symlink it): bundles/git becomes mise/conf.d/git in the same project, or {} when config_roots is set in global config. A conf.d folder reads only mise.toml, mise.local.toml, mise.<env>.toml, and mise.<env>.local.toml (rename other config filenames) and is their config root, so relative paths and `{{{{ config_root }}}}` still resolve inside it. See https://mise.jdx.dev/configuration.html#conf-d-folders for details.",
+        display_path(declaring_config),
+        display_path(dirs::CONFIG.join("conf.d").join("git"))
     );
     if patterns.is_empty() {
         return Ok(vec![]);
@@ -2055,12 +2145,18 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
     } else {
         paths.extend([
             ".config/mise/conf.d/*.toml",
+            ".config/mise/conf.d/*/mise.toml",
+            ".config/mise/conf.d/*/mise.local.toml",
             ".config/mise/config.toml",
             ".config/mise/mise.toml",
             ".config/mise.toml",
             ".mise/conf.d/*.toml",
+            ".mise/conf.d/*/mise.toml",
+            ".mise/conf.d/*/mise.local.toml",
             ".mise/config.toml",
             "mise/conf.d/*.toml",
+            "mise/conf.d/*/mise.toml",
+            "mise/conf.d/*/mise.local.toml",
             "mise/config.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
@@ -2091,6 +2187,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".config/mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
@@ -2098,6 +2195,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!("mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!("mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
@@ -2105,6 +2203,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".mise/conf.d/*.{env}.toml"));
     }
+    patterns.push(format!(".mise/conf.d/*/mise.{env}.toml"));
     patterns.extend([
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
@@ -2112,6 +2211,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".config/mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!(".config/mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
@@ -2119,6 +2219,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!("mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!("mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
@@ -2126,6 +2227,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     if env_conf_d {
         patterns.push(format!(".mise/conf.d/*.{env}.local.toml"));
     }
+    patterns.push(format!(".mise/conf.d/*/mise.{env}.local.toml"));
     patterns.extend([
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
@@ -2133,7 +2235,7 @@ fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     patterns
 }
 
-pub(crate) static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
+pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let mut filenames = LOCAL_CONFIG_FILENAMES
         .iter()
         .map(|f| f.to_string())
@@ -2163,12 +2265,12 @@ static TOML_CONFIG_MATCHERS: Lazy<Vec<globset::GlobMatcher>> = Lazy::new(|| {
         })
         .collect()
 });
-pub(crate) static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
         .into_iter()
         .collect()
 });
-pub(crate) static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
         .into_iter()
         .filter(|p| {
@@ -2215,6 +2317,9 @@ fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         .unwrap_or_default()
         .into_iter()
         .filter(|path| {
+            if path.parent().is_some_and(is_conf_d_file) {
+                return is_conf_d_folder_file(path);
+            }
             !is_conf_d_file(path)
                 || !path
                     .file_name()
@@ -2290,21 +2395,21 @@ fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-pub(crate) fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
+pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
     DEFAULT_CONFIG_FILENAMES
         .iter()
         .flat_map(|f| config_glob(dir, f))
         .collect()
 }
 
-pub(crate) fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
+pub fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
 }
 
 /// Return the active configuration environment encoded in a loaded config
 /// filename. A vector matches the ordered MISE_ENV model and leaves room for
 /// future config forms that represent more than one environment.
-pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
+pub fn environments_for_config_path(path: &Path) -> Vec<String> {
     let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
         return vec![];
     };
@@ -2373,7 +2478,12 @@ pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
 /// and a chain of `or_else` arms only holds that line for as long as every arm remembers to.
 /// See: <https://github.com/jdx/mise/discussions/5842>
 fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
-    let writable = || files.iter().filter(|p| !is_conf_d_file(p));
+    // conf.d fragments, including folder fragments, are never written to
+    let writable = || {
+        files
+            .iter()
+            .filter(|p| !is_conf_d_file(p) && !is_conf_d_folder_file(p))
+    };
     writable()
         .find(|p| !is_tool_versions_file(p))
         .or_else(|| writable().next())
@@ -2382,6 +2492,37 @@ fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
 fn is_conf_d_file(p: &Path) -> bool {
     p.parent()
         .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
+}
+
+/// A config file inside a `conf.d` folder fragment, such as `conf.d/git/mise.toml`
+/// or `conf.d/git/mise.linux.toml`. The folder is the file's config root, so
+/// fragments keep their own sources and helpers next to their config.
+///
+/// Only `conf.d` directories mise reads count: a project that merely lives at
+/// `nginx/conf.d/site/mise.toml` is an ordinary project.
+pub(crate) fn is_conf_d_folder_file(p: &Path) -> bool {
+    let is_mise_filename = p
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("mise.") && name.ends_with(".toml"));
+    let Some(folder) = p.parent() else {
+        return false;
+    };
+    if !is_mise_filename
+        || !is_conf_d_file(folder)
+        || folder
+            .file_name()
+            .is_none_or(|name| name.to_string_lossy().starts_with('.'))
+    {
+        return false;
+    }
+    folder.parent().and_then(Path::parent).is_some_and(|owner| {
+        owner
+            .file_name()
+            .is_some_and(|name| name == "mise" || name == ".mise")
+            || owner == *dirs::CONFIG
+            || owner == *dirs::SYSTEM_CONFIG
+    })
 }
 
 /// The config files in `dir` that config loading would actually read, with the same
@@ -2413,7 +2554,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
 /// file mise will never read back. When nothing in `dir` is loadable the default name is
 /// still returned — the directory was named explicitly, so mise creates what was asked for
 /// — but the caller is warned that it will not be read.
-pub(crate) fn config_file_in_dir(dir: &Path) -> PathBuf {
+pub fn config_file_in_dir(dir: &Path) -> PathBuf {
     let files = loadable_config_files_in_dir(dir, &DEFAULT_CONFIG_FILENAMES);
     if let Some(cf) = first_config_file(&files)
         && !is_global_config(cf)
@@ -2523,10 +2664,7 @@ pub(crate) fn load_config_paths_from(
     )
 }
 
-pub(crate) fn load_config_paths(
-    config_filenames: &[String],
-    include_ignored: bool,
-) -> Vec<PathBuf> {
+pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
     if Settings::no_config() {
         return vec![];
     }
@@ -2702,14 +2840,13 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
                 found.extend(
-                    glob(&dir, &pattern)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|path| {
-                            !is_conf_d_file(path)
-                                || conf_d_file_environment(path)
-                                    .is_some_and(|(environment, _)| environment == env_name)
-                        }),
+                    // config_glob applies loading's exclusions, such as hidden
+                    // conf.d fragments and folders
+                    config_glob(&dir, &pattern).into_iter().filter(|path| {
+                        !is_conf_d_file(path)
+                            || conf_d_file_environment(path)
+                                .is_some_and(|(environment, _)| environment == env_name)
+                    }),
                 );
             }
         }
@@ -2719,6 +2856,20 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
             if env::env_conf_d() {
                 found.extend(conf_d_environment_files(dir, env_name, false));
                 found.extend(conf_d_environment_files(dir, env_name, true));
+            }
+            for local in ["", ".local"] {
+                found.extend(
+                    glob(
+                        dir,
+                        &format!(
+                            "conf.d/*/mise.{}{local}.toml",
+                            glob::Pattern::escape(env_name)
+                        ),
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|p| is_conf_d_folder_file(p)),
+                );
             }
             for filename in [
                 format!("config.{env_name}.toml"),
@@ -2755,7 +2906,7 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
 /// than from the invocation-rooted `Settings::get()` snapshot: a config root
 /// can enable `idiomatic_version_file_enable_tools` for a tool that the
 /// invocation directory's settings never mention.
-pub(crate) async fn load_config_hierarchy_from_dir(
+pub async fn load_config_hierarchy_from_dir(
     start_dir: &Path,
 ) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
     if Settings::no_config() {
@@ -2801,11 +2952,11 @@ pub(crate) async fn load_config_hierarchy_from_dir(
     Ok((paths, idiomatic_files))
 }
 
-pub(crate) fn is_global_config(path: &Path) -> bool {
+pub fn is_global_config(path: &Path) -> bool {
     config_set_contains(&global_config_files(), path) || is_system_config(path)
 }
 
-pub(crate) fn is_system_config(path: &Path) -> bool {
+pub fn is_system_config(path: &Path) -> bool {
     config_set_contains(&system_config_files(), path)
 }
 
@@ -2974,6 +3125,31 @@ pub(crate) fn config_files_with_incoming(
                 .cloned(),
         )
         .collect();
+    // Folder fragments (`conf.d/<name>/mise.toml`) are found by their folder, so an
+    // incoming batch can introduce one through any of its files.
+    let conf_folders: std::collections::BTreeSet<PathBuf> = conf_files
+        .iter()
+        .filter(|p| p.is_dir())
+        .cloned()
+        .chain(
+            incoming
+                .iter()
+                .filter_map(|p| p.parent())
+                .filter(|folder| folder.parent() == Some(&conf_dir))
+                .map(Path::to_path_buf),
+        )
+        .filter(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| !name.to_string_lossy().starts_with('.'))
+        })
+        .collect();
+    let conf_folder_files = |name: &str| {
+        conf_folders
+            .iter()
+            .map(|folder| folder.join(name))
+            .collect::<Vec<_>>()
+    };
     for p in &conf_files {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
@@ -2984,6 +3160,8 @@ pub(crate) fn config_files_with_incoming(
             files.insert(p.clone());
         }
     }
+    files.extend(conf_folder_files("mise.toml"));
+    files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
@@ -2993,6 +3171,7 @@ pub(crate) fn config_files_with_incoming(
                 false,
             ));
         }
+        files.extend(conf_folder_files(&format!("mise.{environment}.toml")));
         files.extend([
             dir.join(format!("config.{environment}.toml")),
             dir.join(format!("mise.{environment}.toml")),
@@ -3007,6 +3186,7 @@ pub(crate) fn config_files_with_incoming(
                 true,
             ));
         }
+        files.extend(conf_folder_files(&format!("mise.{environment}.local.toml")));
         files.extend([
             dir.join(format!("config.{environment}.local.toml")),
             dir.join(format!("mise.{environment}.local.toml")),
@@ -3050,7 +3230,7 @@ fn conf_d_environment_candidates(
 /// Uses first_config_file() to pick the lowest-precedence non-local TOML (i.e., config.toml
 /// rather than config.local.toml) so that `mise use -g` writes to config.toml.
 /// See: https://github.com/jdx/mise/discussions/8236
-pub(crate) fn global_config_path() -> PathBuf {
+pub fn global_config_path() -> PathBuf {
     let files = global_config_files();
     first_config_file(&files)
         .cloned()
@@ -3063,7 +3243,7 @@ pub(crate) fn global_config_path() -> PathBuf {
 /// already exists (`mise.toml` when that is what the user keeps), else
 /// `config.toml`. An explicitly selected global file is honored even when
 /// it is `.local.toml`; implicit selection prefers a shared file.
-pub(crate) fn global_shared_config_path() -> PathBuf {
+pub fn global_shared_config_path() -> PathBuf {
     let local = |path: &PathBuf| {
         path.file_name()
             .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
@@ -3082,7 +3262,7 @@ pub(crate) fn global_shared_config_path() -> PathBuf {
 }
 
 /// The preferred system config file to write to, or the path where it should be created.
-pub(crate) fn system_config_path() -> PathBuf {
+pub fn system_config_path() -> PathBuf {
     let files = system_config_files();
     first_config_file(&files)
         .cloned()
@@ -3091,14 +3271,14 @@ pub(crate) fn system_config_path() -> PathBuf {
 }
 
 /// the top-most mise.toml (local or global)
-pub(crate) fn top_toml_config() -> Option<PathBuf> {
+pub fn top_toml_config() -> Option<PathBuf> {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .iter()
         .find(|p| p.to_string_lossy().ends_with(".toml"))
         .map(|p| p.to_path_buf())
 }
 
-pub(crate) static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
+pub static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .into_iter()
         .collect()
@@ -3106,7 +3286,7 @@ pub(crate) static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| 
 
 /// The lowest-precedence TOML config in the nearest local config directory, or
 /// the path where it should be written.
-pub(crate) fn local_toml_config_path() -> PathBuf {
+pub fn local_toml_config_path() -> PathBuf {
     static CWD: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("."));
     local_toml_config_path_from_dir(dirs::CWD.as_ref().unwrap_or(&CWD))
 }
@@ -3122,7 +3302,7 @@ pub(crate) fn local_toml_config_path_from_dir(cwd: &Path) -> PathBuf {
 
 /// Options for resolving target config file path
 #[derive(Debug, Default)]
-pub(crate) struct ConfigPathOptions {
+pub struct ConfigPathOptions {
     pub global: bool,
     pub path: Option<PathBuf>,
     pub env: Option<String>,
@@ -3135,7 +3315,7 @@ pub(crate) struct ConfigPathOptions {
 ///
 /// This function centralizes the logic for determining which config file to target
 /// based on various options, ensuring consistent behavior between commands.
-pub(crate) fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
+pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
     let cwd = match opts.cwd {
         Some(ref path) => path.clone(),
         None => env::current_dir()?,
@@ -3257,7 +3437,7 @@ async fn load_all_config_files(
 /// Load config files from a list of paths (for monorepo task config contexts)
 /// Accepts a pre-computed idiomatic filenames map to avoid redundant computation
 /// when called after load_config_hierarchy_from_dir.
-pub(crate) async fn load_config_files_from_paths(
+pub async fn load_config_files_from_paths(
     config_paths: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
@@ -3360,7 +3540,7 @@ fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
 }
 
 /// Load command wrappers from global through project scope.
-pub(crate) fn load_command_wrappers<'a>(
+pub fn load_command_wrappers<'a>(
     config_files: &ConfigMap,
     tools: impl IntoIterator<Item = &'a crate::toolset::ToolRequest>,
 ) -> Result<IndexMap<String, CommandWrapper>> {
@@ -3379,6 +3559,15 @@ pub(crate) fn load_command_wrappers<'a>(
     }
     command_wrapper::add_rust_wrapper(&mut wrappers, tools)?;
     Ok(wrappers)
+}
+
+/// Expands a `[plugins]` value to a URL, keeping any `#ref` outside the
+/// expansion so `owner/repo#v1` doesn't become `…/repo#v1.git`.
+fn plugin_entry_to_url(entry: &str) -> String {
+    match entry.split_once('#') {
+        Some((source, git_ref)) => format!("{}#{git_ref}", registry::full_to_url(source)),
+        None => registry::full_to_url(entry),
+    }
 }
 
 fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
@@ -3792,7 +3981,7 @@ impl ResolvedTaskEnvironment {
 
 /// Prefix that marks a `sources` or `global_inputs` entry as a reference to a
 /// named input group rather than a file pattern.
-pub(crate) const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
+pub const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
@@ -3808,6 +3997,47 @@ struct ResolvedTaskConfig {
     shell: Option<String>,
     cache: Option<TaskCacheConfig>,
     rust_cache: Option<TaskRustCacheConfig>,
+}
+
+/// Whether an inline block gives its task a command. A block without one
+/// overlays a same-named task that has one, or stands alone, such as a group
+/// of `depends`.
+fn task_has_command(task: &Task) -> bool {
+    !task.run.is_empty() || !task.run_windows.is_empty() || task.file.is_some()
+}
+
+impl ResolvedTaskConfig {
+    /// The defaults for an inline block with no command of its own, while its
+    /// tasks load. Such a block may overlay a task that already has the
+    /// defaults of its own root -- possibly a different one, such as a conf.d
+    /// folder -- so until the merge it takes none, keeping only the input
+    /// groups its own `sources` can name. A block still without a command after
+    /// the merge stands alone and gets the rest from
+    /// [`Self::apply_to_standalone`].
+    fn for_overlay(&self) -> Self {
+        Self {
+            inputs: ResolvedTaskInputs {
+                global_inputs: None,
+                input_groups: self.inputs.input_groups.clone(),
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Give a task that loaded with [`Self::for_overlay`] and was merged onto
+    /// nothing the defaults it would have had as a task of its own.
+    async fn apply_to_standalone(&self, task: &mut Task, config: &Arc<Config>) -> Result<()> {
+        if task.dir.is_none() {
+            task.dir = self.dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = self.shell.clone();
+        }
+        apply_task_config_inputs(task, config, &self.inputs).await?;
+        apply_task_config_cache_default(task, &self.cache);
+        apply_task_config_rust_cache_default(task, &self.rust_cache);
+        self.environment.apply(task)
+    }
 }
 
 impl ResolvedTaskInputs {
@@ -4016,7 +4246,7 @@ fn is_global_task_include_path(path: &Path) -> bool {
 }
 
 #[async_backtrace::framed]
-pub(crate) async fn rebuild_shims_and_runtime_symlinks(
+pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -4049,7 +4279,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
 /// and rewrites, so running it for a command that turned out to be a no-op would
 /// both rewrite an unrelated stale lockfile and let a resolution failure fail a
 /// command that had nothing to do.
-pub(crate) async fn generate_lockfiles_after_changes(
+pub async fn generate_lockfiles_after_changes(
     config: &Arc<Config>,
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
@@ -4060,7 +4290,7 @@ pub(crate) async fn generate_lockfiles_after_changes(
             || lockfile_update_mode == lockfile::LockfileUpdateMode::AllowLocked)
     {
         lockfile::generate::ensure_install_succeeded()?;
-        Box::pin(crate::cli::lock::Lock::generate_after_install(
+        Box::pin(crate::frontend::generate_lockfiles_after_install(
             config.clone(),
             new_versions,
         ))
@@ -4072,7 +4302,7 @@ pub(crate) async fn generate_lockfiles_after_changes(
 /// Reconcile runtime links and shim farms after versions have been removed.
 /// Removed versions determine which physical farm changed, but are not passed
 /// to lockfile update logic as newly installed versions.
-pub(crate) async fn rebuild_shims_and_runtime_symlinks_after_removal(
+pub async fn rebuild_shims_and_runtime_symlinks_after_removal(
     config: &Arc<Config>,
     ts: &Toolset,
     removed_install_paths: &[PathBuf],
@@ -4089,7 +4319,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks_after_removal(
 
 /// Reconcile a shim farm after a configuration-only change, where there is no
 /// installed or removed tool path from which to infer ownership.
-pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_scope(
+pub async fn rebuild_shims_and_runtime_symlinks_for_scope(
     config: &Arc<Config>,
     ts: &Toolset,
     scope: shims::ShimScope,
@@ -4316,7 +4546,7 @@ async fn load_local_tasks_with_context(
         .map(|root| enclosing_monorepo_roots(&config.config_files, root))
         .unwrap_or_default();
     for d in all_dirs()? {
-        if cfg!(test) && !d.starts_with(*dirs::HOME) {
+        if mise_util::testing::in_tests() && !d.starts_with(*dirs::HOME) {
             continue;
         }
         if let Some(ref monorepo_root) = monorepo_root
@@ -4363,7 +4593,7 @@ async fn load_local_tasks_with_context(
         // Load tasks from subdirectories in parallel
         let subdir_tasks_futures: Vec<_> = subdirs
             .into_iter()
-            .filter(|subdir| !cfg!(test) || subdir.starts_with(*dirs::HOME))
+            .filter(|subdir| !mise_util::testing::in_tests() || subdir.starts_with(*dirs::HOME))
             .map(|subdir| {
                 let config = config.clone();
                 let monorepo_root = monorepo_root.clone();
@@ -4844,7 +5074,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
-        let sources = load_task_sources_from_configs(
+        let scope_tasks = load_tasks_from_configs_and_folders(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
@@ -4855,7 +5085,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         )
         .await?;
         rendered_file_tasks.finish_config();
-        for task in sources.into_tasks() {
+        for task in scope_tasks {
             tasks.entry(task.name.clone()).or_insert(task);
         }
     }
@@ -4866,10 +5096,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// files) with inline `[tasks.*]` blocks.
 ///
 /// `config_tasks` are collected in config-file precedence order (highest first).
-/// When a name appears in both an executable script task and an inline block,
-/// the script stays as the base and the TOML block is overlaid via
-/// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
-/// an included TOML file. When the same name appears in multiple inline blocks
+/// When a name appears in both an executable script task and an inline block
+/// with no command, the script stays as the base and the TOML block is overlaid
+/// via [`Task::merge_toml_overlay`]. An inline block replaces a same-named task
+/// from an included TOML file. When the same name appears in multiple inline blocks
 /// (e.g. `mise.toml` and `mise.local.toml`), the highest-precedence block wins.
 /// If that block has no command, it overlays the nearest lower-precedence
 /// command-bearing block; definitions below that selected base are skipped.
@@ -4878,17 +5108,110 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
 /// order, so the later include in the list takes precedence — see
 /// `load_tasks_in_dir`.
+///
+/// An executable file task's name keeps the script's extension (`hello.sh`), so
+/// a block naming the extension-stripped form (`[tasks.hello]` for
+/// `mise-tasks/hello.sh`) has no exact match. When such a block carries no
+/// command and no dependencies of its own, it overlays the file task it names
+/// rather than becoming a separate task — see `stripped_name_overlay_targets`.
+///
+/// A block naming a script exactly and declaring a command of its own replaces
+/// it, rather than overlaying metadata onto a script that would still be what
+/// runs. Like an included TOML task, a script only yields to a block from the
+/// config whose `task_config.includes` selected it or a higher-precedence one;
+/// a block below that still only overlays its metadata.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
+    // Names an inline block gives a `run`/`run_windows`/`file` command to, each
+    // with the highest precedence that names it. Such a name is a task in its
+    // own right, so blocks carrying it layer onto that task rather than onto a
+    // same-stem script.
+    let mut inline_command_precedence: IndexMap<String, usize> = IndexMap::new();
+    for t in config_tasks
+        .iter()
+        .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
+    {
+        let precedence = inline_command_precedence
+            .entry(t.name.clone())
+            .or_insert(t.config_precedence);
+        *precedence = (*precedence).min(t.config_precedence);
+    }
+    let ScriptClaims {
+        claimed: claimed_scripts,
+        refused: refused_stems,
+    } = claim_scripts_for_inline_commands(&mut by_name, &inline_command_precedence);
+    // The block that overlays each file task, held until after the loop.
+    //
+    // A script takes only its highest-precedence definition: lower ones
+    // contribute nothing, not even additive fields like `env` or `alias`
+    // (#11103). `config_tasks` is ordered highest precedence first, so the
+    // first block to claim a script keeps it, and because `[tasks.hello]` and
+    // `[tasks."hello.sh"]` name one script they compete for that one slot
+    // rather than both applying.
+    let mut file_task_overlays: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
-    for t in config_tasks {
+    for mut t in config_tasks {
+        // A block spelling a script an inline command has claimed names a task
+        // that no longer exists under that spelling, so read it as naming the
+        // block that claimed it -- `[tasks."hello.sh"]` still configures what
+        // `[tasks.hello] run = ...` now runs. That holds for a second command
+        // too: two spellings of one script are one definition, so the lower one
+        // loses the slot rather than standing up a task beside it.
+        if !by_name.contains_key(&t.name)
+            && let Some(owner) = claimed_scripts.get(&t.name).cloned()
+        {
+            // A stem can name several scripts, and a command may have claimed
+            // only some of them. The rest are still scripts this block
+            // configures, so decorate them before the block is read as naming
+            // the claimant -- `[tasks.hello]` reaches `hello.js` as well as
+            // whatever took `hello.sh` over. A command that reaches here lost
+            // the slot, so it contributes nothing either way.
+            if owner != t.name && t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                for name in stripped_name_overlay_targets(&by_name, &t.name) {
+                    file_task_overlays.entry(name).or_insert_with(|| t.clone());
+                }
+            }
+            t.name = owner;
+        }
+        // `[tasks.hello]` and `[tasks."hello.sh"]` are two spellings of one
+        // script, so a block naming a file task is an overlay on it whichever
+        // spelling it used and whatever fields it carries. Resolving that here,
+        // above the duplicate-name bookkeeping, is what lets every layer of
+        // both spellings contribute instead of the second one being dropped as
+        // a duplicate. Only a block with a command of its own is not an
+        // overlay, and only a name some inline block gives a command to is a
+        // task of its own that such blocks layer onto instead.
+        if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            let targets = file_task_overlay_targets(
+                &by_name,
+                &t.name,
+                &inline_command_precedence,
+                &refused_stems,
+            );
+            if !targets.is_empty() {
+                for name in targets {
+                    file_task_overlays.entry(name).or_insert_with(|| t.clone());
+                }
+                continue;
+            }
+        }
         if !seen_config_task_names.insert(t.name.clone()) {
+            // A block with only `depends` takes whichever role is left for it.
+            // When a command-bearing block of the same name exists it is an
+            // overlay on that command, which is the documented inline layering
+            // rule and what `[tasks.x] depends` on top of a `[tasks.x] run` in
+            // a lower config relies on. When no such block exists it is the
+            // base instead: a dependency group runs, so dropping it here left
+            // the name a commandless task that `mise run` matched and exited 0.
             let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
-            if pending_inline_overlays.contains_key(&t.name) && has_command {
+            let is_base = has_command
+                || (task_has_executable_content(&t)
+                    && !inline_command_precedence.contains_key(&t.name));
+            if pending_inline_overlays.contains_key(&t.name) && is_base {
                 let overlays = pending_inline_overlays
                     .shift_remove(&t.name)
                     .expect("pending inline overlays should be present");
@@ -4913,12 +5236,30 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                     *existing = t;
                 }
             }
-        } else if let Some(existing) = by_name.get_mut(&t.name) {
+        } else if let Some(existing) = by_name.get(&t.name) {
+            // Only a command-bearing block that did not claim this script
+            // reaches here, because the pre-pass took every script a block
+            // outranks. What is left is a block from below the config whose
+            // `task_config.includes` found the script, so it decorates rather
+            // than takes over -- what a `conf.d` fragment layering onto a
+            // script the config above it found relies on.
             if existing.file.is_some() {
-                existing.merge_toml_overlay(t);
+                file_task_overlays.entry(t.name.clone()).or_insert(t);
+            }
+        } else if refused_stems.contains(&t.name) {
+            // The command could not outrank the scripts its stem reaches, so it
+            // decorates them, exactly as one written with a script's full name
+            // does. Standing up a task here would shadow them under
+            // `mise run <stem>` and undo the refusal.
+            for name in stripped_name_overlay_targets(&by_name, &t.name) {
+                file_task_overlays.entry(name).or_insert_with(|| t.clone());
             }
         } else {
-            if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            // No file task claimed this name above, so it is an inline task.
+            // A block without a command is queued as an overlay for a
+            // command-bearing definition further down the precedence order.
+            let metadata_only = t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none();
+            if metadata_only {
                 pending_inline_overlays
                     .entry(t.name.clone())
                     .or_default()
@@ -4927,7 +5268,173 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             by_name.insert(t.name.clone(), t);
         }
     }
+    for (name, overlay) in file_task_overlays {
+        if let Some(base) = by_name.get_mut(&name) {
+            base.merge_toml_overlay(overlay);
+        }
+    }
     by_name.into_values().collect()
+}
+
+/// Whether a task carries anything that makes it run.
+///
+/// The same rule `mise tasks validate` reports a task for lacking, so a task
+/// without it is the "no executable content" shape rather than one a metadata
+/// overlay should defer to. `depends` and `depends_post` count because they put
+/// their targets in the run; `wait_for` does not, since it only orders tasks
+/// something else already scheduled (see `deps.rs`, which gives it no
+/// `add_idx`). A block carrying nothing but `wait_for` is therefore metadata
+/// and overlays a file task rather than shadowing it with a task that runs
+/// nothing.
+fn task_has_executable_content(task: &Task) -> bool {
+    !task.run.is_empty()
+        || !task.run_windows.is_empty()
+        || task.file.is_some()
+        || !task.depends.is_empty()
+        || !task.depends_post.is_empty()
+}
+
+/// Take the scripts an inline command names out of the running.
+///
+/// A `[tasks.<name>]` block that declares a `run`, `run_windows` or `file` says
+/// what `<name>` runs, so the discovered scripts that name reaches stop being
+/// tasks of their own: `hello.sh` for `[tasks."hello.sh"]`, and every script
+/// whose extension-stripped name is `hello` for `[tasks.hello]`. Both spellings
+/// therefore do the same thing, which is the point — `mise tasks ls` shows the
+/// stem and `mise run` takes it, so which spelling a config happened to use
+/// should not change what runs.
+///
+/// A name reaches a script exactly as an overlay does: the script named exactly,
+/// or, when there is none, every script sharing the stem. See
+/// [`file_task_overlay_targets`].
+///
+/// A block only claims a script it outranks. The script is in the running
+/// because some config's `task_config.includes` found it, so taking it over
+/// needs that config's standing or better; below that the block decorates the
+/// script instead, as it always has. Where several blocks name one script the
+/// highest-precedence one claims it (#11103).
+///
+/// Returns the spellings that reached a claimed script mapped to the block that
+/// claimed it — the script's own name and its stem — so a block written either
+/// way still finds the task the script became, plus the names whose claim was
+/// refused, which are not task names at all: see [`ScriptClaims`].
+fn claim_scripts_for_inline_commands(
+    by_name: &mut IndexMap<String, Task>,
+    inline_command_precedence: &IndexMap<String, usize>,
+) -> ScriptClaims {
+    let is_script = |task: &Task| task.file.is_some() && !task.is_toml_include;
+    let mut claimed: IndexMap<String, String> = IndexMap::new();
+    // `config_tasks` arrives highest precedence first, so this map is in that
+    // order too and the first block to reach a script is the one that keeps it.
+    for (name, precedence) in inline_command_precedence {
+        // A spelling an earlier, higher-precedence command already answers for
+        // is not a task of its own -- it loses the single slot those two
+        // spellings share -- so it claims nothing. Letting it claim a sibling
+        // script would take that script away and leave nothing running it.
+        if claimed.get(name).is_some_and(|owner| owner != name) {
+            continue;
+        }
+        let outranks = |task: &Task| *precedence <= task.config_precedence;
+        let targets = match by_name.get(name) {
+            // An exact name claims that script and nothing else, the same way
+            // it overlays only that script.
+            Some(task) if is_script(task) && outranks(task) => vec![name.clone()],
+            Some(_) => vec![],
+            None => by_name
+                .iter()
+                .filter(|(key, task)| {
+                    is_script(task)
+                        && outranks(task)
+                        && crate::task::strip_task_name_extension(key) == name.as_str()
+                })
+                .map(|(key, _)| key.clone())
+                .collect(),
+        };
+        for target in targets {
+            by_name.shift_remove(&target);
+            // Both spellings that reached the script now reach its claimant.
+            // Keeping the first is the same "highest precedence wins" the rest
+            // of the merge uses, and matters when two scripts share a stem.
+            let stem = crate::task::strip_task_name_extension(&target).to_string();
+            claimed.insert(target, name.clone());
+            claimed.entry(stem).or_insert_with(|| name.clone());
+        }
+    }
+    // A stem whose scripts are all still here reached them and was refused, so
+    // it is not a name a task can take: leaving a command under it would shadow
+    // those scripts under `mise run <stem>` and undo the refusal. The full name
+    // needs no such marking -- the script still holds it, so the merge finds it
+    // by name and decorates.
+    let refused = inline_command_precedence
+        .keys()
+        .filter(|name| {
+            !by_name.contains_key(*name) && !stripped_name_overlay_targets(by_name, name).is_empty()
+        })
+        .cloned()
+        .collect();
+    ScriptClaims { claimed, refused }
+}
+
+/// What [`claim_scripts_for_inline_commands`] worked out about the scripts each
+/// inline command names.
+struct ScriptClaims {
+    /// Spellings that reached a claimed script, mapped to the block that
+    /// claimed it.
+    claimed: IndexMap<String, String>,
+    /// Stems whose scripts the command could not outrank. A block of that name
+    /// decorates those scripts rather than becoming a task beside them.
+    refused: BTreeSet<String>,
+}
+
+/// The file tasks a `[tasks.<name>]` block overlays, under either spelling.
+///
+/// An exact name always wins: `[tasks."hello.sh"]` names that script and
+/// nothing else. Otherwise the block may be naming a script by its stem, unless
+/// an inline block somewhere gives that name a command, which makes it a task
+/// of its own that the block layers onto instead.
+fn file_task_overlay_targets(
+    by_name: &IndexMap<String, Task>,
+    name: &str,
+    inline_command_precedence: &IndexMap<String, usize>,
+    refused_stems: &BTreeSet<String>,
+) -> Vec<String> {
+    if let Some(existing) = by_name.get(name) {
+        return if existing.file.is_some() && !existing.is_toml_include {
+            vec![name.to_string()]
+        } else {
+            vec![]
+        };
+    }
+    // A name some block gives a command to is a task of its own -- unless that
+    // command was refused the scripts the name reaches, in which case no task
+    // stands under it and the scripts are still what the name configures.
+    if inline_command_precedence.contains_key(name) && !refused_stems.contains(name) {
+        return vec![];
+    }
+    stripped_name_overlay_targets(by_name, name)
+}
+
+/// Executable file tasks whose extension-stripped name is exactly `name`.
+///
+/// `mise run hello` already resolves `mise-tasks/hello.sh` this way, and more
+/// than one script can share a stem (`hello.sh` and `hello.js` both run), so a
+/// block naming the stem overlays every file task behind it.
+///
+/// The comparison is one-sided on purpose: the block's name is matched against
+/// each file task's stripped name, never stripped itself. `[tasks."my.app"]`
+/// therefore leaves `my.sh` alone, and `[tasks."hello.sh"]` does not reach
+/// `hello.js`.
+///
+fn stripped_name_overlay_targets(by_name: &IndexMap<String, Task>, name: &str) -> Vec<String> {
+    by_name
+        .iter()
+        .filter(|(key, task)| {
+            task.file.is_some()
+                && !task.is_toml_include
+                && crate::task::strip_task_name_extension(key) == name
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
@@ -5037,6 +5544,7 @@ async fn load_config_tasks(
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
+    let overlay_task_config = task_config.for_overlay();
     let mut tasks = vec![];
     for t in cf.tasks().into_iter() {
         let config_root = config_root.clone();
@@ -5053,6 +5561,11 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        let task_config = if task_has_command(&t) {
+            task_config
+        } else {
+            &overlay_task_config
+        };
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
         }
@@ -5321,7 +5834,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
 }
 
 /// Check if a pattern contains glob metacharacters
-pub(crate) fn is_glob_pattern(pattern: &str) -> bool {
+pub fn is_glob_pattern(pattern: &str) -> bool {
     // Check for unescaped glob metacharacters: *, ?, [, ], {, }
     // Note: This is a simple check that may have false positives with escaped chars,
     // but glob() will handle those correctly
@@ -5423,7 +5936,7 @@ fn task_include_patterns_for_dir(
         }))
 }
 
-pub(crate) fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let (includes, resolve_dir, _) = task_include_patterns_for_dir(dir, config_files)?;
 
     Ok(includes
@@ -5439,7 +5952,7 @@ pub(crate) fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Res
         .collect::<Vec<_>>())
 }
 
-pub(crate) fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+pub fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
@@ -5522,7 +6035,7 @@ pub(crate) fn resolve_template_for_late_task(config: &Arc<Config>, task: &mut Ta
     apply_named_template(task, &definitions)
 }
 
-pub(crate) async fn load_tasks_in_dir(
+pub async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,
     config_files: &ConfigMap,
@@ -5561,6 +6074,7 @@ async fn load_tasks_in_dir_with_definitions(
 struct TaskSources {
     file_tasks: Vec<Task>,
     config_tasks: Vec<Task>,
+    task_config: ResolvedTaskConfig,
 }
 
 #[derive(Clone)]
@@ -5648,26 +6162,38 @@ fn cascaded_task_config_for_dir(
     let mut cascaded = None;
     for root in roots {
         let configs = configs_at_root(&root, config_files);
-        match configs.iter().find_map(|cf| cf.task_config().cascade) {
-            Some(false) => {
-                cascaded = None;
-                continue;
-            }
-            Some(true) if cascaded.is_none() => {
-                cascaded = Some(CascadedTaskConfig {
-                    task_config: TaskConfig::default(),
-                    inputs: ResolvedTaskInputs::default(),
-                    includes_root: root.clone(),
-                    excludes_root: root,
-                });
-            }
-            _ => {}
-        }
-        if let Some(cascaded) = &mut cascaded {
-            merge_cascaded_task_config(cascaded, &configs)?;
-        }
+        cascade_through_root(&mut cascaded, &root, &configs)?;
     }
     Ok(cascaded)
+}
+
+/// Carry the task config cascaded from `root`'s ancestors through `root`
+/// itself, on the way to a descendant root: `cascade = false` there drops it,
+/// and `cascade = true` starts it or adds `root`'s own `task_config`.
+fn cascade_through_root(
+    cascaded: &mut Option<CascadedTaskConfig>,
+    root: &Path,
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<()> {
+    match configs.iter().find_map(|cf| cf.task_config().cascade) {
+        Some(false) => {
+            *cascaded = None;
+            return Ok(());
+        }
+        Some(true) if cascaded.is_none() => {
+            *cascaded = Some(CascadedTaskConfig {
+                task_config: TaskConfig::default(),
+                inputs: ResolvedTaskInputs::default(),
+                includes_root: root.to_path_buf(),
+                excludes_root: root.to_path_buf(),
+            });
+        }
+        _ => {}
+    }
+    if let Some(cascaded) = cascaded {
+        merge_cascaded_task_config(cascaded, configs)?;
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -5696,22 +6222,20 @@ impl RenderedTaskCache {
     }
 }
 
-impl TaskSources {
-    fn into_tasks(self) -> Vec<Task> {
-        let mut tasks = merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
-            .into_iter()
-            .sorted_by_cached_key(|t| t.name.clone())
-            .collect::<Vec<_>>();
-        let all_tasks = tasks
-            .clone()
-            .into_iter()
-            .map(|t| (t.name.clone(), t))
-            .collect::<BTreeMap<_, _>>();
-        for task in tasks.iter_mut() {
-            task.display_name = task.display_name(&all_tasks);
-        }
-        tasks
+fn sort_and_name_tasks(tasks: Vec<Task>) -> Vec<Task> {
+    let mut tasks = tasks
+        .into_iter()
+        .sorted_by_cached_key(|t| t.name.clone())
+        .collect::<Vec<_>>();
+    let all_tasks = tasks
+        .clone()
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect::<BTreeMap<_, _>>();
+    for task in tasks.iter_mut() {
+        task.display_name = task.display_name(&all_tasks);
     }
+    tasks
 }
 
 /// Load one config root as a single precedence unit.
@@ -5727,7 +6251,7 @@ async fn load_tasks_from_configs(
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<Vec<Task>> {
-    Ok(load_task_sources_from_configs(
+    load_tasks_from_configs_and_folders(
         config,
         dir,
         configs,
@@ -5736,14 +6260,152 @@ async fn load_tasks_from_configs(
         cascaded_task_config,
         None,
     )
-    .await?
-    .into_tasks())
+    .await
+}
+
+/// The configs of one task root, with each config's precedence among all the
+/// configs being loaded.
+#[derive(Default)]
+struct TaskRootConfigs<'a> {
+    precedences: Vec<usize>,
+    configs: Vec<&'a Arc<dyn ConfigFile>>,
+}
+
+/// Load `configs` as one root, except that the files of each conf.d folder
+/// fragment among them load as a root of their own, the folder.
+///
+/// A folder fragment is self-contained: its tasks run in the folder, its
+/// `task_config` applies only to its own tasks, and its `includes` neither
+/// replace nor are replaced by the enclosing root's. As a root inside `dir`,
+/// it inherits the defaults and `excludes` that cascade from `dir`'s ancestors
+/// and from `dir` itself, but not their `includes`, which `dir` already loads.
+///
+/// Only where tasks run and which `task_config` applies differ by root. Every
+/// root's file and inline tasks are then merged as if they came from one root,
+/// by the precedence of their configs among all of `configs`, so a metadata
+/// block in one root still overlays a same-named task from another. A folder
+/// beats the single-file fragments beside it and loses to the root's own
+/// config. When two roots' default task directories hold the same file task,
+/// the enclosing root's wins, then folders in config order.
+async fn load_tasks_from_configs_and_folders(
+    config: &Arc<Config>,
+    dir: &Path,
+    configs: Vec<&Arc<dyn ConfigFile>>,
+    templates: &TaskDefinitions,
+    monorepo_context: bool,
+    cascaded_task_config: Option<&CascadedTaskConfig>,
+    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+) -> Result<Vec<Task>> {
+    let mut roots: IndexMap<PathBuf, TaskRootConfigs> = IndexMap::new();
+    roots.insert(dir.to_path_buf(), TaskRootConfigs::default());
+    for (precedence, cf) in configs.into_iter().enumerate() {
+        let root = if is_conf_d_folder_file(cf.get_path()) {
+            cf.config_root()
+        } else {
+            dir.to_path_buf()
+        };
+        let root = roots.entry(root).or_default();
+        root.precedences.push(precedence);
+        root.configs.push(cf);
+    }
+    // A folder is a root inside `dir`, so it inherits what cascades through
+    // `dir` itself, except `includes`, which `dir` already loads.
+    let mut folder_cascaded_task_config = cascaded_task_config.cloned();
+    cascade_through_root(&mut folder_cascaded_task_config, dir, &roots[dir].configs)?;
+    if let Some(tc) = &mut folder_cascaded_task_config {
+        tc.task_config.includes = None;
+    }
+
+    // The precedence of a file task from a root's default task directories,
+    // which no config selected, below every config.
+    let default_precedence = roots.values().map(|r| r.configs.len()).sum::<usize>();
+    // The root each config belongs to, to find a standalone block's defaults.
+    let config_roots: HashMap<PathBuf, usize> = roots
+        .values()
+        .enumerate()
+        .flat_map(|(i, root)| {
+            root.configs
+                .iter()
+                .map(move |cf| (cf.get_path().to_path_buf(), i))
+        })
+        .collect();
+    let mut root_task_configs = vec![];
+    let mut file_tasks = vec![];
+    let mut config_tasks = vec![];
+    for (
+        i,
+        (
+            root,
+            TaskRootConfigs {
+                precedences,
+                configs,
+            },
+        ),
+    ) in roots.into_iter().enumerate()
+    {
+        let root_cascaded_task_config = if i == 0 {
+            cascaded_task_config
+        } else {
+            folder_cascaded_task_config.as_ref()
+        };
+        let sources = load_task_sources_from_configs(
+            config,
+            &root,
+            configs,
+            templates,
+            monorepo_context,
+            root_cascaded_task_config,
+            rendered_file_tasks.as_deref_mut(),
+        )
+        .await?;
+        let global_precedence = |task: &Task| {
+            precedences
+                .get(task.config_precedence)
+                .copied()
+                .unwrap_or(default_precedence)
+        };
+        for mut task in sources.file_tasks {
+            task.config_precedence = global_precedence(&task);
+            file_tasks.push((i, task));
+        }
+        for mut task in sources.config_tasks {
+            task.config_precedence = global_precedence(&task);
+            config_tasks.push(task);
+        }
+        root_task_configs.push(sources.task_config);
+    }
+    // The merge wants file tasks in rising precedence, since the last file
+    // task with a name wins, and inline tasks highest precedence first. Roots
+    // were loaded enclosing root first, then folders highest precedence first,
+    // so equal file tasks sort in reverse load order. The sorts are stable,
+    // keeping each root's include order.
+    file_tasks.sort_by_key(|(root, task)| {
+        (
+            std::cmp::Reverse(task.config_precedence),
+            std::cmp::Reverse(*root),
+        )
+    });
+    config_tasks.sort_by_key(|task| task.config_precedence);
+    let file_tasks = file_tasks.into_iter().map(|(_, task)| task).collect();
+    let mut tasks = merge_file_and_config_tasks(file_tasks, config_tasks);
+    for task in &mut tasks {
+        if task_has_command(task) {
+            continue;
+        }
+        if let Some(&root) = config_roots.get(&task.config_source) {
+            root_task_configs[root]
+                .apply_to_standalone(task, config)
+                .await?;
+        }
+    }
+    Ok(sort_and_name_tasks(tasks))
 }
 
 /// Load file and inline task sources without merging them.
 ///
-/// Global user and system scopes use this boundary so they can share rendered
-/// file tasks without merging task definitions across the scope boundary.
+/// Global user and system scopes pass a shared rendered-task cache through
+/// [`load_tasks_from_configs_and_folders`] so they can share rendered file
+/// tasks without merging task definitions across the scope boundary.
 async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,
@@ -5882,9 +6544,10 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
-                if task.is_toml_include {
-                    task.config_precedence = include_config_precedence;
-                }
+                // Both task kinds are reachable only because some config's
+                // `task_config.includes` named this path, so both answer to that
+                // config's precedence when an inline block claims their name.
+                task.config_precedence = include_config_precedence;
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
@@ -5900,6 +6563,7 @@ async fn load_task_sources_from_configs(
     Ok(TaskSources {
         file_tasks,
         config_tasks,
+        task_config,
     })
 }
 
@@ -6008,6 +6672,22 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_plugin_entry_to_url_keeps_ref_outside_shorthand_expansion() {
+        assert_eq!(
+            plugin_entry_to_url("owner/repo#v1.2.0"),
+            "https://github.com/owner/repo.git#v1.2.0"
+        );
+        assert_eq!(
+            plugin_entry_to_url("owner/repo"),
+            "https://github.com/owner/repo.git"
+        );
+        assert_eq!(
+            plugin_entry_to_url("https://example.com/repo.git#main"),
+            "https://example.com/repo.git#main"
+        );
+    }
 
     #[test]
     fn test_resolve_task_template_tracks_definition_sources() -> Result<()> {
@@ -6169,6 +6849,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_reloads_settings() {
+        let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
         let before = Settings::get();
 
@@ -6176,7 +6857,6 @@ mod tests {
         let after = Settings::get();
 
         assert!(!Arc::ptr_eq(&before, &after));
-        Settings::reset(None);
     }
 
     #[test]
@@ -6570,6 +7250,688 @@ mod tests {
         assert_eq!(tasks[0].description, "windows task metadata");
     }
 
+    /// A file task built the way discovery builds one: the name carries the
+    /// script's extension and `file` points at the script.
+    fn file_task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from(format!("mise-tasks/{name}")),
+            file: Some(PathBuf::from(format!("mise-tasks/{name}"))),
+            ..Default::default()
+        }
+    }
+
+    /// A `[tasks.<name>]` block carrying no command of its own.
+    fn inline_overlay(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from("mise.toml"),
+            ..Default::default()
+        }
+    }
+
+    fn inline_task(name: &str, run: &str) -> Task {
+        Task {
+            run: vec![RunEntry::Script(run.to_string())],
+            ..inline_overlay(name)
+        }
+    }
+
+    #[test]
+    fn test_stripped_name_block_overlays_file_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![Task {
+                name: "hello".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "overlaid");
+    }
+
+    #[test]
+    fn test_stripped_name_block_overlays_every_file_task_sharing_the_stem() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![Task {
+                name: "hello".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 2);
+        for task in &tasks {
+            assert_eq!(task.description, "overlaid");
+        }
+    }
+
+    #[test]
+    fn test_stripped_name_block_defers_to_an_inline_command_with_the_same_name() {
+        // `mise.local.toml` contributes metadata, `mise.toml` the command. The
+        // metadata block must overlay that inline base, not the file task, or
+        // the base below it is dropped. The command also claims `hello.sh`,
+        // since `[tasks.hello]` names that script.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    run: vec![RunEntry::Script("echo inline".to_string())],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        let inline = tasks.iter().find(|t| t.name == "hello").unwrap();
+        assert_eq!(inline.description, "from local");
+        assert_eq!(
+            inline.run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert!(
+            !tasks.iter().any(|t| t.name == "hello.sh"),
+            "the command claims the script its name reaches"
+        );
+    }
+
+    #[test]
+    fn test_stripped_name_overlay_matches_the_block_name_against_the_stem_only() {
+        // "my.app" is a task name that happens to contain a dot, not `my` with
+        // an extension, so it must not reach `my.sh`.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("my.sh")],
+            vec![Task {
+                name: "my.app".to_string(),
+                description: "unrelated".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        let names = tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec();
+        assert_eq!(names, vec!["my.app", "my.sh"]);
+    }
+
+    #[test]
+    fn test_dependency_group_is_the_base_when_no_command_shares_its_name() {
+        // Nothing below contributes a command, so the group is the base the
+        // metadata-only block above it overlays. It used to be dropped, leaving
+        // the name a task with no executable content.
+        let tasks = merge_file_and_config_tasks(
+            vec![],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    depends: vec!["lint".to_string().into()],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].description, "from local");
+        assert_eq!(
+            tasks[0]
+                .depends
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["lint"]
+        );
+    }
+
+    #[test]
+    fn test_dependency_group_stays_an_overlay_on_a_lower_precedence_command() {
+        // The documented inline layering rule: a block with only `depends` on
+        // top of a command-bearing block of the same name contributes its
+        // dependency to that command rather than replacing it.
+        let tasks = merge_file_and_config_tasks(
+            vec![],
+            vec![
+                Task {
+                    name: "x".to_string(),
+                    depends: vec!["a".to_string().into()],
+                    ..Default::default()
+                },
+                Task {
+                    name: "x".to_string(),
+                    run: vec![RunEntry::Script("echo x".to_string())],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].run, vec![RunEntry::Script("echo x".to_string())]);
+        assert_eq!(
+            tasks[0]
+                .depends
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["a"]
+        );
+    }
+
+    #[test]
+    fn test_mixed_overlay_spellings_keep_the_higher_precedence_block() {
+        // `[tasks.hello]` and `[tasks."hello.sh"]` reach the same file task
+        // under different names, so the lower-precedence spelling must neither
+        // overwrite the higher one nor survive as a task shadowing the script.
+        for (high, low) in [("hello.sh", "hello"), ("hello", "hello.sh")] {
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![
+                    Task {
+                        name: high.to_string(),
+                        description: "high".to_string(),
+                        ..Default::default()
+                    },
+                    Task {
+                        name: low.to_string(),
+                        description: "low".to_string(),
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "{high} over {low}");
+            assert_eq!(tasks[0].name, "hello.sh", "{high} over {low}");
+            assert_eq!(tasks[0].description, "high", "{high} over {low}");
+        }
+    }
+
+    #[test]
+    fn test_every_dependency_field_stays_an_overlay_on_a_lower_command() {
+        // Guards the split between `metadata_only` and
+        // `task_has_executable_content`. Folding them together drops the
+        // command here, so each dependency field is checked, not just
+        // `depends`.
+        for field in ["depends", "depends_post", "wait_for"] {
+            let mut overlay = Task {
+                name: "x".to_string(),
+                ..Default::default()
+            };
+            let dep = vec!["a".to_string().into()];
+            match field {
+                "depends" => overlay.depends = dep,
+                "depends_post" => overlay.depends_post = dep,
+                _ => overlay.wait_for = dep,
+            }
+
+            let tasks = merge_file_and_config_tasks(
+                vec![],
+                vec![
+                    overlay,
+                    Task {
+                        name: "x".to_string(),
+                        run: vec![RunEntry::Script("echo x".to_string())],
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "{field}");
+            assert_eq!(
+                tasks[0].run,
+                vec![RunEntry::Script("echo x".to_string())],
+                "{field} dropped the command"
+            );
+            let kept = match field {
+                "depends" => &tasks[0].depends,
+                "depends_post" => &tasks[0].depends_post,
+                _ => &tasks[0].wait_for,
+            };
+            assert_eq!(
+                kept.iter().map(|d| d.task.as_str()).collect_vec(),
+                vec!["a"],
+                "{field} dropped the dependency"
+            );
+        }
+    }
+
+    #[test]
+    fn test_wait_for_alone_overlays_the_file_task() {
+        // `wait_for` orders tasks something else already scheduled and adds
+        // none of its own, so a block carrying only `wait_for` is metadata.
+        // Treating it as executable content left it shadowing the script as a
+        // task that runs nothing -- the failure this branch exists to remove.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![Task {
+                name: "hello".to_string(),
+                wait_for: vec!["other".to_string().into()],
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(
+            tasks[0]
+                .wait_for
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["other"]
+        );
+    }
+
+    /// The name a block uses must not change what it does: `[tasks.hello]` and
+    /// `[tasks."hello.sh"]` are two spellings of one script.
+    fn merge_under_both_spellings(mut block: Task) -> Vec<Task> {
+        let mut out = vec![];
+        for spelling in ["hello", "hello.sh"] {
+            block.name = spelling.to_string();
+            let tasks =
+                merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![block.clone()]);
+            assert_eq!(
+                tasks.len(),
+                1,
+                "[tasks.\"{spelling}\"] did not overlay the script"
+            );
+            assert_eq!(tasks[0].name, "hello.sh", "{spelling}");
+            assert_eq!(
+                tasks[0].file,
+                Some(PathBuf::from("mise-tasks/hello.sh")),
+                "{spelling} lost the script"
+            );
+            out.push(tasks[0].clone());
+        }
+        out
+    }
+
+    #[test]
+    fn test_both_spellings_overlay_a_dependency_onto_the_script() {
+        for task in merge_under_both_spellings(Task {
+            depends: vec!["lint".to_string().into()],
+            ..Default::default()
+        }) {
+            assert_eq!(
+                task.depends.iter().map(|d| d.task.as_str()).collect_vec(),
+                vec!["lint"]
+            );
+        }
+    }
+
+    #[test]
+    fn test_both_spellings_overlay_depends_post_onto_the_script() {
+        for task in merge_under_both_spellings(Task {
+            depends_post: vec!["post".to_string().into()],
+            ..Default::default()
+        }) {
+            assert_eq!(
+                task.depends_post
+                    .iter()
+                    .map(|d| d.task.as_str())
+                    .collect_vec(),
+                vec!["post"]
+            );
+        }
+    }
+
+    #[test]
+    fn test_both_spellings_overlay_metadata_onto_the_script() {
+        for task in merge_under_both_spellings(Task {
+            description: "overlaid".to_string(),
+            ..Default::default()
+        }) {
+            assert_eq!(task.description, "overlaid");
+        }
+    }
+
+    #[test]
+    fn test_only_the_highest_precedence_block_reaches_the_script() {
+        // A script takes one definition, not an accumulation: lower-precedence
+        // blocks contribute nothing, not even additive fields (#11103). Because
+        // the two spellings name one script they compete for that single slot,
+        // so this holds across a mix of them just as it does for a repeat of
+        // one.
+        for (high, low) in [
+            ("hello", "hello.sh"),
+            ("hello.sh", "hello"),
+            ("hello", "hello"),
+            ("hello.sh", "hello.sh"),
+        ] {
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![
+                    Task {
+                        name: high.to_string(),
+                        description: "high".to_string(),
+                        ..Default::default()
+                    },
+                    Task {
+                        name: low.to_string(),
+                        description: "low".to_string(),
+                        depends: vec!["lint".to_string().into()],
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            let label = format!("{high} over {low}");
+            assert_eq!(tasks.len(), 1, "{label}");
+            assert_eq!(tasks[0].name, "hello.sh", "{label}");
+            assert_eq!(tasks[0].description, "high", "{label}");
+            assert!(
+                tasks[0].depends.is_empty(),
+                "{label} let a lower-precedence block contribute"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_inline_command_elsewhere_keeps_the_name_for_itself() {
+        // `[tasks.hello] run = ...` makes `hello` a task of its own, so a
+        // metadata block of that name layers onto it rather than onto the
+        // script -- and the script it names is claimed by that command.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    run: vec![RunEntry::Script("echo inline".to_string())],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        let inline = tasks.iter().find(|t| t.name == "hello").unwrap();
+        assert_eq!(inline.description, "from local");
+        assert_eq!(
+            inline.run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert!(
+            !tasks.iter().any(|t| t.name == "hello.sh"),
+            "the command claims the script its name reaches"
+        );
+    }
+
+    #[test]
+    fn test_stripped_name_overlay_keeps_the_monorepo_path_prefix() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("//projects/my.app:build.sh")],
+            vec![Task {
+                name: "//projects/my.app:build".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "//projects/my.app:build.sh");
+        assert_eq!(tasks[0].description, "overlaid");
+    }
+
+    #[test]
+    fn test_inline_command_replaces_a_matching_file_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello.sh", "echo inline")],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert_eq!(tasks[0].file, None);
+    }
+
+    #[test]
+    fn test_inline_file_key_replaces_a_matching_file_task() {
+        let redirected = Task {
+            file: Some(PathBuf::from("scripts/other.sh")),
+            ..inline_overlay("hello.sh")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![redirected]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("scripts/other.sh")));
+    }
+
+    /// A script is in the running because some config's `task_config.includes`
+    /// named its directory, so a block from a config below that one decorates
+    /// the script instead of taking it over.
+    #[test]
+    fn test_a_lower_precedence_command_still_only_overlays_a_file_task() {
+        let script = Task {
+            config_precedence: 0,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            description: "from a lower config".to_string(),
+            ..inline_task("hello.sh", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "from a lower config");
+    }
+
+    /// A command under the stem claims the scripts that stem names, so the two
+    /// spellings do the same thing. `mise tasks ls` shows the stem and
+    /// `mise run` takes it, so a script left beside the command would be
+    /// shadowed by exact-name matching anyway (#10393).
+    #[test]
+    fn test_a_command_under_the_stem_claims_the_scripts_it_names() {
+        use crate::task::GetMatchingExt;
+
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello", "echo inline")],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(tasks.keys().collect_vec(), vec!["hello"]);
+
+        let matches = tasks.get_matching("hello").unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].run, vec![RunEntry::Script("echo inline".into())]);
+    }
+
+    /// A stem names every script sharing it, and a command may have claimed
+    /// only some. A block written with that stem still configures the rest, as
+    /// well as the task the claimed one became.
+    #[test]
+    fn test_a_stem_block_still_reaches_the_siblings_a_command_left() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    description: "stem metadata".to_string(),
+                    config_precedence: 0,
+                    ..inline_overlay("hello")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello.sh", "echo inline")
+                },
+            ],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(tasks.keys().collect_vec(), vec!["hello.js", "hello.sh"]);
+        assert_eq!(
+            tasks["hello.sh"].description, "stem metadata",
+            "the claimant should have the stem block's metadata"
+        );
+        assert_eq!(
+            tasks["hello.js"].description, "stem metadata",
+            "the sibling the command left should have it too"
+        );
+        assert_eq!(
+            tasks["hello.js"].file,
+            Some(PathBuf::from("mise-tasks/hello.js"))
+        );
+    }
+
+    /// A command that loses the slot claims nothing. Letting it claim a script
+    /// the winner's name never reached would take that script away and leave
+    /// nothing running it, since the block itself is then dropped.
+    #[test]
+    fn test_a_command_that_loses_the_slot_leaves_sibling_scripts_alone() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    config_precedence: 0,
+                    ..inline_task("hello.sh", "echo exact")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello", "echo stem")
+                },
+            ],
+        );
+
+        assert_eq!(
+            tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec(),
+            vec!["hello.js", "hello.sh"],
+            "the sibling the winning name never reached must survive"
+        );
+        let claimed = tasks.iter().find(|t| t.name == "hello.sh").unwrap();
+        assert_eq!(
+            claimed.run,
+            vec![RunEntry::Script("echo exact".to_string())]
+        );
+        let sibling = tasks.iter().find(|t| t.name == "hello.js").unwrap();
+        assert_eq!(sibling.file, Some(PathBuf::from("mise-tasks/hello.js")));
+    }
+
+    /// A command that cannot outrank the scripts its stem reaches decorates
+    /// them, exactly as one written with a script's full name does. Left as a
+    /// task of its own it would shadow them under `mise run <stem>`, which is
+    /// the takeover the precedence rule just refused.
+    #[test]
+    fn test_a_refused_stem_command_decorates_instead_of_shadowing() {
+        let script = Task {
+            config_precedence: 0,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            description: "from a lower config".to_string(),
+            ..inline_task("hello", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1, "the command stood up a task of its own");
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "from a lower config");
+    }
+
+    /// Two spellings of one script are one definition, so a second command
+    /// under the other spelling loses the slot rather than standing up a task
+    /// beside the one that claimed the script (#11103).
+    #[test]
+    fn test_a_second_command_under_the_other_spelling_loses_the_slot() {
+        for (high, low) in [("hello", "hello.sh"), ("hello.sh", "hello")] {
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![
+                    Task {
+                        config_precedence: 0,
+                        ..inline_task(high, "echo high")
+                    },
+                    Task {
+                        config_precedence: 1,
+                        ..inline_task(low, "echo low")
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "[tasks.{low}] stood up a task of its own");
+            assert_eq!(
+                tasks[0].run,
+                vec![RunEntry::Script("echo high".to_string())],
+                "[tasks.{high}] should have kept the slot"
+            );
+        }
+    }
+
+    /// The stem can name more than one script, and the command speaks for all
+    /// of them. The full name stays the narrower claim.
+    #[test]
+    fn test_a_command_under_the_stem_claims_every_script_sharing_it() {
+        let scripts = || vec![file_task("hello.sh"), file_task("hello.js")];
+
+        let under_stem =
+            merge_file_and_config_tasks(scripts(), vec![inline_task("hello", "echo inline")]);
+        assert_eq!(
+            under_stem.iter().map(|t| t.name.as_str()).collect_vec(),
+            vec!["hello"],
+            "the stem claims both scripts"
+        );
+
+        let under_full_name =
+            merge_file_and_config_tasks(scripts(), vec![inline_task("hello.sh", "echo inline")]);
+        assert_eq!(
+            under_full_name
+                .iter()
+                .map(|t| t.name.as_str())
+                .sorted()
+                .collect_vec(),
+            vec!["hello.js", "hello.sh"],
+            "the full name claims only the script it spells"
+        );
+    }
+
+    /// On Windows a `.ps1` paired with a POSIX sibling is renamed to the bare
+    /// stem, so the block that replaces it is the one spelled with that stem.
+    #[test]
+    fn test_inline_command_replaces_a_renamed_windows_file_task() {
+        let file_tasks = prefer_windows_file_task_siblings_inner(vec![
+            file_task("hello.sh"),
+            file_task("hello.ps1"),
+        ]);
+
+        let tasks =
+            merge_file_and_config_tasks(file_tasks, vec![inline_task("hello", "echo inline")]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+    }
+
     #[test]
     fn test_prefer_windows_file_task_siblings_keeps_exact_stem_for_matching() {
         use crate::task::GetMatchingExt;
@@ -6815,29 +8177,38 @@ mod tests {
             env_config_patterns_with_conf_d("linux", true),
             vec![
                 ".config/mise/conf.d/*.linux.toml",
+                ".config/mise/conf.d/*/mise.linux.toml",
                 ".config/mise/config.linux.toml",
                 ".config/mise.linux.toml",
                 "mise/conf.d/*.linux.toml",
+                "mise/conf.d/*/mise.linux.toml",
                 "mise/config.linux.toml",
                 "mise.linux.toml",
                 ".mise/conf.d/*.linux.toml",
+                ".mise/conf.d/*/mise.linux.toml",
                 ".mise/config.linux.toml",
                 ".mise.linux.toml",
                 ".config/mise/conf.d/*.linux.local.toml",
+                ".config/mise/conf.d/*/mise.linux.local.toml",
                 ".config/mise/config.linux.local.toml",
                 ".config/mise.linux.local.toml",
                 "mise/conf.d/*.linux.local.toml",
+                "mise/conf.d/*/mise.linux.local.toml",
                 "mise/config.linux.local.toml",
                 "mise.linux.local.toml",
                 ".mise/conf.d/*.linux.local.toml",
+                ".mise/conf.d/*/mise.linux.local.toml",
                 ".mise/config.linux.local.toml",
                 ".mise.linux.local.toml",
             ]
         );
+        // Folder fragments are new, so their environment files are never
+        // subject to the env_conf_d migration.
         assert!(
             env_config_patterns_with_conf_d("linux", false)
                 .iter()
-                .all(|pattern| !pattern.contains("conf.d"))
+                .filter(|pattern| pattern.contains("conf.d"))
+                .all(|pattern| pattern.contains("conf.d/*/mise."))
         );
     }
 
@@ -7015,7 +8386,7 @@ mod tests {
             Some(crate::toolset::parse_tool_options(
                 "api_url=https://inline.example/api/v3",
             )),
-            crate::cli::args::BackendResolution::new(true),
+            crate::args::BackendResolution::new(true),
         ));
 
         let opts = config.get_tool_opts_with_overrides(&ba).await?;

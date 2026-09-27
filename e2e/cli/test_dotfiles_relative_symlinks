@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# `dotfiles.relative_symlinks` and an entry's `relative` key link by a path
+# relative to the link's directory, so links survive the home directory
+# moving. Turning the option on converts links an earlier apply made.
+
+mkdir -p ~/dotfiles/bin
+echo 'foo' >~/dotfiles/foo
+echo 'bar' >~/dotfiles/bar
+echo 'tool' >~/dotfiles/bin/tool
+
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.config/foo" = { source = "~/dotfiles/foo", mode = "symlink" }
+"~/.bar" = { source = "~/dotfiles/bar", mode = "symlink", relative = false }
+"~/.local/bin" = { source = "~/dotfiles/bin", mode = "symlink-each" }
+TOML
+
+# the default stays absolute
+assert_succeed "mise dot apply --yes"
+assert "readlink ~/.config/foo" "$HOME/dotfiles/foo"
+assert "readlink ~/.local/bin/tool" "$HOME/dotfiles/bin/tool"
+
+# turning it on re-points existing links; the entry override stays absolute
+export MISE_DOTFILES_RELATIVE_SYMLINKS=1
+assert_contains "mise dot status" "relative requested"
+assert_succeed "mise dot apply --yes"
+assert "readlink ~/.config/foo" "../dotfiles/foo"
+assert "readlink ~/.local/bin/tool" "../../dotfiles/bin/tool"
+assert "readlink ~/.bar" "$HOME/dotfiles/bar"
+assert "cat ~/.config/foo" "foo"
+assert_contains "mise dot apply --yes 2>&1" "all files are applied"
+
+# a removed source file's relative link is still pruned
+rm ~/dotfiles/bin/tool
+assert_succeed "mise dot apply --yes"
+assert_fail "test -L ~/.local/bin/tool"
+
+# unapply recognizes relative links as its own
+assert_succeed "mise dotfiles unapply ~/.config/foo --yes"
+assert_fail "test -L ~/.config/foo"
+
+# relative only applies to symlink modes
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.copied" = { source = "~/dotfiles/foo", mode = "copy", relative = true }
+TOML
+assert_contains "mise dot status 2>&1" "relative requires mode"

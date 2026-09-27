@@ -66,7 +66,7 @@ mod tests {
     #[cfg(unix)]
     use pretty_assertions::assert_str_eq;
 
-    use crate::config::Config;
+    use crate::config::{Config, SettingsExt};
 
     use super::*;
 
@@ -75,6 +75,7 @@ mod tests {
     async fn test_get_shorthands() {
         use crate::config::Config;
 
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();
@@ -96,6 +97,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_shorthands_missing_file() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _config = Config::get().await.unwrap();
         Settings::reset(None);
         let mut settings = Settings::get().deref().clone();

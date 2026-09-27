@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'TOML'
+[env]
+MISERC_SELECTED = "base"
+TOML
+cat >mise.development.toml <<'TOML'
+[env]
+MISERC_SELECTED = "development"
+TOML
+cat >mise.native.toml <<'TOML'
+[env]
+MISERC_SELECTED = "native"
+TOML
+mkdir -p .config
+cat >.config/mise.toml <<'TOML'
+[env]
+MISERC_IGNORED = "should not load"
+TOML
+cat >.miserc.toml <<'TOML'
+env = ["development"]
+ignored_config_paths = [".config/mise.toml"]
+TOML
+assert "mise exec -- printenv MISERC_SELECTED" development
+
+echo 'env = ["native"]' >.miserc.local.toml
+assert "mise exec -- printenv MISERC_SELECTED" native
+# The local file overrides env without discarding the shared ignored paths.
+assert_fail "mise exec -- printenv MISERC_IGNORED"
+assert "MISE_ENV=development mise exec -- printenv MISERC_SELECTED" development
+assert "MISE_ENV=native mise -E development exec -- printenv MISERC_SELECTED" development
+
+# Inherit a parent's local file, but keep closer shared settings authoritative.
+mkdir child
+assert "(cd child && mise exec -- printenv MISERC_SELECTED)" native
+echo 'env = ["development"]' >child/.miserc.toml
+assert "(cd child && mise exec -- printenv MISERC_SELECTED)" development
+echo 'env = ["native"]' >child/.miserc.local.toml
+assert "(cd child && mise exec -- printenv MISERC_SELECTED)" native
+
+# An empty list clears the shared selection. Templates work in local files too.
+echo 'env = []' >.miserc.local.toml
+assert "mise exec -- printenv MISERC_SELECTED" base
+echo 'env = ["{{ env.MISERC_TEST_ENV }}"]' >.miserc.local.toml
+assert "MISERC_TEST_ENV=native mise exec -- printenv MISERC_SELECTED" native
+
+# A local selector works without a shared file, including the .config layout.
+rm .miserc.toml
+echo 'env = ["development"]' >.config/miserc.toml
+echo 'env = ["native"]' >.miserc.local.toml
+assert "mise exec -- printenv MISERC_SELECTED" native
+rm .config/miserc.toml
+assert "mise exec -- printenv MISERC_SELECTED" native
+
+# Ceiling paths bound local discovery as well as shared discovery.
+mkdir bounded
+echo 'env.MISERC_SELECTED = "base"' >bounded/mise.toml
+assert "(cd bounded && MISE_CEILING_PATHS='$PWD' mise exec -- printenv MISERC_SELECTED)" base
+
+echo 'env = [' >.miserc.local.toml
+assert_fail "mise config ls" 'Invalid TOML in config file'
+assert_fail "mise config ls" '.miserc.local.toml'

@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
-pub(crate) use super::services_common::*;
+pub use super::services_common::*;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ServiceRequest {
+pub struct ServiceRequest {
     pub name: String,
     pub unit: String,
     pub state: ServiceState,
@@ -70,7 +70,7 @@ struct ServicePlan {
     actions: Vec<ServiceAction>,
 }
 
-pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     compose_system_declarations(config)?
         .into_iter()
         .map(|(name, (config, origin))| {
@@ -79,17 +79,17 @@ pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<Servic
         .collect()
 }
 
-pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     let mut requests = prepare_requests_from_config(config)?;
     inspect_requests(&mut requests);
     Ok(requests)
 }
 
-pub(crate) fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     requests_from_config(config)
 }
 
-pub(crate) fn inspect_requests(requests: &mut [ServiceRequest]) {
+pub fn inspect_requests(requests: &mut [ServiceRequest]) {
     if requests.is_empty() {
         return;
     }
@@ -366,7 +366,7 @@ fn instantiated_unit_template(unit: &str) -> Option<String> {
     (!instance.starts_with('.')).then(|| format!("{prefix}@{suffix}"))
 }
 
-pub(crate) fn plans_with_notifications(
+pub fn plans_with_notifications(
     requests: &[ServiceRequest],
     notifications: &ServiceNotifications,
 ) -> Vec<ResourcePlan> {
@@ -376,11 +376,11 @@ pub(crate) fn plans_with_notifications(
         .collect()
 }
 
-pub(crate) fn apply(requests: &[ServiceRequest], dry_run: bool, yes: bool) -> Result<()> {
+pub fn apply(requests: &[ServiceRequest], dry_run: bool, yes: bool) -> Result<()> {
     apply_with_notifications(requests, &ServiceNotifications::default(), dry_run, yes)
 }
 
-pub(crate) fn apply_with_notifications(
+pub fn apply_with_notifications(
     requests: &[ServiceRequest],
     notifications: &ServiceNotifications,
     dry_run: bool,
@@ -460,7 +460,7 @@ pub(crate) fn apply_with_notifications(
     Ok(())
 }
 
-pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     let plan: ServicePlan = serde_json::from_reader(std::io::stdin().lock())?;
     if plan.actions.is_empty() {
         return Ok(());

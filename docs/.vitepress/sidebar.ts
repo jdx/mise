@@ -104,7 +104,6 @@ export const sidebar: SidebarItem[] = [
           { text: "npm", link: "/dev-tools/backends/npm" },
           { text: "packslip", link: "/dev-tools/backends/packslip" },
           { text: "pypi", link: "/dev-tools/backends/pypi" },
-          { text: "pkgx", link: "/dev-tools/backends/pkgx" },
           { text: "spm", link: "/dev-tools/backends/spm" },
           { text: "ubi", link: "/dev-tools/backends/ubi" },
           { text: "vfox", link: "/dev-tools/backends/vfox" },
@@ -211,7 +210,16 @@ export const sidebar: SidebarItem[] = [
         ],
       },
       { text: "Hooks", link: "/hooks" },
-      { text: "Daemons", link: "/daemons" },
+      {
+        text: "Daemons",
+        link: "/daemons",
+        items: [
+          {
+            text: "Set up a development stack",
+            link: "/daemons/development-stack",
+          },
+        ],
+      },
       { text: "direnv", link: "/direnv" },
     ],
   },
@@ -229,6 +237,7 @@ export const sidebar: SidebarItem[] = [
       { text: "Remote Cache Protocol", link: "/tasks/remote-cache-protocol" },
       { text: "Task Templates", link: "/tasks/templates" },
       { text: "Monorepo Tasks", link: "/tasks/monorepo" },
+      { text: "OpenTelemetry", link: "/tasks/opentelemetry" },
       { text: "Sandboxing", link: "/sandboxing" },
     ],
   },

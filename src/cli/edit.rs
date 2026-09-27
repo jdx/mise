@@ -11,9 +11,8 @@ use mise_interactive_config::{
 
 use strum::IntoEnumIterator;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
-use crate::cli::version::VERSION_PLAIN;
 use crate::config::config_file;
 use crate::config::{Config, Settings, global_config_path};
 use crate::file::display_path;
@@ -21,6 +20,7 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
+use crate::version::VERSION_PLAIN;
 use crate::{env, file};
 
 /// Tool provider that lists tools from the mise REGISTRY
@@ -84,7 +84,6 @@ impl BackendProvider for MiseBackendProvider {
                     ("packslip", Some("Install from a vendor's signed packslip"))
                 }
                 BackendType::Pipx => ("pipx", Some("Install Python CLI tools")),
-                BackendType::Pkgx => ("pkgx", Some("Install pkgx pantry packages")),
                 BackendType::Spm => ("spm", Some("Install Swift packages")),
                 BackendType::Http => ("http", Some("Download files from HTTP URLs")),
                 BackendType::S3 => ("s3", Some("Download from S3 buckets")),

@@ -5,9 +5,9 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 
+use crate::args::{BackendArg, BackendResolution};
 use crate::backend::{Backend, BackendMap};
-use crate::cli::args::{BackendArg, BackendResolution};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env;
 use crate::path_env::PathEnv;
 use crate::timeout::{TimeoutError, run_with_timeout, run_with_timeout_async};
@@ -33,7 +33,7 @@ mod rust;
 mod swift;
 mod zig;
 
-pub(crate) static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
+pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),

@@ -23,7 +23,7 @@ use super::tag;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP_FETCH;
 use crate::result::Result;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
@@ -196,7 +196,7 @@ pub(super) async fn build(
 /// return the path to its `ruby` executable.
 pub(crate) async fn ruby_bin() -> Result<PathBuf> {
     let mut config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let mut ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
@@ -219,7 +219,7 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
 
 pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
     let config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
@@ -298,8 +298,9 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
         return Ok(dest);
     }
     pr.set_message(format!("download {basename}"));
-    HTTP.download_file(&src.url, &dest, Some(pr)).await?;
-    crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
+    // GNU formulae point at ftpmirror.gnu.org, which may redirect to a
+    // plain-HTTP mirror; brew follows it, and the pinned sha256 makes it safe.
+    crate::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
     Ok(dest)
 }
 

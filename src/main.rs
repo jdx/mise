@@ -1,8 +1,7 @@
 #![allow(unknown_lints)]
 #![deny(dead_code_pub_in_binary, unreachable_pub)]
-// eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
-#![allow(semicolon_in_expressions_from_macros)]
 
+use crate::config::SettingsExt;
 use std::{
     panic,
     process::ExitCode,
@@ -11,119 +10,41 @@ use std::{
 };
 
 use crate::cli::Cli;
-use crate::cli::version::VERSION;
+use crate::version::VERSION;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use indoc::indoc;
 
-#[cfg(test)]
 #[macro_use]
-mod test;
+extern crate mise;
 
-#[cfg(test)]
-#[path = "../build/lockfile_rollout.rs"]
-mod lockfile_rollout;
+// Everything outside `cli` lives in the `mise` library (`src/lib.rs`). Importing
+// its root here lets `cli` keep addressing it as `crate::config`, `crate::toolset`
+// and so on.
+use mise::*;
 
-#[macro_use]
-mod output;
-
-#[macro_use]
-mod hint;
-
-#[macro_use]
-mod timings;
-
-#[macro_use]
-mod cmd;
-mod inline_command;
-
-mod agecrypt;
-mod aqua;
-mod backend;
-pub(crate) mod build_time;
-mod cache;
 mod cli;
-mod config;
-mod daemons;
-mod deps;
-pub(crate) mod deps_graph;
-mod direnv;
-mod dirs;
-pub(crate) mod duration;
-mod env;
-mod env_diff;
-mod errors;
-mod exit;
-#[cfg_attr(windows, path = "fake_asdf_windows.rs")]
-mod fake_asdf;
-mod file;
-pub(crate) mod forgejo;
-mod fuzzy;
-mod git;
-pub(crate) mod github;
-mod github_relay;
-pub(crate) mod gitlab;
-mod gpg;
-mod hash;
-mod hook_env;
-mod hooks;
-mod http;
-mod install_before;
-mod install_context;
-mod jobs;
-mod lock_file;
-mod lockfile;
-pub(crate) mod logger;
-pub(crate) mod maplit;
-mod migrate;
-mod minisign;
-mod netrc;
-mod oci;
-mod packslip;
-mod packslip_pins;
-mod packslip_requirements;
-mod packslip_stamps;
-pub(crate) mod parallel;
-mod path;
-mod path_env;
-mod platform;
-mod plugins;
-mod rand;
-mod redactions;
-mod registry;
-mod remote_source;
-pub(crate) mod result;
-mod runtime_symlinks;
-mod sandbox;
-mod semver;
-mod shell;
-mod shims;
-mod shorthands;
-mod sops;
-mod sysconfig;
-mod system;
-#[cfg(unix)]
-mod system_install;
-pub(crate) mod task;
-pub(crate) mod tera;
-pub(crate) mod timeout;
-mod tokens;
-mod toml;
-mod tool_catalog;
-mod tool_purgatory;
-mod toolset;
-mod ui;
-mod uv;
-mod versions_host;
-mod watch_files;
-mod wildcard;
-mod windows_posix;
 
-pub(crate) use crate::exit::request as request_exit;
-pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
+#[cfg(test)]
+mod test {
+    // See `mise::testing::init`; this is the same constructor for the binary's
+    // own tests, which also need the frontend hooks that only `cli` can register.
+    #[cfg_attr(
+        target_vendor = "apple",
+        ctor::ctor(unsafe, body(link_section = "__TEXT,__text,regular,pure_instructions"))
+    )]
+    #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
+    fn init() {
+        crate::cli::register_frontend();
+        mise::testing::init();
+    }
+}
+
 fn main() -> ExitCode {
+    cli::register_frontend();
+    register_util_hooks();
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
     // name to finish an update, and when its own init hook does not intercept that, mise would run
     // its shim path and report the generated name as a broken shim. There is nothing for `main` to

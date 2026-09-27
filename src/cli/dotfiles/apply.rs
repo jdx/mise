@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use eyre::Result;
 
 use crate::config::{Config, Settings};
@@ -67,6 +69,22 @@ impl DotfilesApply {
             info!("no dotfiles configured in [dotfiles]");
             return Ok(true);
         }
+        write_and_reload(self.dry_run, |written| {
+            self.write(&config, &files, &edits, &secrets, written)
+        })
+    }
+
+    /// Apply the whole-file entries, then the edits, appending each written
+    /// target to `written` as it goes. Returns `false` when a prompt was
+    /// declined.
+    fn write(
+        &self,
+        config: &Config,
+        files: &[system::files::FileRequest],
+        edits: &[system::edits::EditRequest],
+        secrets: &system::secrets::SecretValues,
+        written: &mut Vec<PathBuf>,
+    ) -> Result<bool> {
         if !files.is_empty() {
             let opts = system::files::ApplyOpts {
                 dry_run: self.dry_run,
@@ -75,7 +93,7 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            if !system::files::apply(&config, &files, &opts, &secrets)? {
+            if !system::files::apply(config, files, &opts, secrets, written)? {
                 return Ok(false);
             }
         }
@@ -86,10 +104,35 @@ impl DotfilesApply {
                 verbose: Settings::get().verbose,
                 yes: self.yes,
             };
-            if !system::edits::apply(&config, &edits, &opts)? {
+            if !system::edits::apply(config, edits, &opts, written)? {
                 return Ok(false);
             }
         }
         Ok(true)
     }
+}
+
+/// Runs `write`, then the `[history.reload]` commands matching the targets it
+/// recorded, and returns its result. Shared by `mise dot apply` and the
+/// dotfiles phase of `mise bootstrap`.
+pub(crate) fn write_and_reload(
+    dry_run: bool,
+    write: impl FnOnce(&mut Vec<PathBuf>) -> Result<bool>,
+) -> Result<bool> {
+    // resolved from the trusted layers before anything is written, so
+    // nothing this apply writes can change which commands run afterwards
+    let reload = system::history::config::reload_commands()?;
+    let mut written = vec![];
+    let result = write(&mut written);
+    // a dry run writes nothing, so nothing is reloaded. A declined edit
+    // prompt or a failed later entry still leaves what was written before
+    // it, so its applications are reloaded before the error is reported
+    if !dry_run && !written.is_empty() {
+        let touched = written
+            .iter()
+            .map(|path| system::history::replay::reload_path(path))
+            .collect::<Vec<_>>();
+        system::history::replay::run_reload(&reload, &touched);
+    }
+    result
 }

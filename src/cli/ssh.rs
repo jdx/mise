@@ -71,7 +71,7 @@ impl Ssh {
             bail!("a repository preview directory requires a dry run");
         }
         if self.global_config_directory {
-            println!(
+            miseprintln!(
                 "{}",
                 crate::system::remote_repository::global_directory().display()
             );

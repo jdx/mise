@@ -1,6 +1,7 @@
 use eyre::Result;
 
 mod ls;
+mod switch;
 
 #[derive(Debug, usage_rs::Args)]
 #[usage(
@@ -24,12 +25,14 @@ Use `mise backends` instead.
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Ls(ls::BackendsLs),
+    Switch(switch::BackendsSwitch),
 }
 
 impl Commands {
-    pub(crate) fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Ls(cmd) => cmd.run(),
+            Self::Switch(cmd) => cmd.run().await,
         }
     }
 }
@@ -38,6 +41,6 @@ impl Backends {
     pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::BackendsLs {}));
 
-        cmd.run()
+        cmd.run().await
     }
 }

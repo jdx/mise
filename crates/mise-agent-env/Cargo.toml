@@ -2,7 +2,7 @@
 name = "mise-agent-env"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 description = "Detect AI coding agents from the process environment"
 documentation = "https://docs.rs/mise-agent-env"

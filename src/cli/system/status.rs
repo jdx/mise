@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::config::Config;
 use crate::system;
-use crate::system::packages::{PackageDesiredState, PackageState};
+use crate::system::packages::{PackageDesiredState, PackageState, PackageStatus};
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[bootstrap.packages]`
@@ -127,6 +127,9 @@ impl SystemStatus {
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
                     });
+                    if let Some(display_name) = &s.display_name {
+                        package["name"] = json!(display_name);
+                    }
                     if let Some(reason) = reason {
                         package["reason"] = json!(reason);
                     }
@@ -137,7 +140,7 @@ impl SystemStatus {
                 } else {
                     rows.push(vec![
                         name.to_string(),
-                        s.request.to_string(),
+                        package_label(&s),
                         installed_version,
                         if auto_updates {
                             format!("{state} (auto-updates)")
@@ -176,5 +179,46 @@ impl SystemStatus {
             return Err(crate::request_exit(1));
         }
         Ok(())
+    }
+}
+
+/// The table's package column: the request, followed by the manager's
+/// human-readable name when the identifier is opaque (e.g. `497799835 (Xcode)`).
+fn package_label(status: &PackageStatus) -> String {
+    match &status.display_name {
+        Some(display_name) => format!("{} ({display_name})", status.request),
+        None => status.request.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::packages::PackageRequest;
+
+    fn status(name: &str, version: Option<&str>, display_name: Option<&str>) -> PackageStatus {
+        PackageStatus {
+            request: PackageRequest {
+                name: name.to_string(),
+                version: version.map(str::to_string),
+                tap_url: None,
+                desired: PackageDesiredState::Present,
+            },
+            state: PackageState::Missing,
+            display_name: display_name.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_package_label() {
+        assert_eq!(
+            package_label(&status("497799835", None, Some("Xcode"))),
+            "497799835 (Xcode)"
+        );
+        assert_eq!(package_label(&status("409203825", None, None)), "409203825");
+        assert_eq!(
+            package_label(&status("jq", Some("1.7"), Some("jq CLI"))),
+            "jq@1.7 (jq CLI)"
+        );
     }
 }

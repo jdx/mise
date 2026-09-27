@@ -11,10 +11,14 @@ description: "Never capture paths matching a glob"
 
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
-logs, caches, databases, and constantly rewritten application state; a
-file that genuinely holds configuration but changes constantly is
-better tracked with `--no-autosave` and saved explicitly.
+Adds a glob to `[history] exclude` in the global configuration. The
+rule applies to all tracked paths. Quote the glob to prevent your shell
+from expanding it.
+
+Use exclusions for logs, caches, databases, and session state. For
+configuration you want to save manually, use `--no-autosave` instead.
+To scope selection to one directory, edit that `[dotfiles]` entry's
+`exclude` or `include` list.
 
 ## Arguments
 - **`<GLOB>`** — A glob such as `~/.config/hypr/plugins/**`

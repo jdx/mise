@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# e2e:non-root
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.27.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork-real
+cat >~/bin/pitchfork <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"$HOME/pitchfork-invocations"
+exec "$HOME/bin/pitchfork-real" "$@"
+SH
+chmod +x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+mkdir -p "$MISE_CONFIG_DIR" one two three four
+pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[daemon_providers.pg]
+preset = "postgres"
+version = "18"
+port = $pg_port
+TOML
+for dir in one two three four; do
+  cat >"$dir/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+provider = "pg"
+[tasks.probe]
+daemons = ["db"]
+run = 'test -n "$DATABASE_URL"'
+TOML
+done
+for dir in three four; do
+  cat >"$dir/mise.local.toml" <<'TOML'
+[daemons.db]
+provider = "pg"
+resource = "shared_app"
+TOML
+done
+base="$PWD"
+assert "test ! -d '$PITCHFORK_STATE_DIR'"
+# A targeted application start must not install or prepare an unrelated provider.
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[daemon_providers.unavailable]
+preset = "postgres"
+version = "0.unavailable"
+port = 9876
+TOML
+cp one/mise.toml one/original.toml
+cat >>one/mise.toml <<'TOML'
+[daemons.unrelated]
+provider = "unavailable"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+[tasks.app]
+daemons = ["api"]
+run = "true"
+TOML
+mise --cd one daemons start api
+mise --cd one run app
+assert "test ! -d '$MISE_STATE_DIR/daemon-providers/unavailable'"
+mise --cd one daemons stop api
+mv one/original.toml one/mise.toml
+cd one
+first=$(mise env --json | jq -r .PGDATABASE)
+mise daemons register
+assert "test ! -f '$MISE_STATE_DIR/daemon-providers/pg/data/PG_VERSION'"
+assert_contains 'mise daemons ls --json' '"ownership": "consumer"'
+cd "$base/two"
+second=$(mise env --json | jq -r .PGDATABASE)
+assert "test '$first' != '$second'"
+# Concurrent consumers must share one server and provision their own databases.
+(mise daemons start db >"$TMPDIR/two-start.log" 2>&1) &
+second_start=$!
+cd "$base/one"
+mise run probe
+wait "$second_start"
+provider_pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+# New resource metadata must not force an unchanged server to restart.
+manifest="$MISE_STATE_DIR/daemon-providers/pg/execution.json"
+jq 'del(.preset, .port, .data_dir, .jetstream)' "$manifest" >"$manifest.old"
+mv "$manifest.old" "$manifest"
+: >"$HOME/pitchfork-invocations"
+mise run probe
+assert_fail "grep -E '^(usage|config add)' '$HOME/pitchfork-invocations'"
+actual_provider_pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+assert "test '$provider_pid' = '$actual_provider_pid'"
+pg_path=$(jq -r .env.PATH "$MISE_STATE_DIR/daemon-providers/pg/execution.json")
+query() {
+  env PATH="$pg_path" psql -X -h 127.0.0.1 -p "$pg_port" -U postgres -d "$1" -Atc "$2"
+}
+export -f query
+export pg_path pg_port
+query "$first" 'CREATE TABLE proof (n integer); INSERT INTO proof VALUES (41);'
+query "$second" 'CREATE TABLE proof (n integer); INSERT INTO proof VALUES (42);'
+assert_contains "query '$first' 'SELECT n FROM proof'" 41
+assert_contains "query '$second' 'SELECT n FROM proof'" 42
+mise daemons stop
+assert "kill -0 '$provider_pid'"
+assert_contains "query '$second' 'SELECT n FROM proof'" 42
+# Explicit resource names intentionally share data across unrelated projects.
+cd "$base/three"
+mise run probe
+query shared_app 'CREATE TABLE shared (n integer); INSERT INTO shared VALUES (73);'
+cd "$base/four"
+mise run probe
+assert_contains "query shared_app 'SELECT n FROM shared'" 73
+mise daemons providers restart pg
+assert_contains "query '$first' 'SELECT n FROM proof'" 41
+assert_contains "query '$second' 'SELECT n FROM proof'" 42
+assert_contains "query shared_app 'SELECT n FROM shared'" 73
+# Pruning a deleted consumer must not remove or stop its provider.
+cd "$base"
+rm -rf one
+mkdir cleanup
+printf '[tools]\npitchfork = "system"\n' >cleanup/mise.toml
+cd cleanup
+mise --yes daemons prune
+assert_contains "query '$second' 'SELECT n FROM proof'" 42

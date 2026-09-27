@@ -8,25 +8,25 @@
 
 pub(crate) mod auth;
 pub(crate) mod builder;
-pub(crate) mod docker_archive;
+pub mod docker_archive;
 pub(crate) mod layer;
 pub(crate) mod layout;
 pub(crate) mod manifest;
 pub(crate) mod packages;
-pub(crate) mod registry;
+pub mod registry;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-pub(crate) use builder::{BuildOptions, BuildOutput, Builder};
-pub(crate) use layer::LayerOwner;
+pub use builder::{BuildOptions, BuildOutput, Builder};
+pub use layer::LayerOwner;
 
 /// A host path copied into an OCI image as an independent layer.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OciCopy {
+pub struct OciCopy {
     pub host: PathBuf,
     pub image: String,
 }
@@ -103,7 +103,7 @@ pub(crate) fn normalize_os(o: &str) -> &str {
 /// The `[oci]` section of a `mise.toml`. All fields optional.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OciConfig {
+pub struct OciConfig {
     /// Base image reference (overrides `oci.default_from` setting).
     #[serde(default)]
     pub from: Option<String>,
@@ -154,7 +154,7 @@ impl OciConfig {
     /// new keys from `other` are added. Copy entries accumulate with less
     /// specific configs first, so a more specific copy targeting the same
     /// image path is emitted later and takes precedence.
-    pub(crate) fn fill_defaults_from(&mut self, other: Self) {
+    pub fn fill_defaults_from(&mut self, other: Self) {
         if self.from.is_none() {
             self.from = other.from;
         }

@@ -19,6 +19,8 @@ use super::api::RubySourceChecksum;
 use super::prefix;
 use super::source;
 use crate::cmd::CmdLineRunner;
+#[cfg(unix)]
+use crate::file::remove_all_at;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::git::{CloneOptions, Git};
 use crate::hash;
@@ -49,7 +51,7 @@ pub(super) use model::{Cask, CaskManager};
 use paths::*;
 use running::*;
 use state::*;
-pub(crate) use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
+pub use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
 const HOMEBREW_CASK_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-cask";
@@ -69,7 +71,7 @@ const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 /// own state directory. Everything between those two ends — download, checksum,
 /// extraction, adoption, and the app swap — is identical, so both are the same
 /// manager configured differently, as with `flatpak` and `flatpak-user`.
-pub(crate) struct BrewCaskManager {
+pub struct BrewCaskManager {
     manager: CaskManager,
 }
 
@@ -580,7 +582,7 @@ struct CaskTransactionJournal<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CaskPruneCandidate {
+pub struct CaskPruneCandidate {
     pub token: String,
     pub version: String,
     version_dir: PathBuf,
@@ -588,13 +590,13 @@ pub(crate) struct CaskPruneCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CaskPruneSkip {
+pub struct CaskPruneSkip {
     pub token: String,
     pub reason: String,
 }
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct CaskPrunePlan {
+pub struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
 }
@@ -606,13 +608,19 @@ struct CaskDependencyClosure {
 }
 
 impl CaskPrunePlan {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
 
+impl Default for BrewCaskManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrewCaskManager {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             manager: CaskManager::BrewCask,
         }
@@ -1272,6 +1280,7 @@ impl SystemPackageManager for BrewCaskManager {
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
+                display_name: None,
             });
         }
         Ok(statuses)
@@ -2642,34 +2651,6 @@ fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Resul
 #[cfg(all(unix, not(target_os = "macos")))]
 fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
     std::io::copy(from, to)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> Result<()> {
-    let stat =
-        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
-            Ok(stat) => stat,
-            Err(nix::errno::Errno::ENOENT) => return Ok(()),
-            Err(err) => return Err(err.into()),
-        };
-    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
-    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
-        let fd = open_dir_nofollow_at(&parent, name)?;
-        let mut directory = nix::dir::Dir::from_fd(fd)?;
-        let entries = directory
-            .iter()
-            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        for entry in entries {
-            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
-                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
-            }
-        }
-        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
-    } else {
-        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
-    }
     Ok(())
 }
 

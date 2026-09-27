@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# A lockfile entry whose `version` was rewritten without refreshing its platform
+# block downloads one release under another's name. Nothing downstream compares
+# the two — the install directory and everything mise prints come from `version`,
+# the bytes come from the URL — so the install "succeeds" with the wrong binary
+# and `mise install` never repairs the entry. mise must refuse instead.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+
+case "$MISE_PLATFORM_OS" in
+  macos) ASSET_OS="darwin" ;;
+  *) ASSET_OS="linux" ;;
+esac
+
+case "$MISE_PLATFORM_ARCH" in
+  arm64) ASSET_ARCH="arm64" ;;
+  *) ASSET_ARCH="amd64" ;;
+esac
+
+cat <<EOF >mise.toml
+[tools]
+shfmt = "3.10.0"
+EOF
+
+write_lock() {
+  cat <<EOF >mise.lock
+[[tools.shfmt]]
+version = "3.10.0"
+backend = "aqua:mvdan/sh"
+"platforms.$MISE_PLATFORM" = { url = "https://github.com/mvdan/sh/releases/download/v$1/shfmt_v$1_${ASSET_OS}_${ASSET_ARCH}" }
+EOF
+}
+
+# The URL names 3.7.0 while the entry claims 3.10.0.
+write_lock 3.7.0
+
+assert_fail "mise install" "locked to a download URL from 3.7.0"
+assert_fail "mise install" "to regenerate the entry"
+assert_fail "mise install --locked" "locked to a download URL from 3.7.0"
+
+# The refusal comes before the download, so nothing landed under the wrong name.
+assert_fail "test -d \"$MISE_DATA_DIR/installs/shfmt/3.10.0\""
+
+# `mise lock` is the documented repair, so it must still read the broken entry.
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" "v3.10.0/shfmt_v3.10.0_${ASSET_OS}_${ASSET_ARCH}"
+
+# A URL that agrees with the version installs as usual.
+write_lock 3.10.0
+mise install --locked
+assert_contains "mise x shfmt -- shfmt --version" "v3.10.0"

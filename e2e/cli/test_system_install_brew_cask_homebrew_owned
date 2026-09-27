@@ -4,49 +4,16 @@ if [[ "$(uname)" != "Darwin" && "$(uname)" != "Linux" ]]; then
   exit 0
 fi
 
-HTTP_PORT_FILE="$TMPDIR/mise_brew_cask_http_port"
-CASK_FIXTURE_FILE="$TMPDIR/mise_brew_cask_fixture.json"
+FORMULAE_DIR="$TMPDIR/formulae"
+CASK_FIXTURE_FILE="$FORMULAE_DIR/api/cask/example-homebrew-owned.json"
+mkdir -p "$(dirname "$CASK_FIXTURE_FILE")"
 
 write_cask_fixture() {
   printf '{"token":"example-homebrew-owned","version":"%s","auto_updates":%s,"url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"future_artifact":["unsupported"]}]}\n' "$1" "$2" >"$CASK_FIXTURE_FILE"
 }
 
 write_cask_fixture "current-2" false
-python3 -u - "$HTTP_PORT_FILE" "$CASK_FIXTURE_FILE" <<'PY' >/dev/null 2>&1 &
-import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
-
-port_file = Path(sys.argv[1])
-fixture_file = Path(sys.argv[2])
-
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        return
-
-    def do_GET(self):
-        if self.path.split("?", 1)[0] != "/api/cask/example-homebrew-owned.json":
-            self.send_error(404)
-            return
-        body = fixture_file.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-server = HTTPServer(("127.0.0.1", 0), Handler)
-port_file_tmp = port_file.with_suffix(".tmp")
-port_file_tmp.write_text(str(server.server_address[1]))
-port_file_tmp.replace(port_file)
-server.serve_forever()
-PY
-HTTP_SERVER_PID=$!
-trap 'kill "$HTTP_SERVER_PID" 2>/dev/null || true' EXIT
-wait_for_file "$HTTP_PORT_FILE" "brew-cask fixture server port file" 30 "$HTTP_SERVER_PID"
-HTTP_PORT="$(cat "$HTTP_PORT_FILE")"
+start_http_server --dir "$FORMULAE_DIR"
 MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
 export MISE_URL_REPLACEMENTS
 

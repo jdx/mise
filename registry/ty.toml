@@ -1,4 +1,7 @@
-backends = ["aqua:astral-sh/ty", "github:astral-sh/ty"]
+backends = [
+  "aqua:astral-sh/ty",
+  { full = "github:astral-sh/ty", attestations_since = "0.0.25" },
+]
 description = "An extremely fast Python type checker and language server, written in Rust"
 test = { cmd = "ty --version", expected = "ty {{version}}" }
 version_order = "semver"

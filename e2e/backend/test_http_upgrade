@@ -14,29 +14,7 @@ mkdir -p "$VERSION_LIST_DIR"
 # Create version list file with two versions
 echo -e "1.0.0\n2.0.0" >"$VERSION_LIST_DIR/versions.txt"
 
-# Start Python HTTP server on a random available port
-HTTP_PORT_FILE="$TMPDIR/http_server_port"
-python3 -c "
-import http.server, socketserver, threading, os
-s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
-with open('$HTTP_PORT_FILE', 'w') as f:
-    f.write(str(s.server_address[1]))
-s.serve_forever()
-" &
-HTTP_SERVER_PID=$!
-
-# Wait for server to start and write port file
-for _i in {1..20}; do
-  if [[ -f $HTTP_PORT_FILE ]]; then break; fi
-  sleep 0.1
-done
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
-
-# Cleanup function
-cleanup() {
-  kill $HTTP_SERVER_PID 2>/dev/null || true
-}
-trap cleanup EXIT
+start_http_server --dir "$VERSION_LIST_DIR"
 
 # Verify server is running
 if ! curl -s "http://localhost:$HTTP_PORT/versions.txt" | grep -q "1.0.0"; then

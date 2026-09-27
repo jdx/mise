@@ -105,7 +105,14 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+      "examples": [
+        "linux",
+        "macos",
+        "windows",
+        "unix",
+        "macos/arm64",
+        "linux/x64"
+      ]
     },
     "os_filter": {
       "description": "operating system filters to install on",
@@ -841,6 +848,11 @@
               "default": "symlink",
               "description": "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`.",
               "type": "string"
+            },
+            "relative_symlinks": {
+              "default": false,
+              "description": "Create dotfile symlinks with relative targets instead of absolute ones.",
+              "type": "boolean"
             },
             "root": {
               "default": "~/.dotfiles",
@@ -1583,6 +1595,22 @@
         "os": {
           "description": "OS to use for precompiled binaries.",
           "type": "string"
+        },
+        "otel": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry trace export for task executions.",
+              "type": "boolean"
+            },
+            "logs": {
+              "default": false,
+              "description": "[experimental] Enable OpenTelemetry log export for task stdout/stderr.",
+              "type": "boolean"
+            }
+          }
         },
         "override_config_filenames": {
           "default": [],
@@ -4334,10 +4362,16 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source",
                 "anyOf": [
                   {
-                    "enum": ["symlink", "symlink-each", "copy", "template"]
+                    "enum": [
+                      "symlink",
+                      "symlink-each",
+                      "copy",
+                      "template",
+                      "absent"
+                    ]
                   },
                   {
                     "type": "string"
@@ -4346,7 +4380,14 @@
               },
               "exclude": {
                 "type": "array",
-                "description": "glob patterns to skip when the mode walks a source directory (symlink-each, or copy with a directory source); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the source root",
+                "description": "glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the root",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "include": {
+                "type": "array",
+                "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
                 "items": {
                   "type": "string"
                 }
@@ -4355,6 +4396,25 @@
                 "type": "string",
                 "description": "source manifest used to select managed files from a directory",
                 "enum": ["git"]
+              },
+              "remove_empty": {
+                "type": "boolean",
+                "default": false,
+                "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
+              },
+              "dot_prefix": {
+                "type": "boolean",
+                "default": false,
+                "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names"
+              },
+              "relative": {
+                "type": "boolean",
+                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+              },
+              "permissions": {
+                "type": "string",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                "pattern": "^(0o)?[0-7]{1,4}$"
               },
               "block": {
                 "type": "string",
@@ -4430,12 +4490,104 @@
             },
             "allOf": [
               {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "relative": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "required": ["mode"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["symlink", "symlink-each"]
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": false,
+                      "content": false,
+                      "permissions": false,
+                      "block": false,
+                      "line": false
+                    }
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "remove_empty": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "const": "template"
+                      },
+                      "content": false,
+                      "block": false,
+                      "line": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "permissions": false
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "if": {
+                  "required": ["mode"],
+                  "properties": {
+                    "mode": {
+                      "const": "absent"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "source": false,
+                    "content": false,
+                    "exclude": false,
+                    "manifest": false,
+                    "permissions": false,
+                    "remove_empty": false,
+                    "dot_prefix": {
+                      "const": false
+                    },
+                    "encrypt": {
+                      "const": false
+                    },
+                    "block": false,
+                    "line": false,
+                    "position": false,
+                    "template": false,
+                    "comment": false
+                  }
+                }
+              },
+              {
                 "oneOf": [
                   {
                     "required": ["manifest"],
                     "properties": {
                       "source": {},
                       "content": false,
+                      "permissions": false,
                       "mode": {
                         "enum": ["copy", "symlink-each"]
                       },
@@ -4450,6 +4602,79 @@
                   {
                     "properties": {
                       "manifest": false
+                    }
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": ["dot_prefix"],
+                  "properties": {
+                    "dot_prefix": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "content": false,
+                    "mode": {
+                      "enum": ["copy", "symlink-each"]
+                    },
+                    "block": false,
+                    "line": false,
+                    "template": false,
+                    "comment": false
+                  },
+                  "anyOf": [
+                    {
+                      "required": ["source"]
+                    },
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "properties": {
+                        "permissions": false
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["permissions"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["copy", "template"]
+                      },
+                      "block": false,
+                      "template": false,
+                      "comment": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "exclude": false,
+                          "manifest": false,
+                          "encrypt": false
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "permissions": false
                     }
                   }
                 ]
@@ -4474,6 +4699,7 @@
                     "required": ["line"],
                     "properties": {
                       "content": false,
+                      "permissions": false,
                       "mode": false,
                       "exclude": false,
                       "source": false,
@@ -4487,6 +4713,23 @@
                       "content": false,
                       "line": false,
                       "position": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["include", "mode"],
+                    "properties": {
+                      "mode": {
+                        "const": "track"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "include": false
                     }
                   }
                 ]
@@ -4544,6 +4787,10 @@
               "template": {
                 "type": "boolean"
               },
+              "remove_empty": {
+                "type": "boolean",
+                "description": "remove the target when the template renders to empty or whitespace-only content; requires template = true"
+              },
               "state": {
                 "type": "string",
                 "enum": ["present", "absent"]
@@ -4558,6 +4805,70 @@
                 }
               }
             },
+            "allOf": [
+              {
+                "if": {
+                  "required": ["remove_empty"],
+                  "properties": {
+                    "remove_empty": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "required": ["template"],
+                  "properties": {
+                    "template": {
+                      "const": true
+                    },
+                    "state": {
+                      "const": "present"
+                    }
+                  }
+                }
+              },
+              {
+                "$comment": "A present file without source or content manages only its permissions: it must declare some, and cannot be templated or replaced.",
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "present"
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      }
+                    ]
+                  }
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["group"]
+                    }
+                  ],
+                  "properties": {
+                    "template": {
+                      "const": false
+                    },
+                    "replace": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            ],
             "additionalProperties": false
           }
         },
@@ -4602,7 +4913,7 @@
         "config_roots": {
           "deprecated": true,
           "type": "array",
-          "description": "deprecated; bootstrap composition across independent config roots needs more design and will be removed in mise 2027.3.3",
+          "description": "deprecated and will be removed in mise 2027.3.3; move each selected root into a conf.d folder instead (https://mise.jdx.dev/configuration.html#conf-d-folders)",
           "items": {
             "type": "string"
           }
@@ -5182,6 +5493,16 @@
                         "minimum": 0,
                         "description": "write ThrottleInterval in seconds"
                       },
+                      "process_type": {
+                        "type": "string",
+                        "enum": [
+                          "Background",
+                          "Standard",
+                          "Adaptive",
+                          "Interactive"
+                        ],
+                        "description": "write ProcessType, the scheduling band launchd runs the job in"
+                      },
                       "queue_directories": {
                         "type": "array",
                         "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
@@ -5386,11 +5707,57 @@
                           "type": "string"
                         }
                       },
+                      "before": {
+                        "type": "array",
+                        "description": "write Before ordering in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "binds_to": {
+                        "type": "array",
+                        "description": "write BindsTo dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "part_of": {
+                        "type": "array",
+                        "description": "write PartOf dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "conflicts": {
+                        "type": "array",
+                        "description": "write Conflicts dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "exec_start_pre": {
+                        "type": "array",
+                        "description": "write one ExecStartPre entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
+                      },
                       "exec_start": {
                         "type": "string",
                         "minLength": 1,
                         "pattern": ".*\\S.*",
                         "description": "write ExecStart in the [Service] section"
+                      },
+                      "exec_start_post": {
+                        "type": "array",
+                        "description": "write one ExecStartPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "type": {
                         "type": "string",
@@ -5413,6 +5780,15 @@
                       "exec_stop": {
                         "type": "string",
                         "description": "write ExecStop in the [Service] section"
+                      },
+                      "exec_stop_post": {
+                        "type": "array",
+                        "description": "write one ExecStopPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "timeout_start_sec": {
                         "type": "string",
@@ -5571,7 +5947,25 @@
                         "not": {
                           "anyOf": [
                             {
+                              "required": ["exec_start_pre"],
+                              "properties": {
+                                "exec_start_pre": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
+                            },
+                            {
                               "required": ["exec_start"]
+                            },
+                            {
+                              "required": ["exec_start_post"],
+                              "properties": {
+                                "exec_start_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["type"]
@@ -5581,6 +5975,15 @@
                             },
                             {
                               "required": ["exec_stop"]
+                            },
+                            {
+                              "required": ["exec_stop_post"],
+                              "properties": {
+                                "exec_stop_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["timeout_start_sec"]
@@ -5920,6 +6323,12 @@
                 },
                 {
                   "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
@@ -5969,6 +6378,12 @@
                 },
                 {
                   "required": ["project"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
@@ -6009,10 +6424,21 @@
                 },
                 {
                   "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
             "properties": {
+              "data_dir": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage."
+              },
               "preset": {
                 "type": "string",
                 "enum": ["cockroachdb", "nats", "postgres", "redis", "spicedb"]
@@ -6065,8 +6491,65 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["provider"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "description": "Name of a globally defined shared server provider."
+              },
+              "resource": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                "description": "Database or NATS account shared by consumers choosing this name. Omit for a checkout-specific resource."
+              }
+            }
           }
         ]
+      }
+    },
+    "daemon_providers": {
+      "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["preset", "version"],
+        "additionalProperties": false,
+        "properties": {
+          "preset": {
+            "enum": ["postgres", "cockroachdb", "nats"]
+          },
+          "version": {
+            "type": "string"
+          },
+          "port": {
+            "$ref": "#/$defs/daemon_port"
+          },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          },
+          "options": {
+            "type": "object"
+          },
+          "data_dir": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tool": {
+            "type": "string"
+          }
+        }
       }
     },
     "daemons_settings": {

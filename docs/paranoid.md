@@ -80,6 +80,17 @@ the backend does not support, or rescan an already-installed tool that mise skip
 This behavior can also be enabled independently via the
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
 
+## Attestations from mise-versions
+
+mise asks [mise-versions](/configuration/settings.html#use_versions_host) whether a public GitHub release artifact has
+GitHub attestations, so installs don't spend your GitHub API rate limit. The attestations it returns are
+verified cryptographically and must name the artifact's repository, so mise-versions cannot vouch
+for an artifact on its own. It can, however, answer that an artifact has no attestations. That
+answer is trusted in normal mode, and a lockfile written afterwards records no provenance.
+
+In paranoid mode, mise confirms that answer with GitHub before skipping verification. This costs
+one GitHub API request per artifact without attestations.
+
 ## See also
 
 - [Safe mode](/security.html#safe-mode) for processing untrusted project metadata.

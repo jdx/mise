@@ -46,6 +46,10 @@ Multiple environments can be specified, for example `mise -E ci,test run build`.
 Within the same directory, the last environment takes precedence. Use
 `mise -E ci,test config` to inspect the combined selection.
 
+For machine setup, group an application's packages, dotfiles, and services in
+one environment file, then select the modules each machine needs. See
+[bootstrap modules](/bootstrap.html#modules) for an example and cleanup guidance.
+
 ## Setting MISE_ENV in .miserc.toml
 
 You can set `MISE_ENV` in a `.miserc.toml` file, which is loaded early, before
@@ -56,6 +60,27 @@ configuration to version control:
 # .miserc.toml
 env = ["development"]
 ```
+
+### Personal environment selection
+
+Use `.miserc.local.toml` for an environment selection that belongs to your
+checkout rather than the whole project:
+
+```toml
+# .miserc.local.toml
+env = ["native"]
+```
+
+Ordinary commands such as `mise install` and `mise run dev` then load
+`mise.native.toml`. Add `.miserc.local.toml` to your global Git ignore file
+(`core.excludesFile`) so this preference stays untracked across repositories.
+Create the file separately in each worktree where you want the selection.
+
+The local file supports the same settings and templates as `.miserc.toml`.
+Its explicitly set fields override the shared file in the same directory;
+omitted fields retain their inherited values. `env` replaces the inherited
+list, and `env = []` clears it. CLI environment flags and `MISE_ENV` still take
+precedence over both files.
 
 ### Templates in .miserc.toml
 
@@ -81,7 +106,7 @@ etc.); settings from `mise.toml` are not yet loaded at this stage.
 
 File locations searched (in order of precedence):
 
-1. `.miserc.toml` and `.config/miserc.toml` in the current directory and parent directories
+1. Current directory, then each parent: `.miserc.local.toml`, `.miserc.toml`, `.config/miserc.toml` (in that order within each directory)
 2. `~/.config/mise/miserc.toml` (global)
 3. `/etc/mise/miserc.toml` (system)
 

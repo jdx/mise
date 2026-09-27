@@ -1,0 +1,125 @@
+name: release-window
+
+# Holds the release PR during quiet hours (18:00-03:00 America/Chicago) by
+# posting a pending `release-window` commit status, which is a required check
+# on main. Merging the release PR is what publishes crates and pushes the tag
+# (see xtasks/release-plz), so this is the only safe place to gate a release.
+# A few scheduled runs flip the status at the two edges: it goes pending when
+# quiet hours start within the hour (~17:07 Central), and back to success after
+# 03:00, when an armed auto-merge completes on its own.
+# The status is keyed by commit, so only the release PR's own events and the
+# schedule write the `release` branch commit's status; other PRs never touch
+# it, and every other commit gets success.
+#
+# To release now anyway, add the `release-now` label to the release PR.
+
+on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
+  pull_request_target:
+    branches: ["main"]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+  schedule:
+    # UTC times covering both CDT and CST. Evening: 17:07/18:07/19:07 CDT,
+    # 16:07/17:07/18:07 CST. Morning: 03:07/04:07/05:07 CDT, 02:07/03:07/04:07
+    # CST. Each edge gets a follow-up run in case one is delayed or dropped.
+    - cron: "7 22,23,0 * * *"
+    - cron: "7 8,9,10 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+# Every run that can write the release PR's status shares one group, so the
+# newest run (which reads the latest labels and time) always posts last. A
+# fork's `release` branch gets its own group so it cannot cancel those runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository && 'release' || github.event.pull_request.number || 'release' }}
+  cancel-in-progress: true
+
+jobs:
+  status:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Set release-window status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+
+          set_status() {
+            gh api "repos/$REPO/statuses/$1" \
+              -f context=release-window -f state="$2" -f description="$3" >/dev/null
+            echo "$1: $2 ($3)"
+          }
+
+          # Minutes since local midnight fall in 18:00-03:00 Central.
+          is_quiet() {
+            local m=$(($1 % 1440))
+            [ "$m" -ge $((18 * 60)) ] || [ "$m" -lt $((3 * 60)) ]
+          }
+
+          release_state() {
+            read -r hour minute < <(TZ=America/Chicago date '+%-H %-M')
+            local now=$((hour * 60 + minute))
+            if is_quiet "$now" || is_quiet $((now + 60)); then
+              echo pending "Waiting for 03:00 Central; label release-now to release immediately"
+            else
+              echo success "Inside the release window"
+            fi
+          }
+
+          # Only this repository's `release` branch, never a fork's branch of the
+          # same name, identifies the release PR. Only a 404 means there is no
+          # release branch; any other failure must not fall through to success.
+          if ! release_sha=$(gh api "repos/$REPO/branches/release" --jq .commit.sha 2>lookup.err); then
+            cat lookup.err >&2
+            if ! grep -q "HTTP 404" lookup.err; then
+              echo "::error::Could not look up the release branch; leaving release-window unset"
+              exit 1
+            fi
+            release_sha=""
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            sha="$HEAD_SHA"
+            if [ "$HEAD_REF" != "release" ] || [ "$HEAD_REPO" != "$REPO" ]; then
+              # Runs for other PRs are not serialized with the release runs, so
+              # they must never write the release commit's status.
+              if [ "$sha" = "$release_sha" ]; then
+                echo "Head is the release commit; its status belongs to the release PR"
+              else
+                set_status "$sha" success "Not a release PR"
+              fi
+              exit 0
+            fi
+            if [ "$sha" != "$release_sha" ]; then
+              echo "Release branch has moved past $sha; a newer run will set its status"
+              exit 0
+            fi
+          else
+            sha="$release_sha"
+            if [ -z "$sha" ]; then
+              echo "No release branch"
+              exit 0
+            fi
+          fi
+
+          # The `owner:release` head filter only matches this repository's branch.
+          labels=$(gh api "repos/$REPO/pulls?head=${REPO%%/*}:release&base=main&state=open" \
+            --jq '.[0].labels // [] | map(.name) | join(",")')
+          if [[ ",$labels," == *",release-now,"* ]]; then
+            set_status "$sha" success "Overridden by the release-now label"
+            exit 0
+          fi
+
+          read -r state description < <(release_state)
+          set_status "$sha" "$state" "$description"

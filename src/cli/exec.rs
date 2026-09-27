@@ -9,7 +9,7 @@ use eyre::{Result, bail};
 use eyre::{Result, eyre};
 use itertools::Itertools;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::{Config, Settings};
@@ -18,7 +18,7 @@ use crate::env;
 use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
-use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -124,13 +124,13 @@ pub(crate) struct Exec {
 
 impl Exec {
     #[async_backtrace::framed]
-    pub async fn run(self) -> eyre::Result<()> {
+    pub async fn run(mut self) -> eyre::Result<()> {
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
             env::reset_env_cache_key();
         }
 
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
 
         // Check if any tool arg explicitly specified @latest
         // If so, resolve to the actual latest version from the registry (not just latest installed)
@@ -149,14 +149,38 @@ impl Exec {
             Default::default()
         };
 
-        let ts = measure!("toolset", {
+        // A native Windows shim runs `mise x -- <name>` in place of `handle_shim`, which also
+        // resolves the tools of the task that ran it, such as a task-only command wrapper.
+        let shim_task_tools =
+            if self.tool.is_empty() && env::MISE_SHIM_PATH.read().unwrap().is_some() {
+                crate::shims::task_tool_args_from_env()?
+            } else {
+                vec![]
+            };
+        let tool_args = if shim_task_tools.is_empty() {
+            &self.tool
+        } else {
+            &shim_task_tools
+        };
+        let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
-                .with_args(&self.tool)
+                .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
                 .build(&config)
                 .await?
         });
+
+        // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
+        // command wrapper is applied here instead of by `handle_shim`.
+        if self.tool.is_empty()
+            && let Some(command) = self.command.as_mut()
+            && let Some(wrapper_env) =
+                super::shim::apply_native_shim_command_wrapper(&mut config, &mut ts, command)
+                    .await?
+        {
+            return self.run_with_command_wrapper(config, ts, wrapper_env).await;
+        }
 
         self.run_with_context(
             config,
@@ -260,6 +284,18 @@ impl Exec {
             // through their bootstrap shims, which a hand-edited declaration lacks.
             warn!("failed to create shims for lazy tools: {err:#}");
         }
+
+        let warned = warn_if_command_falls_back(
+            &config,
+            &ts,
+            &opts,
+            &missing,
+            &program,
+            strip_dispatch_dirs,
+        )
+        .await?;
+        // Those were just named; the generic notice below would repeat them.
+        missing.retain(|tv| !warned.contains(tv));
 
         measure!("notify_if_versions_missing", {
             ts.notify_missing_versions(missing);
@@ -399,6 +435,108 @@ impl Exec {
         // command must not be reinterpreted as a shell body.
         exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
+}
+
+/// With auto-install off, warn when the command belongs to a missing tool. The PATH lookup in
+/// `exec_program` then runs whatever same-named binary it finds, which is not the version the
+/// toolset pins, and the generic missing-tools notice is hidden by default when no other version
+/// of the tool is installed (#13649). Returns the tools it warned about.
+async fn warn_if_command_falls_back(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    opts: &InstallOptions,
+    missing: &[ToolVersion],
+    program: &str,
+    strip_dispatch_dirs: bool,
+) -> Result<Vec<ToolVersion>> {
+    // A path names its binary directly; there is no lookup to fall through.
+    if program.contains(['/', '\\']) {
+        return Ok(vec![]);
+    }
+    let skipped = missing
+        .iter()
+        // A lazy provider of this command was already installed above, whatever the
+        // auto-install settings say.
+        .filter(|tv| tv.request.options().lazy != Some(true))
+        .filter(|tv| {
+            opts.skip_auto_install
+                || opts
+                    .auto_install_disable_tools
+                    .as_ref()
+                    .is_some_and(|tools| tools.contains(&tv.ba().short))
+        })
+        .cloned()
+        .collect_vec();
+    if skipped.is_empty() {
+        return Ok(vec![]);
+    }
+    let providers = ts.missing_bin_providers(config, skipped, program).await;
+    if providers.is_empty() {
+        return Ok(vec![]);
+    }
+    // A command wrapper configured for this command runs in place of any tool's binary. Its
+    // shim may not exist yet, so read the configuration. A wrapper dispatch resolves its own
+    // command with the wrapper directories stripped, so no wrapper applies there.
+    if !strip_dispatch_dirs {
+        let name = crate::shims::command_name_without_exe_suffix(program);
+        let wrappers = crate::config::load_command_wrappers(
+            &config.config_files,
+            ts.versions.values().flat_map(|versions| &versions.requests),
+        )?;
+        if wrappers
+            .keys()
+            .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
+        {
+            return Ok(vec![]);
+        }
+    }
+    // A `_.path` entry that the inherited PATH lacks is searched ahead of every tool path, so it
+    // supplies the command whether or not the tool is installed. An inherited entry is searched
+    // after the tool paths, as in `exec_program`. Entries declared with `tools = true` resolve
+    // only with the full tool environment and are not consulted here.
+    let path_dirs = config
+        .path_dirs()
+        .await?
+        .iter()
+        .filter(|dir| {
+            !env::PATH
+                .iter()
+                .any(|inherited| crate::file::paths_eq(inherited, dir))
+                && !crate::file::is_mise_shims_dir(dir)
+                && !crate::file::is_command_wrapper_dir(dir)
+        })
+        .collect_vec();
+    if !path_dirs.is_empty()
+        && let Ok(path_dirs) = std::env::join_paths(path_dirs)
+    {
+        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+        if which::which_in(program, Some(path_dirs), cwd).is_ok() {
+            return Ok(vec![]);
+        }
+    }
+    // Another configured version of the same tool may supply the command, as with
+    // `node = ["22", "20"]` when only 20 is installed. Another tool's executable may not: a
+    // pinned tool overrides one bundled with a different tool, such as npm over Node's.
+    let mut uncovered = vec![];
+    for tv in providers {
+        if !ts.configured_version_ships_bin(config, &tv, program).await {
+            uncovered.push(tv);
+        }
+    }
+    if uncovered.is_empty() {
+        return Ok(vec![]);
+    }
+    let versions = uncovered
+        .iter()
+        .map(|tv| format!("{}@{}", tv.ba().short, tv.version))
+        .join(" ");
+    let many = uncovered.len() > 1;
+    warn!(
+        "{versions} {} not installed and auto-install is disabled, so mise looks for {program} on PATH instead. Install {} with: mise install {versions}",
+        if many { "are" } else { "is" },
+        if many { "them" } else { "it" },
+    );
+    Ok(uncovered)
 }
 
 #[cfg(all(not(test), unix))]

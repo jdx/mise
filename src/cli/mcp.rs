@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::config::Config;
+use crate::config::{Config, SettingsExt};
 use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},

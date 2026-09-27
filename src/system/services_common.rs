@@ -13,7 +13,7 @@ use crate::system::services::ServiceRequest;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ServiceState {
+pub enum ServiceState {
     #[default]
     Running,
     Stopped,
@@ -34,7 +34,7 @@ impl ServiceState {
 /// Which service manager a `[bootstrap.services]` entry targets.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ServiceScope {
+pub enum ServiceScope {
     /// An existing Linux systemd system unit (the original behaviour).
     #[default]
     System,
@@ -46,7 +46,7 @@ pub(crate) enum ServiceScope {
 /// Restart policy of a user-scope service, with one meaning on every platform.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ServiceRestart {
+pub enum ServiceRestart {
     /// Restart whenever the process exits, even successfully.
     Always,
     /// Restart only after a failure.
@@ -68,7 +68,7 @@ impl ServiceRestart {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ServiceChangeAction {
+pub enum ServiceChangeAction {
     Reload,
     Restart,
     #[default]
@@ -77,7 +77,7 @@ pub(crate) enum ServiceChangeAction {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub(crate) struct ServiceTomlConfig {
+pub struct ServiceTomlConfig {
     #[serde(default)]
     pub state: ServiceState,
     #[serde(default = "default_true")]
@@ -161,12 +161,12 @@ impl ServiceTomlConfig {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ServiceNotifications {
+pub struct ServiceNotifications {
     pub(super) sources: IndexMap<String, IndexSet<ResourceId>>,
 }
 
 impl ServiceNotifications {
-    pub(crate) fn extend(&mut self, other: Self) {
+    pub fn extend(&mut self, other: Self) {
         for (service, sources) in other.sources {
             self.sources.entry(service).or_default().extend(sources);
         }
@@ -222,7 +222,7 @@ pub(crate) fn compose_system_declarations(
 }
 
 /// The user-scope entries of `[bootstrap.services]`.
-pub(crate) fn compose_user_declarations(
+pub fn compose_user_declarations(
     config: &Config,
 ) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
     Ok(compose_declarations(config)?
@@ -232,7 +232,7 @@ pub(crate) fn compose_user_declarations(
 }
 
 /// Names of every user-scope service, for notification validation.
-pub(crate) fn user_service_names(config: &Config) -> Result<Vec<String>> {
+pub fn user_service_names(config: &Config) -> Result<Vec<String>> {
     Ok(compose_user_declarations(config)?.into_keys().collect())
 }
 
@@ -282,7 +282,7 @@ fn services_from_config_files(
     merged
 }
 
-pub(crate) fn validate_notifications(
+pub fn validate_notifications(
     files: &[super::managed_files::ManagedFileRequest],
     directories: &[super::managed_files::ManagedDirectoryRequest],
     services: &[ServiceRequest],

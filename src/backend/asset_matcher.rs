@@ -28,7 +28,7 @@ use crate::http::HTTP;
 // ========== Platform Detection Types (from asset_detector) ==========
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum AssetOs {
+pub enum AssetOs {
     Linux,
     Macos,
     Windows,
@@ -36,7 +36,7 @@ pub(crate) enum AssetOs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum AssetArch {
+pub enum AssetArch {
     X64,
     Arm64,
     X86,
@@ -46,7 +46,7 @@ pub(crate) enum AssetArch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum AssetLibc {
+pub enum AssetLibc {
     Gnu,
     Musl,
     Msvc,
@@ -88,7 +88,7 @@ impl AssetLibc {
 
 /// Detected platform information from a URL
 #[derive(Debug, Clone)]
-pub(crate) struct DetectedPlatform {
+pub struct DetectedPlatform {
     pub os: AssetOs,
     pub arch: AssetArch,
     #[allow(unused)]
@@ -97,7 +97,7 @@ pub(crate) struct DetectedPlatform {
 
 impl DetectedPlatform {
     /// Convert to mise's platform string format (e.g., "linux-x64", "macos-arm64")
-    pub(crate) fn to_platform_string(&self) -> String {
+    pub fn to_platform_string(&self) -> String {
         let os_str = match self.os {
             AssetOs::Linux => "linux",
             AssetOs::Macos => "macos",
@@ -816,7 +816,7 @@ fn is_asset_stem_format(format: ExtractionFormat, ext: &str) -> bool {
 }
 
 /// Detects platform information from a URL
-pub(crate) fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
+pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     let mut detected_os = None;
     let mut detected_arch = None;
     let mut detected_libc = None;

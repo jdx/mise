@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::display_path;
 use crate::git::Git;
@@ -27,7 +27,7 @@ use std::{collections::HashMap, sync::Arc};
 use xx::regex;
 
 #[derive(Debug)]
-pub(crate) struct AsdfPlugin {
+pub struct AsdfPlugin {
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,

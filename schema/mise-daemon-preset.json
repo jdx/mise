@@ -55,6 +55,10 @@
       "description": "File the tool writes with its own major version, cross-checked against the mise marker.",
       "type": "string"
     },
+    "refuses_root": {
+      "description": "The tool exits when run as root, so mise fails before installing or starting it as root.",
+      "type": "boolean"
+    },
     "daemon": {
       "type": "object",
       "required": ["run"],

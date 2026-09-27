@@ -129,14 +129,14 @@ pub(crate) fn ensure_install_succeeded() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn has_previous_file(config: &Config, path: &Path) -> bool {
+pub fn has_previous_file(config: &Config, path: &Path) -> bool {
     path.exists()
         || monorepo_lockfile_migration_paths(config)
             .iter()
             .any(|(source, target)| target == path && source.exists())
 }
 
-pub(crate) fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
+pub fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
     let mut previous = Lockfile::read(path)?;
     let mut exists = path.exists();
     for (source, target) in monorepo_lockfile_migration_paths(config) {
@@ -203,11 +203,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
     Ok(())
 }
 
-fn resolution_key(
-    ba: &crate::cli::args::BackendArg,
-    tv: &ToolVersion,
-    platform: &Platform,
-) -> String {
+fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Platform) -> String {
     let mut options = tv.request.options().clone();
     options.opts.values.sort_keys();
     options.core.install_env.sort_keys();
@@ -224,7 +220,7 @@ fn resolution_key(
 }
 
 async fn resolve(
-    ba: crate::cli::args::BackendArg,
+    ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
 ) -> Result<LockResolutionResult> {
@@ -245,7 +241,7 @@ async fn resolve(
         .clone())
 }
 
-pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
+pub(crate) type Tool = (crate::args::BackendArg, ToolVersion);
 
 /// A conservative check for a complete, unfiltered warm install. Compare the
 /// resolved inputs, not file timestamps: environment-dependent options and
@@ -253,16 +249,11 @@ pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
 ///
 /// Multiple requests for one short and shared dependency tables use the normal
 /// generator, which owns binding conflicts and dependency-table cleanup.
-pub(crate) fn is_current(
-    previous: &Lockfile,
-    tools: &[Tool],
-    platforms: &[Platform],
-) -> Result<bool> {
+pub fn is_current(previous: &Lockfile, tools: &[Tool], platforms: &[Platform]) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
         || previous.tools.len() != tools.len()
         || !previous.conda_packages.is_empty()
-        || !previous.pkgx_packages.is_empty()
         || Settings::get().force_provenance_verify()
     {
         return Ok(false);
@@ -362,7 +353,7 @@ fn can_reuse(info: &PlatformInfo) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
-pub(crate) async fn generate(
+pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
     platforms: &[Platform],
@@ -374,6 +365,7 @@ pub(crate) async fn generate(
     let mut candidate = Lockfile {
         lockfile_version: previous.lockfile_version,
         generated_header_url: previous.generated_header_url.clone(),
+        tool_stubs: previous.tool_stubs.clone(),
         ..Default::default()
     };
     let selected: BTreeSet<_> = tools.iter().map(|(ba, _)| ba.short.as_str()).collect();
@@ -416,7 +408,6 @@ pub(crate) async fn generate(
         }
     }
     candidate.conda_packages = previous.conda_packages.clone();
-    candidate.pkgx_packages = previous.pkgx_packages.clone();
     let report = MultiProgressReport::get().add("lock");
     let mut progress = ProgressGuard {
         report: report.as_ref(),
@@ -442,10 +433,7 @@ pub(crate) async fn generate(
                     .flatten()
             })
             .filter(|info| {
-                info.url.is_some()
-                    || info.install.is_some()
-                    || info.conda_deps.is_some()
-                    || info.pkgx_deps.is_some()
+                info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
             entries
@@ -481,7 +469,6 @@ pub(crate) async fn generate(
                     Ok(info.clone()),
                     options,
                     BTreeMap::new(),
-                    BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 ),
             ));
@@ -498,7 +485,6 @@ pub(crate) async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
                     BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 )
@@ -537,7 +523,7 @@ pub(crate) async fn generate(
     }
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
     for (_, specifier, resolution) in resolved {
-        let (short, version, backend, platform, info, options, conda, pkgx, status) = resolution;
+        let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             continue;
         }
@@ -580,9 +566,6 @@ pub(crate) async fn generate(
         for (key, value) in conda {
             candidate.set_conda_package(&platform.to_key(), &key, value);
         }
-        for (key, value) in pkgx {
-            candidate.set_pkgx_package(&platform.to_key(), &key, value);
-        }
     }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.aube.is_none()) {
@@ -620,13 +603,12 @@ pub(crate) async fn generate(
     ))
     .await?;
     candidate.cleanup_unreferenced_conda_packages();
-    candidate.cleanup_unreferenced_pkgx_packages();
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
 }
 
-pub(crate) async fn populate_aube_locks(
+pub async fn populate_aube_locks(
     lockfile: &mut Lockfile,
     tools: &[Tool],
     report: Option<&dyn crate::ui::progress_report::SingleReport>,
@@ -688,7 +670,7 @@ pub(crate) async fn populate_aube_locks(
     Ok(())
 }
 
-pub(crate) async fn populate_uv_locks(
+pub async fn populate_uv_locks(
     config: &Arc<Config>,
     lockfile: &mut Lockfile,
     tools: &[Tool],
@@ -831,7 +813,7 @@ fn provenance_is_downgrade(
 }
 
 fn validate_provenance_settings(
-    ba: &crate::cli::args::BackendArg,
+    ba: &crate::args::BackendArg,
     tv: &ToolVersion,
     platform: &str,
     info: &PlatformInfo,
@@ -967,7 +949,7 @@ fn preserve_legacy_metadata(old: &PlatformInfo, new: &mut PlatformInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::ToolRequest;
 
     fn tool() -> Tool {
@@ -1275,11 +1257,6 @@ mod tests {
         let mut changed = old.clone();
         changed
             .conda_packages
-            .insert("linux-x64".into(), BTreeMap::new());
-        assert!(!is_current(&changed, &tools, &platforms).unwrap());
-        let mut changed = old.clone();
-        changed
-            .pkgx_packages
             .insert("linux-x64".into(), BTreeMap::new());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
     }

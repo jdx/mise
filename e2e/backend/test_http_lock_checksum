@@ -46,44 +46,28 @@ ${BOGUS_SHA}  someothertool_1.0.0_linux.tar.gz
 EOF
 
 # Start a static file server on an ephemeral port
-PORT_FILE="$TMPDIR/mise_lock_http_port"
-python3 - "$SRV" "$PORT_FILE" <<'PY' &
-import http.server, socketserver, sys, os
-srv, port_file = sys.argv[1], sys.argv[2]
-os.chdir(srv)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as f:
-        f.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "lock http port file" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SRV"
 
 cat >mise.toml <<EOF
 [tools."http:xplat-shasums"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/tool_{{ version }}_{{ os() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/tool_{{ version }}_SHASUMS"
+url = "http://127.0.0.1:${HTTP_PORT}/tool_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/tool_{{ version }}_SHASUMS"
 
 [tools."http:xplat-file"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/file_{{ version }}_{{ os() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/file_{{ version }}_{{ os() }}.tar.gz.sha256"
+url = "http://127.0.0.1:${HTTP_PORT}/file_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/file_{{ version }}_{{ os() }}.tar.gz.sha256"
 
 [tools."http:xplat-sha512"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/tool512_{{ version }}_{{ os() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/tool512_{{ version }}_SHA512SUMS"
+url = "http://127.0.0.1:${HTTP_PORT}/tool512_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/tool512_{{ version }}_SHA512SUMS"
 
 [tools."http:xplat-shasums-mismatch"]
 version = "1.0.0"
-url = "http://127.0.0.1:${PORT}/mismatch_{{ version }}_{{ os() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/mismatch_{{ version }}_SHASUMS"
+url = "http://127.0.0.1:${HTTP_PORT}/mismatch_{{ version }}_{{ os() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/mismatch_{{ version }}_SHASUMS"
 EOF
 
 mise lock --platform linux-x64,macos-x64

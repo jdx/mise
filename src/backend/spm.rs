@@ -1,11 +1,11 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -558,7 +558,7 @@ impl SPMBackend {
         file::create_dir_all(&bundle_dir)?;
         let download_path = tv.download_path().join(&asset.name);
         let headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url),
+            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url)?,
             GitProviderKind::GitHub => github::get_headers(&asset.url)?,
         };
         ctx.pr.set_message(format!("download {}", asset.name));
@@ -1086,7 +1086,7 @@ fn filter_artifactbundle_binaries(
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::{
         config::Config,
         toolset::{ToolSource, ToolVersionOptions},

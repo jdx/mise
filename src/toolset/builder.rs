@@ -3,7 +3,7 @@ use std::sync::Arc;
 use eyre::Result;
 use itertools::Itertools;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
@@ -15,7 +15,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from
 use crate::{config, env};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ConfigScope {
+pub enum ConfigScope {
     /// Include tools from all config files
     #[default]
     All,
@@ -26,7 +26,7 @@ pub(crate) enum ConfigScope {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct ToolsetBuilder {
+pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     scope: ConfigScope,
     default_to_latest: bool,
@@ -37,47 +37,58 @@ pub(crate) struct ToolsetBuilder {
 }
 
 impl ToolsetBuilder {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn with_args(mut self, args: &[ToolArg]) -> Self {
+    pub fn with_args(mut self, args: &[ToolArg]) -> Self {
         self.args = args.to_vec();
         self
     }
 
-    pub(crate) fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
+    pub fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
         self.default_to_latest = default_to_latest;
         self
     }
 
-    pub(crate) fn with_scope(mut self, scope: ConfigScope) -> Self {
+    pub fn with_scope(mut self, scope: ConfigScope) -> Self {
         self.scope = scope;
         self
     }
 
-    pub(crate) fn with_resolution_progress(mut self, enabled: bool) -> Self {
+    pub fn with_resolution_progress(mut self, enabled: bool) -> Self {
         self.resolution_progress = enabled;
         self
     }
 
-    pub(crate) fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
+    pub fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
         self.resolve_options = resolve_options;
         self
     }
 
-    pub(crate) fn with_overridden_lockfile_warnings(mut self) -> Self {
+    pub fn with_overridden_lockfile_warnings(mut self) -> Self {
         self.warn_overridden_lockfiles = true;
         self
     }
 
     /// Use custom config files instead of config.config_files
-    pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
         self.config_files = Some(config_files);
         self
     }
 
-    pub(crate) async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
+    /// Build a toolset from configuration, environment, and arguments without resolving versions.
+    pub fn build_unresolved(self, config: &Arc<Config>) -> Result<Toolset> {
+        let mut toolset = Toolset {
+            ..Default::default()
+        };
+        self.load_config_files(config, &mut toolset)?;
+        self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
+        self.load_runtime_args(&mut toolset)?;
+        Ok(toolset)
+    }
+
+    pub async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()
         };
@@ -366,7 +377,7 @@ mod tests {
     async fn runtime_args_use_platform_supported_version_and_lockfile_owner() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

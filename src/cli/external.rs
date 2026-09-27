@@ -2,8 +2,8 @@ use eyre::Result;
 use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
 
+use crate::args::BackendArg;
 use crate::backend;
-use crate::cli::args::BackendArg;
 
 pub(super) static COMMANDS: Lazy<HashMap<String, crate::plugins::ExternalCommand>> =
     Lazy::new(|| {

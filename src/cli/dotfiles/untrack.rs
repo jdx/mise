@@ -29,6 +29,35 @@ impl DotfilesUntrack {
         let tracked = TrackedSet::effective().await?;
         let global = crate::config::global_shared_config_path();
         let local = super::track::declaration_file(true)?;
+        // Validate every generated rule before changing any declaration.
+        // A later invalid filename must not leave earlier targets untracked.
+        for target_raw in &self.targets {
+            let target = crate::system::files::resolve_target_arg(target_raw)
+                .components()
+                .collect::<PathBuf>();
+            if target.is_relative() {
+                bail!("{target_raw}: target must be absolute or start with ~/");
+            }
+            if managed
+                .iter()
+                .any(|req| req.target == target && req.mode == FileMode::Track)
+            {
+                continue;
+            }
+            let path = normalize_target(&target);
+            if tracked
+                .entry_for(&path)
+                .is_some_and(|owner| owner.path != path)
+            {
+                let key = super::track::normalized_target(&target);
+                let glob = super::track::exclude_rule_for_path(&key, path.is_dir());
+                if let Some(reason) = crate::system::history::tracked::unusable_pattern(
+                    glob.strip_prefix('!').unwrap_or(&glob),
+                ) {
+                    bail!("{glob}: {reason}");
+                }
+            }
+        }
         let mut touched: Vec<PathBuf> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
@@ -75,6 +104,28 @@ impl DotfilesUntrack {
                     }
                 }
                 None => {
+                    // A declaration mise could not read is not absent,
+                    // and saying "not tracked" about one would send the
+                    // user looking for something that is right there.
+                    if let Some(invalid) = crate::system::files::invalid_declarations()
+                        .into_iter()
+                        .find(|invalid| {
+                            // only a declaration mise could not read: one
+                            // ignored by policy is not this path's
+                            // declaration at all
+                            invalid.cause == crate::system::files::Ignored::Unreadable
+                                && crate::system::files::resolve_target_arg(&invalid.target)
+                                    .components()
+                                    .collect::<PathBuf>()
+                                    == target
+                        })
+                    {
+                        bail!(
+                            "{target_raw} is declared in {}, but that declaration cannot be read: {}. Fix or remove it there",
+                            display_path(&invalid.config),
+                            invalid.reason
+                        );
+                    }
                     // A child of an explicitly tracked directory: exclude it.
                     let Some(owner) = tracked.entry_for(&path) else {
                         bail!("{target_raw} is not tracked");
@@ -94,14 +145,13 @@ impl DotfilesUntrack {
                         touched.push(local.clone());
                         continue;
                     }
-                    let glob = if path.is_dir() {
-                        format!("{key}/**")
-                    } else {
-                        key.clone()
-                    };
+                    let glob = super::track::exclude_rule_for_path(&key, path.is_dir());
                     super::track::edit_exclude(&glob, true)?;
+                    // name the command that undoes this, with the path
+                    // as the user would type it: the rule on disk is the
+                    // escaped form and is not what to type back
                     info!(
-                        "dotfiles: {key} is covered by {} ({}); excluded it in {}",
+                        "dotfiles: {key} is covered by {} ({}); excluded it in {} (`mise dot include '{key}'` captures it again)",
                         owner.display(),
                         owner.mode,
                         display_path(&global)

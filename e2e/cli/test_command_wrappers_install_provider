@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# A wrapper's command installs its missing provider the way the command's own
+# shim does. Here an older dummy provides the command but the project pins a
+# version that is not installed yet.
+mise install dummy@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+
+[wrappers]
+cargo = "dummy"
+EOF
+
+mise reshim
+export PATH="$MISE_DATA_DIR/command-wrappers/bin:$PATH"
+assert_fail "MISE_NOT_FOUND_AUTO_INSTALL=0 cargo --version"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+assert_contains "cargo --version" "This is Dummy 2.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# A lazy provider installs on first use even with not-found auto-install off.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "3.0.0", lazy = true, lazy_bins = ["dummy"] }
+
+[wrappers]
+cargo = "dummy"
+EOF
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 cargo --version" "This is Dummy 3.0.0"

@@ -145,6 +145,28 @@ mise lock node@22.15.0      # updates mise.lock without reinstalling
 
 If the version doesn't match the current config prefix, the config is updated automatically. For example, if `mise.toml` has `node = "20"` and you run `mise upgrade node@22.15.0`, the config is bumped to `node = "22"` (preserving the same precision level) and the lockfile is set to `22.15.0`.
 
+### Switching to a New Registry Backend {#registry-backend-changes}
+
+The registry sometimes moves a tool to a different backend, for example from
+`github:jdx/communique` to `packslip:github.com/jdx/communique`. A tool
+configured by its short name keeps using the backend recorded in `mise.lock`,
+including when `mise lock --bump` or `mise upgrade` picks a newer version, so a
+registry update never changes where a locked tool installs from. `mise install`
+and `mise lock` warn when that happens:
+
+```text
+mise WARN  communique is locked to github:jdx/communique, but the registry now installs it from packslip:github.com/jdx/communique. Run `mise backends switch communique` to switch.
+```
+
+[`mise backends switch`](/cli/backends/switch.html) moves the lock entries to
+the registry's backend at the same versions, records the new backend's
+checksums and URLs, and reinstalls installed versions from it:
+
+```sh
+mise backends switch communique   # switch one tool
+mise backends switch --dry-run    # list every locked tool with a newer backend
+```
+
 ## Command Behavior with Lockfiles
 
 These commands update an existing lockfile. Automatic creation follows the
@@ -239,7 +261,8 @@ URL checks skip backends that cannot record a download URL: `asdf`, `cargo`,
 `core:swift`, and vfox backend plugins. This exemption is specific to artifact
 URLs; npm and PyPI dependency graphs have their own locked-install checks.
 vfox tool plugins can record URLs and participate in URL locking.
-Tools resolved from a [tool stub](/dev-tools/tool-stubs) also skip URL checks.
+[Tool stubs](/dev-tools/tool-stubs#locked-tool-stub) follow the same rules,
+using their project's `mise.lock`.
 
 ## Dependency graphs
 
@@ -281,7 +304,8 @@ mise.lock
 ```
 
 The corresponding entry contains a relative path and a SHA-256 digest of the native
-lockfile's exact bytes:
+lockfile's contents, with CRLF line endings normalized to LF so that a Windows
+checkout (`core.autocrlf=true`) verifies against the committed file:
 
 ```toml
 [[tools."pypi:black"]]
@@ -322,8 +346,8 @@ sidecar directories. `aube-lock.yaml` is aube's native format; it is not an npm
 `package-lock.json` and scanners may not recognize its transitive dependencies.
 
 After editing a sidecar, run `mise lock` to validate it and update the recorded
-digest. Then run `mise install --locked`. Even formatting-only edits change the
-digest and installation identity.
+digest. Then run `mise install --locked`. Apart from line endings, even
+formatting-only edits change the digest and installation identity.
 
 Ordinary `mise install` also accepts valid edits when an installation is needed
 and updates the digest through auto-locking. If the recorded installation already

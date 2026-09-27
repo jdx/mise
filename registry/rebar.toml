@@ -1,5 +1,5 @@
 backends = [
-  { full = "github:erlang/rebar3", options = { asset_pattern = "rebar3" } },
+  { full = "github:erlang/rebar3", attestations_since = "3.27.1", options = { asset_pattern = "rebar3" } },
 ]
 bins = ["rebar3"]
 description = "Erlang build tool that makes it easy to compile and test Erlang applications and releases"
