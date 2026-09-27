@@ -938,7 +938,7 @@ impl PIPXBackend {
         let registry_hash = hash_to_str(&registry_url);
         CacheManagerBuilder::new(
             self.ba
-                .cache_path
+                .cache_path()
                 .join(format!("latest_version_{registry_hash}.msgpack.z")),
         )
         .with_fresh_duration(Settings::get().fetch_remote_versions_cache())

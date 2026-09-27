@@ -201,7 +201,7 @@ impl PythonPlugin {
     }
 
     fn python_build_path(&self) -> PathBuf {
-        self.ba.cache_path.join("pyenv")
+        self.ba.cache_path().join("pyenv")
     }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()
@@ -1138,7 +1138,7 @@ impl Backend for PythonPlugin {
             .get_or_init(|| {
                 Arc::new(Mutex::new(
                     CacheManagerBuilder::new(
-                        self.ba().cache_path.join("remote_versions.msgpack.z"),
+                        self.ba().cache_path().join("remote_versions.msgpack.z"),
                     )
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .with_cache_key(

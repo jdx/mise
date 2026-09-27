@@ -94,6 +94,15 @@ if [[ $os == "macos" ]]; then
 	export MISE_NOTIFICATION_SIGN_IDENTITY="Developer ID Application: Jeffrey Dickey (4993Y37DX6)"
 fi
 
+case "$RUST_TRIPLE" in
+*-linux-gnu | *-linux-gnueabihf)
+	# Link the executable at a fixed address instead of as a PIE, so the
+	# dynamic loader has no pointers to patch at startup (see link_without_pie
+	# in build.rs). About halves the run time of short commands like hook-env.
+	export MISE_NO_PIE=1
+	;;
+esac
+
 if [[ -n ${MISE_BOLT:-} ]] && [[ -z ${MISE_PGO:-} ]]; then
 	error "MISE_BOLT requires MISE_PGO so BOLT optimizes the PGO release binary"
 fi
@@ -140,6 +149,9 @@ case "$RUST_TRIPLE" in
 *-linux-gnu | *-linux-gnueabihf)
 	echo "Checking glibc compatibility (floor: $GLIBC_FLOOR)..."
 	scripts/check-glibc.sh "$binary_path" "$GLIBC_FLOOR" "$RUST_TRIPLE"
+	if ! readelf -h "$binary_path" | grep -q 'Type:.*EXEC'; then
+		error "$binary_path is not linked non-PIE; MISE_NO_PIE did not reach build.rs"
+	fi
 	;;
 esac
 mkdir -p dist/mise/bin

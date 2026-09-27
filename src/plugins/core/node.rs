@@ -769,7 +769,7 @@ impl Backend for NodePlugin {
                 let settings = Settings::get();
                 Mutex::new(
                     CacheManagerBuilder::new(
-                        self.ba().cache_path.join("remote_versions.msgpack.z"),
+                        self.ba().cache_path().join("remote_versions.msgpack.z"),
                     )
                     .with_fresh_duration(settings.fetch_remote_versions_cache())
                     .with_cache_key(settings.node.mirror_url.clone().unwrap_or_default())

@@ -9,6 +9,7 @@ passthrough = [
   "CARGO_TERM_COLOR",
   "AWS_LC_SYS_EXTERNAL_BINDGEN",
   "BINDGEN_EXTRA_CLANG_ARGS",
+  "MISE_NO_PIE",
 ]
 
 # Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)

@@ -91,12 +91,12 @@ impl JavaPlugin {
         let ba = Arc::new(plugins::core::new_backend_arg("java"));
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("java_metadata_ea.msgpack.z"),
+                ba.cache_path().join("java_metadata_ea.msgpack.z"),
             )
             .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("java_metadata_ga.msgpack.z"),
+                ba.cache_path().join("java_metadata_ga.msgpack.z"),
             )
             .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
