@@ -491,6 +491,14 @@ mod tests {
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
         assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
 
+        assert_eq!(is_outdated_version("v2.1.280", "2.1.278"), false);
+        assert_eq!(is_outdated_version("v0.156.0", "0.155.1"), false);
+        assert_eq!(is_outdated_version("2.1.278", "V2.1.280"), true);
+        assert_eq!(is_outdated_version("V1.2.3", "v1.2.3"), false);
+        assert_eq!(is_outdated_version("v1.2.3-rc.1", "1.2.3"), true);
+        assert_eq!(is_outdated_version("1.2.3", "v1.2.3-rc.1"), false);
+        assert_eq!(is_outdated_version("v1.2.3+one", "1.2.3+two"), false);
+
         assert_eq!(
             is_outdated_version("1.10.0-SNAPSHOT", "1.12.0-SNAPSHOT"),
             true
