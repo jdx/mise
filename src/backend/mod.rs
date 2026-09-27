@@ -51,7 +51,6 @@ use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use platform_target::PlatformTarget;
-use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
@@ -929,6 +928,7 @@ mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+    use regex::Regex;
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1685,6 +1685,135 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// The regex-based matcher [`fuzzy_version_matches`] replaced, kept to show
+    /// the two agree. Returns a matcher for `query` so each regex compiles once.
+    fn fuzzy_version_matcher_by_regex(query: &str) -> impl Fn(&str) -> bool {
+        let escaped_query = regex::escape(query);
+        let query_pattern = if query == "latest" {
+            "v?[0-9].*".to_string()
+        } else if query.starts_with(|c: char| c.is_ascii_digit()) {
+            format!("v?{escaped_query}")
+        } else {
+            escaped_query
+        };
+        let numeric_query = query
+            .strip_prefix(['v', 'V'])
+            .unwrap_or(query)
+            .starts_with(|c: char| c.is_ascii_digit());
+        let sep = if query == "latest" || numeric_query {
+            "[+\\-.]"
+        } else {
+            "[\\-.]"
+        };
+        let query_regex = if query != "latest" && query.ends_with('-') {
+            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
+        };
+        let without_v_regex = (query.starts_with('v') || query.starts_with('V')).then(|| {
+            let without_v = regex::escape(&query[1..]);
+            if query.ends_with('-') {
+                Regex::new(&format!("^{without_v}.*$")).unwrap()
+            } else {
+                Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
+            }
+        });
+        move |version| {
+            query_regex.is_match(version)
+                || without_v_regex
+                    .as_ref()
+                    .is_some_and(|re| re.is_match(version))
+        }
+    }
+
+    #[test]
+    fn test_fuzzy_version_matches_agrees_with_the_regexes_it_replaced() {
+        let queries = [
+            "latest",
+            "1",
+            "1.2",
+            "1.2.3",
+            "10",
+            "v1",
+            "v1.2",
+            "V1.2",
+            "vv1",
+            "v",
+            "V",
+            "",
+            "temurin",
+            "temurin-",
+            "temurin-21",
+            "v-",
+            "1-",
+            "lts",
+            "lts-iron",
+            "truffleruby",
+            "truffleruby+graalvm",
+            "ref:main",
+            "3.14.0a1",
+            "1.2.",
+            "1.2+",
+            "a.b",
+            "é",
+            "1\n",
+        ];
+        let versions = [
+            "",
+            "1",
+            "1.2",
+            "1.2.3",
+            "1.20",
+            "1.2-rc1",
+            "1.2+build",
+            "1.2.",
+            "1.2-",
+            "1.2+",
+            "1.2.\n",
+            "1.2.x\ny",
+            "v1.2",
+            "v1.2.3",
+            "V1.2",
+            "vv1.2",
+            "10",
+            "10.0",
+            "v10.1",
+            "1\n",
+            "1\nx",
+            "temurin-21.0.1",
+            "temurin",
+            "temurin21",
+            "temurin.1",
+            "temurin+x",
+            "lts",
+            "lts-iron",
+            "truffleruby-34.0.1",
+            "truffleruby+graalvm-34.0.1",
+            "latest",
+            "x1.2",
+            "v",
+            "-",
+            "1-rc",
+            "1-",
+            "v-1",
+            "é-1",
+            "3.14.0a1",
+            "a.b.c",
+            "v1\n",
+            "1.2+b.4",
+        ];
+        for query in queries {
+            let by_regex = fuzzy_version_matcher_by_regex(query);
+            for version in versions {
+                assert_eq!(
+                    fuzzy_version_matches(query, version),
+                    by_regex(version),
+                    "query {query:?} version {version:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -6289,51 +6418,6 @@ fn fuzzy_match_versions_by(
     query: &str,
     is_filtered_prerelease: impl Fn(&str) -> bool,
 ) -> Vec<String> {
-    let escaped_query = regex::escape(query);
-    let query_pattern = if query == "latest" {
-        "v?[0-9].*".to_string()
-    } else if query.starts_with(|c: char| c.is_ascii_digit()) {
-        format!("v?{escaped_query}")
-    } else {
-        escaped_query
-    };
-    // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
-    // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
-    // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
-    // the prefix (e.g. "temurin-25.0.1").
-    // `+` separates semver build metadata ("1.9.1" -> "1.9.1+hotfix.2"), but it
-    // also separates flavour names ("truffleruby" -> "truffleruby+graalvm"). Only
-    // treat it as a separator for numeric queries, so a bare flavour name cannot
-    // select a different flavour.
-    let numeric_query = query
-        .strip_prefix(['v', 'V'])
-        .unwrap_or(query)
-        .starts_with(|c: char| c.is_ascii_digit());
-    let sep = if query == "latest" || numeric_query {
-        "[+\\-.]"
-    } else {
-        "[\\-.]"
-    };
-    let query_regex = if query != "latest" && query.ends_with('-') {
-        Regex::new(&format!("^{query_pattern}.*$")).unwrap()
-    } else {
-        Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
-    };
-
-    // Also create a regex without the 'v' prefix if query starts with 'v'
-    // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
-    let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
-        let without_v = regex::escape(&query[1..]);
-        let re = if query.ends_with('-') {
-            Regex::new(&format!("^{without_v}.*$")).unwrap()
-        } else {
-            Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
-        };
-        Some(re)
-    } else {
-        None
-    };
-
     versions
         .into_iter()
         .filter(|v| {
@@ -6343,15 +6427,7 @@ fn fuzzy_match_versions_by(
             if is_filtered_prerelease(v) {
                 return false;
             }
-            if query_regex.is_match(v) {
-                return true;
-            }
-            if let Some(ref re) = query_without_v_regex
-                && re.is_match(v)
-            {
-                return true;
-            }
-            false
+            fuzzy_version_matches(query, v)
         })
         .collect()
 }
@@ -6368,6 +6444,58 @@ fn cleanup_empty_tool_dir(installs_path: &Path) {
             let _ = remove_all_with_warning(installs_path);
         }
     }
+}
+
+/// Whether `version` belongs to the fuzzy `query`. Resolution runs this for
+/// every tool, so these rules are written as string comparisons; they match the
+/// regexes they replaced, which cost more to compile than resolving the tool:
+///
+/// - `latest` matches a version starting with a digit, after an optional `v`.
+/// - A query ending in `-` (a vendor prefix like `temurin-`) matches any version
+///   it prefixes.
+/// - Otherwise the version must equal the query or continue it with a
+///   separator and at least one more character. For numeric queries like `1.2`
+///   the separators are `+`, `-` and `.`, so `1.2` matches `1.2.3` and
+///   `1.2+build` but not `1.20`. For names they are `-` and `.`, so
+///   `truffleruby` does not select `truffleruby+graalvm`.
+///
+/// A query starting with a digit also matches a `v`-prefixed version, and a
+/// query starting with `v` or `V` also matches the version without it. None of
+/// the text matched after the query may contain a newline.
+fn fuzzy_version_matches(query: &str, version: &str) -> bool {
+    let starts_with_digit = |s: &str| s.starts_with(|c: char| c.is_ascii_digit());
+    if query == "latest" {
+        let version = version.strip_prefix('v').unwrap_or(version);
+        return starts_with_digit(version) && !version.contains('\n');
+    }
+    let without_v = query.strip_prefix(['v', 'V']);
+    let separators: &[char] = if starts_with_digit(without_v.unwrap_or(query)) {
+        &['+', '-', '.']
+    } else {
+        &['-', '.']
+    };
+    let continues = |literal: &str, version: &str| {
+        let Some(rest) = version.strip_prefix(literal) else {
+            return false;
+        };
+        if query.ends_with('-') {
+            return !rest.contains('\n');
+        }
+        rest.is_empty()
+            || rest
+                .strip_prefix(separators)
+                .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
+    };
+    if continues(query, version) {
+        return true;
+    }
+    if starts_with_digit(query)
+        && let Some(version) = version.strip_prefix('v')
+        && continues(query, version)
+    {
+        return true;
+    }
+    without_v.is_some_and(|without_v| continues(without_v, version))
 }
 
 /// Derive the directory namespace from the configured tool spelling.

@@ -151,6 +151,17 @@ pub fn semver_triplet(version: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
+/// Compares complete SemVer versions, accepting one leading `v` or `V`.
+/// Build metadata does not affect precedence. Returns `None` if either version
+/// cannot be parsed, so callers can apply tool-specific comparison rules.
+pub fn semver_precedence_cmp(current: &str, candidate: &str) -> Option<Ordering> {
+    let parse = |v: &str| ::semver::Version::parse(v.strip_prefix(['v', 'V']).unwrap_or(v)).ok();
+    Some(parse(current)?.cmp_precedence(&parse(candidate)?))
+}
+
+/// Compares numeric major, minor, and patch components, ignoring prerelease and
+/// build suffixes. Returns `None` if either triplet cannot be extracted.
+/// Use [`semver_precedence_cmp`] when prerelease ordering matters.
 pub fn semver_cmp(version: &str, other: &str) -> Option<Ordering> {
     Some(semver_triplet(version)?.cmp(&semver_triplet(other)?))
 }
@@ -167,7 +178,8 @@ pub fn semver_is_at_least(version: &str, minimum: &str) -> Option<bool> {
 mod tests {
     use super::{
         chunkify_version, is_npm_semver_range_query, npm_semver_range_filter, semver_cmp,
-        semver_is_at_least, semver_is_older_than, semver_triplet, split_version_prefix,
+        semver_is_at_least, semver_is_older_than, semver_precedence_cmp, semver_triplet,
+        split_version_prefix,
     };
     use std::cmp::Ordering;
 
@@ -364,6 +376,28 @@ mod tests {
         assert_eq!(semver_triplet("1.2"), None);
         assert_eq!(semver_triplet("latest"), None);
         assert_eq!(semver_triplet("garbage"), None);
+    }
+
+    /// Protects the boundary between strict SemVer precedence and the caller's
+    /// handling of tool-specific versions that cannot be parsed as SemVer.
+    #[test]
+    fn test_semver_precedence_cmp() {
+        assert_eq!(
+            semver_precedence_cmp("v2.1.280", "2.1.278"),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(
+            semver_precedence_cmp("1.2.3-rc.1", "V1.2.3"),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            semver_precedence_cmp("v1.2.3+one", "1.2.3+two"),
+            Some(Ordering::Equal)
+        );
+        for version in ["latest", "1.2", "3.7c", "vv1.2.3"] {
+            assert_eq!(semver_precedence_cmp(version, "1.2.3"), None);
+            assert_eq!(semver_precedence_cmp("1.2.3", version), None);
+        }
     }
 
     #[test]
