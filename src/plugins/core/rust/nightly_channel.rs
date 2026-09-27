@@ -119,12 +119,14 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
     Ok(true)
 }
 
-/// Moves `staged` to `dest`, leaving the old `dest` at `previous`. Where the
-/// OS can swap two paths atomically, `dest` never goes missing, so a
-/// concurrent `cargo +nightly` or an interrupted mise always sees a toolchain.
+/// Moves `staged` to `dest`. The old `dest` ends up at `staged` or `previous`,
+/// both inside the staging directory, so it is deleted with it. Where the OS
+/// can swap two paths atomically, `dest` never goes missing, so a concurrent
+/// `cargo +nightly` or an interrupted mise always sees a toolchain.
 fn replace_dir(staged: &Path, dest: &Path, previous: &Path) -> Result<()> {
     match exchange(staged, dest) {
-        Ok(()) => return Ok(fs::rename(staged, previous)?),
+        // The replacement is complete; nothing is left that could fail.
+        Ok(()) => return Ok(()),
         Err(err) => debug!("atomic swap unavailable, renaming instead: {err}"),
     }
     fs::rename(dest, previous)?;
@@ -442,8 +444,10 @@ mod tests {
         replace_dir(&staged, &dest, &previous).unwrap();
 
         assert!(dest.join("new").exists());
-        assert!(previous.join("old").exists());
-        assert!(!staged.exists());
+        assert!(!dest.join("old").exists());
+        // An atomic swap leaves the old directory at `staged`, the rename
+        // fallback at `previous`.
+        assert!(staged.join("old").exists() || previous.join("old").exists());
     }
 
     #[test]
