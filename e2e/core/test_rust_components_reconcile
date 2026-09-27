@@ -82,11 +82,15 @@ EOF
 
 chmod +x "$MISE_CARGO_HOME/bin/cargo" "$MISE_CARGO_HOME/bin/rustc" "$MISE_CARGO_HOME/bin/rustup"
 
+assert_does_not_call_rustup() {
+  cp "$MISE_CARGO_HOME/rustup.log" "$MISE_CARGO_HOME/rustup.log.before"
+  "$@" >/dev/null
+  cmp -s "$MISE_CARGO_HOME/rustup.log.before" "$MISE_CARGO_HOME/rustup.log" ||
+    fail "$* unexpectedly invoked rustup"
+}
+
 assert_hook_env_does_not_call_rustup() {
-  cp "$MISE_CARGO_HOME/rustup.log" "$MISE_CARGO_HOME/rustup.log.before-hook"
-  mise hook-env -s bash --force >/dev/null
-  cmp -s "$MISE_CARGO_HOME/rustup.log.before-hook" "$MISE_CARGO_HOME/rustup.log" ||
-    fail "hook-env unexpectedly invoked rustup"
+  assert_does_not_call_rustup mise hook-env -s bash --force
 }
 
 cat >mise.toml <<EOF
@@ -97,7 +101,7 @@ EOF
 mise install
 assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "1"
 
-sed -i '/^rust-docs$/d' "$MISE_CARGO_HOME/components"
+sed -i.bak '/^rust-docs$/d' "$MISE_CARGO_HOME/components"
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 mise install
 assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "2"
@@ -114,7 +118,7 @@ cat >mise.toml <<EOF
 rust = { version = "1.81.0", profile = "default" }
 EOF
 
-sed -i '/^rustfmt$/d' "$MISE_CARGO_HOME/components"
+sed -i.bak '/^rustfmt$/d' "$MISE_CARGO_HOME/components"
 assert_hook_env_does_not_call_rustup
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 mise install
@@ -139,3 +143,9 @@ assert_contains "cat '$MISE_CARGO_HOME/targets'" "wasm32-unknown-unknown"
 mise install
 assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "5"
 assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
+
+# Shims and exec without auto-install only need install markers; the rustup
+# satisfaction check is reserved for tools mise is about to install.
+mise reshim
+assert_does_not_call_rustup "$MISE_DATA_DIR/shims/rustc" -V
+MISE_EXEC_AUTO_INSTALL=0 assert_does_not_call_rustup mise exec -- rustc -V
