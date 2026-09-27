@@ -10,13 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum AccountState {
-    #[default]
-    Present,
-    Absent,
-}
+pub use mise_bootstrap::AccountState;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct GroupTomlConfig {
