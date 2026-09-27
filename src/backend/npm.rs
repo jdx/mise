@@ -403,6 +403,15 @@ fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
 static SELF_CONTAINED_AUBE_INSTALLS: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(Default::default);
 
+/// Drop a prefix from [`SELF_CONTAINED_AUBE_INSTALLS`] before this process
+/// replaces or removes it.
+fn forget_aube_install_health(install_path: &Path) {
+    SELF_CONTAINED_AUBE_INSTALLS
+        .lock()
+        .unwrap()
+        .remove(install_path);
+}
+
 fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
     if SELF_CONTAINED_AUBE_INSTALLS
         .lock()
@@ -452,6 +461,16 @@ impl Backend for NPMBackend {
 
     fn is_install_path_healthy(&self, install_path: &Path) -> bool {
         aube_install_tree_is_healthy_cached(install_path)
+    }
+
+    async fn uninstall_version_impl(
+        &self,
+        _config: &Arc<Config>,
+        _pr: &dyn SingleReport,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        forget_aube_install_health(&tv.install_path());
+        Ok(())
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -659,6 +678,7 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        forget_aube_install_health(&tv.install_path());
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
             .await;
@@ -3462,6 +3482,25 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Linked);
         assert!(aube_install_tree_is_healthy_cached(tmp.path()));
         std::fs::remove_dir_all(target).unwrap();
+        assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forgetting_a_cached_aube_tree_checks_it_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let virtual_store = tmp.path().join("node_modules/.mise");
+        std::fs::create_dir_all(virtual_store.join("pkg@1.0.0")).unwrap();
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+
+        // A reinstall replaces the prefix with a tree that links to a missing store.
+        forget_aube_install_health(tmp.path());
+        std::fs::remove_dir_all(virtual_store.join("pkg@1.0.0")).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("missing-store/pkg@1.0.0"),
+            virtual_store.join("pkg@1.0.0"),
+        )
+        .unwrap();
         assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
     }
 
