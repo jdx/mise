@@ -434,7 +434,7 @@ impl ToolVersion {
         if path.is_file()
             && let Ok(p) = file::read_to_string(&path).map(PathBuf::from)
         {
-            let path = self.ba().installs_path.join(p);
+            let path = self.ba().installs_path().join(p);
             if path.exists() {
                 return path
                     .absolutize()
