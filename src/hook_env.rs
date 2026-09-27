@@ -1,6 +1,7 @@
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
@@ -202,6 +203,13 @@ impl From<PathBuf> for WatchFilePattern {
 /// This checks basic conditions using only the previous session data.
 /// Returns true if we can definitely skip hook-env, false if we need to continue.
 pub fn should_exit_early_fast() -> bool {
+    // `main` asks before starting the async runtime, and `cli::run` asks again
+    // when that answer was no; the second must not repeat the filesystem checks.
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(check_exit_early_fast)
+}
+
+fn check_exit_early_fast() -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
@@ -232,12 +240,9 @@ pub fn should_exit_early_fast() -> bool {
         return false;
     }
 
-    // Get settings for cache_ttl and chpwd_only
-    let settings = Settings::get();
-    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
-        .map(|d| d.as_millis())
-        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
-        .unwrap_or(0);
+    // Loading settings would cost more than the rest of this check, so use
+    // the values the previous full run saved in the session.
+    let cache_ttl_ms = u128::from(PREV_SESSION.cache_ttl_ms);
 
     // Compute TTL window check only if cache_ttl is enabled (avoid unnecessary file read)
     let (now, within_ttl_window) = if cache_ttl_ms > 0 {
@@ -263,7 +268,7 @@ pub fn should_exit_early_fast() -> bool {
     // chpwd_only mode: skip on precmd if directory hasn't changed
     // This significantly reduces stat operations on slow filesystems like NFS
     // Note: We check this AFTER env var check since that's cheap (no I/O)
-    if settings.hook_env.chpwd_only && is_precmd {
+    if PREV_SESSION.chpwd_only && is_precmd {
         trace!("chpwd_only enabled, skipping precmd hook-env");
         return true;
     }
@@ -488,6 +493,16 @@ pub struct HookEnvSession {
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
+    /// `hook_env.chpwd_only` and `hook_env.cache_ttl` as the full run that
+    /// wrote this session resolved them, so the fast path can apply them
+    /// without loading settings. Their sources are config files and `MISE_*`
+    /// variables, and a change to either forces a full run that refreshes
+    /// these. A session from an older mise has neither, which disables both
+    /// shortcuts until that run.
+    #[serde(default)]
+    chpwd_only: bool,
+    #[serde(default)]
+    cache_ttl_ms: u64,
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -576,12 +591,13 @@ pub async fn build_session(
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
-    // Update the last full check timestamp (only if cache_ttl feature is enabled)
     let settings = Settings::get();
-    if duration::parse_duration(&settings.hook_env.cache_ttl)
-        .map(|d| d.as_millis() > 0)
-        .unwrap_or(false)
-    {
+    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
+        .unwrap_or(0);
+    // Update the last full check timestamp (only if cache_ttl feature is enabled)
+    if cache_ttl_ms > 0 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -600,6 +616,8 @@ pub async fn build_session(
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
+        chpwd_only: settings.hook_env.chpwd_only,
+        cache_ttl_ms,
     })
 }
 

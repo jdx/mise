@@ -883,6 +883,15 @@ fn is_packages_where_query(args: &[String]) -> bool {
     false
 }
 
+/// The fast path reads no settings, so unless something loaded them there is
+/// nothing to report; setting up the logger would load them.
+fn finish_hook_env_fast_exit() {
+    if crate::config::settings::is_loaded() {
+        measure!("logger", { logger::init() });
+        Settings::flush_pending_warnings_before_exit();
+    }
+}
+
 /// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).
 pub(crate) fn register_frontend() {
     crate::frontend::register(crate::frontend::Frontend {
@@ -952,6 +961,29 @@ impl Cli {
         s
     }
 
+    /// Answers an unchanged `hook-env` before `main` starts the async runtime.
+    ///
+    /// The shell hook runs before every prompt and nearly always finds nothing
+    /// changed. Building the runtime spawns up to 16 worker threads, which
+    /// costs more than the check, so this repeats the steps of `run_inner` that
+    /// come before its fast path and runs that fast path here. Anything it
+    /// cannot settle returns false, and `run` then goes through `run_inner` as
+    /// usual.
+    pub(crate) fn exit_early_for_unchanged_hook_env(args: &[String]) -> bool {
+        if args.get(1).map(String::as_str) != Some("hook-env") || *crate::env::MISE_TOOL_STUB {
+            return false;
+        }
+        *crate::env::ARGS.write().unwrap() = args.to_vec();
+        if crate::config::miserc::init().is_err() {
+            return false;
+        }
+        if !hook_env_module::should_exit_early_fast() {
+            return false;
+        }
+        finish_hook_env_fast_exit();
+        true
+    }
+
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
@@ -1007,8 +1039,7 @@ impl Cli {
         // Fast-path for hook-env: exit early if nothing has changed
         // This avoids expensive backend::load_tools() and config loading
         if hook_env_module::should_exit_early_fast() {
-            measure!("logger", { logger::init() });
-            Settings::flush_pending_warnings_before_exit();
+            finish_hook_env_fast_exit();
             return Ok(());
         }
         measure!("logger", { logger::init() });
