@@ -1,4 +1,6 @@
 mod bounded;
+#[cfg(windows)]
+pub mod ctrl_c_group;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Debug, Display, Formatter};
@@ -141,14 +143,56 @@ pub struct CmdLineRunner<'a> {
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
     inherit_env: bool,
+    stdio: PendingStdio,
+    kill_on_drop: bool,
+    /// Indices of the arguments added with `raw_arg`, which a Ctrl+C group
+    /// leader has to add the same way.
+    #[cfg(windows)]
+    raw_args: Vec<usize>,
+    /// Whether the spawned process leads a Ctrl+C group (see [`ctrl_c_group`]):
+    /// asked for by [`Self::interrupt_on_timeout`], kept only with a timeout.
+    #[cfg(windows)]
+    ctrl_c_group: bool,
+}
+
+/// Stdio for a command, applied when it is spawned. `Command` cannot hand its
+/// stdio back, so it is held here for whichever command is finally spawned.
+#[derive(Default)]
+struct PendingStdio {
+    stdin: Option<Stdio>,
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+}
+
+impl PendingStdio {
+    /// What `CmdLineRunner::new` starts with: no stdin, both outputs piped.
+    fn defaults() -> Self {
+        Self {
+            stdin: Some(Stdio::null()),
+            stdout: Some(Stdio::piped()),
+            stderr: Some(Stdio::piped()),
+        }
+    }
+
+    fn apply(&mut self, cmd: &mut Command) {
+        if let Some(stdin) = self.stdin.take() {
+            cmd.stdin(stdin);
+        }
+        if let Some(stdout) = self.stdout.take() {
+            cmd.stdout(stdout);
+        }
+        if let Some(stderr) = self.stderr.take() {
+            cmd.stderr(stderr);
+        }
+    }
 }
 
 const GUARD_RUNNING: u8 = 0;
 const GUARD_CANCELLED: u8 = 1;
 const GUARD_TIMED_OUT: u8 = 2;
 
-/// How long a timed-out command gets between SIGTERM and SIGKILL.
-#[cfg(unix)]
+/// How long a timed-out command gets to exit after being asked to (SIGTERM, or
+/// Ctrl+C on Windows) before it is killed.
 const TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 
 #[cfg(unix)]
@@ -333,7 +377,9 @@ struct TimeoutGuard {
 }
 
 impl TimeoutGuard {
-    fn new(timeout: Duration, pid: u32) -> Self {
+    /// `interruptible` is whether `pid` can be asked to stop before it is killed:
+    /// always on Unix, and on Windows when it leads a Ctrl+C group.
+    fn new(timeout: Duration, pid: u32, interruptible: bool) -> Self {
         let state = Arc::new(AtomicU8::new(GUARD_RUNNING));
         let cancel = Arc::new((Mutex::new(false), Condvar::new()));
         let state_clone = state.clone();
@@ -359,6 +405,7 @@ impl TimeoutGuard {
             }
             #[cfg(unix)]
             {
+                debug_assert!(interruptible, "Unix can always signal a command");
                 signal_process_tree(pid, nix::sys::signal::Signal::SIGTERM);
                 drop(guard);
                 let guard = lock.lock().unwrap();
@@ -371,9 +418,16 @@ impl TimeoutGuard {
             #[cfg(windows)]
             {
                 drop(guard);
-                // TODO: Windows lacks graceful shutdown parity with Unix.
-                // Currently force-kills immediately via taskkill /F with no grace period.
-                // Consider using GenerateConsoleCtrlEvent for CTRL_C_EVENT before force kill.
+                // Without a console to raise Ctrl+C on, there is nothing to wait for.
+                if interruptible && ctrl_c_group::interrupt(pid) {
+                    let guard = lock.lock().unwrap();
+                    let grace_deadline = std::time::Instant::now() + TIMEOUT_GRACE;
+                    let (_guard, cancelled) =
+                        wait_for_cancel_or_deadline(cvar, guard, grace_deadline);
+                    if cancelled {
+                        return;
+                    }
+                }
                 kill_process_tree(pid);
             }
         });
@@ -401,6 +455,23 @@ impl TimeoutGuard {
     fn timed_out(&self) -> Option<Duration> {
         (self.state.load(Ordering::Acquire) == GUARD_TIMED_OUT).then_some(self.timeout)
     }
+}
+
+/// Whether the timeout had fired by the time the command exited. Taken at exit,
+/// not after draining its pipes, which a background process can hold open past
+/// the deadline.
+fn timed_out_at_exit(guard: Option<&TimeoutGuard>) -> Option<Duration> {
+    guard.and_then(TimeoutGuard::timed_out)
+}
+
+/// How long a finished command ran before its timeout stopped it, if it did.
+/// On Windows a command stopped by Ctrl+C can exit cleanly, so its exit status
+/// cannot tell; on Unix only a failed command is reported as timed out.
+fn timed_out(at_exit: Option<Duration>, status: &ExitStatus) -> Option<Duration> {
+    if cfg!(unix) && status.success() {
+        return None;
+    }
+    at_exit
 }
 
 impl Drop for TimeoutGuard {
@@ -729,13 +800,8 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
-        let mut cmd = Command::new(program);
-        cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-
         Self {
-            cmd,
+            cmd: Command::new(program),
             pr: None,
             pr_arc: None,
             stdin: None,
@@ -751,6 +817,12 @@ impl<'a> CmdLineRunner<'a> {
             timeout: None,
             sandbox: None,
             inherit_env: true,
+            stdio: PendingStdio::defaults(),
+            kill_on_drop: false,
+            #[cfg(windows)]
+            raw_args: Vec::new(),
+            #[cfg(windows)]
+            ctrl_c_group: false,
         }
     }
 
@@ -860,17 +932,17 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
-        self.cmd.stdin(cfg);
+        self.stdio.stdin = Some(cfg.into());
         self
     }
 
     pub fn stdout<T: Into<Stdio>>(mut self, cfg: T) -> Self {
-        self.cmd.stdout(cfg);
+        self.stdio.stdout = Some(cfg.into());
         self
     }
 
     pub fn stderr<T: Into<Stdio>>(mut self, cfg: T) -> Self {
-        self.cmd.stderr(cfg);
+        self.stdio.stderr = Some(cfg.into());
         self
     }
 
@@ -943,11 +1015,10 @@ impl<'a> CmdLineRunner<'a> {
             )
         {
             self.cmd = command.into();
-            self.cmd
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+            self.stdio = PendingStdio::defaults();
             self.inherit_env = false;
+            #[cfg(windows)]
+            self.raw_args.clear();
         }
         self
     }
@@ -1070,6 +1141,7 @@ impl<'a> CmdLineRunner<'a> {
     pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         // tokio's `Command` exposes `raw_arg` as an inherent method, so the
         // `std::os::windows::process::CommandExt` trait import is unnecessary.
+        self.raw_args.push(self.cmd.as_std().get_args().len());
         self.cmd.raw_arg(arg);
         self
     }
@@ -1114,7 +1186,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
-        self.cmd.stdin(Stdio::piped());
+        self.stdio.stdin = Some(Stdio::piped());
         self.stdin = Some(input.into());
         self
     }
@@ -1129,6 +1201,7 @@ impl<'a> CmdLineRunner<'a> {
         }
         #[cfg(unix)]
         prepare_execute_child(self.cmd.as_std_mut());
+        self.interrupt_on_timeout();
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -1200,7 +1273,9 @@ impl<'a> CmdLineRunner<'a> {
             let _ = tx.send(ChildProcessOutput::ExitStatus(status));
         });
 
-        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
+        let timeout_guard = self
+            .timeout
+            .map(|t| TimeoutGuard::new(t, id, self.interruptible()));
 
         let mut failure_output = self.failure_output_tail();
         // The child's last word, kept for the error itself. The live output is
@@ -1208,6 +1283,7 @@ impl<'a> CmdLineRunner<'a> {
         // `--quiet` it was never printed at all.
         let mut last_stderr: Option<String> = None;
         let mut status = None;
+        let mut timed_out_by_exit = None;
         // Once ExitStatus arrives we set a deadline and switch to recv_timeout
         // so a grandchild that inherited the pipes can't hang us forever
         // waiting for EOF. See PIPE_DRAIN_TIMEOUT.
@@ -1261,6 +1337,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
+                    timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
                     drain_deadline = Some(Instant::now() + PIPE_DRAIN_TIMEOUT);
                 }
                 #[cfg(not(windows))]
@@ -1288,10 +1365,10 @@ impl<'a> CmdLineRunner<'a> {
 
         let status = status.unwrap();
 
+        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+            bail!("timed out after {duration:?}");
+        }
         if !status.success() {
-            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
-                bail!("timed out after {duration:?}");
-            }
             let mut output = failure_output.map_or_else(Vec::new, FailureOutputTail::into_output);
             if let Some(line) = last_stderr {
                 output.push((line, OutputSource::Stderr));
@@ -1324,6 +1401,7 @@ impl<'a> CmdLineRunner<'a> {
         }
         #[cfg(unix)]
         prepare_execute_child(self.cmd.as_std_mut());
+        self.interrupt_on_timeout();
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
@@ -1399,7 +1477,9 @@ impl<'a> CmdLineRunner<'a> {
         }
         drop(tx);
 
-        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
+        let timeout_guard = self
+            .timeout
+            .map(|t| TimeoutGuard::new(t, id, self.interruptible()));
         let mut failure_output = self.failure_output_tail();
         // The child's last word, kept for the error itself. The live output is
         // long gone by the time anyone reads `exit code 127`, and under
@@ -1472,6 +1552,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         let drain_deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
         loop {
             let remaining = drain_deadline.saturating_duration_since(Instant::now());
@@ -1523,10 +1604,10 @@ impl<'a> CmdLineRunner<'a> {
         }
 
         let status = status.unwrap();
+        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+            bail!("timed out after {duration:?}");
+        }
         if !status.success() {
-            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
-                bail!("timed out after {duration:?}");
-            }
             let mut output = failure_output.map_or_else(Vec::new, FailureOutputTail::into_output);
             if let Some(line) = last_stderr {
                 output.push((line, OutputSource::Stderr));
@@ -1554,7 +1635,7 @@ impl<'a> CmdLineRunner<'a> {
     ) -> Result<(String, String)> {
         let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
-        self.cmd.kill_on_drop(true);
+        self.kill_on_drop = true;
         // These commands are non-interactive probes: nothing reads stdin and
         // both output streams are piped. Detaching stdin from the terminal
         // means the child can never need the controlling TTY, so unlike
@@ -1562,7 +1643,7 @@ impl<'a> CmdLineRunner<'a> {
         // risking SIGTTIN. That guarantee matters here — cleanup on timeout,
         // an output-limit breach, or a stuck pipe relies on `killpg` reaching
         // descendants, not just the direct child.
-        self.cmd.stdin(Stdio::null());
+        self.stdio.stdin = Some(Stdio::null());
         #[cfg(unix)]
         if should_use_pgroup() {
             self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
@@ -1576,6 +1657,7 @@ impl<'a> CmdLineRunner<'a> {
                 });
             }
         }
+        self.interrupt_on_timeout();
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
@@ -1635,7 +1717,9 @@ impl<'a> CmdLineRunner<'a> {
         }
         drop(tx);
 
-        let timeout_guard = self.timeout.map(|timeout| TimeoutGuard::new(timeout, id));
+        let timeout_guard = self
+            .timeout
+            .map(|timeout| TimeoutGuard::new(timeout, id, self.interruptible()));
         let mut stdout_hasher = blake3::Hasher::new();
         let mut stderr_hasher = blake3::Hasher::new();
         let mut output_bytes = 0usize;
@@ -1685,6 +1769,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         let drain_deadline = Instant::now() + pipe_drain_timeout;
         loop {
             let remaining = drain_deadline.saturating_duration_since(Instant::now());
@@ -1719,10 +1804,10 @@ impl<'a> CmdLineRunner<'a> {
             guard.cancel();
         }
         let status = status.expect("command wait must complete");
+        if let Some(timeout) = timed_out(timed_out_by_exit, &status) {
+            bail!("timed out after {timeout:?}");
+        }
         if !status.success() {
-            if let Some(timeout) = timeout_guard.as_ref().and_then(|guard| guard.timed_out()) {
-                bail!("timed out after {timeout:?}");
-            }
             bail!("exited with non-zero status: {status}");
         }
         Ok((
@@ -1735,7 +1820,7 @@ impl<'a> CmdLineRunner<'a> {
     pub async fn read(mut self) -> Result<String> {
         let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
-        self.cmd.kill_on_drop(true);
+        self.kill_on_drop = true;
         #[cfg(unix)]
         if should_use_pgroup() {
             self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
@@ -1795,7 +1880,7 @@ impl<'a> CmdLineRunner<'a> {
     pub async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
         let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
-        self.cmd.kill_on_drop(true);
+        self.kill_on_drop = true;
         #[cfg(unix)]
         if should_use_pgroup() {
             self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
@@ -1865,20 +1950,24 @@ impl<'a> CmdLineRunner<'a> {
         // directly. Piped stdout/stderr would deadlock if the child produces >64KB
         // of output since nobody reads the pipes.
         if self.stdin.is_none() {
-            self.cmd.stdin(Stdio::inherit());
+            self.stdio.stdin = Some(Stdio::inherit());
         }
-        self.cmd.stdout(Stdio::inherit());
-        self.cmd.stderr(Stdio::inherit());
+        self.stdio.stdout = Some(Stdio::inherit());
+        self.stdio.stderr = Some(Stdio::inherit());
+        self.interrupt_on_timeout();
         let mut cp = self.spawn_with_etxtbsy_retry()?;
-        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
+        let timeout_guard = self
+            .timeout
+            .map(|t| TimeoutGuard::new(t, cp.id(), self.interruptible()));
         let status = cp.wait()?;
+        let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
+        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+            bail!("timed out after {duration:?}");
+        }
         if !status.success() {
-            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
-                bail!("timed out after {duration:?}");
-            }
             return self.on_error(vec![], status);
         }
         Ok(())
@@ -1889,10 +1978,11 @@ impl<'a> CmdLineRunner<'a> {
         is_cancelled: impl Fn() -> bool + Send + Sync,
     ) -> Result<()> {
         if self.stdin.is_none() {
-            self.cmd.stdin(Stdio::inherit());
+            self.stdio.stdin = Some(Stdio::inherit());
         }
-        self.cmd.stdout(Stdio::inherit());
-        self.cmd.stderr(Stdio::inherit());
+        self.stdio.stdout = Some(Stdio::inherit());
+        self.stdio.stderr = Some(Stdio::inherit());
+        self.interrupt_on_timeout();
         let mut cp = self.spawn_async_with_etxtbsy_retry().await?;
         let id = cp.id().unwrap_or_default();
         if is_cancelled() {
@@ -1901,27 +1991,72 @@ impl<'a> CmdLineRunner<'a> {
             #[cfg(windows)]
             kill_process_tree(id);
         }
-        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
+        let timeout_guard = self
+            .timeout
+            .map(|t| TimeoutGuard::new(t, id, self.interruptible()));
         let status = cp.wait().await?;
+        let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
+        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+            bail!("timed out after {duration:?}");
+        }
         if !status.success() {
-            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
-                bail!("timed out after {duration:?}");
-            }
             return self.on_error(vec![], status);
         }
         Ok(())
+    }
+
+    /// Ask for a Ctrl+C group leader, which only the paths whose [`TimeoutGuard`]
+    /// interrupts a timed-out command need.
+    #[cfg(windows)]
+    fn interrupt_on_timeout(&mut self) {
+        self.ctrl_c_group = true;
+    }
+
+    #[cfg(unix)]
+    fn interrupt_on_timeout(&mut self) {}
+
+    /// Hand the stdio and drop behaviour held on this runner to the command about
+    /// to spawn. On Windows a command with a timeout that asked to be interrupted is
+    /// spawned through a Ctrl+C group leader, returned here; `self.cmd` stays as is
+    /// for error messages.
+    fn prepare_spawn(&mut self) -> Option<Command> {
+        #[cfg(windows)]
+        {
+            self.ctrl_c_group &= self.timeout.is_some();
+            if self.ctrl_c_group {
+                let mut leader = ctrl_c_group::wrap(&self.cmd, self.inherit_env, &self.raw_args);
+                self.stdio.apply(&mut leader);
+                leader.kill_on_drop(self.kill_on_drop);
+                return Some(leader);
+            }
+        }
+        self.stdio.apply(&mut self.cmd);
+        self.cmd.kill_on_drop(self.kill_on_drop);
+        None
+    }
+
+    #[cfg(windows)]
+    fn interruptible(&self) -> bool {
+        self.ctrl_c_group
+    }
+
+    #[cfg(unix)]
+    fn interruptible(&self) -> bool {
+        true
     }
 
     /// Retry spawning a process if it fails with ETXTBSY (Text file busy).
     /// This can happen on Linux when executing a binary that was just written/extracted,
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        let mut leader = self.prepare_spawn();
         let mut attempt = 0;
         loop {
-            match self.cmd.as_std_mut().spawn() {
+            let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
+            match cmd.as_std_mut().spawn() {
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
@@ -1935,9 +2070,11 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
+        let mut leader = self.prepare_spawn();
         let mut attempt = 0;
         loop {
-            match self.cmd.spawn() {
+            let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
+            match cmd.spawn() {
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
@@ -2039,13 +2176,10 @@ impl<'a> CmdLineRunner<'a> {
             }
             // Match CmdLineRunner::new() defaults for stdio.
             // execute() reads from piped stdout/stderr; execute_raw() overrides to inherit.
+            self.stdio = PendingStdio::defaults();
             if self.stdin.is_some() {
-                new_cmd.stdin(Stdio::piped());
-            } else {
-                new_cmd.stdin(Stdio::null());
+                self.stdio.stdin = Some(Stdio::piped());
             }
-            new_cmd.stdout(Stdio::piped());
-            new_cmd.stderr(Stdio::piped());
             if let Some(dir) = self.cmd.as_std().get_current_dir() {
                 new_cmd.current_dir(dir);
             }

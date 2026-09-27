@@ -53,6 +53,12 @@ fn main() -> ExitCode {
     if env::invoked_as_self_replace_helper() {
         return ExitCode::SUCCESS;
     }
+    // A timed-out command on Windows runs under this binary as its Ctrl+C group
+    // leader, and exits with the command's full 32-bit exit code.
+    #[cfg(windows)]
+    if let Some(code) = mise_util::cmd::ctrl_c_group::try_run() {
+        mise::exit::exit_with_windows_status(code as u32);
+    }
     // Embedded aube lifecycle shims re-exec this binary with private commands
     // (notably `__node-gyp-bootstrap`). Hand those to aube before mise's
     // naked-run rewrite / clap parser can claim them.
