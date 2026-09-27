@@ -53,13 +53,7 @@ pub struct ManagedDirectoryTomlConfig {
 
 pub use mise_bootstrap::ManagedFilePhase;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ManagedState {
-    #[default]
-    Present,
-    Absent,
-}
+pub use mise_bootstrap::ManagedState;
 
 #[derive(Clone, Debug)]
 pub struct ManagedFileRequest {

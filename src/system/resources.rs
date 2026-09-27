@@ -138,8 +138,7 @@ pub async fn plan(
     for directory in &directories {
         let resource = directory.plan()?;
         plan.insert(resource)?;
-        add_account_dependencies(
-            &mut plan,
+        plan.add_account_dependencies(
             &ResourceId::new("directory", directory.path.to_string_lossy()),
             directory.state,
             directory.owner.as_deref(),
@@ -158,42 +157,19 @@ pub async fn plan(
             continue;
         };
         let id = ResourceId::new("directory", directory.path.to_string_lossy());
-        let parent_id = ResourceId::new("directory", parent.to_string_lossy());
-        match (directory.state, parent_state) {
-            (
-                super::managed_files::ManagedState::Present,
-                super::managed_files::ManagedState::Present,
-            ) => {
-                plan.add_dependency(&id, parent_id)?;
-            }
-            (
-                super::managed_files::ManagedState::Absent,
-                super::managed_files::ManagedState::Absent,
-            ) => {
-                plan.add_dependency(&parent_id, id)?;
-            }
-            (
-                super::managed_files::ManagedState::Present,
-                super::managed_files::ManagedState::Absent,
-            ) => {
-                bail!(
-                    "directory '{}' cannot be present while managed parent '{}' is absent",
-                    directory.path.display(),
-                    parent.display()
-                );
-            }
-            (
-                super::managed_files::ManagedState::Absent,
-                super::managed_files::ManagedState::Present,
-            ) => {}
-        }
+        plan.add_managed_parent_dependency(
+            &id,
+            &directory.path,
+            directory.state,
+            parent,
+            *parent_state,
+        )?;
     }
     for file in files {
         let resource = file.plan()?;
         let id = resource.id.clone();
         plan.insert(resource)?;
-        add_account_dependencies(
-            &mut plan,
+        plan.add_account_dependencies(
             &id,
             file.state,
             file.owner.as_deref(),
@@ -207,35 +183,7 @@ pub async fn plan(
             .skip(1)
             .find_map(|parent| directory_states.get_key_value(parent))
         {
-            let parent_id = ResourceId::new("directory", parent.to_string_lossy());
-            match (file.state, parent_state) {
-                (
-                    super::managed_files::ManagedState::Present,
-                    super::managed_files::ManagedState::Present,
-                ) => {
-                    plan.add_dependency(&id, parent_id)?;
-                }
-                (
-                    super::managed_files::ManagedState::Absent,
-                    super::managed_files::ManagedState::Absent,
-                ) => {
-                    plan.add_dependency(&parent_id, id)?;
-                }
-                (
-                    super::managed_files::ManagedState::Present,
-                    super::managed_files::ManagedState::Absent,
-                ) => {
-                    bail!(
-                        "file '{}' cannot be present while managed parent '{}' is absent",
-                        file.path.display(),
-                        parent.display()
-                    );
-                }
-                (
-                    super::managed_files::ManagedState::Absent,
-                    super::managed_files::ManagedState::Present,
-                ) => {}
-            }
+            plan.add_managed_parent_dependency(&id, &file.path, file.state, parent, *parent_state)?;
         }
     }
     for resource in unavailable_files {
@@ -251,7 +199,7 @@ pub async fn plan(
             })
         })
         .collect::<Vec<_>>();
-    add_file_phase_ordering(&mut plan, &builtin_packages)?;
+    plan.add_file_phase_ordering(&builtin_packages)?;
     let service_dependencies = plan
         .ids()
         .filter(|id| matches!(id.kind.as_str(), "package" | "file" | "directory"))
@@ -344,80 +292,6 @@ pub async fn plan(
     Ok(plan)
 }
 
-fn add_file_phase_ordering(plan: &mut BootstrapPlan, packages: &[ResourceId]) -> Result<()> {
-    use mise_bootstrap::ManagedFilePhase;
-
-    let early = plan
-        .values()
-        .filter(|resource| resource.phase == Some(ManagedFilePhase::PrePackages))
-        .map(|resource| resource.id.clone())
-        .collect::<Vec<_>>();
-    let late = plan
-        .values()
-        .filter(|resource| resource.phase == Some(ManagedFilePhase::PostPackages))
-        .map(|resource| resource.id.clone())
-        .collect::<Vec<_>>();
-    for package in packages {
-        for file in &early {
-            plan.add_ordering(package, file.clone())?;
-        }
-    }
-    for file in &late {
-        for dependency in packages.iter().chain(&early) {
-            plan.add_ordering(file, dependency.clone())?;
-        }
-    }
-    // Installed and pending plugin managers both run after the file phases.
-    let plugin_packages = plan
-        .ids()
-        .filter(|id| id.kind == "package" && !packages.contains(id))
-        .cloned()
-        .collect::<Vec<_>>();
-    for package in plugin_packages {
-        for predecessor in early.iter().chain(&late).chain(packages) {
-            plan.add_ordering(&package, predecessor.clone())?;
-        }
-    }
-    Ok(())
-}
-
-fn add_account_dependencies(
-    plan: &mut BootstrapPlan,
-    resource: &ResourceId,
-    state: super::managed_files::ManagedState,
-    owner: Option<&str>,
-    group: Option<&str>,
-    user_states: &HashMap<String, super::accounts::AccountState>,
-    group_states: &HashMap<String, super::accounts::AccountState>,
-) -> Result<()> {
-    if state != super::managed_files::ManagedState::Present {
-        return Ok(());
-    }
-    if let Some(owner) = owner {
-        match user_states.get(owner) {
-            Some(super::accounts::AccountState::Present) => {
-                plan.add_dependency(resource, ResourceId::new("user", owner))?;
-            }
-            Some(super::accounts::AccountState::Absent) => bail!(
-                "bootstrap resource '{resource}' requires owner '{owner}', but that user is absent"
-            ),
-            None => {}
-        }
-    }
-    if let Some(group) = group {
-        match group_states.get(group) {
-            Some(super::accounts::AccountState::Present) => {
-                plan.add_dependency(resource, ResourceId::new("group", group))?;
-            }
-            Some(super::accounts::AccountState::Absent) => bail!(
-                "bootstrap resource '{resource}' requires group '{group}', but that group is absent"
-            ),
-            None => {}
-        }
-    }
-    Ok(())
-}
-
 fn desired_package(request: &super::packages::PackageRequest) -> String {
     if request.desired == super::packages::PackageDesiredState::Absent {
         return "absent".to_string();
@@ -496,43 +370,6 @@ fn package_resource_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn file_phases_order_resources_around_packages() {
-        use mise_bootstrap::ManagedFilePhase;
-
-        let mut plan = BootstrapPlan::default();
-        let late = ResourceId::new("file", "/etc/service.conf");
-        let package = ResourceId::new("package", "apt:vendor");
-        let early = ResourceId::new("file", "/etc/apt/sources.list.d/vendor.sources");
-        let plugin = ResourceId::new("package", "custom:vendor");
-        for (id, phase) in [
-            (plugin.clone(), None),
-            (late.clone(), Some(ManagedFilePhase::PostPackages)),
-            (package.clone(), None),
-            (early.clone(), Some(ManagedFilePhase::PrePackages)),
-        ] {
-            let mut resource = ResourcePlan::new(id, "missing", "present", ResourceAction::Create);
-            resource.phase = phase;
-            plan.insert(resource).unwrap();
-        }
-        add_file_phase_ordering(&mut plan, std::slice::from_ref(&package)).unwrap();
-        let output = plan.output().unwrap();
-        assert_eq!(
-            output
-                .resources
-                .iter()
-                .map(|resource| &resource.id)
-                .collect::<Vec<_>>(),
-            [&early, &package, &late, &plugin]
-        );
-        assert!(
-            output
-                .resources
-                .iter()
-                .all(|resource| resource.depends_on.is_empty())
-        );
-    }
 
     fn package_request(version: Option<&str>) -> PackageRequest {
         PackageRequest {
