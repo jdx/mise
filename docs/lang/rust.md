@@ -63,7 +63,8 @@ locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to a
 
 So that `cargo +nightly` keeps working, mise also gives rustup a `nightly` toolchain matching the dated one when rustup's
 `nightly` is missing, older, or the same nightly without all of its components and targets. Its files are reflinked, or hardlinked on filesystems without copy-on-write clones, so it
-takes almost no extra disk space. After that it belongs to rustup: `rustup update nightly` can move it forward without
+takes almost no extra disk space. A rustup `nightly` with components or targets you added through rustup is never
+replaced, since that would remove them. After that it belongs to rustup: `rustup update nightly` can move it forward without
 changing the dated toolchain mise installed.
 
 To keep a specific nightly instead, configure its date explicitly:

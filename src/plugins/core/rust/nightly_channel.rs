@@ -27,9 +27,10 @@ use crate::file;
 const CHANNEL_MANIFEST: &str = "lib/rustlib/multirust-channel-manifest.toml";
 const COMPONENTS: &str = "lib/rustlib/components";
 
-/// Makes `toolchains/<alias>` a copy of `toolchains/<dated>` unless rustup
-/// already has a newer nightly there, or the same nightly with every component
-/// and target the dated toolchain has. Returns whether the alias was written.
+/// Makes `toolchains/<alias>` a copy of `toolchains/<dated>` when it is
+/// missing, or when it is an older nightly (or the same nightly lacking some of
+/// the dated toolchain's components and targets) and replacing it would not
+/// drop anything added to it with rustup. Returns whether the alias was written.
 pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<bool> {
     let source = toolchains.join(dated);
     let alias_path = toolchains.join(alias);
@@ -41,6 +42,14 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         return Ok(false);
     };
     match fs::symlink_metadata(&alias_path) {
+        // Components or targets added with `rustup component add` or
+        // `rustup target add` would be lost, so rustup keeps owning updates.
+        Ok(meta) if meta.is_dir() && !has_components_of(&source, &alias_path) => {
+            debug!(
+                "leaving rustup {alias} alone: it has components or targets mise did not install"
+            );
+            return Ok(false);
+        }
         Ok(meta) if meta.is_dir() => match toolchain_nightly(&alias_path) {
             // Both are validated `nightly-YYYY-MM-DD` names, so string order is
             // date order.
@@ -73,7 +82,19 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
     let staged = staging.path().join(alias);
     clone_toolchain(&source, &staged, true)?;
     if alias_path.exists() {
-        replace_dir(&staged, &alias_path, &staging.path().join("previous"))?;
+        let previous = staging.path().join("previous");
+        if let Err(err) = replace_dir(&staged, &alias_path, &previous) {
+            if previous.exists() && !alias_path.exists() {
+                // Restoring failed too: keep the staging directory so rustup's
+                // toolchain is not deleted along with it.
+                let kept = staging.keep();
+                return Err(err.wrap_err(format!(
+                    "rustup's previous {alias} toolchain was left at {}",
+                    file::display_path(kept.join("previous"))
+                )));
+            }
+            return Err(err);
+        }
     } else {
         fs::rename(&staged, &alias_path)
             .wrap_err_with(|| format!("failed to move {}", file::display_path(&alias_path)))?;
@@ -158,6 +179,7 @@ fn exchange(_a: &Path, _b: &Path) -> io::Result<()> {
 }
 
 /// Whether `toolchain` has every component and target listed for `source`.
+/// rustup lists targets as `rust-std-<target>` components.
 fn has_components_of(toolchain: &Path, source: &Path) -> bool {
     let read = |root: &Path| fs::read_to_string(root.join(COMPONENTS)).unwrap_or_default();
     let installed = read(toolchain);
@@ -396,6 +418,26 @@ mod tests {
         assert!(dest.join("new").exists());
         assert!(previous.join("old").exists());
         assert!(!staged.exists());
+    }
+
+    #[test]
+    fn refresh_keeps_an_older_alias_with_components_added_through_rustup() {
+        let dir = tempfile::tempdir().unwrap();
+        let toolchains = dir.path().join("toolchains");
+        write_toolchain(&toolchains, &dated("2026-09-26"), "2026-09-26");
+        write_toolchain(&toolchains, &alias(), "2026-07-04");
+        fs::write(
+            toolchains.join(alias()).join(COMPONENTS),
+            "rustc\nrust-std-wasm32-unknown-unknown\n",
+        )
+        .unwrap();
+
+        assert!(!refresh(&toolchains, &dated("2026-09-26"), &alias()).unwrap());
+
+        assert_eq!(
+            toolchain_nightly(&toolchains.join(alias())).as_deref(),
+            Some("nightly-2026-07-04")
+        );
     }
 
     #[test]
