@@ -466,6 +466,9 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     Ok(())
 }
 
+/// Checks whether the current version is older than a backend-selected candidate.
+/// Uses SemVer precedence when possible, then the general version comparison;
+/// versions that cannot be ordered are considered outdated when they differ.
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {
     if let Some(ordering) = semver_precedence_cmp(current, latest) {
         return ordering == Ordering::Less;
