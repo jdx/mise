@@ -183,8 +183,10 @@ public static class MiseShimLoopJob {
 
             $exited = $process.WaitForExit(60000)
             if (-not $exited) {
-                [MiseShimLoopJob]::TerminateJobObject($job, 1) | Out-Null
-                $process.WaitForExit()
+                $terminated = [MiseShimLoopJob]::TerminateJobObject($job, 1)
+                if (-not ($terminated -and $process.WaitForExit(10000))) {
+                    throw "the two shims alternated and the job could not be terminated"
+                }
             }
             $exited | Should -BeTrue -Because "the two shims alternated: $($stderr.Result)"
             $process.ExitCode | Should -Be 0 -Because $stderr.Result
