@@ -26,6 +26,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -340,7 +341,9 @@ impl<'a> NpmOptions<'a> {
 /// cache. The install prefix can outlive that cache, leaving the directory in
 /// place while every package link is dangling. Check only the immediate
 /// virtual-store entries: each represents a whole package tree, so this stays
-/// cheap enough for mise's installed-version fast path.
+/// cheap enough for mise's installed-version fast path. Only symlinks can
+/// dangle, so the directory listing's file type settles every other entry
+/// without a `stat`.
 fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
     [".mise", ".aube"].iter().all(|name| {
         let virtual_store = install_path.join("node_modules").join(name);
@@ -349,14 +352,38 @@ fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
             Err(_) => return false,
             Ok(_) => {}
         }
-        let entries = match std::fs::read_dir(&virtual_store) {
+        let mut entries = match std::fs::read_dir(&virtual_store) {
             Ok(entries) => entries,
             Err(_) => return false,
         };
-        entries
-            .map(|entry| entry.map(|entry| entry.path()))
-            .all(|path| path.is_ok_and(|path| path.try_exists().unwrap_or(false)))
+        entries.all(|entry| {
+            entry.is_ok_and(|entry| match entry.file_type() {
+                Ok(file_type) if !file_type.is_symlink() => true,
+                _ => entry.path().try_exists().unwrap_or(false),
+            })
+        })
     })
+}
+
+/// Install prefixes already found healthy in this process. One command asks
+/// about the same prefix many times (hook-env checks each npm tool about eight
+/// times), and a large tree has hundreds of entries to list. Only healthy
+/// results are kept, so a repair in this process is still seen, and an
+/// uninstalled prefix fails the existence check before this one.
+static HEALTHY_AUBE_INSTALLS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Default::default);
+
+fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
+    if HEALTHY_AUBE_INSTALLS.lock().unwrap().contains(install_path) {
+        return true;
+    }
+    let healthy = aube_install_tree_is_healthy(install_path);
+    if healthy {
+        HEALTHY_AUBE_INSTALLS
+            .lock()
+            .unwrap()
+            .insert(install_path.to_path_buf());
+    }
+    healthy
 }
 
 #[async_trait]
@@ -386,7 +413,7 @@ impl Backend for NPMBackend {
     }
 
     fn is_install_path_healthy(&self, install_path: &Path) -> bool {
-        aube_install_tree_is_healthy(install_path)
+        aube_install_tree_is_healthy_cached(install_path)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
