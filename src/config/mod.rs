@@ -2290,11 +2290,16 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     if let Some(glob) = results.get(&key) {
         return Ok(glob.clone());
     }
+    let full_pattern = dir.join(pattern);
+    let full_pattern = full_pattern.to_string_lossy();
     let paths = if glob_parent_exists(dir, pattern) {
-        glob::glob(dir.join(pattern).to_string_lossy().as_ref())?
+        glob::glob(full_pattern.as_ref())?
             .filter_map(|p| p.ok())
             .collect_vec()
     } else {
+        // Still reject a malformed pattern, as `glob::glob` would, so callers
+        // can report it.
+        glob::Pattern::new(full_pattern.as_ref())?;
         vec![]
     };
     results.insert(key, paths.clone());
@@ -2313,7 +2318,11 @@ fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
     let literal = components
         .iter()
         .take(components.len().saturating_sub(1))
-        .take_while(|c| !c.as_os_str().to_string_lossy().contains(['*', '?', '[', ']']))
+        .take_while(|c| {
+            !c.as_os_str()
+                .to_string_lossy()
+                .contains(['*', '?', '[', ']'])
+        })
         .collect::<PathBuf>();
     literal.as_os_str().is_empty() || dir.join(literal).is_dir()
 }
@@ -8241,6 +8250,8 @@ mod tests {
             glob(tmp.path(), ".mise/conf.d/*/mise.toml")?,
             vec![confd.join("node/mise.toml")]
         );
+        // A malformed pattern is an error even when its directory is missing.
+        assert!(glob(missing.path(), "missing/[unclosed/*.toml").is_err());
         // A pattern with no wildcard names a file, not a directory to check.
         fs::write(tmp.path().join("mise.toml"), "")?;
         assert_eq!(
