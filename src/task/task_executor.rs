@@ -2223,7 +2223,7 @@ impl TaskExecutor {
             .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
             .chain(once("__MISE_DIFF".to_string()))
             .collect();
-        if !self.timings {
+        if !self.timings || self.no_timings {
             Self::insert_env_excluded_from_nested_mise_diff(
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
