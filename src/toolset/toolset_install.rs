@@ -391,7 +391,7 @@ impl Toolset {
         let failed_backends = attempted_failures
             .iter()
             .filter_map(|tr| tr.backend().ok())
-            .unique_by(|backend| backend.ba().installs_path.clone())
+            .unique_by(|backend| backend.ba().installs_path().to_path_buf())
             .collect_vec();
 
         // Update footer for errors found before install tasks are spawned.

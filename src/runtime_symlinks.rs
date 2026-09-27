@@ -75,7 +75,7 @@ pub(crate) async fn migrate_real_dirs(config: &Config) -> Result<()> {
 /// out when we actually need to change something there.
 fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
     let ba = backend.ba();
-    let mut dirs = vec![ba.installs_path.clone()];
+    let mut dirs = vec![ba.installs_path().to_path_buf()];
     let tool_dir_name = ba.tool_dir_name();
     for shared_dir in env::shared_install_dirs() {
         let dir = shared_dir.join(&tool_dir_name);
@@ -270,7 +270,7 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
 /// marker is keyed by the tool's name, not by the install dir's basename, which
 /// install state can map to a differently named directory.
 fn is_install_incomplete(backend: &Arc<dyn Backend>, v: &str) -> bool {
-    install_state::incomplete_file_path(&backend.ba().short, v).exists()
+    install_state::incomplete_file_path(backend.ba(), v).exists()
 }
 
 /// Real install directories a rebuild must never replace with a selector
@@ -452,7 +452,7 @@ fn is_temporary_runtime_label(v: &str) -> bool {
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
-    remove_missing_symlinks_in_dir(&backend.ba().installs_path)
+    remove_missing_symlinks_in_dir(backend.ba().installs_path())
 }
 
 pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
@@ -537,7 +537,7 @@ mod tests {
     /// Leaves version `v` of `backend` the way an interrupted install does:
     /// the incomplete marker is still in the cache.
     fn interrupted_install(backend: &Arc<dyn Backend>, v: &str) -> Result<InterruptedInstall> {
-        let marker = install_state::incomplete_file_path(&backend.ba().short, v);
+        let marker = install_state::incomplete_file_path(backend.ba(), v);
         fs::create_dir_all(marker.parent().unwrap())?;
         fs::write(&marker, "")?;
         Ok(InterruptedInstall(

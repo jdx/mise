@@ -920,7 +920,7 @@ mod tests {
             None,
             BackendResolution::new(true),
         );
-        backend.installs_path = installs_path.to_path_buf();
+        backend.set_installs_path(installs_path.to_path_buf());
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         ToolVersion::new(request, version.into())
     }
