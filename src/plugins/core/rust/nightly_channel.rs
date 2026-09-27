@@ -45,6 +45,7 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         );
         return Ok(false);
     };
+    let observed = AliasState::read(&alias_path);
     match fs::symlink_metadata(&alias_path) {
         // Components or targets added with `rustup component add` or
         // `rustup target add` would be lost, so rustup keeps owning updates.
@@ -90,18 +91,9 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
         fs::read(source.join(COMPONENTS)).unwrap_or_default(),
     )?;
     if alias_path.exists() {
-        let previous = staging.path().join("previous");
-        if let Err(err) = replace_dir(&staged, &alias_path, &previous) {
-            if previous.exists() && !alias_path.exists() {
-                // Restoring failed too: keep the staging directory so rustup's
-                // toolchain is not deleted along with it.
-                let kept = staging.keep();
-                return Err(err.wrap_err(format!(
-                    "rustup's previous {alias} toolchain was left at {}",
-                    file::display_path(kept.join("previous"))
-                )));
-            }
-            return Err(err);
+        if !replace_if_unchanged(staging, alias, &alias_path, &observed)? {
+            debug!("leaving rustup {alias} alone: rustup changed it while mise was copying");
+            return Ok(false);
         }
     } else {
         fs::rename(&staged, &alias_path)
@@ -115,6 +107,64 @@ pub(super) fn refresh(toolchains: &Path, dated: &str, alias: &str) -> Result<boo
             Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(err.into()),
             _ => {}
         }
+    }
+    Ok(true)
+}
+
+/// rustup's record of what a toolchain holds, compared to notice rustup
+/// changing it while mise copies the dated toolchain. rustup has no lock mise
+/// could take instead.
+#[derive(Debug, PartialEq, Eq)]
+struct AliasState {
+    components: Option<Vec<u8>>,
+    manifest: Option<Vec<u8>>,
+}
+
+impl AliasState {
+    fn read(toolchain: &Path) -> Self {
+        Self {
+            components: fs::read(toolchain.join(COMPONENTS)).ok(),
+            manifest: fs::read(toolchain.join(CHANNEL_MANIFEST)).ok(),
+        }
+    }
+}
+
+/// Replaces `dest` with the copy staged at `staging/<alias>`, but only if
+/// `dest` still matches `observed`, the state the refresh decision was based
+/// on. Returns false, leaving `dest` as it is, when rustup changed it in the
+/// meantime. Whenever rustup's old toolchain cannot be put back, the staging
+/// directory holding it is kept rather than deleted.
+fn replace_if_unchanged(
+    staging: tempfile::TempDir,
+    alias: &str,
+    dest: &Path,
+    observed: &AliasState,
+) -> Result<bool> {
+    let staged = staging.path().join(alias);
+    let previous = staging.path().join("previous");
+    if AliasState::read(dest) != *observed {
+        return Ok(false);
+    }
+    let keep = |staging: tempfile::TempDir, err: eyre::Report, name: &str| {
+        let kept = staging.keep();
+        err.wrap_err(format!(
+            "rustup's previous {alias} toolchain was left at {}",
+            file::display_path(kept.join(name))
+        ))
+    };
+    if let Err(err) = replace_dir(&staged, dest, &previous) {
+        if previous.exists() && !dest.exists() {
+            return Err(keep(staging, err, "previous"));
+        }
+        return Err(err);
+    }
+    // After an atomic swap the replaced toolchain is at `staged`. If rustup
+    // finished a change after the check above, swap it back.
+    if staged.exists() && AliasState::read(&staged) != *observed {
+        if let Err(err) = exchange(&staged, dest) {
+            return Err(keep(staging, err.into(), alias));
+        }
+        return Ok(false);
     }
     Ok(true)
 }
@@ -448,6 +498,33 @@ mod tests {
         // An atomic swap leaves the old directory at `staged`, the rename
         // fallback at `previous`.
         assert!(staged.join("old").exists() || previous.join("old").exists());
+    }
+
+    #[test]
+    fn replace_if_unchanged_leaves_an_alias_rustup_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        write_toolchain(dir.path(), &dated("2026-09-26"), "2026-09-26");
+        write_toolchain(dir.path(), &alias(), "2026-07-04");
+        let dest = dir.path().join(alias());
+        let observed = AliasState::read(&dest);
+        // `rustup component add rust-src --toolchain nightly` finishes after
+        // the refresh decision.
+        fs::write(dest.join(COMPONENTS), "rustc\nrust-src\n").unwrap();
+
+        let staging = tempfile::tempdir_in(dir.path()).unwrap();
+        clone_toolchain(
+            &dir.path().join(dated("2026-09-26")),
+            &staging.path().join(alias()),
+            true,
+        )
+        .unwrap();
+        let replaced = replace_if_unchanged(staging, &alias(), &dest, &observed).unwrap();
+
+        assert!(!replaced);
+        assert_eq!(
+            fs::read_to_string(dest.join(COMPONENTS)).unwrap(),
+            "rustc\nrust-src\n"
+        );
     }
 
     #[test]
