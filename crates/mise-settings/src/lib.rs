@@ -373,6 +373,7 @@ where
         .collect())
 }
 
+mod accessors;
 mod cache;
 pub use cache::{Loader, clear, is_loaded, last_cached, load_defaults, set_loader, store};
 
