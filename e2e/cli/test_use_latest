@@ -18,13 +18,17 @@ touch mise.lock
 assert "mise use dummy@1 tiny@1"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.dummy]]
 version = \"1.0.0\"
 backend = \"asdf:dummy\"
+specifiers = [\"1\"]
 
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"1\"]"
 assert "mise tool dummy --requested" "1"
 assert "mise tool tiny --requested" "1"
 assert "mise tool dummy --active" "1.0.0"
@@ -33,13 +37,17 @@ assert "mise tool tiny --active" "1.0.0"
 assert "mise use dummy@latest"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.dummy]]
 version = \"2.0.0\"
 backend = \"asdf:dummy\"
+specifiers = [\"latest\"]
 
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"1\"]"
 assert "mise tool dummy --requested" "latest"
 assert "mise tool tiny --requested" "1"
 assert "mise tool dummy --active" "2.0.0"

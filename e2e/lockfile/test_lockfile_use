@@ -12,34 +12,46 @@ assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"1\"]"
 
 assert "mise use tiny@1"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.tiny]]
 version = \"1.0.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"1\"]"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 
 assert "mise up tiny"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.tiny]]
 version = \"1.1.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"1\"]"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "1"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.1.0"
 
 assert "mise up tiny --bump"
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 3
+
 [[tools.tiny]]
 version = \"3.1.0\"
-backend = \"vfox:tiny\""
+backend = \"vfox:tiny\"
+specifiers = [\"3\"]"
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "3"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "3.1.0"
 

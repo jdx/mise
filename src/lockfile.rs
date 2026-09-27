@@ -76,7 +76,8 @@ pub fn invalidate_caches() {
     }
 }
 
-const CURRENT_LOCKFILE_VERSION: u32 = 2;
+pub const CURRENT_LOCKFILE_VERSION: u32 = 3;
+const FORGE_IDS_LOCKFILE_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AubeLock {
@@ -850,13 +851,34 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
-                let repository_id = match t.remove("repository_id") {
-                    Some(toml::Value::String(s)) => Some(s),
-                    _ => None,
-                };
-                let repository_owner_id = match t.remove("repository_owner_id") {
-                    Some(toml::Value::String(s)) => Some(s),
-                    _ => None,
+                if t.contains_key("repository_id") || t.contains_key("repository_owner_id") {
+                    bail!(
+                        "flat repository_id and repository_owner_id lockfile fields are unsupported; use repository_ids in lockfile revision 3"
+                    );
+                }
+                let (repository_id, repository_owner_id) = match t.remove("repository_ids") {
+                    Some(toml::Value::Table(mut ids)) => {
+                        let repository_id = ids
+                            .remove("repository")
+                            .map(|value| value.try_into())
+                            .transpose()?;
+                        let repository_owner_id = ids
+                            .remove("owner")
+                            .map(|value| value.try_into())
+                            .transpose()?;
+                        if !ids.is_empty() {
+                            bail!(
+                                "unrecognized repository_ids fields in lockfile: {:?}",
+                                ids.keys().collect::<Vec<_>>()
+                            );
+                        }
+                        if repository_id.is_none() {
+                            bail!("repository_ids requires a repository ID");
+                        }
+                        (repository_id, repository_owner_id)
+                    }
+                    Some(_) => bail!("repository_ids must be a table in lockfile"),
+                    None => (None, None),
                 };
                 let additional_artifacts = match t.remove("additional_artifacts") {
                     Some(toml::Value::Array(values)) => values
@@ -949,11 +971,13 @@ impl From<PlatformInfo> for toml::Value {
         if let Some(attested_by) = platform_info.attested_by {
             table.insert("attested_by".to_string(), attested_by.into());
         }
-        if let Some(id) = platform_info.repository_id {
-            table.insert("repository_id".to_string(), id.into());
-        }
-        if let Some(id) = platform_info.repository_owner_id {
-            table.insert("repository_owner_id".to_string(), id.into());
+        if let Some(repository_id) = platform_info.repository_id {
+            let mut ids = toml::Table::new();
+            ids.insert("repository".to_string(), repository_id.into());
+            if let Some(owner_id) = platform_info.repository_owner_id {
+                ids.insert("owner".to_string(), owner_id.into());
+            }
+            table.insert("repository_ids".to_string(), ids.into());
         }
         toml::Value::Table(table)
     }
@@ -975,6 +999,21 @@ mod signer_round_trip {
         };
         let value: toml::Value = info.clone().into();
         assert_eq!(PlatformInfo::try_from(value).unwrap(), info);
+        let repository_only = PlatformInfo {
+            repository_owner_id: None,
+            ..info.clone()
+        };
+        let value: toml::Value = repository_only.clone().into();
+        assert_eq!(PlatformInfo::try_from(value).unwrap(), repository_only);
+        for invalid in [
+            toml::Value::Table(toml::toml! { repository_ids = { owner = "216188" } }),
+            toml::Value::Table(toml::toml! { repository_ids = "922514152" }),
+            toml::Value::Table(toml::toml! { repository_ids = { repository = 922514152 } }),
+            toml::Value::Table(toml::toml! { repository_id = "922514152" }),
+            toml::Value::Table(toml::toml! { repository_owner_id = "216188" }),
+        ] {
+            assert!(PlatformInfo::try_from(invalid).is_err());
+        }
         assert_eq!(
             info.without_artifact_data().repository_id,
             info.repository_id,
@@ -1175,6 +1214,12 @@ impl Lockfile {
         let content = file::read_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         let mut table: toml::Table = toml::from_str(&content)?;
+        if table.is_empty() {
+            return Ok(Lockfile {
+                generated_header_url,
+                ..Default::default()
+            });
+        }
         let lockfile_version = table
             .remove("lockfile_version")
             .map(|value| value.try_into())
@@ -1220,6 +1265,18 @@ impl Lockfile {
                 })
                 .collect::<Result<Vec<_>>>()?;
             lockfile.tools.entry(short).or_default().extend(versions);
+        }
+
+        if lockfile_version < FORGE_IDS_LOCKFILE_VERSION
+            && lockfile.tools.values().flatten().any(|tool| {
+                tool.platforms
+                    .values()
+                    .any(|info| info.repository_id.is_some() || info.repository_owner_id.is_some())
+            })
+        {
+            bail!(
+                "forge repository IDs require lockfile revision {FORGE_IDS_LOCKFILE_VERSION}; run `mise lock --upgrade`"
+            );
         }
 
         if lockfile_version < 2
@@ -1304,6 +1361,18 @@ impl Lockfile {
         let path = target.as_path();
 
         let mut lockfile = toml::Table::new();
+        if self.lockfile_version < FORGE_IDS_LOCKFILE_VERSION
+            && self.tools.values().flatten().any(|tool| {
+                tool.platforms
+                    .values()
+                    .any(|info| info.repository_id.is_some() || info.repository_owner_id.is_some())
+            })
+        {
+            warn!(
+                "forge repository IDs require lockfile revision {FORGE_IDS_LOCKFILE_VERSION}; omitting them from revision {}. Run `mise lock --upgrade` to record them",
+                self.lockfile_version
+            );
+        }
 
         if self.lockfile_version > 0 {
             lockfile.insert(
@@ -1382,6 +1451,14 @@ impl Lockfile {
                         .as_ref()
                         .map(|g| g.pointer(path.parent().unwrap_or(Path::new("."))))
                         .transpose()?;
+                    // Forge IDs belong to revision 3. Preserve the existing
+                    // revision on ordinary writes; `mise lock --upgrade` opts in.
+                    if self.lockfile_version < FORGE_IDS_LOCKFILE_VERSION {
+                        for platform in version.platforms.values_mut() {
+                            platform.repository_id = None;
+                            platform.repository_owner_id = None;
+                        }
+                    }
                     let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
                         value.as_table_mut().unwrap().insert("uv".into(), uv);
@@ -5014,7 +5091,22 @@ fn format(mut doc: DocumentMut) -> String {
                                 });
                                 for k in &keys {
                                     if let Some(item) = platform_info.get(k) {
-                                        subtable.insert(k, item.clone());
+                                        if k == "repository_ids"
+                                            && let toml_edit::Item::Table(ids) = item
+                                        {
+                                            let mut inline = toml_edit::InlineTable::new();
+                                            for key in ["repository", "owner"] {
+                                                if let Some(value) =
+                                                    ids.get(key).and_then(|i| i.as_value())
+                                                {
+                                                    inline.insert(key, value.clone());
+                                                }
+                                            }
+                                            inline.fmt();
+                                            subtable.insert(k, toml_edit::value(inline));
+                                        } else {
+                                            subtable.insert(k, item.clone());
+                                        }
                                     }
                                 }
                                 subtable.set_implicit(true);
@@ -5323,14 +5415,97 @@ mod tests {
 
         lockfile.save(&path).unwrap();
         let contents = file::read_to_string(&path).unwrap();
-        assert!(contents.contains("lockfile_version = 2"));
+        assert!(contents.contains("lockfile_version = 3"));
         assert!(contents.contains("specifiers = [\"1\"]"));
 
         let reloaded = Lockfile::read(&path).unwrap();
-        assert_eq!(reloaded.lockfile_version(), 2);
+        assert_eq!(reloaded.lockfile_version(), 3);
         assert_eq!(
             reloaded.tools["dummy"][0].specifiers,
             BTreeSet::from(["1".to_string()])
+        );
+    }
+
+    #[test]
+    fn forge_ids_require_explicit_upgrade_and_write_inline() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(&path, "lockfile_version = 2\n[tools]\n").unwrap();
+        let mut lockfile = Lockfile::read(&path).unwrap();
+        lockfile.save(&path).unwrap();
+        assert!(
+            file::read_to_string(&path)
+                .unwrap()
+                .contains("lockfile_version = 2")
+        );
+        let mut tool = basic_tool("1.0.0", "packslip:example/tool");
+        tool.platforms.insert(
+            "linux-x64".into(),
+            PlatformInfo {
+                repository_id: Some("922514152".into()),
+                repository_owner_id: Some("216188".into()),
+                signer: Some("sigstore-oidc:example".into()),
+                ..Default::default()
+            },
+        );
+        tool.platforms.insert(
+            "macos-arm64".into(),
+            PlatformInfo {
+                repository_id: Some("922514152".into()),
+                signer: Some("sigstore-oidc:example".into()),
+                ..Default::default()
+            },
+        );
+        lockfile.tools.insert("example".into(), vec![tool]);
+        lockfile.save(&path).unwrap();
+
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(contents.contains("lockfile_version = 2"), "{contents}");
+        assert!(!contents.contains("repository_ids"), "{contents}");
+
+        lockfile.upgrade();
+        lockfile.save(&path).unwrap();
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(contents.contains("lockfile_version = 3"), "{contents}");
+        assert!(
+            contents
+                .contains("repository_ids = { repository = \"922514152\", owner = \"216188\" }"),
+            "{contents}"
+        );
+        assert!(
+            contents.contains("repository_ids = { repository = \"922514152\" }"),
+            "{contents}"
+        );
+        let reloaded = Lockfile::read(&path).unwrap();
+        let ids = &reloaded.tools["example"][0].platforms["linux-x64"];
+        assert_eq!(ids.repository_id.as_deref(), Some("922514152"));
+        assert_eq!(ids.repository_owner_id.as_deref(), Some("216188"));
+    }
+
+    #[test]
+    fn empty_lockfile_uses_current_revision() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(&path, "").unwrap();
+        let lockfile = Lockfile::read(&path).unwrap();
+        assert_eq!(lockfile.lockfile_version(), CURRENT_LOCKFILE_VERSION);
+    }
+
+    #[test]
+    fn forge_ids_require_version_three_when_reading() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(
+            &path,
+            "lockfile_version = 2\n[[tools.example]]\nversion = \"1.0.0\"\nbackend = \"packslip:example/tool\"\n[tools.example.\"platforms.linux-x64\"]\nrepository_ids = { repository = \"922514152\" }\n",
+        )
+        .unwrap();
+
+        let error = Lockfile::read(&path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("forge repository IDs require lockfile revision 3")
         );
     }
 
@@ -5437,12 +5612,12 @@ lockfileVersion: '9.0'
     fn future_lockfile_versions_are_rejected() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
-        file::write(&path, "lockfile_version = 3\n[tools]\n").unwrap();
+        file::write(&path, "lockfile_version = 4\n[tools]\n").unwrap();
 
         let err = Lockfile::read(&path).unwrap_err();
         assert!(
             err.to_string()
-                .contains("unsupported lockfile version 3; this mise supports up to version 2")
+                .contains("unsupported lockfile version 4; this mise supports up to version 3")
         );
     }
 
@@ -7327,7 +7502,7 @@ url = "https://example.com/hk-1.58.1-mac"
         invalidate_caches();
 
         let mixed = read_lockfile_at(primary_path, Some(legacy_path));
-        assert_eq!(mixed.lockfile_version(), 2);
+        assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
         assert!(mixed.uses_request_bindings());
         assert!(
             mixed.tools["node"]

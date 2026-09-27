@@ -21,7 +21,9 @@ assert "mise uninstall --all"
 assert "mise unuse tiny"
 assert "mise lock"
 
-# empty lockfile should just have header and tools section
+# empty lockfile should keep its revision and tools section
 assert "cat mise.lock" "$LOCKFILE_HEADER
+
+lockfile_version = 3
 
 [tools]"
