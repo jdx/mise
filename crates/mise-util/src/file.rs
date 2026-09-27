@@ -2555,7 +2555,11 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
         .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
 }
 
-static DESYMLINKED: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+/// Resolutions made by [`desymlink_path_cached`], and how many times
+/// [`clear_desymlink_cache`] has run. A lookup caches its result only if no
+/// clear happened while it was resolving, so a resolution made before a clear
+/// cannot be stored after it.
+static DESYMLINKED: Lazy<Mutex<(u64, HashMap<PathBuf, PathBuf>)>> = Lazy::new(Default::default);
 
 /// [`desymlink_path`] with resolutions of existing absolute paths cached until
 /// [`clear_desymlink_cache`]. A path that does not exist yet is resolved on
@@ -2564,15 +2568,19 @@ pub fn desymlink_path_cached(p: &Path) -> PathBuf {
     if !p.is_absolute() {
         return desymlink_path(p);
     }
-    if let Some(resolved) = DESYMLINKED.lock().unwrap().get(p).cloned() {
-        return resolved;
-    }
+    let generation = {
+        let cache = DESYMLINKED.lock().unwrap();
+        if let Some(resolved) = cache.1.get(p) {
+            return resolved.clone();
+        }
+        cache.0
+    };
     let resolved = desymlink_path(p);
     if p.exists() {
-        DESYMLINKED
-            .lock()
-            .unwrap()
-            .insert(p.to_path_buf(), resolved.clone());
+        let mut cache = DESYMLINKED.lock().unwrap();
+        if cache.0 == generation {
+            cache.1.insert(p.to_path_buf(), resolved.clone());
+        }
     }
     resolved
 }
@@ -2581,7 +2589,9 @@ pub fn desymlink_path_cached(p: &Path) -> PathBuf {
 /// follows symlinks as they are now. Config reloads call this: a symlink
 /// retargeted since the last load must not keep its old destination.
 pub fn clear_desymlink_cache() {
-    DESYMLINKED.lock().unwrap().clear();
+    let mut cache = DESYMLINKED.lock().unwrap();
+    cache.0 += 1;
+    cache.1.clear();
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
