@@ -14,18 +14,14 @@
 #      private registry with basic-auth userinfo, so a token genuinely lives in
 #      this URL.
 
-python3 - "$PWD" <<'PYTHON'
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+TOKEN="ghp_e2eSECRET"
 
-root = Path(sys.argv[1]).resolve()
-TOKEN = "ghp_e2eSECRET"
-requests = []
+# A fake registry. It records each request's path and whether it carried basic
+# auth, one per line, so the assertions below can stay in bash.
+cat >registry.py <<'PYTHON'
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 versions = json.dumps([
     {"number": "1.0.0", "created_at": "2026-01-01T00:00:00.000Z"},
@@ -38,7 +34,9 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        requests.append((self.path, self.headers.get("Authorization")))
+        auth = (self.headers.get("Authorization") or "").split(" ")[0] or "none"
+        with open("requests.log", "a") as log:
+            log.write(f"{self.path} {auth}\n")
         if self.path != "/acme/api/v1/versions/internal-cli.json":
             self.send_error(404)
             return
@@ -50,47 +48,34 @@ class Handler(BaseHTTPRequestHandler):
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-port = server.server_port
-thread = threading.Thread(target=server.serve_forever, daemon=True)
-thread.start()
-
-try:
-    # Declared in config, with a credential in the URL. The command below names
-    # the tool as a bare argument and passes no options.
-    (root / "mise.toml").write_text(
-        "[tools]\n"
-        f'"gem:internal-cli" = {{ version = "latest", source = "http://{TOKEN}@127.0.0.1:{port}/acme" }}\n'
-    )
-
-    result = subprocess.run(
-        ["mise", "ls-remote", "gem:internal-cli"],
-        env=dict(os.environ, MISE_DEBUG="1"),
-        text=True,
-        capture_output=True,
-        timeout=60,
-    )
-    output = result.stdout + result.stderr
-    print(output, end="", flush=True)
-    assert result.returncode == 0, output
-
-    # Reached the configured registry rather than rubygems.org, which only
-    # happens if the source was resolved from config.
-    assert requests, "the configured registry was never asked"
-    paths = [path for path, _ in requests]
-    assert paths == ["/acme/api/v1/versions/internal-cli.json"], paths
-
-    # The endpoint landed under the source's path, and the credential was sent
-    # as basic auth rather than being dropped.
-    assert all(auth and auth.startswith("Basic ") for _, auth in requests), requests
-
-    # Versions came from the fixture, not from rubygems.org.
-    assert "2.2.0" in output, output
-
-    # And the token appears nowhere, at debug verbosity, in stdout or stderr.
-    assert TOKEN not in output, "the source credential reached mise's output"
-    assert "[redacted]" in output, output
-finally:
-    server.shutdown()
-    thread.join()
-    server.server_close()
+Path("registry.port").write_text(str(server.server_port))
+server.serve_forever()
 PYTHON
+
+python3 registry.py &
+registry_pid=$!
+trap 'kill "$registry_pid" 2>/dev/null || true' EXIT
+wait_for_file registry.port "gem registry port" 30 "$registry_pid"
+port="$(cat registry.port)"
+
+# Declared in config, with a credential in the URL. The command below names the
+# tool as a bare argument and passes no options.
+cat >mise.toml <<EOF
+[tools]
+"gem:internal-cli" = { version = "latest", source = "http://${TOKEN}@127.0.0.1:${port}/acme" }
+EOF
+
+output="$(MISE_DEBUG=1 mise ls-remote gem:internal-cli 2>&1)"
+echo "$output"
+
+# Versions came from the fixture, not from rubygems.org, which only happens if
+# the source was resolved from config.
+assert_contains_text "$output" "2.2.0"
+
+# Exactly one request, under the source's path, with the credential sent as
+# basic auth rather than dropped.
+assert "cat requests.log" "/acme/api/v1/versions/internal-cli.json Basic"
+
+# And the token appears nowhere, at debug verbosity, in stdout or stderr.
+assert_not_contains_text "$output" "$TOKEN"
+assert_contains_text "$output" "[redacted]"
