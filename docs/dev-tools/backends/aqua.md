@@ -136,6 +136,33 @@ Set them via tool options using either top-level keys or a nested `vars` table:
 Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
 unless the registry also provides a default.
 
+A registry var named `libc` must be set as `vars.libc`, because a top-level `libc` key is the
+[`libc`](#libc) tool option.
+
+### `libc`
+
+On a glibc Linux host, mise prefers a release's glibc build even when the aqua registry names the
+musl one. It uses the musl build only when no glibc build is published. Set `libc` to choose the
+build for one tool:
+
+```toml
+[tools]
+"aqua:domcyrus/rustnet" = { version = "latest", libc = "musl" }
+```
+
+`libc` accepts `glibc` (or `gnu`) and `musl`. Like the [`libc`](/configuration/settings.html#libc)
+setting, it makes selection strict: mise never falls back to a build for the other libc. It
+overrides `libc = "glibc"` in settings. It does not override a platform that names a libc, such as
+a musl host or a `linux-x64-musl` lockfile platform, because a glibc build cannot run there. Setting
+`libc = "musl"` in settings makes the host a musl platform (for example `linux-arm64-musl`), so
+under that setting a tool's `libc = "glibc"` has no effect. The value is recorded in the lockfile,
+so changing it resolves the tool again. A version that is already installed keeps its
+build until you reinstall it with `mise install --force`, as with other install options.
+
+`libc` affects install, lock, and resolving `latest` from the release GitHub marks as latest. The
+full version list (`mise ls-remote`) is shared by every configuration of a tool, so it still uses the
+host's libc.
+
 ### `prerelease`
 
 By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:
