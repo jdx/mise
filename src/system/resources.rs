@@ -138,15 +138,14 @@ pub async fn plan(
     for directory in &directories {
         let resource = directory.plan()?;
         plan.insert(resource)?;
-        if directory.state == super::managed_files::ManagedState::Present {
-            plan.add_account_dependencies(
-                &ResourceId::new("directory", directory.path.to_string_lossy()),
-                directory.owner.as_deref(),
-                directory.group.as_deref(),
-                &user_states,
-                &group_states,
-            )?;
-        }
+        plan.add_account_dependencies(
+            &ResourceId::new("directory", directory.path.to_string_lossy()),
+            directory.state,
+            directory.owner.as_deref(),
+            directory.group.as_deref(),
+            &user_states,
+            &group_states,
+        )?;
     }
     for directory in &directories {
         let Some((parent, parent_state)) = directory
@@ -170,15 +169,14 @@ pub async fn plan(
         let resource = file.plan()?;
         let id = resource.id.clone();
         plan.insert(resource)?;
-        if file.state == super::managed_files::ManagedState::Present {
-            plan.add_account_dependencies(
-                &id,
-                file.owner.as_deref(),
-                file.group.as_deref(),
-                &user_states,
-                &group_states,
-            )?;
-        }
+        plan.add_account_dependencies(
+            &id,
+            file.state,
+            file.owner.as_deref(),
+            file.group.as_deref(),
+            &user_states,
+            &group_states,
+        )?;
         if let Some((parent, parent_state)) = file
             .path
             .ancestors()

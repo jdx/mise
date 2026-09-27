@@ -342,16 +342,20 @@ impl BootstrapPlan {
         Ok(())
     }
 
-    /// Depend on declared owners and groups, rejecting principals marked absent.
-    /// Call this for managed resources whose desired state is present.
+    /// Depend on declared owners and groups for present resources, rejecting
+    /// principals marked absent. Removed resources do not need principals.
     pub fn add_account_dependencies(
         &mut self,
         resource: &ResourceId,
+        state: ManagedState,
         owner: Option<&str>,
         group: Option<&str>,
         user_states: &HashMap<String, AccountState>,
         group_states: &HashMap<String, AccountState>,
     ) -> Result<()> {
+        if state != ManagedState::Present {
+            return Ok(());
+        }
         if let Some(owner) = owner {
             match user_states.get(owner) {
                 Some(AccountState::Present) => {
@@ -490,8 +494,15 @@ mod tests {
         let users = HashMap::from([("service".to_string(), AccountState::Present)]);
         let groups = HashMap::from([("services".to_string(), AccountState::Present)]);
 
-        plan.add_account_dependencies(&file, Some("service"), Some("services"), &users, &groups)
-            .unwrap();
+        plan.add_account_dependencies(
+            &file,
+            ManagedState::Present,
+            Some("service"),
+            Some("services"),
+            &users,
+            &groups,
+        )
+        .unwrap();
 
         assert_eq!(plan.get(&file).unwrap().depends_on, [user, group]);
         assert_eq!(plan.output().unwrap().resources.last().unwrap().id, file);
@@ -512,15 +523,46 @@ mod tests {
         let missing = HashMap::new();
 
         let error = plan
-            .add_account_dependencies(&file, Some("service"), None, &absent, &missing)
+            .add_account_dependencies(
+                &file,
+                ManagedState::Present,
+                Some("service"),
+                None,
+                &absent,
+                &missing,
+            )
             .unwrap_err();
         assert!(error.to_string().contains("owner 'service'"));
         let error = plan
-            .add_account_dependencies(&file, None, Some("service"), &missing, &absent)
+            .add_account_dependencies(
+                &file,
+                ManagedState::Present,
+                None,
+                Some("service"),
+                &missing,
+                &absent,
+            )
             .unwrap_err();
         assert!(error.to_string().contains("group 'service'"));
-        plan.add_account_dependencies(&file, Some("external"), None, &missing, &missing)
-            .unwrap();
+        plan.add_account_dependencies(
+            &file,
+            ManagedState::Present,
+            Some("external"),
+            None,
+            &missing,
+            &missing,
+        )
+        .unwrap();
+        assert!(plan.get(&file).unwrap().depends_on.is_empty());
+        plan.add_account_dependencies(
+            &file,
+            ManagedState::Absent,
+            Some("service"),
+            Some("service"),
+            &absent,
+            &absent,
+        )
+        .unwrap();
         assert!(plan.get(&file).unwrap().depends_on.is_empty());
     }
 
