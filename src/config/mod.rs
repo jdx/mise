@@ -2290,11 +2290,32 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     if let Some(glob) = results.get(&key) {
         return Ok(glob.clone());
     }
-    let paths = glob::glob(dir.join(pattern).to_string_lossy().as_ref())?
-        .filter_map(|p| p.ok())
-        .collect_vec();
+    let paths = if glob_parent_exists(dir, pattern) {
+        glob::glob(dir.join(pattern).to_string_lossy().as_ref())?
+            .filter_map(|p| p.ok())
+            .collect_vec()
+    } else {
+        vec![]
+    };
     results.insert(key, paths.clone());
     Ok(paths)
+}
+
+/// Whether the directory spelled out by `pattern` before its first wildcard
+/// exists under `dir`. Nothing can match below a missing directory, and config
+/// discovery globs about a dozen `conf.d` patterns in every ancestor directory,
+/// where those directories almost never exist: one lookup here replaces
+/// compiling and walking each pattern. A component with any glob metacharacter,
+/// escaped ones included, ends the literal part, so this never skips a pattern
+/// that could match.
+fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
+    let components = Path::new(pattern).components().collect_vec();
+    let literal = components
+        .iter()
+        .take(components.len().saturating_sub(1))
+        .take_while(|c| !c.as_os_str().to_string_lossy().contains(['*', '?', '[', ']']))
+        .collect::<PathBuf>();
+    literal.as_os_str().is_empty() || dir.join(literal).is_dir()
 }
 
 fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
@@ -8197,6 +8218,36 @@ mod tests {
                 .filter(|pattern| pattern.contains("conf.d"))
                 .all(|pattern| pattern.contains("conf.d/*/mise."))
         );
+    }
+
+    #[test]
+    fn test_glob_skips_patterns_under_missing_directories() -> Result<()> {
+        let missing = TempDir::new()?;
+        assert!(glob(missing.path(), ".config/mise/conf.d/*.toml")?.is_empty());
+        assert!(glob(missing.path(), ".mise/conf.d/*/mise.toml")?.is_empty());
+
+        // glob caches by directory and pattern, so the matching case needs a
+        // directory of its own.
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(confd.join("node"))?;
+        fs::write(confd.join("tools.toml"), "")?;
+        fs::write(confd.join("node/mise.toml"), "")?;
+        assert_eq!(
+            glob(tmp.path(), ".mise/conf.d/*.toml")?,
+            vec![confd.join("tools.toml")]
+        );
+        assert_eq!(
+            glob(tmp.path(), ".mise/conf.d/*/mise.toml")?,
+            vec![confd.join("node/mise.toml")]
+        );
+        // A pattern with no wildcard names a file, not a directory to check.
+        fs::write(tmp.path().join("mise.toml"), "")?;
+        assert_eq!(
+            glob(tmp.path(), "mise.toml")?,
+            vec![tmp.path().join("mise.toml")]
+        );
+        Ok(())
     }
 
     #[test]
