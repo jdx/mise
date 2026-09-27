@@ -172,11 +172,10 @@ impl ResourcePlan {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn resource_origin_serializes_non_utf8_paths_losslessly() {
         use std::ffi::OsString;
