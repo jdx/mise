@@ -1,9 +1,10 @@
-use crate::semver::{chunkify_version, split_version_prefix};
+use crate::semver::{chunkify_version, semver_precedence_cmp, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
 use std::{
+    cmp::Ordering,
     collections::BTreeSet,
     fmt::{Display, Formatter},
     path::PathBuf,
@@ -466,6 +467,9 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
 }
 
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+    if let Some(ordering) = semver_precedence_cmp(current, latest) {
+        return ordering == Ordering::Less;
+    }
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
     } else {
