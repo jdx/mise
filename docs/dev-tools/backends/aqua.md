@@ -159,8 +159,9 @@ tool's `libc = "glibc"` has no effect. The value is recorded in the
 lockfile, so changing it resolves the tool again. A version that is already installed keeps its
 build until you reinstall it with `mise install --force`, as with other install options.
 
-`libc` affects install and lock. The version list is shared by every configuration of a tool, so
-it still uses the host's libc.
+`libc` affects install, lock, and resolving `latest` from the release GitHub marks as latest. The
+full version list (`mise ls-remote`) is shared by every configuration of a tool, so it still uses the
+host's libc.
 
 ### `prerelease`
 

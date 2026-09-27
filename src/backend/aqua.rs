@@ -387,7 +387,8 @@ impl Backend for AquaBackend {
         if self.include_prereleases(&opts) {
             return Ok(None);
         }
-        self.latest_marked_release_info().await
+        let tool_libc = AquaOptions::new(&opts).libc()?;
+        self.latest_marked_release_info(tool_libc).await
     }
 
     /// aqua knows, from the registry entry alone, when a version cannot be installed here:
@@ -2196,7 +2197,12 @@ impl AquaBackend {
     /// cached remote-version list, and a list that has not yet caught up with
     /// upstream makes an eligible release look ineligible. See
     /// `latest_stable_candidate_allowed_by_before_date`.
-    async fn latest_marked_release_info(&self) -> Result<Option<VersionInfo>> {
+    /// `tool_libc` is the tool's `libc` option. This fast path is per tool, unlike the version
+    /// list, which is one cache shared by every configuration of the tool.
+    async fn latest_marked_release_info(
+        &self,
+        tool_libc: Option<&str>,
+    ) -> Result<Option<VersionInfo>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -2236,7 +2242,7 @@ impl AquaBackend {
 
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target, None);
+        let target_libc = Self::target_variant_libc(&target, tool_libc);
         match marked_release_version_info(
             &pkg,
             &release,
