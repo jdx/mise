@@ -100,8 +100,13 @@ pub(crate) fn lock_record(info: &mut PlatformInfo, signer: String, check: Option
     info.signer = Some(signer);
     match check.and_then(|check| check.pin.as_ref()) {
         Some(pin) => {
+            // A certificate can record the repository's ID without its
+            // owner's; the owner ID recorded for the same repository stays.
+            let same_repository = info.repository_id.as_deref() == Some(&pin.repository_id);
+            if pin.owner_id.is_some() || !same_repository {
+                info.repository_owner_id = pin.owner_id.clone();
+            }
             info.repository_id = Some(pin.repository_id.clone());
-            info.repository_owner_id = pin.owner_id.clone();
         }
         None if same_signer => {}
         None => {
@@ -483,6 +488,31 @@ mod tests {
         lock_record(&mut cleared, HK_SIGNER.into(), None);
         assert_eq!(cleared.repository_id.as_deref(), Some("1"));
         assert_eq!(cleared.repository_owner_id.as_deref(), Some("2"));
+        // A certificate with the repository's ID but not its owner's keeps
+        // the owner ID recorded for the same repository.
+        let check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        let mut partial = check.clone();
+        partial.pin.as_mut().unwrap().owner_id = None;
+        let mut entry = PlatformInfo {
+            repository_id: Some("922514152".into()),
+            repository_owner_id: Some("216188".into()),
+            ..Default::default()
+        };
+        lock_record(&mut entry, HK_SIGNER.into(), Some(&partial));
+        assert_eq!(entry.repository_owner_id.as_deref(), Some("216188"));
+        let mut moved = PlatformInfo {
+            repository_id: Some("1".into()),
+            repository_owner_id: Some("2".into()),
+            ..Default::default()
+        };
+        lock_record(&mut moved, HK_SIGNER.into(), Some(&partial));
+        assert_eq!(moved.repository_id.as_deref(), Some("922514152"));
+        assert_eq!(
+            moved.repository_owner_id, None,
+            "another repository's owner is not kept"
+        );
         // ...and another signer does not inherit it.
         let other = "sigstore-key:5A0A".to_string();
         lock_record(&mut cleared, other.clone(), None);
@@ -655,6 +685,29 @@ owner_id = "{owner_id}"
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_certificate_without_the_owner_id_keeps_the_one_pinned() {
+        let (_dir, path) = pins_under("github.com/jdx/hk", "release.yml", JDX_ID);
+        let mut check = verify(&expect("github.com/jdx/hk", vec![], None))
+            .unwrap()
+            .check;
+        check.pin.as_mut().unwrap().owner_id = None;
+        let pin =
+            packslip_pins::record_at(&path, "github.com/jdx/hk", hk_observed(Some(&check), true))
+                .unwrap();
+        assert_eq!(pin.forge, Some(hk_pin("github.com/jdx/hk")));
+        // So does a release list's.
+        let list = |owner: Option<&str>| {
+            ForgePin::new("github.com/jdx/hk", "922514152", owner.map(str::to_string))
+        };
+        packslip_pins::check_sequence_at(&path, "github.com/jdx/hk", 8, Some(&list(Some(JDX_ID))))
+            .unwrap();
+        packslip_pins::check_sequence_at(&path, "github.com/jdx/hk", 9, Some(&list(None))).unwrap();
+        assert!(crate::file::read_to_string(&path)
+            .unwrap()
+            .contains("[list_forges.\"github.com/jdx/hk\"]\nproject = \"github.com/jdx/hk\"\nrepository_id = \"922514152\"\nowner_id = \"216188\""));
     }
 
     #[test]

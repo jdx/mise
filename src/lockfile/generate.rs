@@ -786,9 +786,19 @@ fn packslip_signer_continues(old: &PlatformInfo, new: &PlatformInfo) -> bool {
 /// without the forge check, and an older certificate carries no IDs. Neither
 /// says the repository changed, so the commitment stays for the next
 /// resolution that does check it.
+///
+/// Likewise the owner ID alone, when the new entry records the same
+/// repository without it, as a certificate with the repository's ID but not
+/// its owner's does.
 fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
     if new.signer.is_some() && new.signer == old.signer && new.repository_id.is_none() {
         new.repository_id = old.repository_id.clone();
+        new.repository_owner_id = old.repository_owner_id.clone();
+    }
+    if new.repository_owner_id.is_none()
+        && new.repository_id.is_some()
+        && new.repository_id == old.repository_id
+    {
         new.repository_owner_id = old.repository_owner_id.clone();
     }
 }
@@ -1562,6 +1572,22 @@ mod tests {
         let mut not_carried = unchecked_renamed.clone();
         carry_forge_ids(&old, &mut not_carried);
         assert_eq!(not_carried.repository_id, None);
+        // A certificate with the repository's ID but not its owner's keeps
+        // the owner ID recorded for the same repository, and only for it.
+        let ownerless = PlatformInfo {
+            repository_owner_id: None,
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &ownerless, backend).is_ok());
+        let mut kept = ownerless.clone();
+        carry_forge_ids(&old, &mut kept);
+        assert_eq!(kept, old);
+        let mut other_repository = PlatformInfo {
+            repository_id: Some("43".into()),
+            ..ownerless
+        };
+        carry_forge_ids(&old, &mut other_repository);
+        assert_eq!(other_repository.repository_owner_id, None);
         // Another workflow of the same repository is another signer.
         let other_workflow = PlatformInfo {
             signer: Some(

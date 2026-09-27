@@ -380,6 +380,13 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
     for key in &keys {
         check_against(&pins.pins[key], key, project, observed)?;
     }
+    // A certificate can record the repository's ID without its owner's; the
+    // owner ID a pin recorded for the same repository stays.
+    let forge = forge.map(|forge| {
+        keys.iter()
+            .filter_map(|key| pins.pins[key].forge.as_ref())
+            .fold(forge, keep_owner_id)
+    });
     let pin = &pins.pins[first];
     let any = |floor: fn(&Pin) -> bool| keys.iter().any(|key| floor(&pins.pins[key]));
     let updated = Pin {
@@ -407,6 +414,16 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         save(path, &pins)?;
     }
     Ok(updated)
+}
+
+/// `forge`, with the owner ID `recorded` has when it is the same repository
+/// and `forge` records none: a recorded ID is never dropped for the lack of
+/// one.
+pub fn keep_owner_id(mut forge: ForgePin, recorded: &ForgePin) -> ForgePin {
+    if forge.owner_id.is_none() && same_repository(&forge, recorded) {
+        forge.owner_id = recorded.owner_id.clone();
+    }
+    forge
 }
 
 /// Refuse a release list whose sequence is below one already accepted for
@@ -445,8 +462,12 @@ pub fn check_sequence_at(
             changed |= pins.sequences.remove(key).is_some();
             changed |= pins.list_forges.remove(key).is_some();
         }
-        changed |= pins.list_forges.get(project) != Some(forge);
-        pins.list_forges.insert(project.to_string(), forge.clone());
+        let forge = match pins.list_forges.get(project) {
+            Some(recorded) => keep_owner_id(forge.clone(), recorded),
+            None => forge.clone(),
+        };
+        changed |= pins.list_forges.get(project) != Some(&forge);
+        pins.list_forges.insert(project.to_string(), forge);
     }
     if changed {
         pins.sequences.insert(project.to_string(), sequence);
