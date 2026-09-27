@@ -10,6 +10,14 @@ case "$1" in
   usage)
     if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
     ;;
+  schema)
+    # How pitchfork 2.28.0 declares `run`, and how older releases did.
+    if [[ ${OLD_ARGV:-0} == 1 ]]; then
+      echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"type":"string"}}}}}'
+    else
+      echo '{"$defs":{"PitchforkTomlDaemon":{"properties":{"run":{"$ref":"#/$defs/RunCommand"}}},"RunCommand":{"anyOf":[{"type":"string"},{"type":"array"}]}}}'
+    fi
+    ;;
   status)
     # $2 is the daemon id. RUNNING_ID names one the supervisor still reports as
     # running, which is how a partial stop is simulated. STATUS_BROKEN stands
@@ -110,6 +118,9 @@ assert_fail "MISE_SAFE=1 mise daemons register"
 : >"$DAEMON_LOG"
 assert_fail "OLD_PITCHFORK=1 mise daemons start"
 assert_contains "OLD_PITCHFORK=1 mise daemons start 2>&1 || true" 'external configuration support'
+# Only task daemons need pitchfork's argv `run`; a project without them is not asked for it.
+OLD_ARGV=1 mise daemons start
+: >"$DAEMON_LOG"
 mise daemons start
 assert_contains "cat '$DAEMON_LOG'" 'config add'
 assert_contains "cat '$DAEMON_LOG'" '/api'
@@ -305,6 +316,21 @@ generated="$(daemon_state_dir)/pitchfork.toml"
 # a marker in the daemon environment is what stops the recursion instead.
 assert_not_contains "cat '$generated'" 'skip-deps'
 assert_contains "cat '$generated'" 'MISE_DAEMON_TASK'
+# The task starts without a shell: `run` is an argv, not an `exec` command line.
+assert_contains "cat '$generated'" '"dev:core"'
+assert_not_contains "cat '$generated'" "exec '"
+# That needs pitchfork 2.28.0; an older one gets a clear error, not a broken daemon.
+assert_fail_contains "OLD_ARGV=1 mise daemons start core 2>&1" 'needs pitchfork 2.28.0 or later'
+# An unchanged configuration is still checked again once pitchfork changes, even when
+# an older one replaces it in place, as a package manager downgrading it would.
+cp ~/bin/pitchfork ~/pitchfork.current
+{
+  head -n 1 ~/pitchfork.current
+  echo 'export OLD_ARGV=1'
+  tail -n +2 ~/pitchfork.current
+} >~/bin/pitchfork
+assert_fail_contains "mise run dev 2>&1" 'needs pitchfork 2.28.0 or later'
+cp ~/pitchfork.current ~/bin/pitchfork
 # The marker makes that nested run skip daemons rather than fail on them.
 assert_contains "MISE_DAEMON_TASK=1 mise run dev" 'dev-ran'
 : >"$DAEMON_LOG"
