@@ -798,7 +798,9 @@ This limits the individual task. Use [`mise run --timeout`](/cli/run.html) or th
 [`task.timeout`](/configuration/settings.html#task.timeout) setting to limit the entire task run.
 When both a global timeout and a per-task timeout are set, the shorter of the two wins: a per-task
 timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides the global
-setting.
+setting. Either timeout stops the task's processes the same way: SIGTERM, then SIGKILL after 5
+seconds; on Windows the process tree is terminated immediately. The global timeout does not stop
+the processes of tasks run with [`raw`](#raw).
 
 ### `deny_all`
 

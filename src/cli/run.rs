@@ -929,13 +929,20 @@ impl Run {
         // already succeeded.
         let telemetry = self.telemetry.clone();
         let result = if let Some(timeout) = timeout {
-            tokio::time::timeout(
+            match tokio::time::timeout(
                 timeout,
                 self.parallelize_tasks(config, execution_tasks, previewed_tools),
             )
             .await
-            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))
-            .flatten()
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    // Dropping the run does not stop the task jobs it spawned,
+                    // and their children would outlive mise.
+                    crate::cmd::CmdLineRunner::terminate_all().await;
+                    Err(eyre!("mise run timed out after {:?}", timeout))
+                }
+            }
         } else {
             self.parallelize_tasks(config, execution_tasks, previewed_tools)
                 .await
