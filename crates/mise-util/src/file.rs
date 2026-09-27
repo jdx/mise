@@ -2555,6 +2555,28 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
         .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
 }
 
+/// [`desymlink_path`] with resolutions of existing absolute paths cached for the
+/// current process, like [`canonicalize_cached`]. A path that does not exist yet
+/// is resolved on every call, since it may be created later in the process.
+pub fn desymlink_path_cached(p: &Path) -> PathBuf {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+    if !p.is_absolute() {
+        return desymlink_path(p);
+    }
+    if let Some(resolved) = CACHE.lock().unwrap().get(p).cloned() {
+        return resolved;
+    }
+    let resolved = desymlink_path(p);
+    if p.exists() {
+        CACHE
+            .lock()
+            .unwrap()
+            .insert(p.to_path_buf(), resolved.clone());
+    }
+    resolved
+}
+
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     if cfg!(target_os = "macos") {
         cmd!("/bin/cp", "-cR", from, to).run()?;

@@ -2958,8 +2958,10 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
     if set.contains(path) {
         return true;
     }
-    let target = file::desymlink_path(path);
-    set.iter().any(|p| file::desymlink_path(p) == target)
+    // This runs for every config file each time a tool resolves, so resolving
+    // the same paths again would dominate short commands.
+    let target = file::desymlink_path_cached(path);
+    set.iter().any(|p| file::desymlink_path_cached(p) == target)
 }
 
 fn resolved_task_file(task: &Task) -> Option<PathBuf> {
