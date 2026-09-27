@@ -154,7 +154,11 @@ build for one tool:
 setting, it makes selection strict: mise never falls back to a build for the other libc. The tool
 option takes precedence over the setting. It does not override a platform that already names a
 libc, such as a detected musl host or a `linux-x64-musl` lockfile platform. The value is recorded in the
-lockfile, so changing it resolves the tool again.
+lockfile, so changing it resolves the tool again. A version that is already installed keeps its
+build until you reinstall it with `mise install --force`, as with other install options.
+
+`libc` affects install and lock. The version list is shared by every configuration of a tool, so
+it still uses the host's libc.
 
 ### `prerelease`
 
