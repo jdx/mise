@@ -153,7 +153,7 @@ build for one tool:
 `libc` accepts `glibc` (or `gnu`) and `musl`. Like the [`libc`](/configuration/settings.html#libc)
 setting, it makes selection strict: mise never falls back to a build for the other libc. The tool
 option takes precedence over the setting. It does not override a platform that already names a
-libc, such as a musl host or a `linux-x64-musl` lockfile platform. The value is recorded in the
+libc, such as a detected musl host or a `linux-x64-musl` lockfile platform. The value is recorded in the
 lockfile, so changing it resolves the tool again.
 
 ### `prerelease`

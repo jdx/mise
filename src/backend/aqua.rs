@@ -1085,17 +1085,35 @@ impl AquaBackend {
         (target_os, target_arch)
     }
 
-    /// The libc to select assets for. A libc in the target platform wins (a musl host, or a
-    /// `linux-x64-musl` lockfile platform), then the tool's `libc` option, then the `libc`
-    /// setting on the current platform.
+    /// The libc to select assets for. A libc the target platform names wins (a detected
+    /// musl host, or a `linux-x64-musl` lockfile platform), then the tool's `libc` option,
+    /// then the `libc` setting on the current platform.
     fn target_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
-        target.libc().or(tool_libc).map(str::to_string).or_else(|| {
-            if target.is_current() {
-                Settings::get().libc().map(str::to_string)
-            } else {
-                None
-            }
-        })
+        let settings_libc = if target.is_current() {
+            Settings::get().libc().map(str::to_string)
+        } else {
+            None
+        };
+        Self::resolve_target_libc(target.libc(), tool_libc, settings_libc)
+    }
+
+    fn resolve_target_libc(
+        platform_libc: Option<&str>,
+        tool_libc: Option<&str>,
+        settings_libc: Option<String>,
+    ) -> Option<String> {
+        // `Platform::current()` turns `libc = "musl"` in settings into the platform
+        // qualifier, so with the setting present the qualifier is the setting and the tool
+        // option overrides it. Without it, the qualifier is the detected host libc.
+        let platform_libc = if settings_libc.is_some() {
+            None
+        } else {
+            platform_libc
+        };
+        platform_libc
+            .or(tool_libc)
+            .map(str::to_string)
+            .or(settings_libc)
     }
 
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
@@ -6387,6 +6405,30 @@ no_asset: true
             LibcAssetPreference::Exact
         );
         assert_eq!(AquaBackend::target_variant_libc(&macos, Some("musl")), None);
+    }
+
+    #[test]
+    fn test_tool_libc_overrides_libc_setting() {
+        // Global `libc = "musl"` on a glibc host: the current platform carries the setting as
+        // its musl qualifier, and a per-tool `libc = "glibc"` still wins.
+        assert_eq!(
+            AquaBackend::resolve_target_libc(Some("musl"), Some("gnu"), Some("musl".into())),
+            Some("gnu".to_string())
+        );
+        assert_eq!(
+            AquaBackend::resolve_target_libc(None, Some("musl"), Some("gnu".into())),
+            Some("musl".to_string())
+        );
+        assert_eq!(
+            AquaBackend::resolve_target_libc(Some("musl"), None, Some("musl".into())),
+            Some("musl".to_string())
+        );
+        // Without the setting the qualifier is the detected host libc, which wins.
+        assert_eq!(
+            AquaBackend::resolve_target_libc(Some("musl"), Some("gnu"), None),
+            Some("musl".to_string())
+        );
+        assert_eq!(AquaBackend::resolve_target_libc(None, None, None), None);
     }
 
     #[test]
