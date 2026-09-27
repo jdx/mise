@@ -1200,10 +1200,11 @@ impl Lock {
                 "Upgrading"
             };
             miseprintln!(
-                "{} {prefix} {} from lockfile version {} to 2",
+                "{} {prefix} {} from lockfile version {} to {}",
                 style("→").yellow(),
                 style(display_path(path)).cyan(),
                 lockfile.lockfile_version(),
+                lockfile::CURRENT_LOCKFILE_VERSION,
             );
         } else {
             warn!(
@@ -1229,9 +1230,10 @@ impl Lock {
             return Ok(());
         }
         miseprintln!(
-            "{} Upgraded {} to lockfile version 2",
+            "{} Upgraded {} to lockfile version {}",
             style("→").yellow(),
-            style(display_path(path)).cyan()
+            style(display_path(path)).cyan(),
+            lockfile::CURRENT_LOCKFILE_VERSION,
         );
         Ok(())
     }
