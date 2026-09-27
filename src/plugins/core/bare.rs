@@ -9,7 +9,7 @@ use tempfile::tempdir_in;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, SecurityFeature, VersionInfo};
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
