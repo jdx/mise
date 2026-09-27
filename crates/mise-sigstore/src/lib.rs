@@ -837,9 +837,34 @@ fn verify_public_key_bundle(
                     "DSSE signature verification failed: no valid signatures found".to_string(),
                 ));
             }
+            verify_dsse_artifact_subject(&payload, artifact)?;
         }
     }
 
+    Ok(())
+}
+
+fn verify_dsse_artifact_subject(payload: &[u8], artifact: &[u8]) -> Result<()> {
+    let statement: serde_json::Value = serde_json::from_slice(payload)
+        .map_err(|e| AttestationError::Verification(format!("invalid DSSE payload: {e}")))?;
+    let artifact_digest = hex::encode(Sha256::digest(artifact));
+    let matches = statement
+        .get("subject")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|subjects| {
+            subjects.iter().any(|subject| {
+                subject
+                    .get("digest")
+                    .and_then(|digest| digest.get("sha256"))
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|digest| digest.eq_ignore_ascii_case(&artifact_digest))
+            })
+        });
+    if !matches {
+        return Err(AttestationError::Verification(
+            "DSSE subject digest does not match artifact".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -1792,6 +1817,26 @@ pub async fn calculate_file_digest(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_key_dsse_subject_must_match_artifact() {
+        let digest = hex::encode(Sha256::digest(b"artifact"));
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "subject": [{"digest": {"sha256": digest.to_uppercase()}}]
+        }))
+        .unwrap();
+        verify_dsse_artifact_subject(&payload, b"artifact").unwrap();
+
+        let err = verify_dsse_artifact_subject(&payload, b"different artifact").unwrap_err();
+        assert!(err.to_string().contains("does not match artifact"));
+    }
+
+    #[test]
+    fn public_key_dsse_rejects_missing_or_invalid_subjects() {
+        for payload in [br#"{}"#.as_slice(), br#"{"subject":[]}"#, br#"not json"#] {
+            assert!(verify_dsse_artifact_subject(payload, b"artifact").is_err());
+        }
+    }
 
     #[test]
     fn select_tuf_config_default_uses_production_url() {
