@@ -993,7 +993,6 @@ fn strip_url_credentials(value: &toml::Value) -> toml::Value {
     toml::Value::String(url.to_string())
 }
 
-
 /// Marks `v` of `ba` as mid-install; also the identity of its install lock.
 /// Keyed by the tool's cache dir, which install, uninstall and link share
 /// across local, shared and system install paths.
