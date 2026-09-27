@@ -108,6 +108,8 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
+static REPOSITORY_CACHE: Lazy<RwLock<CacheGroup<RepositoryIdentity>>> = Lazy::new(Default::default);
+
 pub static API_URL: &str = "https://api.github.com";
 
 pub static API_PATH: &str = "/api/v3";
@@ -525,6 +527,67 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     get_release_with_versions_host(repo, tag, true).await
+}
+
+/// What GitHub says a repository name stands for now: the repository's
+/// immutable IDs and its current name. A renamed or transferred repository's
+/// old name answers with the new name and the same `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepositoryIdentity {
+    /// The repository's numeric ID, which no rename or transfer changes.
+    pub id: String,
+    /// `owner/repo` as the repository is called now.
+    pub full_name: String,
+    /// The numeric ID of the repository's owner.
+    pub owner_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRepositoryIds {
+    id: u64,
+    full_name: String,
+    owner: Option<GithubRepositoryOwner>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRepositoryOwner {
+    id: u64,
+}
+
+/// The identity GitHub gives `owner/repo` now, following a rename's
+/// redirect. Cached like a release listing.
+pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
+    let key = format!(
+        "{}-repository-{}",
+        repo.to_kebab_case(),
+        crate::hash::hash_to_str(&repo)
+    );
+    REPOSITORY_CACHE
+        .write()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = REPOSITORY_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    Ok(cache
+        .get_or_try_init_async(async || {
+            let url = format!("{API_URL}/repos/{repo}");
+            let headers = get_headers(&url)?;
+            let repository: GithubRepositoryIds = crate::http::HTTP_FETCH
+                .json_with_headers(url, &headers)
+                .await?;
+            Ok(RepositoryIdentity {
+                id: repository.id.to_string(),
+                full_name: repository.full_name,
+                owner_id: repository.owner.map(|o| o.id.to_string()),
+            })
+        })
+        .await?
+        .clone())
 }
 
 /// Resolve a repository name through GitHub so callers can follow repository
