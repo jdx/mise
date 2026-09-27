@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
 use super::model::Cask;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
 
 const BULK_URL: &str = "https://formulae.brew.sh/api/cask.json";
