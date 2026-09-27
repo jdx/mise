@@ -39,16 +39,8 @@ jobs:
       # own budget instead.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install: false
+          install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
-      - name: Install docs tools from the current lockfile
-        run: |
-          if ! mise install --locked --dry-run aube node >/dev/null 2>&1; then
-            cargo build --all-features --ignore-rust-version
-            export PATH="$PWD/target/debug:$PATH"
-            echo "$PWD/target/debug" >> "$GITHUB_PATH"
-          fi
-          mise install --locked aube node
       # Check the API directly instead of bootstrapping the rate-limit helper,
       # since installing the helper itself requires GitHub API access.
       - name: Wait for GitHub rate limit

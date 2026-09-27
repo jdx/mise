@@ -110,15 +110,8 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false
-          install: false
-      - name: Install tools from the current lockfile
-        run: |
-          if ! mise install --locked --dry-run >/dev/null 2>&1; then
-            MBX_DISABLE=1 cargo build --all-features --ignore-rust-version
-            export PATH="$PWD/target/debug:$PATH"
-            echo "$PWD/target/debug" >> "$GITHUB_PATH"
-          fi
-          mise install --locked
+        env:
+          MISE_LOCKED: "1"
 
       - name: Runner metadata
         run: |

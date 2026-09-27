@@ -1356,24 +1356,10 @@ impl Lockfile {
 
         let mut lockfile = toml::Table::new();
 
-        // A release's forge IDs are a version 3 commitment. If an older
-        // lockfile gains them, upgrade it so older mise versions cannot silently
-        // ignore the identity check while accepting the rest of the entry.
-        let has_forge_ids = self.tools.values().flatten().any(|tool| {
-            tool.platforms
-                .values()
-                .any(|info| info.repository_id.is_some() || info.repository_owner_id.is_some())
-        });
-        let write_version = if has_forge_ids {
-            self.lockfile_version.max(FORGE_IDS_LOCKFILE_VERSION)
-        } else {
-            self.lockfile_version
-        };
-
-        if write_version > 0 {
+        if self.lockfile_version > 0 {
             lockfile.insert(
                 "lockfile_version".to_string(),
-                i64::from(write_version).into(),
+                i64::from(self.lockfile_version).into(),
             );
         }
 
@@ -1447,7 +1433,15 @@ impl Lockfile {
                         .as_ref()
                         .map(|g| g.pointer(path.parent().unwrap_or(Path::new("."))))
                         .transpose()?;
-                    let mut value = version.into_toml_value(write_version > 0);
+                    // Forge IDs belong to revision 3. Preserve the existing
+                    // revision on ordinary writes; `mise lock --upgrade` opts in.
+                    if self.lockfile_version < FORGE_IDS_LOCKFILE_VERSION {
+                        for platform in version.platforms.values_mut() {
+                            platform.repository_id = None;
+                            platform.repository_owner_id = None;
+                        }
+                    }
+                    let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
                         value.as_table_mut().unwrap().insert("uv".into(), uv);
                     }
@@ -5415,7 +5409,7 @@ mod tests {
     }
 
     #[test]
-    fn forge_ids_upgrade_older_lockfiles_and_write_inline() {
+    fn forge_ids_require_explicit_upgrade_and_write_inline() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
         file::write(&path, "lockfile_version = 2\n[tools]\n").unwrap();
@@ -5447,6 +5441,12 @@ mod tests {
         lockfile.tools.insert("example".into(), vec![tool]);
         lockfile.save(&path).unwrap();
 
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(contents.contains("lockfile_version = 2"), "{contents}");
+        assert!(!contents.contains("repository_ids"), "{contents}");
+
+        lockfile.upgrade();
+        lockfile.save(&path).unwrap();
         let contents = file::read_to_string(&path).unwrap();
         assert!(contents.contains("lockfile_version = 3"), "{contents}");
         assert!(
