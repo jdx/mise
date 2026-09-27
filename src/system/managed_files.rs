@@ -51,22 +51,7 @@ pub struct ManagedDirectoryTomlConfig {
     pub notify: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ManagedFilePhase {
-    PrePackages,
-    #[default]
-    PostPackages,
-}
-
-impl ManagedFilePhase {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::PrePackages => "pre-packages",
-            Self::PostPackages => "post-packages",
-        }
-    }
-}
+pub use mise_bootstrap::ManagedFilePhase;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
