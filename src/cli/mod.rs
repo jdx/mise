@@ -22,24 +22,18 @@ static CLI_SETTING_PROPS: &[PropMeta] = &[
 ];
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
-/// Settings given by command-local flags declared with `setting = "..."`.
-#[derive(Debug, Default)]
-struct CliBoundSettings {
-    truncate: Option<bool>,
-    task_remote_no_cache: Option<bool>,
-}
-
-fn cli_bound_settings(layer: &usage_rs::config::CliLayer) -> Result<CliBoundSettings> {
+/// The settings layer given by command-local flags declared with `setting = "..."`.
+fn cli_bound_settings(layer: &usage_rs::config::CliLayer) -> Result<SettingsPartial> {
     let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
     let get_bool = |key: &str| match resolved.get_key(key) {
         Some(Value::Bool(value)) => Some(*value),
         None => None,
         Some(value) => unreachable!("{key} resolved as {}", value.type_name()),
     };
-    Ok(CliBoundSettings {
-        truncate: get_bool("truncate"),
-        task_remote_no_cache: get_bool("task.remote_no_cache"),
-    })
+    let mut s = <SettingsPartial as confique::Layer>::empty();
+    s.truncate = get_bool("truncate");
+    s.task.remote_no_cache = get_bool("task.remote_no_cache");
+    Ok(s)
 }
 
 mod activate;
@@ -927,17 +921,12 @@ pub(crate) fn register_frontend() {
 }
 
 impl Cli {
-    /// The settings layer the global flags set, for `Settings::add_cli_matches`.
-    fn settings_layer(&self, bound: CliBoundSettings) -> SettingsPartial {
-        let mut s = <SettingsPartial as confique::Layer>::empty();
+    /// The settings layer the global flags set on top of `bound`, for
+    /// `Settings::add_cli_matches`.
+    fn settings_layer(&self, bound: SettingsPartial) -> SettingsPartial {
+        let mut s = bound;
         if self.raw {
             s.raw = Some(true);
-        }
-        if let Some(truncate) = bound.truncate {
-            s.truncate = Some(truncate);
-        }
-        if let Some(no_cache) = bound.task_remote_no_cache {
-            s.task.remote_no_cache = Some(no_cache);
         }
         if self.locked {
             s.locked = Some(true);
@@ -1041,7 +1030,9 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(cli.settings_layer(CliBoundSettings::default()))?;
+            Settings::init_package_query(
+                cli.settings_layer(<SettingsPartial as confique::Layer>::empty()),
+            )?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
@@ -1809,7 +1800,7 @@ mod tests {
     fn parse_task_remote_no_cache(args: &[&str]) -> Option<bool> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
-        cli_bound_settings(&layer).unwrap().task_remote_no_cache
+        cli_bound_settings(&layer).unwrap().task.remote_no_cache
     }
 
     #[test]
