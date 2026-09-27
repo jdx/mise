@@ -1480,6 +1480,7 @@ impl Run {
             shell: self.shell.clone(),
             tool: self.tool.clone(),
             timings: self.timings,
+            no_timings: self.no_timings,
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,

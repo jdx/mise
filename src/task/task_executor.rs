@@ -297,6 +297,7 @@ pub struct TaskExecutorConfig {
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
     pub timings: bool,
+    pub no_timings: bool,
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
@@ -321,6 +322,7 @@ pub struct TaskExecutor {
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
     pub timings: bool,
+    pub no_timings: bool,
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
@@ -375,6 +377,7 @@ impl TaskExecutor {
             shell: config.shell,
             tool: config.tool,
             timings: config.timings,
+            no_timings: config.no_timings,
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
@@ -499,6 +502,10 @@ impl TaskExecutor {
     }
 
     pub(crate) fn task_timings(&self, task: Option<&Task>) -> bool {
+        // `--no-timings` wins over `--timings` and `task.timings`.
+        if self.no_timings {
+            return false;
+        }
         // Resolve the style/verbosity for *this* task so a per-task `output`
         // override is honored (e.g. a task with `output = "interleave"` must not
         // get a timing line just because the global default is `prefix`).
