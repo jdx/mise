@@ -835,13 +835,25 @@ pub(crate) fn list_versions(short: &str) -> Vec<String> {
 /// backend recorded there still serves.
 pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
     let storage = ba.storage_short();
-    let mut versions = list_versions(&storage);
     let routed = ba.routed_storage_shorts();
+    // For a version-routed tool, a version is only this tool's where the
+    // registry routes it today; a copy left under another backend after a
+    // boundary moved would resolve to a path that doesn't exist.
+    let routed_here = |store: &str, v: &str| {
+        routed.is_empty()
+            || ba
+                .with_registry_version(v)
+                .map(|ba| ba.storage_short())
+                .as_deref()
+                == Some(store)
+    };
+    let mut versions = list_versions(&storage)
+        .into_iter()
+        .filter(|v| routed_here(&storage, v))
+        .collect::<Vec<_>>();
     for other in routed.iter().filter(|other| **other != storage) {
         for v in list_versions(other) {
-            // A version is only this tool's if the registry still routes it here.
-            let owner = ba.with_registry_version(&v).map(|ba| ba.storage_short());
-            if owner.as_deref() == Some(other.as_str()) && !versions.contains(&v) {
+            if routed_here(other, &v) && !versions.contains(&v) {
                 versions.push(v);
             }
         }
