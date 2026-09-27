@@ -1,15 +1,17 @@
 //! Cask API models and artifact parsing. Installation remains in mise.
 
 mod artifacts;
+mod flight;
 mod helpers;
 mod model;
 mod types;
 
 pub use artifacts::{
     cask_artifacts, parse_app_artifact, parse_binary_artifact, parse_command_wrapper_artifact,
-    parse_flight_step, parse_font_artifact, parse_generated_completion_artifact,
-    parse_generic_artifact, parse_pkg_artifact, parse_run_command,
+    parse_font_artifact, parse_generated_completion_artifact, parse_generic_artifact,
+    parse_pkg_artifact,
 };
+pub use flight::{parse_flight_step, parse_run_command};
 pub use helpers::{
     artifact_type, has_lifecycle_hook, is_flight_glob, validate_flight_relative_path,
 };
