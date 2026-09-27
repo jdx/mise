@@ -851,6 +851,11 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     }
                     _ => None,
                 };
+                if t.contains_key("repository_id") || t.contains_key("repository_owner_id") {
+                    bail!(
+                        "flat repository_id and repository_owner_id lockfile fields are unsupported; use repository_ids in lockfile revision 3"
+                    );
+                }
                 let (repository_id, repository_owner_id) = match t.remove("repository_ids") {
                     Some(toml::Value::Table(mut ids)) => {
                         let repository_id = ids
@@ -1004,6 +1009,8 @@ mod signer_round_trip {
             toml::Value::Table(toml::toml! { repository_ids = { owner = "216188" } }),
             toml::Value::Table(toml::toml! { repository_ids = "922514152" }),
             toml::Value::Table(toml::toml! { repository_ids = { repository = 922514152 } }),
+            toml::Value::Table(toml::toml! { repository_id = "922514152" }),
+            toml::Value::Table(toml::toml! { repository_owner_id = "216188" }),
         ] {
             assert!(PlatformInfo::try_from(invalid).is_err());
         }
@@ -7468,7 +7475,7 @@ url = "https://example.com/hk-1.58.1-mac"
         invalidate_caches();
 
         let mixed = read_lockfile_at(primary_path, Some(legacy_path));
-        assert_eq!(mixed.lockfile_version(), 2);
+        assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
         assert!(mixed.uses_request_bindings());
         assert!(
             mixed.tools["node"]
