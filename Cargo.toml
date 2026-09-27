@@ -5,6 +5,7 @@ members = [
   "crates/mise-brew-relocation",
   "crates/mise-agent-env",
   "crates/mise-brew-metadata",
+  "crates/mise-bootstrap",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -141,6 +142,7 @@ mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-fe
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
 mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
+mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",

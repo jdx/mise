@@ -6609,6 +6609,7 @@ dependencies = [
  "log",
  "miette",
  "minisign-verify",
+ "mise-bootstrap",
  "mise-brew-metadata",
  "mise-brew-relocation",
  "mise-cache-core",
@@ -6695,6 +6696,17 @@ dependencies = [
 [[package]]
 name = "mise-agent-env"
 version = "0.1.0"
+
+[[package]]
+name = "mise-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "eyre",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "mise-brew-metadata"
