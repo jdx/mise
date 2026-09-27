@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 #[cfg(panic = "abort")]
 use std::sync::TryLockError;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -147,12 +147,73 @@ const GUARD_RUNNING: u8 = 0;
 const GUARD_CANCELLED: u8 = 1;
 const GUARD_TIMED_OUT: u8 = 2;
 
+/// How long a timed-out command gets between SIGTERM and SIGKILL.
+#[cfg(unix)]
+const TIMEOUT_GRACE: Duration = Duration::from_secs(5);
+
 #[cfg(unix)]
 fn signal_process_tree(pid: u32, signal: nix::sys::signal::Signal) {
     let pid = nix::unistd::Pid::from_raw(pid as i32);
     if !should_use_pgroup() || nix::sys::signal::killpg(pid, signal).is_err() {
         let _ = nix::sys::signal::kill(pid, signal);
     }
+}
+
+/// Those of `pids` for which anything that [`signal_process_tree`] would reach
+/// is still running.
+#[cfg(unix)]
+fn alive_process_trees(pids: &HashSet<u32>) -> HashSet<u32> {
+    #[cfg(target_os = "linux")]
+    if let Some(alive) = alive_process_trees_procfs(pids) {
+        return alive;
+    }
+    pids.iter()
+        .copied()
+        .filter(|&pid| {
+            let pid = nix::unistd::Pid::from_raw(pid as i32);
+            (should_use_pgroup() && nix::sys::signal::killpg(pid, None).is_ok())
+                || nix::sys::signal::kill(pid, None).is_ok()
+        })
+        .collect()
+}
+
+/// Signal 0 also reaches zombies, which an init that never reaps keeps around,
+/// so read process states instead. `None` when /proc cannot be read.
+#[cfg(target_os = "linux")]
+fn alive_process_trees_procfs(pids: &HashSet<u32>) -> Option<HashSet<u32>> {
+    let use_pgroup = should_use_pgroup();
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let mut alive = HashSet::new();
+    for entry in entries.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        // "pid (comm) state ppid pgrp ..."; comm may itself contain ") ".
+        let Some(fields) = stat.rfind(')').map(|i| &stat[i + 1..]) else {
+            continue;
+        };
+        let mut fields = fields.split_whitespace();
+        let (Some(state), Some(_ppid), Some(pgrp)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if state == "Z" {
+            continue;
+        }
+        if pids.contains(&pid) {
+            alive.insert(pid);
+        }
+        if use_pgroup
+            && let Ok(pgrp) = pgrp.parse::<u32>()
+            && pids.contains(&pgrp)
+        {
+            alive.insert(pgrp);
+        }
+    }
+    Some(alive)
 }
 
 #[cfg(windows)]
@@ -221,7 +282,7 @@ impl TimeoutGuard {
                 signal_process_tree(pid, nix::sys::signal::Signal::SIGTERM);
                 drop(guard);
                 let guard = lock.lock().unwrap();
-                let grace_deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let grace_deadline = std::time::Instant::now() + TIMEOUT_GRACE;
                 let (_guard, cancelled) = wait_for_cancel_or_deadline(cvar, guard, grace_deadline);
                 if !cancelled {
                     signal_process_tree(pid, nix::sys::signal::Signal::SIGKILL);
@@ -272,6 +333,20 @@ static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 static RAW_LOCK: Lazy<tokio::sync::RwLock<()>> = Lazy::new(|| tokio::sync::RwLock::new(()));
 
 static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
+/// Set by [`CmdLineRunner::terminate_all`]; nothing started afterwards may keep running.
+static TERMINATING: AtomicBool = AtomicBool::new(false);
+
+/// Track a started command for `kill_all`. One that started after
+/// `terminate_all` began missed its signals, so it is killed here instead.
+fn register_running_pid(pid: u32) {
+    RUNNING_PIDS.lock().unwrap().insert(pid);
+    if TERMINATING.load(Ordering::SeqCst) {
+        #[cfg(unix)]
+        signal_process_tree(pid, nix::sys::signal::SIGKILL);
+        #[cfg(windows)]
+        kill_process_tree(pid);
+    }
+}
 
 #[cfg(all(panic = "abort", unix))]
 fn kill_pids_immediately(pids: &HashSet<u32>) {
@@ -320,7 +395,7 @@ pub struct RunningPidGuard(Option<u32>);
 impl RunningPidGuard {
     pub fn new(pid: Option<u32>) -> Self {
         if let Some(pid) = pid {
-            RUNNING_PIDS.lock().unwrap().insert(pid);
+            register_running_pid(pid);
         }
         Self(pid)
     }
@@ -662,6 +737,38 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
+    /// Stop every running command the way a per-command timeout does: SIGTERM,
+    /// then SIGKILL for whatever has not exited after the grace period. Windows
+    /// has no graceful stop yet, so it force-kills the trees at once. Commands
+    /// started from here on are killed as they start, for the rest of the process.
+    pub async fn terminate_all() {
+        TERMINATING.store(true, Ordering::SeqCst);
+        #[cfg(unix)]
+        {
+            // Kept past the leaders' exit: a shell that dies on SIGTERM leaves
+            // RUNNING_PIDS while a child ignoring it keeps the group alive.
+            let mut pids = RUNNING_PIDS.lock().unwrap().clone();
+            for &pid in &pids {
+                signal_process_tree(pid, nix::sys::signal::SIGTERM);
+            }
+            let deadline = Instant::now() + TIMEOUT_GRACE;
+            loop {
+                // A tree once seen gone is never signalled again: its ID could
+                // by now belong to an unrelated process.
+                pids = alive_process_trees(&pids);
+                if pids.is_empty() || Instant::now() >= deadline {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            for &pid in &pids {
+                signal_process_tree(pid, nix::sys::signal::SIGKILL);
+            }
+        }
+        #[cfg(windows)]
+        Self::kill_all();
+    }
+
     pub fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stdin(cfg);
         self
@@ -936,7 +1043,7 @@ impl<'a> CmdLineRunner<'a> {
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        register_running_pid(id);
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
@@ -1136,7 +1243,7 @@ impl<'a> CmdLineRunner<'a> {
             .await
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        register_running_pid(id);
         if is_cancelled() {
             #[cfg(unix)]
             signal_process_tree(id, nix::sys::signal::SIGINT);
