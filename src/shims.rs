@@ -1770,12 +1770,13 @@ pub(crate) fn inactive_installed_tool_message(
 
 /// The registry shorthand for an install recorded under a backend's full name
 /// (a shorthand installs there), so the suggestion is `mise use usage` rather
-/// than `mise use packslip:github.com/jdx/usage`. Only a shorthand that resolves
-/// to that same backend qualifies: it has to reuse the install.
+/// than `mise use packslip:github.com/jdx/usage`. Only a shorthand stored in that
+/// same dir qualifies: it has to reuse the install. One resolving to the same
+/// backend through its own alias keeps a separate, short-named dir.
 fn registry_shorthand_for(installed: &str, bin_name: &str) -> Option<String> {
     let shorts = crate::registry::shorts_for_full(installed)
         .iter()
-        .filter(|short| BackendArg::from(**short).full_without_opts() == installed)
+        .filter(|short| BackendArg::from(**short).storage_short() == installed)
         .collect_vec();
     shorts
         .iter()
