@@ -23,7 +23,7 @@ static CLI_SETTING_PROPS: &[PropMeta] = &[
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
 /// The settings layer given by command-local flags declared with `setting = "..."`.
-fn cli_bound_settings(layer: &usage_rs::config::CliLayer) -> Result<SettingsPartial> {
+fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<SettingsPartial> {
     let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
     let get_bool = |key: &str| match resolved.get_key(key) {
         Some(Value::Bool(value)) => Some(*value),
@@ -921,10 +921,10 @@ pub(crate) fn register_frontend() {
 }
 
 impl Cli {
-    /// The settings layer the global flags set on top of `bound`, for
+    /// The settings layer the global flags set on top of `command_local`, for
     /// `Settings::add_cli_matches`.
-    fn settings_layer(&self, bound: SettingsPartial) -> SettingsPartial {
-        let mut s = bound;
+    fn settings_layer(&self, command_local: SettingsPartial) -> SettingsPartial {
+        let mut s = command_local;
         if self.raw {
             s.raw = Some(true);
         }
@@ -1092,9 +1092,9 @@ impl Cli {
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
-        let bound_settings = cli_bound_settings(&cli_settings)?;
+        let command_local = command_local_settings(&cli_settings)?;
         measure!("add_cli_matches", {
-            Settings::add_cli_matches(cli.settings_layer(bound_settings))
+            Settings::add_cli_matches(cli.settings_layer(command_local))
         });
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
             // These file-only edits must remain available when alias values conflict.
@@ -1752,10 +1752,14 @@ mod tests {
         }
     }
 
-    fn parse_truncate(args: &[&str]) -> Option<bool> {
+    fn parse_command_local_settings(args: &[&str]) -> SettingsPartial {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
-        cli_bound_settings(&layer).unwrap().truncate
+        command_local_settings(&layer).unwrap()
+    }
+
+    fn parse_truncate(args: &[&str]) -> Option<bool> {
+        parse_command_local_settings(args).truncate
     }
 
     #[test]
@@ -1798,9 +1802,7 @@ mod tests {
     }
 
     fn parse_task_remote_no_cache(args: &[&str]) -> Option<bool> {
-        let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
-        let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
-        cli_bound_settings(&layer).unwrap().task.remote_no_cache
+        parse_command_local_settings(args).task.remote_no_cache
     }
 
     #[test]
