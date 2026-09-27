@@ -44,10 +44,10 @@ impl RubyPlugin {
     }
 
     fn ruby_build_path(&self) -> PathBuf {
-        self.ba.cache_path.join("ruby-build")
+        self.ba.cache_path().join("ruby-build")
     }
     fn ruby_install_path(&self) -> PathBuf {
-        self.ba.cache_path.join("ruby-install")
+        self.ba.cache_path().join("ruby-install")
     }
 
     fn ruby_build_bin(&self) -> PathBuf {

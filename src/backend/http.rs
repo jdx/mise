@@ -759,7 +759,7 @@ impl HttpBackend {
             .install_path
             .as_ref()
             .and_then(|path| path.parent())
-            .unwrap_or(&tv.ba().installs_path);
+            .unwrap_or(tv.ba().installs_path());
         tool_dir.join(Self::install_version_name(tv, cache_key))
     }
 
@@ -773,7 +773,7 @@ impl HttpBackend {
         } else {
             let pathname = Self::install_version_name(tv, "");
             env::find_in_shared_installs(
-                tv.ba().installs_path.join(&pathname),
+                tv.ba().installs_path().join(&pathname),
                 &tv.ba().tool_dir_name(),
                 &pathname,
             )
@@ -1474,7 +1474,7 @@ mod tests {
             BackendResolution::new(true),
         );
         if let Some(installs_path) = installs_path {
-            backend.installs_path = installs_path;
+            backend.set_installs_path(installs_path);
         }
         let backend = Arc::new(backend);
         let request = ToolRequest::new_version_for_test(backend, version, ToolSource::Argument);
@@ -1598,8 +1598,8 @@ mod tests {
         let tv = http_test_tv("");
         let install_path = HttpBackend::install_path_for(&tv, "abcdef123456");
 
-        assert_eq!(install_path, tv.ba().installs_path.join("_implicit"));
-        assert_ne!(install_path, tv.ba().installs_path);
+        assert_eq!(install_path, tv.ba().installs_path().join("_implicit"));
+        assert_ne!(install_path, tv.ba().installs_path());
     }
 
     #[test]

@@ -2072,7 +2072,7 @@ impl AquaBackend {
                     id
                 });
         }
-        let cache_path = ba.cache_path.clone();
+        let cache_path = ba.cache_path().to_path_buf();
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),

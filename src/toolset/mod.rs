@@ -275,7 +275,7 @@ impl Toolset {
             .into_iter()
             .map(|(p, tv)| {
                 (
-                    (p.ba().installs_path.clone(), tv.tv_pathname()),
+                    (p.ba().installs_path().to_path_buf(), tv.tv_pathname()),
                     (p.clone(), tv),
                 )
             })
@@ -285,7 +285,7 @@ impl Toolset {
         for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) =
-                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                    current_versions.get(&(b.ba().installs_path().to_path_buf(), v.clone()))
                 {
                     versions.push((p.clone(), tv.clone()));
                 } else {
@@ -321,7 +321,7 @@ impl Toolset {
             .into_iter()
             .map(|(backend, _)| backend)
             .chain(backend::list())
-            .unique_by(|backend| backend.ba().installs_path.clone())
+            .unique_by(|backend| backend.ba().installs_path().to_path_buf())
             .collect()
     }
 

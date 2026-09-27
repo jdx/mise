@@ -60,6 +60,9 @@ fn main() -> ExitCode {
     if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
         return exit::status(code);
     }
+    if cli::Cli::exit_early_for_unchanged_hook_env(&early_args) {
+        return ExitCode::SUCCESS;
+    }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();

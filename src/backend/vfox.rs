@@ -854,7 +854,7 @@ impl VfoxBackend {
             return Ok(Some(load()?));
         }
         let cache = self.metadata_snapshot_cache.get_or_init(|| {
-            CacheManagerBuilder::new(self.ba.cache_path.join("metadata.msgpack.z"))
+            CacheManagerBuilder::new(self.ba.cache_path().join("metadata.msgpack.z"))
                 .with_cache_key(lua_sources_fingerprint(&plugin_path))
                 .build()
         });
