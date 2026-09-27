@@ -193,17 +193,22 @@ mise implements checksum, GitHub artifact attestation, Cosign, SLSA, and Minisig
 verification natively. You do not need their separate CLI tools. **Support in the
 backend does not mean that every package supplies all of these checks.**
 
-| Method                       | Required publisher or registry metadata                                                                    |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Checksums                    | An expected digest from registry metadata, a checksum file, the release API, or a lockfile.                |
-| GitHub artifact attestations | A registry attestation configuration identifying the expected workflow.                                    |
-| Cosign                       | A supported public-key or signature-bundle configuration; arbitrary Cosign CLI arguments are not executed. |
-| SLSA                         | A registry provenance configuration and the publisher's provenance artifact.                               |
-| Minisign                     | A signature and the expected public key.                                                                   |
+| Method                       | Required publisher or registry metadata                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Checksums                    | An expected digest from registry metadata, a checksum file, the release API, or a lockfile.                               |
+| GitHub artifact attestations | A registry attestation configuration identifying the expected workflow.                                                   |
+| Cosign                       | A supported public-key or signature-bundle configuration; arbitrary Cosign CLI arguments are not executed.                |
+| SLSA                         | A registry provenance configuration with `signer_identity` and `signer_issuer`, plus the publisher's provenance artifact. |
+| Minisign                     | A signature and the expected public key.                                                                                  |
 
 The corresponding `aqua.*` verification settings are enabled by default. Some
 checks also have a global setting, such as `github_attestations` or `slsa`.
 See [Settings](#settings) for the complete configuration.
+
+The signer fields are the exact Fulcio certificate URI subject and OIDC issuer.
+Registry packages without them skip SLSA and may use another verification method.
+An existing lockfile that requires SLSA fails until the signer metadata is added
+or the lockfile is refreshed with another verification method.
 
 A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous provenance
 result while checking the artifact digest. Set

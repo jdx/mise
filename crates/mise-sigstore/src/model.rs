@@ -50,6 +50,16 @@ pub struct SlsaArtifact {
     pub sha256: String,
 }
 
+/// Expected signer of an SLSA provenance statement.
+///
+/// Both values must match the Fulcio certificate exactly. The identity is the
+/// certificate's URI subject alternative name, including its workflow ref.
+#[derive(Debug, Clone, Copy)]
+pub struct SlsaSignerIdentity<'a> {
+    pub identity: &'a str,
+    pub issuer: &'a str,
+}
+
 impl SlsaArtifact {
     pub fn from_bytes(name: String, bytes: &[u8]) -> Self {
         Self {

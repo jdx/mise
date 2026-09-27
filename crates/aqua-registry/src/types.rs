@@ -232,6 +232,10 @@ pub struct AquaSlsaProvenance {
     pub asset: Option<String>,
     pub source_uri: Option<String>,
     pub source_tag: Option<String>,
+    /// Exact URI SAN expected in the Fulcio signer certificate.
+    pub signer_identity: Option<String>,
+    /// Exact OIDC issuer expected in the Fulcio signer certificate.
+    pub signer_issuer: Option<String>,
 }
 
 /// Minisign verification configuration
@@ -1485,6 +1489,13 @@ impl AquaCosignSignature {
 }
 
 impl AquaSlsaProvenance {
+    pub fn has_signer_identity(&self) -> bool {
+        self.signer_identity
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+            && self.signer_issuer.as_deref().is_some_and(|s| !s.is_empty())
+    }
+
     pub fn asset_strs(
         &self,
         pkg: &AquaPackage,
@@ -1531,6 +1542,12 @@ impl AquaSlsaProvenance {
         }
         if let Some(source_tag) = other.source_tag {
             self.source_tag = Some(source_tag);
+        }
+        if let Some(signer_identity) = other.signer_identity {
+            self.signer_identity = Some(signer_identity);
+        }
+        if let Some(signer_issuer) = other.signer_issuer {
+            self.signer_issuer = Some(signer_issuer);
         }
     }
 }

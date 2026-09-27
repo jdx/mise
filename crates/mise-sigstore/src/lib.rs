@@ -42,7 +42,9 @@ pub use github::{
     verify_github_attestation_with_attestations, verify_github_attestation_with_base_url,
     verify_github_attestation_with_base_url_and_digest,
 };
-pub use model::{ArtifactRef, AttestationError, AttestationSource, Result, SlsaArtifact};
+pub use model::{
+    ArtifactRef, AttestationError, AttestationSource, Result, SlsaArtifact, SlsaSignerIdentity,
+};
 pub use retry::RetryConfig;
 pub use slsa::{
     is_slsa_subject_mismatch, verify_slsa_provenance, verify_slsa_provenance_artifacts,

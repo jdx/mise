@@ -100,6 +100,26 @@ impl<'a> GitBackendOptions<'a> {
         self.values.bool_with_default("github_attestations", true)
     }
 
+    fn slsa_signer(&self) -> Option<crate::github::sigstore::SlsaSignerIdentity<'a>> {
+        let identity = self
+            .values
+            .str("slsa_signer_identity")
+            .filter(|s| !s.is_empty())?;
+        let issuer = self
+            .values
+            .str("slsa_signer_issuer")
+            .filter(|s| !s.is_empty())?;
+        Some(crate::github::sigstore::SlsaSignerIdentity { identity, issuer })
+    }
+
+    fn slsa_signer_for(&self, tv: &ToolVersion) -> Option<(String, String)> {
+        let signer = self.slsa_signer()?;
+        Some((
+            template_string(signer.identity, tv),
+            template_string(signer.issuer, tv),
+        ))
+    }
+
     fn version_prefix(&self) -> Option<&'a str> {
         self.values.str("version_prefix")
     }
@@ -362,6 +382,14 @@ fn github_attestations_disabled_for_tool_error(tv: &ToolVersion) -> eyre::Report
         "Lockfile requires github-attestations provenance for {tv} but \
          github_attestations is disabled for this tool. Re-run `mise lock` \
          to refresh the lockfile, or remove github_attestations = false."
+    )
+}
+
+fn slsa_signer_missing_error(tv: &ToolVersion) -> eyre::Report {
+    eyre::eyre!(
+        "Lockfile requires SLSA provenance for {tv}, but this tool has no expected signer. \
+         Set slsa_signer_identity and slsa_signer_issuer in the tool options, \
+         or refresh the lockfile after choosing another verification method."
     )
 }
 
@@ -1332,7 +1360,7 @@ impl UnifiedGitBackend {
         // Check for SLSA provenance from release assets using the same platform-aware
         // picker as install-time verification. This ensures we only record SLSA provenance
         // when a matching provenance file exists for the target platform.
-        if settings.slsa && settings.github.slsa {
+        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Narrow provenance the same way the binary is narrowed, so a
             // multi-binary release's per-binary provenance files don't
@@ -1453,7 +1481,14 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to SLSA provenance
-        if settings.slsa && settings.github.slsa {
+        if settings.slsa
+            && settings.github.slsa
+            && let Some((identity, issuer)) = opts.slsa_signer_for(tv)
+        {
+            let signer = crate::github::sigstore::SlsaSignerIdentity {
+                identity: &identity,
+                issuer: &issuer,
+            };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
             let release =
@@ -1503,6 +1538,7 @@ impl UnifiedGitBackend {
                     &artifact_path,
                     &provenance_path,
                     1u8,
+                    signer,
                 )
                 .await
                 {
@@ -1527,6 +1563,7 @@ impl UnifiedGitBackend {
                                     &artifact_path,
                                     &provenance_path,
                                     verification.additional_overlay,
+                                    signer,
                                 )
                                 .await
                             {
@@ -2566,6 +2603,15 @@ impl UnifiedGitBackend {
     ) -> Result<()> {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
+        if tv
+            .lock_platforms
+            .get(platform_key)
+            .and_then(|pi| pi.provenance.as_ref())
+            .is_some_and(ProvenanceType::is_slsa)
+            && opts.slsa_signer().is_none()
+        {
+            return Err(slsa_signer_missing_error(tv));
+        }
         if !opts.github_attestations()
             && let Some(provenance) = tv
                 .lock_platforms
@@ -2607,7 +2653,12 @@ impl UnifiedGitBackend {
                 }
                 !settings.github_attestations || !settings.github.github_attestations
             }
-            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
+            ProvenanceType::Slsa { .. } => {
+                if opts.slsa_signer().is_none() {
+                    return Err(slsa_signer_missing_error(tv));
+                }
+                !settings.slsa || !settings.github.slsa
+            }
             _ => {
                 return Err(eyre::eyre!(
                     "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
@@ -2663,6 +2714,10 @@ impl UnifiedGitBackend {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
+        if expected_provenance.is_some_and(ProvenanceType::is_slsa) && opts.slsa_signer().is_none()
+        {
+            return Err(slsa_signer_missing_error(tv));
+        }
         if !attestations_supported(&api_url)
             && let Some(expected) = expected_provenance
             && expected.is_github_attestations()
@@ -2731,7 +2786,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
-        if !skip_slsa && settings.slsa && settings.github.slsa {
+        if !skip_slsa && settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             match self
                 .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url, verification)
                 .await
@@ -2843,6 +2898,7 @@ impl UnifiedGitBackend {
         file_path: &std::path::Path,
         provenance_path: &std::path::Path,
         additional_overlay: bool,
+        signer: crate::github::sigstore::SlsaSignerIdentity<'_>,
     ) -> Result<bool> {
         let raw_opts = tv.request.options();
         let format = if !additional_overlay
@@ -2886,9 +2942,14 @@ impl UnifiedGitBackend {
             })
             .collect::<Vec<_>>();
 
-        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
-            .await
-            .map_err(|e| eyre::eyre!("content-level SLSA verification failed: {e}"))
+        crate::github::sigstore::verify_slsa_provenance_artifacts(
+            provenance_path,
+            &artifacts,
+            1u8,
+            signer,
+        )
+        .await
+        .map_err(|e| eyre::eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Try to verify SLSA provenance. Returns:
@@ -2915,6 +2976,13 @@ impl UnifiedGitBackend {
         let repo = self.repo();
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
+        let (identity, issuer) = opts.slsa_signer_for(tv).ok_or_else(|| {
+            VerificationStatus::Error("SLSA signer identity and issuer are missing".to_string())
+        })?;
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+        };
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
@@ -2994,6 +3062,7 @@ impl UnifiedGitBackend {
             file_path,
             &provenance_path,
             1, // Minimum SLSA level
+            signer,
         )
         .await
         {
@@ -3016,6 +3085,7 @@ impl UnifiedGitBackend {
                             file_path,
                             &provenance_path,
                             verification.additional_overlay,
+                            signer,
                         )
                         .await
                     {
@@ -4141,6 +4211,52 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         );
 
         assert!(!backend.options(&opts).github_attestations());
+    }
+
+    #[test]
+    fn test_slsa_requires_both_signer_options() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        assert!(backend.options(&opts).slsa_signer().is_none());
+        opts.opts.insert(
+            "slsa_signer_identity".to_string(),
+            toml::Value::String("https://github.com/example/workflow@refs/heads/main".to_string()),
+        );
+        assert!(backend.options(&opts).slsa_signer().is_none());
+        opts.opts.insert(
+            "slsa_signer_issuer".to_string(),
+            toml::Value::String("https://token.actions.githubusercontent.com".to_string()),
+        );
+        let signer = backend.options(&opts).slsa_signer().unwrap();
+        assert_eq!(signer.issuer, "https://token.actions.githubusercontent.com");
+    }
+
+    #[test]
+    fn test_slsa_signer_identity_renders_resolved_version() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "slsa_signer_identity".to_string(),
+            toml::Value::String(
+                "https://github.com/example/release.yml@refs/tags/v{{version}}".to_string(),
+            ),
+        );
+        opts.opts.insert(
+            "slsa_signer_issuer".to_string(),
+            toml::Value::String("https://token.actions.githubusercontent.com".to_string()),
+        );
+        let ba = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request = ToolRequest::new(ba, "1.2.3", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.2.3".to_string());
+        let (identity, issuer) = backend.options(&opts).slsa_signer_for(&tv).unwrap();
+        assert_eq!(
+            identity,
+            "https://github.com/example/release.yml@refs/tags/v1.2.3"
+        );
+        assert_eq!(issuer, "https://token.actions.githubusercontent.com");
     }
 
     #[test]
