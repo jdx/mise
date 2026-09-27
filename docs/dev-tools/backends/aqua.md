@@ -154,9 +154,9 @@ build for one tool:
 setting, it makes selection strict: mise never falls back to a build for the other libc. It
 overrides `libc = "glibc"` in settings. It does not override a platform that names a libc, such as
 a musl host or a `linux-x64-musl` lockfile platform, because a glibc build cannot run there. Setting
-`libc = "musl"` in settings makes the host platform `linux-x64-musl`, so under that setting a
-tool's `libc = "glibc"` has no effect. The value is recorded in the
-lockfile, so changing it resolves the tool again. A version that is already installed keeps its
+`libc = "musl"` in settings makes the host a musl platform (for example `linux-arm64-musl`), so
+under that setting a tool's `libc = "glibc"` has no effect. The value is recorded in the lockfile,
+so changing it resolves the tool again. A version that is already installed keeps its
 build until you reinstall it with `mise install --force`, as with other install options.
 
 `libc` affects install, lock, and resolving `latest` from the release GitHub marks as latest. The
