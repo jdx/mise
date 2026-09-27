@@ -2,7 +2,7 @@
 //! per-file adaptive save scheduling (`schedule`), the report of throttled
 //! paths (`noise`), and the foreground process (`runtime`).
 
-pub(crate) mod noise;
+pub mod noise;
 pub(crate) mod plan;
-pub(crate) mod runtime;
+pub mod runtime;
 pub(crate) mod schedule;

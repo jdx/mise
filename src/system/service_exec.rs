@@ -28,7 +28,7 @@ use crate::system::scheduled_tasks::ServiceLaunch;
 /// Run the service registered under `name`, whose launch must hash to
 /// `digest`. Returns once it exits, with its exit code.
 #[cfg(windows)]
-pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
+pub fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     let launch = read_launch(name, launch, digest)?;
     // The console Task Scheduler allocated for this process alone was
     // hidden right after the parser recognized this command
@@ -90,7 +90,7 @@ pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
 /// Only Task Scheduler registers this action: systemd and launchd both set
 /// a service's environment themselves, so nothing has to carry it for them.
 #[cfg(not(windows))]
-pub(crate) fn run(_name: &str, _launch: &Path, _digest: &str) -> Result<i32> {
+pub fn run(_name: &str, _launch: &Path, _digest: &str) -> Result<i32> {
     bail!("user services run through mise only on windows")
 }
 

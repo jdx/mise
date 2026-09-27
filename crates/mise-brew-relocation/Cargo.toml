@@ -1,0 +1,20 @@
+[package]
+name = "mise-brew-relocation"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "Homebrew bottle placeholder and binary relocation for mise"
+documentation = "https://docs.rs/mise-brew-relocation"
+homepage = "https://mise.jdx.dev"
+repository = "https://github.com/jdx/mise"
+readme = "README.md"
+
+[dependencies]
+eyre = "0.6"
+log = "0.4"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
+zip = { version = "8", default-features = false, features = ["deflate"] }

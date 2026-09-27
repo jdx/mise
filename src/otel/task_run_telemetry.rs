@@ -38,7 +38,7 @@ pub(crate) type TaskSpan = opentelemetry_sdk::trace::Span;
 /// `--timeout`). The root span defaults to an error status; `set_succeeded`
 /// marks the happy path.
 #[derive(Clone)]
-pub(crate) struct TaskRunTelemetry {
+pub struct TaskRunTelemetry {
     inner: Arc<Inner>,
 }
 
@@ -75,10 +75,7 @@ impl TaskRunTelemetry {
     ///
     /// `captures_output` is false for a `--raw` run, which never reads task
     /// output and so must not claim an ancestor's log stream.
-    pub(crate) fn init_if_enabled(
-        requested_task_names: &[String],
-        captures_output: bool,
-    ) -> Option<Self> {
+    pub fn init_if_enabled(requested_task_names: &[String], captures_output: bool) -> Option<Self> {
         let traces = traces_enabled();
         let logs = logs_enabled();
         if !traces && !logs {
@@ -151,7 +148,7 @@ impl TaskRunTelemetry {
     }
 
     /// The forwarder to install on the task executor, if log export is on.
-    pub(crate) fn output_forwarder(&self) -> Option<TaskOutputForwarder> {
+    pub fn output_forwarder(&self) -> Option<TaskOutputForwarder> {
         self.inner.output_forwarder.clone()
     }
 
@@ -160,7 +157,7 @@ impl TaskRunTelemetry {
     ///
     /// `args` are the task's arguments with the config's redactions applied;
     /// they appear in the span name and attributes in place of `task.args`.
-    pub(crate) fn start_task(
+    pub fn start_task(
         &self,
         task: &Task,
         args: &[String],
@@ -209,7 +206,7 @@ impl TaskRunTelemetry {
     ///
     /// `end_time` is passed explicitly so the span covers the task itself,
     /// not the error reporting and sibling teardown that follow it.
-    pub(crate) fn end_task(
+    pub fn end_task(
         &self,
         mut span: TaskSpan,
         task: &Task,
@@ -253,7 +250,7 @@ impl TaskRunTelemetry {
     /// tools, running deps providers, starting daemons) under its own span,
     /// a child of the root span. The span is marked as an error when the
     /// phase fails. Without telemetry this just awaits `fut`.
-    pub(crate) async fn phase<T>(
+    pub async fn phase<T>(
         telemetry: Option<&Self>,
         name: &'static str,
         fut: impl Future<Output = Result<T>>,
@@ -275,14 +272,14 @@ impl TaskRunTelemetry {
     /// Mark the run as succeeded. Must be called explicitly on the happy
     /// path — the default is a failed run so that cancelled futures (e.g.
     /// timeout) produce an errored root span.
-    pub(crate) fn set_succeeded(&self) {
+    pub fn set_succeeded(&self) {
         self.inner.has_failures.store(false, Ordering::Relaxed);
     }
 
     /// Flush logs, end the group and root spans, and shut down the tracer
     /// provider. Idempotent; also runs on drop so traces survive
     /// cancellation (e.g. `--timeout`).
-    pub(crate) fn finish(&self) {
+    pub fn finish(&self) {
         self.inner.finish();
     }
 }

@@ -1,9 +1,10 @@
-use crate::config::{Config, Settings, config_file};
+use crate::config::settings::SettingsPartial;
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
-use crate::{hook_env as hook_env_module, logger, migrate, shims};
+use crate::{hook_env as hook_env_module, logger, migrate};
 use eyre::{Report, bail};
 use futures_util::future::LocalBoxFuture;
 use std::path::PathBuf;
@@ -25,7 +26,7 @@ fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<boo
 }
 
 mod activate;
-pub(crate) mod args;
+pub(crate) use crate::args;
 mod asdf;
 pub(crate) mod backends;
 mod bin_paths;
@@ -51,7 +52,6 @@ mod hook_env;
 mod hook_not_found;
 mod tool_alias;
 
-pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
@@ -85,6 +85,7 @@ mod set;
 mod settings;
 mod shell;
 mod shell_alias;
+mod shim;
 mod skills;
 mod sponsors;
 mod ssh;
@@ -649,32 +650,7 @@ fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<Str
     result
 }
 
-/// Long and short forms of the top-level flags that consume a following argument.
-///
-/// Hardcoded rather than derived because `env.rs` needs it from `Lazy` statics
-/// during startup — before anything has parsed arguments — and deriving it means
-/// building the entire clap tree, which costs ~3.1M instructions. Doing that
-/// there is what made every mise command ~6.3M instructions more expensive.
-///
-/// `test_global_flags_with_values_matches_clap` asserts this equals what clap
-/// reports, so adding a value-taking flag to [`Cli`] without updating this list
-/// fails CI rather than silently mis-parsing arguments.
-pub(crate) const GLOBAL_FLAGS_WITH_VALUES: &[&str] = &[
-    "--cd",
-    "-C",
-    "--env",
-    "-E",
-    "--jobs",
-    "-j",
-    "--profile",
-    "-P",
-    "--shell",
-    "-s",
-    "--tool",
-    "-t",
-    "--log-level",
-    "--output",
-];
+use mise_util::args::first_non_global_arg_idx_with;
 
 /// Index of the first argument that is not a global flag or one of its values.
 ///
@@ -687,57 +663,6 @@ pub(crate) fn first_non_global_arg_idx(
 ) -> Option<usize> {
     let flags = get_global_flags(cmd).0;
     first_non_global_arg_idx_with(|f| flags.iter().any(|x| x == f), args)
-}
-
-/// As [`first_non_global_arg_idx`], against [`GLOBAL_FLAGS_WITH_VALUES`].
-///
-/// For callers with no `Command` to hand, which would otherwise build the whole
-/// tree just to read its top-level arguments.
-pub(crate) fn first_non_global_arg_idx_cached(args: &[String]) -> Option<usize> {
-    first_non_global_arg_idx_with(|f| GLOBAL_FLAGS_WITH_VALUES.contains(&f), args)
-}
-
-fn first_non_global_arg_idx_with(
-    takes_value: impl Fn(&str) -> bool,
-    args: &[String],
-) -> Option<usize> {
-    let mut i = 1;
-    while i < args.len() {
-        let arg = &args[i];
-
-        if arg == "--" {
-            return None;
-        }
-
-        if !arg.starts_with('-') {
-            return Some(i);
-        }
-
-        let flag_takes_separate_value = if arg.starts_with("--") {
-            if arg.contains('=') {
-                false
-            } else {
-                let flag_name = arg.split('=').next().unwrap();
-                takes_value(flag_name)
-            }
-        } else if let Some(flag_name) = arg.get(..2) {
-            // `arg.get(..2)` (not `&arg[..2]`) avoids panicking when the arg is
-            // not valid UTF-8 in the first place: args are read lossily, so a
-            // malformed byte becomes a multi-byte U+FFFD and byte index 2 may not
-            // be a char boundary. A short flag is always ASCII, so a non-ASCII
-            // prefix simply matches no value-taking flag.
-            arg.len() == 2 && takes_value(flag_name)
-        } else {
-            false
-        };
-
-        if flag_takes_separate_value && i + 1 < args.len() {
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-    None
 }
 
 fn is_known_subcommand(cmd: &usage_rs::Command<'_>, arg: &str) -> bool {
@@ -958,7 +883,75 @@ fn is_packages_where_query(args: &[String]) -> bool {
     false
 }
 
+/// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).
+pub(crate) fn register_frontend() {
+    crate::frontend::register(crate::frontend::Frontend {
+        lockfiles_after_install: |config, installed| {
+            Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
+        },
+        subcommand_names: || {
+            Cli::command()
+                .subcommands
+                .iter()
+                .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
+                .map(str::to_string)
+                .collect()
+        },
+    });
+}
+
 impl Cli {
+    /// The settings layer the global flags set, for `Settings::add_cli_matches`.
+    fn settings_layer(&self, truncate: Option<bool>) -> SettingsPartial {
+        let mut s = <SettingsPartial as confique::Layer>::empty();
+        if self.raw {
+            s.raw = Some(true);
+        }
+        if let Some(truncate) = truncate {
+            s.truncate = Some(truncate);
+        }
+        if self.locked {
+            s.locked = Some(true);
+        }
+        if let Some(cd) = &self.cd {
+            s.cd = Some(cd.clone());
+        }
+        if let Some(jobs) = self.jobs {
+            s.jobs = Some(jobs);
+        }
+        if self.profile.is_some() {
+            s.env = self.profile.clone();
+        }
+        if self.env.is_some() {
+            s.env = self.env.clone();
+        }
+        if self.yes {
+            s.yes = Some(true);
+        }
+        if self.quiet || self.silent {
+            s.quiet = Some(true);
+        }
+        if self.silent {
+            s.silent = Some(true);
+        }
+        if self.trace {
+            s.log_level = Some("trace".to_string());
+        }
+        if self.debug {
+            s.log_level = Some("debug".to_string());
+        }
+        if let Some(log_level) = &self.log_level {
+            s.log_level = Some(log_level.to_string());
+        }
+        if self.verbose > 0 {
+            s.verbose = Some(true);
+        }
+        if self.verbose > 1 {
+            s.log_level = Some("trace".to_string());
+        }
+        s
+    }
+
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
@@ -996,7 +989,7 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(&cli)?;
+            Settings::init_package_query(cli.settings_layer(None))?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
@@ -1020,7 +1013,7 @@ impl Cli {
         }
         measure!("logger", { logger::init() });
         check_working_directory();
-        measure!("handle_shim", { shims::handle_shim().await })?;
+        measure!("handle_shim", { shim::handle_shim().await })?;
         let print_version = version::print_version_if_requested(args)?;
         // Clap's tool argument parsers consult installed plugin/tool metadata while
         // resolving registry options. Initialize that filesystem-only state before
@@ -1059,7 +1052,7 @@ impl Cli {
         validate_cd_path(&cli.cd)?;
         let cli_truncate = cli_truncate_setting(&cli_settings)?;
         measure!("add_cli_matches", {
-            Settings::add_cli_matches_with(&cli, cli_truncate)
+            Settings::add_cli_matches(cli.settings_layer(cli_truncate))
         });
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
             // These file-only edits must remain available when alias values conflict.
@@ -1357,6 +1350,7 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
 
     #[test]
     /// A help page follows mise's colour decision, not the terminal's.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use eyre::{Result, bail};
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cli::lock::Lock;
 use crate::config::Config;
 use crate::file::display_path;

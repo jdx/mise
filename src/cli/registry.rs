@@ -1,6 +1,6 @@
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::{self, SecurityFeature};
-use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::registry::{REGISTRY, RegistryTool, tool_enabled};
 use crate::ui::table::MiseTable;

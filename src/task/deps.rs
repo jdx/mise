@@ -15,7 +15,7 @@ use std::{
 use tokio::sync::mpsc;
 
 /// Unique key for a task occurrence, including name, args, env vars, and phase.
-pub(crate) type TaskKey = (String, Vec<String>, Vec<(String, String)>, TaskRunPhase);
+pub type TaskKey = (String, Vec<String>, Vec<(String, String)>, TaskRunPhase);
 
 fn env_key(task: &Task) -> Vec<(String, String)> {
     task.env
@@ -29,7 +29,7 @@ fn env_key(task: &Task) -> Vec<(String, String)> {
         .collect()
 }
 
-pub(crate) struct TaskCycleError {
+pub struct TaskCycleError {
     paths: Vec<Vec<String>>,
     keys: Vec<Vec<TaskKey>>,
 }
@@ -39,11 +39,11 @@ impl TaskCycleError {
         self.paths.first().map(Vec::as_slice).unwrap_or_default()
     }
 
-    pub(crate) fn paths(&self) -> &[Vec<String>] {
+    pub fn paths(&self) -> &[Vec<String>] {
         &self.paths
     }
 
-    pub(crate) fn keys(&self) -> &[Vec<TaskKey>] {
+    pub fn keys(&self) -> &[Vec<TaskKey>] {
         &self.keys
     }
 }
@@ -70,7 +70,7 @@ impl std::error::Error for TaskCycleError {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 /// State contributed by a task's completed direct dependencies.
-pub(crate) struct TaskDependencyState {
+pub struct TaskDependencyState {
     /// Stable artifact identities to include in the task's cache key.
     pub cache_keys: Vec<String>,
     /// Whether any dependency executed or restored outputs.
@@ -81,7 +81,7 @@ pub(crate) struct TaskDependencyState {
 
 #[derive(Debug, Clone, Default)]
 /// Completed task state that can be propagated into a nested task graph.
-pub(crate) struct TaskCompletionState {
+pub struct TaskCompletionState {
     completed: HashSet<TaskKey>,
     did_work: HashSet<TaskKey>,
     cache_keys: HashMap<TaskKey, String>,
@@ -97,7 +97,7 @@ impl TaskCompletionState {
 }
 
 #[derive(Debug)]
-pub(crate) struct Deps {
+pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinite loop
@@ -127,14 +127,11 @@ fn same_task_without_phase(task: &Task, other: &Task) -> bool {
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
-    pub(crate) async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+    pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
         Self::new_with_cycle_limit(config, tasks, Some(1)).await
     }
 
-    pub(crate) async fn new_for_validation(
-        config: &Arc<Config>,
-        tasks: Vec<Task>,
-    ) -> eyre::Result<Self> {
+    pub async fn new_for_validation(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
         Self::new_with_cycle_limit(config, tasks, None).await
     }
 
@@ -395,7 +392,7 @@ impl Deps {
     }
 
     /// Snapshot completed task state for nested task sub-graphs.
-    pub(crate) fn completion_state(&self) -> TaskCompletionState {
+    pub fn completion_state(&self) -> TaskCompletionState {
         TaskCompletionState {
             completed: self.removed.clone(),
             did_work: self.did_work.clone(),
@@ -406,7 +403,7 @@ impl Deps {
     /// Check if a post-dep task should actually run: it must be a post-dependency
     /// AND its parent must have actually started executing (not just been scheduled).
     /// Returns false for non-post-dep tasks or post-deps whose parent was never executed.
-    pub(crate) fn is_runnable_post_dep(&self, task: &Task) -> bool {
+    pub fn is_runnable_post_dep(&self, task: &Task) -> bool {
         let key = task_key(task);
         match self.post_dep_parents.get(&key) {
             Some(parent_keys) => parent_keys.iter().any(|pk| self.executed.contains(pk)),
@@ -424,29 +421,29 @@ impl Deps {
     /// Mark a task as having actually started execution.
     /// This is distinct from being scheduled (sent) — a task may be scheduled as a
     /// graph leaf but then skipped because an earlier task failed.
-    pub(crate) fn mark_executed(&mut self, task: &Task) {
+    pub fn mark_executed(&mut self, task: &Task) {
         self.executed.insert(task_key(task));
     }
 
     /// Clear the execution marker when cancellation prevents a scheduled task
     /// from reaching process startup.
-    pub(crate) fn unmark_executed(&mut self, task: &Task) {
+    pub fn unmark_executed(&mut self, task: &Task) {
         self.executed.remove(&task_key(task));
     }
 
     /// Mark a task as having executed or restored outputs.
     /// Used to invalidate dependent tasks' source freshness checks.
-    pub(crate) fn mark_did_work(&mut self, task: &Task) {
+    pub fn mark_did_work(&mut self, task: &Task) {
         self.did_work.insert(task_key(task));
     }
 
     /// Record a stable artifact identity produced or reused by a completed task.
-    pub(crate) fn mark_cache_key(&mut self, task: &Task, cache_key: String) {
+    pub fn mark_cache_key(&mut self, task: &Task, cache_key: String) {
         self.cache_keys.insert(task_key(task), cache_key);
     }
 
     /// Return the completed dependency state needed for freshness and artifact caching.
-    pub(crate) fn dependency_state(&self, task: &Task) -> TaskDependencyState {
+    pub fn dependency_state(&self, task: &Task) -> TaskDependencyState {
         let key = task_key(task);
         let deps = self
             .dep_edges
@@ -486,7 +483,7 @@ impl Deps {
     // use contracts::{ensures, requires};
     // #[requires(self.graph.node_count() > 0)]
     // #[ensures(self.graph.node_count() == old(self.graph.node_count()) - 1)]
-    pub(crate) fn remove(&mut self, task: &Task) {
+    pub fn remove(&mut self, task: &Task) {
         if let Some(idx) = self.node_idx(task) {
             self.graph.remove_node(idx);
             let key = task_key(task);
@@ -506,7 +503,7 @@ impl Deps {
     /// Node index order is creation order only until the first removal, so
     /// anything that cares about the order wants
     /// [`all_in_creation_order`](Self::all_in_creation_order) instead.
-    pub(crate) fn all(&self) -> impl Iterator<Item = &Task> {
+    pub fn all(&self) -> impl Iterator<Item = &Task> {
         self.graph.node_indices().map(|idx| &self.graph[idx])
     }
 
@@ -523,7 +520,7 @@ impl Deps {
     /// pruned as already complete never runs, so nothing would ever retire the
     /// slot it was given, and an empty slot at the front of the buffer map stops
     /// everything behind it from streaming.
-    pub(crate) fn all_in_creation_order(&self) -> Vec<&Task> {
+    pub fn all_in_creation_order(&self) -> Vec<&Task> {
         let mut present: HashMap<TaskKey, &Task> = self
             .graph
             .node_indices()
@@ -539,7 +536,7 @@ impl Deps {
 
     /// Mark tasks that share a display_name so their prefix includes args
     /// for disambiguation (e.g. `[test-docker 4.1]` vs `[test-docker 4.2]`).
-    pub(crate) fn mark_ambiguous_prefixes(&mut self) {
+    pub fn mark_ambiguous_prefixes(&mut self) {
         let mut name_to_indices: HashMap<String, Vec<petgraph::graph::NodeIndex>> = HashMap::new();
         for idx in self.graph.node_indices() {
             name_to_indices
@@ -556,7 +553,7 @@ impl Deps {
         }
     }
 
-    pub(crate) fn is_linear(&self) -> bool {
+    pub fn is_linear(&self) -> bool {
         let mut graph = self.graph.clone();
         // pop dependencies off, if we get multiple dependencies at once it's not linear
         loop {

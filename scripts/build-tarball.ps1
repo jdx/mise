@@ -25,6 +25,13 @@ $Features = "rustls-native-roots,self_update,vfox/vendored-lua"
 # On Unix, longjmp does not unwind, so the other targets keep panic=abort.
 $Env:CARGO_PROFILE_SERIOUS_PANIC = "unwind"
 
+# Fat LTO optimizes the whole program as one LLVM module on one thread, and on
+# the 4-vCPU/16 GB windows-latest runner that link ran from ~65 minutes to past
+# the 150-minute job timeout depending on memory pressure. Thin LTO keeps most
+# of the cross-crate inlining while optimizing in parallel with far less
+# memory. Go back to fat once the Windows builds move to a larger runner.
+$Env:CARGO_PROFILE_SERIOUS_LTO = "thin"
+
 cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
 cargo build --profile=serious -p mise-shim --target "$Target"
 mkdir -p dist/mise/bin

@@ -32,11 +32,11 @@ use crate::file::{self, display_path};
 pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The state directory the store lives under.
-pub(crate) fn state_dir() -> PathBuf {
+pub fn state_dir() -> PathBuf {
     crate::dirs::STATE.to_path_buf()
 }
 
-pub(crate) fn store_dir_in(state_dir: &Path) -> PathBuf {
+pub fn store_dir_in(state_dir: &Path) -> PathBuf {
     state_dir.join("history")
 }
 
@@ -188,7 +188,7 @@ pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
 
 /// Display context for an in-progress local operation, never durable history.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Machine {
+pub struct Machine {
     pub id: String,
     pub name: String,
 }
@@ -216,7 +216,7 @@ fn hostname() -> String {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Trigger {
+pub enum Trigger {
     Edit,
     Save,
     Agent,
@@ -235,7 +235,7 @@ pub(crate) enum Trigger {
 }
 
 impl Trigger {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Edit => "edit",
             Self::Save => "save",
@@ -255,7 +255,7 @@ impl Trigger {
         }
     }
 
-    pub(crate) fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Option<Self> {
         Some(match text {
             "edit" => Self::Edit,
             "save" => Self::Save,
@@ -286,7 +286,7 @@ impl Trigger {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum DescriptionSource {
+pub enum DescriptionSource {
     Computed,
     User,
     Agent,
@@ -295,7 +295,7 @@ pub(crate) enum DescriptionSource {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum OperationKind {
+pub enum OperationKind {
     Capture,
     Bootstrap,
     Rollback,
@@ -304,7 +304,7 @@ pub(crate) enum OperationKind {
 }
 
 impl OperationKind {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Capture => "capture",
             Self::Bootstrap => "bootstrap",
@@ -317,7 +317,7 @@ impl OperationKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum OperationStatus {
+pub enum OperationStatus {
     /// The command that owns this operation has not finished (or died).
     Pending,
     Completed,
@@ -325,7 +325,7 @@ pub(crate) enum OperationStatus {
 }
 
 impl OperationStatus {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::Completed => "completed",
@@ -337,7 +337,7 @@ impl OperationStatus {
 /// Derived checkpoint metadata. Durable metadata lives in ordinary commits;
 /// descriptions, labels, and pins change through annotations.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Checkpoint {
+pub struct Checkpoint {
     pub schema_version: u32,
     /// Committed records use the Git commit OID. Pending operation records
     /// reserve a provisional UUID before their outcome commit exists.
@@ -454,11 +454,11 @@ impl Checkpoint {
     }
 
     /// The trigger label plus the operation kind, for tables.
-    pub(crate) fn kind_label(&self) -> String {
+    pub fn kind_label(&self) -> String {
         self.trigger.as_str().to_string()
     }
 
-    pub(crate) fn status(&self) -> Option<OperationStatus> {
+    pub fn status(&self) -> Option<OperationStatus> {
         self.operation.as_ref().map(|operation| operation.status)
     }
 }
@@ -552,7 +552,7 @@ impl CommitOperation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct TreeInfo {
+pub struct TreeInfo {
     /// The ordinary tracked-file tree of this commit.
     pub snapshot: Option<String>,
     /// False when no content snapshot could be taken (no usable `git`).
@@ -569,7 +569,7 @@ pub(crate) struct TreeInfo {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct RootRecord {
+pub struct RootRecord {
     /// `home` for `$HOME`, `fs` for everything outside it.
     pub label: String,
     pub path: PathBuf,
@@ -586,7 +586,7 @@ pub(crate) struct RootRecord {
 /// cannot see all of it must not answer from the part it understands.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Coverage {
+pub struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
@@ -609,7 +609,7 @@ pub(crate) struct Coverage {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct CoverageEntry {
+pub struct CoverageEntry {
     /// `~`-relative when under `$HOME`, absolute otherwise.
     pub path: String,
     /// The explicit tracking mode.
@@ -637,7 +637,7 @@ pub(crate) struct CoverageEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct PathReason {
+pub struct PathReason {
     pub path: String,
     pub reason: String,
 }
@@ -645,7 +645,7 @@ pub(crate) struct PathReason {
 /// What changed since the previous checkpoint's snapshot, as `~`-relative
 /// (or absolute) paths.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Changes {
+pub struct Changes {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -659,16 +659,16 @@ pub(crate) struct Changes {
 }
 
 impl Changes {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.modified.is_empty() && self.removed.is_empty()
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.added.len() + self.modified.len() + self.removed.len()
     }
 
     /// Whether `path` (or anything under it) changed.
-    pub(crate) fn touches(&self, path: &str) -> bool {
+    pub fn touches(&self, path: &str) -> bool {
         let under = |candidate: &String| {
             candidate == path
                 || candidate
@@ -683,7 +683,7 @@ impl Changes {
 
 /// The outcome half of an operation pair.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Operation {
+pub struct Operation {
     pub id: String,
     pub kind: OperationKind,
     pub status: OperationStatus,
@@ -726,13 +726,13 @@ pub(crate) struct Operation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct OperationSource {
+pub struct OperationSource {
     pub checkpoint: String,
     pub paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Summary {
+pub struct Summary {
     pub message: Option<String>,
 }
 
@@ -781,7 +781,7 @@ pub(crate) fn write_index_in(state_dir: &Path, index: &Index) -> Result<()> {
 
 /// A checkpoint together with its local handle.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct Entry {
+pub struct Entry {
     pub id: u64,
     pub commit: String,
     #[serde(flatten)]
@@ -790,7 +790,7 @@ pub(crate) struct Entry {
 
 /// A description or label edit appended as metadata in ordinary Git history.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Annotation {
+pub struct Annotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -921,7 +921,7 @@ pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
 
 /// Private write-ahead bookkeeping for an unfinished operation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Pending {
+pub struct Pending {
     pub id: u64,
     pub checkpoint: Checkpoint,
     pub recovery: RecoveryState,
@@ -929,7 +929,7 @@ pub(crate) struct Pending {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum RecoveryState {
+pub enum RecoveryState {
     /// An interrupted batch or an explicitly incomplete all-or-nothing apply.
     Pending,
     /// A normally returned command; retain its completed phases.
@@ -947,7 +947,7 @@ pub(crate) fn write_pending_in(state_dir: &Path, pending: &Pending) -> Result<()
 
 /// Every pending record with the file holding it. Unreadable records stop
 /// recovery; never hide them or discard possibly referenced preimages.
-pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+pub fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
     let mut pending = vec![];
     let directory = match std::fs::read_dir(pending_dir_in(state_dir)) {
         Ok(directory) => directory,
@@ -976,7 +976,7 @@ pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)
 
 /// Read-only status lookup. A record removed concurrently is skipped, but
 /// corruption must remain visible rather than reporting healthy empty state.
-pub(crate) fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+pub fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
     list_pending_in(state_dir)
 }
 
@@ -986,7 +986,7 @@ pub(crate) fn remove_pending_in(state_dir: &Path, uuid: &str) {
 
 /// The marker of an operation in progress, next to the lock that owns it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct OperationMarker {
+pub struct OperationMarker {
     pub uuid: String,
     pub kind: OperationKind,
     pub started_at: String,
@@ -997,7 +997,7 @@ pub(crate) fn write_marker_in(state_dir: &Path, marker: &OperationMarker) -> Res
     write_json(&operation_marker_in(state_dir), marker)
 }
 
-pub(crate) fn read_marker_in(state_dir: &Path) -> Result<Option<OperationMarker>> {
+pub fn read_marker_in(state_dir: &Path) -> Result<Option<OperationMarker>> {
     let path = operation_marker_in(state_dir);
     if !path.exists() {
         return Ok(None);
@@ -1083,7 +1083,7 @@ pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
     }
 }
 
-pub(crate) fn now_rfc3339() -> String {
+pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 

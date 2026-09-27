@@ -42,10 +42,10 @@ const CREDENTIAL_GLOBS: &[&str] = &[
     "oauth*",
 ];
 
-pub(crate) type Policy = FilePolicy;
+pub type Policy = FilePolicy;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TrackedEntry {
+pub struct TrackedEntry {
     /// Absolute, `~` expanded, lexically normalized.
     pub path: PathBuf,
     /// The explicit tracking declaration's mode.
@@ -66,7 +66,8 @@ pub(crate) struct TrackedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
     /// The entry's own `include` globs, relative to its path and matched
-    /// like `exclude`.
+    /// like `exclude`, except that `*` never crosses `/` (see
+    /// [`crate::system::files::is_selected`]).
     ///
     /// `None` means no list was declared and the whole tree is captured.
     /// `Some` means one was, and only what it names is — including
@@ -167,7 +168,7 @@ impl TrackedEntry {
         };
         match path.strip_prefix(&self.path) {
             Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+                crate::system::files::is_selected(&pattern_relative(rel), &patterns)
             }
             _ => false,
         }
@@ -192,7 +193,7 @@ impl TrackedEntry {
     /// The one place rule 4 is decided. The walk, `mise dot save <path>`,
     /// `mise dot track`'s preflight and its dry run all ask here, so none
     /// of them can promise something the others will not do.
-    pub(crate) fn capture_exclusion(&self, path: &Path) -> Option<&'static str> {
+    pub fn capture_exclusion(&self, path: &Path) -> Option<&'static str> {
         let reason = capture_exclusion(path, &self.policy)?;
         // **An `include` list is a selection, and selection decides what
         // is captured.** A list the user wrote is the user choosing these
@@ -211,7 +212,7 @@ impl TrackedEntry {
         Some(reason)
     }
 
-    pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
+    pub fn tree_path(&self, path: &Path) -> Result<String> {
         super::sync::layout::Roots::current()
             .branch_path(path, self.variant.as_deref())
             .ok_or_else(|| {
@@ -222,11 +223,11 @@ impl TrackedEntry {
             })
     }
 
-    pub(crate) fn display(&self) -> String {
+    pub fn display(&self) -> String {
         display_path(&self.path)
     }
 
-    pub(crate) fn new(path: PathBuf, mode: &str, policy: Policy) -> Self {
+    pub fn new(path: PathBuf, mode: &str, policy: Policy) -> Self {
         Self {
             path,
             mode: mode.to_string(),
@@ -241,7 +242,7 @@ impl TrackedEntry {
 
 /// The resolved tracked set for one capture.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct TrackedSet {
+pub struct TrackedSet {
     pub entries: Vec<TrackedEntry>,
     pub manifest: super::manifest::Manifest,
     /// Current explicit local declarations, before repository reconciliation.
@@ -259,7 +260,7 @@ pub(crate) struct TrackedSet {
 
 /// What a walk of the tracked set found.
 #[derive(Debug, Default)]
-pub(crate) struct Walk {
+pub struct Walk {
     pub manifest: super::manifest::Manifest,
     /// The explicit entries as walked.
     pub entries: Vec<TrackedEntry>,
@@ -293,7 +294,7 @@ pub(crate) struct Walk {
 
 impl TrackedSet {
     /// The effective tracked set for the loaded configuration.
-    pub(crate) async fn effective() -> Result<Self> {
+    pub async fn effective() -> Result<Self> {
         let config = Config::get().await?;
         let declared = Self::from_config(&config)?;
         if !super::shadow::HistoryRepo::path_in(&dirs::STATE).is_dir() {
@@ -306,7 +307,7 @@ impl TrackedSet {
     }
 
     /// Explicit tracking from the system and global configuration layers.
-    pub(crate) fn from_config(config: &Config) -> Result<Self> {
+    pub fn from_config(config: &Config) -> Result<Self> {
         let mut set = Self {
             exclude: super::config::exclude_globs()?,
             ..Default::default()
@@ -451,7 +452,7 @@ impl TrackedSet {
     }
 
     /// Adds explicit enrollment, rejecting conflicting encryption policies.
-    pub(crate) fn push(&mut self, entry: TrackedEntry) {
+    pub fn push(&mut self, entry: TrackedEntry) {
         if let Some(existing) = self
             .entries
             .iter_mut()
@@ -469,11 +470,11 @@ impl TrackedSet {
     }
 
     /// The most specific entry covering `path`.
-    pub(crate) fn entry_for(&self, path: &Path) -> Option<&TrackedEntry> {
+    pub fn entry_for(&self, path: &Path) -> Option<&TrackedEntry> {
         owning_entry(&self.entries, path)
     }
 
-    pub(crate) fn entry_index_for(&self, path: &Path) -> Option<usize> {
+    pub fn entry_index_for(&self, path: &Path) -> Option<usize> {
         owning_entry_index(&self.entries, path)
     }
 
@@ -508,7 +509,7 @@ impl TrackedSet {
 
     /// Whether a capture of this set would include `path`: under an entry,
     /// not excluded, not inside mise's own directories or a `.git`.
-    pub(crate) fn would_capture(&self, path: &Path) -> Result<bool> {
+    pub fn would_capture(&self, path: &Path) -> Result<bool> {
         if !self.would_retain(path)? {
             return Ok(false);
         }
@@ -667,7 +668,7 @@ impl TrackedSet {
     }
 
     /// Walks every entry and decides, file by file, what the capture holds.
-    pub(crate) fn walk(&self) -> Result<Walk> {
+    pub fn walk(&self) -> Result<Walk> {
         self.walk_entries(None)
     }
 
@@ -682,7 +683,7 @@ impl TrackedSet {
     /// walked: `mise dot track --dry-run` on one directory would
     /// otherwise re-walk and re-stat every directory already tracked on
     /// the machine, which is the opposite of cheap.
-    pub(crate) fn walk_selected(&self, selected: &[usize]) -> Result<Walk> {
+    pub fn walk_selected(&self, selected: &[usize]) -> Result<Walk> {
         self.walk_entries(Some(selected))
     }
 
@@ -1011,7 +1012,7 @@ fn walk_entry(
             *walk.considered.entry(index).or_default() += 1;
             match path.strip_prefix(&entry.path) {
                 Ok(rel)
-                    if !crate::system::files::is_excluded(
+                    if !crate::system::files::is_selected(
                         &pattern_relative(rel),
                         entry_include,
                     ) =>
@@ -1087,7 +1088,7 @@ fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
 }
 
 /// Why the credential guard keeps a file out of capture.
-pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file before tracking it";
+pub const CREDENTIAL_REASON: &str = "credential store; encrypt the file before tracking it";
 
 /// What a capture says about a directory with its own `.git` found
 /// inside a tracked one.
@@ -1181,7 +1182,7 @@ pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &P
         .collect();
     match path.strip_prefix(entry_path) {
         Ok(rel) if !rel.as_os_str().is_empty() => {
-            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+            crate::system::files::is_selected(&pattern_relative(rel), &patterns)
         }
         _ => false,
     }
@@ -1205,7 +1206,7 @@ pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &P
 /// inside `~/x` would let one entry appear to own another's paths, and a
 /// replay would then judge a live file by the wrong root and the wrong
 /// exclusions.
-pub(crate) fn display_under(path: &str, root: &str) -> bool {
+pub fn display_under(path: &str, root: &str) -> bool {
     let path = display_separators(&file::replace_path(path).to_string_lossy());
     let root = display_separators(&file::replace_path(root).to_string_lossy());
     path == root
@@ -1243,7 +1244,7 @@ impl Walk {
     }
 
     /// `22,972 files, 1.2 GiB`.
-    pub(crate) fn summary(&self) -> String {
+    pub fn summary(&self) -> String {
         count_and_size(self.file_count(), self.bytes())
     }
 
@@ -1255,7 +1256,7 @@ impl Walk {
     /// could not use changes what the listing holds — so a command that
     /// showed the listing silently would be the one place the problem is
     /// invisible.
-    pub(crate) fn report_warnings(&self) {
+    pub fn report_warnings(&self) {
         for warning in self.warnings.iter().chain(&self.capture_warnings) {
             super::notices::say(&format!("history: {warning}"));
         }
@@ -1266,7 +1267,7 @@ impl Walk {
 /// owns (a more specific entry owns its own subtree), and what a save
 /// would leave out under it.
 #[derive(Debug, Default)]
-pub(crate) struct EntryPreview {
+pub struct EntryPreview {
     pub files: usize,
     pub bytes: u64,
     pub omitted: Vec<PathReason>,
@@ -1278,11 +1279,11 @@ pub(crate) struct EntryPreview {
 }
 
 impl EntryPreview {
-    pub(crate) fn summary(&self) -> String {
+    pub fn summary(&self) -> String {
         count_and_size(self.files, self.bytes)
     }
 
-    pub(crate) fn is_large(&self) -> bool {
+    pub fn is_large(&self) -> bool {
         self.files > LARGE_TREE_FILES || self.bytes > LARGE_TREE_BYTES
     }
 }
@@ -1291,7 +1292,7 @@ impl Walk {
     /// The preview of the entry at `index` of `set`, which this walk was
     /// taken from: nested targets in one command partition instead of the
     /// outer one counting the inner one's files too.
-    pub(crate) fn preview_of(&self, set: &TrackedSet, index: usize) -> EntryPreview {
+    pub fn preview_of(&self, set: &TrackedSet, index: usize) -> EntryPreview {
         let mut preview = EntryPreview::default();
         for (path, (owner, _)) in &self.files {
             if *owner != index {
@@ -1335,7 +1336,7 @@ pub(crate) fn count_and_size(files: usize, bytes: u64) -> String {
     )
 }
 
-pub(crate) fn with_separators(n: usize) -> String {
+pub fn with_separators(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, ch) in digits.chars().enumerate() {
@@ -1350,7 +1351,7 @@ pub(crate) fn with_separators(n: usize) -> String {
 /// The set tracking `path` alone would capture, under the `[history]`
 /// exclusions: what `mise dot paths --preview` lists and what `mise dot
 /// track` sizes up before it writes a declaration.
-pub(crate) fn preview_set(path: &Path, policy: Policy) -> Result<TrackedSet> {
+pub fn preview_set(path: &Path, policy: Policy) -> Result<TrackedSet> {
     Ok(preview_set_with(
         path,
         policy,
@@ -1391,7 +1392,7 @@ pub(crate) fn omission_report(omitted: &[PathReason], nested: &[PathReason]) -> 
 }
 
 /// One line naming how many files a capture leaves out and why.
-pub(crate) fn omission_summary(omitted: &[PathReason], nested: &[PathReason]) -> String {
+pub fn omission_summary(omitted: &[PathReason], nested: &[PathReason]) -> String {
     let mut parts = vec![];
     if !omitted.is_empty() {
         let credentials = omitted
@@ -1814,12 +1815,18 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
     // directory whose files the list still selects. Same rule as
     // `pattern_relative` and `display_separators`, not a third one.
     let pattern = display_separators(pattern);
+    // a leading `/` anchors the rest to the entry root, exactly as the
+    // matcher reads it — even `/cache`, which has no other separator
+    let (anchored, body) = match crate::system::files::rooted_pattern(&pattern) {
+        Some(body) => (true, body),
+        None => (pattern.contains('/'), pattern.as_str()),
+    };
     // a name matches a component at any depth, so it can name a file
     // inside any directory
-    if !pattern.contains('/') {
+    if !anchored {
         return true;
     }
-    let parts: Vec<&str> = pattern.split('/').filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = body.split('/').filter(|part| !part.is_empty()).collect();
     let mut parts = parts.as_slice();
     let mut rest = components;
     loop {
@@ -1885,7 +1892,7 @@ fn anchor_of(body: &str) -> Anchor {
 /// Shared with `mise dot exclude`, which refuses such a pattern rather
 /// than writing it, so the message a user sees when they type one is the
 /// message the loader would have warned about later.
-pub(crate) fn unusable_pattern(body: &str) -> Option<String> {
+pub fn unusable_pattern(body: &str) -> Option<String> {
     if body.contains('$') {
         return Some(
             "environment variables are not supported in exclusion patterns; write `~/…` or an absolute path".into(),
@@ -2111,11 +2118,39 @@ fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
     ))
 }
 
-/// The matcher a checkpoint's `exclude` list was read with. Bumped only
-/// when a change could make a pattern match *less* than it used to, so a
-/// replay of an older checkpoint does not conclude a path was absent
-/// when the older matcher would have called it excluded.
-pub(crate) const MATCHER_VERSION: u32 = 1;
+/// The matcher a checkpoint's `exclude` list was read with. Bumped when
+/// a change could make an `exclude` pattern match *less*, or an entry's
+/// `include` pattern match *more*, than it used to: either way a replay
+/// of an older checkpoint could conclude a path was covered and absent
+/// when the older matcher never covered it, and delete the live file.
+///
+/// Version 2 reads a per-entry pattern with a leading `/` as anchored to
+/// the entry root (see [`crate::system::files::rooted_pattern`]); version
+/// 1 read it as matching nothing.
+pub(crate) const MATCHER_VERSION: u32 = 2;
+
+/// Whether a checkpoint written by `matcher` read an entry with this
+/// `include` list the way this matcher reads it.
+///
+/// **Only an older matcher that selected less is a reason to distrust a
+/// record.** Version 1 differs from version 2 only in rooted per-entry
+/// patterns, which it read as matching nothing. A rooted `exclude` that
+/// matches now reads the path as outside coverage, which never deletes,
+/// so it changes nothing that matters here; a rooted `include` that
+/// selects now would read files version 1 never captured as absent. So a
+/// version 1 record is read as current unless its entry's `include`
+/// list has a rooted pattern — rather than every checkpoint with a list
+/// becoming unevaluable over a spelling almost none of them use.
+pub(crate) fn matcher_reads_alike(matcher: Option<u32>, include: Option<&[String]>) -> bool {
+    match matcher {
+        Some(MATCHER_VERSION) => true,
+        Some(1) => !include
+            .into_iter()
+            .flatten()
+            .any(|pattern| crate::system::files::rooted_pattern(pattern).is_some()),
+        _ => false,
+    }
+}
 
 /// Directories mise owns that are never captured.
 pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
@@ -2143,7 +2178,7 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
 }
 
 /// The global config directory (where `--adopt` checks out).
-pub(crate) fn global_config_dir() -> PathBuf {
+pub fn global_config_dir() -> PathBuf {
     crate::env::MISE_GLOBAL_CONFIG_FILE
         .as_deref()
         .map(|path| {
@@ -2163,7 +2198,7 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
 
 /// Resolve existing ancestors consistently even when the leaf is missing.
 /// A symlink leaf is tracked as a link, never as its destination.
-pub(crate) fn normalize_target(path: &Path) -> PathBuf {
+pub fn normalize_target(path: &Path) -> PathBuf {
     let expanded = file::replace_path(path);
     if !file::is_symlink_or_junction(&expanded)
         && let Ok(resolved) = dunce::canonicalize(&expanded)
@@ -2217,7 +2252,7 @@ fn lexical(path: &Path) -> PathBuf {
 
 /// Turns a snapshot-tree path (`home/.zshrc`, `fs/etc/hosts`) into the
 /// display form (`~/.zshrc`, `/etc/hosts`).
-pub(crate) fn tree_path_to_display(tree_path: &str) -> String {
+pub fn tree_path_to_display(tree_path: &str) -> String {
     let (stem, rest) = tree_path.split_once('/').unwrap_or((tree_path, ""));
     let root = stem.split('@').next().unwrap_or(stem);
     if root == "config" {
@@ -2333,7 +2368,7 @@ pub(crate) fn mode_from(
     Some(permissions.get(&key).copied().unwrap_or(0o755))
 }
 
-pub(crate) fn ensure_portable_ancestors(path: &Path) -> Result<()> {
+pub fn ensure_portable_ancestors(path: &Path) -> Result<()> {
     eyre::ensure!(
         path.to_str().is_some(),
         "tracking does not support non-UTF-8 filenames"
@@ -2388,7 +2423,7 @@ pub(crate) fn ensure_portable_ancestors(path: &Path) -> Result<()> {
 }
 
 /// Turns a display or absolute path into its snapshot-tree path.
-pub(crate) fn display_to_tree_path(path: &str) -> String {
+pub fn display_to_tree_path(path: &str) -> String {
     // the link itself, never its destination: a tracked symlink is captured
     // as a link and addressed as one
     let expanded = normalize_target(Path::new(path));
@@ -2640,6 +2675,50 @@ mod tests {
         assert!(matches!(
             classify_coverage(&coverage, &display),
             PathState::Unevaluable(_)
+        ));
+    }
+
+    /// **Matcher 1 read a rooted pattern as matching nothing.** A rooted
+    /// `include` in a record it wrote selected nothing, so the files it
+    /// names now were never captured, and reading them as absent would
+    /// delete them. Every other list reads as it did.
+    #[test]
+    fn replay_distrusts_a_rooted_include_from_matcher_one() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".into()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let mut coverage = set.coverage(&set.walk().unwrap());
+        coverage.matcher = Some(1);
+        let display = display_path(root.join("rules/one.md"));
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+
+        coverage.entries[0].include = Some(vec!["/rules/**".into()]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Unevaluable(_)
+        ));
+        coverage.matcher = Some(MATCHER_VERSION);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+
+        // a rooted exclude that matches now only reads more as outside
+        // coverage, which never deletes
+        coverage.matcher = Some(1);
+        coverage.entries[0].include = Some(vec!["rules/**".into()]);
+        coverage.entries[0].exclude = Some(vec!["/rules/one.md".into()]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Uncovered
         ));
     }
 
@@ -3110,15 +3189,30 @@ mod tests {
         std::fs::write(root.join("rules/one.md"), "keep").unwrap();
         std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
 
-        // every one of these matches the directory `rules/deep` or an
+        // the first three match the directory `rules/deep` or an
         // ancestor of it, and **a pattern matching a directory takes
-        // everything under it** — so all three select the file, and none
-        // of them may prune the directory
+        // everything under it** — so they select the file, and none of
+        // them may prune the directory. In a pattern with `/`, `*` stops
+        // at a separator, so `rules/*.md` names only files directly in
+        // `rules` and the walk may skip `rules/deep`.
         for (pattern, selects_deep) in [
             ("rules", true),
             ("rules/**", true),
             ("rules/*", true),
+            ("rules/*/two.md", true),
+            ("rules/**/*.md", true),
+            ("rules/*.md", false),
+            ("*/two.md", false),
             ("sessions/**", false),
+            // a leading `/` is the entry root, not a path that never
+            // matches: selection and pruning agree on it either way
+            ("/rules", true),
+            ("/rules/**", true),
+            ("/rules/*/two.md", true),
+            ("/rules/deep/*.md", true),
+            ("/rules/*.md", false),
+            ("/sessions/**", false),
+            ("/deep", false),
         ] {
             let mut tracked = entry(&root);
             tracked.include = Some(vec![pattern.to_string()]);

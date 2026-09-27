@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use clx::progress;
 use eyre::Result;
 use std::collections::HashSet;
@@ -179,7 +179,7 @@ pub(crate) fn thread_id() -> String {
     id.replace(")", "")
 }
 
-pub(crate) fn init() {
+pub fn init() {
     static LOGGER: OnceLock<Logger> = OnceLock::new();
     let settings = Settings::try_get();
     if let Some(logger) = LOGGER.get() {

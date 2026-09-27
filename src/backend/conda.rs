@@ -1,3 +1,4 @@
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
@@ -5,7 +6,6 @@ use crate::backend::{
     MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
     runtime_path_for_install_path,
 };
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{HTTP, apply_url_replacements};
@@ -39,7 +39,7 @@ use versions::Versioning;
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct CondaPackageInfo {
+pub struct CondaPackageInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,

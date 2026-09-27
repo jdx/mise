@@ -25,7 +25,7 @@ use crate::system::history::config::OriginTomlConfig;
 use crate::system::history::store as hstore;
 use crate::system::history::tracked::{TrackedSet, global_config_dir};
 
-pub(crate) struct Onboarding {
+pub struct Onboarding {
     /// Where the branch is fetched from: the url, or a transferred bundle.
     pub fetch_from: String,
     /// The repository as this machine keeps reaching it.
@@ -36,7 +36,7 @@ pub(crate) struct Onboarding {
     pub replace_history: bool,
 }
 
-pub(crate) struct Outcome {
+pub struct Outcome {
     /// Incoming configuration staged privately for the ordinary bootstrap
     /// preview. The caller owns its lifetime; live configuration is untouched.
     pub preview_config: Option<tempfile::TempDir>,
@@ -143,7 +143,7 @@ fn preview_config_path(
 /// `mise bootstrap --adopt <url>`: `Some` when the repository is
 /// history-managed and this machine was set up from it (or would be, on a
 /// dry run); `None` leaves the ordinary clone to the caller.
-pub(crate) async fn from_git(
+pub async fn from_git(
     url: &str,
     yes: bool,
     dry_run: bool,
@@ -267,7 +267,7 @@ fn undecided_advice(undecided: usize, conflicts: usize) -> String {
 /// history-managed: says what will happen, shows the plan, confirms, records
 /// the connection, and pulls (the configuration first, then what it
 /// declares, like any pull).
-pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
+pub async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcome> {
     let state_dir = store.state_dir();
     let mode = SyncMode::current()?;
     let config_dir = global_config_dir();

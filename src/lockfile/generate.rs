@@ -129,14 +129,14 @@ pub(crate) fn ensure_install_succeeded() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn has_previous_file(config: &Config, path: &Path) -> bool {
+pub fn has_previous_file(config: &Config, path: &Path) -> bool {
     path.exists()
         || monorepo_lockfile_migration_paths(config)
             .iter()
             .any(|(source, target)| target == path && source.exists())
 }
 
-pub(crate) fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
+pub fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
     let mut previous = Lockfile::read(path)?;
     let mut exists = path.exists();
     for (source, target) in monorepo_lockfile_migration_paths(config) {
@@ -203,11 +203,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
     Ok(())
 }
 
-fn resolution_key(
-    ba: &crate::cli::args::BackendArg,
-    tv: &ToolVersion,
-    platform: &Platform,
-) -> String {
+fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Platform) -> String {
     let mut options = tv.request.options().clone();
     options.opts.values.sort_keys();
     options.core.install_env.sort_keys();
@@ -224,7 +220,7 @@ fn resolution_key(
 }
 
 async fn resolve(
-    ba: crate::cli::args::BackendArg,
+    ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
 ) -> Result<LockResolutionResult> {
@@ -245,7 +241,7 @@ async fn resolve(
         .clone())
 }
 
-pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
+pub(crate) type Tool = (crate::args::BackendArg, ToolVersion);
 
 /// A conservative check for a complete, unfiltered warm install. Compare the
 /// resolved inputs, not file timestamps: environment-dependent options and
@@ -253,11 +249,7 @@ pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
 ///
 /// Multiple requests for one short and shared dependency tables use the normal
 /// generator, which owns binding conflicts and dependency-table cleanup.
-pub(crate) fn is_current(
-    previous: &Lockfile,
-    tools: &[Tool],
-    platforms: &[Platform],
-) -> Result<bool> {
+pub fn is_current(previous: &Lockfile, tools: &[Tool], platforms: &[Platform]) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
         || previous.tools.len() != tools.len()
@@ -361,7 +353,7 @@ fn can_reuse(info: &PlatformInfo) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
-pub(crate) async fn generate(
+pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
     platforms: &[Platform],
@@ -616,7 +608,7 @@ pub(crate) async fn generate(
     Ok(candidate)
 }
 
-pub(crate) async fn populate_aube_locks(
+pub async fn populate_aube_locks(
     lockfile: &mut Lockfile,
     tools: &[Tool],
     report: Option<&dyn crate::ui::progress_report::SingleReport>,
@@ -678,7 +670,7 @@ pub(crate) async fn populate_aube_locks(
     Ok(())
 }
 
-pub(crate) async fn populate_uv_locks(
+pub async fn populate_uv_locks(
     config: &Arc<Config>,
     lockfile: &mut Lockfile,
     tools: &[Tool],
@@ -821,7 +813,7 @@ fn provenance_is_downgrade(
 }
 
 fn validate_provenance_settings(
-    ba: &crate::cli::args::BackendArg,
+    ba: &crate::args::BackendArg,
     tv: &ToolVersion,
     platform: &str,
     info: &PlatformInfo,
@@ -957,7 +949,7 @@ fn preserve_legacy_metadata(old: &PlatformInfo, new: &mut PlatformInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::ToolRequest;
 
     fn tool() -> Tool {

@@ -455,14 +455,16 @@ impl TasksValidate {
         let mut issues = Vec::new();
 
         // Try to parse the usage spec
-        match task.parse_usage_spec_for_display(config).await {
+        match task.parse_usage_spec_for_validation(config).await {
             Ok(_spec) => {
                 // Successfully parsed
             }
             Err(e) => {
+                // An unparseable spec is not fatal at runtime, but the task then runs with
+                // its declared arguments silently ignored, so it fails validation.
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
-                    severity: Severity::Warning,
+                    severity: Severity::Error,
                     category: "usage-parse-error".to_string(),
                     message: "Failed to parse usage specification".to_string(),
                     details: Some(format!("{:#}", e)),

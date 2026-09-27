@@ -65,9 +65,12 @@ None of this applies to editing an existing registry entry; do not ask the user 
 ### High-Level Structure
 Mise is a Rust CLI tool that manages development environments, tools, tasks, and environment variables. The codebase follows a modular architecture:
 
+The `mise` package has two targets. The library (`src/lib.rs`) is everything except the command line; the binary (`src/main.rs` plus `src/cli/`) sits on top of it and glob-imports its root, so `cli` code still writes `crate::config::…`. An edit under `src/cli/` recompiles only the binary. Core code must not refer to `crate::cli`: it reaches command behavior through the hooks in `src/frontend.rs`. When `cli` needs a core item, make that item `pub`; `unreachable_pub` keeps everything else `pub(crate)`. `cfg(test)` does not reach the library from the binary's tests, so core code that behaves differently under tests checks `mise_util::testing::in_tests()` instead.
+
 **Core Components:**
-- `src/main.rs` - Entry point and CLI initialization
-- `src/cli/` - Command-line interface implementation with subcommands
+- `src/main.rs` - Binary entry point
+- `src/lib.rs` - Library root: module list and the hooks lower crates need
+- `src/cli/` - Command-line interface implementation with subcommands (binary only)
 - `src/config/` - Configuration file parsing and management
 - `src/backend/` - Tool backend implementations (aqua, github, cargo, npm, asdf, vfox, …)
 - `src/toolset/` - Tool version management and installation logic
@@ -113,7 +116,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-brew-relocation`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
@@ -146,7 +149,7 @@ SHOULD use the same format:
 - Use `task` (not `run`) for task-related changes, even if the code lives in `src/cli/run.rs` or `src/cmd.rs`
 
 **Description Style:**
-- Start the description with a lowercase character
+- Start the description with a lowercase character, or with an acronym such as `PGO` or `CLI`
 - Use imperative mood ("add feature" not "added feature")
 - Keep it concise but descriptive
 
@@ -162,7 +165,7 @@ SHOULD use the same format:
 
 CI validates the pull request title and re-runs when it is edited. Intermediate
 commit subjects are not checked because pull requests are squash-merged. CI
-mechanically checks the allowed type, syntax, and lowercase-leading description;
+mechanically checks the allowed type, syntax, and lowercase- or acronym-leading description;
 imperative mood and breaking-change details remain review rules.
 
 ### PR titles and descriptions are release-note inputs
@@ -233,7 +236,7 @@ If you think you need to pick "the newest installed version" at a new call site,
 - Plugin metadata is defined in `mise.plugin.toml` files
 
 ### Configuration Parsing
-The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`.
+The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`. The `Settings` types are generated from `settings.toml` in `crates/mise-settings`; loading them (config discovery, trust, CLI flags) stays in `src/config/settings.rs`, whose `SettingsExt` trait holds the methods that need the rest of mise.
 
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)

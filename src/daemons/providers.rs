@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Provider {
+pub struct Provider {
     pub name: String,
     pub source: PathBuf,
     pub declaration: toml::Table,
@@ -446,13 +446,13 @@ impl Execution {
 }
 
 #[derive(Debug, usage_rs::Args)]
-pub(crate) struct Exec {
+pub struct Exec {
     manifest: PathBuf,
     command: String,
 }
 
 impl Exec {
-    pub(crate) fn run(self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         let manifest: Execution = serde_json::from_slice(&std::fs::read(&self.manifest)?)?;
         let command = manifest
             .commands
@@ -481,7 +481,7 @@ impl Exec {
 
 /// Manage shared servers defined in global [daemon_providers].
 #[derive(Debug, usage_rs::Args)]
-pub(crate) struct Providers {
+pub struct Providers {
     #[usage(subcommand)]
     command: Option<ProviderCommand>,
 }
@@ -508,7 +508,7 @@ struct Names {
 }
 
 impl Providers {
-    pub(crate) async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let mut providers = load(&config.config_files)?;
         let (action, names, json) = match self.command {
@@ -607,7 +607,7 @@ impl Providers {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Binding {
+pub struct Binding {
     pub provider: Provider,
     pub resource: String,
 }
@@ -705,7 +705,7 @@ pub(crate) fn binding(
     })
 }
 
-pub(crate) async fn install_set(set: &DaemonSet) -> Result<()> {
+pub async fn install_set(set: &DaemonSet) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     for binding in set.daemons.values().filter_map(|d| d.provider.as_ref()) {
         if seen.insert(&binding.provider.name) {
@@ -731,13 +731,13 @@ pub(crate) async fn prepare_set(
 
 /// A project-owned readiness process: it never starts or stops the server itself.
 #[derive(Debug, usage_rs::Args)]
-pub(crate) struct Resource {
+pub struct Resource {
     provider: PathBuf,
     resource: String,
 }
 
 impl Resource {
-    pub(crate) async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         validate_resource(&self.resource)?;
         let root = self.provider;
         let execution: Execution =

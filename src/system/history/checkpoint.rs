@@ -34,7 +34,7 @@ const CHANGES_MAX: usize = 2000;
 
 /// What a caller wants captured.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Draft {
+pub struct Draft {
     pub trigger: Option<Trigger>,
     /// A caller-supplied description; the computed one is kept as `summary`.
     pub description: Option<String>,
@@ -60,7 +60,7 @@ pub(crate) struct Draft {
 }
 
 impl Draft {
-    pub(crate) fn new(trigger: Trigger) -> Self {
+    pub fn new(trigger: Trigger) -> Self {
         Self {
             trigger: Some(trigger),
             ..Default::default()
@@ -83,7 +83,7 @@ impl Draft {
 }
 
 #[derive(Debug)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     Created(Box<Entry>),
     /// The tracked state equals the newest checkpoint's; nothing recorded.
     Unchanged,
@@ -93,7 +93,7 @@ pub(crate) enum Outcome {
 
 /// An open history store.
 #[derive(Debug)]
-pub(crate) struct Store {
+pub struct Store {
     state_dir: PathBuf,
     repo: Option<HistoryRepo>,
     unavailable: Option<String>,
@@ -127,15 +127,15 @@ impl Store {
         Ok(store)
     }
 
-    pub(crate) fn open() -> Result<Self> {
+    pub fn open() -> Result<Self> {
         Self::open_in(&crate::dirs::STATE)
     }
 
-    pub(crate) fn state_dir(&self) -> &Path {
+    pub fn state_dir(&self) -> &Path {
         &self.state_dir
     }
 
-    pub(crate) fn repo(&self) -> Option<&HistoryRepo> {
+    pub fn repo(&self) -> Option<&HistoryRepo> {
         self.repo.as_ref()
     }
 
@@ -144,7 +144,7 @@ impl Store {
     }
 
     /// Why no content can be captured, if git is unusable.
-    pub(crate) fn unavailable(&self) -> Option<&str> {
+    pub fn unavailable(&self) -> Option<&str> {
         self.unavailable.as_deref()
     }
 
@@ -171,7 +171,7 @@ impl Store {
     }
 
     /// Captures the tracked set into a checkpoint. Takes the store lock.
-    pub(crate) fn attempt(&self, tracked: &TrackedSet, draft: Draft) -> Result<Outcome> {
+    pub fn attempt(&self, tracked: &TrackedSet, draft: Draft) -> Result<Outcome> {
         let _lock = self.lock()?;
         self.attempt_locked(tracked, draft, None)
     }
@@ -942,7 +942,7 @@ impl Store {
 }
 
 /// Append annotation metadata to ordinary history and rebuild its derived view.
-pub(crate) fn annotate(store: &Store, entry: &Entry, annotation: Annotation) -> Result<()> {
+pub fn annotate(store: &Store, entry: &Entry, annotation: Annotation) -> Result<()> {
     let _lock = store.lock()?;
     if let Some(repo) = store.repo()
         && !entry.commit.is_empty()

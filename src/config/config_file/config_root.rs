@@ -52,7 +52,7 @@ pub(crate) fn config_source(path: &Path) -> String {
         .to_string()
 }
 
-pub(crate) fn config_root(path: &Path) -> PathBuf {
+pub fn config_root(path: &Path) -> PathBuf {
     let path = path
         .absolutize()
         .map(|p| p.to_path_buf())

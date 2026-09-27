@@ -34,6 +34,7 @@
 
 pub(crate) const EXPERIMENTAL: bool = false;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
@@ -43,7 +44,6 @@ use crate::backend::static_helpers::{
 };
 use crate::backend::version_list;
 use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
-use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::hash;
@@ -702,7 +702,7 @@ impl Backend for S3Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendResolution;
+    use crate::args::BackendResolution;
     use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource};
     use indexmap::IndexMap;

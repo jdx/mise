@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.9.14](https://github.com/jdx/mise/compare/v2026.9.13..v2026.9.14) - 2026-09-25
+
+### 🚀 Features
+
+- **(config)** load conf.d folders as self-contained config fragments by @jdx in [#13603](https://github.com/jdx/mise/pull/13603)
+- **(dotfiles)** add opt-in relative symlinks by @jdx in [#13583](https://github.com/jdx/mise/pull/13583)
+- **(dotfiles)** add dot_prefix to deploy dot-<name> sources as .<name> by @jdx in [#13585](https://github.com/jdx/mise/pull/13585)
+- **(github)** use mise-versions for any public github.com repo by @jdx in [#13584](https://github.com/jdx/mise/pull/13584)
+- **(registry)** let registry entries require GitHub attestations by @jdx in [#13586](https://github.com/jdx/mise/pull/13586)
+
+### 🐛 Bug Fixes
+
+- **(backend)** don't reuse versions-host version lists when MISE_USE_VERSIONS_HOST=0 by @jdx in [#13605](https://github.com/jdx/mise/pull/13605)
+- **(bootstrap)** point config_roots deprecation warning at conf.d folders by @jdx in [#13598](https://github.com/jdx/mise/pull/13598)
+- **(http)** warn when a download is crawling by @jdx in [#13589](https://github.com/jdx/mise/pull/13589)
+- **(install)** name the process holding a tool's install lock by @jdx in [#13588](https://github.com/jdx/mise/pull/13588)
+- **(install)** ignore interrupted installs when listing versions and runtime symlinks by @jdx in [#13596](https://github.com/jdx/mise/pull/13596)
+- **(oci)** apply dotfiles exclude and git manifest to directory entries by @jdx in [#13591](https://github.com/jdx/mise/pull/13591)
+- **(pipx)** treat PEP 440 .devN releases as prereleases by @jdx in [#13601](https://github.com/jdx/mise/pull/13601)
+- **(pipx)** keep the user in git+ssh URLs out of the tool version by @jdx in [#13610](https://github.com/jdx/mise/pull/13610)
+- **(prune)** keep versions pinned by configs a project's .miserc.toml ignores by @jdx in [#13602](https://github.com/jdx/mise/pull/13602)
+- **(system)** follow HTTP mirror redirects for checksum-pinned brew sources by @jdx in [#13611](https://github.com/jdx/mise/pull/13611)
+
+### 📦️ Dependency Updates
+
+- update rust crate demand to v2.2.0 by @renovate[bot] in [#13595](https://github.com/jdx/mise/pull/13595)
+- update aube to v2.4.0 by @renovate[bot] in [#13608](https://github.com/jdx/mise/pull/13608)
+
+### 📦 Registry
+
+- use aqua for spin-framework by @scop in [#13594](https://github.com/jdx/mise/pull/13594)
+
+### Chore
+
+- **(release)** build Windows tarballs with thin LTO by @jdx in [#13614](https://github.com/jdx/mise/pull/13614)
+- bootstrap Claude Code on the web sessions for mise development by @jdx in [#13597](https://github.com/jdx/mise/pull/13597)
+
+### Ci
+
+- defer release PR merges overnight with a release-now override by @jdx in [#13606](https://github.com/jdx/mise/pull/13606)
+- accept pull request titles whose description starts with an acronym by @jdx in [9d15702](https://github.com/jdx/mise/commit/9d1570217d42eac1fed095c88d5e013fced482bb)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`utkuozdemir/pv-migrate`](https://github.com/utkuozdemir/pv-migrate)
+
 ## [2026.9.13](https://github.com/jdx/mise/compare/v2026.9.12..v2026.9.13) - 2026-09-24
 
 ### 🚀 Features

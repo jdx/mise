@@ -8,6 +8,7 @@ pub(crate) mod backend_tools;
 pub(crate) mod backend_uninstall;
 pub(crate) mod env_keys;
 pub(crate) mod mise_env;
+pub(crate) mod mise_install_satisfied;
 pub(crate) mod mise_path;
 pub(crate) mod package;
 pub(crate) mod parse_legacy_file;

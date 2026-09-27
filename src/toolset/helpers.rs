@@ -150,7 +150,7 @@ async fn preflight_system_deps_inner(
     }
 
     let mgrs = crate::system::packages_from_requests(by_mgr)?;
-    let driver_opts = crate::cli::system::driver::DriverOpts {
+    let driver_opts = crate::system::driver::DriverOpts {
         manager: None,
         explicit: false,
         allow_unavailable_manager: false,
@@ -158,12 +158,8 @@ async fn preflight_system_deps_inner(
         update: false,
         yes: matches!(mode, SystemDepsMode::Auto) || opts.yes,
     };
-    if let Err(err) = crate::cli::system::driver::run(
-        mgrs,
-        crate::cli::system::driver::Action::Install,
-        &driver_opts,
-    )
-    .await
+    if let Err(err) =
+        crate::system::driver::run(mgrs, crate::system::driver::Action::Install, &driver_opts).await
     {
         warn!("failed to install system dependencies: {err:#}");
         return Ok(());

@@ -23,6 +23,7 @@ use packslip::model::{
 };
 use packslip::sigstore::{Policy, Trust};
 
+use crate::args::BackendArg;
 use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{ArchiveLayout, install_artifact};
@@ -30,8 +31,7 @@ use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
     runtime_path_for_install_path,
 };
-use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
@@ -124,7 +124,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 
 /// The packslip project name behind a tool name: `github.com/owner/repo`
 /// as given, `owner/repo` with github.com implied, or a vendor's host.
-pub(crate) fn project_name(tool_name: &str) -> Result<String> {
+pub fn project_name(tool_name: &str) -> Result<String> {
     let name = tool_name.trim_matches('/');
     let first = name.split('/').next().unwrap_or_default();
     let project = if first.contains('.') {

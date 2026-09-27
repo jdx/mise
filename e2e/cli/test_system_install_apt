@@ -39,6 +39,21 @@ assert_contains "mise bootstrap packages upgrade --dry-run" "apt-get update"
 assert_contains "mise bootstrap packages upgrade --dry-run" "apt-get install -y --only-upgrade -- bc"
 assert_succeed "mise bootstrap packages upgrade --yes"
 
+# the lists exist now: installing only refreshes them when a requested package
+# has no install candidate in them
+apt-get remove -y bc >/dev/null 2>&1 || true
+assert_not_contains "mise bootstrap packages apply --dry-run" "apt-get update"
+assert_contains "mise bootstrap packages apply apt:bc apt:mise-nonexistent-pkg-xyz --dry-run" "apt-get update"
+
+# a real install recovers when the lists exist but lack the package: drop the
+# lists for the component that ships bc and keep the rest, so this exercises
+# the refresh for incomplete lists rather than the one for no lists at all
+rm -f /var/lib/apt/lists/*_main_binary-*_Packages*
+assert_succeed "ls /var/lib/apt/lists/ | grep -q _Packages"
+assert_fail "apt-get --simulate -q install -y -- bc"
+assert_succeed "mise bootstrap packages apply --yes"
+assert_succeed "bc --version"
+
 # `use` writes the config entry and installs in one step
 rm mise.toml
 apt-get remove -y bc >/dev/null 2>&1 || true

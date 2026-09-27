@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::Backend;
+#[cfg(unix)]
+use crate::config::SettingsExt;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
@@ -14,7 +16,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
 
-pub(crate) async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
+pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
     rebuild_for_backends(config, ts, ts.list_cached_and_current_backends()).await
 }
 
@@ -449,7 +451,7 @@ fn is_temporary_runtime_label(v: &str) -> bool {
     v == "latest"
 }
 
-pub(crate) fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
+pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     remove_missing_symlinks_in_dir(&backend.ba().installs_path)
 }
 
@@ -487,7 +489,7 @@ fn missing_symlinks_in_dir(installs_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-pub(crate) fn is_runtime_symlink(path: &Path) -> bool {
+pub fn is_runtime_symlink(path: &Path) -> bool {
     runtime_symlink_target(path).is_some()
 }
 

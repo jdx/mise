@@ -54,6 +54,7 @@ fn parse_pacman_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageS
             PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: None,
             }
         })
         .collect()
@@ -676,6 +677,7 @@ mod tests {
         let mut status = PackageStatus {
             request: req("mariadb-clients", Some("12.3.2")),
             state: PackageState::Missing,
+            display_name: None,
         };
 
         // pacman -T validated the version declared by Provides even though the
@@ -803,6 +805,7 @@ mod tests {
         let mut status = PackageStatus {
             request: req("virtual-package", Some("2.0")),
             state: PackageState::Missing,
+            display_name: None,
         };
 
         let packages = parse_pacman_info(

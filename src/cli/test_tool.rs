@@ -1,6 +1,6 @@
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cmd::cmd;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::{contains_template_syntax, get_tera, render_str};

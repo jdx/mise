@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;

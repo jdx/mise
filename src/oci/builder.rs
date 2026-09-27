@@ -32,12 +32,18 @@ pub(crate) const ANNOTATION_TOOL_VERSION: &str = "dev.mise.tool.version";
 pub(crate) const ANNOTATION_LAYER_PREFIX: &str = "dev.mise.layer.prefix";
 pub(crate) const ANNOTATION_LAYER_OWNER: &str = "dev.mise.layer.owner";
 pub(crate) const ANNOTATION_LAYER_RELOCATION: &str = "dev.mise.layer.relocation";
+/// Fingerprint of the vfox plugin that installed a tool layer. Part of the
+/// reuse key: a plugin update can change what the same version installs.
+/// Absent for tools that aren't installed by a plugin.
+pub(crate) const ANNOTATION_TOOL_PLUGIN: &str = "dev.mise.tool.plugin";
+/// Marks a layer holding a vfox plugin's sources under `<mount>/plugins/`.
+pub(crate) const ANNOTATION_PLUGIN: &str = "dev.mise.plugin";
 
 const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
-pub(crate) struct BuildOptions {
+pub struct BuildOptions {
     /// Output directory for the OCI image layout.
     pub out_dir: PathBuf,
     /// Base image reference (overrides mise.toml and default setting).
@@ -48,8 +54,8 @@ pub(crate) struct BuildOptions {
     pub mount_point: Option<String>,
     /// Numeric owner assigned to every tar entry in generated layers.
     pub owner: Option<LayerOwner>,
-    /// Embed the current mise binary at /usr/local/bin/mise.
-    pub include_mise: bool,
+    /// Host mise binary to embed at /usr/local/bin/mise, if any.
+    pub mise_binary: Option<PathBuf>,
     /// CLI-provided host paths copied after config-provided entries.
     pub copy: Vec<OciCopy>,
     /// A previously pushed image to reuse unchanged tool layers from
@@ -65,7 +71,7 @@ pub(crate) struct BuildOptions {
     pub no_cache: bool,
 }
 
-/// Cache key for tool-layer reuse. All four parts must match — a layer built
+/// Cache key for tool-layer reuse. All parts must match — a layer built
 /// for a different mount point or file owner has different bytes even for
 /// the same tool version.
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -75,6 +81,8 @@ struct ReuseKey {
     prefix: String,
     owner: String,
     relocation: String,
+    /// Empty for tools not installed by a plugin.
+    plugin: String,
 }
 
 /// A tool layer taken verbatim from the remote cache image.
@@ -109,6 +117,9 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
                 prefix: prefix.clone(),
                 owner: owner.clone(),
                 relocation: relocation.clone(),
+                // Optional: layers from images pushed before plugin support
+                // lack it, and only match tools without a plugin.
+                plugin: a.get(ANNOTATION_TOOL_PLUGIN).cloned().unwrap_or_default(),
             },
             ReusedLayer {
                 media_type: layer.media_type.clone(),
@@ -121,7 +132,7 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
     index
 }
 
-pub(crate) struct Builder {
+pub struct Builder {
     pub cfg: Arc<Config>,
     pub ts: Toolset,
     pub oci: OciConfig,
@@ -131,13 +142,13 @@ pub(crate) struct Builder {
 }
 
 /// Output summary returned to the CLI.
-pub(crate) struct BuildOutput {
+pub struct BuildOutput {
     pub out_dir: PathBuf,
     pub manifest_digest: String,
     pub tool_layers: Vec<ToolLayerInfo>,
 }
 
-pub(crate) struct ToolLayerInfo {
+pub struct ToolLayerInfo {
     pub short: String,
     pub version: String,
     pub digest: String,
@@ -147,7 +158,7 @@ pub(crate) struct ToolLayerInfo {
 }
 
 impl Builder {
-    pub(crate) fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
+    pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
         Self {
             cfg,
             ts,
@@ -158,18 +169,18 @@ impl Builder {
         }
     }
 
-    pub(crate) fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
         self.dotfiles = dotfiles;
         self
     }
 
-    pub(crate) fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
+    pub fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
         self.system_packages = system_packages;
         self
     }
 
     /// Build the image and write it to the output directory.
-    pub(crate) async fn build(self) -> Result<BuildOutput> {
+    pub async fn build(self) -> Result<BuildOutput> {
         let versions = self.ts.list_current_versions();
         if versions.is_empty() {
             warn!("mise oci build: no tools in the toolset — image will have only the base layer");
@@ -285,6 +296,7 @@ impl Builder {
         // the layer is never built locally and the tool doesn't need to be
         // installed at all.
         let owner_str = format!("{}:{}", owner.uid, owner.gid);
+        let plugins = build_plugin_layers(&self.cfg, &versions, &mount_point, owner).await?;
         let python_relocations: Vec<PythonRelocation> = versions
             .iter()
             .filter(|(backend, _)| is_python_backend(backend.as_ref()))
@@ -302,7 +314,8 @@ impl Builder {
             .unwrap_or_default();
         let tool_reuse: Vec<Option<ReusedLayer>> = versions
             .iter()
-            .map(|(_, tv)| {
+            .zip(&plugins.tool_fingerprints)
+            .map(|((_, tv), plugin)| {
                 reuse_index
                     .get(&ReuseKey {
                         short: tv.ba().short.clone(),
@@ -310,6 +323,7 @@ impl Builder {
                         prefix: tool_tar_prefix(&mount_point, tv),
                         owner: owner_str.clone(),
                         relocation: tool_layer_relocation_key(tv, &python_relocations),
+                        plugin: plugin.clone(),
                     })
                     .cloned()
             })
@@ -361,6 +375,7 @@ impl Builder {
             version: String,
             prefix: String,
             relocation: String,
+            plugin: String,
             layer: ToolLayer,
         }
         enum ToolLayer {
@@ -435,6 +450,7 @@ impl Builder {
                 version: tv.version.clone(),
                 prefix: tv_prefix,
                 relocation: relocation_key,
+                plugin: plugins.tool_fingerprints[i].clone(),
                 layer,
             });
         }
@@ -463,7 +479,7 @@ impl Builder {
 
         // --- 6. mise binary layer (optional) ---
         let mut mise_layer: Option<LayerBlob> = None;
-        if self.opts.include_mise {
+        if let Some(exe) = &self.opts.mise_binary {
             // OCI images are linux-targeted in v1 (we normalize `os` to
             // "linux" above). Embedding a darwin/windows mise binary would
             // pass the build but explode with `Exec format error` the first
@@ -475,17 +491,10 @@ impl Builder {
                     std::env::consts::OS
                 );
             }
-            match std::env::current_exe() {
-                Ok(exe) => {
-                    let bytes = std::fs::read(&exe)
-                        .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
-                    let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
-                    mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
-                }
-                Err(e) => {
-                    warn!("could not locate mise binary to embed in image: {e}");
-                }
-            }
+            let bytes = std::fs::read(exe)
+                .wrap_err_with(|| format!("reading mise binary at {}", exe.display()))?;
+            let files = vec![("usr/local/bin/mise".to_string(), bytes, 0o755u32)];
+            mise_layer = Some(layer::build_layer_from_files(&files, owner)?);
         }
 
         // --- 5. Dotfiles layer (optional) ---
@@ -540,6 +549,20 @@ impl Builder {
             all_diff_ids.push(blob.blob.diff_id.clone());
         }
 
+        for (name, blob) in &plugins.layers {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert(ANNOTATION_PLUGIN.to_string(), name.clone());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
+        }
+
         for entry in &tool_layers {
             let mut annotations = IndexMap::new();
             annotations.insert(ANNOTATION_TOOL_SHORT.to_string(), entry.short.clone());
@@ -550,6 +573,9 @@ impl Builder {
                 ANNOTATION_LAYER_RELOCATION.to_string(),
                 entry.relocation.clone(),
             );
+            if !entry.plugin.is_empty() {
+                annotations.insert(ANNOTATION_TOOL_PLUGIN.to_string(), entry.plugin.clone());
+            }
             let (media_type, digest, size, diff_id, reused) = match &entry.layer {
                 ToolLayer::Built(blob) => {
                     layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
@@ -772,11 +798,31 @@ impl Builder {
         for (backend, tv) in versions {
             let host_install = tv.install_path();
             let in_image_root = tool_in_image_path(mount_point, tv);
+            let from_plugin = matches!(
+                backend.get_type(),
+                BackendType::Vfox | BackendType::VfoxBackend(_)
+            );
             match backend.exec_env(&self.cfg, &self.ts, tv).await {
                 Ok(tool_env) => {
+                    let mut host_paths = vec![];
                     for (k, v) in tool_env {
                         let rebased = rebase_path_value(&v, &host_install, &in_image_root);
+                        if from_plugin && refers_to_host_home(&rebased) {
+                            host_paths.push(k.clone());
+                        }
                         env_pairs.insert(k, rebased);
+                    }
+                    // Plugin env hooks run on the build host. A value under
+                    // the host's home (e.g. `GOPATH=$HOME/go`) is baked into
+                    // the image verbatim and won't exist in the container.
+                    if !host_paths.is_empty() {
+                        warn!(
+                            "mise oci build: {} sets {} to a path under the build host's home \
+                             directory; the path is baked into the image as-is and likely \
+                             doesn't exist in the container. Override it with [oci].env.",
+                            tv.style(),
+                            host_paths.join(", ")
+                        );
                     }
                 }
                 Err(e) => {
@@ -1251,29 +1297,116 @@ fn source_mode(path: &std::path::Path) -> Result<u32> {
 fn reject_unsupported_backends(
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
 ) -> Result<()> {
-    // Ask the actual backend instance rather than parsing the short name.
-    // `BackendType::guess` only matches literal "asdf" / "vfox" prefixes and
-    // misses third-party vfox plugins whose tools use a custom plugin name
-    // as the prefix (e.g. `my-plugin:tool`), even though they have the same
-    // out-of-tree write behavior we're guarding against.
+    // Ask the actual backend instance rather than parsing the short name:
+    // `BackendType::guess` only matches a literal "asdf" prefix and misses
+    // plugin-named tools that resolve to asdf.
+    //
+    // vfox plugins are accepted: mise extracts their downloads into the
+    // per-version directory, and their env hooks run on the host at build
+    // time. asdf plugins stay rejected — their bash install scripts commonly
+    // write outside the install dir, and their `exec-env` scripts expect
+    // bash at runtime.
     let bad: Vec<String> = versions
         .iter()
-        .filter_map(|(backend, tv)| match backend.get_type() {
-            BackendType::Asdf | BackendType::Vfox | BackendType::VfoxBackend(_) => {
-                Some(tv.ba().short.clone())
-            }
-            _ => None,
-        })
+        .filter(|(backend, _)| backend.get_type() == BackendType::Asdf)
+        .map(|(_, tv)| tv.ba().short.clone())
         .collect();
     if !bad.is_empty() {
         bail!(
-            "mise oci build does not support asdf/vfox plugins in v1 (their install scripts can \
+            "mise oci build does not support asdf plugins (their install scripts can \
              write outside the per-version directory, breaking the one-layer-per-tool invariant). \
-             Affected tools: {}",
+             Use a vfox plugin or another backend for: {}",
             bad.join(", ")
         );
     }
     Ok(())
+}
+
+/// Plugin layers for an image, plus each tool's plugin fingerprint.
+struct PluginLayers {
+    /// One layer per distinct on-disk plugin, keyed by its directory name
+    /// under `<mount>/plugins/`.
+    layers: IndexMap<String, LayerBlob>,
+    /// Parallel to the builder's `versions`: the reuse-key fingerprint of the
+    /// plugin that installed each tool, or empty when no plugin did.
+    tool_fingerprints: Vec<String>,
+}
+
+/// Package the vfox plugins that installed the toolset's tools.
+///
+/// The embedded mise resolves these tools through `<mount>/plugins/<name>`
+/// just as it does on the host. Without the plugin there, any mise command
+/// inside the container would try to clone it — and a plugin declared by URL
+/// in a project `[plugins]` section couldn't be found at all, since that
+/// section isn't carried into the image config.
+///
+/// Plugins embedded in the mise binary have no directory to copy; the
+/// embedded mise carries them, and their fingerprint hashes their sources.
+async fn build_plugin_layers(
+    config: &Arc<Config>,
+    versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+    mount_point: &str,
+    owner: LayerOwner,
+) -> Result<PluginLayers> {
+    use crate::plugins::{Plugin, PluginEnum};
+    use crate::ui::multi_progress_report::MultiProgressReport;
+
+    let mut layers: IndexMap<String, LayerBlob> = IndexMap::new();
+    let mut tool_fingerprints = Vec::with_capacity(versions.len());
+    for (backend, tv) in versions {
+        let plugin = match backend.plugin() {
+            Some(PluginEnum::Vfox(p) | PluginEnum::VfoxBackend(p)) => p,
+            _ => {
+                tool_fingerprints.push(String::new());
+                continue;
+            }
+        };
+        // The image env is derived by running the plugin's hooks, so it must
+        // be present even when the tool layer is reused from a registry.
+        plugin
+            .ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await
+            .wrap_err_with(|| format!("installing plugin {} for {}", plugin.name, tv.style()))?;
+        if !plugin.plugin_path.exists() {
+            if let Some(fingerprint) = embedded_plugin_fingerprint(&plugin.name) {
+                tool_fingerprints.push(fingerprint);
+                continue;
+            }
+            bail!(
+                "plugin {} for {} is not installed at {}",
+                plugin.name,
+                tv.style(),
+                plugin.plugin_path.display()
+            );
+        }
+        let name = plugin
+            .plugin_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| plugin.name.clone());
+        if !layers.contains_key(&name) {
+            // Plugins linked from a local directory or a git subdirectory are
+            // symlinks; package what they point at.
+            let src = std::fs::canonicalize(&plugin.plugin_path).wrap_err_with(|| {
+                format!("resolving plugin path {}", plugin.plugin_path.display())
+            })?;
+            // Everything in the plugin directory except `.git` ships, including
+            // untracked local files; name the source so it can be reviewed.
+            info!(
+                "oci: copying plugin {name} from {} into the image (all files except .git)",
+                crate::file::display_path(&src)
+            );
+            let prefix = format!("{}/plugins/{name}", mount_point.trim_start_matches('/'));
+            let blob = layer::build_plugin_layer_from_dir(&src, &prefix, owner)
+                .wrap_err_with(|| format!("building layer for plugin {name}"))?;
+            layers.insert(name.clone(), blob);
+        }
+        tool_fingerprints.push(layers[&name].diff_id.clone());
+    }
+    Ok(PluginLayers {
+        layers,
+        tool_fingerprints,
+    })
 }
 
 /// Rewrite any occurrence of the host install path in an `exec_env` value to
@@ -1286,6 +1419,50 @@ fn rebase_path_value(value: &str, host_prefix: &std::path::Path, in_image_prefix
         return value.to_string();
     }
     value.replace(host, in_image_prefix)
+}
+
+/// Content hash of a plugin compiled into the mise binary, over its metadata,
+/// hook, and library sources. `None` when no such plugin is embedded.
+fn embedded_plugin_fingerprint(name: &str) -> Option<String> {
+    let plugin = vfox::embedded_plugins::get_embedded_plugin(name)?;
+    let mut hasher = Sha256::new();
+    // Length-prefix every field so adjacent fields can't run together.
+    let mut field = |bytes: &[u8]| {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    };
+    field(plugin.metadata.as_bytes());
+    for (kind, files) in [("hooks", plugin.hooks), ("lib", plugin.lib)] {
+        field(kind.as_bytes());
+        field(&(files.len() as u64).to_le_bytes());
+        for (path, source) in files {
+            field(path.as_bytes());
+            field(source.as_bytes());
+        }
+    }
+    Some(format!(
+        "embedded:sha256:{}",
+        layer::hex_encode(&hasher.finalize())
+    ))
+}
+
+/// Whether an env value names a path under the build host's home directory.
+fn refers_to_host_home(value: &str) -> bool {
+    value_refers_to_dir(value, &crate::dirs::HOME)
+}
+
+fn value_refers_to_dir(value: &str, dir: &std::path::Path) -> bool {
+    let dir = dir.to_string_lossy();
+    let dir = dir.trim_end_matches('/');
+    // An empty or root home would match every absolute path.
+    if dir.is_empty() {
+        return false;
+    }
+    std::env::split_paths(value).any(|p| {
+        p.to_str()
+            .and_then(|p| p.strip_prefix(dir))
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
 }
 
 /// In-image absolute path for a tool's install dir, e.g.
@@ -1707,7 +1884,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let backend =
-            crate::cli::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
+            crate::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
         let request =
             ToolRequest::new_version_for_test(backend.into(), &version, ToolSource::Unknown);
         let mut tv = ToolVersion::new(request, version);
@@ -1751,8 +1928,7 @@ mod tests {
 
     #[test]
     fn recognizes_an_alias_resolved_to_core_python() {
-        let alias =
-            crate::cli::args::BackendArg::new("py".to_string(), Some("core:python".to_string()));
+        let alias = crate::args::BackendArg::new("py".to_string(), Some("core:python".to_string()));
         let backend = crate::backend::arg_to_backend(alias).unwrap();
         assert!(is_python_backend(backend.as_ref()));
     }
@@ -1822,6 +1998,7 @@ mod tests {
                 prefix: "mise/installs/jq/1.8.1".into(),
                 owner: "0:0".into(),
                 relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
+                plugin: String::new(),
             })
             .unwrap();
         assert_eq!(hit.digest, "sha256:aaa");
@@ -1835,9 +2012,77 @@ mod tests {
                     prefix: "mise/installs/jq/1.8.1".into(),
                     owner: "1000:1000".into(),
                     relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
+                    plugin: String::new(),
                 })
                 .is_none()
         );
+    }
+
+    #[test]
+    fn reuse_index_keys_plugin_tools_on_the_plugin_fingerprint() {
+        let base = [
+            (ANNOTATION_TOOL_SHORT, "demo:hello"),
+            (ANNOTATION_TOOL_VERSION, "1.0.0"),
+            (ANNOTATION_LAYER_PREFIX, "mise/installs/demo-hello/1.0.0"),
+            (ANNOTATION_LAYER_OWNER, "0:0"),
+            (ANNOTATION_LAYER_RELOCATION, TOOL_LAYER_RELOCATION_VERSION),
+        ];
+        let mut with_plugin = base.to_vec();
+        with_plugin.push((ANNOTATION_TOOL_PLUGIN, "sha256:plugin-a"));
+        let remote = registry::RemoteImage {
+            manifest: ImageManifest {
+                schema_version: 2,
+                media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
+                config: layer(&[], "sha256:cfg"),
+                layers: vec![layer(&with_plugin, "sha256:aaa")],
+                annotations: Default::default(),
+            },
+            diff_ids: vec!["sha256:diff-a".into()],
+            config: serde_json::json!({}),
+        };
+        let index = build_reuse_index(&remote);
+        let key = |plugin: &str| ReuseKey {
+            short: "demo:hello".into(),
+            version: "1.0.0".into(),
+            prefix: "mise/installs/demo-hello/1.0.0".into(),
+            owner: "0:0".into(),
+            relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
+            plugin: plugin.into(),
+        };
+        assert!(index.contains_key(&key("sha256:plugin-a")));
+        // An updated plugin, or no plugin at all, must not reuse the layer.
+        assert!(!index.contains_key(&key("sha256:plugin-b")));
+        assert!(!index.contains_key(&key("")));
+    }
+
+    #[test]
+    fn embedded_plugin_fingerprint_hashes_plugin_sources() {
+        assert_eq!(embedded_plugin_fingerprint("not-an-embedded-plugin"), None);
+        let mut seen = std::collections::HashSet::new();
+        for name in vfox::embedded_plugins::list_embedded_plugins() {
+            let fingerprint = embedded_plugin_fingerprint(name).unwrap();
+            assert!(fingerprint.starts_with("embedded:sha256:"));
+            assert_eq!(embedded_plugin_fingerprint(name).unwrap(), fingerprint);
+            // Distinct plugins have distinct sources, so distinct fingerprints.
+            assert!(seen.insert(fingerprint), "duplicate fingerprint for {name}");
+        }
+    }
+
+    #[test]
+    fn host_home_detection_matches_whole_path_components() {
+        let home = std::path::Path::new("/home/runner");
+        assert!(value_refers_to_dir("/home/runner/go", home));
+        assert!(value_refers_to_dir("/home/runner", home));
+        // PATH-like values use the host's separator (`;` on Windows).
+        let list = std::env::join_paths(["/mise/installs/x/bin", "/home/runner/.cargo/bin"])
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(value_refers_to_dir(&list, home));
+        assert!(!value_refers_to_dir("/home/runner2/go", home));
+        assert!(!value_refers_to_dir("/mise/installs/x/1.0.0", home));
+        assert!(!value_refers_to_dir("1", home));
+        assert!(!value_refers_to_dir("/anything", std::path::Path::new("/")));
     }
 
     #[test]

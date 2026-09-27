@@ -1,10 +1,10 @@
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::try_with_v_prefix;
-use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
     GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,

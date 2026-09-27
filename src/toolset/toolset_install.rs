@@ -10,15 +10,15 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::config::Config;
 use crate::config::settings::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::{InstallContext, install_dependency_declarations};
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
-use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
+use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
 use crate::toolset::tool_request::ToolRequest;
@@ -74,7 +74,7 @@ impl Toolset {
             .and_then(|(_, tv)| (tv.request.options().lazy == Some(true)).then_some(tv)))
     }
 
-    pub(crate) async fn has_missing_lazy_bin_provider(
+    pub async fn has_missing_lazy_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -109,7 +109,7 @@ impl Toolset {
         requests
     }
 
-    pub(crate) async fn install_missing_lazy_bin(
+    pub async fn install_missing_lazy_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -157,7 +157,7 @@ impl Toolset {
         Ok(Some(installed))
     }
 
-    pub(crate) async fn should_install_missing_registry_bin_provider(
+    pub async fn should_install_missing_registry_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -291,7 +291,7 @@ impl Toolset {
             .await
     }
 
-    pub(crate) async fn install_all_versions_with_progress(
+    pub async fn install_all_versions_with_progress(
         &mut self,
         config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
@@ -835,7 +835,54 @@ impl Toolset {
         backend.install_version(ctx, tv).await
     }
 
-    pub(crate) async fn install_missing_bin(
+    /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
+    /// so this relies on the signals available before install: the tool's name, registry bin
+    /// metadata, or another installed version of the same tool that ships the bin.
+    pub async fn missing_bin_providers(
+        &self,
+        config: &Arc<Config>,
+        missing: Vec<ToolVersion>,
+        bin_name: &str,
+    ) -> Vec<ToolVersion> {
+        let (mut providers, unmatched): (Vec<_>, Vec<_>) = missing.into_iter().partition(|tv| {
+            tv.ba().matches_bin_name(bin_name)
+                || tv
+                    .ba()
+                    .registry_tool()
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        });
+        if unmatched.is_empty() {
+            return providers;
+        }
+        // Without the scan, the name and registry signals above are all there is. Failing here
+        // instead would stop commands that no missing tool provides.
+        let installed = match self.list_installed_versions(config).await {
+            Ok(installed) => installed,
+            Err(err) => {
+                warn!("failed to list installed versions: {err:#}");
+                return providers;
+            }
+        };
+        for tv in unmatched {
+            if installed_version_ships_bin(config, &installed, &tv, bin_name).await {
+                providers.push(tv);
+            }
+        }
+        providers
+    }
+
+    /// Whether a configured, installed version of `tv`'s tool ships `bin_name`.
+    pub async fn configured_version_ships_bin(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> bool {
+        let installed = self.list_current_installed_versions(config);
+        installed_version_ships_bin(config, &installed, tv, bin_name).await
+    }
+
+    pub async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -934,7 +981,7 @@ impl Toolset {
     }
 
     /// Install all plugins defined in [plugins] config section
-    pub(crate) async fn ensure_config_plugins_installed(
+    pub async fn ensure_config_plugins_installed(
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
@@ -942,7 +989,7 @@ impl Toolset {
     }
 
     /// Install all plugins from an explicit plugin URL map.
-    pub(crate) async fn ensure_config_plugins_installed_from_urls(
+    pub async fn ensure_config_plugins_installed_from_urls(
         config: &Arc<Config>,
         repo_urls: &HashMap<String, String>,
         dry_run: bool,
@@ -1055,10 +1102,25 @@ fn transitive_dependency_before_date(
     }
 }
 
+/// Whether a version in `installed` of the same tool as `tv` ships `bin_name`.
+async fn installed_version_ships_bin(
+    config: &Arc<Config>,
+    installed: &[TVTuple],
+    tv: &ToolVersion,
+    bin_name: &str,
+) -> bool {
+    for (backend, installed_tv) in installed.iter().filter(|(b, _)| &**b.ba() == tv.ba()) {
+        if let Ok(Some(_bin)) = backend.which(config, installed_tv, bin_name).await {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     #[cfg(windows)]

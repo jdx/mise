@@ -1,4 +1,4 @@
-use crate::cli::args::TruncateOptions;
+use crate::args::TruncateOptions;
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;

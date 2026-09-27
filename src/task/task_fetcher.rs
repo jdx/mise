@@ -21,12 +21,18 @@ static REMOTE_TASK_ARTIFACTS: LazyLock<RemoteTaskArtifacts> = LazyLock::new(Dash
 static REMOTE_TASK_ARTIFACT_SCOPES: Mutex<usize> = Mutex::new(0);
 
 /// Keeps no-cache remote task snapshots alive for one command or direct caller.
-pub(crate) struct RemoteTaskArtifactsGuard(());
+pub struct RemoteTaskArtifactsGuard(());
 
 impl RemoteTaskArtifactsGuard {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         *REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap() += 1;
         Self(())
+    }
+}
+
+impl Default for RemoteTaskArtifactsGuard {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -63,21 +69,17 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 }
 
 /// Handles fetching remote task files and converting them to local paths
-pub(crate) struct TaskFetcher {
+pub struct TaskFetcher {
     no_cache: bool,
 }
 
 impl TaskFetcher {
-    pub(crate) fn new(no_cache: bool) -> Self {
+    pub fn new(no_cache: bool) -> Self {
         Self { no_cache }
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
-    pub(crate) async fn fetch_tasks(
-        &self,
-        config: &Arc<Config>,
-        tasks: &mut Vec<Task>,
-    ) -> Result<()> {
+    pub async fn fetch_tasks(&self, config: &Arc<Config>, tasks: &mut Vec<Task>) -> Result<()> {
         let no_cache = self.no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
@@ -164,7 +166,7 @@ impl TaskFetcher {
     }
 
     /// Check if a source path is a remote task file (git or http/https)
-    pub(crate) fn is_remote_source(source: &str) -> bool {
+    pub fn is_remote_source(source: &str) -> bool {
         source.starts_with("git::")
             || source.starts_with("http://")
             || source.starts_with("https://")

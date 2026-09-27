@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::request_exit;
 use crate::shell::ShellType;
@@ -1041,7 +1041,7 @@ impl TaskScriptParser {
     }
 }
 
-pub(crate) fn has_any_args_defined(spec: &usage::Spec) -> bool {
+pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
     !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() || !spec.cmd.subcommands.is_empty()
 }
 
@@ -1051,7 +1051,7 @@ pub(crate) fn has_any_args_defined(spec: &usage::Spec) -> bool {
 ///
 /// Note: before_help_long is excluded because populate_spec_metadata()
 /// sets it automatically for tasks with dependencies.
-pub(crate) fn has_any_usage_spec(spec: &usage::Spec) -> bool {
+pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
     has_any_args_defined(spec)
         || spec.about.is_some()
         || spec.about_long.is_some()
@@ -1091,24 +1091,10 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct TeraV1Guard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl TeraV1Guard {
-        fn new() -> Self {
-            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
-            Settings::override_with(|settings| settings.tera_v1 = Some(true));
-            Self { _lock: lock }
-        }
-    }
-
-    impl Drop for TeraV1Guard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
+    fn tera_v1() -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
+        Settings::override_with(|settings| settings.tera_v1 = Some(true));
+        guard
     }
 
     #[tokio::test]
@@ -1429,7 +1415,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_template_uses_tera_v1_when_enabled() {
         let config = Config::get().await.unwrap();
-        let _guard = TeraV1Guard::new();
+        let _guard = tera_v1();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
         let scripts = vec![

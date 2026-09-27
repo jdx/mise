@@ -9,7 +9,7 @@ use crate::config::env_directive::EnvValue;
 /// be persisted in the manifest or serialized into task/backend option specs.
 // install_env is a core field on CoreToolOptions, but parse_tool_options()
 // can still place it in opts, so we filter it here as well.
-pub(crate) const EPHEMERAL_OPT_KEYS: &[&str] = &[
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "postinstall",
     "install_env",
     "depends",
@@ -19,7 +19,7 @@ pub(crate) const EPHEMERAL_OPT_KEYS: &[&str] = &[
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub(crate) struct CoreToolOptions {
+pub struct CoreToolOptions {
     #[serde(default)]
     pub os: Option<Vec<String>>,
     #[serde(default)]
@@ -33,7 +33,7 @@ pub(crate) struct CoreToolOptions {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub(crate) struct RawBackendOptions {
+pub struct RawBackendOptions {
     #[serde(flatten, default)]
     pub values: IndexMap<String, toml::Value>,
 }
@@ -109,7 +109,7 @@ impl IntoIterator for RawBackendOptions {
 /// and raw backend options. `ToolVersionOptions` remains as a compatibility
 /// alias while call sites move to the clearer names.
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub(crate) struct ToolOptions {
+pub struct ToolOptions {
     #[serde(flatten, default)]
     pub core: CoreToolOptions,
     #[serde(flatten, default)]
@@ -120,7 +120,7 @@ pub(crate) struct ToolOptions {
 // and won't have NaN, so this is safe in practice.
 impl Eq for ToolOptions {}
 
-pub(crate) type ToolVersionOptions = ToolOptions;
+pub type ToolVersionOptions = ToolOptions;
 
 impl Deref for ToolOptions {
     type Target = CoreToolOptions;
@@ -137,7 +137,7 @@ impl DerefMut for ToolOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ToolOptionSource {
+pub enum ToolOptionSource {
     Registry,
     InstallManifest,
     BackendAlias,
@@ -147,7 +147,7 @@ pub(crate) enum ToolOptionSource {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct ResolvedToolOptions {
+pub struct ResolvedToolOptions {
     options: ToolVersionOptions,
     sources: IndexMap<String, ToolOptionSource>,
 }
@@ -345,7 +345,7 @@ impl ToolOptions {
         self.opts
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
@@ -360,7 +360,7 @@ impl ToolOptions {
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
-    pub(crate) fn minimum_release_age(&self) -> Option<&str> {
+    pub fn minimum_release_age(&self) -> Option<&str> {
         if let Some(value) = self.get("minimum_release_age") {
             return Some(value);
         }
@@ -419,7 +419,7 @@ impl ToolOptions {
         }
     }
 
-    pub(crate) fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
+    pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
         if self.insert_core_option(&key, &value)? {
             return Ok(());
         }
@@ -502,7 +502,7 @@ impl ToolOptions {
         }
     }
 
-    pub(crate) fn contains_key(&self, key: &str) -> bool {
+    pub fn contains_key(&self, key: &str) -> bool {
         if self.opts.contains_key(key) {
             return true;
         }
@@ -636,7 +636,7 @@ fn preserves_backend_option_type(key: &str) -> bool {
 /// `pub(crate)` so callers that only want to know whether a value would resolve can ask the same
 /// question the lookup answers, instead of keeping a second copy of the rule that can drift from
 /// this one.
-pub(crate) fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
+pub fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
         toml::Value::Integer(i) => Some(i.to_string()),
@@ -647,7 +647,7 @@ pub(crate) fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
     }
 }
 
-pub(crate) fn parse_tool_options(s: &str) -> ToolVersionOptions {
+pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
     // Keep this legacy entry point forgiving: callers use it for registry/cache
     // paths where dropping every backend option because one core key is malformed
     // is worse than skipping only the invalid key.
@@ -657,7 +657,7 @@ pub(crate) fn parse_tool_options(s: &str) -> ToolVersionOptions {
     parse_tool_options_manual_lenient(s)
 }
 
-pub(crate) fn try_parse_tool_options(s: &str) -> Result<ToolVersionOptions, String> {
+pub fn try_parse_tool_options(s: &str) -> Result<ToolVersionOptions, String> {
     // Try TOML parsing first (handles nested structures like platforms={...} correctly)
     if let Some(result) = try_parse_as_toml(s) {
         return result;

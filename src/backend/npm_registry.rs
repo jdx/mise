@@ -22,7 +22,7 @@ use eyre::Result;
 
 use crate::backend::VersionInfo;
 use crate::backend::npm::is_semver_prerelease;
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 
 /// npm registry configuration from the environment and the user's
 /// `~/.npmrc`, read once per process.

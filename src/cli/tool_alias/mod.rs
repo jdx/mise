@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 
 mod get;
 mod ls;

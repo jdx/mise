@@ -14,12 +14,12 @@ mod native_binstall;
 use native_binstall::NativeBinstallAction;
 
 use crate::Result;
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;

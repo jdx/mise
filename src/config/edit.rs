@@ -10,7 +10,7 @@ use crate::file::{self, display_path};
 
 /// `config.toml`, or `config.local.toml` next to it for machine-only
 /// declarations.
-pub(crate) fn declaration_file(local: bool) -> Result<PathBuf> {
+pub fn declaration_file(local: bool) -> Result<PathBuf> {
     let global = crate::config::global_shared_config_path();
     if !local {
         return Ok(global);
@@ -19,7 +19,7 @@ pub(crate) fn declaration_file(local: bool) -> Result<PathBuf> {
     Ok(dir.join("config.local.toml"))
 }
 
-pub(crate) fn read_document(path: &Path) -> Result<DocumentMut> {
+pub fn read_document(path: &Path) -> Result<DocumentMut> {
     if path.exists() {
         let text = file::read_to_string(path)?;
         Ok(text

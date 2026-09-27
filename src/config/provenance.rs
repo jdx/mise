@@ -10,21 +10,21 @@ use crate::config::{is_global_config, is_system_config};
 /// configuration layers are composed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ConfigFileScope {
+pub enum ConfigFileScope {
     System,
     User,
     Project,
 }
 
 impl ConfigFileScope {
-    pub(crate) fn is_project(self) -> bool {
+    pub fn is_project(self) -> bool {
         self == Self::Project
     }
 }
 
 /// Identifies both the file and ownership layer from which configuration came.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ConfigProvenance {
+pub struct ConfigProvenance {
     path: PathBuf,
     scope: ConfigFileScope,
 }
@@ -48,7 +48,7 @@ impl ConfigProvenance {
         &self.path
     }
 
-    pub(crate) fn scope(&self) -> ConfigFileScope {
+    pub fn scope(&self) -> ConfigFileScope {
         self.scope
     }
 }

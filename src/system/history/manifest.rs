@@ -12,7 +12,7 @@ pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Enrollment {
+pub struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
     pub path: String,
     pub autosave: bool,
@@ -35,7 +35,7 @@ pub(crate) struct Enrollment {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Manifest {
+pub struct Manifest {
     pub format: u32,
     pub enrollment: Vec<Enrollment>,
     pub exclude: Vec<String>,
@@ -322,7 +322,7 @@ impl Manifest {
 
     /// Restore enrollment from Git without needing a captured mise config.
     /// Deployment inputs are validated separately; none are inferred here.
-    pub(crate) fn tracking(&self) -> Result<super::tracked::TrackedSet> {
+    pub fn tracking(&self) -> Result<super::tracked::TrackedSet> {
         self.validate()?;
         let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
@@ -492,7 +492,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub(crate) fn read(repo: &HistoryRepo, tree: &str) -> Result<Option<Self>> {
+    pub fn read(repo: &HistoryRepo, tree: &str) -> Result<Option<Self>> {
         let Some((mode, oid)) = repo.object_at(tree, PATH)? else {
             return Ok(None);
         };

@@ -1,20 +1,15 @@
-use crate::request_exit;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
-    sync::atomic::Ordering,
-};
 
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
-use crate::cli::args::{BackendArg, ToolArg};
-use crate::cli::exec::Exec;
-use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
+use crate::config::{Config, Settings, SettingsExt, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
-use crate::toolset::{ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolVersion, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
@@ -33,7 +28,7 @@ const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated
 const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
 const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
 
-pub(crate) const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
+pub const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TaskToolArg {
@@ -45,7 +40,7 @@ struct TaskToolArg {
 /// Preserve runtime-only task tool requests for a shim process. A task's `tools`
 /// entries are not part of the config that a shim reloads, so without this context
 /// a bootstrap shim cannot find a lazy provider declared only on the task.
-pub(crate) fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
+pub fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
     let tools = tools
         .iter()
         .map(|tool| TaskToolArg {
@@ -65,7 +60,7 @@ pub(crate) fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
     }
 }
 
-pub(crate) fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
+pub fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
     let Ok(serialized) = env::var(TASK_TOOL_ARGS_ENV) else {
         return Ok(vec![]);
     };
@@ -97,263 +92,11 @@ pub(crate) fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
 }
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
-pub(crate) async fn handle_shim() -> Result<()> {
-    // TODO: instead, check if bin is in shims dir
-    let bin_name = *env::MISE_BIN_NAME;
-    if env::is_mise_binary(bin_name) || cfg!(test) {
-        return Ok(());
-    }
-    #[cfg(windows)]
-    {
-        let shim_path = invoked_shim_path();
-        if env::var_path(env::MISE_SHIM_PATH_ENV)
-            .as_ref()
-            .is_some_and(|previous| {
-                file::paths_eq(
-                    &file::canonicalize_or_self(previous),
-                    &file::canonicalize_or_self(&shim_path),
-                )
-            })
-        {
-            bail!(
-                "recursive shim invocation detected for {bin_name}: {}",
-                display_path(&shim_path)
-            );
-        }
-        *env::MISE_SHIM_PATH.write().unwrap() = Some(shim_path.clone());
-        env::set_var(env::MISE_SHIM_PATH_ENV, &shim_path);
-    }
-    let mut config = Config::get().await?;
-    let mut args = env::ARGS.read().unwrap().clone();
-    env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
-    trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
-    args[0] = bin.to_string_lossy().to_string();
-    if let Some(wrapper) = &wrapper {
-        args.splice(1..1, wrapper.args().iter().cloned());
-    }
-    env::set_var("__MISE_SHIM", "1");
-    let exec = Exec {
-        tool: vec![],
-        c: None,
-        command: Some(args),
-        jobs: None,
-        raw: false,
-        no_deps: true, // Skip deps for shims to avoid performance impact
-        fresh_env: false,
-        deny_all: false,
-        deny_read: false,
-        deny_write: false,
-        deny_net: false,
-        deny_env: false,
-        allow_read: vec![],
-        allow_write: vec![],
-        allow_net: vec![],
-        allow_env: vec![],
-    };
-    time!("shim exec");
-    if let Some(wrapper) = wrapper {
-        exec.run_with_command_wrapper(
-            config,
-            ts,
-            wrapper
-                .env()
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        )
-        .await?;
-    } else {
-        exec.run_with_toolset(config, ts).await?;
-    }
-    Err(request_exit(0))
-}
-
-#[cfg(windows)]
-fn invoked_shim_path() -> PathBuf {
-    let argv0 = PathBuf::from(&*env::ARGV0);
-    if argv0.is_absolute() {
-        return argv0;
-    }
-    if argv0.components().count() > 1 {
-        return argv0
-            .absolutize()
-            .map(|path| path.into_owned())
-            .unwrap_or(argv0);
-    }
-    which::which(&argv0)
-        .ok()
-        .or_else(|| std::env::current_exe().ok())
-        .unwrap_or(argv0)
-}
-
-async fn which_shim(
-    config: &mut Arc<Config>,
-    bin_name: &str,
-    args: &[String],
-) -> Result<(PathBuf, Toolset, Option<CommandWrapper>)> {
-    // Shell completion invokes `usage complete-word` through the `usage` shim.
-    // It should use the installed CLI or fail locally, never resolve a floating
-    // tool version or auto-install over the network while the user is pressing
-    // tab. On Windows the shim is invoked as `usage.exe`, so strip the platform
-    // executable suffix before comparing.
-    let shim_name = command_name_without_exe_suffix(bin_name);
-    let is_usage = if cfg!(windows) {
-        shim_name.eq_ignore_ascii_case("usage")
-    } else {
-        shim_name == "usage"
-    };
-    let completion_offline = is_usage && args.get(1).is_some_and(|arg| arg == "complete-word");
-    let resolve_options = if completion_offline {
-        ResolveOptions {
-            offline: true,
-            ..Default::default()
-        }
-    } else {
-        ResolveOptions::default()
-    };
-    let task_tools = task_tool_args_from_env()?;
-    let mut ts = ToolsetBuilder::new()
-        .with_args(&task_tools)
-        .with_resolve_options(resolve_options)
-        .build(config)
-        .await?;
-    let wrappers = load_command_wrappers(
-        &config.config_files,
-        ts.versions.values().flat_map(|versions| &versions.requests),
-    )?;
-    validate_wrapper_names(wrappers.keys())?;
-    let wrapper = if cfg!(macos) {
-        wrappers
-            .iter()
-            .find(|(name, _)| command_names_eq(name, shim_name))
-            .map(|(_, wrapper)| wrapper)
-    } else {
-        wrappers.get(shim_name)
-    };
-    if let Some(wrapper) = wrapper {
-        if command_names_eq(wrapper.command(), shim_name) {
-            bail!("command wrapper for {shim_name} cannot delegate to itself");
-        }
-        trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
-        if !completion_offline {
-            install_missing_wrapper_command(config, &mut ts, wrapper.command()).await?;
-        }
-        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
-    }
-    // A configured tool may intentionally override an executable bundled by another installed
-    // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
-    // by the registry before resolving an incidental installed provider.
-    if !completion_offline
-        && Settings::get().not_found_auto_install
-        && ts
-            .should_install_missing_registry_bin_provider(config, shim_name)
-            .await?
-    {
-        for tv in ts
-            .install_missing_bin(config, shim_name)
-            .await?
-            .unwrap_or_default()
-        {
-            let p = tv.backend()?;
-            if let Some(bin) =
-                backend_which_shim(p.as_ref(), config, &tv, shim_name, bin_name).await?
-            {
-                trace!(
-                    "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
-                    bin = display_path(&bin)
-                );
-                return Ok((bin, ts, None));
-            }
-        }
-    }
-    for lookup_name in [shim_name, bin_name].into_iter().unique() {
-        if let Some((p, tv)) = ts.which(config, lookup_name).await
-            && let Some(bin) = p.which(config, &tv, lookup_name).await?
-        {
-            trace!(
-                "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
-                bin = display_path(&bin)
-            );
-            return Ok((bin, ts, None));
-        }
-    }
-    // Lazy tools are explicit fallback providers. They install on first shim use even when
-    // general not-found auto-install is disabled, but only after configured/project providers
-    // and already-installed tools have had a chance to win.
-    if !completion_offline && ts.has_missing_lazy_bin_provider(config, shim_name).await? {
-        for tv in ts
-            .install_missing_lazy_bin(config, shim_name)
-            .await?
-            .unwrap_or_default()
-        {
-            let backend = tv.backend()?;
-            if let Some(bin) =
-                backend_which_shim(backend.as_ref(), config, &tv, shim_name, bin_name).await?
-            {
-                trace!(
-                    "shim[{bin_name}] LAZY ToolVersion: {tv} bin: {bin}",
-                    bin = display_path(&bin)
-                );
-                return Ok((bin, ts, None));
-            }
-        }
-    }
-    // Auto-installing here would download a tool over the network; skip it for
-    // offline completion so `usage complete-word` fails locally instead.
-    if !completion_offline && Settings::get().not_found_auto_install {
-        for tv in ts
-            .install_missing_bin(config, shim_name)
-            .await?
-            .unwrap_or_default()
-        {
-            let p = tv.backend()?;
-            if let Some(bin) =
-                backend_which_shim(p.as_ref(), config, &tv, shim_name, bin_name).await?
-            {
-                trace!(
-                    "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
-                    bin = display_path(&bin)
-                );
-                return Ok((bin, ts, None));
-            }
-        }
-    }
-    // fallback for "system"
-    if Settings::get().not_found_system_fallback {
-        let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
-        for path in &*env::PATH {
-            if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {
-                continue;
-            }
-            let bin = path.join(bin_name);
-            if bin.is_file() && file::is_executable(&bin) {
-                if file::is_active_mise_shim(&bin) {
-                    continue;
-                }
-                // Skip if this binary is a mise shim (symlink pointing to the mise binary)
-                if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
-                    continue;
-                }
-                trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-                return Ok((bin, ts, None));
-            }
-        }
-    }
-    let mut tvs = ts.list_rtvs_with_bin(config, shim_name).await?;
-    if tvs.is_empty() && shim_name != bin_name {
-        tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
-    }
-    match err_no_version_set(config, ts, shim_name, tvs).await {
-        Ok(_) => unreachable!("err_no_version_set always returns an error"),
-        Err(err) => Err(err),
-    }
-}
 
 /// A wrapper's command usually comes from another configured tool (cargo → mbx
 /// from mr-boxington). Install a missing provider the way that command's own
 /// shim would, or the wrapper execs a command that is not on PATH.
-async fn install_missing_wrapper_command(
+pub async fn install_missing_wrapper_command(
     config: &mut Arc<Config>,
     ts: &mut Toolset,
     command: &str,
@@ -381,7 +124,7 @@ async fn install_missing_wrapper_command(
     Ok(())
 }
 
-async fn backend_which_shim(
+pub async fn backend_which_shim(
     backend: &dyn Backend,
     config: &Arc<Config>,
     tv: &ToolVersion,
@@ -404,14 +147,14 @@ async fn backend_which_shim(
 /// surfaces the opaque `cannot find binary path`; symlink shims already get
 /// this message directly from `which_shim`. See discussion #11183.
 #[cfg(not(test))]
-pub(crate) async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
+pub async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
     // Windows exe shims are invoked as `<tool>.exe`; name `<tool>` in the message.
     let bin_stem = bin_name
         .strip_suffix(std::env::consts::EXE_SUFFIX)
         .unwrap_or(bin_name);
     let build = async {
         let config = Config::get().await?;
-        let ts = ToolsetBuilder::new().build(&config).await?;
+        let ts = crate::toolset::ToolsetBuilder::new().build(&config).await?;
         let tvs = ts.list_rtvs_with_bin(&config, bin_stem).await?;
         // err_no_version_set always returns Err; map its Ok arm defensively.
         err_no_version_set(&config, ts, bin_stem, tvs)
@@ -424,7 +167,7 @@ pub(crate) async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ShimScope {
+pub enum ShimScope {
     User,
     System,
     Both,
@@ -432,7 +175,7 @@ pub(crate) enum ShimScope {
 
 /// The shim farms that serve as the lazy-install fallback boundary on PATH: the user
 /// farm, plus the system farm when it exists as separate storage.
-pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
+pub fn shim_farm_dirs() -> Vec<PathBuf> {
     let user_shims = dirs::shims();
     let system_shims = dirs::system_shims();
     let mut dirs = vec![user_shims];
@@ -451,7 +194,7 @@ pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
 /// version list. Once every lazy declaration is installed there is nothing left to
 /// write, and the function returns before locating the mise binary, so that steady
 /// state costs only the option checks.
-pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     let mut bins_by_dir = BTreeMap::<PathBuf, Vec<String>>::new();
     let mut lazy_bins_error = None;
     for tv in missing {
@@ -606,7 +349,7 @@ fn is_permission_denied(err: &eyre::Report) -> bool {
     })
 }
 
-pub(crate) async fn reshim_for(
+pub async fn reshim_for(
     config: &Arc<Config>,
     ts: &Toolset,
     force: bool,
@@ -1107,7 +850,7 @@ fn is_legacy_windows_cmd_shim(contents: &[u8]) -> bool {
 }
 
 /// Create wrappers needed by a runtime toolset without removing another task's wrappers.
-pub(crate) fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()> {
+pub fn ensure_command_wrapper_shims(config: &Config, ts: &Toolset) -> Result<()> {
     let wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),
@@ -1180,7 +923,7 @@ fn sync_command_wrapper_shims(
     Ok(())
 }
 
-pub(crate) fn command_names_eq(a: &str, b: &str) -> bool {
+pub fn command_names_eq(a: &str, b: &str) -> bool {
     if cfg!(macos) {
         a.to_lowercase() == b.to_lowercase()
     } else {
@@ -1188,7 +931,7 @@ pub(crate) fn command_names_eq(a: &str, b: &str) -> bool {
     }
 }
 
-pub(crate) fn command_name_without_exe_suffix(bin_name: &str) -> &str {
+pub fn command_name_without_exe_suffix(bin_name: &str) -> &str {
     let suffix = std::env::consts::EXE_SUFFIX;
     if suffix.is_empty() {
         return bin_name;
@@ -1210,7 +953,7 @@ fn validate_wrapper_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Result<()> {
+pub fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Result<()> {
     let mut normalized = HashSet::new();
     for name in names {
         validate_wrapper_name(name)?;
@@ -1228,7 +971,7 @@ fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Re
 /// through a mise shim named `node`, `python`, etc. runs the snap CLI instead of mise. Point Snap
 /// shims at the payload beneath its refresh-stable `current` symlink instead. For other package
 /// managers, retain the PATH-visible executable so their stable launcher survives upgrades.
-pub(crate) fn mise_bin_for_shims() -> PathBuf {
+pub fn mise_bin_for_shims() -> PathBuf {
     env::var_path("SNAP")
         .as_deref()
         .and_then(|snap| snap_mise_bin(&env::MISE_BIN, snap))
@@ -1325,7 +1068,7 @@ fn old_shim_path(path: &Path) -> PathBuf {
 /// Not `#[cfg(windows)]`, unlike the shim code around it: `mise generate task-stubs
 /// --windows-launcher=exe` asks the same question, and on a host where the answer is always `None`
 /// that is the honest answer to report rather than a compile error to route around.
-pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
+pub fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
     // mise-shim.exe ships beside the real mise.exe, which may sit behind a
     // symlink or junction (dunce avoids the `\\?\` verbatim prefix)
     let real_bin = dunce::canonicalize(mise_bin).unwrap_or_else(|_| mise_bin.to_path_buf());
@@ -1411,7 +1154,7 @@ fn bash_shim_script(tool: &str) -> String {
 /// becomes `eWindows_NTf`. The other three modes are native executables and are handed argv
 /// directly, so this is the only mode that needs it.
 ///
-/// The recovery is the one [`crate::cli::generate::windows_launcher_body`] documents in full: what
+/// The recovery is the one `windows_launcher_body` in `cli/generate` documents in full: what
 /// cmd destroys on the way in it also keeps, in its `CMDCMDLINE` pseudo-variable, so the body
 /// copies that out — `!CMDCMDLINE!` rather than `%CMDCMDLINE%`, which is substituted before special
 /// characters are parsed and truncates at the first `&` — and passes it through the environment,
@@ -1429,10 +1172,10 @@ fn bash_shim_script(tool: &str) -> String {
 /// business tracking shim changes. The names come from the same constants, and
 /// `the_shim_body_carries_the_same_recovery` fails if the shapes drift.
 ///
-/// Compiled for tests on every platform, unlike the shim code around it, so the body itself is
-/// unit-tested everywhere; `pub(crate)` so that comparison can live beside the launcher.
-#[cfg(any(windows, test))]
-pub(crate) fn windows_file_shim_body(shim: &str) -> String {
+/// Compiled on every platform, unlike the shim code around it, so the body itself is unit-tested
+/// everywhere. It is public so that comparison can live beside the launcher, in the `mise` binary's
+/// own tests, which `cfg(test)` on this library does not reach.
+pub fn windows_file_shim_body(shim: &str) -> String {
     let raw = env::LAUNCHER_RAW_CMDLINE_ENV;
     let path = env::LAUNCHER_PATH_ENV;
     let sentinel = env::LAUNCHER_ARGS_SENTINEL;
@@ -1542,7 +1285,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) struct ShimDiffs {
+pub struct ShimDiffs {
     pub missing: BTreeSet<String>,
     pub extra: BTreeSet<String>,
     pub desired: HashSet<String>,
@@ -1597,7 +1340,7 @@ fn calculate_shim_diffs(
 
 // get_shim_diffs contrasts the actual shims on disk
 // with the desired shims specified by the Toolset
-pub(crate) async fn get_shim_diffs(
+pub async fn get_shim_diffs(
     config: &Arc<Config>,
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
@@ -1904,7 +1647,7 @@ async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn err_no_version_set(
+pub async fn err_no_version_set(
     config: &Arc<Config>,
     ts: Toolset,
     bin_name: &str,
@@ -1946,7 +1689,7 @@ async fn err_no_version_set(
     }
 }
 
-pub(crate) fn unavailable_configured_tool_message(
+pub fn unavailable_configured_tool_message(
     config: &Arc<Config>,
     ts: &Toolset,
     bin_name: &str,
@@ -2064,13 +1807,16 @@ pub(crate) fn os_unsupported_tool_message(bin_name: &str) -> Option<String> {
 /// binary has definitively failed to resolve, so the config/toolset load lands
 /// on a path that is about to abort anyway.
 #[cfg(not(test))]
-pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
+pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
     // Windows invokes binaries as `<tool>.exe`; name `<tool>` in the message.
     let bin_stem = bin_name
         .strip_suffix(std::env::consts::EXE_SUFFIX)
         .unwrap_or(bin_name);
     let config = Config::get().await.ok()?;
-    let ts = ToolsetBuilder::new().build(&config).await.ok()?;
+    let ts = crate::toolset::ToolsetBuilder::new()
+        .build(&config)
+        .await
+        .ok()?;
     // A disabled tool is skipped by `Toolset::add_version`, so it never reaches
     // the configured-tool check above. Suggesting `mise use` for one would be
     // wrong twice over: it may well be in a config file, and mise has been told
@@ -2093,7 +1839,7 @@ pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
 
     #[test]

@@ -310,7 +310,7 @@ fn escape_dotenv_double_quoted(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Settings;
+    use crate::config::{Settings, SettingsExt};
     use rops::{
         cryptography::{cipher::AES256GCM, hasher::SHA512},
         file::builder::RopsFileBuilder,
@@ -344,6 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn decrypts_sops_toml_file() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
@@ -362,11 +363,11 @@ mod tests {
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[tokio::test]
     async fn decrypts_sops_toml_file_with_exec_env_mise_age_key_file() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
@@ -393,11 +394,11 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[tokio::test]
     async fn decrypts_sops_toml_file_with_multiple_age_keys() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
@@ -430,11 +431,11 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[tokio::test]
     async fn rejects_invalid_non_comment_age_key_lines() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_age_key_file = crate::env::var("MISE_SOPS_AGE_KEY_FILE").ok();
@@ -466,11 +467,11 @@ mod tests {
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_AGE_KEY_FILE", prev_age_key_file);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[tokio::test]
     async fn ambient_sops_age_key_file_precedes_exec_env_sops_age_key() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_mise_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_sops_age_key = crate::env::var("SOPS_AGE_KEY").ok();
@@ -497,11 +498,11 @@ mod tests {
         restore_env_var("SOPS_AGE_KEY", prev_sops_age_key);
         restore_env_var("SOPS_AGE_KEY_FILE", prev_sops_age_key_file);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[tokio::test]
     async fn errors_when_sops_cli_is_configured_for_toml_file() {
+        let _settings = crate::test::SettingsGuard::lock();
         let _lock = ENV_MUTEX.lock().await;
         let prev_age_key = crate::env::var("MISE_SOPS_AGE_KEY").ok();
         let prev_rops = crate::env::var("MISE_SOPS_ROPS").ok();
@@ -526,7 +527,6 @@ mod tests {
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-        Settings::reset(None);
     }
 
     #[test]

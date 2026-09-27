@@ -2,7 +2,7 @@ use color_eyre::eyre::{Result, bail, eyre};
 use console::style;
 use indoc::formatdoc;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::shell::{EXAMPLE_SHELL, require_shell};

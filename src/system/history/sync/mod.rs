@@ -9,19 +9,19 @@
 
 use eyre::{Result, bail};
 
-pub(crate) mod apply;
+pub mod apply;
 mod directories;
 pub(crate) mod files;
 pub(crate) mod format;
 pub(crate) mod graph;
-pub(crate) mod layout;
-pub(crate) mod network;
-pub(crate) mod onboard;
-pub(crate) mod origin;
+pub mod layout;
+pub mod network;
+pub mod onboard;
+pub mod origin;
 mod preflight;
 pub(crate) mod publish;
-pub(crate) mod reconcile;
-pub(crate) mod run;
+pub mod reconcile;
+pub mod run;
 pub(crate) mod share;
 pub(crate) mod state;
 
@@ -29,7 +29,7 @@ pub(crate) mod state;
 /// commands (`sync`, `pull`) work the same in every mode except that
 /// `fetch-only` never publishes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SyncMode {
+pub enum SyncMode {
     /// The watcher publishes after saves, fetches periodically, and applies
     /// incoming changes once the complete setup is free of conflicts.
     Sync,
@@ -49,7 +49,7 @@ pub(crate) struct Automatic {
 }
 
 impl SyncMode {
-    pub(crate) fn parse(value: &str) -> Result<Self> {
+    pub fn parse(value: &str) -> Result<Self> {
         match value {
             "sync" => Ok(Self::Sync),
             "fetch-only" => Ok(Self::FetchOnly),
@@ -58,11 +58,11 @@ impl SyncMode {
         }
     }
 
-    pub(crate) fn current() -> Result<Self> {
+    pub fn current() -> Result<Self> {
         Self::parse(&crate::config::Settings::get().history.sync)
     }
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Sync => "sync",
             Self::FetchOnly => "fetch-only",

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use eyre::{Result, WrapErr, bail, ensure};
 use serde::{Deserialize, Serialize};
 
+use crate::args::BackendArg;
 use crate::backend::packslip::{PackslipBackend, project_name};
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::file;
 use crate::install_context::InstallContext;

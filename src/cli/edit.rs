@@ -11,8 +11,8 @@ use mise_interactive_config::{
 
 use strum::IntoEnumIterator;
 
+use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
 use crate::config::config_file;
 use crate::config::{Config, Settings, global_config_path};
 use crate::file::display_path;

@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct DoctorConfig {
+pub struct DoctorConfig {
     #[serde(default)]
     pub checks: BTreeMap<String, DoctorCheck>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DoctorCheck {
+pub struct DoctorCheck {
     pub run: String,
     pub description: Option<String>,
     pub hint: Option<String>,
@@ -54,7 +54,7 @@ where
 }
 
 impl DoctorCheck {
-    pub(crate) fn applies(&self) -> bool {
+    pub fn applies(&self) -> bool {
         self.os.is_empty()
             || self
                 .os
