@@ -1644,12 +1644,11 @@ impl PackslipBackend {
             {
                 info.checksum = Some(format!("sha256:{sha256}"));
             }
-            info.signer = Some(signer);
             // Set for a repackager's document and cleared for the vendor's,
             // so the lockfile ratchets up the way the pin does.
             info.attested_by = (verified.attested_by == packslip::Attestor::Repackager)
                 .then(|| "repackager".to_string());
-            packslip_forge::lock_record(info, check);
+            packslip_forge::lock_record(info, signer, check);
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
@@ -1957,15 +1956,17 @@ impl Backend for PackslipBackend {
                 .map(|digest| format!("sha256:{digest}")),
             size: Some(artifact.size),
             url: Some(url),
-            signer: Some(format!(
-                "{scheme}:{}",
-                packslip_pins::signer_of(&scheme, &verified.key_id)
-            )),
             attested_by: (verified.attested_by == packslip::Attestor::Repackager)
                 .then(|| "repackager".to_string()),
             ..Default::default()
         };
-        packslip_forge::lock_record(&mut info, check.as_ref());
+        // A fresh entry: lock generation carries the IDs an entry for the same
+        // signer recorded forward when this resolution checked none.
+        let signer = format!(
+            "{scheme}:{}",
+            packslip_pins::signer_of(&scheme, &verified.key_id)
+        );
+        packslip_forge::lock_record(&mut info, signer, check.as_ref());
         Ok(info)
     }
 
