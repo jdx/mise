@@ -792,9 +792,12 @@ where
     let program_name = program.to_string_lossy().into_owned();
     let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
     let resolved = match which::which_in_all(program, lookup_path, cwd) {
-        Ok(mut candidates) => {
-            candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate))
-        }
+        // Skipping every native shim, not just the calling one, keeps two shim
+        // copies on PATH (a shim dir plus WinGet\Links) from alternating forever.
+        Ok(mut candidates) => candidates.find(|candidate| {
+            !crate::file::is_active_mise_shim(candidate)
+                && !(is_shim_dispatch && crate::shims::is_native_tool_shim(candidate))
+        }),
         Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
