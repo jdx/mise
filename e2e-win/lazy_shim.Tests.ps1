@@ -43,12 +43,12 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["JQ.EXE"] }
         $LASTEXITCODE | Should -Be 0
         $shim = Join-Path $env:MISE_DATA_DIR 'shims\jq.exe'
         Test-Path $shim -PathType Leaf | Should -BeTrue
-        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeFalse
+        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\aqua-jqlang-jq\1.7.1') | Should -BeFalse
 
         $output = & $shim --version 2>&1
         $LASTEXITCODE | Should -Be 0 -Because "native shim output: $($output | Out-String)"
         ($output | Out-String) | Should -Match 'jq-1\.7.1'
-        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeTrue
+        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\aqua-jqlang-jq\1.7.1') | Should -BeTrue
 
         mise uninstall --all jq
         $LASTEXITCODE | Should -Be 0
@@ -61,11 +61,11 @@ jq = { version = "1.7.1", lazy = true, lazy_bins = ["JQ.EXE"] }
         & $hardlinkMise reshim --force
         $LASTEXITCODE | Should -Be 0
         (Get-Item -Path $shim).LinkType | Should -Be 'HardLink'
-        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeFalse
+        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\aqua-jqlang-jq\1.7.1') | Should -BeFalse
 
         $output = & $shim --version 2>&1
         $LASTEXITCODE | Should -Be 0 -Because "hardlink shim output: $($output | Out-String)"
         ($output | Out-String) | Should -Match 'jq-1\.7\.1'
-        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\jq\1.7.1') | Should -BeTrue
+        Test-Path (Join-Path $env:MISE_DATA_DIR 'installs\aqua-jqlang-jq\1.7.1') | Should -BeTrue
     }
 }
