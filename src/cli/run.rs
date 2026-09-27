@@ -244,7 +244,12 @@ pub(crate) struct Run {
     pub fresh_env: bool,
 
     /// Do not use cache on remote tasks
-    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    #[usage(
+        long,
+        verbatim_doc_comment,
+        env = "MISE_TASK_REMOTE_NO_CACHE",
+        setting = "task.remote_no_cache"
+    )]
     pub no_cache: bool,
 
     /// Skip automatic dependency preparation
