@@ -141,7 +141,11 @@ impl Pins {
             *to = (*to).max(sequence);
         }
         if let Some(forge) = self.list_forges.remove(from) {
-            self.list_forges.entry(to.to_string()).or_insert(forge);
+            let kept = match self.list_forges.remove(to) {
+                Some(current) => keep_owner_id(current, &forge),
+                None => forge,
+            };
+            self.list_forges.insert(to.to_string(), kept);
         }
     }
 }
@@ -458,14 +462,18 @@ pub fn check_sequence_at(
     // Without the repository's ID from the list itself, a sequence found by
     // an ID recorded before still counts, but stays where it is.
     if let Some(forge) = forge {
+        // Every name linked to the repository may hold its owner ID, the
+        // current one included, so take it before the old names go.
+        let forge = pins
+            .forges()
+            .filter(|(key, _)| keys.contains(*key))
+            .fold(forge.clone(), |forge, (_, recorded)| {
+                keep_owner_id(forge, recorded)
+            });
         for key in keys.iter().filter(|key| key.as_str() != project) {
             changed |= pins.sequences.remove(key).is_some();
             changed |= pins.list_forges.remove(key).is_some();
         }
-        let forge = match pins.list_forges.get(project) {
-            Some(recorded) => keep_owner_id(forge.clone(), recorded),
-            None => forge.clone(),
-        };
         changed |= pins.list_forges.get(project) != Some(&forge);
         pins.list_forges.insert(project.to_string(), forge);
     }
@@ -874,6 +882,33 @@ pinned_at = "2026-09-01T00:00:00Z"
         // lets an older list in.
         assert!(forget_at(&path, new).unwrap());
         check_sequence_at(&path, new, 1, Some(&repo(new, "42"))).unwrap();
+    }
+
+    #[test]
+    fn a_release_list_keeps_the_owner_id_a_rename_left_under_the_old_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/new");
+        check_sequence_at(&path, old, 1, Some(&repo(old, "42"))).unwrap();
+        // The config follows the rename, and the new list's certificate
+        // records the repository's ID but not its owner's.
+        let ownerless = ForgePin::new(new, "42", None);
+        check_sequence_at(&path, new, 2, Some(&ownerless)).unwrap();
+        let pins = load(&path).unwrap();
+        assert_eq!(pins.list_forges.keys().collect::<Vec<_>>(), [new]);
+        assert_eq!(pins.list_forges[new].owner_id.as_deref(), Some("7"));
+        // Another repository's owner is not taken.
+        check_sequence_at(
+            &path,
+            "github.com/o/x",
+            1,
+            Some(&ForgePin::new("github.com/o/x", "43", None)),
+        )
+        .unwrap();
+        assert_eq!(
+            load(&path).unwrap().list_forges["github.com/o/x"].owner_id,
+            None
+        );
     }
 
     #[test]
