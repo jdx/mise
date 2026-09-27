@@ -491,6 +491,8 @@ mod tests {
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 
+    /// Guards against offering a downgrade when installed versions and backend
+    /// candidates use different prefixes, while retaining non-SemVer comparisons.
     #[test]
     fn test_is_outdated_version() {
         assert_eq!(is_outdated_version("3.7b", "3.7c"), true);

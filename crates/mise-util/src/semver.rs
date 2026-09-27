@@ -159,6 +159,9 @@ pub fn semver_precedence_cmp(current: &str, candidate: &str) -> Option<Ordering>
     Some(parse(current)?.cmp_precedence(&parse(candidate)?))
 }
 
+/// Compares numeric major, minor, and patch components, ignoring prerelease and
+/// build suffixes. Returns `None` if either triplet cannot be extracted.
+/// Use [`semver_precedence_cmp`] when prerelease ordering matters.
 pub fn semver_cmp(version: &str, other: &str) -> Option<Ordering> {
     Some(semver_triplet(version)?.cmp(&semver_triplet(other)?))
 }
@@ -375,6 +378,8 @@ mod tests {
         assert_eq!(semver_triplet("garbage"), None);
     }
 
+    /// Protects the boundary between strict SemVer precedence and the caller's
+    /// handling of tool-specific versions that cannot be parsed as SemVer.
     #[test]
     fn test_semver_precedence_cmp() {
         assert_eq!(
