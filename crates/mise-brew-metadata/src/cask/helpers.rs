@@ -3,7 +3,7 @@ use std::path::{Component, Path};
 use eyre::{Result, bail};
 use serde_json::Value;
 
-use super::Cask;
+use super::model::Cask;
 
 pub fn artifact_type(value: &Value) -> String {
     value
@@ -13,7 +13,7 @@ pub fn artifact_type(value: &Value) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-pub fn is_non_install_artifact(kind: &str) -> bool {
+pub(super) fn is_non_install_artifact(kind: &str) -> bool {
     matches!(
         kind,
         "caveats"
@@ -37,7 +37,7 @@ pub fn has_lifecycle_hook(cask: &Cask, hook: &str) -> bool {
         .any(|artifact| artifact_type(artifact) == hook)
 }
 
-pub fn is_shell_env_name(value: &str) -> bool {
+pub(super) fn is_shell_env_name(value: &str) -> bool {
     let mut chars = value.chars();
     chars
         .next()

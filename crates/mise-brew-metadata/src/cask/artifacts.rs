@@ -4,7 +4,7 @@ use std::path::{Component, Path};
 use eyre::{Result, bail, eyre};
 use serde_json::Value;
 
-use super::*;
+use super::{helpers::*, model::*, types::*};
 
 pub fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     let mut artifacts = CaskArtifacts::default();
@@ -92,7 +92,7 @@ pub fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     Ok(artifacts)
 }
 
-pub fn declared_target(value: &Value) -> Option<String> {
+fn declared_target(value: &Value) -> Option<String> {
     value
         .as_object()
         .and_then(|o| o.get("target"))
@@ -100,7 +100,7 @@ pub fn declared_target(value: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
+fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
     values
         .get(1)
         .and_then(|v| v.as_object())
@@ -113,7 +113,7 @@ pub fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
 /// The `source` and `target` of an artifact declared either as a bare string or
 /// as a `[source, {target: ...}]` pair. A bare string carries no target of its
 /// own; artifacts that accept a sibling `target` key add it themselves.
-pub fn artifact_source_target(value: &Value, artifact: &Value) -> Option<(String, Option<String>)> {
+fn artifact_source_target(value: &Value, artifact: &Value) -> Option<(String, Option<String>)> {
     match artifact {
         Value::String(source) => Some((source.clone(), None)),
         Value::Array(values) => Some((
@@ -312,7 +312,7 @@ fn parse_pkg_choices(options: &Value) -> Result<Vec<PkgChoice>> {
         .collect()
 }
 
-pub fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {
+fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {
     let Some(installer) = value.as_object().and_then(|object| object.get("installer")) else {
         return Ok(None);
     };
@@ -356,7 +356,7 @@ fn optional_installer_bool(object: &serde_json::Map<String, Value>, field: &str)
 
 /// `kind` names the declaring artifact, so errors read e.g. "installer script
 /// args must be an array".
-pub fn string_args(object: &serde_json::Map<String, Value>, kind: &str) -> Result<Vec<String>> {
+fn string_args(object: &serde_json::Map<String, Value>, kind: &str) -> Result<Vec<String>> {
     let Some(args) = object.get("args") else {
         return Ok(Vec::new());
     };
@@ -371,7 +371,7 @@ pub fn string_args(object: &serde_json::Map<String, Value>, kind: &str) -> Resul
         .collect()
 }
 
-pub fn reject_unsupported_artifact_fields(
+fn reject_unsupported_artifact_fields(
     context: &str,
     object: &serde_json::Map<String, Value>,
     allowed: &[&str],
@@ -414,7 +414,7 @@ pub fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
     Some(FontArtifact { source, target })
 }
 
-pub fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtifact>> {
+fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtifact>> {
     for (key, shell) in [
         ("bash_completion", CompletionShell::Bash),
         ("fish_completion", CompletionShell::Fish),
@@ -428,7 +428,7 @@ pub fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtif
     Ok(None)
 }
 
-pub fn parse_declared_completion_artifact(
+fn parse_declared_completion_artifact(
     value: &Value,
     completion: &Value,
     shell: CompletionShell,
@@ -523,7 +523,7 @@ pub fn parse_generated_completion_artifact(
     }))
 }
 
-pub fn default_generated_completion_shells(format: Option<&str>) -> Vec<CompletionShell> {
+fn default_generated_completion_shells(format: Option<&str>) -> Vec<CompletionShell> {
     match format {
         Some("cobra") | Some("typer") => vec![
             CompletionShell::Bash,
@@ -539,11 +539,7 @@ pub fn default_generated_completion_shells(format: Option<&str>) -> Vec<Completi
     }
 }
 
-pub fn parse_flight_steps(
-    cask: &Cask,
-    value: &Value,
-    kind: &str,
-) -> Result<Option<Vec<FlightStep>>> {
+fn parse_flight_steps(cask: &Cask, value: &Value, kind: &str) -> Result<Option<Vec<FlightStep>>> {
     let Some(metadata) = value.as_object().and_then(|o| o.get(kind)) else {
         return Ok(None);
     };
@@ -957,7 +953,7 @@ pub fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<Fligh
     }
 }
 
-pub fn parse_flight_sudo(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<FlightSudo> {
+fn parse_flight_sudo(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<FlightSudo> {
     match value {
         None | Some(Value::Bool(false)) => Ok(FlightSudo::Never),
         Some(Value::Bool(true)) => Ok(FlightSudo::Always),
@@ -966,11 +962,7 @@ pub fn parse_flight_sudo(cask: &Cask, kind: &str, value: Option<&Value>) -> Resu
     }
 }
 
-pub fn parse_flight_guards(
-    cask: &Cask,
-    kind: &str,
-    value: Option<&Value>,
-) -> Result<Vec<FlightGuard>> {
+fn parse_flight_guards(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<Vec<FlightGuard>> {
     value
         .map(|guards| {
             guards
@@ -1043,7 +1035,7 @@ fn parse_ownership_name(
     }
 }
 
-pub fn parse_optional_flight_bool(
+fn parse_optional_flight_bool(
     cask: &Cask,
     kind: &str,
     object: &serde_json::Map<String, Value>,
@@ -1106,7 +1098,7 @@ pub fn parse_run_command(cask: &Cask, kind: &str, value: Option<&Value>) -> Resu
     })
 }
 
-pub fn parse_flight_guard(cask: &Cask, kind: &str, value: &Value) -> Result<FlightGuard> {
+fn parse_flight_guard(cask: &Cask, kind: &str, value: &Value) -> Result<FlightGuard> {
     let object = value.as_object().ok_or_else(|| {
         eyre!(
             "brew-cask:{}: unsupported {kind} run guard metadata format",
@@ -1154,7 +1146,7 @@ pub fn parse_flight_guard(cask: &Cask, kind: &str, value: &Value) -> Result<Flig
     }
 }
 
-pub fn parse_context_flight_path(
+fn parse_context_flight_path(
     cask: &Cask,
     kind: &str,
     field: &str,
@@ -1182,7 +1174,7 @@ pub fn parse_context_flight_path(
     })
 }
 
-pub fn parse_context_flight_path_value(
+fn parse_context_flight_path_value(
     cask: &Cask,
     kind: &str,
     field: &str,
@@ -1198,7 +1190,7 @@ pub fn parse_context_flight_path_value(
     parse_context_flight_path(cask, kind, field, object)
 }
 
-pub fn reject_unsupported_flight_fields(
+fn reject_unsupported_flight_fields(
     cask: &Cask,
     kind: &str,
     context: &str,
@@ -1221,7 +1213,7 @@ pub fn reject_unsupported_flight_fields(
     Ok(())
 }
 
-pub fn parse_flight_path(
+fn parse_flight_path(
     cask: &Cask,
     kind: &str,
     field: &str,
@@ -1262,7 +1254,7 @@ pub fn parse_flight_path(
 /// `set_permissions` paths follow Homebrew's `remove` shape but may also
 /// name the installed app for `postflight_steps`, so `appdir` is accepted
 /// beside `staged_path`.
-pub fn parse_permissions_flight_path(
+fn parse_permissions_flight_path(
     cask: &Cask,
     kind: &str,
     value: Option<&Value>,
@@ -1308,7 +1300,7 @@ pub fn parse_permissions_flight_path(
     })
 }
 
-pub fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
+fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
     let Some(object) = value.as_object() else {
         return;
     };
