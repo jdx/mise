@@ -202,7 +202,13 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<(Vec<ToolVersion>, Vec<ToolVersion>)> {
-        let missing = self.list_missing_versions_for_install(config).await;
+        // Only versions this call may install need the backend-specific
+        // satisfaction check. The rest are reported from install markers, as
+        // hook-env does, so a shim call does not run e.g. rustup for every
+        // configured tool.
+        let missing = self
+            .list_missing_versions_checking(config, |tv| self.may_auto_install(tv, opts))
+            .await;
 
         // If auto-install is explicitly disabled, skip installation but return what's missing
         if opts.skip_auto_install {
@@ -211,18 +217,7 @@ impl Toolset {
 
         let mut versions = missing
             .iter()
-            .filter(|tv| tv.request.options().lazy != Some(true) || opts.include_lazy)
-            .filter(|tv| {
-                !opts.missing_args_only
-                    || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
-            })
-            .filter(|tv| {
-                if let Some(tools) = &opts.auto_install_disable_tools {
-                    !tools.contains(&tv.ba().short)
-                } else {
-                    true
-                }
-            })
+            .filter(|tv| self.may_auto_install(tv, opts))
             .map(|tv| tv.request.clone())
             .collect_vec();
         // Ensure options from toolset are preserved during auto-install
@@ -247,11 +242,28 @@ impl Toolset {
             )
             .await?;
             // Re-check what's still missing after installation
-            let still_missing = self.list_missing_versions_for_install(config).await;
+            let still_missing = self
+                .list_missing_versions_checking(config, |tv| self.may_auto_install(tv, opts))
+                .await;
             return Ok((installed, still_missing));
         }
         // Nothing was installed, the missing list is unchanged
         Ok((installed, missing))
+    }
+
+    /// Whether `install_missing_versions` would install `tv` if it were missing.
+    fn may_auto_install(&self, tv: &ToolVersion, opts: &InstallOptions) -> bool {
+        !opts.skip_auto_install
+            && (tv.request.options().lazy != Some(true) || opts.include_lazy)
+            && (!opts.missing_args_only
+                || self
+                    .versions
+                    .get(tv.ba())
+                    .is_some_and(|tvl| matches!(tvl.source, ToolSource::Argument)))
+            && opts
+                .auto_install_disable_tools
+                .as_ref()
+                .is_none_or(|tools| !tools.contains(&tv.ba().short))
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
