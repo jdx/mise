@@ -82,16 +82,16 @@ run = "npm run test:integration"
 mise executes tasks in parallel up to the configured job limit:
 
 ```bash
-mise run --jobs 8 test        # Use 8 parallel jobs
+mise run --jobs 16 test       # Use 16 parallel jobs
 mise run -j 1 test            # Force sequential execution
 ```
 
-The default is 4 parallel jobs, but you can configure this globally:
+The default is 8 parallel jobs, but you can configure this globally:
 
 ```toml
 # ~/.config/mise/config.toml
 [settings]
-jobs = 8
+jobs = 4
 ```
 
 ### Example Execution Flow
