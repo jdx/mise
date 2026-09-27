@@ -7,38 +7,34 @@ use toml::Table;
 
 use crate::config::Settings;
 use crate::registry::REGISTRY;
-use crate::{dirs, env, file};
+use crate::{dirs, file};
 
 pub(crate) type Shorthands = HashMap<String, Vec<String>>;
 
 pub(crate) fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
     if !settings.disable_default_registry {
-        // Only asdf and vfox backends become shorthands, and few registry tools
-        // list one. `backends()` also checks each tool for a MISE_BACKENDS_*
-        // override, which costs more than everything else here across the
-        // whole registry, so skip tools without such a backend unless an
-        // override is set.
-        let has_backend_overrides =
-            env::vars_safe().any(|(key, _)| key.starts_with("MISE_BACKENDS_"));
+        // Only asdf and vfox backends become shorthands. Walking the whole
+        // registry through `backends()` would check every tool for a
+        // MISE_BACKENDS_* override and filter every backend it lists, so ask
+        // for plugin backends directly unless an override may apply.
+        let is_plugin_backend = |full: &str| full.starts_with("asdf:") || full.starts_with("vfox:");
+        let has_backend_overrides = crate::registry::has_backend_overrides();
         shorthands.extend(
             REGISTRY
                 .iter()
-                .filter(|(_, rt)| {
-                    has_backend_overrides
-                        || rt
-                            .backends
-                            .iter()
-                            .any(|b| b.full.starts_with("asdf:") || b.full.starts_with("vfox:"))
-                })
                 .map(|(id, rt)| {
+                    let fulls = if has_backend_overrides {
+                        rt.backends()
+                            .into_iter()
+                            .filter(|f| is_plugin_backend(f))
+                            .collect_vec()
+                    } else {
+                        rt.registry_backends_where(is_plugin_backend)
+                    };
                     (
                         id.to_string(),
-                        rt.backends()
-                            .iter()
-                            .filter(|f| f.starts_with("asdf:") || f.starts_with("vfox:"))
-                            .map(|f| f.to_string())
-                            .collect_vec(),
+                        fulls.into_iter().map(|f| f.to_string()).collect_vec(),
                     )
                 })
                 .filter(|(_, fulls)| !fulls.is_empty()),
