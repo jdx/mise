@@ -337,6 +337,19 @@ impl<'a> NpmOptions<'a> {
     }
 }
 
+/// What [`aube_install_tree_health`] found in an install prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AubeTreeHealth {
+    /// A virtual-store entry is a dangling link, or the store is unreadable.
+    Broken,
+    /// Every entry resolves, but some are links into a shared store that
+    /// another process can still prune.
+    Linked,
+    /// Every entry is a real directory inside the prefix, which only changes
+    /// when the prefix itself does.
+    SelfContained,
+}
+
 /// Legacy embedded-aube installs linked each virtual-store entry into a shared
 /// cache. The install prefix can outlive that cache, leaving the directory in
 /// place while every package link is dangling. Check only the immediate
@@ -344,46 +357,71 @@ impl<'a> NpmOptions<'a> {
 /// cheap enough for mise's installed-version fast path. Only symlinks can
 /// dangle, so the directory listing's file type settles every other entry
 /// without a `stat`.
-fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
-    [".mise", ".aube"].iter().all(|name| {
+fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
+    let mut health = AubeTreeHealth::SelfContained;
+    for name in [".mise", ".aube"] {
         let virtual_store = install_path.join("node_modules").join(name);
         match virtual_store.symlink_metadata() {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-            Err(_) => return false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return AubeTreeHealth::Broken,
             Ok(_) => {}
         }
-        let mut entries = match std::fs::read_dir(&virtual_store) {
-            Ok(entries) => entries,
-            Err(_) => return false,
+        let Ok(entries) = std::fs::read_dir(&virtual_store) else {
+            return AubeTreeHealth::Broken;
         };
-        entries.all(|entry| {
-            entry.is_ok_and(|entry| match entry.file_type() {
-                Ok(file_type) if !file_type.is_symlink() => true,
-                _ => entry.path().try_exists().unwrap_or(false),
-            })
-        })
-    })
+        for entry in entries {
+            let Ok(entry) = entry else {
+                return AubeTreeHealth::Broken;
+            };
+            if entry
+                .file_type()
+                .is_ok_and(|file_type| !file_type.is_symlink())
+            {
+                continue;
+            }
+            if !entry.path().try_exists().unwrap_or(false) {
+                return AubeTreeHealth::Broken;
+            }
+            health = AubeTreeHealth::Linked;
+        }
+    }
+    health
 }
 
-/// Install prefixes already found healthy in this process. One command asks
-/// about the same prefix many times (hook-env checks each npm tool about eight
-/// times), and a large tree has hundreds of entries to list. Only healthy
-/// results are kept, so a repair in this process is still seen, and an
-/// uninstalled prefix fails the existence check before this one.
-static HEALTHY_AUBE_INSTALLS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Default::default);
+#[cfg(test)]
+fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
+    aube_install_tree_health(install_path) != AubeTreeHealth::Broken
+}
+
+/// Install prefixes already found self-contained in this process. One command
+/// asks about the same prefix many times (hook-env checks each npm tool about
+/// eight times), and a large tree has hundreds of entries to list. Only
+/// self-contained trees are kept: a linked tree can break when another process
+/// prunes the shared store, and a broken one can be repaired in this process,
+/// so both are checked again each time. An uninstalled prefix fails the
+/// existence check before this one.
+static SELF_CONTAINED_AUBE_INSTALLS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(Default::default);
 
 fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
-    if HEALTHY_AUBE_INSTALLS.lock().unwrap().contains(install_path) {
+    if SELF_CONTAINED_AUBE_INSTALLS
+        .lock()
+        .unwrap()
+        .contains(install_path)
+    {
         return true;
     }
-    let healthy = aube_install_tree_is_healthy(install_path);
-    if healthy {
-        HEALTHY_AUBE_INSTALLS
-            .lock()
-            .unwrap()
-            .insert(install_path.to_path_buf());
+    match aube_install_tree_health(install_path) {
+        AubeTreeHealth::Broken => false,
+        AubeTreeHealth::Linked => true,
+        AubeTreeHealth::SelfContained => {
+            SELF_CONTAINED_AUBE_INSTALLS
+                .lock()
+                .unwrap()
+                .insert(install_path.to_path_buf());
+            true
+        }
     }
-    healthy
 }
 
 #[async_trait]
@@ -3408,6 +3446,40 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
             "packages:\n  - .\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_aube_trees_are_rechecked_after_being_found_healthy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let virtual_store = tmp.path().join("node_modules/.mise");
+        let target = tmp.path().join("shared-store/pkg@1.0.0");
+        std::fs::create_dir_all(&virtual_store).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, virtual_store.join("pkg@1.0.0")).unwrap();
+
+        assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Linked);
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+        std::fs::remove_dir_all(target).unwrap();
+        assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
+    }
+
+    #[test]
+    fn self_contained_aube_trees_are_cached() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("node_modules/.mise/pkg@1.0.0")).unwrap();
+
+        assert_eq!(
+            aube_install_tree_health(tmp.path()),
+            AubeTreeHealth::SelfContained
+        );
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+        assert!(
+            SELF_CONTAINED_AUBE_INSTALLS
+                .lock()
+                .unwrap()
+                .contains(tmp.path())
         );
     }
 
