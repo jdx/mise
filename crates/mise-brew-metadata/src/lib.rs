@@ -1,4 +1,6 @@
-//! Homebrew formula metadata models and tap URL parsing.
+//! Homebrew formula and cask metadata parsing and tap URL parsing.
+
+pub mod cask;
 
 use std::collections::HashMap;
 
