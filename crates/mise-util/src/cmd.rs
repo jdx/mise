@@ -452,6 +452,8 @@ impl TimeoutGuard {
         cvar.notify_one();
     }
 
+    /// How long the command ran before this guard stopped it, if it did. A command
+    /// can exit cleanly on SIGTERM or Ctrl+C, so its exit status cannot tell.
     fn timed_out(&self) -> Option<Duration> {
         (self.state.load(Ordering::Acquire) == GUARD_TIMED_OUT).then_some(self.timeout)
     }
@@ -462,16 +464,6 @@ impl TimeoutGuard {
 /// the deadline.
 fn timed_out_at_exit(guard: Option<&TimeoutGuard>) -> Option<Duration> {
     guard.and_then(TimeoutGuard::timed_out)
-}
-
-/// How long a finished command ran before its timeout stopped it, if it did.
-/// On Windows a command stopped by Ctrl+C can exit cleanly, so its exit status
-/// cannot tell; on Unix only a failed command is reported as timed out.
-fn timed_out(at_exit: Option<Duration>, status: &ExitStatus) -> Option<Duration> {
-    if cfg!(unix) && status.success() {
-        return None;
-    }
-    at_exit
 }
 
 impl Drop for TimeoutGuard {
@@ -1365,7 +1357,7 @@ impl<'a> CmdLineRunner<'a> {
 
         let status = status.unwrap();
 
-        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+        if let Some(duration) = timed_out_by_exit {
             bail!("timed out after {duration:?}");
         }
         if !status.success() {
@@ -1604,7 +1596,7 @@ impl<'a> CmdLineRunner<'a> {
         }
 
         let status = status.unwrap();
-        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+        if let Some(duration) = timed_out_by_exit {
             bail!("timed out after {duration:?}");
         }
         if !status.success() {
@@ -1804,7 +1796,7 @@ impl<'a> CmdLineRunner<'a> {
             guard.cancel();
         }
         let status = status.expect("command wait must complete");
-        if let Some(timeout) = timed_out(timed_out_by_exit, &status) {
+        if let Some(timeout) = timed_out_by_exit {
             bail!("timed out after {timeout:?}");
         }
         if !status.success() {
@@ -1964,7 +1956,7 @@ impl<'a> CmdLineRunner<'a> {
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
-        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+        if let Some(duration) = timed_out_by_exit {
             bail!("timed out after {duration:?}");
         }
         if !status.success() {
@@ -1999,7 +1991,7 @@ impl<'a> CmdLineRunner<'a> {
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
-        if let Some(duration) = timed_out(timed_out_by_exit, &status) {
+        if let Some(duration) = timed_out_by_exit {
             bail!("timed out after {duration:?}");
         }
         if !status.success() {

@@ -786,7 +786,8 @@ console.log('hello world')
 - **Default**: unset
 
 Maximum execution time for this task. The value accepts durations such as `30s`, `5m`, or `1h` and
-supports Tera templates. The task fails if it does not complete within the configured duration.
+supports Tera templates. The task fails if it does not complete within the configured duration,
+even if it exits successfully once stopped.
 
 ```mise-toml
 [tasks.integration-test]

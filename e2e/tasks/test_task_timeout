@@ -105,6 +105,24 @@ mise run quick 2>&1
 mise run slow 2>&1
 echo "✓ Tasks within timeout complete successfully"
 
+# A task that exits 0 on SIGTERM still timed out.
+cat <<'EOF' >mise.toml
+[tasks.clean_exit]
+run = "trap 'exit 0' TERM; while true; do sleep 1; done"
+timeout = "2s"
+EOF
+
+echo "Testing a task that exits cleanly on SIGTERM still times out..."
+if output="$(mise run clean_exit 2>&1)"; then
+  echo "ERROR: Expected clean_exit to fail, got: $output"
+  exit 1
+fi
+if [[ $output != *"timed out"* ]]; then
+  echo "ERROR: Expected 'timed out' in output, got: $output"
+  exit 1
+fi
+echo "✓ A task that exits cleanly on SIGTERM still times out"
+
 # Test timeout via environment variable (global)
 cat <<EOF >mise.toml
 [tasks.env_test1]
