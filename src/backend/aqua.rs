@@ -37,6 +37,7 @@ use itertools::Itertools;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
@@ -613,23 +614,38 @@ impl Backend for AquaBackend {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query = if query == "latest" {
-            "\\D*[0-9].*"
+        // Resolution runs this for every aqua tool, so only `latest`, which has
+        // a fixed pattern, uses a regex; a query is matched as a literal
+        // followed by `-` or `.` and at least one more character.
+        static LATEST: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
+        let latest = query == "latest";
+        let exact = if latest {
+            r"\D*[0-9].*".to_string()
         } else {
-            &escaped_query
+            regex::escape(query)
         };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        let matches = |v: &str| {
+            if latest {
+                return LATEST.is_match(v);
+            }
+            v.strip_prefix(query).is_some_and(|rest| {
+                rest.is_empty()
+                    || rest
+                        .strip_prefix(['-', '.'])
+                        .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
+            })
+        };
         versions
             .into_iter()
             .filter(|v| {
-                if query == v {
+                if exact == *v {
                     return true;
                 }
                 if filter_prereleases && VERSION_REGEX.is_match(v) {
                     return false;
                 }
-                query_regex.is_match(v)
+                matches(v)
             })
             .collect()
     }
