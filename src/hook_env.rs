@@ -1,6 +1,7 @@
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
@@ -202,6 +203,13 @@ impl From<PathBuf> for WatchFilePattern {
 /// This checks basic conditions using only the previous session data.
 /// Returns true if we can definitely skip hook-env, false if we need to continue.
 pub fn should_exit_early_fast() -> bool {
+    // `main` asks before starting the async runtime, and `cli::run` asks again
+    // when that answer was no; the second must not repeat the filesystem checks.
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(check_exit_early_fast)
+}
+
+fn check_exit_early_fast() -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
@@ -232,12 +240,23 @@ pub fn should_exit_early_fast() -> bool {
         return false;
     }
 
-    // Get settings for cache_ttl and chpwd_only
-    let settings = Settings::get();
-    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
-        .map(|d| d.as_millis())
-        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
-        .unwrap_or(0);
+    // hook_env.chpwd_only and hook_env.cache_ttl are the only settings this
+    // check reads, and loading settings costs more than the rest of it. When
+    // the full run that wrote the session found neither set, skip the load:
+    // turning either on edits a config file or a MISE_* variable, which the
+    // checks below catch, and the resulting full run refreshes the session.
+    // Otherwise read them live, so turning one off applies on the next prompt,
+    // as it does for a session written before this was recorded.
+    let (chpwd_only, cache_ttl_ms) = if PREV_SESSION.hook_env_shortcuts_unset {
+        (false, 0)
+    } else {
+        let settings = Settings::get();
+        let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
+            .map(|d| d.as_millis())
+            .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
+            .unwrap_or(0);
+        (settings.hook_env.chpwd_only, cache_ttl_ms)
+    };
 
     // Compute TTL window check only if cache_ttl is enabled (avoid unnecessary file read)
     let (now, within_ttl_window) = if cache_ttl_ms > 0 {
@@ -263,7 +282,7 @@ pub fn should_exit_early_fast() -> bool {
     // chpwd_only mode: skip on precmd if directory hasn't changed
     // This significantly reduces stat operations on slow filesystems like NFS
     // Note: We check this AFTER env var check since that's cheap (no I/O)
-    if settings.hook_env.chpwd_only && is_precmd {
+    if chpwd_only && is_precmd {
         trace!("chpwd_only enabled, skipping precmd hook-env");
         return true;
     }
@@ -488,6 +507,11 @@ pub struct HookEnvSession {
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
+    /// Whether the full run that wrote this session found `hook_env.chpwd_only`
+    /// off and `hook_env.cache_ttl` unset, which lets the fast path skip
+    /// loading settings. False in sessions from older mise versions.
+    #[serde(default)]
+    hook_env_shortcuts_unset: bool,
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -576,12 +600,13 @@ pub async fn build_session(
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
-    // Update the last full check timestamp (only if cache_ttl feature is enabled)
     let settings = Settings::get();
-    if duration::parse_duration(&settings.hook_env.cache_ttl)
-        .map(|d| d.as_millis() > 0)
-        .unwrap_or(false)
-    {
+    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| d.as_millis())
+        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
+        .unwrap_or(0);
+    // Update the last full check timestamp (only if cache_ttl feature is enabled)
+    if cache_ttl_ms > 0 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -600,6 +625,7 @@ pub async fn build_session(
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
+        hook_env_shortcuts_unset: !settings.hook_env.chpwd_only && cache_ttl_ms == 0,
     })
 }
 
