@@ -2708,9 +2708,8 @@ impl AquaBackend {
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
-        // Skip provenance verification if the lockfile already has both a checksum and
-        // provenance entry for this platform — the artifact integrity is already guaranteed
-        // by the checksum, so re-verifying attestations would just be redundant API calls.
+        // Reuse checksum-backed non-SLSA provenance. SLSA locks always re-verify
+        // the certificate against the current expected signer identity.
         // However, still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
@@ -2741,7 +2740,12 @@ impl AquaBackend {
                 "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Add the expected signer or refresh the lockfile."
             ));
         }
-        if has_lockfile_integrity && !force_verify {
+        if has_lockfile_integrity
+            && !force_verify
+            && !locked_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(

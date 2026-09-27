@@ -210,8 +210,9 @@ Registry packages without them skip SLSA and may use another verification method
 An existing lockfile that requires SLSA fails until the signer metadata is added
 or the lockfile is refreshed with another verification method.
 
-A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous provenance
-result while checking the artifact digest. Set
+A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous non-SLSA provenance
+result while checking the artifact digest. SLSA always checks the current expected signer.
+Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 to require provenance verification again during locked installation.
 

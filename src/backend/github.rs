@@ -1732,8 +1732,8 @@ impl UnifiedGitBackend {
         }
 
         // Check before verify_checksum, which may generate a new checksum from the
-        // downloaded file. We only want to skip provenance when the lockfile already
-        // had integrity data before this install.
+        // downloaded file. Reuse non-SLSA provenance only when the lockfile had
+        // integrity data before this install; SLSA checks the current signer.
         let platform_key = self.get_platform_key();
         let recorded_provenance = tv
             .lock_platforms
@@ -1759,7 +1759,12 @@ impl UnifiedGitBackend {
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
-        if has_lockfile_integrity && !force_verify {
+        if has_lockfile_integrity
+            && !force_verify
+            && !locked_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
@@ -1873,7 +1878,12 @@ impl UnifiedGitBackend {
         }
         let expected_provenance =
             expected_install_provenance(artifact_info.provenance.clone(), required);
-        if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
+        if has_lockfile_integrity
+            && !Settings::get().force_provenance_verify()
+            && !expected_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
             }
