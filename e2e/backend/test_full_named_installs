@@ -76,3 +76,12 @@ assert_not_contains "mise ls age" "1.2.1"
 mise install age@1.2.1
 assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.1"
 assert_contains "mise x age@1.2.1 -- age --version" "v1.2.1"
+
+echo "=== a forced reinstall of a legacy install lands under the backend ==="
+rm -rf "$INSTALLS/age"
+mv "$INSTALLS/aqua-filo-sottile-age" "$INSTALLS/age"
+legacy_manifest "aqua:FiloSottile/age"
+mise install --force age@1.2.1
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.1"
+assert_directory_not_exists "$INSTALLS/age"
+assert_contains "mise x age@1.2.1 -- age --version" "v1.2.1"

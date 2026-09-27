@@ -36,8 +36,8 @@ use crate::semver::semver_triplet;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
-    install_state, is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolSource, ToolVersion, ToolVersionOptions,
+    Toolset, install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -3408,9 +3408,18 @@ pub trait Backend: Debug + Send + Sync {
                     }
                 }
                 let installed = if stored_elsewhere {
+                    // Install state lists a `mise link` whose target is gone so it
+                    // can be removed; it isn't an install `latest` can pick.
                     self.list_installed_versions()
                         .into_iter()
                         .filter(|v| v != "latest")
+                        .filter(|v| {
+                            ToolRequest::new(self.ba().clone(), v, ToolSource::Unknown).is_ok_and(
+                                |request| {
+                                    ToolVersion::new(request, v.clone()).install_path().exists()
+                                },
+                            )
+                        })
                         .collect_vec()
                 } else {
                     file::dir_subdirs(&installs_path)
@@ -4228,7 +4237,19 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
-        let _ = remove_all_with_warning(tv.install_path());
+        let old_install_path = tv.install_path();
+        let _ = remove_all_with_warning(&old_install_path);
+        // Replacing an install read through from a legacy `installs/<short>`
+        // dir installs under the backend's own dir; forget the cached path.
+        if let Some(dir) = old_install_path.parent()
+            && dir != self.ba().installs_path().as_ref()
+            && dir.starts_with(*dirs::INSTALLS)
+            && tv.install_path.is_none()
+        {
+            tv.forget_install_path();
+            let _ = crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir);
+            cleanup_empty_tool_dir(dir);
+        }
         if !Settings::get().always_keep_download {
             let download_path = tv.download_path();
             if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
