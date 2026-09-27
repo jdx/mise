@@ -177,7 +177,7 @@ notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
 # TODO: switch to the next crates.io release, which includes jdx/packslip#135.
-packslip = { git = "https://github.com/jdx/packslip", rev = "1fc624118f30e2369ebecfa48857c829910f54c4", default-features = false }
+packslip = { version = "1.4", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 pathdiff = "0.2"
