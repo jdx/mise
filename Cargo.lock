@@ -6859,6 +6859,7 @@ dependencies = [
  "rmp-serde",
  "same-file",
  "seccompiler",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
