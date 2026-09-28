@@ -37,7 +37,7 @@ jobs:
   gate:
     # Decides what this run does. Tag pushes and manual dispatches always
     # build and publish. Pull requests only matter when they come from the
-    # `release` branch of this repository, and even then the tarballs are only
+    # `release` branch of this repository targeting `main`. Even then, tarballs are only
     # built once auto-merge has been enabled on the release PR: every merge to
     # main force-pushes `release`, and building eight PGO tarballs for each of
     # those was the bulk of the Namespace bill. The `release` job below still
@@ -54,7 +54,7 @@ jobs:
     steps:
       - id: gate
         env:
-          RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
+          RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.base_ref == 'main' && github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
           ARMED: ${{ github.event_name != 'pull_request' || github.event.pull_request.auto_merge != null }}
           FINISH_DRAFT_TAG: ${{ inputs.finish_draft_tag }}
         run: |
