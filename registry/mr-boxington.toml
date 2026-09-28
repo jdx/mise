@@ -1,3 +1,4 @@
+aliases = ["mbx"]
 backends = [
   { full = "packslip:github.com/jdx/mr-boxington", min_version = "1.8.3" },
   { full = "github:jdx/mr-boxington", attestations_since = "0.5.2" },
