@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Exercise the failing command path without depending on a Go module or proxy.
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$HOME/go-invocations"
+echo "go install failed for ${*: -1}" >&2
+exit 1
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+
+if mise install 'go:example.com/tool@v1.2.3' >"$HOME/prefixed-error" 2>&1; then
+  echo 'expected prefixed Go install to fail' >&2
+  exit 1
+fi
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "1"
+assert_contains "cat '$HOME/go-invocations'" 'example.com/tool@v1.2.3'
+assert_contains "cat '$HOME/prefixed-error'" 'go install failed for example.com/tool@v1.2.3'
+assert_not_contains "cat '$HOME/prefixed-error'" "Retry without the 'v' prefix"
+
+if mise install 'go:example.com/other@1.2.3' >"$HOME/unprefixed-error" 2>&1; then
+  echo 'expected unprefixed Go install to fail' >&2
+  exit 1
+fi
+assert "awk 'END {print NR}' '$HOME/go-invocations'" "3"
+assert "sed -n '2p' '$HOME/go-invocations'" 'install -mod=readonly example.com/other@v1.2.3'
+assert "sed -n '3p' '$HOME/go-invocations'" 'install -mod=readonly example.com/other@1.2.3'
+assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@v1.2.3'
+assert_contains "cat '$HOME/unprefixed-error'" "Retry without the 'v' prefix also failed"
+assert_contains "cat '$HOME/unprefixed-error'" 'go install failed for example.com/other@1.2.3'
