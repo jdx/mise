@@ -548,4 +548,59 @@ mod tests {
         no_url.urls.clear();
         assert!(check_buildable(&no_url).is_err());
     }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_pathname_write_creates_parents() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        let cellar = tmp.path().join("Cellar");
+        crate::file::create_dir_all(&buildpath)?;
+        crate::file::write(&shim, SHIM_RB)?;
+        // both install-time helpers that write through Pathname#write
+        crate::file::write(
+            &formula_rb,
+            r#"class Example < Formula
+  def install
+    (share/"example/greeting").write("hello")
+    (share/"example/greeting").write(", world", mode: "a")
+    generate_completions_from_executable("echo", "completions", shells: [:fish])
+  end
+end
+"#,
+        )?;
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let keg = cellar.join("example/1.0.0");
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/example/greeting"))?,
+            "hello, world"
+        );
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/fish/vendor_completions.d/example.fish"))?,
+            "completions fish\n"
+        );
+        Ok(())
+    }
 }
