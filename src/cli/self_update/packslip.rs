@@ -67,13 +67,10 @@ fn check_release(
         "self-update requires the vendor's packslip"
     );
     // Keep the workflow pinned while allowing the repository's name to move.
-    let workflow = format!(
-        "https://{}/.github/workflows/release.yml@refs/tags/v{version}",
-        verified.project
-    );
+    let workflow = format!("https://{}/.github/workflows/release.yml", verified.project);
     ensure!(
-        verified.key_id == workflow,
-        "self-update packslip was not signed by the release workflow for v{version}"
+        crate::packslip_pins::signer_of(&verified.scheme.to_string(), &verified.key_id) == workflow,
+        "self-update packslip was not signed by the release workflow"
     );
     let logged: jiff::Timestamp = verified
         .logged_at
@@ -126,6 +123,16 @@ mod tests {
             .is_err()
         );
         check_release(&verified, "2026.9.16", None).unwrap();
+    }
+
+    #[test]
+    fn a_release_workflow_dispatched_from_main_is_supported() {
+        let bundle =
+            include_str!("../../../test/fixtures/self-update/mise-v2026.9.3.sigstore.json");
+        let mut verified = verify_manifest(bundle, &[]).unwrap();
+        check_release(&verified, "2026.9.3", None).unwrap();
+        verified.key_id = verified.key_id.replace("release.yml", "other.yml");
+        assert!(check_release(&verified, "2026.9.3", None).is_err());
     }
 
     #[test]

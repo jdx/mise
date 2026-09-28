@@ -29,7 +29,7 @@ def main():
     original = digest(source)
     # Each case starts with the newly built updater, never the release installed
     # by the previous case. Exercise both packslip and pre-packslip releases.
-    for version in ("2026.9.16", "2026.9.2"):
+    for version in ("2026.9.16", "2026.9.3", "2026.9.2"):
         with tempfile.TemporaryDirectory(prefix="mise-su-", ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             binary = root / source.name
