@@ -285,33 +285,20 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = [
   "reqwest-client",
 ] }
 
+self-replace = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+zipsign-api = { version = "0.2", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
-self_update = { version = "1", optional = true, default-features = false, features = [
-  "archive-tar",
-  "compression-tar-gz",
-  "signatures",
-  "reqwest",
-  "github",
-  "progress-bar",
-] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "1", optional = true, default-features = false, features = [
-  "archive-zip",
-  "compression-zip-deflate",
-  "signatures",
-  "reqwest",
-  "github",
-  "progress-bar",
-] }
-zipsign-api = "0.2"
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
 windows-sys = { version = "0.61", features = [
   "Win32_Globalization",
@@ -350,6 +337,7 @@ pretty_assertions = "1"
 test-log = "0.2"
 
 [features]
+self_update = ["dep:self-replace", "dep:tar", "dep:zipsign-api"]
 default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
   "gix/blocking-http-transport-reqwest-native-tls",
@@ -361,7 +349,6 @@ native-tls = [
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
-  "self_update?/native-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -373,7 +360,6 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
-  "self_update?/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -385,7 +371,6 @@ rustls-native-roots = [
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
-  "self_update?/rustls",
 ]
 
 [package.metadata.binstall]
