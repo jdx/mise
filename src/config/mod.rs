@@ -867,6 +867,7 @@ impl Config {
             let relative = |root: &Path| {
                 root.strip_prefix(&config.root).map(|path| {
                     path.components()
+                        .filter(|component| !matches!(component, Component::CurDir))
                         .map(|component| component.as_os_str().to_string_lossy())
                         .join("/")
                 })

@@ -57,6 +57,17 @@ cat >mise.toml <<'TOML'
 monorepo_root = true
 
 [monorepo]
+config_roots = ["foo/bar/baz/abc/123", "./other"]
+
+[monorepo.path_aliases]
+"other" = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //other:build' 'conflicts with a config root path'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
 config_roots = ["*"]
 
 [monorepo.path_aliases]
