@@ -77,6 +77,14 @@ Render the landing-page showreel to docs/public/showreel-120.mp4 and showreel.mp
 
 Record the landing-page showreel's terminal captures in containers
 
+## `docs:showreel-test`
+
+- Depends: docs:setup
+
+- **Usage:** `docs:showreel-test`
+
+Type-check and test the landing-page showreel
+
 ## `fetch-gpg-keys`
 
 - **Usage:** `fetch-gpg-keys`

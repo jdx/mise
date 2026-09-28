@@ -32,7 +32,7 @@ export interface ShowreelFiles {
   /** Site-relative URL of its poster frame. */
   poster: string;
   /** Site-relative URL of its chapters track, versioned like the files. */
-  chapters: string;
+  track: string;
 }
 
 export interface ShowreelChapter {
@@ -106,7 +106,7 @@ export function showreelFiles(): ShowreelFiles | null {
     poster: `/showreel-poster.jpg?v=${version(readFileSync(posterPath))}`,
     // Versioned too, so a browser that cached an earlier render's track
     // never seeks a new render with its chapter times.
-    chapters: `/showreel-chapters.vtt?v=${version(readFileSync(chaptersPath))}`,
+    track: `/showreel-chapters.vtt?v=${version(readFileSync(chaptersPath))}`,
   };
 }
 

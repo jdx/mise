@@ -244,7 +244,11 @@ host_resolves() { [ "$(uname -sm)" = "Linux x86_64" ]; }
 if host_resolves; then
 	got=$("$mise_bin" --version 2>/dev/null) || die "cannot run $mise_bin"
 	case "$got" in *DEBUG*) die "refusing a dev build: $got" ;; esac
-	[ "${got%% *}" = "$mise_version" ] || die "expected mise $mise_version, got $got (pass --mise-version to change the pin)"
+	# A binary passed with --mise and no --mise-version names its own release.
+	[ "$mise_version" = latest ] && mise_version=${got%% *}
+	[ "${got%% *}" = "$mise_version" ] || die "expected mise $mise_version, got $got (pass --mise-version to match it)"
+elif [ "$mise_version" = latest ]; then
+	usage "--mise PATH on this host needs --mise-version V too: the binary runs only in the containers here"
 fi
 
 resolve() { # resolve DEST [key|placeholders]: versions.json for this machine

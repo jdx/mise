@@ -377,9 +377,8 @@ render)
 		fi
 		# A broken reel stops here, before the minutes-long render.
 		say "testing the reel"
-		(cd "$root" && aube run typecheck:showreel &&
-			SHOWREEL_CAPTURES="$out" SHOWREEL_REQUIRE_CHROMIUM=1 SHOWREEL_REQUIRE_CAPTURES=1 \
-				aube run test:showreel)
+		(cd "$root" && SHOWREEL_CAPTURES="$out" SHOWREEL_REQUIRE_CHROMIUM=1 SHOWREEL_REQUIRE_CAPTURES=1 \
+			mise run docs:showreel-test)
 		say "rendering $rkey"
 		render_now
 		keep "$rkey"

@@ -15,6 +15,7 @@ on:
       - ".github/workflows/docs-showreel.yml"
       - "aube-lock.yaml"
       - "package.json"
+      - "tasks.toml"
       - "docs/.vitepress/check-social-images.mjs"
       - "docs/.vitepress/config.ts"
       - "docs/.vitepress/fonts/**"
@@ -57,29 +58,27 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q ffmpeg
           aube exec playwright-core install --with-deps chromium-headless-shell
-      - name: Type-check the showreel
-        run: aube run typecheck:showreel
       # SHOWREEL_REQUIRE_CHROMIUM turns a browser that fails to start into a
       # failure instead of a skip, and SHOWREEL_REQUIRE_CAPTURES a missing
       # capture set (theme/showreel/test/captures here) into one too.
-      - name: Test the showreel
+      - name: Type-check and test the showreel
         env:
           SHOWREEL_REQUIRE_CHROMIUM: "1"
           SHOWREEL_REQUIRE_CAPTURES: "1"
-        run: aube run test:showreel
-      # The poster frame is at 0:54.8. The renderer never writes a draft into
+        run: mise run docs:showreel-test
+      # The poster frame is at 2:10. The renderer never writes a draft into
       # docs/public, so the draft is copied there as the 60 and 120 fps files
       # with a frame of it as the poster; the build's checks read only their
       # container and versions.
       - name: Render a draft and build the site with it
         run: |
           draft="$RUNNER_TEMP/showreel"
-          node docs/.vitepress/showreel-video.mjs --out "$draft/draft.mp4" --fps 30 --from 54 --until 56
+          node docs/.vitepress/showreel-video.mjs --out "$draft/draft.mp4" --fps 30 --from 129 --until 131
           ffmpeg -loglevel error -ss 0.8 -i "$draft/draft.mp4" -frames:v 1 -q:v 3 "$draft/poster.jpg"
           cp "$draft/draft.mp4" docs/public/showreel.mp4
           cp "$draft/draft.mp4" docs/public/showreel-120.mp4
           cp "$draft/poster.jpg" docs/public/showreel-poster.jpg
-          aube run docs:build
+          mise run docs:build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: showreel-draft

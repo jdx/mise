@@ -124,7 +124,7 @@ onUnmounted(() => window.removeEventListener("hashchange", focusOnArrival));
             kind="chapters"
             srclang="en"
             label="Chapters"
-            :src="withBase(showreel.chapters)"
+            :src="withBase(showreel.track)"
             default
           />
         </video>
