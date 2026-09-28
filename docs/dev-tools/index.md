@@ -180,6 +180,19 @@ Run a command immediately after a tool finishes installing by adding a `postinst
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
+To run the command on every `mise install` for the selected tool, even when its
+version is already installed, use `when = "always"`:
+
+```toml
+[tools]
+node = { version = "26", postinstall = { run = "npm install -g corepack", when = "always" } }
+```
+
+This runs once per selected tool request on each `mise install`; it does not
+record completion per config file. The string form (or a table without `when`)
+continues to run only after a fresh install or repair. Dry runs do not execute
+the command.
+
 Behavior:
 
 - The command runs once the install completes successfully for that tool/version.
