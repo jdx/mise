@@ -292,7 +292,14 @@ zipsign-api = { version = "0.2", optional = true }
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
-nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
+nix = { version = "0.31", features = [
+  "dir",
+  "fs",
+  "hostname",
+  "signal",
+  "term",
+  "user",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

@@ -16,6 +16,7 @@ mod tests {
             PlumbingCall::new(["fetch"]).work_tree(temp.path()),
             PlumbingCall::new(["fetch"]).index_file(temp.path()),
             PlumbingCall::new(["fetch"]).stdin(b"unexpected"),
+            PlumbingCall::new(["fetch"]).env("GIT_AUTHOR_EMAIL", "unexpected@example.com"),
         ] {
             assert!(
                 repo.network_output(call)

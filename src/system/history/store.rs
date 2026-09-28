@@ -201,8 +201,16 @@ pub(crate) fn machine() -> Machine {
 }
 
 fn hostname() -> String {
-    std::env::var("HOSTNAME")
+    #[cfg(unix)]
+    let system_hostname = nix::unistd::gethostname()
         .ok()
+        .map(|name| name.to_string_lossy().into_owned());
+    #[cfg(not(unix))]
+    let system_hostname: Option<String> = None;
+
+    system_hostname
+        .filter(|name| !name.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
         .filter(|name| !name.is_empty())
         .or_else(|| {
             std::fs::read_to_string("/etc/hostname")

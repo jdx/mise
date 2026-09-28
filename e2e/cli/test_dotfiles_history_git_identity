@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# History commits use an optional Git email shared across machines.
+require_cmd git
+require_cmd hostname
+
+repo="$MISE_STATE_DIR/history/repo.git"
+echo one >~/.history-identity
+assert_succeed 'mise dot track ~/.history-identity'
+assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
+  'mise <mise@localhost> | mise <mise@localhost>'
+
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history]
+git_email = "mise@{hostname}"
+TOML
+
+echo two >~/.history-identity
+assert_succeed 'mise dot save'
+host=$(hostname)
+assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
+  "mise <mise@$host> | mise <mise@$host>"
+
+echo three >~/.history-identity
+before_watch=$(git --git-dir="$repo" rev-parse HEAD)
+assert_succeed 'mise dot watch --once'
+after_watch=$(git --git-dir="$repo" rev-parse HEAD)
+assert_fail "test $before_watch = $after_watch"
+assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
+  "mise <mise@$host> | mise <mise@$host>"

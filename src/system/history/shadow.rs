@@ -1503,7 +1503,12 @@ impl HistoryRepo {
         }
         args.push("-m".to_string());
         args.push(message.to_string());
-        self.output_str(PlumbingCall::new(args))
+        let email = super::config::git_email()?;
+        self.output_str(
+            PlumbingCall::new(args)
+                .env("GIT_AUTHOR_EMAIL", email.as_str())
+                .env("GIT_COMMITTER_EMAIL", email),
+        )
     }
 
     /// Moves `name` to `commit` only if it still points at `expected`

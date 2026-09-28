@@ -950,6 +950,8 @@ pub struct PlumbingCall<'a> {
     pub index_file: Option<&'a Path>,
     pub cwd: Option<&'a Path>,
     pub stdin: Option<&'a [u8]>,
+    /// Environment overrides for a local plumbing invocation only.
+    pub env: Vec<(OsString, OsString)>,
 }
 
 impl<'a> PlumbingCall<'a> {
@@ -978,6 +980,11 @@ impl<'a> PlumbingCall<'a> {
         self.stdin = Some(bytes);
         self
     }
+
+    pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
+        self.env.push((key.into(), value.into()));
+        self
+    }
 }
 
 /// Runs git plumbing against a repository mise owns (a bare "shadow" repo),
@@ -986,7 +993,7 @@ impl<'a> PlumbingCall<'a> {
 /// Every call ignores the system and global gitconfig, so `filter.*`
 /// (git-crypt, LFS), `core.hooksPath`, `core.excludesFile`, aliases, and
 /// credential helpers from the user's setup cannot act on mise's repository,
-/// and pins a fixed committer identity. Only plumbing commands should be run
+/// and defaults to a fixed committer identity. Only plumbing commands should be run
 /// through it; porcelain (`commit`, `checkout`) would consult hooks.
 #[derive(Debug)]
 pub struct GitPlumbing {
@@ -1108,8 +1115,11 @@ impl GitPlumbing {
     /// plumbing runs here. Prompts are disabled when nobody is attending.
     pub fn network_output(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
         eyre::ensure!(
-            call.work_tree.is_none() && call.index_file.is_none() && call.stdin.is_none(),
-            "network Git calls do not accept a work tree, alternate index, or stdin"
+            call.work_tree.is_none()
+                && call.index_file.is_none()
+                && call.stdin.is_none()
+                && call.env.is_empty(),
+            "network Git calls do not accept a work tree, alternate index, stdin, or environment overrides"
         );
         let git =
             plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;
@@ -1203,6 +1213,9 @@ impl GitPlumbing {
         }
         if let Some(cwd) = call.cwd {
             cmd.current_dir(cwd);
+        }
+        for (key, value) in &call.env {
+            cmd.env(key, value);
         }
         if call.stdin.is_some() {
             cmd.stdin(std::process::Stdio::piped());

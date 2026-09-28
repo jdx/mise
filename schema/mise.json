@@ -6270,6 +6270,10 @@
             "type": "string"
           }
         },
+        "git_email": {
+          "type": "string",
+          "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
+        },
         "reload": {
           "type": "object",
           "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
