@@ -295,6 +295,7 @@ impl Install {
         let mut install_config = self
             .effective_config(&config, monorepo_union.as_ref())
             .await?;
+        crate::lockfile::warn_outdated_lockfiles(&install_config);
         let base_trs = match &monorepo_union {
             Some(union) => union.tool_request_set.clone(),
             None => config.get_tool_request_set().await?.clone(),
@@ -577,6 +578,7 @@ impl Install {
         let mut install_config = self
             .effective_config(&config, monorepo_union.as_ref())
             .await?;
+        crate::lockfile::warn_outdated_lockfiles(&install_config);
 
         // Install plugins from [plugins] config section first
         // This must happen before checking for missing tools so env-only plugins get installed

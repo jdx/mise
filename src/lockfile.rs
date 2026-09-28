@@ -113,17 +113,34 @@ pub fn warn_outdated_lockfiles(config: &Config) {
     }
     let monorepo_root = config.monorepo_lockfile_root();
     let today = jiff::Zoned::now().date();
-    let mut seen = HashSet::new();
+    let mut targets = HashMap::new();
+    let mut roots = HashSet::new();
     for (path, cf) in &config.config_files {
         if !cf.source().is_mise_toml() {
             continue;
         }
-        let (candidate, _) = lockfile_path_for_config(path, monorepo_root.as_deref());
-        if seen.insert(candidate.clone()) && candidate.exists() {
-            let remedy = if crate::config::is_global_config(path) {
-                "run `mise lock --global --upgrade`"
-            } else {
-                "run `mise lock --upgrade` from its config directory"
+        let (target, _) = lockfile_path_for_config(path, monorepo_root.as_deref());
+        let global = crate::config::is_global_config(path);
+        if let Some(root) = target.parent() {
+            roots.insert((root.to_path_buf(), global));
+        }
+        targets.insert(target, global);
+    }
+    let mut seen = HashSet::new();
+    for (root, global) in roots {
+        for candidate in active_lockfile_paths_in_dir(&root) {
+            if !seen.insert(candidate.clone()) || !candidate.exists() {
+                continue;
+            }
+            let remedy = match (targets.get(&candidate), global) {
+                (Some(&true), _) => "run `mise lock --global --upgrade`",
+                (Some(&false), _) => "run `mise lock --upgrade` from its config directory",
+                (None, true) => {
+                    "add a matching config and run `mise lock --global --upgrade`, or remove the lockfile if no longer needed"
+                }
+                (None, false) => {
+                    "add a matching config and run `mise lock --upgrade`, or remove the lockfile if no longer needed"
+                }
             };
             warn_outdated_lockfile(&candidate, today, remedy);
         }
