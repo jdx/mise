@@ -24,6 +24,11 @@ on:
     paths: *docs-paths
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rerender-showreel:
+        description: Record the landing-page showreel's captures and render it again, even if the cache has them
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -35,6 +40,7 @@ jobs:
     uses: $/.github/workflows/docs-impl.yml
     with:
       trusted: true
+      rerender-showreel: ${{ inputs.rerender-showreel || false }}
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
       CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}

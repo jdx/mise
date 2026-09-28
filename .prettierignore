@@ -16,6 +16,9 @@ crates/aqua-registry/aqua-registry/
 docs/.vitepress/cache
 docs/.vitepress/dist
 docs/.vitepress/theme/custom.css
+# the showreel's committed capture set: written byte for byte by
+# showreel-capture/export.py and checked against the rig by captures.test.ts
+docs/.vitepress/theme/showreel/test/captures/
 docs/cli
 docs/environments.md
 docs/public/site.webmanifest

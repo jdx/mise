@@ -1,0 +1,753 @@
+{
+  "id": "C1",
+  "width": 80,
+  "height": 200,
+  "styles": [
+    {
+      "fg": "default",
+      "bg": "default",
+      "bold": false,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    },
+    {
+      "fg": "green",
+      "bg": "default",
+      "bold": false,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    },
+    {
+      "fg": "yellow",
+      "bg": "default",
+      "bold": true,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    },
+    {
+      "fg": "magenta",
+      "bg": "default",
+      "bold": true,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    },
+    {
+      "fg": "green",
+      "bg": "default",
+      "bold": true,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    },
+    {
+      "fg": "cyan",
+      "bg": "default",
+      "bold": false,
+      "dim": false,
+      "italics": false,
+      "underline": false,
+      "strikethrough": false,
+      "reverse": false,
+      "blink": false
+    }
+  ],
+  "rows": [
+    [],
+    [["~ $", 0]],
+    [["~ $ m", 0]],
+    [["~ $ mi", 0]],
+    [["~ $ mis", 0]],
+    [["~ $ mise", 0]],
+    [
+      ["Dev tools, env vars, and tasks in one CLI                         ", 0],
+      ["  ▄▄  ▄▄▄  ▄▄", 1]
+    ],
+    [
+      ["                                                                  ", 0],
+      [" ▟  ▙▟   ▙▟  ▙", 1]
+    ],
+    [
+      ["Usage:", 2],
+      [" mise [", 0],
+      ["FLAGS", 3],
+      ["] [", 0],
+      ["TASK", 3],
+      ["] [", 0],
+      ["SUBCOMMAND", 3],
+      ["]                           ", 0],
+      [" ▜▄▄▄▄▄▄▄▄▄▄▄▛", 1]
+    ],
+    [
+      ["                                                                  ", 0],
+      ["  ▀▀▀▀▀▀▀▀▀▀▀", 1]
+    ],
+    [
+      ["Commands:", 2],
+      ["                                                         ", 0],
+      ["   ▗▄▄▄▄▄▄▄▖", 1]
+    ],
+    [
+      ["  ", 0],
+      ["activate", 4],
+      ["      Print the script to activate mise in an           ", 0],
+      ["   ▌ ▀   ▔ ▐", 1]
+    ],
+    [
+      ["                interactive shell                                 ", 0],
+      ["   ▝▄ ▀▄▀ ▄▘", 1]
+    ],
+    [
+      ["  ", 0],
+      ["backends", 4],
+      ["      Manage backends [aliases: b, backend,", 0]
+    ],
+    [["                backend-list]", 0]],
+    [
+      ["  ", 0],
+      ["bin-paths", 4],
+      ["     List all the active runtime bin paths", 0]
+    ],
+    [
+      ["  ", 0],
+      ["bootstrap", 4],
+      ["     Set up a machine from the current configuration", 0]
+    ],
+    [["                [aliases: bs]", 0]],
+    [
+      ["  ", 0],
+      ["cache", 4],
+      ["         Manage the mise cache", 0]
+    ],
+    [
+      ["  ", 0],
+      ["completion", 4],
+      ["    Generate shell completions [aliases: complete,", 0]
+    ],
+    [["                completions]", 0]],
+    [
+      ["  ", 0],
+      ["config", 4],
+      ["        Manage config files [aliases: cfg, toml]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["daemons", 4],
+      ["       [experimental] Manage project daemons with", 0]
+    ],
+    [["                pitchfork [aliases: daemon]", 0]],
+    [
+      ["  ", 0],
+      ["deactivate", 4],
+      ["    Print the script to disable mise in the current", 0]
+    ],
+    [["                shell session", 0]],
+    [
+      ["  ", 0],
+      ["deps", 4],
+      ["          [experimental] Manage project dependencies", 0]
+    ],
+    [["                [aliases: dep, prepare]", 0]],
+    [
+      ["  ", 0],
+      ["doctor", 4],
+      ["        Check mise installation for possible problems", 0]
+    ],
+    [["                [aliases: dr]", 0]],
+    [
+      ["  ", 0],
+      ["dotfiles", 4],
+      ["      Manage dotfiles from ", 0],
+      ["[dotfiles]", 5],
+      [" [aliases: dot]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["edit", 4],
+      ["          Edit mise.toml interactively", 0]
+    ],
+    [
+      ["  ", 0],
+      ["en", 4],
+      ["            Start a new shell with the mise environment", 0]
+    ],
+    [["                built from the current configuration", 0]],
+    [
+      ["  ", 0],
+      ["env", 4],
+      ["           Print the environment for the current", 0]
+    ],
+    [["                configuration [aliases: e]", 0]],
+    [
+      ["  ", 0],
+      ["exec", 4],
+      ["          Execute a command with tool(s) set [aliases: x]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["fmt", 4],
+      ["           Format mise TOML configuration", 0]
+    ],
+    [
+      ["  ", 0],
+      ["generate", 4],
+      ["      Generate files for various tools/services", 0]
+    ],
+    [["                [aliases: gen, g]", 0]],
+    [
+      ["  ", 0],
+      ["implode", 4],
+      ["       Remove the mise CLI and all related data", 0]
+    ],
+    [
+      ["  ", 0],
+      ["install", 4],
+      ["       Install a tool version [aliases: i]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["install-into", 4],
+      ["  Install a tool version to a specific path", 0]
+    ],
+    [
+      ["  ", 0],
+      ["latest", 4],
+      ["        Resolve the latest matching version request for", 0]
+    ],
+    [["                a tool", 0]],
+    [
+      ["  ", 0],
+      ["link", 4],
+      ["          Symlink a tool version into mise [aliases: ln]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["lock", 4],
+      ["          Create or refresh lockfile versions, checksums,", 0]
+    ],
+    [["                and download URLs", 0]],
+    [
+      ["  ", 0],
+      ["ls", 4],
+      ["            List installed and active tool versions", 0]
+    ],
+    [["                [aliases: list]", 0]],
+    [
+      ["  ", 0],
+      ["ls-remote", 4],
+      ["     List tool versions available to install", 0]
+    ],
+    [["                [aliases: list-all, list-remote]", 0]],
+    [
+      ["  ", 0],
+      ["mcp", 4],
+      ["           Run the Model Context Protocol server over", 0]
+    ],
+    [["                stdin/stdout", 0]],
+    [
+      ["  ", 0],
+      ["oci", 4],
+      ["           [experimental] Build OCI container images from a", 0]
+    ],
+    [["                mise.toml", 0]],
+    [
+      ["  ", 0],
+      ["outdated", 4],
+      ["      Show outdated tool versions", 0]
+    ],
+    [
+      ["  ", 0],
+      ["packslip", 4],
+      ["      The signers mise accepts packslips from", 0]
+    ],
+    [
+      ["  ", 0],
+      ["patrons", 4],
+      ["       Show the individuals supporting mise as", 0]
+    ],
+    [["                Patron-tier members", 0]],
+    [
+      ["  ", 0],
+      ["plugins", 4],
+      ["       Manage plugins [aliases: p, plugin, plugin-list]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["prune", 4],
+      ["         Delete unused versions of tools", 0]
+    ],
+    [
+      ["  ", 0],
+      ["registry", 4],
+      ["      List registry shorthand names and their backends", 0]
+    ],
+    [
+      ["  ", 0],
+      ["reshim", 4],
+      ["        Create shims for executables provided by", 0]
+    ],
+    [["                installed tools", 0]],
+    [
+      ["  ", 0],
+      ["run", 4],
+      ["           Run tasks and their dependencies [aliases: r]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["search", 4],
+      ["        Search for available tools", 0]
+    ],
+    [
+      ["  ", 0],
+      ["self-update", 4],
+      ["   Update mise itself", 0]
+    ],
+    [
+      ["  ", 0],
+      ["set", 4],
+      ["           Set environment variables in mise.toml [aliases:", 0]
+    ],
+    [["                ev, env-vars]", 0]],
+    [
+      ["  ", 0],
+      ["settings", 4],
+      ["      Manage settings", 0]
+    ],
+    [
+      ["  ", 0],
+      ["shell", 4],
+      ["         Set a tool version for the current shell session", 0]
+    ],
+    [["                [aliases: sh]", 0]],
+    [
+      ["  ", 0],
+      ["shell-alias", 4],
+      ["   Manage shell aliases", 0]
+    ],
+    [
+      ["  ", 0],
+      ["skills", 4],
+      ["        Agent skills the active tools ship, from their", 0]
+    ],
+    [["                packslips [aliases: skill]", 0]],
+    [
+      ["  ", 0],
+      ["sponsors", 4],
+      ["      Show the companies sponsoring mise and the", 0]
+    ],
+    [["                jdx.dev open source tools", 0]],
+    [
+      ["  ", 0],
+      ["ssh", 4],
+      ["           Open an SSH session, optionally borrowing", 0]
+    ],
+    [["                read-only GitHub access", 0]],
+    [
+      ["  ", 0],
+      ["sync", 4],
+      ["          Synchronize tools from other version managers", 0]
+    ],
+    [["                with mise", 0]],
+    [
+      ["  ", 0],
+      ["tasks", 4],
+      ["         Manage tasks [aliases: t, task]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["test-tool", 4],
+      ["     Test that a tool installs and runs", 0]
+    ],
+    [
+      ["  ", 0],
+      ["token", 4],
+      ["         Display git provider tokens mise will use", 0]
+    ],
+    [
+      ["  ", 0],
+      ["tool", 4],
+      ["          Show information about a tool", 0]
+    ],
+    [
+      ["  ", 0],
+      ["tool-alias", 4],
+      ["    Manage tool version aliases [aliases: alias,", 0]
+    ],
+    [["                aliases]", 0]],
+    [
+      ["  ", 0],
+      ["tool-stub", 4],
+      ["     Execute a tool stub", 0]
+    ],
+    [
+      ["  ", 0],
+      ["trust", 4],
+      ["         Mark a config file as trusted", 0]
+    ],
+    [
+      ["  ", 0],
+      ["uninstall", 4],
+      ["     Remove installed tool versions", 0]
+    ],
+    [
+      ["  ", 0],
+      ["unset", 4],
+      ["         Remove environment variable(s) from the config", 0]
+    ],
+    [["                file", 0]],
+    [
+      ["  ", 0],
+      ["untrust", 4],
+      ["       Remove explicit trust for a config", 0]
+    ],
+    [
+      ["  ", 0],
+      ["unuse", 4],
+      ["         Remove tool requests from configuration and", 0]
+    ],
+    [["                prune unused installations [aliases: rm, remove]", 0]],
+    [
+      ["  ", 0],
+      ["upgrade", 4],
+      ["       Upgrade outdated tools [aliases: up]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["use", 4],
+      ["           Install a tool and add it to configuration", 0]
+    ],
+    [["                [aliases: u]", 0]],
+    [
+      ["  ", 0],
+      ["version", 4],
+      ["       Display the version of mise [aliases: v]", 0]
+    ],
+    [
+      ["  ", 0],
+      ["watch", 4],
+      ["         Run task(s) and rerun them when files change", 0]
+    ],
+    [["                [aliases: w]", 0]],
+    [
+      ["  ", 0],
+      ["where", 4],
+      ["         Display the installation path for a tool", 0]
+    ],
+    [
+      ["  ", 0],
+      ["which", 4],
+      ["         Show the path a tool's executable resolves to", 0]
+    ],
+    [
+      ["  ", 0],
+      ["help", 4],
+      ["          Print this message or the help of the given", 0]
+    ],
+    [["                subcommand(s)", 0]],
+    [["Arguments:", 2]],
+    [
+      ["  [", 0],
+      ["TASK", 3],
+      ["]  Task to run", 0]
+    ],
+    [["Flags:", 2]],
+    [
+      ["  ", 0],
+      ["-C", 4],
+      [", ", 0],
+      ["--cd", 4],
+      [" ", 0],
+      ["<DIR>", 3],
+      ["     Change directory before running command", 0]
+    ],
+    [
+      ["  ", 0],
+      ["-E", 4],
+      [", ", 0],
+      ["--env", 4],
+      [" ", 0],
+      ["<ENV>", 3],
+      ["    Set the environment for loading", 0]
+    ],
+    [
+      ["                     ", 0],
+      ["mise.<ENV>.toml", 5]
+    ],
+    [
+      ["  ", 0],
+      ["-j", 4],
+      [", ", 0],
+      ["--jobs", 4],
+      [" ", 0],
+      ["<JOBS>", 3],
+      ["  How many jobs to run in parallel; values", 0]
+    ],
+    [["                     below 1 are treated as 1 [default: 8] [env:", 0]],
+    [["                     MISE_JOBS]", 0]],
+    [
+      ["  ", 0],
+      ["-q", 4],
+      [", ", 0],
+      ["--quiet", 4],
+      ["        Suppress non-error messages [env:", 0]
+    ],
+    [["                     MISE_QUIET]", 0]],
+    [
+      ["  ", 0],
+      ["-v", 4],
+      [", ", 0],
+      ["--verbose", 4],
+      ["      Show extra output (use -vv for even more)", 0]
+    ],
+    [
+      ["  ", 0],
+      ["-y", 4],
+      [", ", 0],
+      ["--yes", 4],
+      ["          Answer yes to all confirmation prompts", 0]
+    ],
+    [
+      ["      ", 0],
+      ["--no-config", 4],
+      ["    Do not load any config files", 0]
+    ],
+    [
+      ["      ", 0],
+      ["--no-env", 4],
+      ["       Do not load environment variables from", 0]
+    ],
+    [["                     config files", 0]],
+    [
+      ["      ", 0],
+      ["--no-hooks", 4],
+      ["     Do not execute hooks from config files", 0]
+    ],
+    [
+      ["      ", 0],
+      ["--raw", 4],
+      ["          Read/write directly to stdin/stdout/stderr", 0]
+    ],
+    [["                     instead of by line", 0]],
+    [
+      ["      ", 0],
+      ["--locked", 4],
+      ["       Require lockfile URL", 0]
+    ],
+    [
+      ["      ", 0],
+      ["--locked", 4],
+      ["       Require lockfile URLs to be present during", 0]
+    ],
+    [["                     installation", 0]],
+    [
+      ["      ", 0],
+      ["--silent", 4],
+      ["       Suppress all task output and mise non-error", 0]
+    ],
+    [["                     messages", 0]],
+    [
+      ["  ", 0],
+      ["-h", 4],
+      [", ", 0],
+      ["--help", 4],
+      ["         Print help", 0]
+    ],
+    [["Examples:", 2]],
+    [["    $ mise install node@20.0.0", 0]],
+    [["    $ mise install node@20", 0]],
+    [["    $ mise install node", 0]],
+    [["    $ mise install", 0]],
+    [["    $ mise install cargo:ripgrep", 0]],
+    [["    $ mise install npm:prettier", 0]],
+    [["    $ mise use node@20", 0]],
+    [["    $ mise use -g node@20", 0]],
+    [["    $ mise use node@latest", 0]],
+    [["    $ mise up --interactive", 0]],
+    [["    $ mise x -- npm install", 0]],
+    [["    $ mise x node@20 -- node app.js", 0]],
+    [["    $ mise set NODE_ENV=production", 0]],
+    [["    $ mise run build", 0]],
+    [["    $ mise watch build", 0]],
+    [["    $ mise settings", 0]],
+    [["    $ mise settings color=0", 0]]
+  ],
+  "frames": [
+    {
+      "t": 0.394625,
+      "rows": [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [0, 0]
+    },
+    {
+      "t": 0.395758,
+      "rows": [
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [4, 0]
+    },
+    {
+      "t": 1.703734,
+      "rows": [
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [5, 0]
+    },
+    {
+      "t": 1.748799,
+      "rows": [
+        3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [6, 0]
+    },
+    {
+      "t": 1.79388,
+      "rows": [
+        4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [7, 0]
+    },
+    {
+      "t": 1.838963,
+      "rows": [
+        5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [8, 0]
+    },
+    {
+      "t": 1.884134,
+      "rows": [
+        5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [0, 1]
+    },
+    {
+      "t": 1.887406,
+      "rows": [
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+        42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [0, 50]
+    },
+    {
+      "t": 1.89036,
+      "rows": [
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+        42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77,
+        78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 0, 106, 107, 0, 108, 109,
+        110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+        124, 125, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [41, 122]
+    },
+    {
+      "t": 1.894988,
+      "rows": [
+        5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+        42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77,
+        78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+        96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 0, 106, 107, 0, 108, 109,
+        110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+        124, 126, 127, 128, 129, 130, 0, 131, 132, 0, 133, 0, 134, 0, 135, 0,
+        136, 0, 137, 0, 138, 0, 139, 0, 140, 0, 141, 0, 142, 0, 143, 0, 144, 0,
+        145, 0, 146, 0, 147, 0, 148, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      "cursor": [4, 162]
+    }
+  ],
+  "marks": [
+    { "name": "start", "t": 0.903546, "frame": 1 },
+    { "name": "help", "t": 2.310786, "frame": 9 },
+    { "name": "end", "t": 4.11166, "frame": 9 }
+  ]
+}

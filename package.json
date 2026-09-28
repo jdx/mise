@@ -11,7 +11,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "docs:dev": "vitepress dev docs",
     "docs:build": "node --test docs/.vitepress/social-images.test.mjs && vitepress build docs && node docs/.vitepress/check-social-images.mjs docs/.vitepress/dist",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "showreel:video": "node docs/.vitepress/showreel-video.mjs",
+    "showreel:frames": "node docs/.vitepress/showreel-frames.mjs",
+    "test:showreel": "node docs/.vitepress/theme/showreel/test/run.mjs",
+    "typecheck:showreel": "tsc -p docs/.vitepress/theme/showreel"
   },
   "author": "@jdx",
   "resolutions": {
@@ -22,9 +26,12 @@
     "@tsconfig/node24": "^24.0.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.0.0",
+    "esbuild": "^0.28.2",
     "js-toml": "^2.0.0",
     "markdown-it": "^15.0.0",
+    "playwright-core": "^1.63.0",
     "toml": "^5.0.0",
+    "typescript": "^7.0.2",
     "vitepress": "1.6.4",
     "vitepress-plugin-group-icons": "^1.6.5",
     "vitepress-plugin-mermaid": "2.0.17",

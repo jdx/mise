@@ -39,3 +39,7 @@ testResults.xml
 comment.md
 
 .claude/settings.local.json
+
+# showreel capture runs (mise run docs:showreel-capture)
+/docs/.vitepress/showreel-capture/out/
+/docs/.vitepress/showreel-capture/__pycache__/

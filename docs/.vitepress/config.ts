@@ -1,5 +1,6 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
 import { pageDescription } from "./social-descriptions.mjs";
+import { showreelFiles } from "./showreel.data";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +37,24 @@ const pageUrl = (relativePath: string) =>
   `${siteUrl}/${relativePath}`
     .replace(/\/index\.md$/, "/")
     .replace(/\.md$/, ".html");
+
+// Link previews that play video (Discord, iMessage, Telegram, Slack) use the
+// rendered showreel through og:video; X ignores og:video and keeps the large
+// image card. Builds without a render leave the tags out, and the homepage
+// stays a website.
+type HeadTag = [string, Record<string, string>];
+function showreelVideoTags(): HeadTag[] {
+  const showreel = showreelFiles();
+  if (!showreel) return [];
+  const url = `${siteUrl}${showreel.src}`;
+  return [
+    ["meta", { property: "og:video", content: url }],
+    ["meta", { property: "og:video:secure_url", content: url }],
+    ["meta", { property: "og:video:type", content: "video/mp4" }],
+    ["meta", { property: "og:video:width", content: "1920" }],
+    ["meta", { property: "og:video:height", content: "1080" }],
+  ];
+}
 
 // VitePress writes an `application/ld+json` body through as raw HTML, so a page
 // whose title or description contains `</script>` would otherwise break out of
@@ -319,7 +338,8 @@ export default withMermaid(
       ],
       // Open Graph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
-      ["meta", { property: "og:type", content: "website" }],
+      // og:type is set per page in transformHead: with a rendered showreel,
+      // the homepage is a video.other.
       ["meta", { property: "og:locale", content: "en_US" }],
       ["meta", { property: "og:image:width", content: "1200" }],
       ["meta", { property: "og:image:height", content: "630" }],
@@ -340,16 +360,21 @@ export default withMermaid(
       const image = new URL(card.path, `${siteUrl}/`).toString();
       const imageAlt = `${heading} — mise docs. ${card.subtitle}`;
       const url = pageUrl(pageData.relativePath);
+      const video: HeadTag[] =
+        pageData.relativePath === "index.md" ? showreelVideoTags() : [];
 
       return [
         ...(pageData.relativePath === "404.md"
-          ? [
-              ["meta", { name: "robots", content: "noindex" }] as [
-                string,
-                Record<string, string>,
-              ],
-            ]
+          ? [["meta", { name: "robots", content: "noindex" }] as HeadTag]
           : []),
+        [
+          "meta",
+          {
+            property: "og:type",
+            content: video.length ? "video.other" : "website",
+          },
+        ],
+        ...video,
         ["meta", { property: "og:url", content: url }],
         ["meta", { property: "og:image", content: image }],
         ["meta", { property: "og:image:alt", content: imageAlt }],

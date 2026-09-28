@@ -34,3 +34,16 @@ page title and subtitle. Checks also cover description consistency, canonical
 URLs, image type and dimensions, and the error page's noindex directive.
 Regression tests reject swapped images and empty alt text. Edit
 `social-images.mjs` to adjust colors or layout.
+
+## The showreel as og:video
+
+When the build has a rendered showreel (`mise run docs:showreel`, which the
+docs deploy runs), the homepage is an Open Graph `video.other` and offers the
+60 fps `showreel.mp4` as `og:video`, with a `?v=` content hash, for link
+previews that play video. X ignores `og:video` and keeps the large image
+card. Every other page, and the homepage in a build without a render, is a
+`website` with no video tags, so `og:type` is set per page in `transformHead`
+rather than in the site-wide head. The built-page check also requires the
+homepage player to start on the deployed video and poster, the 120 fps file
+to be the one the player's script switches to, and "Watch the demo" to link
+`/#showreel` only when the player is there.

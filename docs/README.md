@@ -27,6 +27,33 @@ The task installs JavaScript dependencies, runs the social image tests, builds t
 site, and checks generated social images. VitePress also checks internal page links.
 Use `mise run docs:preview` to serve the production build locally.
 
+## The landing-page showreel
+
+The homepage plays a showreel under the hero when the build has one. It is
+rendered, never committed (`docs/public/showreel*.mp4` and
+`showreel-poster.jpg` are gitignored):
+
+```sh
+mise run docs:showreel                 # render it from the captures on this machine
+mise run docs:showreel -- --capture    # record the terminal captures first if they are out of date
+```
+
+Rendering needs ffmpeg and Playwright's Chromium headless shell
+(`aube exec playwright-core install chromium-headless-shell`); recording the
+captures needs Docker. With a render in `docs/public`, `mise run docs:build`
+adds the player, the homepage's `og:video`, and points "Watch the demo" at it;
+delete the three files to build the site without it, as the docs workflow
+builds pull requests. For a draft of part of the reel, run
+`aube run showreel:video --help`. The storyboard, art spec and capture rig are
+in `docs/.vitepress/theme/showreel/` and `docs/.vitepress/showreel-capture/`.
+
+You never need to commit or upload a render. The docs deploy runs
+`docs:showreel` itself and keeps the result on its cache volume, so a change
+to the reel reaches the site the next time main or a release renders it: when
+the reel's code, fonts, song, renderer or capture rig change, or the capture
+set's key does (the capture rig's README says what that covers). Run the docs
+workflow by hand with `rerender-showreel` to record and render it again anyway.
+
 ## Choose the right page
 
 | Content                                           | Location                                                                        |

@@ -1,0 +1,5 @@
+{
+  "files/.zshrc": "PROMPT='%~ $ '\nautoload -Uz compinit && compinit\neval \"$(mise activate zsh)\"\n",
+  "files/.config/mise/config.toml": "[tools]\nnode = \"24\"\n\n[dotfiles]\n\"~/.config/mise/config.toml\" = { mode = \"track\" }\n\"~/.zshrc\" = { mode = \"track\" }\n\n[bootstrap.services.mise-history]\nbuiltin = \"history-watch\"\n",
+  "offcam/service.txt": "● dev.mise.mise-history.service - mise dot history: save tracked files as they change\n     Loaded: loaded (/home/you/.config/systemd/user/dev.mise.mise-history.service; enabled; preset: enabled)\n     Active: active (running) since Mon 2026-09-28 02:24:41 UTC; 20s ago\n Invocation: d6787645e55844a5b6a35d42e268a85d\n   Main PID: 730 (mise)\n"
+}

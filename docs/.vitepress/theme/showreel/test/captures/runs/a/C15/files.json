@@ -1,0 +1,9 @@
+{
+  "files/.config/mise/config.toml": "[tools]\nnode = \"24\"\n\n[dotfiles]\n\"~/.zshrc\" = { mode = \"track\" }\n",
+  "files/work/api/mise.toml": "[tools]\nhk = \"2.2.0\"\njq = \"latest\"\nnode = \"24\"\n\"npm:prettier\" = \"latest\"\n\n[env]\nAPP_ENV = \"api\"\n_.file = [\".env\", { path = \".env.deploy\", redact = true }]\n\n[tasks.lint]\nrun = \"node --check src/server.js\"\n\n[tasks.test]\nrun = \"node --test --test-reporter=dot\"\n\n[tasks.build]\nrun = \"mkdir -p dist && cp src/server.js dist/server.js\"\nsources = [\"src/**/*.js\"]\noutputs = [\"dist/server.js\"]\n\n[tasks.ci]\ndepends = [\"lint\", \"test\", \"build\"]\nrun = \"echo \\\"api ready: node $(node --version), APP_ENV=$APP_ENV\\\"\"\n",
+  "files/work/dashboard/mise.toml": "[tools]\nnode = \"26\"\n",
+  "files/work/shop/mise.toml": "[tools]\npitchfork = \"2.27.0\"\n\n[daemons]\npostgres = \"18\"\n\n[daemons_settings]\nnamespace = \"shop\"\n\n[tasks.db]\ndaemons = \"postgres\"\nrun = 'psql -Atc \"show server_version\"'\n",
+  "files/work/tools/mise.toml": "[tools]\n\"github:cli/cli\" = \"latest\"\n",
+  "offcam/history-after.txt": "4  2026-09-28 02:24  rollback  rollback: rolled back ~/.zshrc to checkpoint 1  1\n2  2026-09-28 02:24  edit      edited ~/.zshrc                                 1\n1  2026-09-28 02:23  baseline  tracked ~/.zshrc                                1\n",
+  "offcam/zshrc-after.txt": "PROMPT='%~ $ '\nautoload -Uz compinit && compinit\neval \"$(mise activate zsh)\"\n"
+}

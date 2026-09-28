@@ -1,0 +1,8 @@
+[
+  { "name": "start", "t": 0.542729 },
+  { "name": "cd-dashboard", "t": 2.445557 },
+  { "name": "node-dashboard", "t": 5.483216 },
+  { "name": "cd-api", "t": 8.315554 },
+  { "name": "node-api", "t": 11.353132 },
+  { "name": "end", "t": 13.154472 }
+]
