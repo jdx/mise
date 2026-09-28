@@ -300,3 +300,13 @@ mise install
 mise upgrade --bump
 assert_contains "mise ls --current patch-release" "29.1.1"
 assert_contains "cat mise.toml" 'patch-release = "29.1.1"'
+
+cat <<'CONFIG' >mise.toml
+[tools]
+patch-release = "29"
+CONFIG
+mise uninstall --all patch-release
+mise install patch-release@29.1
+mise upgrade --bump
+assert_contains "mise ls --current patch-release" "29.1.1"
+assert_contains "cat mise.toml" 'patch-release = "29"'

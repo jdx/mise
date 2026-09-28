@@ -198,7 +198,9 @@ impl OutdatedInfo {
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
             let bumped_version = check_semver_bump(old, new).or_else(|| {
-                matches!(oi.tool_request, ToolRequest::Version { .. }).then(|| new.to_string())
+                oi.tool_version
+                    .request_pinned_this_version()
+                    .then(|| new.to_string())
             });
             if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
