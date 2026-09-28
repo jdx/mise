@@ -628,7 +628,7 @@ impl Install {
                         tr.is_install_satisfied(&install_config),
                     )
                     .await;
-                    if satisfied {
+                    if satisfied && tr.options().postinstall().is_none_or(|(_, always)| !always) {
                         if let Some(reporter) = reporter {
                             reporter.finish_with_icon(
                                 "already installed".into(),
@@ -698,7 +698,10 @@ impl Install {
             })
         };
         if self.is_dry_run() {
-            if self.dry_run_code && has_work {
+            if self.dry_run_code
+                && has_work
+                && versions.iter().any(|tv| tv.install_satisfied != Some(true))
+            {
                 return Err(exit::request(1));
             }
             return install_error;

@@ -391,9 +391,12 @@ impl Toolset {
         preflight_system_deps(config, &versions, opts).await;
 
         // Build dependency graph and install using Kahn's algorithm
-        let (installed, failed, attempted_failures) = self
+        let (mut installed, failed, attempted_failures) = self
             .install_with_deps(config, versions, opts, install_progress.as_deref())
             .await;
+        if !opts.dry_run {
+            installed.retain(|tv| tv.install_satisfied != Some(true));
+        }
         // Capture the completed installation itself before config reload, floating-link
         // rebuilds, or a caller's later config write can change what a second lookup sees.
         // `installed` contains every success even when a sibling failed, so partial-failure
