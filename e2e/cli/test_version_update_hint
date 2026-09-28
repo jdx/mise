@@ -8,8 +8,9 @@
 # show_latest() returns early under ci_info::is_ci(), so clear the CI markers
 unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
-# Pretend the daily check already found a newer release, so no network is needed
-echo "9999.0.0" >"$MISE_CACHE_DIR/latest-version"
+# Seed a newer release with an old publication date, so the default 24h policy
+# permits it without a network request.
+printf "9999.0.0\t946684800\n" >"$MISE_CACHE_DIR/latest-version.releases-v1"
 
 # self-update disabled, no packager instructions → generic hint
 assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false mise version 2>&1' '9999.0.0 available'

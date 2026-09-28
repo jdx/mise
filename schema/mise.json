@@ -1932,6 +1932,10 @@
               "description": "GitHub API base URL used by `mise self-update`.",
               "type": "string"
             },
+            "minimum_release_age": {
+              "description": "Minimum release age for mise itself; inherits minimum_release_age (24h by default).",
+              "type": "string"
+            },
             "repository": {
               "default": "jdx/mise",
               "description": "GitHub repository used by `mise self-update`.",

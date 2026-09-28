@@ -112,6 +112,7 @@ pub(crate) async fn maybe_auto_update(
         force: false,
         yes: true,
         no_plugins: true,
+        minimum_release_age: None,
     };
     if let Err(err) = update.run().await {
         debug!("automatic mise update failed: {err:#}");
@@ -192,7 +193,8 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 
 /// Update mise itself
 ///
-/// Uses the GitHub Releases API to find the latest release and binary.
+/// Selects the newest stable release satisfying the minimum release age (24h by default).
+/// Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 /// By default, this will also update any installed plugins.
 /// Uses mise's GitHub token resolution chain for authenticated requests.
 ///
@@ -204,6 +206,10 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
+
+    /// Override the minimum release age for unpinned updates (default: 24h)
+    #[usage(long)]
+    minimum_release_age: Option<String>,
 
     /// Update even if already up to date
     #[usage(long, short)]
@@ -452,6 +458,15 @@ fn install_dir_not_writable_message(exe: &Path, dir: &Path, why: Unreplaceable) 
     msg
 }
 
+// A fresh explicitly installed release must survive an unpinned update, even
+// with --force. Explicit targets still allow intentional downgrades.
+fn skip_selected_update(target: &str, current: &str, explicit: bool, force: bool) -> Result<bool> {
+    Ok((!explicit
+        && crate::cli::version::mise_release_key(target)?
+            < crate::cli::version::mise_release_key(current)?)
+        || (!force && target == current))
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
@@ -616,28 +631,25 @@ impl SelfUpdate {
             .current_version(cargo_crate_version!())
             .bin_path_in_archive(bin_path_in_archive);
 
-        let v = self
-            .version
-            .clone()
-            .map_or_else(
-                || -> Result<String> {
-                    Ok(update
-                        .build()?
-                        .get_latest_release()?
-                        .latest()
-                        .ok_or_else(|| {
-                            eyre::eyre!("no GitHub releases found for {}", source.repository)
-                        })?
-                        .version()
-                        .to_string())
-                },
-                Ok,
-            )
-            .map(|v| format!("v{v}"))?;
-
-        // Check if already up to date (unless --force is specified)
+        let explicit = self.version.is_some();
+        let version = match &self.version {
+            Some(version) => version.trim_start_matches('v').to_string(),
+            None => tokio::runtime::Handle::current().block_on(
+                crate::cli::version::eligible_self_update_version(
+                    &source,
+                    self.minimum_release_age.as_deref(),
+                ),
+            )?,
+        };
+        let v = format!("v{version}");
         let current_version = format!("v{}", cargo_crate_version!());
-        if !self.force && v == current_version {
+        if !explicit {
+            miseprintln!(
+                "Selected mise {version} (minimum release age: {})",
+                crate::cli::version::self_update_release_age(self.minimum_release_age.as_deref())
+            );
+        }
+        if skip_selected_update(&version, cargo_crate_version!(), explicit, self.force)? {
             return Ok(VersionStatus::UpToDate(current_version));
         }
 
@@ -860,6 +872,16 @@ impl SelfUpdate {
 mod release_asset_tests {
     use super::*;
     use self_update::update::Release;
+
+    #[test]
+    fn age_filter_never_implicitly_downgrades() {
+        assert!(skip_selected_update("2026.9.15", "2026.9.16", false, false).unwrap());
+        assert!(skip_selected_update("2026.9.15", "2026.9.16", false, true).unwrap());
+        assert!(!skip_selected_update("2026.9.15", "2026.9.16", true, false).unwrap());
+        assert!(skip_selected_update("2026.9.16", "2026.9.16", false, false).unwrap());
+        assert!(!skip_selected_update("2026.9.16", "2026.9.16", false, true).unwrap());
+        assert!(!skip_selected_update("2026.10.0", "2026.9.30", false, false).unwrap());
+    }
 
     #[test]
     fn archive_names_match_release_platforms() {
