@@ -88,7 +88,9 @@ function mp4Seconds(mp4: Buffer): number | null {
  * file as og:video.
  */
 export function showreelFiles(): ShowreelFiles | null {
-  if (!existsSync(videoPath) || !existsSync(posterPath)) return null;
+  // The player needs its chapters track as well as the video and poster.
+  if (![videoPath, posterPath, chaptersPath].every((p) => existsSync(p)))
+    return null;
   const video = readFileSync(videoPath);
   const video120 = existsSync(video120Path) ? readFileSync(video120Path) : null;
   const seconds = video120 && mp4Seconds(video120);
