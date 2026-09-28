@@ -3,8 +3,11 @@ use crate::request_exit;
 use eyre::Result;
 
 use crate::config::{Config, Settings};
+use crate::registry::{REGISTRY, tool_enabled};
 use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
+
+use super::r#use::Use;
 
 /// [internal] called by shell when a command is not found
 #[derive(Debug, usage_rs::Args)]
@@ -32,7 +35,36 @@ impl HookNotFound {
             {
                 return Ok(());
             }
+            if settings.not_found_auto_install_registry
+                && let Some(tool) = registry_bin_provider(&self.bin, &settings)
+                && !ts
+                    .list_current_versions()
+                    .into_iter()
+                    .any(|(_, version)| version.ba().short == tool)
+            {
+                Use::use_global_registry_tool(tool).await?;
+                return Ok(());
+            }
         }
         Err(request_exit(127))
     }
+}
+
+fn registry_bin_provider(bin: &str, settings: &Settings) -> Option<&'static str> {
+    let enabled = settings.enable_tools();
+    let disabled = settings.disable_tools();
+    let mut providers = REGISTRY
+        .iter()
+        .filter(|(name, tool)| {
+            tool.provides_bin(bin)
+                && tool_enabled(enabled.as_ref(), &disabled, &name.to_string())
+                && !settings
+                    .auto_install_disable_tools
+                    .as_ref()
+                    .is_some_and(|tools| tools.iter().any(|disabled| disabled == name))
+                && !tool.backends().is_empty()
+        })
+        .map(|(name, _)| name);
+    let provider = providers.next()?;
+    providers.next().is_none().then_some(provider)
 }

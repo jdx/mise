@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# An unconfigured registry bin is only installed when explicitly enabled.
+assert_fail "mise hook-not-found rtx-tiny"
+assert_fail "mise current tiny"
+
+export MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY=1
+# Ambiguous bin metadata must not pick a tool arbitrarily.
+assert_fail "mise hook-not-found tsh"
+assert_fail "mise current teleport-community"
+assert_fail "mise current teleport-ent"
+
+export MISE_AUTO_INSTALL_DISABLE_TOOLS=tiny
+assert_fail "mise hook-not-found rtx-tiny"
+unset MISE_AUTO_INSTALL_DISABLE_TOOLS
+
+mise hook-not-found rtx-tiny
+assert "mise current tiny" "3.1.0"
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'tiny = "latest"'

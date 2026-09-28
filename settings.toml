@@ -2150,6 +2150,20 @@ This also runs in shims.
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
+[not_found_auto_install_registry]
+default = false
+description = "Automatically install an unconfigured tool when its registry bin matches a missing command."
+docs = """
+When the command-not-found handler cannot install a configured tool, look for a matching binary in
+mise's registry. If exactly one enabled tool provides the command, install its latest version and
+add it to the global config, as with `mise use --global TOOL`. Ambiguous matches are skipped.
+
+This is disabled by default. [`not_found_auto_install`](#not_found_auto_install) and
+[`auto_install_disable_tools`](#auto_install_disable_tools) also apply.
+"""
+env = "MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY"
+type = "Bool"
+
 [not_found_system_fallback]
 default = true
 description = "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH."
