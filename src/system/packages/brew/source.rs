@@ -29,7 +29,6 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 const SHIM_RB: &str = include_str!("shim.rb");
-
 const HOMEBREW_CORE_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-core";
 
 /// does this formula have a bottle that can be poured on this machine?
