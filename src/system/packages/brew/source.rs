@@ -29,6 +29,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 const SHIM_RB: &str = include_str!("shim.rb");
+
 const HOMEBREW_CORE_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-core";
 
 /// does this formula have a bottle that can be poured on this machine?
@@ -311,7 +312,7 @@ fn stage_source(archive: &Path, build_root: &Path, basename: &str) -> Result<Pat
     crate::file::create_dir_all(&stage)?;
     // `basename` is the upstream file name — the cache entry's own name
     // carries a checksum prefix that must not leak into the build tree
-    let format = ExtractionFormat::from_file_name(basename);
+    let format = ExtractionFormat::detect(archive, basename)?;
     if format.is_archive() {
         crate::file::extract_archive(archive, &stage, format, &ExtractOptions::default())
             .wrap_err_with(|| format!("failed to extract {}", archive.display()))?;
@@ -602,5 +603,36 @@ end
             "completions fish\n"
         );
         Ok(())
+    }
+
+    /// GitHub's codeload URLs (`.../tar.gz/refs/tags/v1.0.0`) name no
+    /// extension; the tarball must still be unpacked rather than staged as an
+    /// opaque file the build then cannot find its sources in.
+    #[test]
+    fn test_stage_source_unpacks_suffixless_tarball() {
+        use flate2::{Compression, write::GzEncoder};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("0123456789ab-v1.0.0");
+        let mut builder = jdx_tar::Builder::new(GzEncoder::new(
+            std::fs::File::create(&archive).unwrap(),
+            Compression::default(),
+        ));
+        let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+        header.set_size(11);
+        header.set_mode(0o644);
+        builder
+            .append_data(&mut header, "test-1.0.0/go.mod", &b"module test"[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let build_root = tmp.path().join("build");
+        let buildpath = stage_source(&archive, &build_root, "v1.0.0").unwrap();
+
+        assert_eq!(buildpath, build_root.join("src/test-1.0.0"));
+        assert_eq!(
+            std::fs::read(buildpath.join("go.mod")).unwrap(),
+            b"module test"
+        );
     }
 }
