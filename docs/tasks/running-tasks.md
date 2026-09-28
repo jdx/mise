@@ -74,7 +74,7 @@ mise run
 
 ### Parallelism and output
 
-Tasks run with a maximum of four parallel jobs by default. Set `--jobs`, the
+Tasks run with a maximum of eight parallel jobs by default. Set `--jobs`, the
 `jobs` setting, or `MISE_JOBS` to choose another limit. Output normally prints
 one line at a time with the task label, which keeps parallel output readable.
 With `--jobs 1`, mise uses `interleave` output.

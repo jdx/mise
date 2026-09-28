@@ -303,7 +303,7 @@ a new lockfile. `--lock` fails when no project config is found above the stub.
 
 ```toml
 # mise.lock
-lockfile_version = 2
+lockfile_version = 3
 tool-stubs = ["bin/node"]
 
 [[tools.node]]

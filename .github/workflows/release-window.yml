@@ -15,7 +15,7 @@ name: release-window
 
 on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no untrusted code
   pull_request_target:
-    branches: ["main"]
+    # Report required checks for stacked PRs targeting any base branch.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
   schedule:
     # UTC times covering both CDT and CST. Evening: 17:07/18:07/19:07 CDT,

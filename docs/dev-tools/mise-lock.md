@@ -505,7 +505,7 @@ a version and how artifact metadata is stored for one platform. Generate the
 entries your project needs with `mise lock` rather than copying this excerpt.
 
 ```toml [mise.lock]
-lockfile_version = 2
+lockfile_version = 3
 
 [[tools.node]]
 version = "26.8.1"
@@ -519,9 +519,12 @@ url = "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz"
 
 New lockfiles use the current versioned format. Older lockfiles retain their format
 during ordinary updates to avoid making them unreadable by collaborators using an
-older mise. Run `mise lock --upgrade` to upgrade explicitly. Version 1 records each
+older mise. Run `mise lock --upgrade` to upgrade explicitly and record forge
+repository IDs in version 3. Older revisions omit those IDs and warn when a
+Packslip release provides them. Version 1 records each
 original tool request in the concrete entry it resolved to. Version 2 references native
-aube and uv dependency graphs in sidecar directories. Older mise versions reject version 2 lockfiles.
+aube and uv dependency graphs in sidecar directories. Version 3 records forge repository
+IDs for Packslip signatures. Older mise versions reject newer lockfile versions.
 
 ### Platform Information
 
@@ -535,6 +538,7 @@ A platform entry is written under a quoted key such as
 - **`url_api`** (optional): API download URL, for sources that require authenticated asset requests
 - **`provenance`**: Verification method successfully used for the artifact
 - **`signer`** and **`attested_by`**: Packslip identity commitments
+- **`repository_ids`** (version 3): For a Packslip project on GitHub or GitLab, an inline table containing the forge's `repository` ID and, when available, `owner` ID from the signing certificate. For example, `repository_ids = { repository = "922514152", owner = "216188" }`. The commitment [follows a renamed repository](/dev-tools/backends/packslip.html#renamed-repositories) and refuses a different one under the same name
 
 ### Tool Entry Fields
 

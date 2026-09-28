@@ -36,6 +36,12 @@ pub fn init() {
         "HOME",
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),
     );
+    // The embedded aube writes its adaptive concurrency state under
+    // `$XDG_CACHE_HOME`, else `~/Library/Caches` on macOS, which would leave
+    // an untracked file in the fixture tree. Pin it to the Linux default,
+    // which `test/.gitignore` already covers, and away from the developer's
+    // own cache when their shell sets XDG_CACHE_HOME.
+    env::set_var("XDG_CACHE_HOME", env::HOME.join(".cache"));
     env::remove_var("MISE_TRUSTED_CONFIG_PATHS");
     env::remove_var("MISE_DISABLE_TOOLS");
     env::set_var("NO_COLOR", "1");

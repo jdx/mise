@@ -17,6 +17,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
+use packslip::forge::{Check, ForgePin};
 use packslip::model::{
     Artifact, Host, ReleaseListStatement, ReleaseRef, Selection, Statement, is_bare_format,
     repository, repository_subpath, tag_version,
@@ -37,6 +38,7 @@ use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::packslip_forge::{self, ForgeExpect};
 use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
@@ -531,6 +533,10 @@ fn locate_entry(install_path: &Path, rel: &str, wanted: fn(&Path) -> bool) -> Op
 /// or identity given in the tool options.
 #[derive(Clone)]
 pub(crate) enum Pin {
+    /// A GitHub or GitLab project with no signer given: its releases are
+    /// verified by the forge's repository ID (see [`packslip_forge`]), with
+    /// this policy for the name it is requested under.
+    Forge(Policy),
     Identity(Policy),
     Key(packslip::minisign::PublicKey),
 }
@@ -555,7 +561,7 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
         return Ok(Pin::Identity(explicit));
     }
     match Policy::for_project(project) {
-        Some(policy) => Ok(Pin::Identity(policy)),
+        Some(policy) => Ok(Pin::Forge(policy)),
         None => bail!(
             "packslip:{project} is not on a forge mise knows, so nothing pins its signer; set `pubkey`, or `identity` and `issuer`, in its tool options"
         ),
@@ -572,7 +578,7 @@ impl Pin {
         let Some(prefix) = value.as_str().filter(|prefix| !prefix.trim().is_empty()) else {
             bail!("packslip: list_identity_prefix must be a non-empty string");
         };
-        let Self::Identity(policy) = self else {
+        let (Self::Identity(policy) | Self::Forge(policy)) = self else {
             bail!("packslip: list_identity_prefix cannot be combined with pubkey");
         };
         if policy.issuer.as_deref().is_none_or(str::is_empty) {
@@ -587,28 +593,113 @@ impl Pin {
 
     fn trust(&self) -> Trust<'_> {
         match self {
-            Pin::Identity(policy) => Trust::Identity(policy),
+            Pin::Forge(policy) | Pin::Identity(policy) => Trust::Identity(policy),
             Pin::Key(key) => Trust::Key(key),
+        }
+    }
+
+    /// What a forge project's `bundle` must be signed by, given the lock
+    /// entries its install or lock resolution already has; none for a pin
+    /// the tool options give, which the options alone decide.
+    async fn forge<'a>(
+        &self,
+        project: &str,
+        lock: impl IntoIterator<Item = &'a PlatformInfo>,
+        bundle: &str,
+    ) -> Result<Option<ForgeExpect>> {
+        match self {
+            Pin::Forge(_) => Ok(Some(ForgeExpect::new(project, lock, bundle).await?)),
+            Pin::Identity(_) | Pin::Key(_) => Ok(None),
         }
     }
 }
 
-/// Verify a bundle and, for each artifact path given, its digest and size.
-/// Blocks: packslip drives sigstore on a runtime of its own.
+/// A verified bundle, and for a forge project the check that says which
+/// repository signed it and how it relates to the one requested.
+struct Accepted {
+    verified: packslip::Verified,
+    check: Option<Check>,
+}
+
+impl Accepted {
+    /// The release is for the requested project: under its name, or under
+    /// another name of the same repository that the forge check followed.
+    fn check_project(&self, project: &str) -> Result<()> {
+        if self.verified.project != project && self.check.is_none() {
+            bail!(
+                "the packslip is for {}, not {project}",
+                self.verified.project
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Verify a bundle and, for each artifact path given, its digest and size;
+/// a forge project's by its repository ID. Blocks: packslip drives sigstore
+/// on a runtime of its own.
 fn verify_bundle(
     bundle: &str,
     pin: &Pin,
+    forge: Option<&ForgeExpect>,
     require_log: bool,
     artifacts: &[&Path],
-) -> Result<packslip::Verified> {
+) -> Result<Accepted> {
     file::run_blocking(|| {
         let root = packslip::sigstore::trusted_root(None).map_err(|e| eyre!("{e}"))?;
         let options = packslip::Options {
             require_log,
             trusted_root: &root,
         };
-        packslip::verify(bundle, &pin.trust(), options, artifacts).map_err(|e| eyre!("{e}"))
+        if let Some(forge) = forge {
+            let verified = forge.verify(bundle, options, artifacts)?;
+            return Ok(Accepted {
+                verified: verified.verified,
+                check: Some(verified.check),
+            });
+        }
+        let verified =
+            packslip::verify(bundle, &pin.trust(), options, artifacts).map_err(|e| eyre!("{e}"))?;
+        Ok(Accepted {
+            verified,
+            check: None,
+        })
     })
+}
+
+/// Verify a vendor's release list for `project`: a forge project's by its
+/// repository ID, so a renamed repository's list, signed under its new
+/// name, still speaks for it. Any other list must name `project` itself,
+/// which the caller checks.
+async fn verify_project_release_list(
+    project: &str,
+    bundle: &str,
+    pin: &Pin,
+    require_log: bool,
+) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
+    let Some(forge) = pin.forge(project, [], bundle).await? else {
+        return Ok((verify_release_list(bundle, pin, require_log)?, None));
+    };
+    file::run_blocking(|| {
+        let root = packslip::sigstore::trusted_root(None).map_err(|e| eyre!("{e}"))?;
+        let options = packslip::Options {
+            require_log,
+            trusted_root: &root,
+        };
+        let verified = forge.verify_list(bundle, options)?;
+        check_list_current(&verified.verified.list)?;
+        Ok((verified.verified.list, verified.check.pin))
+    })
+}
+
+fn check_list_current(list: &ReleaseListStatement) -> Result<()> {
+    if !list.is_current(jiff::Timestamp::now()) {
+        bail!(
+            "the release list expired at {}; the vendor has not published a fresh one",
+            list.predicate.expires_at
+        );
+    }
+    Ok(())
 }
 
 pub(crate) fn verify_release_list(
@@ -624,12 +715,7 @@ pub(crate) fn verify_release_list(
         };
         let verified = packslip::verify_release_list(bundle, &pin.trust(), options)
             .map_err(|e| eyre!("{e}"))?;
-        if !verified.list.is_current(jiff::Timestamp::now()) {
-            bail!(
-                "the release list expired at {}; the vendor has not published a fresh one",
-                verified.list.predicate.expires_at
-            );
-        }
+        check_list_current(&verified.list)?;
         Ok(verified.list)
     })
 }
@@ -701,8 +787,12 @@ fn verified_age_allowed(
 /// Refuse a list whose sequence is below one already accepted for the
 /// project, and remember the highest seen. The crate verifies the list
 /// and its expiry; this is the consumer's part, kept with the pins.
-fn check_sequence(project: &str, list: &ReleaseListStatement) -> Result<()> {
-    crate::packslip_pins::check_sequence(project, list.predicate.sequence)
+fn check_sequence(
+    project: &str,
+    list: &ReleaseListStatement,
+    forge: Option<&ForgePin>,
+) -> Result<()> {
+    crate::packslip_pins::check_sequence(project, list.predicate.sequence, forge)
 }
 
 /// Where a release's packslip is.
@@ -710,6 +800,45 @@ struct Located {
     url: String,
     /// The digest a signed release list recorded for the bundle, if any.
     digest: Option<String>,
+    /// Whether the GitHub repository keeps no signed list. Checked again once
+    /// the bundle verifies: its certificate's repository ID shows whether a
+    /// list was accepted for the repository under a name it had before.
+    list_missing: bool,
+}
+
+/// What the vendor's own signed list says about a version.
+enum Vendor {
+    /// The list names the version.
+    Listed(Located),
+    /// The list does not name the version.
+    Unlisted,
+    /// The GitHub repository keeps no list.
+    NoList,
+}
+
+impl Vendor {
+    fn digest(self) -> Option<String> {
+        match self {
+            Vendor::Listed(located) => located.digest,
+            Vendor::Unlisted | Vendor::NoList => None,
+        }
+    }
+
+    fn list_missing(&self) -> bool {
+        matches!(self, Vendor::NoList)
+    }
+}
+
+/// A GitHub repository that keeps no signed list may not have kept one
+/// under any name: now that a verified certificate gives the repository's
+/// ID, a list accepted before a rename counts.
+fn check_list_still_missing(project: &str, located: &Located, check: Option<&Check>) -> Result<()> {
+    match check.and_then(|check| check.pin.as_ref()) {
+        Some(forge) if located.list_missing => {
+            packslip_pins::check_missing_list(project, Some(forge))
+        }
+        _ => Ok(()),
+    }
 }
 
 impl PackslipBackend {
@@ -785,15 +914,17 @@ impl PackslipBackend {
         let text = HTTP_FETCH.get_text(&url).await.wrap_err_with(|| {
             format!("fetching the release list of packslip:{project} from {url}")
         })?;
-        let list = verify_release_list(&text, &pin, !opts.allow_unlogged())
-            .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
-        if list.predicate.project != project {
+        let (list, forge) =
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+                .await
+                .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
+        if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
             bail!(
                 "the release list at {url} is for {}, not {project}",
                 list.predicate.project
             );
         }
-        check_sequence(project, &list)?;
+        check_sequence(project, &list, forge.as_ref())?;
         Ok(list)
     }
 
@@ -828,7 +959,7 @@ impl PackslipBackend {
         {
             Ok(text) => text,
             Err(err) if crate::http::error_code(&err) == Some(404) => {
-                packslip_pins::check_missing_list(project)?;
+                packslip_pins::check_missing_list(project, None)?;
                 return Ok(None);
             }
             Err(err) => {
@@ -836,15 +967,17 @@ impl PackslipBackend {
                     .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
             }
         };
-        let list = verify_release_list(&text, &pin, !opts.allow_unlogged())
-            .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
-        if list.predicate.project != project {
+        let (list, forge) =
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+                .await
+                .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
+        if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
             bail!(
                 "the release list in github.com/{repo} is for {}, not {project}",
                 list.predicate.project
             );
         }
-        check_sequence(project, &list)?;
+        check_sequence(project, &list, forge.as_ref())?;
         Ok(Some(list))
     }
 
@@ -859,10 +992,10 @@ impl PackslipBackend {
         tv: &ToolVersion,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
-    ) -> Result<Option<Located>> {
+    ) -> Result<Vendor> {
         if let Some(repo) = Self::repo(project) {
             let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
-                return Ok(None);
+                return Ok(Vendor::NoList);
             };
             let Some(entry) = list
                 .predicate
@@ -870,12 +1003,13 @@ impl PackslipBackend {
                 .iter()
                 .find(|r| r.version == tv.version)
             else {
-                return Ok(None);
+                return Ok(Vendor::Unlisted);
             };
             refuse_if_withdrawn(project, &tv.version, entry)?;
-            return Ok(Some(Located {
+            return Ok(Vendor::Listed(Located {
                 url: entry.packslip.clone(),
                 digest: list.digest_of(&entry.packslip).map(str::to_string),
+                list_missing: false,
             }));
         }
         let list = self.release_list(project, pin, opts).await?;
@@ -891,9 +1025,10 @@ impl PackslipBackend {
             );
         };
         refuse_if_withdrawn(project, &tv.version, entry)?;
-        Ok(Some(Located {
+        Ok(Vendor::Listed(Located {
             url: entry.packslip.clone(),
             digest: list.digest_of(&entry.packslip).map(str::to_string),
+            list_missing: false,
         }))
     }
 
@@ -904,7 +1039,9 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Located> {
-        if let Some(located) = self.vendor_entry(project, tv, pin, opts).await? {
+        let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+        let list_missing = vendor.list_missing();
+        if let Vendor::Listed(located) = vendor {
             return Ok(located);
         }
         // No signed list names the manifest, so the release asset is the
@@ -943,6 +1080,7 @@ impl PackslipBackend {
             // asset's API endpoint is already in hand here.
             url: github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await,
             digest: None,
+            list_missing,
         })
     }
 
@@ -957,13 +1095,13 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
         stamp: Option<&crate::packslip_stamps::Stamp>,
-    ) -> Result<(Statement, packslip::Verified)> {
+    ) -> Result<(Statement, Accepted)> {
         use sha2::{Digest, Sha256};
 
         // With a stamp in hand the manifest is already named, so the vendor is
         // asked only for withdrawals and its digest pin. Requiring the original
         // release asset here would refuse a stamped mirror that install accepts.
-        let (url, vendor_digest) = match stamp {
+        let (located, vendor_digest) = match stamp {
             Some(stamp) => {
                 if stamp.digest.is_none() {
                     bail!(
@@ -973,19 +1111,21 @@ impl PackslipBackend {
                         stamp.entry.packslip
                     );
                 }
-                (
-                    stamp.entry.packslip.clone(),
-                    self.vendor_entry(project, tv, pin, opts)
-                        .await?
-                        .and_then(|vendor| vendor.digest),
-                )
+                let vendor = self.vendor_entry(project, tv, pin, opts).await?;
+                let located = Located {
+                    url: stamp.entry.packslip.clone(),
+                    digest: None,
+                    list_missing: vendor.list_missing(),
+                };
+                (located, vendor.digest())
             }
             None => {
-                let vendor = self.locate_bundle(project, tv, pin, opts).await?;
-                (vendor.url, vendor.digest)
+                let mut located = self.locate_bundle(project, tv, pin, opts).await?;
+                let digest = located.digest.take();
+                (located, digest)
             }
         };
-        let text = crate::packslip::fetch_text(&url).await?;
+        let text = crate::packslip::fetch_text(&located.url).await?;
         let actual = hex::encode(Sha256::digest(text.as_bytes()));
         for expected in vendor_digest
             .iter()
@@ -998,8 +1138,15 @@ impl PackslipBackend {
                 );
             }
         }
-        let verified = verify_bundle(&text, pin, !opts.allow_unlogged(), &[])?;
-        if verified.project != project || verified.version != tv.version {
+        let forge = pin
+            .forge(project, tv.lock_platforms.values(), &text)
+            .await?;
+        let accepted = verify_bundle(&text, pin, forge.as_ref(), !opts.allow_unlogged(), &[])?;
+        check_list_still_missing(project, &located, accepted.check.as_ref())?;
+        let verified = &accepted.verified;
+        if (verified.project != project && accepted.check.is_none())
+            || verified.version != tv.version
+        {
             bail!(
                 "packslip:{project}@{}: verified manifest project/version differs from discovery",
                 tv.version
@@ -1016,11 +1163,12 @@ impl PackslipBackend {
                 attested_by: &attested_by,
                 provenance: verified.provenance_linked,
                 logged: verified.logged_at.is_some(),
+                forge: accepted.check.as_ref(),
             },
         )?;
         let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
         let statement: Statement = serde_json::from_slice(&payload)?;
-        Ok((statement, verified))
+        Ok((statement, accepted))
     }
 
     async fn recommendation(
@@ -1074,7 +1222,7 @@ impl PackslipBackend {
             },
             None => None,
         };
-        let (statement, verified) = self
+        let (statement, Accepted { verified, .. }) = self
             .verified_release(project, &tv, pin, opts, stamp)
             .await?;
         // Parse errors are verification errors, not age-policy exclusions.
@@ -1231,6 +1379,7 @@ pub(crate) struct PendingPin {
     attested_by: String,
     provenance: bool,
     logged: bool,
+    forge: Option<Check>,
 }
 
 impl PendingPin {
@@ -1244,6 +1393,7 @@ impl PendingPin {
                 attested_by: &self.attested_by,
                 provenance: self.provenance,
                 logged: self.logged,
+                forge: self.forge.as_ref(),
             },
         )?;
         Ok(())
@@ -1307,8 +1457,9 @@ impl PackslipBackend {
                     Located {
                         url: stamp.entry.packslip.clone(),
                         digest: Some(digest),
+                        list_missing: vendor.list_missing(),
                     },
-                    vendor.and_then(|v| v.digest),
+                    vendor.digest(),
                 )
             }
             // Without a stamp the located bundle is the vendor's own, so its
@@ -1333,13 +1484,19 @@ impl PackslipBackend {
         }
         let bundle = file::read_to_string(&bundle_path)?;
         ctx.pr.set_message("verify packslip".into());
-        let verified = verify_bundle(&bundle, &pin, require_log, &[])
+        // The repository IDs this project is held to: this machine's pin and
+        // every platform's lock entry, which all speak for the one release.
+        let forge = pin
+            .forge(&project, tv.lock_platforms.values(), &bundle)
+            .await?;
+        let accepted = verify_bundle(&bundle, &pin, forge.as_ref(), require_log, &[])
             .wrap_err_with(|| format!("verifying the packslip of {}", tv.style()))?;
         let payload = packslip::sigstore::peek_statement(&bundle).map_err(|e| eyre!("{e}"))?;
         let statement: Statement = serde_json::from_slice(&payload)?;
-        if verified.project != project {
-            bail!("the packslip is for {}, not {project}", verified.project);
-        }
+        accepted.check_project(&project)?;
+        let check = accepted.check.as_ref();
+        check_list_still_missing(&project, &located, check)?;
+        let verified = &accepted.verified;
         if verified.version != tv.version {
             bail!(
                 "the packslip says version {}, not {}; the release's tag and its manifest disagree",
@@ -1391,6 +1548,7 @@ impl PackslipBackend {
             attested_by: &attested_by,
             provenance: verified.provenance_linked,
             logged: verified.logged_at.is_some(),
+            forge: check,
         };
         packslip_pins::check(&project, observed)?;
         let signer = format!(
@@ -1399,10 +1557,12 @@ impl PackslipBackend {
         );
         let platform_key = self.get_platform_key();
         // The signer describes the release, so every platform's lock entry
-        // speaks for it, not only this host's.
+        // speaks for it, not only this host's. After a rename it is the same
+        // workflow of the same repository, by the forge check, under the
+        // repository's new name.
         for info in tv.lock_platforms.values() {
             if let Some(locked) = &info.signer
-                && *locked != signer
+                && !packslip_forge::lock_signer_continues(locked, &signer, check)
             {
                 bail!(
                     "mise.lock says {} signed {}, but this release is signed by {signer}; remove the entry from mise.lock to accept the new signer",
@@ -1474,7 +1634,7 @@ impl PackslipBackend {
         // the project committed to. A fresh entry records the signed sha256.
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("verify {}", artifact.name));
-        verify_bundle(&bundle, &pin, require_log, &[&file_path])
+        verify_bundle(&bundle, &pin, forge.as_ref(), require_log, &[&file_path])
             .wrap_err_with(|| format!("verifying {} against its packslip", artifact.name))?;
         {
             let info = tv.lock_platforms.entry(platform_key).or_default();
@@ -1484,11 +1644,11 @@ impl PackslipBackend {
             {
                 info.checksum = Some(format!("sha256:{sha256}"));
             }
-            info.signer = Some(signer);
             // Set for a repackager's document and cleared for the vendor's,
             // so the lockfile ratchets up the way the pin does.
             info.attested_by = (verified.attested_by == packslip::Attestor::Repackager)
                 .then(|| "repackager".to_string());
+            packslip_forge::lock_record(info, signer, check);
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
@@ -1539,6 +1699,9 @@ impl PackslipBackend {
             crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
             crate::packslip::install_man_pages(&tv.install_path(), &statement, Some(&artifact))?;
         }
+        if let Some(check) = check {
+            packslip_forge::warn_if_renamed(check).await;
+        }
         Ok((
             tv,
             PendingPin {
@@ -1549,6 +1712,7 @@ impl PackslipBackend {
                 attested_by: observed.attested_by.to_owned(),
                 provenance: observed.provenance,
                 logged: observed.logged,
+                forge: observed.forge.cloned(),
             },
         ))
     }
@@ -1745,7 +1909,7 @@ impl Backend for PackslipBackend {
             ),
             None => None,
         };
-        let (statement, verified) = self
+        let (statement, Accepted { verified, check }) = self
             .verified_release(&project, tv, &pin, &opts, stamp)
             .await?;
         // Locking records the version that resolution already chose, so a
@@ -1786,20 +1950,24 @@ impl Backend for PackslipBackend {
             .clone()
             .ok_or_else(|| eyre!("the packslip gives no download URL for {}", artifact.name))?;
         let scheme = verified.scheme.to_string();
-        Ok(PlatformInfo {
+        let mut info = PlatformInfo {
             checksum: statement
                 .digest_of(&artifact.name)
                 .map(|digest| format!("sha256:{digest}")),
             size: Some(artifact.size),
             url: Some(url),
-            signer: Some(format!(
-                "{scheme}:{}",
-                packslip_pins::signer_of(&scheme, &verified.key_id)
-            )),
             attested_by: (verified.attested_by == packslip::Attestor::Repackager)
                 .then(|| "repackager".to_string()),
             ..Default::default()
-        })
+        };
+        // A fresh entry: lock generation carries the IDs an entry for the same
+        // signer recorded forward when this resolution checked none.
+        let signer = format!(
+            "{scheme}:{}",
+            packslip_pins::signer_of(&scheme, &verified.key_id)
+        );
+        packslip_forge::lock_record(&mut info, signer, check.as_ref());
+        Ok(info)
     }
 
     /// `variant` and `ignore_requirements` can decide which artifact is

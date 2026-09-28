@@ -376,6 +376,17 @@ impl ToolOptions {
         None
     }
 
+    pub fn postinstall(&self) -> Option<(&str, bool)> {
+        match self.opts.get("postinstall")? {
+            toml::Value::String(script) => Some((script, false)),
+            toml::Value::Table(table) => Some((
+                table.get("run")?.as_str()?,
+                table.get("when").and_then(toml::Value::as_str) == Some("always"),
+            )),
+            _ => None,
+        }
+    }
+
     /// Get a scalar value for a key as an owned string.
     pub(crate) fn get_string(&self, key: &str) -> Option<String> {
         self.opts.get(key).and_then(scalar_value_to_string)
@@ -471,11 +482,24 @@ impl ToolOptions {
                 Ok(true)
             }
             "postinstall" => {
-                let script = value
-                    .as_str()
-                    .ok_or_else(|| "postinstall must be a string".to_string())?;
-                self.opts
-                    .insert(key.to_string(), toml::Value::String(script.to_string()));
+                match value {
+                    toml::Value::String(_) => {}
+                    toml::Value::Table(table) => {
+                        if !table.get("run").is_some_and(|v| v.is_str()) {
+                            return Err("postinstall.run must be a string".to_string());
+                        }
+                        if table.keys().any(|key| key != "run" && key != "when") {
+                            return Err("postinstall supports only run and when".to_string());
+                        }
+                        if let Some(when) = table.get("when")
+                            && !matches!(when.as_str(), Some("install" | "always"))
+                        {
+                            return Err("postinstall.when must be install or always".to_string());
+                        }
+                    }
+                    _ => return Err("postinstall must be a string or table".to_string()),
+                }
+                self.opts.insert(key.to_string(), value.clone());
                 Ok(true)
             }
             "minimum_release_age" | "install_before" => {
@@ -974,7 +998,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_tool_options_rejects_non_string_postinstall() {
+    fn test_parse_tool_options_postinstall_table() {
+        let opts =
+            try_parse_tool_options(r#"postinstall={ run = "corepack enable", when = "always" }"#)
+                .unwrap();
+        assert_eq!(opts.postinstall(), Some(("corepack enable", true)));
+        assert_eq!(
+            try_parse_tool_options(r#"postinstall={ run = "echo hi" }"#)
+                .unwrap()
+                .postinstall(),
+            Some(("echo hi", false))
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_options_rejects_invalid_postinstall() {
         for input in [
             "postinstall=123",
             "postinstall=true",
@@ -983,9 +1021,29 @@ mod tests {
         ] {
             assert_eq!(
                 try_parse_tool_options(input),
-                Err("postinstall must be a string".to_string()),
+                Err("postinstall must be a string or table".to_string()),
                 "input: {input}"
             );
+        }
+        for (input, error) in [
+            (
+                r#"postinstall={ when = "always" }"#,
+                "postinstall.run must be a string",
+            ),
+            (
+                r#"postinstall={ run = 123 }"#,
+                "postinstall.run must be a string",
+            ),
+            (
+                r#"postinstall={ run = "echo", when = "sometimes" }"#,
+                "postinstall.when must be install or always",
+            ),
+            (
+                r#"postinstall={ run = "echo", extra = true }"#,
+                "postinstall supports only run and when",
+            ),
+        ] {
+            assert_eq!(try_parse_tool_options(input), Err(error.to_string()));
         }
     }
 

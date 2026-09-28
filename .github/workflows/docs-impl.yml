@@ -39,7 +39,7 @@ jobs:
       # own budget instead.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: bun
+          install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
       # Check the API directly instead of bootstrapping the rate-limit helper,
       # since installing the helper itself requires GitHub API access.
@@ -65,7 +65,7 @@ jobs:
               sleep "$wait_seconds"
             fi
           fi
-      - run: bun i
+      - run: aube install
       - run: mise run docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}

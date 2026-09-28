@@ -28,6 +28,7 @@ Linux box can share the same live path with different contents.
 - **`--profile <PROFILE>`** — Declare a variant for this mise environment
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
 - **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
+- **`--allow-plaintext`** — Save an explicitly tracked credential-named file in plaintext
 - **`-y --yes`** — Accept without prompting
 - **`-n --dry-run`** — Show what each path expands to (files, size, what is left out) without tracking it
 - **`-h --help`** — Print help

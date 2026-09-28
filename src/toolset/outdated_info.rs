@@ -1,9 +1,10 @@
-use crate::semver::{chunkify_version, split_version_prefix};
+use crate::semver::{chunkify_version, semver_precedence_cmp, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
 use std::{
+    cmp::Ordering,
     collections::BTreeSet,
     fmt::{Display, Formatter},
     path::PathBuf,
@@ -196,7 +197,12 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
-            if let Some(bumped_version) = check_semver_bump(old, new)
+            let bumped_version = check_semver_bump(old, new).or_else(|| {
+                oi.tool_version
+                    .request_pinned_this_version()
+                    .then(|| new.to_string())
+            });
+            if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
             {
                 oi.bump = match oi.tool_request.clone() {
@@ -465,7 +471,13 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     Ok(())
 }
 
+/// Checks whether the current version is older than a backend-selected candidate.
+/// Uses SemVer precedence when possible, then the general version comparison;
+/// versions that cannot be ordered are considered outdated when they differ.
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+    if let Some(ordering) = semver_precedence_cmp(current, latest) {
+        return ordering == Ordering::Less;
+    }
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
     } else {
@@ -484,12 +496,22 @@ mod tests {
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 
+    /// Guards against offering a downgrade when installed versions and backend
+    /// candidates use different prefixes, while retaining non-SemVer comparisons.
     #[test]
     fn test_is_outdated_version() {
         assert_eq!(is_outdated_version("3.7b", "3.7c"), true);
         assert_eq!(is_outdated_version("3.7c", "3.7b"), false);
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
         assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
+
+        assert_eq!(is_outdated_version("v2.1.280", "2.1.278"), false);
+        assert_eq!(is_outdated_version("v0.156.0", "0.155.1"), false);
+        assert_eq!(is_outdated_version("2.1.278", "V2.1.280"), true);
+        assert_eq!(is_outdated_version("V1.2.3", "v1.2.3"), false);
+        assert_eq!(is_outdated_version("v1.2.3-rc.1", "1.2.3"), true);
+        assert_eq!(is_outdated_version("1.2.3", "v1.2.3-rc.1"), false);
+        assert_eq!(is_outdated_version("v1.2.3+one", "1.2.3+two"), false);
 
         assert_eq!(
             is_outdated_version("1.10.0-SNAPSHOT", "1.12.0-SNAPSHOT"),

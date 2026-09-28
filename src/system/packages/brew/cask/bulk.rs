@@ -25,7 +25,7 @@ use reqwest::header::{HeaderMap, HeaderValue, IF_MODIFIED_SINCE, LAST_MODIFIED};
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
-use super::model::Cask;
+use super::Cask;
 use crate::config::{Settings, SettingsExt};
 use crate::http::HTTP;
 

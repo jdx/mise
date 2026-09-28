@@ -395,7 +395,7 @@ When you run a command that is not found, mise can install the tool that provide
 If nothing happens, the cause is usually one of these:
 
 - **The tool is configured by a raw backend spec.** `"cargo:some-crate" = "1.0.0"` or `"github:owner/repo" = "1.0.0"` is not a registry entry, so it carries no bin metadata and nothing connects the command you typed to it.
-- **The tool is not configured at all.** The handler only installs tools your config already asks for in the current directory; it will not pick a tool for a command you have never declared.
+- **The tool is not configured at all.** By default, the handler only installs tools your config already asks for in the current directory. Set [`not_found_auto_install_registry`](/configuration/settings.html#not_found_auto_install_registry) to `true` to install a uniquely matching registry tool and add it to your global config. If multiple registry tools provide the command, mise skips it.
 - **The feature is off for that tool** — either [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is `false`, or the tool is listed in [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools).
 
 **Workarounds:**

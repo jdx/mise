@@ -453,7 +453,7 @@ impl ToolRequest {
             return Ok(());
         }
         let options = self.options();
-        if options.get("postinstall").is_some() {
+        if options.postinstall().is_some() {
             Settings::ensure_not_safe(&format!(
                 "running tool-level postinstall hooks for {}",
                 self.ba().short

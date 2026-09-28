@@ -40,6 +40,16 @@ mise then periodically checks before eligible interactive commands, installs a n
 updating plugins, and re-runs the original command with the new binary. Configure the interval with
 [`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
 
+For releases from v2026.9.3 onward, self-update also verifies the release's
+[packslip](https://packslip.dev): its signed archive digest, version, release
+workflow, and transparency-log entry. The signer is pinned to mise's immutable
+GitHub repository ID, so repository renames and moves between organizations do
+not change which project is trusted. The minimum release age also applies to the
+verified log timestamp; explicit versions bypass the delay. Older releases retain
+the embedded archive-signature check, which is also required for newer releases.
+Mirrors must preserve the original manifest and archive bytes. Missing or invalid
+manifests for modern releases fail the update without replacing mise.
+
 Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
 setting [`self_update.repository`](/configuration/settings.html#self_update.repository). Private
 repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
@@ -115,7 +125,8 @@ Options:
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
-- `MISE_VERSION=v2025.12.0` – install a specific version
+- `MISE_VERSION=v2025.12.0` – install a specific version, bypassing the release-age delay
+- `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=7d` – override the minimum age for mise releases; falls back to `MISE_MINIMUM_RELEASE_AGE`, then `24h`. Use `0s` for immediate releases. The installer supports integer `s`, `m`, `h`, `d`, and `w` durations and reads environment variables, not TOML settings.
 - `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
 - `MISE_INSTALL_MUSL=1` – use the static musl build on systems with older glibc
 
@@ -136,9 +147,19 @@ sh ./install.sh
 ```
 
 ::: tip
-Unless you change the version with `MISE_VERSION`, the install script is pinned to whatever the latest
-version was when it was downloaded, with checksums inside the file. Downloading the script and committing it to
-a project is therefore a great way to ensure that anyone who installs with it fetches the exact same mise binary.
+The installer selects the newest stable release published at least 24 hours ago. It evaluates
+release ages when run, even if you saved the script earlier. Set `MISE_VERSION` to pin a version
+for reproducible installs. Unpinned installs keep an existing version if it is already as new as
+or newer than the eligible release.
+
+```sh
+curl -fsSL https://mise.run | MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=7d sh
+```
+
+For subsequent updates, `mise self-update` uses `[settings].self_update.minimum_release_age`,
+falling back to `[settings].minimum_release_age` and then `24h`. Its
+`--minimum-release-age` flag overrides both settings, and an explicit version bypasses the delay.
+Automatic updates and update notifications use the same cutoff.
 :::
 
 Supported OS/arch:

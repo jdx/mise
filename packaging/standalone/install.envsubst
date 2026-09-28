@@ -271,8 +271,51 @@ installed_mise_version() {
   fi
 }
 
+# Keep bootstrap dependencies to POSIX sh/awk and curl or wget. The native CLI
+# additionally supports calendar durations and absolute cutoff dates.
+release_age_cutoff() {
+  awk -v age="$1" -v now="$(date +%s)" 'BEGIN {
+    if (age !~ /^[0-9]+[smhdw]$/) exit 1
+    unit = substr(age, length(age)); value = substr(age, 1, length(age)-1)
+    seconds = (unit == "s" ? 1 : unit == "m" ? 60 : unit == "h" ? 3600 : unit == "d" ? 86400 : 604800)
+    printf "%.0f\n", now - value * seconds
+  }'
+}
+
+select_release() {
+  awk -v cutoff="$1" '
+    NF != 2 || $1 !~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ || $2 !~ /^[0-9]+$/ { invalid = 1; next }
+    $2 <= cutoff {
+      split(substr($1, 2), v, ".")
+      if (!selected || v[1]+0 > year || (v[1]+0 == year && v[2]+0 > month) || (v[1]+0 == year && v[2]+0 == month && v[3]+0 > patch)) {
+        selected = substr($1, 2); year = v[1]+0; month = v[2]+0; patch = v[3]+0
+      }
+    }
+    END { if (invalid || !selected) exit 1; print selected }
+  '
+}
+
+resolve_release() {
+  if [ -n "${MISE_VERSION:-}" ]; then
+    printf '%s\n' "${MISE_VERSION#v}"
+    return
+  fi
+  age="${MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE-${MISE_MINIMUM_RELEASE_AGE-24h}}"
+  cutoff=$(release_age_cutoff "$age") || error "invalid minimum release age: $age (use an integer with s, m, h, d, or w)"
+  if command -v curl >/dev/null 2>&1; then
+    index=$(curl -fsSL https://mise.jdx.dev/releases.tsv) || error "could not fetch mise release index"
+  elif command -v wget >/dev/null 2>&1; then
+    index=$(wget -qO- https://mise.jdx.dev/releases.tsv) || error "could not fetch mise release index"
+  else
+    error "mise install requires curl or wget"
+  fi
+  selected=$(printf '%s\n' "$index" | select_release "$cutoff") || error "no eligible mise release or invalid release index; lower MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE or set MISE_VERSION"
+  info "mise: selected $selected (minimum release age: $age)"
+  printf '%s\n' "$selected"
+}
+
 install_mise() {
-  version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
+  version="$(resolve_release)"
   version="${version#v}"
   current_version="$MISE_CURRENT_VERSION"
   current_version="${current_version#v}"
@@ -282,6 +325,20 @@ install_mise() {
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
   install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
+
+  # Keep a newer manually installed release when resolving an unpinned install.
+  if [ -z "${MISE_VERSION:-}" ] && [ -x "$install_path" ]; then
+    existing_version="$(installed_mise_version "$install_path")"
+    [ -n "$existing_version" ] || error "cannot compare installed mise version; set MISE_VERSION explicitly"
+    if [ -n "$existing_version" ]; then
+      compare_version="${existing_version%-DEBUG}"
+      newest=$(printf 'v%s 0\nv%s 0\n' "$compare_version" "$version" | select_release 0) || error "cannot compare installed mise version; set MISE_VERSION explicitly"
+      if [ "$newest" = "$compare_version" ]; then
+        info "mise: $install_path is already at $existing_version, keeping installed version"
+        return 0
+      fi
+    fi
+  fi
 
   # Opt-in: skip the download/install if the binary already at the install
   # path matches the requested version. Only the install path is checked (not

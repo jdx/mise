@@ -5,24 +5,36 @@ use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate};
+use confique::Layer as _;
 use eyre::{Report, bail};
 use futures_util::future::LocalBoxFuture;
 use std::path::PathBuf;
 use usage_rs::config::{Layers, PropMeta, Registry as SettingsRegistry, Ty, Value};
 
-static CLI_SETTING_PROPS: &[PropMeta] = &[PropMeta {
-    cli: &["--truncate", "--no-truncate"],
-    ..PropMeta::new("truncate", Ty::Bool)
-}];
+static CLI_SETTING_PROPS: &[PropMeta] = &[
+    PropMeta {
+        cli: &["--truncate", "--no-truncate"],
+        ..PropMeta::new("truncate", Ty::Bool)
+    },
+    PropMeta {
+        cli: &["--no-cache"],
+        ..PropMeta::new("task.remote_no_cache", Ty::Bool)
+    },
+];
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
-fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<bool>> {
+/// The settings layer given by command-local flags declared with `setting = "..."`.
+fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<SettingsPartial> {
     let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
-    Ok(match resolved.get_key("truncate") {
+    let get_bool = |key: &str| match resolved.get_key(key) {
         Some(Value::Bool(value)) => Some(*value),
         None => None,
-        Some(value) => unreachable!("truncate resolved as {}", value.type_name()),
-    })
+        Some(value) => unreachable!("{key} resolved as {}", value.type_name()),
+    };
+    let mut s = SettingsPartial::empty();
+    s.truncate = get_bool("truncate");
+    s.task.remote_no_cache = get_bool("task.remote_no_cache");
+    Ok(s)
 }
 
 mod activate;
@@ -910,14 +922,12 @@ pub(crate) fn register_frontend() {
 }
 
 impl Cli {
-    /// The settings layer the global flags set, for `Settings::add_cli_matches`.
-    fn settings_layer(&self, truncate: Option<bool>) -> SettingsPartial {
-        let mut s = <SettingsPartial as confique::Layer>::empty();
+    /// The settings layer the global flags set on top of `command_local`,
+    /// for `Settings::add_cli_matches`.
+    fn settings_layer(&self, command_local: SettingsPartial) -> SettingsPartial {
+        let mut s = command_local;
         if self.raw {
             s.raw = Some(true);
-        }
-        if let Some(truncate) = truncate {
-            s.truncate = Some(truncate);
         }
         if self.locked {
             s.locked = Some(true);
@@ -1021,7 +1031,7 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(cli.settings_layer(None))?;
+            Settings::init_package_query(cli.settings_layer(SettingsPartial::empty()))?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
@@ -1081,9 +1091,9 @@ impl Cli {
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
-        let cli_truncate = cli_truncate_setting(&cli_settings)?;
+        let command_local = command_local_settings(&cli_settings)?;
         measure!("add_cli_matches", {
-            Settings::add_cli_matches(cli.settings_layer(cli_truncate))
+            Settings::add_cli_matches(cli.settings_layer(command_local))
         });
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
             // These file-only edits must remain available when alias values conflict.
@@ -1741,10 +1751,14 @@ mod tests {
         }
     }
 
-    fn parse_truncate(args: &[&str]) -> Option<bool> {
+    fn parse_command_local_settings(args: &[&str]) -> SettingsPartial {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
-        cli_truncate_setting(&layer).unwrap()
+        command_local_settings(&layer).unwrap()
+    }
+
+    fn parse_truncate(args: &[&str]) -> Option<bool> {
+        parse_command_local_settings(args).truncate
     }
 
     #[test]
@@ -1784,6 +1798,28 @@ mod tests {
             let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
             assert!(Cli::parse_from_argv_with_settings(&argv).is_err());
         }
+    }
+
+    fn parse_task_remote_no_cache(args: &[&str]) -> Option<bool> {
+        parse_command_local_settings(args).task.remote_no_cache
+    }
+
+    #[test]
+    fn run_no_cache_flag_sets_task_remote_no_cache() {
+        assert_eq!(parse_task_remote_no_cache(&["mise", "run", "build"]), None);
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "run", "--no-cache", "build"]),
+            Some(true)
+        );
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "tasks", "run", "--no-cache", "build"]),
+            Some(true)
+        );
+        // `oci build --no-cache` is about image layers, not remote tasks.
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "oci", "build", "--no-cache"]),
+            None
+        );
     }
 
     #[test]

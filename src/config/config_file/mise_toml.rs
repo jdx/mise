@@ -510,6 +510,9 @@ pub struct MonorepoConfig {
     /// Explicit list of config roots for monorepo task discovery.
     /// Supports single-level glob patterns (*).
     pub config_roots: Option<Vec<String>>,
+    /// Short names for configured monorepo task roots.
+    #[serde(default)]
+    pub path_aliases: BTreeMap<String, String>,
     /// Use a single lockfile at the monorepo root for descendant config roots.
     /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,

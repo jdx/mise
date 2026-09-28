@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
@@ -13,7 +13,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedEntry, TrackedSet, normalize_target,
+    CREDENTIAL_REASON, TrackedEntry, TrackedSet, is_builtin_credential, normalize_target,
 };
 
 /// Track a file or directory in place
@@ -49,6 +49,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     encrypt: bool,
 
+    /// Save an explicitly tracked credential-named file in plaintext
+    #[usage(long)]
+    allow_plaintext: bool,
+
     /// Accept without prompting
     #[usage(long, short)]
     yes: bool,
@@ -73,6 +77,9 @@ impl DotfilesTrack {
             Some(declaration_lock()?)
         };
         let config = Config::get().await?;
+        if self.encrypt && self.allow_plaintext {
+            bail!("dotfiles: --encrypt and --allow-plaintext cannot be used together");
+        }
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
         }
@@ -86,7 +93,12 @@ impl DotfilesTrack {
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
         let mut locations = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
+        // targets this file already declares exactly as this command would:
+        // no prompt and no rewrite, and their baseline records a checkpoint
+        // only if something changed
+        let mut retracked: Vec<String> = vec![];
         let mut manual = vec![];
+        let mut has_autosave = false;
         // what each path expands to, sized up before anything is written:
         // one walk of every target of this run beside the entries already
         // tracked, so nested targets partition instead of the outer one
@@ -123,10 +135,16 @@ impl DotfilesTrack {
             ..Default::default()
         };
         let mut resolved: Vec<(PathBuf, PathBuf)> = vec![];
+        let mut approved_plaintext = BTreeSet::new();
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
                 .collect::<PathBuf>();
+            // Deduplicate normalized paths before editing declarations, so a later spelling
+            // of the same target cannot be classified from this run's edits.
+            if resolved.iter().any(|(previous, _)| previous == &target) {
+                continue;
+            }
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
@@ -164,7 +182,44 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let normalized = normalize_target(&target);
-            let mut entry = TrackedEntry::new(normalized.clone(), "track", self.policy(existing));
+            if self.allow_plaintext && target.is_dir() {
+                bail!("{target_raw}: --allow-plaintext applies to a file, not a directory");
+            }
+            let credential_name = normalized
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| is_builtin_credential(&normalized, name));
+            if self.allow_plaintext && !credential_name {
+                bail!("{target_raw}: --allow-plaintext is only needed for a credential-named file");
+            }
+            if credential_name
+                && !target.is_dir()
+                && (target.exists() || target.is_symlink())
+                && !self.encrypt
+                && !existing
+                    .is_some_and(|request| request.policy.encrypt || request.policy.allow_plaintext)
+                && !self.allow_plaintext
+                && !self.dry_run
+            {
+                if !console::user_attended_stderr()
+                    || !crate::ui::prompt::confirm_with_default(
+                        format!(
+                            "dotfiles: {target_raw} looks like a credential store. Save it in plaintext history, including any connected origin?"
+                        ),
+                        false,
+                    )?
+                    .is_yes()
+                {
+                    bail!("{target_raw}: use --encrypt for credentials or --allow-plaintext to save this file in plaintext without a terminal");
+                }
+                approved_plaintext.insert(normalized.clone());
+            }
+            let allow_plaintext = self.allow_plaintext || approved_plaintext.contains(&normalized);
+            let mut entry = TrackedEntry::new(
+                normalized.clone(),
+                "track",
+                self.policy(existing, allow_plaintext),
+            );
             // re-tracking previews under the entry's effective exclude
             // and include lists: the saved one when this machine's
             // declaration says nothing, its own when it does.
@@ -246,9 +301,55 @@ impl DotfilesTrack {
             let declaration_key = existing
                 .filter(|req| req.origin.config == config_path)
                 .map_or(target_key.as_str(), |req| req.target_raw.as_str());
+            // the keys this file's declaration wrote, whether as an inline
+            // table or a `[dotfiles."path"]` table
+            let previous_item = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get(declaration_key));
+            let previous_table = previous_item.and_then(Item::as_table_like);
+            let previous: Vec<String> = previous_table
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            // the list as this file wrote it, so a pattern the loader
+            // could not parse (and warned about) is not silently dropped
+            let previous_exclude = previous_table
+                .and_then(|table| table.get("exclude"))
+                .and_then(Item::as_array)
+                .cloned();
+            let previous_include = previous_table
+                .and_then(|table| table.get("include"))
+                .and_then(Item::as_array)
+                .cloned();
+            let entry = self.entry(
+                existing,
+                &previous,
+                previous_exclude,
+                previous_include,
+                self.allow_plaintext || approved_plaintext.contains(&normalized),
+            );
+            let retrack = existing.is_some_and(|req| req.origin.config == config_path)
+                && previous_item.is_some_and(|previous| same_declaration(previous, &entry));
+            if retrack {
+                retracked.push(target_key.clone());
+            } else {
+                let dotfiles = doc
+                    .entry("dotfiles")
+                    .or_insert(Item::Table(toml_edit::Table::new()));
+                if let Some(table) = dotfiles.as_table_mut() {
+                    table.set_implicit(false);
+                    table.insert(declaration_key, Item::Value(Value::InlineTable(entry)));
+                } else {
+                    doc["dotfiles"][declaration_key] = Item::Value(Value::InlineTable(entry));
+                }
+                edit.changed = true;
+            }
             locations.insert(target_key.clone(), config_path);
-            let policy = self.policy(existing);
-            if !policy.autosave {
+            let policy = self.policy(
+                existing,
+                self.allow_plaintext || approved_plaintext.contains(&normalized),
+            );
+            has_autosave |= policy.autosave;
+            if !policy.autosave && !retrack {
                 manual.push(target_key.clone());
             }
             let set = &preview_set;
@@ -271,7 +372,7 @@ impl DotfilesTrack {
             // kind yet is told what happens to it as a file instead.
             if !target.is_dir() {
                 let owner = &set.entries[entry_index];
-                if let Some(reason) = owner.capture_exclusion(&target) {
+                if let Some(reason) = owner.capture_exclusion(&normalized) {
                     let advice = if reason == CREDENTIAL_REASON {
                         "; `mise dot track --encrypt` saves it encrypted"
                     } else {
@@ -367,45 +468,18 @@ impl DotfilesTrack {
                 );
             }
             previews.push(summary);
-            // the keys this file's declaration wrote, whether as an inline
-            // table or a `[dotfiles."path"]` table
-            let previous_table = doc
-                .get("dotfiles")
-                .and_then(|dotfiles| dotfiles.get(declaration_key))
-                .and_then(Item::as_table_like);
-            let previous: Vec<String> = previous_table
-                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
-                .unwrap_or_default();
-            // the list as this file wrote it, so a pattern the loader
-            // could not parse (and warned about) is not silently dropped
-            let previous_exclude = previous_table
-                .and_then(|table| table.get("exclude"))
-                .and_then(Item::as_array)
-                .cloned();
-            let previous_include = previous_table
-                .and_then(|table| table.get("include"))
-                .and_then(Item::as_array)
-                .cloned();
-            let entry = self.entry(existing, &previous, previous_exclude, previous_include);
-            let dotfiles = doc
-                .entry("dotfiles")
-                .or_insert(Item::Table(toml_edit::Table::new()));
-            if let Some(table) = dotfiles.as_table_mut() {
-                table.set_implicit(false);
-                table.insert(declaration_key, Item::Value(Value::InlineTable(entry)));
-            } else {
-                doc["dotfiles"][declaration_key] = Item::Value(Value::InlineTable(entry));
-            }
             declared.push((target_key, target));
         }
         if self.dry_run {
             info!("dotfiles: dry run; nothing was tracked");
             return Ok(());
         }
-        if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
+        let only_retracks = retracked.len() == declared.len();
+        if !only_retracks && !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
                 .zip(&previews)
+                .filter(|((key, _), _)| !retracked.contains(key))
                 .map(|((key, _), summary)| format!("{key} ({summary})"))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -416,9 +490,11 @@ impl DotfilesTrack {
         }
         let result = async {
             for (path, edit) in &mut edits {
-                edit.write(path)?;
+                if edit.changed {
+                    edit.write(path)?;
+                }
             }
-            activate_and_baseline(&declared).await
+            activate_and_baseline(&declared, only_retracks).await
         }
         .await;
         if let Err(error) = result {
@@ -433,10 +509,17 @@ impl DotfilesTrack {
             return Err(error);
         }
         for ((key, _), summary) in declared.iter().zip(&previews) {
-            info!(
-                "dotfiles: tracking {key} ({summary}; declared in {})",
-                display_path(&locations[key])
-            );
+            if retracked.contains(key) {
+                info!(
+                    "dotfiles: {key} is already tracked (declared in {})",
+                    display_path(&locations[key])
+                );
+            } else {
+                info!(
+                    "dotfiles: tracking {key} ({summary}; declared in {})",
+                    display_path(&locations[key])
+                );
+            }
         }
         if !manual.is_empty() {
             info!(
@@ -444,7 +527,7 @@ impl DotfilesTrack {
                 manual.join(", ")
             );
         }
-        if manual.len() < declared.len() {
+        if has_autosave {
             crate::cli::dotfiles::capture_health::report().await;
         }
         Ok(())
@@ -452,7 +535,11 @@ impl DotfilesTrack {
 
     /// The policy a target is tracked under: the existing entry's, with
     /// this command's flags on top.
-    fn policy(&self, existing: Option<&FileRequest>) -> crate::system::files::FilePolicy {
+    fn policy(
+        &self,
+        existing: Option<&FileRequest>,
+        allow_plaintext: bool,
+    ) -> crate::system::files::FilePolicy {
         let mut policy = existing
             .map(|req| req.policy)
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
@@ -461,6 +548,10 @@ impl DotfilesTrack {
         }
         if self.encrypt {
             policy.encrypt = true;
+            policy.allow_plaintext = false;
+        } else if allow_plaintext {
+            policy.encrypt = false;
+            policy.allow_plaintext = true;
         }
         policy
     }
@@ -477,18 +568,25 @@ impl DotfilesTrack {
         previous: &[String],
         previous_exclude: Option<Array>,
         previous_include: Option<Array>,
+        allow_plaintext: bool,
     ) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
-        let policy = self.policy(existing);
+        let policy = self.policy(existing, allow_plaintext);
         // a policy is written when this command sets it or this file wrote
         // it before; one inherited from another layer stays unwritten so
         // that layer keeps deciding it
         let written = |key: &str| previous.iter().any(|written| written == key);
-        if self.encrypt || written("encrypt") {
+        if self.encrypt || allow_plaintext || written("encrypt") {
             table.insert(
                 "encrypt",
                 Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
+            );
+        }
+        if allow_plaintext || written("allow_plaintext") {
+            table.insert(
+                "allow_plaintext",
+                Value::Boolean(toml_edit::Formatted::new(policy.allow_plaintext)),
             );
         }
         if self.no_autosave || written("autosave") {
@@ -588,6 +686,9 @@ struct DeclarationEdit {
     document: DocumentMut,
     original: Option<String>,
     written: Option<String>,
+    /// Whether any target changed its declaration here; a file only
+    /// re-tracked is left exactly as it is.
+    changed: bool,
 }
 
 impl DeclarationEdit {
@@ -601,6 +702,7 @@ impl DeclarationEdit {
             document: original.as_deref().unwrap_or("").parse()?,
             original,
             written: None,
+            changed: false,
         })
     }
 
@@ -678,7 +780,9 @@ fn commit_declaration(
 }
 
 /// Checks that every declared entry is active and saves their baseline.
-async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
+/// When every entry was already tracked, the baseline is recorded only if
+/// something changed since the newest checkpoint.
+async fn activate_and_baseline(declared: &[(String, PathBuf)], only_retracks: bool) -> Result<()> {
     let config = Config::reset().await?;
     // The capture resolves this set again through `enrollment::resolve`,
     // so the declaration is what this function needs: it is checking
@@ -699,7 +803,7 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
     }
-    baseline(&tracked, declared).await?;
+    baseline(&tracked, declared, only_retracks).await?;
     for (key, target) in declared {
         if target.is_symlink() {
             // This resolver is read-only, follows dangling chains, and bounds
@@ -732,7 +836,11 @@ fn resolve_symlink_source(target: &Path) -> Result<PathBuf> {
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails
 /// the enrollment, since an untracked file must never look protected.
-async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Result<()> {
+async fn baseline(
+    tracked: &TrackedSet,
+    declared: &[(String, PathBuf)],
+    only_retracks: bool,
+) -> Result<()> {
     if !crate::config::Settings::get().history.enabled {
         warn!("dotfiles: history is disabled (history.enabled = false); no baseline saved");
         return Ok(());
@@ -761,6 +869,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
         .map(|(_, path)| normalize_target(path))
         .collect();
     draft.description = Some(format!("tracked {names}"));
+    draft.skip_unchanged = only_retracks;
     let tracked = tracked.clone();
     tokio::task::spawn_blocking(move || {
         // Lock waits and filesystem capture must not block a Tokio worker.
@@ -807,6 +916,25 @@ pub(crate) fn normalized_target(target: &Path) -> String {
         Ok(_) => "~".to_string(),
         Err(_) => target.to_string_lossy().to_string(),
     }
+}
+
+/// Whether `entry` says what the declaration `previous` already says, so
+/// writing it would change nothing but formatting. A declaration that
+/// cannot be compared counts as different, and is rewritten as before.
+fn same_declaration(previous: &Item, entry: &InlineTable) -> bool {
+    let Some(table) = previous.as_table_like() else {
+        return false;
+    };
+    let mut previous = InlineTable::new();
+    for (key, item) in table.iter() {
+        let Some(value) = item.as_value() else {
+            return false;
+        };
+        previous.insert(key, value.clone());
+    }
+    let parse = |value: &Value| toml::from_str::<toml::Table>(&format!("v = {value}")).ok();
+    parse(&Value::InlineTable(previous))
+        .is_some_and(|previous| Some(previous) == parse(&Value::InlineTable(entry.clone())))
 }
 
 fn string(text: &str) -> Value {
@@ -1192,6 +1320,7 @@ mod declaration_tests {
             profile: None,
             no_autosave: false,
             encrypt: false,
+            allow_plaintext: false,
             yes: true,
             dry_run: false,
         };
@@ -1227,15 +1356,15 @@ mod declaration_tests {
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);
-        let table = command.entry(Some(&existing), &previous, None, None);
+        let table = command.entry(Some(&existing), &previous, None, None, false);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
         // another layer wrote them (the composed flags say explicit): this
         // file must not pin the inherited values
-        let table = command.entry(Some(&existing), &["mode".to_string()], None, None);
+        let table = command.entry(Some(&existing), &["mode".to_string()], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
-        let table = command.entry(None, &[], None, None);
+        let table = command.entry(None, &[], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         // an inherited non-default value is not pinned either; this
@@ -1243,27 +1372,28 @@ mod declaration_tests {
         let mut inherited = existing.clone();
         inherited.policy.autosave = false;
         inherited.policy.encrypt = true;
-        let table = command.entry(Some(&inherited), &["mode".to_string()], None, None);
+        let table = command.entry(Some(&inherited), &["mode".to_string()], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         let flagged = DotfilesTrack {
             no_autosave: true,
             ..command
         };
-        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None, None);
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None, None, false);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
         // an inherited exclude list is not pinned either; one this file
         // wrote is kept, even when empty
         let mut listed = existing.clone();
         listed.exclude = vec![glob::Pattern::new("sessions").unwrap()];
-        let table = flagged.entry(Some(&listed), &["mode".to_string()], None, None);
+        let table = flagged.entry(Some(&listed), &["mode".to_string()], None, None, false);
         assert!(table.get("exclude").is_none());
         let table = flagged.entry(
             Some(&listed),
             &["mode".to_string(), "exclude".to_string()],
             None,
             None,
+            false,
         );
         assert_eq!(
             table
@@ -1285,6 +1415,7 @@ mod declaration_tests {
             &["mode".to_string(), "exclude".to_string()],
             Some(raw),
             None,
+            false,
         );
         assert_eq!(
             table
@@ -1300,6 +1431,7 @@ mod declaration_tests {
             &["mode".to_string(), "exclude".to_string()],
             None,
             None,
+            false,
         );
         assert_eq!(
             table
@@ -1307,6 +1439,14 @@ mod declaration_tests {
                 .and_then(Value::as_array)
                 .map(|a| a.len()),
             Some(0)
+        );
+        let mut encrypted = existing.clone();
+        encrypted.policy.encrypt = true;
+        let table = flagged.entry(Some(&encrypted), &["mode".to_string()], None, None, true);
+        assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            table.get("allow_plaintext").and_then(Value::as_bool),
+            Some(true)
         );
         // the keys are read from either table form
         for text in [

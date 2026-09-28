@@ -1017,7 +1017,7 @@ impl NPMBackend {
 
     fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
         let minutes = seconds.div_ceil(60);
-        vec![format!("--config.minimumReleaseAge={minutes}").into()]
+        vec![format!("--config.minimum-release-age={minutes}").into()]
     }
 
     fn pnpm_uses_global_dir_env(version: Option<&str>) -> bool {
@@ -1076,7 +1076,7 @@ impl NPMBackend {
             NpmPackageManager::Pnpm => Some((
                 "pnpm",
                 PNPM_MIN_RELEASE_AGE_VERSION,
-                "--config.minimumReleaseAge",
+                "--config.minimum-release-age",
             )),
         }
     }
@@ -2607,7 +2607,7 @@ mod tests {
     #[test]
     fn test_build_pnpm_release_age_args_rounds_up_to_minutes() {
         let args = NPMBackend::build_pnpm_release_age_args(1);
-        assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
+        assert_eq!(args, vec![OsString::from("--config.minimum-release-age=1")]);
     }
 
     #[test]
@@ -3286,7 +3286,7 @@ pkg@1.2.0 '1.2.0'
             Some((
                 "pnpm",
                 PNPM_MIN_RELEASE_AGE_VERSION,
-                "--config.minimumReleaseAge"
+                "--config.minimum-release-age"
             ))
         );
     }

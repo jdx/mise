@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+python3 "$ROOT/e2e/fixtures/self_update.py" "$(type -P mise)"

@@ -350,7 +350,7 @@ Edit source inputs, then regenerate the outputs affected by your change:
 | Settings | `settings.toml` → `mise run render:schema` |
 | All generated docs and completions | `mise run render` |
 | Docs website | Edit Markdown/Vue sources; run `mise run docs:build` |
-| Documentation index for agents | `mise exec bun -- bun docs/.vitepress/llms.ts` after the final docs changes |
+| Documentation index for agents | `mise exec node -- node docs/.vitepress/llms.ts` after the final docs changes |
 
 CLI pages under `docs/cli` are generated. Do not patch those files without changing their
 source or generator. Docs examples use **TOML 1.1**; multiline inline tables, comments, and

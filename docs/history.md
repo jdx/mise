@@ -438,6 +438,24 @@ unrelated histories intact for you to resolve; it does not force-push.
 Before writing incoming changes, it checks the complete batch, including
 configuration, required sources, committed files, and unsaved local edits.
 
+### Identify commits by machine
+
+History commits use `mise <mise@localhost>` for both author and committer by
+default. To identify the machine that made each new commit in a shared Git
+history, add this to your system or global mise configuration:
+
+```toml
+[history]
+git_email = "mise@{hostname}"
+```
+
+mise replaces `{hostname}` with the machine's hostname when it creates a
+commit. For example, a save on `work-mbp.local` uses
+`mise <mise@work-mbp.local>`. This also applies to automatic commits from
+`history-watch` and to merge commits made by mise. The setting accepts a
+fixed email address as well. It affects new commits only; existing commits
+keep their original identity.
+
 ### Resolve unrelated histories
 
 If local checkpoints and the origin branch have no shared Git ancestry,
@@ -610,9 +628,28 @@ throughout the history.
 
 Include lists apply only to tracked directories. For a single file,
 track it directly, or track its parent and select the file by relative
-path. Use `--encrypt` when directly tracking a credential file. Invalid
-include or exclude globs make a tracked entry invalid; fix the declaration
-before tracking it again.
+path. Invalid include or exclude globs make a tracked entry invalid; fix
+the declaration before tracking it again.
+
+When a directly tracked filename looks like a credential store, `mise dot
+track` asks whether to save it in plaintext. The default is no. For a
+noninteractive command, use `--allow-plaintext` only after checking that
+the file is safe to put in Git history and any connected origin:
+
+```sh
+mise dot track --allow-plaintext ~/commit-mossy-token.md
+```
+
+The choice is saved as `allow_plaintext = true` on that file's `[dotfiles]`
+entry, so later saves and other machines use the same policy. Use
+`mise dot track --encrypt` for a real credential; encryption requires
+configured recipients. `--yes` does not accept plaintext tracking. Upgrade
+other machines sharing the history before using this option; older mise
+versions cannot read its enrollment metadata.
+
+`--allow-plaintext` can approve a file before it exists. If that path later
+becomes a directory, the directory remains tracked and the usual credential
+filter still applies to its contents.
 
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being

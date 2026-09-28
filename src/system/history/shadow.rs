@@ -730,14 +730,14 @@ impl HistoryRepo {
         let commits = gix::traverse::commit::topo::Builder::new(&repo)
             .with_tips([head])
             .sorting(gix::traverse::commit::topo::Sorting::TopoOrder)
-            .build()?;
+            .build()
+            .map_err(gix::Exn::into_error)?;
         let mut messages = vec![];
         for commit in commits {
-            let commit = commit?;
+            let commit = commit.map_err(gix::Exn::into_error)?;
             let object = repo.find_commit(commit.id)?;
-            let message = String::from_utf8_lossy(object.message_raw()?.as_ref())
-                .trim()
-                .to_string();
+            let message = object.message_raw().map_err(gix::Exn::into_error)?;
+            let message = String::from_utf8_lossy(message.as_ref()).trim().to_string();
             messages.push((commit.id.to_string(), message));
         }
         Ok(messages)
@@ -748,13 +748,12 @@ impl HistoryRepo {
         READ_META_CALLS.with(|count| count.set(count.get() + 1));
         let repo = gix::open_opts(self.dir(), gix::open::Options::isolated())
             .wrap_err_with(|| format!("opening {} with gix", display_path(self.dir())))?;
-        let id = gix::ObjectId::from_hex(commit.as_bytes())?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes()).map_err(gix::Exn::into_error)?;
         let commit_object = repo.find_commit(id)?;
         let tree = commit_object.tree()?;
         let manifest = super::manifest::Manifest::read_gix(&tree)?;
-        let message = String::from_utf8_lossy(commit_object.message_raw()?.as_ref())
-            .trim()
-            .to_string();
+        let message = commit_object.message_raw().map_err(gix::Exn::into_error)?;
+        let message = String::from_utf8_lossy(message.as_ref()).trim().to_string();
         let own_record = message
             .lines()
             .rev()
@@ -1504,7 +1503,12 @@ impl HistoryRepo {
         }
         args.push("-m".to_string());
         args.push(message.to_string());
-        self.output_str(PlumbingCall::new(args))
+        let email = super::config::git_email()?;
+        self.output_str(
+            PlumbingCall::new(args)
+                .env("GIT_AUTHOR_EMAIL", email.as_str())
+                .env("GIT_COMMITTER_EMAIL", email),
+        )
     }
 
     /// Moves `name` to `commit` only if it still points at `expected`
@@ -1885,6 +1889,7 @@ mod tests {
                 path: "home/.native".into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: Some(vec!["sessions/**".into()]),
                 include: None,
@@ -1926,6 +1931,7 @@ mod tests {
                 path: "home/.native".into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,
@@ -2140,6 +2146,7 @@ mod tests {
             path,
             autosave: true,
             encrypt: false,
+            allow_plaintext: None,
             variants,
             exclude: None,
             include: None,
