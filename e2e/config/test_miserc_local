@@ -79,7 +79,6 @@ assert "(cd '$HOME/../miserc-outside' && mise exec -- printenv MISERC_SELECTED)"
 echo 'env = ["development"]' >"$HOME/../miserc-outside/.miserc.toml"
 assert "(cd '$HOME/../miserc-outside' && mise exec -- printenv MISERC_SELECTED)" development
 assert "(cd '$HOME/../miserc-outside' && MISE_ENV=native mise exec -- printenv MISERC_SELECTED)" native
-rm "$MISE_CONFIG_DIR/miserc.local.toml" "$MISE_CONFIG_DIR/miserc.toml"
 
 echo 'env = [' >.miserc.local.toml
 assert_fail "mise config ls" 'Invalid TOML in config file'
