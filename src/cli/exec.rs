@@ -903,6 +903,22 @@ where
             }
         }
     }
+    // A positional `cmd /c <command>`, which is how pitchfork runs a `mise = true`
+    // daemon, also needs its command verbatim once it contains a `"`.
+    if !shell_body_mode
+        && let Some(prog) = program.to_str()
+        && let Some(args) = args
+            .iter()
+            .map(|a| a.to_str().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+        && let Some((switches, command)) = crate::path::positional_cmd_command(&args)
+        && let Some(mut c) = crate::path::cmd_verbatim_command(prog, switches, command)
+    {
+        match c.status()?.code() {
+            Some(code) => return Err(crate::request_exit(code)),
+            None => return Err(eyre!("command failed: terminated by signal")),
+        }
+    }
 
     // libuv adds a CRT table for every Node child. Only an IPC child has both the Node channel
     // marker and a matching pipe descriptor, so keep the normal duct path for all other commands

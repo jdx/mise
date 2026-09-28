@@ -28,6 +28,31 @@ Describe 'exec / exec() inner-quote preservation (cmd /c)' {
         $output | Should -Be '"hello world"'
     }
 
+    It 'preserves inner double quotes in a positional mise exec -- cmd /c command' {
+        # pitchfork runs a `mise = true` daemon as `mise x -- cmd /C <run>`, with the
+        # whole command line as the one argument after /C.
+        $output = mise exec -- cmd /c 'echo "hello world"' | Select-Object -Last 1
+        $output | Should -Not -Match '\\'
+        $output | Should -Be '"hello world"'
+    }
+
+    It 'still runs a positional cmd /c command without quotes' {
+        $output = mise exec -- cmd /c 'echo hello world' | Select-Object -Last 1
+        $output | Should -Be 'hello world'
+    }
+
+    It 'launches a quoted program path with a space through a positional cmd /c' {
+        # The case pitchfork hits: a `run` that quotes a program path and an argument.
+        $dir = Join-Path $TestDrive 'quoted program'
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $program = Join-Path $dir 'probe.cmd'
+        '@echo launched [%~1]' | Set-Content -Path $program -Encoding ascii
+
+        $output = mise exec -- cmd /c "`"$program`" `"a b`"" | Select-Object -Last 1
+        $LASTEXITCODE | Should -Be 0
+        $output | Should -Be 'launched [a b]'
+    }
+
     It 'passes an inner-quoted -c argument through to a program (mise exec -c)' {
         # Without the fix the quoted script is split at the first space and node
         # fails with a syntax error instead of printing the result.

@@ -340,6 +340,20 @@ pub fn cmd_verbatim_command(
     Some(c)
 }
 
+/// The switches and command of a positional `cmd /c <command>` (as in
+/// `mise exec -- cmd /c <command>`) to hand cmd verbatim, when the command is the
+/// one argument after `/c` or `/k` and contains a `"`. std would escape that
+/// quote as `\"`, which cmd does not understand. Without one, std's quoting
+/// already reaches cmd intact, so those commands are left alone.
+pub fn positional_cmd_command(args: &[String]) -> Option<(&[String], &str)> {
+    let (command, switches) = args.split_last()?;
+    let runs = switches
+        .last()
+        .is_some_and(|s| s.eq_ignore_ascii_case("/c") || s.eq_ignore_ascii_case("/k"));
+    (runs && switches.iter().all(|s| s.starts_with('/')) && command.contains('"'))
+        .then_some((switches, command.as_str()))
+}
+
 /// Split a configured shell *command string* (program + args) into argv,
 /// honoring host conventions.
 ///
