@@ -7792,7 +7792,8 @@ esc clear filter • enter confirm
 .SH "MISE SELF-UPDATE"
 Update mise itself
 
-Uses the GitHub Releases API to find the latest release and binary.
+Selects the newest stable release satisfying the minimum release age (24h by default).
+Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 By default, this will also update any installed plugins.
 Uses mise's GitHub token resolution chain for authenticated requests.
 
@@ -7804,6 +7805,9 @@ https://mise.jdx.dev/contributing.html#packaging\-and\-self\-update\-instruction
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
+Override the minimum release age for unpinned updates (default: 24h)
 .TP
 \fB\-f, \-\-force\fR
 Update even if already up to date

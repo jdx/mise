@@ -18,6 +18,7 @@ Describe 'self-update with a TEMP that is too long' {
         # destroy the mise these tests are running against.
         $script:MissingVersion = "0.0.0-nonexistent"
         $script:MiseExe = (Get-Command mise).Source
+        $script:CurrentVersion = ((& $script:MiseExe --version) -split '\s+')[0] -replace '-DEBUG$', ''
     }
 
     AfterAll {
@@ -33,22 +34,22 @@ Describe 'self-update with a TEMP that is too long' {
 
         $LASTEXITCODE | Should -Not -Be 0
         $output | Should -Match "TEMP is too long"
-        # The update never started: this line is the first thing the update itself prints.
-        $output | Should -Not -Match "Checking target-arch"
+        # The preflight guard stops the update before a release API request.
+        $output | Should -Not -Match "404 Not Found"
         Test-Path -LiteralPath $script:MiseExe | Should -BeTrue
     }
 
-    It 'lets the update proceed with an ordinary TEMP' {
+    It 'lets an up-to-date check proceed with an ordinary TEMP' {
         $env:TEMP = $script:OriginalTemp
         $env:TMP = $script:OriginalTmp
 
-        $output = mise self-update $script:MissingVersion --force --yes 2>&1 | Out-String
+        # The installed version is a fully offline success path, so a GitHub
+        # outage cannot turn a passing TEMP preflight into a test failure.
+        $output = mise self-update $script:CurrentVersion --yes --no-plugins 2>&1 | Out-String
 
-        # Still fails, but on the missing version rather than on TEMP: the guard fires on
-        # length, not on every run.
-        $LASTEXITCODE | Should -Not -Be 0
+        $LASTEXITCODE | Should -Be 0
         $output | Should -Not -Match "TEMP is too long"
-        $output | Should -Match "Checking target-arch"
+        $output | Should -Match "already up to date"
         Test-Path -LiteralPath $script:MiseExe | Should -BeTrue
     }
 }
