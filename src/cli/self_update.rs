@@ -1,3 +1,5 @@
+mod packslip;
+
 use crate::github::GithubAsset as ReleaseAsset;
 use color_eyre::Result;
 use color_eyre::eyre::bail;
@@ -112,7 +114,7 @@ pub(crate) async fn maybe_auto_update(
         no_plugins: true,
         minimum_release_age: None,
     };
-    if let Err(err) = update.run().await {
+    if let Err(err) = update.run_with_age_policy(true).await {
         debug!("automatic mise update failed: {err:#}");
         return Ok(());
     }
@@ -524,6 +526,11 @@ fn skip_selected_update(target: &str, current: &str, explicit: bool, force: bool
 
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
+        let enforce_age = self.version.is_none();
+        self.run_with_age_policy(enforce_age).await
+    }
+
+    async fn run_with_age_policy(self, enforce_age: bool) -> Result<()> {
         if !Self::is_available() && !self.force {
             if let Some(instructions) = upgrade_instructions_text() {
                 warn!("{}", instructions);
@@ -539,7 +546,7 @@ impl SelfUpdate {
         sweep_helper_orphans();
         #[cfg(windows)]
         Self::ensure_temp_dir_can_replace_binary()?;
-        let version = self.do_update().await?;
+        let version = self.do_update(enforce_age).await?;
 
         if let Some(version) = version {
             let styled_version = style(&version).bright().yellow();
@@ -654,7 +661,7 @@ impl SelfUpdate {
         }
     }
 
-    async fn do_update(&self) -> Result<Option<String>> {
+    async fn do_update(&self, enforce_age: bool) -> Result<Option<String>> {
         let settings = Settings::get();
         let source = SelfUpdateSource::from_settings(&settings);
         source.validate()?;
@@ -697,6 +704,16 @@ impl SelfUpdate {
             .error_for_status()?
             .json()
             .await?;
+        let manifest = Self::release_packslip(&client, &source, &release, &version).await?;
+        let before = enforce_age
+            .then(|| {
+                crate::duration::parse_into_timestamp(
+                    &crate::cli::version::self_update_release_age(
+                        self.minimum_release_age.as_deref(),
+                    ),
+                )
+            })
+            .transpose()?;
         let archive_name = release_archive_name(
             &format!("v{version}"),
             &OS,
@@ -718,9 +735,13 @@ impl SelfUpdate {
             .path()
             .join(if cfg!(windows) { "mise.exe" } else { "mise" });
         let new_binary = binary.clone();
+        let selected_version = version.clone();
         // Verification and archive I/O are blocking; no unverified contents are
         // extracted, and the running executable is untouched on any failure.
         tokio::task::spawn_blocking(move || -> Result<()> {
+            if let Some(manifest) = manifest {
+                packslip::verify(&manifest, &selected_version, &archive_path, before)?;
+            }
             stage_update_binary(
                 &archive_path,
                 &new_binary,
@@ -748,6 +769,51 @@ impl SelfUpdate {
             );
         }
         Ok(headers)
+    }
+
+    async fn release_packslip(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        release: &crate::github::GithubRelease,
+        version: &str,
+    ) -> Result<Option<String>> {
+        match release
+            .assets
+            .iter()
+            .find(|asset| asset.name == "packslip.sigstore.json")
+        {
+            Some(asset) => Ok(Some(
+                Self::download_packslip(client, source, &asset.url).await?,
+            )),
+            None if packslip::required(version)? => {
+                bail!("release v{version} is missing its required packslip.sigstore.json")
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn download_packslip(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        url: &str,
+    ) -> Result<String> {
+        let mut headers = Self::request_headers(source, url)?;
+        headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
+        let mut response = client
+            .get(url)
+            .headers(headers)
+            .send()
+            .await?
+            .error_for_status()?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            eyre::ensure!(
+                bytes.len() + chunk.len() <= 4 * 1024 * 1024,
+                "self-update packslip exceeds 4 MiB"
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(String::from_utf8(bytes)?)
     }
 
     fn http_client() -> Result<reqwest::Client> {
@@ -878,6 +944,13 @@ impl SelfUpdate {
             .bytes()
             .await?;
         fs::write(&zip_path, archive)?;
+
+        let manifest =
+            Self::release_packslip(&Self::http_client()?, source, &release, version).await?;
+        if let Some(manifest) = manifest {
+            // The main executable already enforced age for this exact release.
+            crate::file::run_blocking(|| packslip::verify(&manifest, version, &zip_path, None))?;
+        }
 
         // Verify the archive signature using the same key as the main update
         verify_update_archive(&zip_path, &[*include_bytes!("../../zipsign.pub")])?;
