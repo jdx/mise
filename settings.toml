@@ -2142,8 +2142,9 @@ of a tool you already have.
 spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
 traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
 install and run in one step — since both materialise the whole configured toolset whatever the
-backend. The tool also has to be configured in a config file that applies to the current directory:
-mise will not install something you have not asked for.
+backend. By default, the tool also has to be configured in a config file that applies to the current
+directory. Set [`not_found_auto_install_registry`](#not_found_auto_install_registry) to install an
+unconfigured tool when a single registry entry provides the command.
 
 This also runs in shims.
 """

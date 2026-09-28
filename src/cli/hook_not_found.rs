@@ -56,15 +56,44 @@ fn registry_bin_provider(bin: &str, settings: &Settings) -> Option<&'static str>
     let mut providers = REGISTRY
         .iter()
         .filter(|(name, tool)| {
-            tool.provides_bin(bin)
-                && tool_enabled(enabled.as_ref(), &disabled, &name.to_string())
+            *name == tool.short
+                && tool.provides_bin(bin)
+                && tool_enabled(enabled.as_ref(), &disabled, &tool.short.to_string())
                 && !settings
                     .auto_install_disable_tools
                     .as_ref()
-                    .is_some_and(|tools| tools.iter().any(|disabled| disabled == name))
+                    .is_some_and(|tools| tools.iter().any(|disabled| disabled == tool.short))
+                && tool.is_supported_os()
                 && !tool.backends().is_empty()
         })
-        .map(|(name, _)| name);
+        .map(|(_, tool)| tool.short);
     let provider = providers.next()?;
     providers.next().is_none().then_some(provider)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_bin_provider_counts_aliases_once() {
+        // ripgrep also has the `rg` registry alias, but both keys name one tool.
+        assert_eq!(
+            registry_bin_provider("rg", &Settings::default()),
+            Some("ripgrep")
+        );
+
+        let settings = Settings {
+            auto_install_disable_tools: Some(vec!["ripgrep".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(registry_bin_provider("rg", &settings), None);
+
+        // A registry backend can exist even when the tool excludes this OS.
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(
+            registry_bin_provider("tfc-agent-core", &Settings::default()),
+            None
+        );
+    }
 }
