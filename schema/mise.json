@@ -1538,6 +1538,11 @@
           "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
+        "not_found_auto_install_registry": {
+          "default": false,
+          "description": "Automatically install an unconfigured tool when its registry bin matches a missing command.",
+          "type": "boolean"
+        },
         "not_found_system_fallback": {
           "default": true,
           "description": "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH.",

@@ -2142,12 +2142,27 @@ of a tool you already have.
 spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
 traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
 install and run in one step — since both materialise the whole configured toolset whatever the
-backend. The tool also has to be configured in a config file that applies to the current directory:
-mise will not install something you have not asked for.
+backend. By default, the tool also has to be configured in a config file that applies to the current
+directory. Set [`not_found_auto_install_registry`](#not_found_auto_install_registry) to install an
+unconfigured tool when a single registry entry provides the command.
 
 This also runs in shims.
 """
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
+type = "Bool"
+
+[not_found_auto_install_registry]
+default = false
+description = "Automatically install an unconfigured tool when its registry bin matches a missing command."
+docs = """
+When the command-not-found handler cannot install a configured tool, look for a matching binary in
+mise's registry. If exactly one enabled tool provides the command, install its latest version and
+add it to the global config, as with `mise use --global TOOL`. Ambiguous matches are skipped.
+
+This is disabled by default. [`not_found_auto_install`](#not_found_auto_install) and
+[`auto_install_disable_tools`](#auto_install_disable_tools) also apply.
+"""
+env = "MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY"
 type = "Bool"
 
 [not_found_system_fallback]

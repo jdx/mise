@@ -35,7 +35,7 @@ use crate::{config, env, exit, file};
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 /// for filename overrides and configuration precedence. Selection takes effect in
 /// an activated shell on its next prompt, or immediately in `mise exec` commands.
-#[derive(Debug, usage_rs::Args)]
+#[derive(Debug, Default, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "u",
@@ -232,6 +232,20 @@ impl UseTool {
 }
 
 impl Use {
+    pub(super) async fn use_global_registry_tool(tool: &str) -> Result<()> {
+        Self {
+            tools: vec![UseTool {
+                postinstall: None,
+                tool_option: Vec::new(),
+                tool: tool.parse()?,
+            }],
+            global: true,
+            ..Default::default()
+        }
+        .run()
+        .await
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
