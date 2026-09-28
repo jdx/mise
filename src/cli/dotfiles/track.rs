@@ -182,13 +182,13 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let normalized = normalize_target(&target);
-            if self.allow_plaintext && !target.is_file() && !target.is_symlink() {
-                bail!("{target_raw}: --allow-plaintext requires an existing file");
+            if self.allow_plaintext && target.is_dir() {
+                bail!("{target_raw}: --allow-plaintext applies to a file, not a directory");
             }
-            let credential_name = target
+            let credential_name = normalized
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| is_builtin_credential(&target, name));
+                .is_some_and(|name| is_builtin_credential(&normalized, name));
             if self.allow_plaintext && !credential_name {
                 bail!("{target_raw}: --allow-plaintext is only needed for a credential-named file");
             }
@@ -372,7 +372,7 @@ impl DotfilesTrack {
             // kind yet is told what happens to it as a file instead.
             if !target.is_dir() {
                 let owner = &set.entries[entry_index];
-                if let Some(reason) = owner.capture_exclusion(&target) {
+                if let Some(reason) = owner.capture_exclusion(&normalized) {
                     let advice = if reason == CREDENTIAL_REASON {
                         "; `mise dot track --encrypt` saves it encrypted"
                     } else {
@@ -550,6 +550,7 @@ impl DotfilesTrack {
             policy.encrypt = true;
             policy.allow_plaintext = false;
         } else if allow_plaintext {
+            policy.encrypt = false;
             policy.allow_plaintext = true;
         }
         policy
@@ -576,7 +577,7 @@ impl DotfilesTrack {
         // it before; one inherited from another layer stays unwritten so
         // that layer keeps deciding it
         let written = |key: &str| previous.iter().any(|written| written == key);
-        if self.encrypt || written("encrypt") {
+        if self.encrypt || allow_plaintext || written("encrypt") {
             table.insert(
                 "encrypt",
                 Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
@@ -1438,6 +1439,14 @@ mod declaration_tests {
                 .and_then(Value::as_array)
                 .map(|a| a.len()),
             Some(0)
+        );
+        let mut encrypted = existing.clone();
+        encrypted.policy.encrypt = true;
+        let table = flagged.entry(Some(&encrypted), &["mode".to_string()], None, None, true);
+        assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            table.get("allow_plaintext").and_then(Value::as_bool),
+            Some(true)
         );
         // the keys are read from either table form
         for text in [

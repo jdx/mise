@@ -972,12 +972,6 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if allow_plaintext.is_some() && mode != FileMode::Track {
                     bail!("dotfile {target}: allow_plaintext requires mode = \"track\"");
                 }
-                if allow_plaintext == Some(true)
-                    && std::fs::symlink_metadata(resolve_target_arg(&target))
-                        .is_ok_and(|meta| meta.is_dir())
-                {
-                    bail!("dotfile {target}: allow_plaintext applies only to a tracked file");
-                }
                 if mode == FileMode::Absent
                     && (source.is_some()
                         || manifest.is_some()
@@ -1471,14 +1465,6 @@ fn merge_file_entry(
             return;
         }
         let target = resolve_target_arg(&target_raw);
-        if allow_plaintext == Some(true) && target.is_dir() {
-            record_invalid(
-                &target_raw,
-                &origin.config,
-                "allow_plaintext applies only to a tracked file",
-            );
-            return;
-        }
         if target.is_relative() {
             record_invalid(
                 &target_raw,

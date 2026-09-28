@@ -629,6 +629,10 @@ configured recipients. `--yes` does not accept plaintext tracking. Upgrade
 other machines sharing the history before using this option; older mise
 versions cannot read its enrollment metadata.
 
+`--allow-plaintext` can approve a file before it exists. If that path later
+becomes a directory, the directory remains tracked and the usual credential
+filter still applies to its contents.
+
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being
 scanned, so a preview may show a selected-file count without a total for
