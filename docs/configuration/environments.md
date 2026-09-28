@@ -76,8 +76,21 @@ Ordinary commands such as `mise install` and `mise run dev` then load
 (`core.excludesFile`) so this preference stays untracked across repositories.
 Create the file separately in each worktree where you want the selection.
 
-The local file supports the same settings and templates as `.miserc.toml`.
-Its explicitly set fields override the shared file in the same directory;
+To select an environment for the whole machine while keeping the shared global
+`miserc.toml` unchanged, use `miserc.local.toml` in `MISE_CONFIG_DIR` (normally
+`~/.config/mise`):
+
+```toml
+# ~/.config/mise/miserc.local.toml
+env = ["work"]
+```
+
+This file is loaded regardless of the current directory. It overrides fields
+in the global `miserc.toml`; project `.miserc.toml` and `.miserc.local.toml`
+files can still override it.
+
+Both local file locations support the same settings and templates as `miserc.toml`.
+Explicitly set fields override the shared file at the same level;
 omitted fields retain their inherited values. `env` replaces the inherited
 list, and `env = []` clears it. CLI environment flags and `MISE_ENV` still take
 precedence over both files.
@@ -107,7 +120,7 @@ etc.); settings from `mise.toml` are not yet loaded at this stage.
 File locations searched (in order of precedence):
 
 1. Current directory, then each parent: `.miserc.local.toml`, `.miserc.toml`, `.config/miserc.toml` (in that order within each directory)
-2. `~/.config/mise/miserc.toml` (global)
+2. `~/.config/mise/miserc.local.toml`, then `~/.config/mise/miserc.toml` (global)
 3. `/etc/mise/miserc.toml` (system)
 
 `MISE_ENV` cannot be set in `mise.toml` because it determines which config
