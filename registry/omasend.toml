@@ -1,4 +1,5 @@
 description = "An Omarchy native LocalSend client"
+test = { cmd = "omasend --version", expected = "omasend {{version}}" }
 version_order = "semver"
 
 bins = ["omasend"]
