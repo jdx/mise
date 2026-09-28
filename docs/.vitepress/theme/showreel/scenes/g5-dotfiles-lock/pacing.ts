@@ -7,44 +7,12 @@
 // never dims a terminal whose output is still being read (rules 3 and 4).
 
 import type { SectionId } from "../../bible";
-import {
-  type Capture,
-  type CaptureId,
-  capture,
-  type ReelData,
-} from "../../captures";
+import type { Capture } from "../../captures";
 import type { Play } from "../../kit/grey";
 import { type FocusPlan, focusOf, type Pace, type Span } from "../../kit/pace";
 import { boardOf } from "../../storyboard";
 
-export { focusPlan } from "../../kit/pace";
-
-/**
- * A scene's schedule, built from the facts once per facts object (and
- * once for none), so a frame never rebuilds it; the same facts always
- * give the same schedule, so frames stay pure functions of time.
- */
-export function perFacts<T>(
-  fn: (d: ReelData | null) => T,
-): (d: ReelData | null) => T {
-  const seen = new WeakMap<object, T>();
-  let none: { v: T } | null = null;
-  return (d) => {
-    if (!d) {
-      none ??= { v: fn(null) };
-      return none.v;
-    }
-    if (!seen.has(d)) seen.set(d, fn(d));
-    return seen.get(d) as T;
-  };
-}
-
-/**
- * Take `id`, or null: also for facts that carry no takes at all (a
- * storyboard check's version set), so a schedule falls back to the plan.
- */
-export const takeIn = (d: ReelData | null, id: CaptureId): Capture | null =>
-  d?.captures ? capture(d, id) : null;
+export { focusPlan, perFacts, takeIn } from "../../kit/pace";
 
 /** Event `name` of section `id`'s storyboard plan (sections.json `plan`), or null. */
 export function planned(

@@ -23,7 +23,7 @@ captures stay in `out/`, and the failed run moves to `out/failed`.
 ## Running it, on a laptop or in CI
 
 The host needs Linux x86_64, Docker, `python3`, `curl`, `tar` and `xz`
-(and `gpg` only to record with a mise other than the pin). Nothing needs a
+(and `gpg`, to check the release's signed checksums). Nothing needs a
 TTY, and the Docker daemon need not see the checkout: files go in and out
 of the containers with `docker cp`. The same command runs on a GitHub
 Actions or Namespace runner:
@@ -79,13 +79,15 @@ try took and how it ended.
   so bootstrap can start the history watcher as a user service. The images
   hold no mise and no rig files; each run copies them in.
 - **mise:** a release binary, never a dev build (its progress header would
-  say `-DEBUG`). The default is 2026.9.15, downloaded once into
-  `out/.cache/` as `mise-v2026.9.15-linux-x64.tar.xz` and checked against
-  the sha256 pinned in `xtasks/docs/showreel-capture`. `--mise-version V`
-  (or `latest`) records with another release, checked against that
-  release's `SHASUMS256.asc`, whose signature must be the release key in
-  `SECURITY.md`. `--mise PATH` uses a local binary. The run refuses a
-  binary whose `--version` differs from the version asked for.
+  say `-DEBUG`). The default is the newest release (`latest`, read from
+  `https://mise.jdx.dev/VERSION`), so a change to mise's node `lts` alias
+  reaches the reel once it is released. It is downloaded once into
+  `out/.cache/` and checked against the release's `SHASUMS256.asc`, whose
+  signature must be the release key in `SECURITY.md`; 2026.9.15 is also
+  pinned by sha256 in `xtasks/docs/showreel-capture`, so it needs no gpg.
+  `--mise-version V` records with a given release and `--mise PATH` with a
+  local binary. The run refuses a binary whose `--version` differs from the
+  version asked for.
 - **The user:** `you`, `HOME=/home/you`. The shell gets a PTY whose size is
   set before zsh starts (the same as hk's `script -c 'stty cols 80 rows 50;
 …'`).

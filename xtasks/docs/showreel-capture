@@ -28,10 +28,12 @@
 #
 # Options:
 #   --mise PATH          record with this mise binary (must be a release build)
-#   --mise-version V     release to download from mise.jdx.dev (default: the
-#                        pin below; "latest" is the newest release). The pin is
-#                        checked against its pinned sha256, any other version
-#                        against its signed SHASUMS256.asc (needs gpg)
+#   --mise-version V     release to download from mise.jdx.dev (default:
+#                        "latest", the newest release, so a change to mise's
+#                        node `lts` alias reaches the reel once it is
+#                        released). The pin below is checked against its
+#                        pinned sha256, any other version against its signed
+#                        SHASUMS256.asc (needs gpg)
 #   --runs N             independent cold runs to record (default 1; 2 or more
 #                        also compares the runs)
 #   --attempts N         tries per run before giving up (default 2); each try
@@ -69,16 +71,17 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 rig="$root/docs/.vitepress/showreel-capture"
 reference="$root/docs/.vitepress/theme/showreel/test/captures"
 
-# The mise release the captures are recorded with by default, and the sha256
-# of its linux-x64 .tar.xz, as its signed SHASUMS256.asc lists it. Another
-# version is checked against its own SHASUMS256.asc, signed by the release key
-# (SECURITY.md, "Release gpg key"; this is its fingerprint).
+# A known-good mise release and the sha256 of its linux-x64 .tar.xz, as its
+# signed SHASUMS256.asc lists it: checked without gpg when asked for. Every
+# other version, including the default (the newest release), is checked
+# against its own SHASUMS256.asc, signed by the release key (SECURITY.md,
+# "Release gpg key"; this is its fingerprint).
 pin_version=2026.9.15
 pin_sha256=ef349bbbcf3526865c551dc3dc317d354d63b26553855014db51caf7a063c7d2
 release_fpr=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 
 out=${SHOWREEL_CAPTURE_OUT:-$rig/out}
-mise_version=${SHOWREEL_MISE_VERSION:-$pin_version}
+mise_version=${SHOWREEL_MISE_VERSION:-latest}
 mise_bin=${SHOWREEL_MISE_BIN:-}
 cutoff=${SHOWREEL_CUTOFF:-}
 runs=1
@@ -213,6 +216,7 @@ if [ -z "$mise_bin" ]; then
 		mise_version=$(tr -d '[:space:]' <"$work/VERSION")
 		mise_version=${mise_version#v}
 	fi
+	mise_version=${mise_version#v} # a release tag (v2026.9.15) names the same release
 	[[ $mise_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage "--mise-version must be a release like $pin_version"
 	mise_bin="$cache/mise-$mise_version"
 	if ! [ -x "$mise_bin" ] || ! [ -f "$mise_bin.sha256" ] ||

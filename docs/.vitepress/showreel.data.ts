@@ -18,6 +18,7 @@ const configDir = dirname(fileURLToPath(import.meta.url));
 const videoPath = resolve(configDir, "../public/showreel.mp4");
 const video120Path = resolve(configDir, "../public/showreel-120.mp4");
 const posterPath = resolve(configDir, "../public/showreel-poster.jpg");
+const chaptersPath = resolve(configDir, "../public/showreel-chapters.vtt");
 const boardPath = resolve(configDir, "theme/showreel/sections.json");
 
 export interface ShowreelFiles {
@@ -30,6 +31,8 @@ export interface ShowreelFiles {
   video120: { src: string; bitrate: number } | null;
   /** Site-relative URL of its poster frame. */
   poster: string;
+  /** Site-relative URL of its chapters track, versioned like the files. */
+  chapters: string;
 }
 
 export interface ShowreelChapter {
@@ -101,6 +104,9 @@ export function showreelFiles(): ShowreelFiles | null {
     // Versioned by its own bytes: a change to the poster frame alone must
     // reach browsers too.
     poster: `/showreel-poster.jpg?v=${version(readFileSync(posterPath))}`,
+    // Versioned too, so a browser that cached an earlier render's track
+    // never seeks a new render with its chapter times.
+    chapters: `/showreel-chapters.vtt?v=${version(readFileSync(chaptersPath))}`,
   };
 }
 

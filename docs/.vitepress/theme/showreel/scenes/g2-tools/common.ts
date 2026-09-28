@@ -36,35 +36,7 @@ import {
 } from "../../kit/style";
 import { advance, drawTermLine, type Run, run } from "../../kit/term";
 
-/**
- * A scene's schedule, built from the facts once per facts object (and
- * once for none): a Pace (kit/pace.ts) is cheap, but a frame should not
- * rebuild it, its captions' times and its plays every time it draws.
- * The same facts always give the same schedule, so frames stay pure
- * functions of time.
- */
-export function perFacts<T>(
-  fn: (d: ReelData | null) => T,
-): (d: ReelData | null) => T {
-  const seen = new WeakMap<object, T>();
-  let none: { v: T } | null = null;
-  return (d) => {
-    if (!d) {
-      none ??= { v: fn(null) };
-      return none.v;
-    }
-    if (!seen.has(d)) seen.set(d, fn(d));
-    return seen.get(d) as T;
-  };
-}
-
-/**
- * A take in the facts, or null: as captures.ts capture(), but also for a
- * facts object that carries versions and no captures (the storyboard's
- * version sets), which a schedule built for captions may be given.
- */
-export const takeIn = (d: ReelData | null, id: CaptureId): Capture | null =>
-  d?.captures?.[id] ?? null;
+export { perFacts, takeIn } from "../../kit/pace";
 
 /** A file a take left, or null: as captures.ts fileOf(), for facts without files too. */
 export const fileIn = (

@@ -63,6 +63,20 @@ Release documentation site to production or remote
 
 Install documentation dependencies
 
+## `docs:showreel`
+
+- Depends: docs:setup
+
+- **Usage:** `docs:showreel`
+
+Render the landing-page showreel to docs/public/showreel-120.mp4 and showreel.mp4 with its poster
+
+## `docs:showreel-capture`
+
+- **Usage:** `docs:showreel-capture`
+
+Record the landing-page showreel's terminal captures in containers
+
 ## `fetch-gpg-keys`
 
 - **Usage:** `fetch-gpg-keys`

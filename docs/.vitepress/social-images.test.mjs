@@ -201,9 +201,10 @@ test("built-page checks offer the showreel as og:video on the homepage only", ()
     <meta property="og:image:alt" content="${alt} — mise docs. Description">
     <meta name="twitter:image:alt" content="${alt} — mise docs. Description">
     <meta name="twitter:card" content="summary_large_image">`;
+  const vtt = "WEBVTT\n";
   const player = (video = src, poster = posterSrc) => `
     <a class="action-btn" href="/#showreel">Watch the demo</a>
-    <section id="showreel" class="home-showreel"><video src="${video}" poster="${poster}" preload="none"><track kind="chapters" src="/showreel-chapters.vtt"></video></section>`;
+    <section id="showreel" class="home-showreel"><video src="${video}" poster="${poster}" preload="none"><track kind="chapters" src="/showreel-chapters.vtt?v=${version(Buffer.from(vtt))}"></video></section>`;
   const homeWith = (url, body = player()) =>
     page("", "Home", home, {
       type: "video.other",
@@ -232,7 +233,7 @@ test("built-page checks offer the showreel as og:video on the homepage only", ()
     writeFileSync(join(dir, "showreel.mp4"), video);
     writeFileSync(join(dir, "showreel-120.mp4"), video120);
     writeFileSync(join(dir, "showreel-poster.jpg"), jpeg);
-    writeFileSync(join(dir, "showreel-chapters.vtt"), "WEBVTT\n");
+    writeFileSync(join(dir, "showreel-chapters.vtt"), vtt);
     const upgrade = (v) =>
       writeFileSync(
         join(dir, "app.js"),

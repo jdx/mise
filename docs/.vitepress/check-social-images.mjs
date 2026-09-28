@@ -163,9 +163,16 @@ for (const file of walk(root).filter((file) => file.endsWith(".html"))) {
       "The player's poster is not the deployed render's",
     );
     const track = html.match(/<track\b[^>]*\ssrc="([^"]*)"/);
+    const trackUrl = track && new URL(track[1], "https://mise.jdx.dev");
+    const trackFile = trackUrl && join(root, trackUrl.pathname);
     assert.ok(
-      track && existsSync(join(root, track[1])),
+      trackFile && existsSync(trackFile),
       "The player's chapters track is not deployed",
+    );
+    assert.equal(
+      trackUrl.searchParams.get("v"),
+      version(readFileSync(trackFile)),
+      "The player's chapters track is not versioned by its own bytes",
     );
     assert.match(
       html,

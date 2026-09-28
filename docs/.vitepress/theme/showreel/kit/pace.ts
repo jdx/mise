@@ -21,11 +21,40 @@
 // the same numbers come back.
 
 import { BEAT, type SectionId, sec } from "../bible";
-import type { ReelData } from "../captures";
+import type { Capture, CaptureId, ReelData } from "../captures";
 import { lerp, progress } from "../math";
 import { boardOf, type CaptionTimes, captionTimes } from "../storyboard";
 import { type Play, playsEnd } from "./grey";
 import { DUR, EASE, PACE } from "./style";
+
+/**
+ * A scene's schedule, built from the facts once per facts object (and
+ * once for none): a Pace is cheap, but a frame should not rebuild it, its
+ * captions' times and its plays every time it draws. The same facts
+ * always give the same schedule, so frames stay pure functions of time.
+ */
+export function perFacts<T>(
+  fn: (d: ReelData | null) => T,
+): (d: ReelData | null) => T {
+  const seen = new WeakMap<object, T>();
+  let none: { v: T } | null = null;
+  return (d) => {
+    if (!d) {
+      none ??= { v: fn(null) };
+      return none.v;
+    }
+    if (!seen.has(d)) seen.set(d, fn(d));
+    return seen.get(d) as T;
+  };
+}
+
+/**
+ * Take `id` in the facts, or null: as captures.ts capture(), but also for
+ * facts that carry versions and no takes (the storyboard's version sets),
+ * so a schedule built for captions falls back to the plan.
+ */
+export const takeIn = (d: ReelData | null, id: CaptureId): Capture | null =>
+  d?.captures?.[id] ?? null;
 
 /** Seconds as beats. */
 const beats = (s: number): number => s / BEAT;
