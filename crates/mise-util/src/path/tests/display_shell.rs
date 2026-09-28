@@ -303,6 +303,36 @@ fn test_cmd_verbatim_args() {
 }
 
 #[test]
+fn test_positional_cmd_command() {
+    // How pitchfork runs a `mise = true` daemon: `mise x -- cmd /C <run>`.
+    let args = sv(&["/C", r#"echo init && "C:\a b\mise.exe" run "dev""#]);
+    assert_eq!(
+        positional_cmd_command(&args),
+        Some((&args[..1], args[1].as_str()))
+    );
+    // Other switches may come first, and `/k` runs a command too.
+    let args = sv(&["/d", "/s", "/k", r#"echo "a b""#]);
+    assert_eq!(
+        positional_cmd_command(&args),
+        Some((&args[..3], args[3].as_str()))
+    );
+    // Without a `"`, std's quoting already reaches cmd intact: a path with a
+    // space works because cmd keeps the only two quotes std adds.
+    assert_eq!(
+        positional_cmd_command(&sv(&["/c", r"C:\Program Files\app.exe"])),
+        None
+    );
+    // Several arguments after `/c` stay arguments, not one command.
+    assert_eq!(
+        positional_cmd_command(&sv(&["/c", r#"echo "one""#, "two"])),
+        None
+    );
+    assert_eq!(positional_cmd_command(&sv(&["x", "/c", r#""a""#])), None);
+    assert_eq!(positional_cmd_command(&sv(&[r#""a""#])), None);
+    assert_eq!(positional_cmd_command(&[]), None);
+}
+
+#[test]
 fn test_quote_arg_for_cmd_body() {
     // No special chars -> returned as-is (no quotes added).
     assert_eq!(quote_arg_for_cmd_body("plain"), "plain");
