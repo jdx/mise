@@ -1,5 +1,103 @@
 # Changelog
 
+## [2026.9.16](https://github.com/jdx/mise/compare/v2026.9.15..v2026.9.16) - 2026-09-28
+
+### 🚀 Features
+
+- **(aqua)** add per-tool libc option to choose glibc or musl builds by @jdx in [#13701](https://github.com/jdx/mise/pull/13701)
+- **(packslip)** keep packslip tools installing after a repository is renamed by @jdx in [#13702](https://github.com/jdx/mise/pull/13702)
+- **(task)** add aliases for monorepo task paths by @jdx in [#13756](https://github.com/jdx/mise/pull/13756)
+
+### 🐛 Bug Fixes
+
+- **(cache)** retry blob-pack stream errors and split cache core by @jdx in [#13715](https://github.com/jdx/mise/pull/13715)
+- **(dotfiles)** report already-tracked paths instead of re-enrolling them by @jdx in [#13648](https://github.com/jdx/mise/pull/13648)
+- **(dotfiles)** allow explicit plaintext tracking of credential-like files by @jdx in [#13749](https://github.com/jdx/mise/pull/13749)
+- **(lock)** record forge IDs in lockfile revision 3 by @jdx in [#13738](https://github.com/jdx/mise/pull/13738)
+- **(rust)** keep `cargo +nightly` working when rust@nightly installs a dated toolchain by @jdx in [#13707](https://github.com/jdx/mise/pull/13707)
+- **(sigstore)** bind public-key DSSE bundles to artifact digest by @jdx in [#13721](https://github.com/jdx/mise/pull/13721)
+- **(task)** apply run --no-cache to Git task includes and remote dependencies by @irisTa56 in [#13697](https://github.com/jdx/mise/pull/13697)
+- **(task)** make `mise run --no-timings` hide each task's elapsed time again by @jdx in [#13718](https://github.com/jdx/mise/pull/13718)
+- compare v-prefixed semver versions correctly by @himkt in [#13690](https://github.com/jdx/mise/pull/13690)
+
+### 🚜 Refactor
+
+- **(aqua)** split registry type tests into modules by @jdx in [#13730](https://github.com/jdx/mise/pull/13730)
+- **(aqua)** split registry type implementation into modules by @jdx in [#13731](https://github.com/jdx/mise/pull/13731)
+- **(aqua)** move template tests into their own module by @jdx in [#13732](https://github.com/jdx/mise/pull/13732)
+- **(bootstrap)** extract resource planner into mise-bootstrap by @jdx in [#13709](https://github.com/jdx/mise/pull/13709)
+- **(bootstrap)** move dependency policies into planner crate by @jdx in [#13711](https://github.com/jdx/mise/pull/13711)
+- **(brew)** extract cask metadata and artifact parsing by @jdx in [#13703](https://github.com/jdx/mise/pull/13703)
+- **(brew)** split cask artifact and flight parsers by @jdx in [#13720](https://github.com/jdx/mise/pull/13720)
+- **(brew)** split relocation tests into focused modules by @jdx in [#13722](https://github.com/jdx/mise/pull/13722)
+- **(config)** split interactive document operations by concern by @jdx in [#13724](https://github.com/jdx/mise/pull/13724)
+- **(config)** split interactive editor actions by operation by @jdx in [#13728](https://github.com/jdx/mise/pull/13728)
+- **(config)** split interactive editor mode handlers by @jdx in [#13729](https://github.com/jdx/mise/pull/13729)
+- **(config)** split interactive renderer state and items by @jdx in [#13727](https://github.com/jdx/mise/pull/13727)
+- **(settings)** separate cache and tests from crate root by @jdx in [#13723](https://github.com/jdx/mise/pull/13723)
+- **(sigstore)** split attestation and trust code into modules by @jdx in [#13717](https://github.com/jdx/mise/pull/13717)
+- **(util)** split HTTP tests by behavior by @jdx in [#13741](https://github.com/jdx/mise/pull/13741)
+- **(util)** split path tests into focused modules by @jdx in [#13735](https://github.com/jdx/mise/pull/13735)
+- **(util)** split file tests by behavior by @jdx in [#13742](https://github.com/jdx/mise/pull/13742)
+- **(util)** split Tera tests by behavior by @jdx in [#13743](https://github.com/jdx/mise/pull/13743)
+- **(util)** move command runner tests into modules by @jdx in [#13744](https://github.com/jdx/mise/pull/13744)
+- **(util)** split GitHub utility tests by behavior by @jdx in [#13745](https://github.com/jdx/mise/pull/13745)
+- **(util)** move Git helper tests into modules by @jdx in [#13747](https://github.com/jdx/mise/pull/13747)
+- **(vfox)** split HTTP tests by behavior by @jdx in [#13739](https://github.com/jdx/mise/pull/13739)
+- **(vfox)** move integration tests into their own module by @jdx in [#13733](https://github.com/jdx/mise/pull/13733)
+- **(vfox)** split implementation by operation by @jdx in [#13734](https://github.com/jdx/mise/pull/13734)
+
+### 📚 Documentation
+
+- **(task)** correct the default job count and task output mode by @jdx in [#13716](https://github.com/jdx/mise/pull/13716)
+
+### ⚡ Performance
+
+- **(backend)** resolve fuzzy versions like `node = "24"` without compiling regexes by @jdx in [#13694](https://github.com/jdx/mise/pull/13694)
+- **(config)** stop re-resolving symlinks for every tool when checking global configs by @jdx in [#13695](https://github.com/jdx/mise/pull/13695)
+- **(config)** load config faster by building plugin shorthands without walking every tool's backends by @jdx in [#13696](https://github.com/jdx/mise/pull/13696)
+- **(shim)** skip rustup checks on shim calls for tools that won't be installed by @jdx in [#13705](https://github.com/jdx/mise/pull/13705)
+
+### 📦️ Dependency Updates
+
+- update packslip to v1.4.0 by @jdx in [#13704](https://github.com/jdx/mise/pull/13704)
+- update aube to v2.5.1 by @renovate[bot] in [#13719](https://github.com/jdx/mise/pull/13719)
+
+### 📦 Registry
+
+- add mbx alias for mr-boxington by @jdx in [#13752](https://github.com/jdx/mise/pull/13752)
+
+### Chore
+
+- **(lockfile)** record repository IDs for Linux tools by @jdx in [#13726](https://github.com/jdx/mise/pull/13726)
+- use aube and Node instead of Bun for the repo's own tooling by @jdx in [#13713](https://github.com/jdx/mise/pull/13713)
+
+### Ci
+
+- retry unit tests once so a one-off runner stall doesn't fail unit-macos by @jdx in [#13706](https://github.com/jdx/mise/pull/13706)
+
+### Security
+
+- **(sigstore)** require expected SLSA signer identity by @jdx in [#13725](https://github.com/jdx/mise/pull/13725)
+
+### New Contributors
+
+- @irisTa56 made their first contribution in [#13697](https://github.com/jdx/mise/pull/13697)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`MitMaro/git-interactive-rebase-tool`](https://github.com/MitMaro/git-interactive-rebase-tool)
+- [`XTLS/Xray-core`](https://github.com/XTLS/Xray-core)
+- [`awslabs/aidlc-workflows`](https://github.com/awslabs/aidlc-workflows)
+- [`domcyrus/rustnet`](https://github.com/domcyrus/rustnet)
+- [`lance0/ttl`](https://github.com/lance0/ttl)
+
+#### Updated Packages (1)
+
+- [`FiloSottile/age`](https://github.com/FiloSottile/age)
+
 ## [2026.9.15](https://github.com/jdx/mise/compare/v2026.9.14..v2026.9.15) - 2026-09-27
 
 ### 🚀 Features

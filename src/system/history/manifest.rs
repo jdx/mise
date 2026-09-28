@@ -756,7 +756,8 @@ mod tests {
             }],
         )?;
         let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated())?;
-        let tree = gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes())?)?;
+        let tree =
+            gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes()).map_err(gix::Exn::into_error)?)?;
         assert!(
             Manifest::read_gix(&tree)
                 .unwrap_err()
