@@ -77,7 +77,11 @@ while time.monotonic() < deadline and process.poll() is None:
         if b"dotfiles: track " in output and not sent:
             os.write(master, b"n\n")
             sent = True
-if process.poll() is None:
+# The pty read fails once mise closes its end, which can happen just before
+# the process can be reaped, so wait for exit instead of polling once.
+try:
+    process.wait(timeout=max(0, deadline - time.monotonic()))
+except subprocess.TimeoutExpired:
     process.kill()
     process.wait()
     sys.exit("track prompt timed out")
