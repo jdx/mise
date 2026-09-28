@@ -691,7 +691,7 @@ impl SelfUpdate {
             .push(&format!("v{version}"));
         let release: crate::github::GithubRelease = client
             .get(url.clone())
-            .headers(crate::github::get_headers(url.as_str())?)
+            .headers(Self::request_headers(&source, url.as_str())?)
             .send()
             .await?
             .error_for_status()?
@@ -713,7 +713,7 @@ impl SelfUpdate {
         }
         let dir = tempfile::tempdir()?;
         let archive_path = dir.path().join(&archive_name);
-        Self::download_archive(&client, &asset.url, &archive_path).await?;
+        Self::download_archive(&client, &source, &asset.url, &archive_path).await?;
         let binary = dir
             .path()
             .join(if cfg!(windows) { "mise.exe" } else { "mise" });
@@ -735,6 +735,21 @@ impl SelfUpdate {
         Ok(Some(version))
     }
 
+    fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
+        let mut headers = crate::github::get_headers(url)?;
+        // A configured API may use any HTTPS host/path. Resolve its token
+        // explicitly, but never send it to an asset on another origin.
+        if url::Url::parse(url)?.origin() == url::Url::parse(&source.api_url)?.origin()
+            && let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url)
+        {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                crate::tokens::bearer_header("GitHub", &token)?,
+            );
+        }
+        Ok(headers)
+    }
+
     fn http_client() -> Result<reqwest::Client> {
         let settings = Settings::get();
         Ok(reqwest::Client::builder()
@@ -749,9 +764,14 @@ impl SelfUpdate {
             .build()?)
     }
 
-    async fn download_archive(client: &reqwest::Client, url: &str, path: &Path) -> Result<()> {
+    async fn download_archive(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        url: &str,
+        path: &Path,
+    ) -> Result<()> {
         use tokio::io::AsyncWriteExt;
-        let mut headers = crate::github::get_headers(url)?;
+        let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
         let mut response = client
             .get(url)

@@ -33,8 +33,8 @@ Describe 'self-update with a TEMP that is too long' {
 
         $LASTEXITCODE | Should -Not -Be 0
         $output | Should -Match "TEMP is too long"
-        # The update never started: this line is the first thing the update itself prints.
-        $output | Should -Not -Match "Checking target-arch"
+        # The preflight guard stops the update before a release API request.
+        $output | Should -Not -Match "404 Not Found"
         Test-Path -LiteralPath $script:MiseExe | Should -BeTrue
     }
 
@@ -48,7 +48,7 @@ Describe 'self-update with a TEMP that is too long' {
         # length, not on every run.
         $LASTEXITCODE | Should -Not -Be 0
         $output | Should -Not -Match "TEMP is too long"
-        $output | Should -Match "Checking target-arch"
+        $output | Should -Match "404 Not Found"
         Test-Path -LiteralPath $script:MiseExe | Should -BeTrue
     }
 }
