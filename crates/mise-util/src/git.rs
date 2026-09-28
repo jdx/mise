@@ -950,7 +950,7 @@ pub struct PlumbingCall<'a> {
     pub index_file: Option<&'a Path>,
     pub cwd: Option<&'a Path>,
     pub stdin: Option<&'a [u8]>,
-    /// Environment overrides for this invocation only.
+    /// Environment overrides for a local plumbing invocation only.
     pub env: Vec<(OsString, OsString)>,
 }
 
@@ -1115,8 +1115,11 @@ impl GitPlumbing {
     /// plumbing runs here. Prompts are disabled when nobody is attending.
     pub fn network_output(&self, call: PlumbingCall<'_>) -> Result<std::process::Output> {
         eyre::ensure!(
-            call.work_tree.is_none() && call.index_file.is_none() && call.stdin.is_none(),
-            "network Git calls do not accept a work tree, alternate index, or stdin"
+            call.work_tree.is_none()
+                && call.index_file.is_none()
+                && call.stdin.is_none()
+                && call.env.is_empty(),
+            "network Git calls do not accept a work tree, alternate index, stdin, or environment overrides"
         );
         let git =
             plumbing_binary().ok_or_else(|| eyre!("no unattended git executable is available"))?;

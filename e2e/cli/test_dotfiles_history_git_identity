@@ -21,6 +21,9 @@ assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
   "mise <mise@$host> | mise <mise@$host>"
 
 echo three >~/.history-identity
+before_watch=$(git --git-dir="$repo" rev-parse HEAD)
 assert_succeed 'mise dot watch --once'
+after_watch=$(git --git-dir="$repo" rev-parse HEAD)
+assert_fail "test $before_watch = $after_watch"
 assert "git --git-dir=$repo log -1 --format='%an <%ae> | %cn <%ce>'" \
   "mise <mise@$host> | mise <mise@$host>"
