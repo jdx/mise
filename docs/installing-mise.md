@@ -40,6 +40,16 @@ mise then periodically checks before eligible interactive commands, installs a n
 updating plugins, and re-runs the original command with the new binary. Configure the interval with
 [`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
 
+For releases from v2026.9.3 onward, self-update also verifies the release's
+[packslip](https://packslip.dev): its signed archive digest, version, release
+workflow, and transparency-log entry. The signer is pinned to mise's immutable
+GitHub repository ID, so repository renames and moves between organizations do
+not change which project is trusted. The minimum release age also applies to the
+verified log timestamp; explicit versions bypass the delay. Older releases retain
+the embedded archive-signature check, which is also required for newer releases.
+Mirrors must preserve the original manifest and archive bytes. Missing or invalid
+manifests for modern releases fail the update without replacing mise.
+
 Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
 setting [`self_update.repository`](/configuration/settings.html#self_update.repository). Private
 repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
