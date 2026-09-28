@@ -856,14 +856,6 @@ impl Config {
             if !target_dir.starts_with(&canonical_root) {
                 bail!("[monorepo.path_aliases]: {alias:?} points outside the monorepo root");
             }
-            let selected_root = root_dirs
-                .iter()
-                .find(|root| root.canonicalize().is_ok_and(|root| root == target_dir));
-            let Some(selected_root) = selected_root else {
-                bail!(
-                    "[monorepo.path_aliases]: {alias:?} must point to a root in [monorepo].config_roots"
-                );
-            };
             let relative = |root: &Path| {
                 root.strip_prefix(&config.root).map(|path| {
                     path.components()
@@ -871,6 +863,18 @@ impl Config {
                         .map(|component| component.as_os_str().to_string_lossy())
                         .join("/")
                 })
+            };
+            let target = target_path
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .join("/");
+            let selected_root = root_dirs
+                .iter()
+                .find(|root| relative(root).is_ok_and(|path| path == target));
+            let Some(selected_root) = selected_root else {
+                bail!(
+                    "[monorepo.path_aliases]: {alias:?} must point to a root in [monorepo].config_roots"
+                );
             };
             if root_dirs.iter().any(|root| {
                 relative(root)

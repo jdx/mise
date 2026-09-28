@@ -75,6 +75,18 @@ config_roots = ["*"]
 TOML
 assert_contains 'mise run //short:build' 'other-build'
 
+ln -s other linked
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["linked", "other"]
+
+[monorepo.path_aliases]
+"short" = "other"
+TOML
+assert_contains 'mise tasks info //short:build' '//other:build'
+
 mkdir -p abc/sub
 cat >abc/sub/mise.toml <<'TOML'
 [tasks.build]
