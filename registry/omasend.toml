@@ -1,0 +1,12 @@
+description = "An Omarchy native LocalSend client"
+version_order = "semver"
+
+bins = ["omasend"]
+[[backends]]
+full = "github:huacnlee/omasend"
+
+[backends.options.platforms.macos-arm64]
+bin_path = "OmaSend.app/Contents/MacOS"
+
+[backends.options.platforms.macos-x64]
+bin_path = "OmaSend.app/Contents/MacOS"
