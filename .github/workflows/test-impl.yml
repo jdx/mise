@@ -140,23 +140,10 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - name: Read locked mr-boxington version
-        id: mbx-version
-        run: |
-          version=$(awk '
-            /^\[/ { tool = ($0 == "[[tools.mr-boxington]]") }
-            tool && /^version = "/ { gsub(/"/, "", $3); print $3; exit }
-          ' mise.lock)
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Expected one concrete mr-boxington version in mise.lock"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Seed the target/registry cache on main; all PRs (including forks)
       # restore only. Install mbx before bootstrapping this checkout's mise.
       - uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
         with:
-          version: ${{ steps.mbx-version.outputs.version }}
           cache-generation: unit-macos-v1
       - name: Install test tools
         run: brew install fd tmux
