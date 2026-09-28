@@ -780,7 +780,7 @@ impl SelfUpdate {
             .await?
             .error_for_status()?;
         let progress =
-            crate::ui::multi_progress_report::MultiProgressReport::get().add("mise self-update");
+            crate::ui::multi_progress_report::MultiProgressReport::get().add("self-update");
         progress.set_message("downloading release".into());
         if let Some(length) = response.content_length() {
             progress.set_length(length);
