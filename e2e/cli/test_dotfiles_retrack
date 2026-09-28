@@ -77,7 +77,10 @@ while time.monotonic() < deadline and process.poll() is None:
         if b"dotfiles: track " in output and not sent:
             os.write(master, b"n\n")
             sent = True
-if process.poll() is None:
+# mise closes the terminal (the OSError above) a moment before it exits, so wait for the exit.
+try:
+    process.wait(timeout=max(deadline - time.monotonic(), 0))
+except subprocess.TimeoutExpired:
     process.kill()
     process.wait()
     sys.exit("track prompt timed out")
