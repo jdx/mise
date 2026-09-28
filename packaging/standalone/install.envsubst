@@ -330,8 +330,9 @@ install_mise() {
   if [ -z "${MISE_VERSION:-}" ] && [ -x "$install_path" ]; then
     existing_version="$(installed_mise_version "$install_path")"
     if [ -n "$existing_version" ]; then
-      newest=$(printf 'v%s 0\nv%s 0\n' "$existing_version" "$version" | select_release 0) || error "cannot compare installed mise version; set MISE_VERSION explicitly"
-      if [ "$newest" = "$existing_version" ]; then
+      compare_version="${existing_version%-DEBUG}"
+      newest=$(printf 'v%s 0\nv%s 0\n' "$compare_version" "$version" | select_release 0) || error "cannot compare installed mise version; set MISE_VERSION explicitly"
+      if [ "$newest" = "$compare_version" ]; then
         info "mise: $install_path is already at $existing_version, keeping installed version"
         return 0
       fi

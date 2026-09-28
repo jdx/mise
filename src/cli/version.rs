@@ -290,19 +290,14 @@ enum Cached {
     Stale,
 }
 
-/// Classify the cache file.
-///
-/// Deliberately does not compare against [`V`]. Doing so conflated "the cache is
-/// current" with "an update exists", so every outcome meaning "no update
-/// available" — a failed request, or running a build newer than the latest
-/// release — looked stale forever. `check_for_new_version` applies `*V < latest`
-/// itself.
-fn cached_latest_version(path: &Path, duration: Duration) -> Cached {
+/// Cache publication metadata, not the selected version: releases may become
+/// eligible while the network cache is still fresh.
+fn cached_release_index(path: &Path, duration: Duration) -> Cached {
     match modified_duration(path) {
         Ok(age) if age < duration => match file::read_to_string(path) {
             // Read succeeded, so this reflects what the last check learned —
             // possibly nothing, which is the negative cache.
-            Ok(body) => Cached::Fresh(Versioning::new(body.trim()).map(|v| v.to_string())),
+            Ok(body) => Cached::Fresh((!body.trim().is_empty()).then(|| body.trim().to_string())),
             // Could not read it at all. Distinct from an empty body: treating a
             // permissions problem or transient I/O error as a negative cache
             // would suppress update checks for the whole TTL on the strength of
@@ -320,31 +315,36 @@ async fn get_latest_version(duration: Duration) -> Option<String> {
         return None;
     }
     let age = self_update_release_age(None);
-    let version_file_path = source
-        .cache_path()
-        .with_extension(crate::hash::hash_to_str(&age));
-    if let Cached::Fresh(version) = cached_latest_version(&version_file_path, duration) {
-        return version;
-    }
-    let _ = file::create_dir_all(*dirs::CACHE);
-    let version = get_latest_version_call(&source).await;
-    // Written even on failure, so its mtime acts as a negative cache and a
-    // machine that cannot reach the network stops retrying once per invocation.
-    let _ = file::write(version_file_path, version.clone().unwrap_or_default());
-    version
-}
-
-#[cfg(test)]
-async fn get_latest_version_call(_source: &SelfUpdateSource) -> Option<String> {
-    Some("0.0.0".to_string())
-}
-
-#[cfg(not(test))]
-async fn get_latest_version_call(source: &SelfUpdateSource) -> Option<String> {
-    match eligible_self_update_version(source, None).await {
+    let cutoff = match crate::duration::parse_into_timestamp(&age) {
+        Ok(cutoff) => cutoff,
+        Err(err) => {
+            debug!("invalid self-update release age: {err:#}");
+            return None;
+        }
+    };
+    // Separate from the old selected-version cache. The index is independent of
+    // policy and is filtered again on every invocation, even within its TTL.
+    let path = source.cache_path().with_extension("releases-v1");
+    let index = match cached_release_index(&path, duration) {
+        Cached::Fresh(index) => index,
+        Cached::Stale => {
+            let index = match fetch_release_index(&source).await {
+                Ok(index) => Some(index),
+                Err(err) => {
+                    debug!("failed to check for version: {err:#}");
+                    None
+                }
+            };
+            let _ = file::create_dir_all(*dirs::CACHE);
+            // Preserve negative caching for network failures.
+            let _ = file::write(path, index.clone().unwrap_or_default());
+            index
+        }
+    }?;
+    match select_eligible_release(&index, cutoff) {
         Ok(version) => Some(version),
         Err(err) => {
-            debug!("failed to check for version: {err:#}");
+            debug!("failed to select eligible version: {err:#}");
             None
         }
     }
@@ -379,7 +379,13 @@ pub(crate) fn mise_release_key(version: &str) -> Result<(u32, u32, u32)> {
         .trim_start_matches('v')
         .split('.')
         .collect::<Vec<_>>();
-    eyre::ensure!(parts.len() == 3, "invalid mise release version: {version}");
+    eyre::ensure!(
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())),
+        "invalid mise release version: {version}"
+    );
     Ok((parts[0].parse()?, parts[1].parse()?, parts[2].parse()?))
 }
 
@@ -406,10 +412,14 @@ pub(crate) async fn eligible_self_update_version(
     source.validate()?;
     let age = self_update_release_age(cli_age);
     let cutoff = crate::duration::parse_into_timestamp(&age)?;
-    let index = if source.is_default() {
+    select_eligible_release(&fetch_release_index(source).await?, cutoff)
+}
+
+async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
+    if source.is_default() {
         crate::http::HTTP
             .get_text("https://mise.jdx.dev/releases.tsv")
-            .await?
+            .await
     } else {
         // Fetch every page: an age cutoff can reach beyond the first 100 releases.
         // Do not reuse the tool-release cache or its bounded pagination.
@@ -424,7 +434,12 @@ pub(crate) async fn eligible_self_update_version(
                 .json_headers_with_headers(&url, &headers)
                 .await?;
             let done = releases.len() < 100;
-            for release in releases.into_iter().filter(|r| !r.draft && !r.prerelease) {
+            for release in releases.into_iter().filter(|r| {
+                !r.draft
+                    && !r.prerelease
+                    && r.tag_name.starts_with('v')
+                    && mise_release_key(&r.tag_name).is_ok()
+            }) {
                 let published = release.published_at.ok_or_else(|| {
                     eyre::eyre!("missing publication date for {}", release.tag_name)
                 })?;
@@ -439,9 +454,8 @@ pub(crate) async fn eligible_self_update_version(
                 break;
             }
         }
-        index
-    };
-    select_eligible_release(&index, cutoff)
+        Ok(index)
+    }
 }
 
 #[cfg(test)]
@@ -500,16 +514,16 @@ mod tests {
     fn missing_file_is_stale() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("latest-version");
-        assert_eq!(cached_latest_version(&p, HOUR), Cached::Stale);
+        assert_eq!(cached_release_index(&p, HOUR), Cached::Stale);
     }
 
     #[test]
-    fn fresh_file_returns_its_version() {
+    fn fresh_file_returns_its_index() {
         let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "2030.1.2\n");
+        let p = write(dir.path(), "v2030.1.2 100\n");
         assert_eq!(
-            cached_latest_version(&p, HOUR),
-            Cached::Fresh(Some("2030.1.2".to_string()))
+            cached_release_index(&p, HOUR),
+            Cached::Fresh(Some("v2030.1.2 100".to_string()))
         );
     }
 
@@ -521,7 +535,7 @@ mod tests {
     fn fresh_but_empty_file_is_a_negative_cache_not_stale() {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "");
-        assert_eq!(cached_latest_version(&p, HOUR), Cached::Fresh(None));
+        assert_eq!(cached_release_index(&p, HOUR), Cached::Fresh(None));
     }
 
     /// A file we cannot read is not evidence of anything, so it must not act as a
@@ -533,21 +547,23 @@ mod tests {
         // A directory where a file is expected: fresh mtime, but every read fails.
         let p = dir.path().join("latest-version");
         std::fs::create_dir(&p).unwrap();
-        assert_eq!(cached_latest_version(&p, HOUR), Cached::Stale);
+        assert_eq!(cached_release_index(&p, HOUR), Cached::Stale);
     }
 
-    /// `Versioning` is permissive and parses almost any string, so garbage in the
-    /// cache round-trips as a version rather than reading as "learned nothing".
-    /// Pinned here because it means the empty file above is the *only* negative
-    /// cache we get — a stricter parser would give us a second one for free, and
-    /// anyone tempted to widen this should know which behaviour they are relying on.
     #[test]
-    fn versioning_is_permissive_so_garbage_is_not_a_negative_cache() {
+    fn cached_index_is_refiltered_as_releases_age() {
         let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "not-a-version\n");
+        let p = write(dir.path(), "v2026.1.1 100\nv2026.1.2 200\n");
+        let Cached::Fresh(Some(index)) = cached_release_index(&p, HOUR) else {
+            panic!("expected fresh release index");
+        };
         assert_eq!(
-            cached_latest_version(&p, HOUR),
-            Cached::Fresh(Some("not-a-version".to_string()))
+            select_eligible_release(&index, jiff::Timestamp::from_second(199).unwrap()).unwrap(),
+            "2026.1.1"
+        );
+        assert_eq!(
+            select_eligible_release(&index, jiff::Timestamp::from_second(200).unwrap()).unwrap(),
+            "2026.1.2"
         );
     }
 
@@ -555,8 +571,8 @@ mod tests {
     #[test]
     fn expired_file_is_stale() {
         let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "2030.1.2\n");
-        assert_eq!(cached_latest_version(&p, Duration::ZERO), Cached::Stale);
+        let p = write(dir.path(), "v2030.1.2 100\n");
+        assert_eq!(cached_release_index(&p, Duration::ZERO), Cached::Stale);
     }
 
     #[test]
@@ -621,10 +637,10 @@ mod tests {
     #[test]
     fn cache_is_honoured_even_when_it_is_older_than_us() {
         let dir = tempfile::tempdir().unwrap();
-        let p = write(dir.path(), "0.0.1\n");
+        let p = write(dir.path(), "v0.0.1 100\n");
         assert_eq!(
-            cached_latest_version(&p, HOUR),
-            Cached::Fresh(Some("0.0.1".to_string()))
+            cached_release_index(&p, HOUR),
+            Cached::Fresh(Some("v0.0.1 100".to_string()))
         );
     }
 

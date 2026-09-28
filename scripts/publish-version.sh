@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=scripts/gh-api-retry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/gh-api-retry.sh"
+
 TAG=${1:?usage: publish-version.sh <release-tag>}
 if ! [[ $TAG =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
 	echo "Invalid release tag: $TAG" >&2
@@ -47,9 +50,13 @@ for platform in windows-arm64 windows-x64; do
 done
 aws s3api head-object --bucket mise --key "$TAG/SHASUMS256.txt" >/dev/null
 
+for installer in install.sh install.sh.sig install.sh.minisig; do
+	aws s3api head-object --bucket mise --key "$TAG/$installer" >/dev/null
+done
+
 # Publish the complete stable release history after GitHub publication. Consumers
 # apply their cutoff at runtime, so aging into eligibility needs no deployment.
-gh api --paginate "repos/${GITHUB_REPOSITORY:-jdx/mise}/releases?per_page=100" |
+gh_api --paginate "repos/${GITHUB_REPOSITORY:-jdx/mise}/releases?per_page=100" |
 	jq -sr '
 		add | map(select(.draft == false and .prerelease == false)) |
 		map(select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) |
@@ -61,6 +68,14 @@ awk -v tag="$TAG" '$1 == tag { found = 1 } END { exit !found }' "$release_index"
 aws s3 cp "$release_index" s3://mise/releases.tsv \
 	--cache-control "max-age=300,s-maxage=300,public" \
 	--no-progress --content-type "text/plain"
+
+# Promote the installer only after publishing the index it requires. The release
+# staging job uploads these files under the tag without changing the public URL.
+for installer in install.sh install.sh.sig install.sh.minisig; do
+	aws s3 cp "s3://mise/$TAG/$installer" "s3://mise/$installer" \
+		--cache-control "max-age=86400,s-maxage=86400,public,immutable" \
+		--no-progress --content-type "text/plain"
+done
 
 aws s3 cp "$version_file" s3://mise/VERSION \
 	--cache-control "max-age=86400,s-maxage=86400,public,immutable" \

@@ -64,7 +64,7 @@ def release(tag, age):
             "created_at": "2020-01-01T00:00:00Z", "assets": [],
             "published_at": datetime.datetime.fromtimestamp(now-age, datetime.timezone.utc).isoformat()}
 Path("served/page1.json").write_text(json.dumps([release("v9999.1.0", 3600)] * 100))
-Path("served/page2.json").write_text(json.dumps([release("v" + current, 172800)]))
+Path("served/page2.json").write_text(json.dumps([dict(release("nightly", 0), published_at=None), release("v" + current, 172800)]))
 PYTHON
 export MISE_SELF_UPDATE_API_URL=https://mirror.example.test
 export MISE_SELF_UPDATE_REPOSITORY=acme/mise
@@ -78,7 +78,7 @@ import json
 from pathlib import Path
 p = Path("served/page2.json")
 releases = json.loads(p.read_text())
-releases[0].pop("published_at")
+releases[1].pop("published_at")
 p.write_text(json.dumps(releases))
 PYTHON
 assert_fail "mise self-update --no-plugins" "missing publication date"
