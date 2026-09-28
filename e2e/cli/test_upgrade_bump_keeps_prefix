@@ -33,8 +33,8 @@ CONFIG
   before=$(cat mise.toml)
 
   output=$(mise upgrade --bump --dry-run 2>&1)
-  assert_contains "echo '$output'" "Would install prefixtest@20.5.3"
-  assert_not_contains "echo '$output'" "Would bump"
+  assert_contains_text "$output" "Would install prefixtest@20.5.3"
+  assert_not_contains_text "$output" "Would bump"
   mise upgrade --bump
   assert "cat mise.toml" "$before"
   assert_contains "mise ls --current prefixtest" "20.5.3"
