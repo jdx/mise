@@ -3726,7 +3726,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: Version == "v1.3.1"
+      - version_constraint: Version in ["v1.3.0", "v1.3.1"]
         # https://github.com/FiloSottile/age/pull/676
         # https://github.com/FiloSottile/age/commit/10561a774f9f6de47c8d23ddc58537b6a18b083d
         asset: age-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
@@ -6215,6 +6215,113 @@ packages:
         asset: dops
         supported_envs:
           - linux/amd64
+  - type: github_release
+    repo_owner: MitMaro
+    repo_name: git-interactive-rebase-tool
+    description: Native cross-platform full feature terminal-based sequence editor for git interactive rebase
+    files:
+      - name: interactive-rebase-tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0"
+        asset: "{{.OS}}-git-interactive-tool"
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.2.0"
+        asset: "{{.OS}}-git-interactive-tool"
+        format: raw
+        replacements:
+          darwin: OSX
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.4.0"
+        asset: "{{.OS}}-interactive-rebase-tool.{{.Format}}"
+        format: zip
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.6.0"
+        asset: "{{.OS}}-git-interactive-rebase-tool"
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.7.0"
+        asset: git-interactive-rebase-tool-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            format: raw
+            asset: "{{.OS}}-interactive-rebase-tool"
+          - goos: windows
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "1.0.0-rc.2"
+        asset: "{{.OS}}-interactive-rebase-tool"
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 1.2.1")
+        asset: git-interactive-rebase-tool-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            format: raw
+            asset: "{{.OS}}-interactive-rebase-tool"
+          - goos: windows
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: semver("<= 2.3.0")
+        asset: interactive-rebase-tool
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: "{{.OS}}-interactive-rebase-tool"
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: "true"
+        asset: git-interactive-rebase-tool-{{.Version}}-{{.OS}}-12_intel
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: git-interactive-rebase-tool-{{.Version}}-{{.OS}}-12_{{.Arch}}
+            replacements:
+              arm64: arm
+          - goos: windows
+            asset: git-interactive-rebase-tool-{{.Version}}-{{.OS}}-_{{.Arch}}
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
   - type: github_release
     repo_owner: MordechaiHadad
     repo_name: bob
@@ -10364,6 +10471,44 @@ packages:
       - version_constraint: "true"
         type: cargo
         crate: tokei
+  - type: github_release
+    repo_owner: XTLS
+    repo_name: Xray-core
+    description: Xray, Penetrates Everything. Also the best v2ray-core
+    files:
+      - name: xray
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.1")
+        asset: Xray-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          darwin: macos
+          amd64: "64"
+          arm64: arm64-v8a
+        overrides:
+          - goos: windows
+            goarch: arm64
+            asset: Xray-{{.OS}}-arm32-v7a.{{.Format}}
+      - version_constraint: semver("<= 1.4.5")
+        asset: Xray-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          amd64: "64"
+          arm64: arm64-v8a
+        overrides:
+          - goos: windows
+            goarch: arm64
+            asset: Xray-{{.OS}}-arm32-v7a.{{.Format}}
+      - version_constraint: "true"
+        asset: Xray-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          amd64: "64"
+          arm64: arm64-v8a
   - type: github_release
     repo_owner: XcodesOrg
     repo_name: xcodes
@@ -18212,6 +18357,40 @@ packages:
       - darwin
     search_words:
       - macOS Only
+  - type: github_release
+    repo_owner: awslabs
+    repo_name: aidlc-workflows
+    description: AI-Driven Life Cycle (AI-DLC) adaptive workflow steering rules for AI coding agents
+    files:
+      - name: aidlc
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.7.0")
+        no_asset: true
+      - version_constraint: Version contains "-preview."
+        asset: aidlc-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: awslabs/aidlc-workflows/.github/workflows/preview-release.yml
+      - version_constraint: "true"
+        asset: aidlc-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: awslabs/aidlc-workflows/.github/workflows/release.yml
   - type: http
     repo_owner: awslabs
     repo_name: amazon-ecr-credential-helper
@@ -35400,6 +35579,43 @@ packages:
             src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt
           - name: git-dolt-smudge
             src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt-smudge
+  - type: github_release
+    repo_owner: domcyrus
+    repo_name: rustnet
+    description: Per-process network monitoring for your terminal with deep packet inspection. Cross-platform, sandboxed
+    files:
+      - name: rustnet
+        src: "{{.AssetWithoutExt}}/rustnet"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.10.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.17.0")
+        asset: rustnet-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: rustnet-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - name: dominikh/go-tools/staticcheck
     type: github_release
     repo_owner: dominikh
@@ -63147,6 +63363,91 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: lance0
+    repo_name: ttl
+    description: Fast, modern traceroute with real-time TUI, per-hop stats, ASN/geo lookup, ECMP detection, and MPLS label parsing. A better mtr
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.12.3")
+        asset: ttl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: semver("<= 0.12.8")
+        asset: ttl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              amd64: x86_64
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: semver("<= 0.19.1")
+        asset: ttl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: ttl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - type: github_release
     repo_owner: lasantosr
     repo_name: intelli-shell
