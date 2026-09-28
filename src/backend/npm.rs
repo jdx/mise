@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -8,10 +9,9 @@ use crate::backend::platform_target::PlatformTarget;
 #[cfg(windows)]
 use crate::backend::runtime_path_for_install_path;
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
@@ -26,6 +26,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -336,27 +337,100 @@ impl<'a> NpmOptions<'a> {
     }
 }
 
+/// What [`aube_install_tree_health`] found in an install prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AubeTreeHealth {
+    /// A virtual-store entry is a dangling link, or the store is unreadable.
+    Broken,
+    /// Every entry resolves, but some are links into a shared store that
+    /// another process can still prune.
+    Linked,
+    /// Every entry is a real directory inside the prefix, which only changes
+    /// when the prefix itself does.
+    SelfContained,
+}
+
 /// Legacy embedded-aube installs linked each virtual-store entry into a shared
 /// cache. The install prefix can outlive that cache, leaving the directory in
 /// place while every package link is dangling. Check only the immediate
 /// virtual-store entries: each represents a whole package tree, so this stays
-/// cheap enough for mise's installed-version fast path.
-fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
-    [".mise", ".aube"].iter().all(|name| {
+/// cheap enough for mise's installed-version fast path. Only symlinks can
+/// dangle, so the directory listing's file type settles every other entry
+/// without a `stat`.
+fn aube_install_tree_health(install_path: &Path) -> AubeTreeHealth {
+    let mut health = AubeTreeHealth::SelfContained;
+    for name in [".mise", ".aube"] {
         let virtual_store = install_path.join("node_modules").join(name);
         match virtual_store.symlink_metadata() {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-            Err(_) => return false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return AubeTreeHealth::Broken,
             Ok(_) => {}
         }
-        let entries = match std::fs::read_dir(&virtual_store) {
-            Ok(entries) => entries,
-            Err(_) => return false,
+        let Ok(entries) = std::fs::read_dir(&virtual_store) else {
+            return AubeTreeHealth::Broken;
         };
-        entries
-            .map(|entry| entry.map(|entry| entry.path()))
-            .all(|path| path.is_ok_and(|path| path.try_exists().unwrap_or(false)))
-    })
+        for entry in entries {
+            let Ok(entry) = entry else {
+                return AubeTreeHealth::Broken;
+            };
+            if entry
+                .file_type()
+                .is_ok_and(|file_type| !file_type.is_symlink())
+            {
+                continue;
+            }
+            if !entry.path().try_exists().unwrap_or(false) {
+                return AubeTreeHealth::Broken;
+            }
+            health = AubeTreeHealth::Linked;
+        }
+    }
+    health
+}
+
+#[cfg(test)]
+fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
+    aube_install_tree_health(install_path) != AubeTreeHealth::Broken
+}
+
+/// Install prefixes already found self-contained in this process. One command
+/// asks about the same prefix many times (hook-env checks each npm tool about
+/// eight times), and a large tree has hundreds of entries to list. Only
+/// self-contained trees are kept: a linked tree can break when another process
+/// prunes the shared store, and a broken one can be repaired in this process,
+/// so both are checked again each time. An uninstalled prefix fails the
+/// existence check before this one.
+static SELF_CONTAINED_AUBE_INSTALLS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(Default::default);
+
+/// Drop a prefix from [`SELF_CONTAINED_AUBE_INSTALLS`] before this process
+/// replaces or removes it.
+fn forget_aube_install_health(install_path: &Path) {
+    SELF_CONTAINED_AUBE_INSTALLS
+        .lock()
+        .unwrap()
+        .remove(install_path);
+}
+
+fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
+    if SELF_CONTAINED_AUBE_INSTALLS
+        .lock()
+        .unwrap()
+        .contains(install_path)
+    {
+        return true;
+    }
+    match aube_install_tree_health(install_path) {
+        AubeTreeHealth::Broken => false,
+        AubeTreeHealth::Linked => true,
+        AubeTreeHealth::SelfContained => {
+            SELF_CONTAINED_AUBE_INSTALLS
+                .lock()
+                .unwrap()
+                .insert(install_path.to_path_buf());
+            true
+        }
+    }
 }
 
 #[async_trait]
@@ -386,7 +460,17 @@ impl Backend for NPMBackend {
     }
 
     fn is_install_path_healthy(&self, install_path: &Path) -> bool {
-        aube_install_tree_is_healthy(install_path)
+        aube_install_tree_is_healthy_cached(install_path)
+    }
+
+    async fn uninstall_version_impl(
+        &self,
+        _config: &Arc<Config>,
+        _pr: &dyn SingleReport,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        forget_aube_install_health(&tv.install_path());
+        Ok(())
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -594,6 +678,7 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        forget_aube_install_health(&tv.install_path());
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
             .await;
@@ -826,7 +911,7 @@ impl NPMBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: TokioMutex::new(
-                CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
+                CacheManagerBuilder::new(ba.cache_path().join("latest_version.msgpack.z"))
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .build(),
             ),
@@ -932,7 +1017,7 @@ impl NPMBackend {
 
     fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
         let minutes = seconds.div_ceil(60);
-        vec![format!("--config.minimumReleaseAge={minutes}").into()]
+        vec![format!("--config.minimum-release-age={minutes}").into()]
     }
 
     fn pnpm_uses_global_dir_env(version: Option<&str>) -> bool {
@@ -991,7 +1076,7 @@ impl NPMBackend {
             NpmPackageManager::Pnpm => Some((
                 "pnpm",
                 PNPM_MIN_RELEASE_AGE_VERSION,
-                "--config.minimumReleaseAge",
+                "--config.minimum-release-age",
             )),
         }
     }
@@ -2264,10 +2349,10 @@ pub(crate) fn test_backend(
         Some(tool.to_string()),
         tool.to_string(),
         opts,
-        crate::cli::args::BackendResolution::new(true),
+        crate::args::BackendResolution::new(true),
     );
     if let Some(installs_path) = installs_path {
-        ba.installs_path = installs_path;
+        ba.set_installs_path(installs_path);
     }
     NPMBackend::from_arg(ba)
 }
@@ -2275,7 +2360,7 @@ pub(crate) fn test_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
 
     #[derive(Debug, Default)]
     struct RecordingReport(std::sync::Mutex<Vec<String>>);
@@ -2522,7 +2607,7 @@ mod tests {
     #[test]
     fn test_build_pnpm_release_age_args_rounds_up_to_minutes() {
         let args = NPMBackend::build_pnpm_release_age_args(1);
-        assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
+        assert_eq!(args, vec![OsString::from("--config.minimum-release-age=1")]);
     }
 
     #[test]
@@ -3201,7 +3286,7 @@ pkg@1.2.0 '1.2.0'
             Some((
                 "pnpm",
                 PNPM_MIN_RELEASE_AGE_VERSION,
-                "--config.minimumReleaseAge"
+                "--config.minimum-release-age"
             ))
         );
     }
@@ -3384,6 +3469,59 @@ pkg@1.2.0 '1.2.0'
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn linked_aube_trees_are_rechecked_after_being_found_healthy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let virtual_store = tmp.path().join("node_modules/.mise");
+        let target = tmp.path().join("shared-store/pkg@1.0.0");
+        std::fs::create_dir_all(&virtual_store).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, virtual_store.join("pkg@1.0.0")).unwrap();
+
+        assert_eq!(aube_install_tree_health(tmp.path()), AubeTreeHealth::Linked);
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+        std::fs::remove_dir_all(target).unwrap();
+        assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forgetting_a_cached_aube_tree_checks_it_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let virtual_store = tmp.path().join("node_modules/.mise");
+        std::fs::create_dir_all(virtual_store.join("pkg@1.0.0")).unwrap();
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+
+        // A reinstall replaces the prefix with a tree that links to a missing store.
+        forget_aube_install_health(tmp.path());
+        std::fs::remove_dir_all(virtual_store.join("pkg@1.0.0")).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("missing-store/pkg@1.0.0"),
+            virtual_store.join("pkg@1.0.0"),
+        )
+        .unwrap();
+        assert!(!aube_install_tree_is_healthy_cached(tmp.path()));
+    }
+
+    #[test]
+    fn self_contained_aube_trees_are_cached() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("node_modules/.mise/pkg@1.0.0")).unwrap();
+
+        assert_eq!(
+            aube_install_tree_health(tmp.path()),
+            AubeTreeHealth::SelfContained
+        );
+        assert!(aube_install_tree_is_healthy_cached(tmp.path()));
+        assert!(
+            SELF_CONTAINED_AUBE_INSTALLS
+                .lock()
+                .unwrap()
+                .contains(tmp.path())
+        );
+    }
+
     #[test]
     fn aube_install_tree_without_virtual_store_is_healthy() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3418,7 +3556,7 @@ pkg@1.2.0 '1.2.0'
             None,
             BackendResolution::new(true),
         );
-        ba.installs_path = tmp.path().join("installs/npm-pkg");
+        ba.set_installs_path(tmp.path().join("installs/npm-pkg"));
         let backend = NPMBackend::from_arg(ba);
         let request =
             ToolRequest::new(backend.ba().clone(), "1.0.0", ToolSource::Argument).unwrap();

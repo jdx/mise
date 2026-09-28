@@ -1,6 +1,5 @@
 #[cfg(unix)]
 pub(super) mod brew;
-pub(crate) mod driver;
 pub(super) mod export;
 pub(super) mod import;
 pub(super) mod install;

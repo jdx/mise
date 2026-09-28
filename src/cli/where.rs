@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::errors::Error;
 use crate::toolset::ToolsetBuilder;

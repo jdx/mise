@@ -6,33 +6,42 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
-# Check for .release-skip-e2e and skip all tests if version matches
-RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
-VERSION="$(. "$ROOT/scripts/get-version.sh" | tr -d '\n')"
-if [[ -f $RELEASE_SKIP_FILE ]]; then
-  if grep -Fxq "$VERSION" "$RELEASE_SKIP_FILE"; then
-    echo "[e2e] Skipping all e2e tests: .release-skip-e2e contains $VERSION" >&2
-    exit 0
+# Tests named as arguments (paths relative to e2e/) run in the given order,
+# including slow ones; `mise run test:e2e` passes them when E2E_JOBS is set.
+# Without arguments, every test is discovered.
+EXPLICIT_FILES=0
+if (($# > 0)); then
+  EXPLICIT_FILES=1
+  FILES=("$@")
+else
+  # Check for .release-skip-e2e and skip all tests if version matches
+  RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
+  VERSION="$(. "$ROOT/scripts/get-version.sh" | tr -d '\n')"
+  if [[ -f $RELEASE_SKIP_FILE ]]; then
+    if grep -Fxq "$VERSION" "$RELEASE_SKIP_FILE"; then
+      echo "[e2e] Skipping all e2e tests: .release-skip-e2e contains $VERSION" >&2
+      exit 0
+    fi
   fi
+
+  pushd e2e >/dev/null
+  list_test_files() {
+    local pattern="$1"
+    find . -type f -name "$pattern" | sed 's#^\./##' | sort
+  }
+
+  # Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
+  SLOW_FILES=()
+  while IFS= read -r line; do
+    SLOW_FILES+=("$line")
+  done < <(list_test_files "test_*_slow")
+  FAST_FILES=()
+  while IFS= read -r line; do
+    FAST_FILES+=("$line")
+  done < <(list_test_files "test_*" | grep -v "_slow$")
+  popd >/dev/null
+  FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 fi
-
-pushd e2e >/dev/null
-list_test_files() {
-  local pattern="$1"
-  find . -type f -name "$pattern" | sed 's#^\./##' | sort
-}
-
-# Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
-SLOW_FILES=()
-while IFS= read -r line; do
-  SLOW_FILES+=("$line")
-done < <(list_test_files "test_*_slow")
-FAST_FILES=()
-while IFS= read -r line; do
-  FAST_FILES+=("$line")
-done < <(list_test_files "test_*" | grep -v "_slow$")
-popd >/dev/null
-FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 test_count=0
 skipped_count=0
 status=0
@@ -53,8 +62,8 @@ for index in "${!FILES[@]}"; do
     fi
   fi
 
-  # Skip slow tests unless TEST_ALL == 1
-  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
+  # Skip discovered slow tests unless TEST_ALL == 1
+  if [[ $EXPLICIT_FILES == 0 && ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
     #    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
     skipped_count=$((skipped_count + 1))
     SUMMARY_ENTRY_TYPES+=("skip")

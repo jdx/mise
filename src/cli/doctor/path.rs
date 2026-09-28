@@ -31,7 +31,7 @@ impl Path {
             ts.list_final_paths(&config, env_results).await?
         };
         for path in paths {
-            println!("{}", path.display());
+            miseprintln!("{}", path.display());
         }
         Ok(())
     }

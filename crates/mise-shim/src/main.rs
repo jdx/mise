@@ -9,7 +9,7 @@ use std::process::{Command, ExitCode};
 
 const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 #[used]
-static NATIVE_SHIM_MARKER: [u8; 30] = *include_bytes!("../native-shim-marker");
+static NATIVE_SHIM_MARKER: [u8; 30] = *include_bytes!("../../../src/assets/native-shim-marker");
 
 fn paths_eq(a: &Path, b: &Path) -> bool {
     let lexical_eq = |a: &Path, b: &Path| {

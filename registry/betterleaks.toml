@@ -1,4 +1,7 @@
-backends = ["aqua:betterleaks/betterleaks", "github:betterleaks/betterleaks"]
+backends = [
+  "aqua:betterleaks/betterleaks",
+  { full = "github:betterleaks/betterleaks", attestations_since = "1.2.0" },
+]
 description = "Betterleaks scans code, past or present, for secrets"
 test = { cmd = "betterleaks --version", expected = "betterleaks version {{version}}" }
 version_order = "semver"

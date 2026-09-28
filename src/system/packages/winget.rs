@@ -166,6 +166,7 @@ async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
     Ok(PackageStatus {
         request: request.clone(),
         state,
+        display_name: None,
     })
 }
 

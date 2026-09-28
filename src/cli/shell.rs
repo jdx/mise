@@ -2,7 +2,7 @@ use color_eyre::eyre::{Result, bail, eyre};
 use console::style;
 use indoc::formatdoc;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::env;
 use crate::shell::{EXAMPLE_SHELL, require_shell};
@@ -60,7 +60,7 @@ impl Shell {
         if self.unset {
             for ta in &self.tool {
                 let op = shell.unset_env(&tool_env_var_name(&ta.ba.short));
-                print!("{op}");
+                miseprint!("{op}")?;
             }
             return Ok(());
         }
@@ -92,7 +92,7 @@ impl Shell {
             if matches!(source, ToolSource::Argument) {
                 let k = tool_env_var_name(p.id());
                 let op = shell.set_env(&k, &tv.version);
-                print!("{op}");
+                miseprint!("{op}")?;
             }
         }
 

@@ -271,11 +271,6 @@ class Pathname
     end
   end
 
-  def write(content, *args)
-    dirname.mkpath
-    super
-  end
-
   def atomic_write(content)
     dirname.mkpath
     File.write(to_s, content)
@@ -289,6 +284,17 @@ class Pathname
     chmod(0o755) if file?
   end
 end
+
+# brew's Pathname#write creates missing parent directories. It has to be
+# prepended: redefining `write` inside `class Pathname` replaces the core
+# method, leaving `super` nothing to call.
+module MisePathnameWrite
+  def write(...)
+    dirname.mkpath
+    super
+  end
+end
+Pathname.prepend(MisePathnameWrite)
 
 class BuildOptions
   def with?(_name) = false

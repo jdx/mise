@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Machine setup that files alone cannot express lives in the ordinary,
+# repeatable `bootstrap` task of the shared configuration. Adopting a setup
+# repository runs the task from the configuration that just arrived, and a
+# later shared change reaches an existing machine through a pull followed by
+# `mise bootstrap`, which runs the updated task.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# ---- machine A publishes a configuration whose bootstrap task sets a
+# machine up
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.bootstrap]
+run = 'echo v1 >>"$HOME/setup.log"'
+EOF2
+assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
+
+# other machines are other HOMEs reached through wrapper scripts
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home"
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+
+# ---- machine B: a fresh HOME
+B="$(dirname "$HOME")/b-home"
+wrapper "$B" "$PWD/b"
+b="$PWD/b"
+
+# adoption restores the configuration, then runs its task in the same run
+assert_fail "test -e '$B/setup.log'"
+assert_succeed "$b bootstrap --adopt file://$origin --yes"
+assert "cat $B/setup.log" "v1"
+
+# ---- A changes the task (keeping the rest of the configuration) and
+# shares it
+config="$(cat "$MISE_CONFIG_DIR/config.toml")"
+printf '%s\n' "${config/echo v1/echo v2}" >"$MISE_CONFIG_DIR/config.toml"
+assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
+
+# a sync fetches it and a pull restores the new configuration, but neither
+# runs setup: the status says to bootstrap
+assert_succeed "$b dot sync"
+assert_succeed "$b dot pull --yes"
+assert_contains "cat $B/.config/mise/config.toml" "v2"
+assert "cat $B/setup.log" "v1"
+assert_contains "$b bootstrap dotfiles status" "declarations changed"
+
+# a partial run of the task alone runs the updated version but applies
+# only part of the setup, so the reminder stays
+assert_succeed "$b bootstrap --yes --only task"
+assert "cat $B/setup.log" $'v1\nv2'
+assert_contains "$b bootstrap dotfiles status" "declarations changed"
+
+# the complete bootstrap runs it again (it must be safe to repeat) and
+# clears the reminder
+assert_succeed "$b bootstrap --yes"
+assert "cat $B/setup.log" $'v1\nv2\nv2'
+assert_not_contains "$b bootstrap dotfiles status" "declarations changed"
+
+# ---- machine C already has a differing configuration: adoption holds it
+# and runs no task from either version; once the conflict is decided, the
+# ordinary bootstrap runs the adopted task
+C="$(dirname "$HOME")/c-home"
+wrapper "$C" "$PWD/c"
+c="$PWD/c"
+mkdir -p "$C/.config/mise"
+printf '[env]\nC_ONLY = "1"\n' >"$C/.config/mise/config.toml"
+assert_fail "$c bootstrap --adopt file://$origin --yes 2>&1" "nothing was bootstrapped"
+assert_fail "test -e '$C/setup.log'"
+assert_succeed "$c dot pull --take-remote-all --yes"
+assert_fail "test -e '$C/setup.log'"
+assert_succeed "$c bootstrap --yes"
+assert "cat $C/setup.log" "v2"

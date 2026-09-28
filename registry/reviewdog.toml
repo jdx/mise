@@ -1,0 +1,4 @@
+backends = ["aqua:reviewdog/reviewdog"]
+description = "Automated code review tool integrated with any code analysis tools regardless of programming language"
+test = { cmd = "reviewdog -version", expected = "{{version}}" }
+version_order = "semver"

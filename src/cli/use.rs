@@ -8,7 +8,7 @@ use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use jiff::Timestamp;
 
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
@@ -35,7 +35,7 @@ use crate::{config, env, exit, file};
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 /// for filename overrides and configuration precedence. Selection takes effect in
 /// an activated shell on its next prompt, or immediately in `mise exec` commands.
-#[derive(Debug, usage_rs::Args)]
+#[derive(Debug, Default, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "u",
@@ -232,6 +232,20 @@ impl UseTool {
 }
 
 impl Use {
+    pub(super) async fn use_global_registry_tool(tool: &str) -> Result<()> {
+        Self {
+            tools: vec![UseTool {
+                postinstall: None,
+                tool_option: Vec::new(),
+                tool: tool.parse()?,
+            }],
+            global: true,
+            ..Default::default()
+        }
+        .run()
+        .await
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -277,6 +291,7 @@ impl Use {
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
+            latest_versions_for_all_requests: false,
             use_locked_version: true,
             resolve_rolling_channels: false,
             prefer_exact_version: pin,

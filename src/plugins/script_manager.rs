@@ -10,17 +10,16 @@ use indexmap::indexmap;
 use std::sync::LazyLock as Lazy;
 
 use crate::cmd::{CmdLineRunner, cmd};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::env::PATH_KEY;
-use crate::errors::Error;
-use crate::errors::Error::ScriptFailed;
+use crate::errors::ProcessError::{self, ScriptFailed};
 use crate::fake_asdf::get_path_with_fake_asdf;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ScriptManager {
+pub struct ScriptManager {
     pub plugin_path: PathBuf,
     pub env: HashMap<OsString, OsString>,
 }
@@ -205,7 +204,7 @@ impl ScriptManager {
         if let Err(e) = cmd.execute() {
             // Re-label the failure with the script's path, keeping the child's
             // own last stderr line so the reason survives the rewrite.
-            let (status, stderr_tail) = match e.downcast_ref::<Error>() {
+            let (status, stderr_tail) = match e.downcast_ref::<ProcessError>() {
                 Some(ScriptFailed(_, status, stderr_tail)) => (*status, stderr_tail.clone()),
                 _ => (None, None),
             };

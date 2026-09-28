@@ -21,30 +21,14 @@ printf '#!/bin/sh\necho mytool ok\n' >"$SRV/mytool"
 printf '%s  mytool\n' "$REAL_SHA" >"$SRV/mytool_SHASUMS"
 
 # Serve the directory on an ephemeral port
-PORT_FILE="$TMPDIR/mise_lock_verify_port"
-python3 - "$SRV" "$PORT_FILE" <<'PY' &
-import http.server, socketserver, sys, os
-srv, port_file = sys.argv[1], sys.argv[2]
-os.chdir(srv)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as f:
-        f.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "lock verify port file" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SRV"
 
 cat >mise.toml <<EOF
 [tools."http:mytool-lock-verify"]
 version = "1.0.0"
 bin = "mytool"
-url = "http://127.0.0.1:${PORT}/mytool"
-checksum_url = "http://127.0.0.1:${PORT}/mytool_SHASUMS"
+url = "http://127.0.0.1:${HTTP_PORT}/mytool"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/mytool_SHASUMS"
 EOF
 
 # Lock resolves the published checksum for the current platform.
@@ -81,8 +65,8 @@ cat >mise.toml <<EOF
 [tools."http:exprtool-lock-verify"]
 version = "1.0.0"
 bin = "exprtool"
-url = "http://127.0.0.1:${PORT}/exprtool"
-checksum_url = "http://127.0.0.1:${PORT}/expr_manifest.json"
+url = "http://127.0.0.1:${HTTP_PORT}/exprtool"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/expr_manifest.json"
 checksum_expr = '"sha256:" + fromJSON(body).platforms[(os == "macos" ? "darwin" : (os == "windows" ? "win32" : "linux")) + "-" + arch].checksum'
 EOF
 

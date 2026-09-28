@@ -6,8 +6,8 @@ use std::sync::Arc;
 use eyre::{Result, WrapErr, bail, ensure};
 use serde::{Deserialize, Serialize};
 
+use crate::args::BackendArg;
 use crate::backend::packslip::{PackslipBackend, project_name};
-use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::file;
 use crate::install_context::InstallContext;
@@ -60,7 +60,22 @@ impl Source {
 pub(crate) struct Installed {
     pub source: Source,
     pub version: String,
+    #[serde(serialize_with = "serialize_platforms")]
     platforms: BTreeMap<String, PlatformInfo>,
+}
+
+fn serialize_platforms<S>(
+    platforms: &BTreeMap<String, PlatformInfo>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let platforms = platforms
+        .iter()
+        .map(|(name, info)| (name, toml::Value::from(info.clone())))
+        .collect::<BTreeMap<_, _>>();
+    platforms.serialize(serializer)
 }
 
 pub(crate) fn installed(path: &Path) -> Result<Option<Installed>> {
@@ -68,7 +83,24 @@ pub(crate) fn installed(path: &Path) -> Result<Option<Installed>> {
     if !state.exists() {
         return Ok(None);
     }
-    Ok(Some(serde_json::from_str(&file::read_to_string(state)?)?))
+    let mut state: serde_json::Value = serde_json::from_str(&file::read_to_string(state)?)?;
+    // Older plugin state stored these IDs as flat JSON fields. This is separate
+    // from the versioned TOML lockfile and must remain readable after upgrade.
+    if let Some(platforms) = state.get_mut("platforms").and_then(|v| v.as_object_mut()) {
+        for info in platforms.values_mut().filter_map(|v| v.as_object_mut()) {
+            let repository = info.remove("repository_id");
+            let owner = info.remove("repository_owner_id");
+            if let Some(repository) = repository {
+                let mut ids = serde_json::Map::new();
+                ids.insert("repository".into(), repository);
+                if let Some(owner) = owner {
+                    ids.insert("owner".into(), owner);
+                }
+                info.insert("repository_ids".into(), ids.into());
+            }
+        }
+    }
+    Ok(Some(serde_json::from_value(state)?))
 }
 
 pub(crate) async fn install(
@@ -88,7 +120,7 @@ pub(crate) async fn install(
     let previous = installed(path)?;
     let mut ba = BackendArg::from(format!("packslip:{}", source.project).as_str());
     // Each attempt owns its downloads, including concurrent aliases of a plugin.
-    ba.downloads_path = staging.path().join("downloads");
+    ba.set_downloads_path(staging.path().join("downloads"));
     let backend = PackslipBackend::from_arg(ba.clone());
     let request = ToolRequest::new(Arc::new(ba), &source.request, ToolSource::Argument)?;
     pr.set_message(format!("resolve {}", source.url()));
@@ -248,6 +280,47 @@ pub(crate) fn validate_layout(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_state_preserves_forge_ids() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("plugin");
+        std::fs::create_dir(&path).unwrap();
+        let state = Installed {
+            source: Source::parse("packslip:mise-plugins/vfox-bfs#0.1.0-dev.2")
+                .unwrap()
+                .unwrap(),
+            version: "0.1.0-dev.2".into(),
+            platforms: BTreeMap::from([(
+                "linux-x64".into(),
+                PlatformInfo {
+                    repository_id: Some("922514152".into()),
+                    repository_owner_id: Some("216188".into()),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let serialized = serde_json::to_value(&state).unwrap();
+        let ids = &serialized["platforms"]["linux-x64"]["repository_ids"];
+        assert_eq!(ids["repository"], "922514152");
+        assert_eq!(ids["owner"], "216188");
+        std::fs::write(path.join(STATE_FILE), serialized.to_string()).unwrap();
+        assert_eq!(
+            installed(&path).unwrap().unwrap().platforms["linux-x64"],
+            state.platforms["linux-x64"]
+        );
+
+        let mut legacy = serialized;
+        let platform = legacy["platforms"]["linux-x64"].as_object_mut().unwrap();
+        platform.remove("repository_ids");
+        platform.insert("repository_id".into(), "922514152".into());
+        platform.insert("repository_owner_id".into(), "216188".into());
+        std::fs::write(path.join(STATE_FILE), legacy.to_string()).unwrap();
+        assert_eq!(
+            installed(&path).unwrap().unwrap().platforms["linux-x64"],
+            state.platforms["linux-x64"]
+        );
+    }
 
     #[test]
     fn plugin_artifact_contract() {

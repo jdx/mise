@@ -4,8 +4,8 @@ use console::style;
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 
+use crate::args::ToolArg;
 use crate::backend::Backend;
-use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::install_progress::removal_progress;

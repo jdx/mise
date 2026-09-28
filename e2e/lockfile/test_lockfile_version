@@ -22,7 +22,7 @@ EOF
 
 assert_succeed "cd versioned && mise install"
 assert_succeed "cd versioned/packages/b && mise install"
-assert_contains "cat versioned/mise.lock" "lockfile_version = 2"
+assert_contains "cat versioned/mise.lock" "lockfile_version = 3"
 assert_contains "cat versioned/mise.lock" 'specifiers = ["1"]'
 assert_contains "cat versioned/mise.lock" 'specifiers = ["1.0.0"]'
 assert "cd versioned && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
@@ -80,7 +80,7 @@ EOF
 assert "cd legacy-argument && mise x dummy@latest -- dummy --version" "This is Dummy 2.0.0! --version"
 
 assert_contains "cd legacy && mise lock --upgrade" "Upgraded"
-assert_contains "cat legacy/mise.lock" "lockfile_version = 2"
+assert_contains "cat legacy/mise.lock" "lockfile_version = 3"
 assert_contains "cat legacy/mise.lock" 'specifiers = ["1.0.0"]'
 
 echo "=== upgrades bind distinct requests resolving to the same version ==="

@@ -22,6 +22,11 @@ pub(crate) enum MatchType {
 ///
 /// Searches the registry and installed backend catalogs for tools matching NAME.
 ///
+/// Prefix NAME with a backend to also search that backend's package registry:
+/// `npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
+/// including all of those package registries. Otherwise, unprefixed searches do
+/// not query package registries.
+///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
 #[derive(Debug, usage_rs::Args)]
@@ -33,6 +38,11 @@ jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq"###
+    ),
+    example(
+        r###"mise search --match-type equal npm:typescript-language-server
+Tool                            Description
+npm:typescript-language-server  Language Server Protocol (LSP) implementation for TypeScript using tsserver"###
     ),
     example(
         r###"mise search --interactive
@@ -50,6 +60,11 @@ esc clear filter • enter confirm"###
 pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
+
+    /// Search every backend: the registry, aqua, installed backend plugins,
+    /// and the npm, cargo, gem, and dotnet package registries
+    #[usage(long, short)]
+    all: bool,
 
     /// Show an interactive search menu
     #[usage(long, short, conflicts = &["match_type", "no_header"])]
@@ -74,15 +89,21 @@ pub(crate) struct Search {
 
 impl Search {
     pub(crate) async fn run(self) -> Result<()> {
-        let tools = crate::tool_catalog::search(self.name.as_deref().unwrap_or_default()).await;
-        if self.complete {
-            self.print_completions(&tools, true);
+        let query = self.name.as_deref().unwrap_or_default();
+        if self.complete || self.complete_ids {
+            let tools = crate::tool_catalog::search(query).await;
+            self.print_completions(&tools, self.complete)?;
             return Ok(());
         }
-        if self.complete_ids {
-            self.print_completions(&tools, false);
-            return Ok(());
-        }
+        let (catalog, package_registry) = tokio::join!(
+            crate::tool_catalog::search(query),
+            crate::tool_catalog::search_package_registry(query, self.all),
+        );
+        let tools = catalog
+            .into_iter()
+            .chain(package_registry)
+            .unique_by(|tool| tool.id.clone())
+            .collect_vec();
         if self.interactive {
             self.interactive(&tools)?;
         } else {
@@ -179,13 +200,16 @@ impl Search {
             .map(|(score, tool)| (score, tool.id.clone(), search_description(tool)))
             .collect_vec();
 
-        if matches.is_empty() {
+        if matches.is_empty() || self.all {
             matches.extend(self.get_aqua_matches(name, &mut fuzzy_matcher, &fuzzy_pattern));
         }
 
         matches
             .into_iter()
             .sorted_by_key(|(score, _short, _description)| std::cmp::Reverse(*score))
+            // With --all, an aqua package can translate to the same backend id
+            // as a package registry result (e.g. cargo:jaq)
+            .unique_by(|(_score, short, _description)| short.clone())
             .map(|(_score, short, description)| (short, description))
             .collect()
     }
@@ -238,27 +262,26 @@ impl Search {
             .collect()
     }
 
-    fn print_completions(&self, tools: &[ToolCatalogEntry], descriptions: bool) {
+    fn print_completions(&self, tools: &[ToolCatalogEntry], descriptions: bool) -> Result<()> {
         for tool in tools {
             if descriptions {
-                println!(
+                miseprintln!(
                     "{}:{}",
                     tool.id.replace(':', "\\:"),
                     tool.selector_description().replace(':', "\\:")
                 );
             } else {
-                println!("{}", tool.id);
+                miseprintln!("{}", tool.id);
             }
         }
+        Ok(())
     }
 }
 
 fn search_description(tool: &ToolCatalogEntry) -> String {
     match &tool.source {
         ToolCatalogSource::Registry(registry_tool) => get_description(registry_tool),
-        ToolCatalogSource::VfoxBackend => {
-            tool.description.clone().unwrap_or_else(|| tool.id.clone())
-        }
+        ToolCatalogSource::Backend => tool.description.clone().unwrap_or_else(|| tool.id.clone()),
     }
 }
 

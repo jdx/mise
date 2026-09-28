@@ -22,7 +22,13 @@ else
 fi
 
 setup_isolated_env() {
-  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  # macOS's per-user TMPDIR can exceed Pitchfork's Unix socket path limit.
+  # Keep daemon fixtures short while preserving other tests' temporary roots.
+  if [[ $(os) == "macos" && $(basename "$TEST") == test_daemons* ]]; then
+    TEST_ISOLATED_DIR="$(mktemp --tmpdir=/tmp --directory "$(basename "$TEST").XXXXXX")"
+  else
+    TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  fi
   if [[ $(os) == "macos" ]]; then
     TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
   fi
@@ -114,7 +120,6 @@ within_isolated_env() {
         MISE_EXPERIMENTAL=1 \
         MISE_TEST_PITCHFORK="${MISE_TEST_PITCHFORK:-}" \
         MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
-        MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
         MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
         MISE_STATE_DIR="$MISE_STATE_DIR" \
         MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \

@@ -10,15 +10,15 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::config::Config;
 use crate::config::settings::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::{InstallContext, install_dependency_declarations};
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
-use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
+use crate::toolset::helpers::{TVTuple, preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
 use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
 use crate::toolset::tool_request::ToolRequest;
@@ -74,7 +74,7 @@ impl Toolset {
             .and_then(|(_, tv)| (tv.request.options().lazy == Some(true)).then_some(tv)))
     }
 
-    pub(crate) async fn has_missing_lazy_bin_provider(
+    pub async fn has_missing_lazy_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -109,7 +109,7 @@ impl Toolset {
         requests
     }
 
-    pub(crate) async fn install_missing_lazy_bin(
+    pub async fn install_missing_lazy_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -157,7 +157,7 @@ impl Toolset {
         Ok(Some(installed))
     }
 
-    pub(crate) async fn should_install_missing_registry_bin_provider(
+    pub async fn should_install_missing_registry_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -202,7 +202,13 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<(Vec<ToolVersion>, Vec<ToolVersion>)> {
-        let missing = self.list_missing_versions_for_install(config).await;
+        // Only versions this call may install need the backend-specific
+        // satisfaction check. The rest are reported from install markers, as
+        // hook-env does, so a shim call does not run e.g. rustup for every
+        // configured tool.
+        let missing = self
+            .list_missing_versions_checking(config, |tv| self.may_auto_install(tv, opts))
+            .await;
 
         // If auto-install is explicitly disabled, skip installation but return what's missing
         if opts.skip_auto_install {
@@ -211,18 +217,7 @@ impl Toolset {
 
         let mut versions = missing
             .iter()
-            .filter(|tv| tv.request.options().lazy != Some(true) || opts.include_lazy)
-            .filter(|tv| {
-                !opts.missing_args_only
-                    || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
-            })
-            .filter(|tv| {
-                if let Some(tools) = &opts.auto_install_disable_tools {
-                    !tools.contains(&tv.ba().short)
-                } else {
-                    true
-                }
-            })
+            .filter(|tv| self.may_auto_install(tv, opts))
             .map(|tv| tv.request.clone())
             .collect_vec();
         // Ensure options from toolset are preserved during auto-install
@@ -247,11 +242,28 @@ impl Toolset {
             )
             .await?;
             // Re-check what's still missing after installation
-            let still_missing = self.list_missing_versions_for_install(config).await;
+            let still_missing = self
+                .list_missing_versions_checking(config, |tv| self.may_auto_install(tv, opts))
+                .await;
             return Ok((installed, still_missing));
         }
         // Nothing was installed, the missing list is unchanged
         Ok((installed, missing))
+    }
+
+    /// Whether `install_missing_versions` would install `tv` if it were missing.
+    fn may_auto_install(&self, tv: &ToolVersion, opts: &InstallOptions) -> bool {
+        !opts.skip_auto_install
+            && (tv.request.options().lazy != Some(true) || opts.include_lazy)
+            && (!opts.missing_args_only
+                || self
+                    .versions
+                    .get(tv.ba())
+                    .is_some_and(|tvl| matches!(tvl.source, ToolSource::Argument)))
+            && opts
+                .auto_install_disable_tools
+                .as_ref()
+                .is_none_or(|tools| !tools.contains(&tv.ba().short))
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset
@@ -291,7 +303,7 @@ impl Toolset {
             .await
     }
 
-    pub(crate) async fn install_all_versions_with_progress(
+    pub async fn install_all_versions_with_progress(
         &mut self,
         config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
@@ -382,10 +394,19 @@ impl Toolset {
         let (installed, failed, attempted_failures) = self
             .install_with_deps(config, versions, opts, install_progress.as_deref())
             .await;
+        // Capture the completed installation itself before config reload, floating-link
+        // rebuilds, or a caller's later config write can change what a second lookup sees.
+        // Hook-only requests must remain in the return value for callers such as
+        // `mise use` that persist the selected version, but they are not installs.
+        let installed_tools: Vec<InstalledToolInfo> = installed
+            .iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .map(InstalledToolInfo::from)
+            .collect();
         let failed_backends = attempted_failures
             .iter()
             .filter_map(|tr| tr.backend().ok())
-            .unique_by(|backend| backend.ba().installs_path.clone())
+            .unique_by(|backend| backend.ba().installs_path().to_path_buf())
             .collect_vec();
 
         // Update footer for errors found before install tasks are spawned.
@@ -486,8 +507,6 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
-            let installed_tools: Vec<InstalledToolInfo> =
-                installed.iter().map(InstalledToolInfo::from).collect();
             hooks::run_one_hook_with_context(
                 config,
                 self,
@@ -785,6 +804,8 @@ impl Toolset {
         .await?;
         let backend = tv.backend()?;
         backend::ensure_backend_enabled(&backend.get_type())?;
+        crate::lockfile::ensure_locked_url_matches_version(&tv, &backend.get_platform_key())?;
+        tv.ba().warn_if_locked_backend_superseded(&tv.version);
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs
                 .then(|| scope_installs_dir(tr))
@@ -829,7 +850,54 @@ impl Toolset {
         backend.install_version(ctx, tv).await
     }
 
-    pub(crate) async fn install_missing_bin(
+    /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
+    /// so this relies on the signals available before install: the tool's name, registry bin
+    /// metadata, or another installed version of the same tool that ships the bin.
+    pub async fn missing_bin_providers(
+        &self,
+        config: &Arc<Config>,
+        missing: Vec<ToolVersion>,
+        bin_name: &str,
+    ) -> Vec<ToolVersion> {
+        let (mut providers, unmatched): (Vec<_>, Vec<_>) = missing.into_iter().partition(|tv| {
+            tv.ba().matches_bin_name(bin_name)
+                || tv
+                    .ba()
+                    .registry_tool()
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        });
+        if unmatched.is_empty() {
+            return providers;
+        }
+        // Without the scan, the name and registry signals above are all there is. Failing here
+        // instead would stop commands that no missing tool provides.
+        let installed = match self.list_installed_versions(config).await {
+            Ok(installed) => installed,
+            Err(err) => {
+                warn!("failed to list installed versions: {err:#}");
+                return providers;
+            }
+        };
+        for tv in unmatched {
+            if installed_version_ships_bin(config, &installed, &tv, bin_name).await {
+                providers.push(tv);
+            }
+        }
+        providers
+    }
+
+    /// Whether a configured, installed version of `tv`'s tool ships `bin_name`.
+    pub async fn configured_version_ships_bin(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> bool {
+        let installed = self.list_current_installed_versions(config);
+        installed_version_ships_bin(config, &installed, tv, bin_name).await
+    }
+
+    pub async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -928,7 +996,7 @@ impl Toolset {
     }
 
     /// Install all plugins defined in [plugins] config section
-    pub(crate) async fn ensure_config_plugins_installed(
+    pub async fn ensure_config_plugins_installed(
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
@@ -936,7 +1004,7 @@ impl Toolset {
     }
 
     /// Install all plugins from an explicit plugin URL map.
-    pub(crate) async fn ensure_config_plugins_installed_from_urls(
+    pub async fn ensure_config_plugins_installed_from_urls(
         config: &Arc<Config>,
         repo_urls: &HashMap<String, String>,
         dry_run: bool,
@@ -1049,10 +1117,25 @@ fn transitive_dependency_before_date(
     }
 }
 
+/// Whether a version in `installed` of the same tool as `tv` ships `bin_name`.
+async fn installed_version_ships_bin(
+    config: &Arc<Config>,
+    installed: &[TVTuple],
+    tv: &ToolVersion,
+    bin_name: &str,
+) -> bool {
+    for (backend, installed_tv) in installed.iter().filter(|(b, _)| &**b.ba() == tv.ba()) {
+        if let Ok(Some(_bin)) = backend.which(config, installed_tv, bin_name).await {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::parse_tool_options;
 
     #[cfg(windows)]
@@ -1098,7 +1181,7 @@ mod tests {
         );
 
         let mut inactive_options = parse_tool_options(r#"postinstall="echo inactive""#);
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

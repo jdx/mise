@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+current=$(mise version | tail -n1 | awk '{print $1}' | sed 's/-DEBUG$//')
+export MISE_CACHE_DIR="$PWD/update-cache"
+now=$(date +%s)
+mkdir -p served
+printf 'v9999.1.0 %s\nv%s %s\nv0.1.0 %s\n' "$((now - 3600))" "$current" "$((now - 172800))" "$((now - 864000))" >served/releases.tsv
+start_http_server --handler - <<'PYTHON'
+import http.server
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory="served", **kwargs)
+
+    def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path == "/repos/acme/mise/releases":
+            page = int(parse_qs(url.query)["page"][0])
+            body = Path(f"served/page{page}.json").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            super().do_GET()
+PYTHON
+export MISE_URL_REPLACEMENTS="{\"https://mise.jdx.dev\":\"http://127.0.0.1:$HTTP_PORT\"}"
+unset MISE_MINIMUM_RELEASE_AGE MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE
+
+assert "mise version --json | jq -r .latest" "$current"
+assert_contains "mise self-update --no-plugins 2>&1" "already up to date"
+
+# Changing the age must not reuse the previously selected version cache.
+export MISE_MINIMUM_RELEASE_AGE=7d
+assert "mise version --json | jq -r .latest" "0.1.0"
+export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=24h
+assert "mise version --json | jq -r .latest" "$current"
+export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=0s
+assert "mise version --json | jq -r .latest" "9999.1.0"
+
+# The command flag beats both environment settings. --force cannot downgrade.
+assert_contains "mise self-update --minimum-release-age 7d --force --no-plugins 2>&1" "Selected mise 0.1.0"
+assert_contains "mise self-update --minimum-release-age 7d --force --no-plugins 2>&1" "already up to date"
+
+# Pins bypass even an invalid policy and unavailable metadata.
+printf 'invalid\n' >served/releases.tsv
+export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=invalid
+assert_contains "mise self-update $current --no-plugins 2>&1" "already up to date"
+export MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=24h
+assert_fail "mise self-update --no-plugins" "invalid mise release index"
+
+# A custom mirror needs pagination past a full page of too-young releases.
+python3 - "$current" "$now" <<'PYTHON'
+import datetime
+import json
+from pathlib import Path
+import sys
+
+current, now = sys.argv[1], int(sys.argv[2])
+def release(tag, age):
+    return {"tag_name": tag, "draft": False, "prerelease": False,
+            "created_at": "2020-01-01T00:00:00Z", "assets": [],
+            "published_at": datetime.datetime.fromtimestamp(now-age, datetime.timezone.utc).isoformat()}
+Path("served/page1.json").write_text(json.dumps([release("v9999.1.0", 3600)] * 100))
+Path("served/page2.json").write_text(json.dumps([dict(release("nightly", 0), published_at=None), release("v" + current, 172800)]))
+PYTHON
+export MISE_SELF_UPDATE_API_URL=https://mirror.example.test
+export MISE_SELF_UPDATE_REPOSITORY=acme/mise
+export MISE_URL_REPLACEMENTS="{\"https://mirror.example.test\":\"http://127.0.0.1:$HTTP_PORT\"}"
+assert "mise version --json | jq -r .latest" "$current"
+assert_contains "mise self-update --no-plugins 2>&1" "already up to date"
+
+# A mirror missing publication dates must not use the old commit's created_at.
+python3 - <<'PYTHON'
+import json
+from pathlib import Path
+p = Path("served/page2.json")
+releases = json.loads(p.read_text())
+releases[1].pop("published_at")
+p.write_text(json.dumps(releases))
+PYTHON
+assert_fail "mise self-update --no-plugins" "missing publication date"

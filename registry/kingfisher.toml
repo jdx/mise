@@ -1,4 +1,6 @@
-backends = ["github:mongodb/kingfisher"]
+backends = [
+  { full = "github:mongodb/kingfisher", attestations_since = "1.91.0" },
+]
 bins = ["kingfisher"]
 description = "Secret scanner with live validation and blast radius analysis"
 test = { cmd = "kingfisher --version", expected = "kingfisher {{version}}" }

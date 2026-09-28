@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# In a tracked entry's include pattern containing `/`, `*` stops at a
+# separator and only `**` crosses one. The capture walk skips directories an
+# include list cannot reach into, and must agree with the matcher about what
+# it selects.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+
+mkdir -p ~/.codex/rules/deep
+echo 'always test' >~/.codex/rules/one.md
+echo 'never guess' >~/.codex/rules/deep/two.md
+
+# `rules/*.md` names only the files directly in `rules`
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/*.md"] }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'always test'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
+checkpoint=$(mise dot history --json | jq -r '.[0].uuid')
+
+# `**` is how a pattern reaches deeper
+echo 'still guessing' >~/.codex/rules/deep/two.md
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/**/*.md"] }
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'always test'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/deep/two.md" 'still guessing'
+
+# A rollback reads the list the older checkpoint recorded, and must see
+# that `rules/*.md` never covered the nested file. Reading `*` as crossing
+# `/` there called it selected but absent, the one answer that deletes a
+# live file.
+echo 'always test, again' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+assert_succeed "mise dot rollback ~/.codex --to $checkpoint --yes"
+assert 'cat ~/.codex/rules/one.md' 'always test'
+assert 'cat ~/.codex/rules/deep/two.md' 'still guessing'
+
+# An exclude list never narrows under a user: narrowing it would save
+# files they asked to leave out. `rules/*.md` still drops the nested file,
+# and says to write `**` instead.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["rules/*.md"] }
+TOML
+echo 'edited' >~/.codex/rules/deep/two.md
+assert_contains 'mise dot save 2>&1' "exclude pattern 'rules/*.md' matches 'rules/deep/two.md' only because"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/one.md"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
+# the pattern that means what the older reading did is quiet
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["rules/**/*.md"] }
+TOML
+echo 'edited again' >~/.codex/rules/deep/two.md
+assert_not_contains 'mise dot save 2>&1' 'only because'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
+
+# and so does a directory-walking deployment entry
+src="$MISE_CONFIG_DIR/src"
+mkdir -p "$src/nvim/after"
+echo 'top' >"$src/nvim/init.bak"
+echo 'nested' >"$src/nvim/after/ftplugin.bak"
+echo 'kept' >"$src/nvim/init.lua"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/deployed" = { source = "src", mode = "symlink-each", exclude = ["nvim/*.bak"] }
+TOML
+assert_contains 'mise dot apply 2>&1' 'only because'
+assert 'cat ~/deployed/nvim/init.lua' 'kept'
+assert_fail 'test -e ~/deployed/nvim/init.bak'
+assert_fail 'test -e ~/deployed/nvim/after/ftplugin.bak'

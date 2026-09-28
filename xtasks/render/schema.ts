@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 //MISE description="Render JSON schema"
 //MISE depends=["docs:setup"]

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tools]
+node = "22"
+
+[tasks.build]
+run = "make"
+EOF
+
+cat >other.toml <<'EOF'
+[tools]
+bun = "1"
+EOF
+
+settings="$(mise __complete_word__ --shell fish --line 'mise config set settings.jo')"
+assert_contains_text "$settings" $'settings.jobs\tHow many jobs to run concurrently'
+assert_not_contains_text "$settings" $'\001files'
+
+zsh_settings="$(mise __complete_word__ --shell zsh --line 'mise config set settings.jo')"
+assert_contains_text "$zsh_settings" $'settings.jobs\tHow many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.\tsettings.jobs'
+assert_not_contains_text "$zsh_settings" $'\001files'
+
+pwsh_settings="$(mise __complete_word__ --shell powershell --line 'mise config set settings.jo')"
+assert_contains_text "$pwsh_settings" $'settings.jobs\tHow many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.\tsettings.jobs\tvalue'
+assert_not_contains_text "$pwsh_settings" $'\001files'
+
+tools="$(mise __complete_word__ --shell fish --line 'mise cfg get tools.')"
+assert_contains_text "$tools" 'tools.node'
+assert_not_contains_text "$tools" 'tools.bun'
+
+other_tools="$(mise __complete_word__ --shell fish --line 'mise config set --file other.toml tools.')"
+assert_contains_text "$other_tools" 'tools.bun'
+assert_not_contains_text "$other_tools" 'tools.node'
+
+tool_options="$(mise __complete_word__ --shell fish --line 'mise config set tools.node.ver')"
+assert_contains_text "$tool_options" $'tools.node.version\tversion of the tool to install'
+
+task_options="$(mise __complete_word__ --shell fish --line 'mise config set tasks.build.dep')"
+assert_contains_text "$task_options" 'tasks.build.depends'
+
+# The run= the usage spec carries for this argument, as a usage-generated script calls it.
+spec_run="$(mise __complete_word__ --candidates key '--line=mise config set settings.jo')"
+assert_contains_text "$spec_run" 'settings.jobs'

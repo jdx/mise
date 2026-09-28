@@ -1,6 +1,6 @@
 use color_eyre::eyre::{Result, eyre};
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::Config;
 
 /// Show a configured version alias for a tool

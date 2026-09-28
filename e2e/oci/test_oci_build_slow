@@ -53,12 +53,12 @@ layer_c="$(jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq")
 # different version → different tool layer digest
 assert_not "test \"$layer_a\" = \"$layer_c\" && echo same" "same"
 
-# --- 5. asdf/vfox backends are rejected ---
+# --- 5. asdf backends are rejected ---
 cat >mise.toml <<EOF
 [tools]
 "asdf:some-plugin" = "1.0.0"
 EOF
-assert_fail "mise oci build --from scratch -o ./out-bad" "does not support asdf/vfox"
+assert_fail "mise oci build --from scratch -o ./out-bad" "does not support asdf plugins"
 
 # --- 6. Global config tools are NOT packaged by default (#9690) ---
 # Pin mise.toml back to a buildable project, then drop a *different* tool
@@ -76,13 +76,13 @@ EOF
 assert_succeed "mise oci build -o ./out-scope --from scratch"
 # Only the project tool (jq) should be in the manifest — the asdf plugin from
 # the global config must be filtered out, both as a packaged layer and as a
-# trigger for the asdf/vfox rejection check.
+# trigger for the asdf rejection check.
 mf="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' ./out-scope/index.json)"
 assert "jq -r '[.layers[] | select(.annotations.\"dev.mise.tool.short\") | .annotations.\"dev.mise.tool.short\"] | sort | unique | join(\",\")' ./out-scope/blobs/sha256/$mf" "jq"
 
 # --- 7. --include-global reverses the scope filter ---
-# With the asdf plugin now back in scope, the asdf/vfox rejection should fire.
-assert_fail "mise oci build --include-global -o ./out-incl --from scratch" "does not support asdf/vfox"
+# With the asdf plugin now back in scope, the asdf rejection should fire.
+assert_fail "mise oci build --include-global -o ./out-incl --from scratch" "does not support asdf plugins"
 
 # --- 8. [oci] settings from global config are also project-scoped by default ---
 # Replace the asdf-plugin-in-global with a bogus [oci].from that would fail to

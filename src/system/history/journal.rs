@@ -27,7 +27,7 @@ pub(crate) const DIR_SNAPSHOT_MAX: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum JournalEntry {
+pub enum JournalEntry {
     /// Context for someone reading `mise dot history show`.
     Note { message: String },
     /// Written before `path` is mutated on behalf of `item` (a dotfile
@@ -69,7 +69,7 @@ impl JournalEntry {
 
 /// Renders a journal for humans, folding each `Committed` into the
 /// `PathChanged` it completes: `dotfiles: ~/.zshrc: missing -> symlink`.
-pub(crate) fn render(entries: &[JournalEntry]) -> Vec<String> {
+pub fn render(entries: &[JournalEntry]) -> Vec<String> {
     let mut lines: Vec<(u32, String)> = vec![];
     for (index, entry) in entries.iter().enumerate() {
         match entry {
@@ -101,7 +101,7 @@ pub(crate) fn render(entries: &[JournalEntry]) -> Vec<String> {
 /// larger content stays in the private recovery directory. Recovery data
 /// must never enter the publishable repository's object database.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Blob {
+pub struct Blob {
     pub sha256: String,
     pub size: u64,
     /// base64 of the bytes when they fit [`BLOB_INLINE_MAX`].
@@ -152,7 +152,7 @@ impl Blob {
 /// put it back.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum PathSnapshot {
+pub enum PathSnapshot {
     Missing,
     File {
         content: Blob,
@@ -185,20 +185,20 @@ pub(crate) enum PathSnapshot {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DirFileSnapshot {
+pub struct DirFileSnapshot {
     pub rel: PathBuf,
     pub content: Blob,
     pub mode: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DirLinkSnapshot {
+pub struct DirLinkSnapshot {
     pub rel: PathBuf,
     pub dest: PathBuf,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct DirDirSnapshot {
+pub struct DirDirSnapshot {
     pub rel: PathBuf,
     pub mode: u32,
 }
@@ -363,7 +363,7 @@ fn capture_dir(state_dir: &Path, dir: &Path) -> std::result::Result<DirCapture, 
 /// is still in the state the run left it in.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum PathState {
+pub enum PathState {
     Missing,
     File {
         sha256: String,
@@ -495,7 +495,7 @@ fn mode_of(_metadata: &std::fs::Metadata) -> u32 {
 
 /// A `PathChanged` entry awaiting its `Committed`.
 #[derive(Debug)]
-pub(crate) struct PendingChange {
+pub struct PendingChange {
     seq: u32,
     path: PathBuf,
 }
@@ -503,7 +503,7 @@ pub(crate) struct PendingChange {
 /// Captures every path's prior state and records a `PathChanged` for each,
 /// before the caller mutates them. Returns nothing when no generation is
 /// open, so inactive runs pay no capture cost.
-pub(crate) fn begin_changes(
+pub fn begin_changes(
     part: &str,
     item: &str,
     paths: impl IntoIterator<Item = PathBuf>,
@@ -554,7 +554,7 @@ pub(crate) fn begin_changes_with(
 }
 
 /// Records the resulting state of each pending change.
-pub(crate) fn commit_changes(pending: Vec<PendingChange>) {
+pub fn commit_changes(pending: Vec<PendingChange>) {
     for change in pending {
         // the mutation already happened; a missing `committed` is handled by
         // inspecting the path later, so this is a warning
@@ -568,7 +568,7 @@ pub(crate) fn commit_changes(pending: Vec<PendingChange>) {
 }
 
 /// Records a free-form note on the open generation.
-pub(crate) fn note(message: impl Into<String>) {
+pub fn note(message: impl Into<String>) {
     if let Err(err) = super::scope::record(JournalEntry::Note {
         message: message.into(),
     }) {

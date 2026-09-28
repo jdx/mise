@@ -87,7 +87,7 @@ if ! MISE_DEBUG=1 mise install >"$PNPM_DEBUG_LOG" 2>&1; then
   cat "$PNPM_DEBUG_LOG"
   exit 1
 fi
-assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimumReleaseAge="
+assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimum-release-age="
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--allow-build=tiny"
 assert_succeed "mise exec -- tiny --help >/dev/null"

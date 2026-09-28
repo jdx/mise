@@ -1,7 +1,7 @@
 use color_eyre::eyre::{Result, bail};
 use jiff::Timestamp;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{ToolRequest, resolve_sub_base};

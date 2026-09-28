@@ -10,7 +10,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, dirs};
 use async_trait::async_trait;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub(crate) use script_manager::{Script, ScriptManager};
@@ -24,20 +24,20 @@ use std::{
 };
 
 pub(crate) mod asdf_plugin;
-pub(crate) mod core;
+pub mod core;
 pub(crate) mod mise_plugin_toml;
 pub(crate) mod packslip;
 pub(crate) mod script_manager;
 pub(crate) mod vfox_plugin;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExternalCommand {
+pub struct ExternalCommand {
     pub topic: String,
     pub subcommands: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
-pub(crate) enum PluginType {
+pub enum PluginType {
     Asdf,
     Vfox,
     VfoxBackend,
@@ -45,7 +45,7 @@ pub(crate) enum PluginType {
 }
 
 #[derive(Debug)]
-pub(crate) enum PluginEnum {
+pub enum PluginEnum {
     Asdf(Arc<AsdfPlugin>),
     Vfox(Arc<VfoxPlugin>),
     VfoxBackend(Arc<VfoxPlugin>),
@@ -53,7 +53,7 @@ pub(crate) enum PluginEnum {
 }
 
 impl PluginEnum {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             PluginEnum::Asdf(plugin) => plugin.name(),
             PluginEnum::Vfox(plugin) => plugin.name(),
@@ -71,7 +71,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn get_plugin_type(&self) -> PluginType {
+    pub fn get_plugin_type(&self) -> PluginType {
         match self {
             PluginEnum::Asdf(_) => PluginType::Asdf,
             PluginEnum::Vfox(_) => PluginType::Vfox,
@@ -80,7 +80,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn get_remote_url(&self) -> eyre::Result<Option<String>> {
+    pub fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
             PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
@@ -89,7 +89,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn set_remote_url(&self, url: String) {
+    pub fn set_remote_url(&self, url: String) {
         match self {
             PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
             PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
@@ -98,7 +98,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
+    pub fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
@@ -107,7 +107,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn current_sha_short(&self) -> eyre::Result<Option<String>> {
+    pub fn current_sha_short(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
             PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
@@ -116,7 +116,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn remote_sha(&self) -> eyre::Result<Option<String>> {
+    pub fn remote_sha(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.remote_sha(),
             PluginEnum::Vfox(plugin) => plugin.remote_sha(),
@@ -125,7 +125,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
+    pub fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
@@ -134,11 +134,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn execute_external_command(
-        &self,
-        command: &str,
-        args: Vec<String>,
-    ) -> eyre::Result<()> {
+    pub fn execute_external_command(&self, command: &str, args: Vec<String>) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
@@ -147,11 +143,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn update(
-        &self,
-        pr: &dyn SingleReport,
-        gitref: Option<String>,
-    ) -> eyre::Result<()> {
+    pub async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
@@ -160,7 +152,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    pub async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
             PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
@@ -169,7 +161,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn is_installed(&self) -> bool {
+    pub fn is_installed(&self) -> bool {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),
             PluginEnum::Vfox(plugin) => plugin.is_installed(),
@@ -187,7 +179,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) async fn ensure_installed(
+    pub async fn ensure_installed(
         &self,
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
@@ -208,7 +200,7 @@ impl PluginEnum {
 }
 
 impl PluginType {
-    pub(crate) fn from_full(full: &str) -> eyre::Result<Self> {
+    pub fn from_full(full: &str) -> eyre::Result<Self> {
         match full.split(':').next() {
             Some("asdf") => Ok(Self::Asdf),
             Some("vfox") => Ok(Self::Vfox),
@@ -218,7 +210,7 @@ impl PluginType {
         }
     }
 
-    pub(crate) fn from_plugin_config(key: &str) -> (Self, &str) {
+    pub fn from_plugin_config(key: &str) -> (Self, &str) {
         if let Some(name) = key.strip_prefix("vfox:") {
             (Self::Vfox, name)
         } else if let Some(name) = key.strip_prefix("vfox-backend:") {
@@ -252,7 +244,7 @@ impl PluginType {
         }
     }
 
-    pub(crate) fn plugin(&self, short: String) -> PluginEnum {
+    pub fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
             PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
@@ -267,7 +259,7 @@ impl PluginType {
 
 /// Warn if a plugin is an env-only vfox plugin that shadows a registry entry.
 /// Env-only plugins have `hooks/mise_env.lua` but not `hooks/available.lua`.
-pub(crate) fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
+pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
     let hooks = plugin_path.join("hooks");
     let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
     if is_env_only && REGISTRY.contains_key(name) {
@@ -285,22 +277,45 @@ pub(crate) static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-/// PEP 440 separator-less pre-release segment, grounded in the canonical
-/// public version grammar:
+/// PEP 440 pre-release and developmental-release segments, grounded in the
+/// canonical public version grammar:
 ///
 /// > `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
 ///
-/// The pre-release segment (`{a|b|rc}N`) must follow the release segment, so
-/// the regex requires a leading digit. `c` is included as PEP 440's recognized
-/// alternate spelling for `rc`. The trailing boundary `(?:$|[^a-z0-9])` keeps
-/// it from matching inside hex hashes or other identifiers.
+/// The segment must follow the release segment, so the regex requires a
+/// leading digit. It also accepts the spellings PEP 440 normalizes to that
+/// form: an optional `-`/`_`/`.` separator on either side, the long names
+/// `alpha`, `beta`, `c`, `pre` and `preview`, and an omitted number
+/// (`1.0a` is `1.0a0`, `1.0.dev` is `1.0.dev0`). pip and uv exclude all of
+/// these unless pre-releases are requested. The trailing boundary
+/// `(?:$|[^a-z0-9])` keeps it from matching inside hex hashes or other
+/// identifiers.
 ///
 /// Only consulted by Python-flavored backends (currently `pipx`); other
 /// backends would false-positive on hex hashes like `f149714c1d54`.
-pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
-    Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
+pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)[0-9][-_.]?(?:alpha|beta|preview|pre|rc|a|b|c|dev)[-_.]?[0-9]*(?:$|[^a-z0-9])")
+        .unwrap()
+});
 
-pub(crate) fn get(short: &str) -> Result<PluginEnum> {
+/// The public part of a PEP 440 version, without its local label
+/// (`1.1+gpu.dev0` -> `1.1`).
+fn pep440_public_version(version: &str) -> &str {
+    version
+        .split_once('+')
+        .map_or(version, |(public, _)| public)
+}
+
+/// Pre-release detection for Python-flavored backends: the PEP 440 rule plus
+/// the shared [`VERSION_REGEX`] channel tags, both applied to the public
+/// version only. A local label (`+gpu.dev0`, `+build1dev0`) is free-form and
+/// never makes a release a pre-release.
+pub(crate) fn is_python_prerelease(version: &str) -> bool {
+    let public = pep440_public_version(version);
+    PEP440_PRERELEASE_REGEX.is_match(public) || VERSION_REGEX.is_match(public)
+}
+
+pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
 
     // For plugin:tool format, look up the plugin by just the plugin name
@@ -500,13 +515,7 @@ pub(crate) fn install_git_plugin_source(
         file::remove_all_with_progress(plugin_path, pr)?;
         file::remove_all_with_progress(&repo_path, pr)?;
 
-        let git = Git::new(&repo_path);
-        pr.set_message(format!("clone {repo_url}"));
-        git.clone(repo_url, CloneOptions::default().pr(pr))?;
-        if let Some(ref_) = git_ref {
-            pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
+        clone_git_plugin_source(&repo_path, repo_url, git_ref, pr)?;
 
         let subdir_path = repo_path.join(subdir);
         if !subdir_path.is_dir() {
@@ -520,15 +529,171 @@ pub(crate) fn install_git_plugin_source(
         file::make_symlink(&subdir_path, plugin_path)?;
         Ok(Git::new(plugin_path))
     } else {
-        let git = Git::new(plugin_path);
+        clone_git_plugin_source(plugin_path, repo_url, git_ref, pr)
+    }
+}
+
+/// Clones `repo_url` into `dir` and checks out `git_ref`. On failure `dir` is
+/// removed, so a ref that can't be checked out never leaves the default
+/// branch installed in its place.
+fn clone_git_plugin_source(
+    dir: &Path,
+    repo_url: &str,
+    git_ref: Option<&str>,
+    pr: &dyn SingleReport,
+) -> Result<Git> {
+    let git = Git::new(dir);
+    let result = (|| {
         pr.set_message(format!("clone {repo_url}"));
         git.clone(repo_url, CloneOptions::default().pr(pr))?;
         if let Some(ref_) = git_ref {
             pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
+            git.update(Some(ref_.to_string()))
+                .wrap_err_with(|| format!("failed to check out {ref_} from {repo_url}"))?;
         }
-        Ok(git)
+        Ok(())
+    })();
+    if let Err(err) = result {
+        if let Err(cleanup_err) = file::remove_all(dir) {
+            warn!(
+                "failed to remove {} after install failed: {cleanup_err:#}",
+                display_path(dir)
+            );
+        }
+        return Err(err);
     }
+    Ok(git)
+}
+
+/// An installed plugin whose checkout no longer matches its `[plugins]` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginDrift {
+    pub name: String,
+    pub reason: String,
+}
+
+impl Display for PluginDrift {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "plugin {} {}; run `mise plugins install --force {}` to reinstall it from [plugins]",
+            self.name, self.reason, self.name
+        )
+    }
+}
+
+/// Compares installed git plugins with their `[plugins]` entries using only
+/// local git state.
+///
+/// `[plugins]` is applied when a plugin is installed, so editing an entry
+/// afterwards leaves the old checkout in place. mise doesn't move it on its
+/// own; this lets commands point out the mismatch instead.
+pub fn plugin_drift(config: &Config) -> Vec<PluginDrift> {
+    let mut drift: Vec<_> = config
+        .repo_urls
+        .keys()
+        .filter_map(|key| {
+            let (_, name) = PluginType::from_plugin_config(key);
+            let configured = config.configured_plugin_url(name)?;
+            match git_plugin_drift(name, &configured) {
+                Ok(reason) => reason.map(|reason| PluginDrift {
+                    name: name.to_string(),
+                    reason,
+                }),
+                Err(err) => {
+                    debug!("failed to compare plugin {name} with [plugins]: {err:#}");
+                    None
+                }
+            }
+        })
+        .collect();
+    drift.sort_by(|a, b| a.name.cmp(&b.name));
+    drift.dedup();
+    drift
+}
+
+pub fn warn_plugin_drift(config: &Config) {
+    for drift in plugin_drift(config) {
+        warn!("{drift}");
+    }
+}
+
+fn git_plugin_drift(name: &str, configured: &str) -> Result<Option<String>> {
+    if configured.starts_with("packslip:") || local_plugin_source_path(configured).is_some() {
+        return Ok(None);
+    }
+    let PluginSource::Git { url, git_ref, .. } = PluginSource::parse(configured) else {
+        return Ok(None);
+    };
+    let plugin_path = dirs::PLUGINS.join(name.to_kebab_case());
+    if !plugin_path.exists() || packslip::installed(&plugin_path)?.is_some() {
+        return Ok(None);
+    }
+    let repo_path = match managed_git_plugin_repo_path(name, &plugin_path)? {
+        Some(repo_path) => repo_path,
+        // A symlink mise didn't create is a linked local plugin.
+        None if plugin_path.is_symlink() => return Ok(None),
+        None => plugin_path,
+    };
+    let git = Git::new(&repo_path);
+    if !git.is_repo() {
+        return Ok(None);
+    }
+    if let Some(installed_url) = git.get_remote_url()
+        && normalize_git_url(&installed_url) != normalize_git_url(&url)
+    {
+        return Ok(Some(format!(
+            "is installed from {}, but [plugins] names {}",
+            display_git_url(&installed_url),
+            display_git_url(&url)
+        )));
+    }
+    let Some(git_ref) = git_ref else {
+        return Ok(None);
+    };
+    let head = git.current_sha()?;
+    let head_short = head.get(..7).unwrap_or(&head);
+    let name = git_ref.strip_prefix("refs/heads/").unwrap_or(&git_ref);
+    if !git_ref.starts_with("refs/tags/") && git.current_branch()? == name {
+        return Ok(None);
+    }
+    if git.resolve_commit(&git_ref)?.as_deref() != Some(head.as_str()) {
+        return Ok(Some(format!(
+            "is checked out at {head_short}, but [plugins] pins {git_ref}"
+        )));
+    }
+    // A branch pin also needs HEAD on that branch, or `mise plugins update`
+    // won't follow it. Only local refs count, so upstream commits on the
+    // branch aren't reported, and a same-named tag keeps a detached checkout
+    // of that tag valid.
+    let is_branch_pin = git_ref.starts_with("refs/heads/")
+        || (git.resolve_commit(&format!("refs/heads/{name}"))?.is_some()
+            && git.resolve_commit(&format!("refs/tags/{name}"))?.is_none());
+    if is_branch_pin {
+        return Ok(Some(format!(
+            "is checked out at {head_short} rather than on branch {name}, which [plugins] pins"
+        )));
+    }
+    Ok(None)
+}
+
+/// Strips credentials from a git URL before it is shown to the user, since
+/// drift warnings end up in install logs and shared `mise doctor` reports.
+fn display_git_url(url: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(url) else {
+        // scp-style `user@host:path` can't carry a password.
+        return url.to_string();
+    };
+    if parsed.scheme() != "ssh" {
+        let _ = parsed.set_username("");
+    }
+    let _ = parsed.set_password(None);
+    parsed.to_string()
+}
+
+fn normalize_git_url(url: &str) -> &str {
+    let url = url.trim_end_matches('/');
+    url.strip_suffix(".git").unwrap_or(url)
 }
 
 pub(crate) fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
@@ -601,6 +766,22 @@ pub(crate) fn install_local_plugin_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_display_git_url_strips_credentials() {
+        assert_eq!(
+            display_git_url("https://user:token@example.com/org/repo.git"),
+            "https://example.com/org/repo.git"
+        );
+        assert_eq!(
+            display_git_url("ssh://git@example.com/org/repo.git"),
+            "ssh://git@example.com/org/repo.git"
+        );
+        assert_eq!(
+            display_git_url("git@github.com:org/repo.git"),
+            "git@github.com:org/repo.git"
+        );
+    }
 
     #[test]
     fn test_local_plugin_source_path_requires_plain_absolute_path() {
@@ -972,6 +1153,22 @@ mod tests {
     }
 
     #[test]
+    fn test_is_python_prerelease_ignores_local_label() {
+        // The shared channel tags still count in the public version...
+        assert!(is_python_prerelease("1.0.0-rc1"));
+        assert!(is_python_prerelease("1.0.0.dev0"));
+        assert!(is_python_prerelease("3.12.0a1"));
+        assert!(is_python_prerelease("1.0.0-rc1+gpu"));
+
+        // ...but not inside a local label, which is free-form.
+        assert!(VERSION_REGEX.is_match("1.1+gpu.dev0"));
+        assert!(!is_python_prerelease("1.1+gpu.dev0"));
+        assert!(!is_python_prerelease("1.1+cu121.rc"));
+        assert!(!is_python_prerelease("1.1+build-nightly"));
+        assert!(!is_python_prerelease("1.1"));
+    }
+
+    #[test]
     fn test_pep440_prerelease_regex() {
         // Canonical PEP 440 pre-release segments: `aN`, `bN`, `rcN`, plus the
         // recognized `cN` alias for `rcN`.
@@ -981,6 +1178,33 @@ mod tests {
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.2.3rc1"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0c1+build"));
         assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0a1.dev0"));
+
+        // Developmental releases are pre-releases too (uv/pip skip them by
+        // default).
+        assert!(PEP440_PRERELEASE_REGEX.is_match("2026.9.16.232951.dev0"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.dev1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0dev"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1.dev2"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-devtools"));
+
+        // Omitted numbers and long/separated spellings normalize to the
+        // canonical pre-release forms.
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0a"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0b"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0rc"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0.alpha.1"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0-beta2"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0_preview3"));
+        assert!(PEP440_PRERELEASE_REGEX.is_match("1.0pre"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0-alpine"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0.post1"));
+        assert!(!PEP440_PRERELEASE_REGEX.is_match("1.0.0-post1"));
+
+        // Local version labels are ignored.
+        assert!(is_python_prerelease("1.0.0c1+build"));
+        assert!(is_python_prerelease("1.0.dev0+local"));
+        assert!(!is_python_prerelease("1.1+build1dev0"));
+        assert!(!is_python_prerelease("1.1+abc1a1"));
 
         // Stable releases — including `.postN`, which PEP 440 specifies as a
         // post-release (after a stable), NOT a pre-release.

@@ -19,3 +19,23 @@ EOF
 
 mise install
 assert_contains "mise x -- npm --version" "11.7.0"
+
+# Test 3: node defined before pnpm
+cat >mise.toml <<EOF
+[tools]
+node = "25.2.1"
+pnpm = "10.26.1"
+EOF
+
+mise install
+assert_contains "mise x -- pnpm --version" "10.26.1"
+
+# Test 4: pnpm defined before node
+cat >mise.toml <<EOF
+[tools]
+pnpm = "10.26.1"
+node = "25.2.1"
+EOF
+
+mise install
+assert_contains "mise x -- pnpm --version" "10.26.1"

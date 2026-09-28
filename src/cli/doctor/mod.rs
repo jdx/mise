@@ -9,7 +9,6 @@ use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::version;
-use crate::cli::version::VERSION;
 use crate::config::{Config, IGNORED_CONFIG_FILES};
 use crate::env::PATH_KEY;
 use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
@@ -20,7 +19,8 @@ use crate::registry::REGISTRY;
 use crate::toolset::install_state;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
-use crate::{backend, dirs, duration, env, file, shims};
+use crate::version::VERSION;
+use crate::{backend, dirs, duration, env, file, plugins, shims};
 use console::{Alignment, pad_str, style};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
@@ -214,6 +214,7 @@ impl Doctor {
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
+        self.analyze_plugin_drift(&config);
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
@@ -311,12 +312,13 @@ impl Doctor {
         }
 
         let out = serde_json::to_string_pretty(&data)?;
-        println!("{out}");
+        let written = miseprint!("{out}\n");
 
+        // Diagnosed problems decide the exit status even when the reader has gone away.
         if !self.errors.is_empty() {
             return Err(crate::request_exit(1));
         }
-        Ok(())
+        Ok(written?)
     }
 
     async fn doctor(mut self) -> eyre::Result<()> {
@@ -353,10 +355,11 @@ impl Doctor {
 
         self.analyze_plugins();
         self.analyze_backend_mismatches();
-        if let Ok(config) = Config::get().await
-            && let Ok(ts) = config.get_toolset().await
-        {
-            self.analyze_system_deps(ts).await;
+        if let Ok(config) = Config::get().await {
+            self.analyze_plugin_drift(&config);
+            if let Ok(ts) = config.get_toolset().await {
+                self.analyze_system_deps(ts).await;
+            }
         }
 
         let env_vars = mise_env_vars()
@@ -466,7 +469,7 @@ impl Doctor {
             }
             self.warnings.push(format!(
                 "new mise version {latest} available, currently on {}",
-                *version::V
+                *crate::version::V
             ));
         }
     }
@@ -505,7 +508,7 @@ impl Doctor {
         info::section("config_files", render_config_files(config))?;
         info::section("env_files", render_env_files(config).await?)?;
         if IGNORED_CONFIG_FILES.is_empty() {
-            println!();
+            miseprintln!();
             info::inline_section("ignored_config_files", "(none)")?;
         } else {
             info::section(
@@ -1165,6 +1168,14 @@ impl Doctor {
                     .push(format!("plugin {} overrides a core plugin", plugin.id()));
             }
         }
+    }
+
+    fn analyze_plugin_drift(&mut self, config: &Config) {
+        self.warnings.extend(
+            plugins::plugin_drift(config)
+                .into_iter()
+                .map(|drift| drift.to_string()),
+        );
     }
 
     fn analyze_backend_mismatches(&mut self) {

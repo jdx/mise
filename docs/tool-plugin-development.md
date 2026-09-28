@@ -120,7 +120,9 @@ local attestation = {
 
 Assign this table to the `attestation` field in `PreInstall`'s response. Other supported
 fields include `cosign_sig_or_bundle_path` with optional `cosign_public_key_path`, and
-`slsa_provenance_path` with optional `slsa_min_level`. Supply real verification inputs for
+`slsa_provenance_path` with optional `slsa_min_level`, plus `slsa_signer_identity` (the exact
+Fulcio certificate URI subject, including workflow ref) and `slsa_signer_issuer` (the exact OIDC
+issuer). SLSA is skipped when signer fields are absent. Supply real verification inputs for
 the chosen method. Do not combine unrelated placeholder methods into one example.
 
 mise's lifecycle processes the main artifact; do not rely on upstream vfox `addition`
@@ -167,6 +169,44 @@ end
 
 The check above assumes a Unix executable layout. Archives normally carry executable
 permissions; only change them when the actual distribution requires it.
+
+#### MiseInstallSatisfied Hook
+
+Some tools keep install state that depends on tool options, such as add-on components the
+plugin installs in `PostInstall`. Without this hook, mise treats a version as installed
+once its directory exists, so changing the option later has no effect until the user runs
+`mise install --force`, which downloads the tool again.
+
+`MiseInstallSatisfied` lets the plugin report that an installed version no longer matches
+the request. mise calls it whenever it decides whether a tool needs installing, including
+`mise install` and auto-install, so keep it fast and free of side effects: inspect files
+under `ctx.path` rather than running the tool or making network requests. `ctx.version` is
+the installed version and `ctx.options` contains the current tool options.
+
+```lua
+-- hooks/mise_install_satisfied.lua
+function PLUGIN:MiseInstallSatisfied(ctx)
+    local file = require("file")
+    for _, name in ipairs(ctx.options.components or {}) do
+        if not file.exists(file.join_path(ctx.path, "components", name)) then
+            return {satisfied = false, reason = "missing component " .. name}
+        end
+    end
+    return {satisfied = true}
+end
+```
+
+Return `{satisfied = false}` (or `false`) when the install needs updating. mise then runs
+`PostInstall` again on the existing install, without running `PreInstall`, downloading, or
+removing the install directory, so `PostInstall` must be safe to rerun. After that and the
+tool's `postinstall` script, mise calls `MiseInstallSatisfied` again and fails with its
+`reason` if the install still does not match;
+the existing install stays in place either way. `mise install --force` still reinstalls from
+scratch.
+
+`reason` appears in debug output (`MISE_DEBUG=1`). Returning `true` or `nil` keeps the install
+as it is. If the hook raises an error, mise warns and keeps the install, so a broken check
+cannot trigger work on every command.
 
 #### PreUse Hook
 
@@ -216,6 +256,7 @@ my-tool-plugin/
 │   ├── pre_install.lua
 │   ├── env_keys.lua
 │   ├── post_install.lua       # optional
+│   ├── mise_install_satisfied.lua  # optional
 │   └── parse_legacy_file.lua  # optional
 └── lib/
     └── helper.lua            # optional shared code

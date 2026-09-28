@@ -128,20 +128,19 @@ where
     // A named generic value is authoritative. A flag-like value proves an
     // agent is present but lets a specific marker below identify it first.
     let mut generic = None;
-    for signal in ["AI_AGENT"] {
-        if let Some(raw) = value(signal)
-            && !is_false(&raw)
-        {
-            let mut agent = classify_generic(&raw);
-            if agent == Agent::ClaudeCode && enabled("CLAUDE_CODE_IS_COWORK") {
-                agent = Agent::ClaudeCowork;
-            }
-            let detection = Detection { agent, signal };
-            if agent != Agent::Other {
-                return Some(detection);
-            }
-            generic.get_or_insert(detection);
+    let signal = "AI_AGENT";
+    if let Some(raw) = value(signal)
+        && !is_false(&raw)
+    {
+        let mut agent = classify_generic(&raw);
+        if agent == Agent::ClaudeCode && enabled("CLAUDE_CODE_IS_COWORK") {
+            agent = Agent::ClaudeCowork;
         }
+        let detection = Detection { agent, signal };
+        if agent != Agent::Other {
+            return Some(detection);
+        }
+        generic = Some(detection);
     }
 
     // More-specific derivatives precede the agents whose compatibility

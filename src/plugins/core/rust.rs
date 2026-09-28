@@ -2,13 +2,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::options::BackendOptions;
 use crate::backend::{Backend, IdiomaticVersion, platform_target::PlatformTarget};
 use crate::build_time::TARGET;
-use crate::cli::args::BackendArg;
 use crate::cmd::{CmdLineRunner, cmd};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -20,6 +20,8 @@ use async_trait::async_trait;
 use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
 use xx::regex;
+
+mod nightly_channel;
 
 #[derive(Debug)]
 pub(super) struct RustPlugin {
@@ -202,6 +204,44 @@ impl RustPlugin {
             .envs(rustup_env(&runtime.homes, &tv.version))
             .prepend_path(vec![runtime.bin_dir.clone()])?
             .execute()
+    }
+
+    /// Gives rustup a `nightly` toolchain matching the dated nightly that
+    /// the rolling `nightly` request resolved to, so `cargo +nightly` keeps
+    /// working. An explicitly dated request leaves rustup's `nightly` alone.
+    fn link_nightly_channel(&self, tv: &ToolVersion, runtime: &RustRuntime) -> Result<()> {
+        if !is_dated_nightly(&tv.version) || tv.request.version() == tv.version {
+            return Ok(());
+        }
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTC_BIN), ["--print", "sysroot"])
+            .env("PATH", rustup_path_env(runtime)?)
+            .stderr_capture();
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
+            cmd = cmd.env(key, value);
+        }
+        let sysroot = PathBuf::from(cmd.read()?.trim());
+        // Only touch a rustup-managed `toolchains/<name>-<host>` directory.
+        let (Some(toolchains), Some(host_suffix)) = (
+            sysroot
+                .parent()
+                .filter(|dir| dir.file_name().is_some_and(|name| name == "toolchains")),
+            sysroot
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_prefix(tv.version.as_str())),
+        ) else {
+            debug!(
+                "not linking rustup nightly: unexpected sysroot {}",
+                file::display_path(&sysroot)
+            );
+            return Ok(());
+        };
+        let dated = format!("{}{host_suffix}", tv.version);
+        let alias = format!("nightly{host_suffix}");
+        if nightly_channel::refresh(toolchains, &dated, &alias)? {
+            debug!("linked rustup {alias} to {dated}");
+        }
+        Ok(())
     }
 
     fn target_triple(&self, tv: &ToolVersion) -> String {
@@ -553,6 +593,10 @@ impl Backend for RustPlugin {
         file::make_symlink(&runtime.bin_dir, &tv.install_path())?;
 
         self.test_rust(ctx, &tv, &runtime).await?;
+
+        if let Err(err) = self.link_nightly_channel(&tv, &runtime) {
+            warn!("failed to make rustup's nightly toolchain match {tv}: {err:#}");
+        }
 
         Ok(tv)
     }

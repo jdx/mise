@@ -1,3 +1,4 @@
+use crate::args::{BackendArg, ToolVersionType};
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
@@ -8,12 +9,8 @@ use crate::backend::static_helpers::{
     lookup_with_fallback, template_string, try_with_v_prefix, try_with_v_prefix_and_repo,
     verify_artifact,
 };
-use crate::backend::{
-    MISE_BINS_DIR, SecurityFeature, backend_arg_matches_registry_backend,
-    runtime_path_for_install_path,
-};
-use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::{Config, Settings};
+use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -101,6 +98,26 @@ impl<'a> GitBackendOptions<'a> {
 
     fn github_attestations(&self) -> bool {
         self.values.bool_with_default("github_attestations", true)
+    }
+
+    fn slsa_signer(&self) -> Option<crate::github::sigstore::SlsaSignerIdentity<'a>> {
+        let identity = self
+            .values
+            .str("slsa_signer_identity")
+            .filter(|s| !s.is_empty())?;
+        let issuer = self
+            .values
+            .str("slsa_signer_issuer")
+            .filter(|s| !s.is_empty())?;
+        Some(crate::github::sigstore::SlsaSignerIdentity { identity, issuer })
+    }
+
+    fn slsa_signer_for(&self, tv: &ToolVersion) -> Option<(String, String)> {
+        let signer = self.slsa_signer()?;
+        Some((
+            template_string(signer.identity, tv),
+            template_string(signer.issuer, tv),
+        ))
     }
 
     fn version_prefix(&self) -> Option<&'a str> {
@@ -316,6 +333,46 @@ impl<'a> GitBackendOptions<'a> {
 /// Server doesn't implement the attestations endpoint, so any verification
 /// attempt against a custom api_url will fail. Callers gate on this so users
 /// don't have to disable `MISE_GITHUB_ATTESTATIONS` globally for GHE tools.
+/// The provenance an install must verify: the registry's requirement when
+/// there is one, since a lockfile may have been written without it (after a
+/// wrong "no attestations", or recording SLSA instead); otherwise the
+/// lockfile's.
+fn expected_install_provenance(
+    locked: Option<ProvenanceType>,
+    required: Option<ProvenanceType>,
+) -> Option<ProvenanceType> {
+    required.or(locked)
+}
+
+/// Whether a lockfile's recorded provenance lets an install skip
+/// verification: only when it is what the registry requires, if anything.
+fn locked_provenance_satisfies(
+    locked: Option<&ProvenanceType>,
+    required: Option<&ProvenanceType>,
+) -> bool {
+    required.is_none_or(|required| locked == Some(required))
+}
+
+/// Fail `mise lock` when verification settled on anything other than the
+/// provenance the registry requires (SLSA, or nothing at all).
+fn ensure_registry_provenance(
+    tv: &ToolVersion,
+    required: Option<&ProvenanceType>,
+    verified: Option<&ProvenanceType>,
+) -> Result<()> {
+    match required {
+        Some(required) if verified != Some(required) => Err(eyre::eyre!(
+            "mise registry requires {required} provenance for {tv} but {}. \
+             This may indicate a downgrade attack.",
+            verified.map_or_else(
+                || "none was verified".to_string(),
+                |verified| format!("only {verified} was verified")
+            )
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn attestations_supported(api_url: &str) -> bool {
     api_url.trim_end_matches('/') == DEFAULT_GITHUB_API_BASE_URL
 }
@@ -325,6 +382,14 @@ fn github_attestations_disabled_for_tool_error(tv: &ToolVersion) -> eyre::Report
         "Lockfile requires github-attestations provenance for {tv} but \
          github_attestations is disabled for this tool. Re-run `mise lock` \
          to refresh the lockfile, or remove github_attestations = false."
+    )
+}
+
+fn slsa_signer_missing_error(tv: &ToolVersion) -> eyre::Report {
+    eyre::eyre!(
+        "Lockfile requires SLSA provenance for {tv}, but this tool has no expected signer. \
+         Set slsa_signer_identity and slsa_signer_issuer in the tool options, \
+         or refresh the lockfile after choosing another verification method."
     )
 }
 
@@ -797,18 +862,12 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
             let api_url = api_url.clone();
             let repo = repo.clone();
             async move {
-                github::get_release_for_url_with_versions_host(
-                    &api_url,
-                    &repo,
-                    &candidate,
-                    use_versions_host,
-                )
-                .await
+                github::get_release_for_url_with_versions_host(&api_url, &repo, &candidate, true)
+                    .await
             }
         })
         .await
@@ -1004,7 +1063,12 @@ impl Backend for UnifiedGitBackend {
             Ok(mut asset) => {
                 let primary_explicit_pattern = opts.asset_pattern_for_target(target).is_some();
                 // Detect provenance availability from release assets and attestation API
-                let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                // A registry requirement is recorded without asking anyone;
+                // the lock-time verification below still has to pass.
+                let required = self.registry_required_provenance(tv, &opts);
+                let mut provenance = if let Some(required) = required.clone() {
+                    Some(required)
+                } else if !self.is_gitlab() && !self.is_forgejo() {
                     self.detect_provenance_type(tv, &opts, &asset, target, primary_explicit_pattern)
                         .await?
                 } else {
@@ -1031,6 +1095,7 @@ impl Backend for UnifiedGitBackend {
                         }
                     }
                 }
+                ensure_registry_provenance(tv, required.as_ref(), provenance.as_ref())?;
                 let mut additional_artifacts = Vec::new();
                 for pattern in opts.additional_asset_patterns_for_target(target) {
                     let mut additional = self
@@ -1042,7 +1107,10 @@ impl Backend for UnifiedGitBackend {
                             Some(&pattern),
                         )
                         .await?;
-                    let mut additional_provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                    // The registry's requirement covers every asset of the release.
+                    let mut additional_provenance = if let Some(required) = required.clone() {
+                        Some(required)
+                    } else if !self.is_gitlab() && !self.is_forgejo() {
                         self.detect_provenance_type(tv, &opts, &additional, target, true)
                             .await?
                     } else {
@@ -1059,6 +1127,11 @@ impl Backend for UnifiedGitBackend {
                             )
                             .await?;
                     }
+                    ensure_registry_provenance(
+                        tv,
+                        required.as_ref(),
+                        additional_provenance.as_ref(),
+                    )?;
                     additional_artifacts.push(ArtifactInfo {
                         checksum: additional.digest,
                         url: additional.url,
@@ -1118,8 +1191,28 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn use_versions_host_for_github_metadata(&self) -> bool {
-        backend_arg_matches_registry_backend(&self.ba)
+    /// The provenance the mise registry requires for `tv`'s primary asset:
+    /// GitHub attestations, for a tool the registry says publishes them from
+    /// this version on. Without this, "no attestations" (from mise-versions,
+    /// or a lockfile written after it) just skips verification. Off whenever
+    /// the user has turned GitHub attestations off.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (!self.is_gitlab()
+            && !self.is_forgejo()
+            && settings.github_attestations
+            && settings.github.github_attestations
+            && opts.github_attestations()
+            && attestations_supported(&opts.api_url())
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
     }
 
     fn additional_artifacts_match_patterns(
@@ -1180,13 +1273,7 @@ impl UnifiedGitBackend {
         repo: &str,
         tag: &str,
     ) -> Result<github::GithubRelease> {
-        github::get_release_for_url_with_versions_host(
-            api_url,
-            repo,
-            tag,
-            self.use_versions_host_for_github_metadata(),
-        )
-        .await
+        github::get_release_for_url_with_versions_host(api_url, repo, tag, true).await
     }
 
     /// Detect what provenance type is available for a release by checking its assets
@@ -1205,17 +1292,13 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.to_string();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -1238,11 +1321,7 @@ impl UnifiedGitBackend {
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
                 match crate::github::sigstore::detect_attestations(
-                    owner,
-                    repo_name,
-                    &api_url,
-                    digest,
-                    self.use_versions_host_for_github_metadata(),
+                    owner, repo_name, &api_url, digest, true,
                 )
                 .await
                 {
@@ -1281,7 +1360,7 @@ impl UnifiedGitBackend {
         // Check for SLSA provenance from release assets using the same platform-aware
         // picker as install-time verification. This ensures we only record SLSA provenance
         // when a matching provenance file exists for the target platform.
-        if settings.slsa && settings.github.slsa {
+        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Narrow provenance the same way the binary is narrowed, so a
             // multi-binary release's per-binary provenance files don't
@@ -1338,9 +1417,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&download_url, &api_url)
+            gitlab::get_headers(&download_url, &api_url)?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&download_url, &api_url)
+            forgejo::get_headers(&download_url, &api_url)?
         } else {
             github::get_headers(&download_url)?
         };
@@ -1376,7 +1455,7 @@ impl UnifiedGitBackend {
                     repo_name,
                     None,
                     Some(&api_url),
-                    self.use_versions_host_for_github_metadata(),
+                    true,
                 )
                 .await
                 {
@@ -1402,20 +1481,23 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to SLSA provenance
-        if settings.slsa && settings.github.slsa {
+        if settings.slsa
+            && settings.github.slsa
+            && let Some((identity, issuer)) = opts.slsa_signer_for(tv)
+        {
+            let signer = crate::github::sigstore::SlsaSignerIdentity {
+                identity: &identity,
+                issuer: &issuer,
+            };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
-            let use_versions_host = self.use_versions_host_for_github_metadata();
             let release =
                 try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                     let api_url = api_url.to_string();
                     let repo = repo.to_string();
                     async move {
                         github::get_release_for_url_with_versions_host(
-                            &api_url,
-                            &repo,
-                            &candidate,
-                            use_versions_host,
+                            &api_url, &repo, &candidate, true,
                         )
                         .await
                     }
@@ -1456,6 +1538,7 @@ impl UnifiedGitBackend {
                     &artifact_path,
                     &provenance_path,
                     1u8,
+                    signer,
                 )
                 .await
                 {
@@ -1480,6 +1563,7 @@ impl UnifiedGitBackend {
                                     &artifact_path,
                                     &provenance_path,
                                     verification.additional_overlay,
+                                    signer,
                                 )
                                 .await
                             {
@@ -1630,9 +1714,9 @@ impl UnifiedGitBackend {
         };
 
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url, &opts.api_url())
+            gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url, &opts.api_url())
+            forgejo::get_headers(&url, &opts.api_url())?
         } else {
             github::get_headers(&url)?
         };
@@ -1648,23 +1732,39 @@ impl UnifiedGitBackend {
         }
 
         // Check before verify_checksum, which may generate a new checksum from the
-        // downloaded file. We only want to skip provenance when the lockfile already
-        // had integrity data before this install.
+        // downloaded file. Reuse non-SLSA provenance only when the lockfile had
+        // integrity data before this install; SLSA checks the current signer.
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_provenance);
-        let locked_provenance = tv
+        let recorded_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
+        let required = self.registry_required_provenance(tv, opts);
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_checksum_and_provenance)
+            && locked_provenance_satisfies(recorded_provenance.as_ref(), required.as_ref());
+        let locked_provenance = expected_install_provenance(recorded_provenance, required);
 
-        self.verify_checksum(ctx, tv, &file_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &file_path) {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
-        if has_lockfile_integrity && !force_verify {
+        if has_lockfile_integrity
+            && !force_verify
+            && !locked_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
@@ -1731,7 +1831,9 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
-        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance();
+        let required = self.registry_required_provenance(tv, opts);
+        let has_lockfile_integrity = artifact_info.has_checksum_and_provenance()
+            && locked_provenance_satisfies(artifact_info.provenance.as_ref(), required.as_ref());
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest
@@ -1751,9 +1853,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url, &opts.api_url())
+            gitlab::get_headers(&url, &opts.api_url())?
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url, &opts.api_url())
+            forgejo::get_headers(&url, &opts.api_url())?
         } else {
             github::get_headers(&url)?
         };
@@ -1763,9 +1865,25 @@ impl UnifiedGitBackend {
             .await?;
         ctx.pr.next_operation();
 
-        self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)?;
-        let expected_provenance = artifact_info.provenance.clone();
-        if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
+        if let Err(err) =
+            self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)
+        {
+            return Err(github::with_checksum_mismatch_note(
+                err,
+                &asset.url,
+                &file_path,
+                lockfile_has_checksum,
+            )
+            .await);
+        }
+        let expected_provenance =
+            expected_install_provenance(artifact_info.provenance.clone(), required);
+        if has_lockfile_integrity
+            && !Settings::get().force_provenance_verify()
+            && !expected_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
             }
@@ -2495,6 +2613,15 @@ impl UnifiedGitBackend {
     ) -> Result<()> {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
+        if tv
+            .lock_platforms
+            .get(platform_key)
+            .and_then(|pi| pi.provenance.as_ref())
+            .is_some_and(ProvenanceType::is_slsa)
+            && opts.slsa_signer().is_none()
+        {
+            return Err(slsa_signer_missing_error(tv));
+        }
         if !opts.github_attestations()
             && let Some(provenance) = tv
                 .lock_platforms
@@ -2536,7 +2663,12 @@ impl UnifiedGitBackend {
                 }
                 !settings.github_attestations || !settings.github.github_attestations
             }
-            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
+            ProvenanceType::Slsa { .. } => {
+                if opts.slsa_signer().is_none() {
+                    return Err(slsa_signer_missing_error(tv));
+                }
+                !settings.slsa || !settings.github.slsa
+            }
             _ => {
                 return Err(eyre::eyre!(
                     "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
@@ -2592,6 +2724,10 @@ impl UnifiedGitBackend {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
+        if expected_provenance.is_some_and(ProvenanceType::is_slsa) && opts.slsa_signer().is_none()
+        {
+            return Err(slsa_signer_missing_error(tv));
+        }
         if !attestations_supported(&api_url)
             && let Some(expected) = expected_provenance
             && expected.is_github_attestations()
@@ -2660,7 +2796,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
-        if !skip_slsa && settings.slsa && settings.github.slsa {
+        if !skip_slsa && settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
             match self
                 .try_verify_slsa(ctx, tv, file_path, asset_name, &api_url, verification)
                 .await
@@ -2700,12 +2836,13 @@ impl UnifiedGitBackend {
             }
         }
 
-        // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
+        // If the lockfile or the registry expects provenance but no verification
+        // succeeded, it's a downgrade attack
         if let Some(expected) = expected_provenance {
             return Err(eyre::eyre!(
-                "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
-                 This may indicate a downgrade attack. Enable the corresponding verification setting \
-                 or update the lockfile."
+                "Lockfile or mise registry requires {expected} provenance for {tv} but verification \
+                 was not performed. This may indicate a downgrade attack. Enable the corresponding \
+                 verification setting or update the lockfile."
             ));
         }
 
@@ -2743,7 +2880,7 @@ impl UnifiedGitBackend {
             repo_name,
             None, // We don't know the expected workflow
             Some(api_url),
-            self.use_versions_host_for_github_metadata(),
+            true,
         )
         .await
         {
@@ -2771,6 +2908,7 @@ impl UnifiedGitBackend {
         file_path: &std::path::Path,
         provenance_path: &std::path::Path,
         additional_overlay: bool,
+        signer: crate::github::sigstore::SlsaSignerIdentity<'_>,
     ) -> Result<bool> {
         let raw_opts = tv.request.options();
         let format = if !additional_overlay
@@ -2814,9 +2952,14 @@ impl UnifiedGitBackend {
             })
             .collect::<Vec<_>>();
 
-        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
-            .await
-            .map_err(|e| eyre::eyre!("content-level SLSA verification failed: {e}"))
+        crate::github::sigstore::verify_slsa_provenance_artifacts(
+            provenance_path,
+            &artifacts,
+            1u8,
+            signer,
+        )
+        .await
+        .map_err(|e| eyre::eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Try to verify SLSA provenance. Returns:
@@ -2843,21 +2986,24 @@ impl UnifiedGitBackend {
         let repo = self.repo();
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
+        let (identity, issuer) = opts.slsa_signer_for(tv).ok_or_else(|| {
+            VerificationStatus::Error("SLSA signer identity and issuer are missing".to_string())
+        })?;
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+        };
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.version_prefix();
-        let use_versions_host = self.use_versions_host_for_github_metadata();
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.to_string();
                 let repo = repo.clone();
                 async move {
                     github::get_release_for_url_with_versions_host(
-                        &api_url,
-                        &repo,
-                        &candidate,
-                        use_versions_host,
+                        &api_url, &repo, &candidate, true,
                     )
                     .await
                 }
@@ -2926,6 +3072,7 @@ impl UnifiedGitBackend {
             file_path,
             &provenance_path,
             1, // Minimum SLSA level
+            signer,
         )
         .await
         {
@@ -2948,6 +3095,7 @@ impl UnifiedGitBackend {
                             file_path,
                             &provenance_path,
                             verification.additional_overlay,
+                            signer,
                         )
                         .await
                     {
@@ -3083,7 +3231,91 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+
+    #[test]
+    fn test_registry_required_provenance_overrides_the_lockfile() {
+        use crate::lockfile::ProvenanceType as P;
+        let slsa = || P::Slsa { url: None };
+        let required = Some(P::GithubAttestations);
+
+        // What an install verifies: the registry's requirement wins over a
+        // lockfile that recorded something weaker, or nothing.
+        assert_eq!(
+            expected_install_provenance(Some(slsa()), required.clone()),
+            required
+        );
+        assert_eq!(
+            expected_install_provenance(None, required.clone()),
+            required
+        );
+        assert_eq!(
+            expected_install_provenance(Some(slsa()), None),
+            Some(slsa())
+        );
+
+        // Whether a locked entry may skip verification.
+        assert!(locked_provenance_satisfies(Some(&slsa()), None));
+        assert!(locked_provenance_satisfies(
+            Some(&P::GithubAttestations),
+            required.as_ref()
+        ));
+        assert!(!locked_provenance_satisfies(
+            Some(&slsa()),
+            required.as_ref()
+        ));
+        assert!(!locked_provenance_satisfies(None, required.as_ref()));
+    }
+
+    #[test]
+    fn test_lock_rejects_anything_but_the_required_provenance() {
+        use crate::lockfile::ProvenanceType as P;
+        let tv = ToolVersion::new(
+            crate::toolset::ToolRequest::new(
+                std::sync::Arc::new(BackendArg::from("github:example/tool")),
+                "2.3.0",
+                crate::toolset::ToolSource::Argument,
+            )
+            .unwrap(),
+            "2.3.0".into(),
+        );
+        let required = Some(P::GithubAttestations);
+        assert!(
+            ensure_registry_provenance(&tv, required.as_ref(), Some(&P::GithubAttestations))
+                .is_ok()
+        );
+        let slsa = ensure_registry_provenance(&tv, required.as_ref(), Some(&P::Slsa { url: None }))
+            .unwrap_err()
+            .to_string();
+        assert!(slsa.contains("only slsa was verified"), "{slsa}");
+        let none = ensure_registry_provenance(&tv, required.as_ref(), None)
+            .unwrap_err()
+            .to_string();
+        assert!(none.contains("none was verified"), "{none}");
+        assert!(ensure_registry_provenance(&tv, None, None).is_ok());
+    }
+
+    #[test]
+    fn test_registry_attestation_requirement_comes_from_declared_backends() {
+        // registry/aube.toml: github:aubepkg/aube, attestations_since = 2.2.5
+        assert!(crate::registry::requires_github_attestations(
+            "github:aubepkg/aube",
+            "2.3.0"
+        ));
+        assert!(!crate::registry::requires_github_attestations(
+            "github:aubepkg/aube",
+            "2.2.4"
+        ));
+        assert!(!crate::registry::requires_github_attestations(
+            "github:example/unlisted",
+            "9.9.9"
+        ));
+        // GitHub repository names are case-insensitive.
+        assert!(crate::registry::requires_github_attestations(
+            "github:Aubepkg/Aube",
+            "2.3.0"
+        ));
+    }
+    use crate::args::BackendArg;
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
@@ -3477,10 +3709,12 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             assets: assets
                 .into_iter()
                 .map(|name| github::GithubAsset {
+                    from_versions_host: false,
                     name: name.into(),
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
                     digest: None,
+                    updated_at: None,
                 })
                 .collect(),
         }
@@ -3987,6 +4221,52 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         );
 
         assert!(!backend.options(&opts).github_attestations());
+    }
+
+    #[test]
+    fn test_slsa_requires_both_signer_options() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        assert!(backend.options(&opts).slsa_signer().is_none());
+        opts.opts.insert(
+            "slsa_signer_identity".to_string(),
+            toml::Value::String("https://github.com/example/workflow@refs/heads/main".to_string()),
+        );
+        assert!(backend.options(&opts).slsa_signer().is_none());
+        opts.opts.insert(
+            "slsa_signer_issuer".to_string(),
+            toml::Value::String("https://token.actions.githubusercontent.com".to_string()),
+        );
+        let signer = backend.options(&opts).slsa_signer().unwrap();
+        assert_eq!(signer.issuer, "https://token.actions.githubusercontent.com");
+    }
+
+    #[test]
+    fn test_slsa_signer_identity_renders_resolved_version() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "slsa_signer_identity".to_string(),
+            toml::Value::String(
+                "https://github.com/example/release.yml@refs/tags/v{{version}}".to_string(),
+            ),
+        );
+        opts.opts.insert(
+            "slsa_signer_issuer".to_string(),
+            toml::Value::String("https://token.actions.githubusercontent.com".to_string()),
+        );
+        let ba = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request = ToolRequest::new(ba, "1.2.3", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.2.3".to_string());
+        let (identity, issuer) = backend.options(&opts).slsa_signer_for(&tv).unwrap();
+        assert_eq!(
+            identity,
+            "https://github.com/example/release.yml@refs/tags/v1.2.3"
+        );
+        assert_eq!(issuer, "https://token.actions.githubusercontent.com");
     }
 
     #[test]

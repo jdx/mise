@@ -38,9 +38,9 @@ assert_succeed "mise bootstrap dotfiles track ~/.zshrc --os $other_os"
 assert "mise bootstrap dotfiles paths --json | jq -r '.entries[] | select(.path == \"~/.zshrc\") | .variant'" "$this_os"
 assert_contains "git --git-dir=$repository ls-tree -r --name-only HEAD" "home@$this_os/.zshrc"
 
-# Defaults exclude credentials entirely, including explicit enrollment.
+# A credential-named file needs an explicit plaintext choice before tracking.
 echo synthetic-secret >~/.netrc
-assert_succeed 'mise bootstrap dotfiles track ~/.netrc'
+assert_fail 'mise bootstrap dotfiles track ~/.netrc 2>&1' '--allow-plaintext'
 assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.netrc"
 mkdir -p ~/native/sub
 echo keep >~/native/sub/keep.conf

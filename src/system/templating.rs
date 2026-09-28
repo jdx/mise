@@ -28,7 +28,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera_without_exec, r
 /// declaration (tests, counters) need no changes, while callers that build a
 /// request from it call [`Templated::render`] first.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Templated<T> {
+pub struct Templated<T> {
     raw: toml::Value,
     parsed: T,
     ignored: Vec<String>,

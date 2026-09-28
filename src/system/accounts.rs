@@ -10,16 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AccountState {
-    #[default]
-    Present,
-    Absent,
-}
+pub use mise_bootstrap::AccountState;
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct GroupTomlConfig {
+pub struct GroupTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub gid: Option<u32>,
@@ -28,7 +22,7 @@ pub(crate) struct GroupTomlConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct UserTomlConfig {
+pub struct UserTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub uid: Option<u32>,
@@ -49,7 +43,7 @@ pub(crate) struct UserTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GroupRequest {
+pub struct GroupRequest {
     pub name: String,
     pub state: AccountState,
     pub gid: Option<u32>,
@@ -58,7 +52,7 @@ pub(crate) struct GroupRequest {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct UserRequest {
+pub struct UserRequest {
     pub name: String,
     pub state: AccountState,
     pub uid: Option<u32>,
@@ -76,7 +70,7 @@ pub(crate) struct UserRequest {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct AccountRequests {
+pub struct AccountRequests {
     pub groups: Vec<GroupRequest>,
     pub users: Vec<UserRequest>,
 }
@@ -160,7 +154,7 @@ struct AccountPlan {
     actions: Vec<AccountAction>,
 }
 
-pub(crate) fn requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     let mut groups = IndexMap::new();
     let mut users = IndexMap::new();
     for cf in config.config_files.values() {
@@ -191,7 +185,7 @@ pub(crate) fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     Ok(AccountRequests { groups, users })
 }
 
-pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
     requests_from_config(config)
 }
 
@@ -736,7 +730,7 @@ fn validate_account_path(name: &str, field: &str, path: &std::path::Path) -> Res
     Ok(())
 }
 
-pub(crate) fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
+pub fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
     requests
         .groups
         .iter()
@@ -745,7 +739,7 @@ pub(crate) fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
         .collect()
 }
 
-pub(crate) fn apply(requests: &AccountRequests, dry_run: bool, yes: bool) -> Result<bool> {
+pub fn apply(requests: &AccountRequests, dry_run: bool, yes: bool) -> Result<bool> {
     let mut actions = vec![];
     let mut unknown = vec![];
     for group in requests
@@ -865,7 +859,7 @@ where
     Ok(())
 }
 
-pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("bootstrap users and groups are only supported on Linux");
     }

@@ -75,12 +75,12 @@ mise run parent
 mise run parent
 assert "test -f workspace/artifact.txt && echo present" "present"
 assert "test -f workspace/dist/artifact.txt && echo present" "present"
-assert "wc -l <child-runs.log" "1"
-assert "wc -l <mixed-runs.log" "1"
+assert "wc -l <child-runs.log | tr -d '[:space:]'" "1"
+assert "wc -l <mixed-runs.log | tr -d '[:space:]'" "1"
 echo changed >workspace/dist/artifact.in
 mise run parent
-assert "wc -l <child-runs.log" "2"
-assert "wc -l <mixed-runs.log" "2"
+assert "wc -l <child-runs.log | tr -d '[:space:]'" "2"
+assert "wc -l <mixed-runs.log | tr -d '[:space:]'" "2"
 
 # Literal text outside a Tera tag must not be mistaken for a usage reference.
 cat <<'EOF' >mise.toml
@@ -96,4 +96,31 @@ EOF
 touch docs-input.txt
 mise run docs
 mise run docs
-assert "wc -l <docs-runs.log" "1"
+assert "wc -l <docs-runs.log | tr -d '[:space:]'" "1"
+
+# An omitted flag still renders source/output paths before freshness checks.
+cat <<'EOF' >mise.toml
+[tasks.generate]
+usage = 'flag "--release"'
+sources = ['{% if usage.release %}release{% else %}debug{% endif %}.in']
+outputs = ['{% if usage.release %}release{% else %}debug{% endif %}.out']
+run = '''
+cat {% if usage.release %}release{% else %}debug{% endif %}.in > {% if usage.release %}release{% else %}debug{% endif %}.out
+echo run >> optional-runs.log
+'''
+EOF
+
+echo debug >debug.in
+echo release >release.in
+mise run generate
+mise run generate
+assert "cat debug.out" "debug"
+assert "wc -l <optional-runs.log | tr -d '[:space:]'" "1"
+mise run generate --release
+mise run generate --release
+assert "cat release.out" "release"
+assert "wc -l <optional-runs.log | tr -d '[:space:]'" "2"
+echo changed >debug.in
+mise run generate
+assert "cat debug.out" "changed"
+assert "wc -l <optional-runs.log | tr -d '[:space:]'" "3"

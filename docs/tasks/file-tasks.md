@@ -59,6 +59,12 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
+You can also configure a script from `mise.toml`. For a script named `build.sh`,
+either `[tasks.build]` or `[tasks."build.sh"]` can add a description,
+environment variables, or dependencies. See
+[configuring file tasks from TOML](/tasks/task-configuration.html#configuring-file-tasks-from-toml)
+for examples and naming rules.
+
 ### Multi-line values
 
 Each `#MISE` line is TOML. An array or inline table may be split across several
@@ -134,7 +140,7 @@ You can also use it to run the script with other programming languages.
 console.log("Hello, World!");
 ```
 
-```python
+```python [python]
 #!/usr/bin/env python
 #MISE description="Hello, World in Python"
 

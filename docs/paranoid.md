@@ -30,6 +30,9 @@ do not need it. Direct file approval hashes the contents, so editing the file re
 Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
 shared between Git worktrees in this mode.
 
+`--yes`, `MISE_YES=1`, and CI auto-confirmation do not approve configuration trust in paranoid mode.
+For unattended runs, review the configuration and run `mise trust` explicitly before loading it.
+
 Inspect the file before accepting it:
 
 ```sh
@@ -79,6 +82,17 @@ the backend does not support, or rescan an already-installed tool that mise skip
 
 This behavior can also be enabled independently via the
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
+
+## Attestations from mise-versions
+
+mise asks [mise-versions](/configuration/settings.html#use_versions_host) whether a public GitHub release artifact has
+GitHub attestations, so installs don't spend your GitHub API rate limit. The attestations it returns are
+verified cryptographically and must name the artifact's repository, so mise-versions cannot vouch
+for an artifact on its own. It can, however, answer that an artifact has no attestations. That
+answer is trusted in normal mode, and a lockfile written afterwards records no provenance.
+
+In paranoid mode, mise confirms that answer with GitHub before skipping verification. This costs
+one GitHub API request per artifact without attestations.
 
 ## See also
 

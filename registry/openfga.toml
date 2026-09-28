@@ -1,4 +1,4 @@
-backends = ["github:openfga/openfga"]
+backends = [{ full = "github:openfga/openfga", attestations_since = "1.18.2" }]
 bins = ["openfga"]
 description = "A high performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar"
 test = { cmd = "openfga version 2>&1", expected = "v{{version}}" }

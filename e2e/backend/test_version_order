@@ -12,23 +12,7 @@ v10.99.0
 v10.34.5
 EOF
 
-HTTP_PORT_FILE="$TMPDIR/version_order_port"
-python3 -c "
-import http.server, socketserver
-s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
-with open('$HTTP_PORT_FILE', 'w') as f:
-    f.write(str(s.server_address[1]))
-s.serve_forever()
-" &
-HTTP_SERVER_PID=$!
-
-cleanup() {
-  kill "$HTTP_SERVER_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-wait_for_file "$HTTP_PORT_FILE" "version order test server port file" 30 "$HTTP_SERVER_PID"
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+start_http_server --dir "$VERSION_LIST_DIR"
 
 cat <<EOF >mise.toml
 [tools."http:version-order"]

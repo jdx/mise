@@ -4,6 +4,7 @@ version_order = "semver"
 
 bins = ["codeql"]
 [[backends]]
+attestations_since = "2.23.1"
 full = "github:github/codeql-cli-binaries"
 
 [backends.options]

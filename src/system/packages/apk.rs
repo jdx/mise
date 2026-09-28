@@ -38,6 +38,7 @@ fn parse_apk_info(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatu
             PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: None,
             }
         })
         .collect()

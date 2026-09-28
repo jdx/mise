@@ -23,7 +23,7 @@
   "select": {
     "trigger_types": ["push"]
   },
-  "debounce_ms": 10000,
+  "debounce_ms": 120000,
   "trails_review": {
     "enabled": true
   },

@@ -5,15 +5,26 @@ description: Run project databases, message brokers, and development servers wit
 # Daemons
 
 ::: warning Experimental
-Daemon management requires `experimental = true`. It requires
-[pitchfork 2.25.0](https://github.com/jdx/pitchfork/releases/tag/v2.25.0) or later
-for external configuration support.
+Daemon management requires `experimental = true` and
+[pitchfork](https://pitchfork.jdx.dev/) for process supervision. Install or update
+Pitchfork before following this guide.
 :::
 
 Use daemons for processes that keep running between task invocations, such as a
 database, message broker, or development server. Declare them in `mise.toml`;
 mise provides the project configuration and tool environment, while
 [pitchfork](https://pitchfork.jdx.dev/) manages the processes and readiness checks.
+
+## Recommended setup
+
+For a stack with application servers, databases, shared repositories, and git
+worktrees, follow [Set up a development stack](/daemons/development-stack.html).
+It walks through one configuration from explicit startup to stable browser URLs
+and a supervisor that starts at login.
+
+Use presets for infrastructure, `run` for application servers, and `depends` for
+startup ordering. Keep definitions in the project that owns each process. The
+sections below are the reference for adapting that setup.
 
 ## Quick start
 
@@ -520,6 +531,10 @@ PostgreSQL uses the `postgres` user with local trust authentication. Set
 to `postgres`. Changing it later does not create another database in an existing
 cluster.
 
+PostgreSQL does not run as root. Run mise as a regular user to start it, for
+example with `USER` in a container image. As root, starting a PostgreSQL daemon or
+provider fails before mise installs anything.
+
 Exports: `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, and `DATABASE_URL`.
 
 #### Redis
@@ -771,8 +786,8 @@ rules, so another service can be pointed at it without any port arithmetic:
 
 ```toml
 [daemons.api]
-run = "npm run dev"
-port = "auto"
+run = "exec npm run dev -- --port $API_PORT"
+port = { auto = true, base = 3000 }
 
 [env]
 APP_BASE_URL = "{{ env.API_URL }}"
@@ -825,9 +840,8 @@ port = 3000
 proxy_tls = "passthrough"
 ```
 
-Both keys are forwarded to pitchfork unchanged. Hostname routing needs pitchfork
-2.26.0 or later; an older supervisor starts the daemons normally but does not serve
-the hostnames.
+Both keys are forwarded to pitchfork unchanged. Update Pitchfork if an older
+supervisor starts the daemons but does not serve their hostnames.
 
 ### Naming the project and the worktree
 
@@ -904,6 +918,24 @@ visible here too. `mise daemons ls --json` carries the same information in its `
 `url`, and `proxy` fields. The primary checkout has no stack page of its own; its
 stack is the project.
 
+### Register for on-demand startup
+
+```sh
+mise daemons register
+mise daemons urls
+```
+
+`register` installs missing tools, validates the daemon definitions and their
+dependencies, and registers the generated configuration with Pitchfork without
+starting any daemons. It includes daemons outside the `default` group and imported
+dependencies. Run it in each checkout you want to make available. Existing daemons
+keep running; registration does not restart them or initialize database data.
+
+With the Pitchfork supervisor running and its proxy enabled, requesting a
+registered daemon's hostname starts that daemon and its dependencies. Listing URLs
+alone does not register the project. See the Pitchfork
+[proxy guide](https://pitchfork.jdx.dev/guides/port-management) for proxy setup.
+
 ### Where the scheme and port come from
 
 Mise derives the URL the way pitchfork does: the scheme follows `proxy.https`, the TLD
@@ -922,7 +954,7 @@ for enabling the proxy and trusting its certificate.
 ## Data and configuration
 
 Mise generates configuration under `$MISE_STATE_DIR/daemons/<project-hash>/` and
-registers it with pitchfork. Nothing is written into the project tree. Registered
+registers it with pitchfork. By default, nothing is written into the project tree. Registered
 files override ordinary pitchfork definitions with the same daemon ID. Edit the
 source `[daemons]` declaration, not the generated file.
 
@@ -930,6 +962,26 @@ Data lives in `data/<daemon-name>/` beside the generated configuration. It survi
 version-request changes and daemon removal; mise never deletes it automatically.
 Major-version changes require an explicit migration or reset. Incompatible data
 fails before startup.
+
+To keep a preset's data inside each checkout, set `data_dir`:
+
+```toml
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+data_dir = ".data/postgres"
+```
+
+Relative paths resolve from the declaring project's root; absolute paths are also
+accepted, and `~/` expands to your home directory. Add `/.data/` to `.gitignore`. Each worktree then owns its data while
+runtime state and generated configuration remain in mise's state directory.
+Avoid pointing simultaneously running instances at the same directory.
+
+Changing `data_dir` does not move existing data. Stop the daemon before copying
+or migrating its data, and retain a backup until the new location is verified.
+`mise daemons prune` only removes generated state; it leaves data outside that
+state directory untouched. Removing a worktree
+or cleaning ignored files can delete data stored inside it.
 
 First-time initialization is serialized and runs in a staging directory. Mise
 moves the data into place only after initialization succeeds. When setup requires a live server,
@@ -950,14 +1002,15 @@ Changed definitions take effect on the next start or explicit restart.
 Use `mise daemons ls --json` to locate a project's daemon data and check its size
 before deleting the project or a worktree. Each daemon row includes:
 
-| Field             | Value                                                                       |
-| ----------------- | --------------------------------------------------------------------------- |
-| `root`            | Project directory                                                           |
-| `state_dir`       | Directory containing the project's generated configuration, state, and data |
-| `data_size`       | Total size of the project's daemon data in bytes                            |
-| `data_size_human` | The same size formatted for display                                         |
+| Field             | Value                                                                         |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `root`            | Project directory                                                             |
+| `data_dir`        | Resolved preset data directory (`null` for custom commands)                   |
+| `state_dir`       | Directory containing generated configuration, state, and default data         |
+| `data_size`       | Total size of default data under `state_dir` in bytes (excludes custom paths) |
+| `data_size_human` | The same size formatted for display                                           |
 
-These fields describe the whole project, so daemons from the same project report
+Except for `data_dir`, these fields describe the whole project, so daemons from the same project report
 the same values.
 
 ### Pruning deleted projects
@@ -1038,3 +1091,135 @@ after upgrading to get shell PID tracking; old activation scripts display a hint
 
 Project sessions also apply to native pitchfork daemons configured for automatic
 lifecycle management. See [pitchfork's shell sessions](https://pitchfork.jdx.dev/guides/shell-hook.html).
+
+## Shared server providers
+
+Define shared servers in your global mise configuration. Providers have their own
+ports, tool versions and persistent storage, independent of any project checkout:
+
+```toml
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+```
+
+Providers support the PostgreSQL, CockroachDB and NATS presets. Provider names use
+lowercase letters, digits and hyphens. Like project daemons, they require
+`experimental = true` and Pitchfork.
+
+```sh
+mise daemons providers ls --json
+mise daemons providers start local-postgres
+mise daemons providers stop local-postgres
+mise daemons providers restart local-postgres
+```
+
+Management commands require explicit provider names. Providers do not join project
+daemon groups or shell start/stop sessions, and do not shut down when idle. Change
+server settings in global configuration, then explicitly restart the provider.
+Mise refuses to replace a running provider's configuration through another start.
+
+By default, provider data lives under `$MISE_STATE_DIR/daemon-providers/<name>/data`.
+Set `data_dir` to choose another location; relative paths resolve beneath that
+provider's state directory. Removing a project or pruning deleted worktrees does
+not remove provider data. Renaming a provider does not move its existing data.
+
+Provider processes and their readiness probes use the provider's tools and a
+minimal environment, without the invoking project's environment, tools or profile.
+Servers listen locally and use the presets' local-development authentication.
+
+### Choose what to share
+
+Keep an ordinary preset declaration for a server and data owned by this checkout.
+To share a server while keeping a separate database, select a global provider:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+```
+
+Mise derives a database name from the canonical checkout path and daemon name.
+Each worktree or unrelated project gets its own database on the same server.
+Symlinked paths to the same checkout keep the same database. Moving the checkout
+changes that identity; the previous database remains on the provider.
+
+To share the database too, choose the same resource name in each consumer:
+
+```toml
+[daemons.db]
+provider = "local-postgres"
+resource = "shared_app"
+```
+
+Resource names start with a lowercase letter and contain at most 63 lowercase
+letters, digits or underscores. This is development isolation between trusted
+local projects, not a security boundary: SQL clients use the preset's existing
+local superuser authentication.
+
+Use a local configuration or profile override to opt into sharing. Mise never
+selects a provider automatically, and a missing provider is an error. A provider
+reference accepts only `provider` and `resource`; server versions, options and
+storage belong in global configuration.
+
+PostgreSQL and CockroachDB resources export their usual preset connection
+variables, pointing at the selected database. Explicit `[env]` values still win.
+The provider's tool version does not become a tool requirement for the consumer.
+
+Starting `db`, running a task with `daemons = ["db"]`, or starting an application
+with `depends = ["db"]` waits for both the server and database provisioning.
+`mise daemons register` prepares this dependency chain without starting the server
+or creating databases, including for later hostname-triggered application starts.
+
+Each consumer has a small readiness process managed by Pitchfork. Stopping or
+pruning that consumer stops its readiness process, leaving the shared server and
+its data intact. Starting another consumer provisions additional databases even
+when the provider's data directory already exists. Concurrent provisioning is
+serialized and existing databases are preserved. Mise does not run application
+migrations or automatically delete databases.
+
+After changing a consumer's resource selection, restart its daemon. Use
+`mise daemons ls --json` to inspect `provider`, `resource` and `ownership`; use
+`mise daemons providers ls --json` for the server's port and storage location.
+
+### Share NATS without sharing messages
+
+NATS providers use an account for each resource. Accounts have separate subject
+and JetStream namespaces, so two checkouts can use identical stream and subject
+names without receiving each other's messages:
+
+```toml
+# Global configuration
+[daemon_providers.local-nats]
+preset = "nats"
+version = "2"
+port = "auto"
+```
+
+```toml
+# Project configuration
+[daemons.messages]
+provider = "local-nats"
+```
+
+As with SQL providers, omit `resource` for a checkout-specific account or set the
+same explicit resource name in several consumers to share that account and its
+messages. `NATS_URL` includes the account's username and password.
+
+Mise generates persistent credentials when first resolving a NATS resource's
+connection settings, including during environment inspection. Credentials and
+managed configuration are stored in private files under the provider's state
+directory. Inspecting the environment does not start NATS or provision a live
+account. Daemon listing output omits passwords; treat exported `NATS_URL` values
+as credentials.
+
+Starting a consumer adds its account through a validated configuration reload.
+Existing accounts and their connections remain available. Provider restarts keep
+credentials and JetStream data; stopping a consumer does not remove its account.
+`options.jetstream = false` disables JetStream while retaining separate subject
+namespaces.
+
+Automatic account provisioning currently requires mise-managed, loopback-only
+NATS configuration. Custom configuration files and TLS/certificate authentication
+are rejected for providers; use an ordinary local NATS daemon for those setups.
+Mise does not rewrite an existing NATS configuration or certificate mapping.

@@ -129,14 +129,14 @@ pub(crate) fn ensure_install_succeeded() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn has_previous_file(config: &Config, path: &Path) -> bool {
+pub fn has_previous_file(config: &Config, path: &Path) -> bool {
     path.exists()
         || monorepo_lockfile_migration_paths(config)
             .iter()
             .any(|(source, target)| target == path && source.exists())
 }
 
-pub(crate) fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
+pub fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lockfile> {
     let mut previous = Lockfile::read(path)?;
     let mut exists = path.exists();
     for (source, target) in monorepo_lockfile_migration_paths(config) {
@@ -203,11 +203,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
     Ok(())
 }
 
-fn resolution_key(
-    ba: &crate::cli::args::BackendArg,
-    tv: &ToolVersion,
-    platform: &Platform,
-) -> String {
+fn resolution_key(ba: &crate::args::BackendArg, tv: &ToolVersion, platform: &Platform) -> String {
     let mut options = tv.request.options().clone();
     options.opts.values.sort_keys();
     options.core.install_env.sort_keys();
@@ -224,7 +220,7 @@ fn resolution_key(
 }
 
 async fn resolve(
-    ba: crate::cli::args::BackendArg,
+    ba: crate::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
 ) -> Result<LockResolutionResult> {
@@ -245,7 +241,7 @@ async fn resolve(
         .clone())
 }
 
-pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
+pub(crate) type Tool = (crate::args::BackendArg, ToolVersion);
 
 /// A conservative check for a complete, unfiltered warm install. Compare the
 /// resolved inputs, not file timestamps: environment-dependent options and
@@ -253,16 +249,11 @@ pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
 ///
 /// Multiple requests for one short and shared dependency tables use the normal
 /// generator, which owns binding conflicts and dependency-table cleanup.
-pub(crate) fn is_current(
-    previous: &Lockfile,
-    tools: &[Tool],
-    platforms: &[Platform],
-) -> Result<bool> {
+pub fn is_current(previous: &Lockfile, tools: &[Tool], platforms: &[Platform]) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
         || previous.tools.len() != tools.len()
         || !previous.conda_packages.is_empty()
-        || !previous.pkgx_packages.is_empty()
         || Settings::get().force_provenance_verify()
     {
         return Ok(false);
@@ -362,7 +353,7 @@ fn can_reuse(info: &PlatformInfo) -> bool {
         && !Settings::get().force_provenance_verify()
 }
 
-pub(crate) async fn generate(
+pub async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
     platforms: &[Platform],
@@ -374,6 +365,7 @@ pub(crate) async fn generate(
     let mut candidate = Lockfile {
         lockfile_version: previous.lockfile_version,
         generated_header_url: previous.generated_header_url.clone(),
+        tool_stubs: previous.tool_stubs.clone(),
         ..Default::default()
     };
     let selected: BTreeSet<_> = tools.iter().map(|(ba, _)| ba.short.as_str()).collect();
@@ -416,7 +408,6 @@ pub(crate) async fn generate(
         }
     }
     candidate.conda_packages = previous.conda_packages.clone();
-    candidate.pkgx_packages = previous.pkgx_packages.clone();
     let report = MultiProgressReport::get().add("lock");
     let mut progress = ProgressGuard {
         report: report.as_ref(),
@@ -442,10 +433,7 @@ pub(crate) async fn generate(
                     .flatten()
             })
             .filter(|info| {
-                info.url.is_some()
-                    || info.install.is_some()
-                    || info.conda_deps.is_some()
-                    || info.pkgx_deps.is_some()
+                info.url.is_some() || info.install.is_some() || info.conda_deps.is_some()
             });
         let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
             entries
@@ -481,7 +469,6 @@ pub(crate) async fn generate(
                     Ok(info.clone()),
                     options,
                     BTreeMap::new(),
-                    BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 ),
             ));
@@ -498,7 +485,6 @@ pub(crate) async fn generate(
                     platform,
                     Ok(info),
                     options,
-                    BTreeMap::new(),
                     BTreeMap::new(),
                     LockResolutionStatus::Optional,
                 )
@@ -537,11 +523,11 @@ pub(crate) async fn generate(
     }
     resolved.sort_by_key(|(ordinal, _, _)| *ordinal);
     for (_, specifier, resolution) in resolved {
-        let (short, version, backend, platform, info, options, conda, pkgx, status) = resolution;
+        let (short, version, backend, platform, info, options, conda, status) = resolution;
         if status == LockResolutionStatus::Unsupported {
             continue;
         }
-        let info = info.map_err(|error| eyre!(error))?;
+        let mut info = info.map_err(|error| eyre!(error))?;
         if let Some(entries) = previous.tools_for(&short) {
             for old in entries
                 .iter()
@@ -555,6 +541,7 @@ pub(crate) async fn generate(
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
                 ensure_no_downgrade(old, &info, &backend)?;
+                carry_forge_ids(old, &mut info);
             }
         }
         if let Some(error) = check_single_tool_provenance(
@@ -579,9 +566,6 @@ pub(crate) async fn generate(
         candidate.bind_request(&short, &specifier, &version, &options);
         for (key, value) in conda {
             candidate.set_conda_package(&platform.to_key(), &key, value);
-        }
-        for (key, value) in pkgx {
-            candidate.set_pkgx_package(&platform.to_key(), &key, value);
         }
     }
     for (short, entries) in &mut candidate.tools {
@@ -620,13 +604,12 @@ pub(crate) async fn generate(
     ))
     .await?;
     candidate.cleanup_unreferenced_conda_packages();
-    candidate.cleanup_unreferenced_pkgx_packages();
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
 }
 
-pub(crate) async fn populate_aube_locks(
+pub async fn populate_aube_locks(
     lockfile: &mut Lockfile,
     tools: &[Tool],
     report: Option<&dyn crate::ui::progress_report::SingleReport>,
@@ -688,7 +671,7 @@ pub(crate) async fn populate_aube_locks(
     Ok(())
 }
 
-pub(crate) async fn populate_uv_locks(
+pub async fn populate_uv_locks(
     config: &Arc<Config>,
     lockfile: &mut Lockfile,
     tools: &[Tool],
@@ -767,6 +750,59 @@ pub(crate) async fn populate_uv_locks(
     Ok(())
 }
 
+/// Whether a newly resolved Packslip entry is signed by the signer the old
+/// one committed to. That is the same signer string, or, when both entries
+/// record the same forge repository and owner IDs, the same workflow of that
+/// repository under the name it has now. A repository ID that changed is a
+/// different repository, and an owner ID that changed is a transfer, even
+/// under the same name and signer: install refuses both, and so does this.
+fn packslip_signer_continues(old: &PlatformInfo, new: &PlatformInfo) -> bool {
+    let (Some(old_signer), Some(new_signer)) = (&old.signer, &new.signer) else {
+        return old.signer.is_none();
+    };
+    let changed = |before: &Option<String>, now: &Option<String>| matches!((before, now), (Some(before), Some(now)) if before != now);
+    if changed(&old.repository_id, &new.repository_id)
+        || changed(&old.repository_owner_id, &new.repository_owner_id)
+    {
+        return false;
+    }
+    // A resolution that checked no forge identity, as under explicit signer
+    // options, continues only the same signer, whose IDs
+    // [`carry_forge_ids`] then keeps. Losing them otherwise is a change.
+    if old.repository_id.is_some() && new.repository_id.is_none() {
+        return old_signer == new_signer;
+    }
+    if old_signer == new_signer {
+        return true;
+    }
+    let same_repository = old.repository_id.is_some() && old.repository_id == new.repository_id;
+    let same_owner =
+        old.repository_owner_id.is_some() && old.repository_owner_id == new.repository_owner_id;
+    same_repository && same_owner && crate::packslip_pins::same_workflow(old_signer, new_signer)
+}
+
+/// Keep the forge IDs an old Packslip entry recorded when the new one, for
+/// the same signer, recorded none: explicit signer options verify a release
+/// without the forge check, and an older certificate carries no IDs. Neither
+/// says the repository changed, so the commitment stays for the next
+/// resolution that does check it.
+///
+/// Likewise the owner ID alone, when the new entry records the same
+/// repository without it, as a certificate with the repository's ID but not
+/// its owner's does.
+fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
+    if new.signer.is_some() && new.signer == old.signer && new.repository_id.is_none() {
+        new.repository_id = old.repository_id.clone();
+        new.repository_owner_id = old.repository_owner_id.clone();
+    }
+    if new.repository_owner_id.is_none()
+        && new.repository_id.is_some()
+        && new.repository_id == old.repository_id
+    {
+        new.repository_owner_id = old.repository_owner_id.clone();
+    }
+}
+
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
     // A verified Packslip signer is the replacement trust baseline for an
     // artifact authenticated by its signed release manifest. Older incremental
@@ -784,8 +820,8 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
     }
-    if let Some(signer) = &old.signer
-        && (new.signer.as_ref() != Some(signer) || new.attested_by != old.attested_by)
+    if old.signer.is_some()
+        && (!packslip_signer_continues(old, new) || new.attested_by != old.attested_by)
     {
         bail!(
             "lockfile generation would change the recorded signer; previous files were preserved"
@@ -831,7 +867,7 @@ fn provenance_is_downgrade(
 }
 
 fn validate_provenance_settings(
-    ba: &crate::cli::args::BackendArg,
+    ba: &crate::args::BackendArg,
     tv: &ToolVersion,
     platform: &str,
     info: &PlatformInfo,
@@ -967,7 +1003,7 @@ fn preserve_legacy_metadata(old: &PlatformInfo, new: &mut PlatformInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::toolset::ToolRequest;
 
     fn tool() -> Tool {
@@ -1277,11 +1313,6 @@ mod tests {
             .conda_packages
             .insert("linux-x64".into(), BTreeMap::new());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
-        let mut changed = old.clone();
-        changed
-            .pkgx_packages
-            .insert("linux-x64".into(), BTreeMap::new());
-        assert!(!is_current(&changed, &tools, &platforms).unwrap());
     }
 
     #[tokio::test]
@@ -1479,6 +1510,102 @@ mod tests {
             ..old
         };
         assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+    }
+
+    #[test]
+    fn packslip_signer_follows_the_repository_id_across_a_rename() {
+        let signer = |repo: &str| {
+            Some(format!(
+                "sigstore-oidc:https://github.com/{repo}/.github/workflows/release.yml"
+            ))
+        };
+        let old = PlatformInfo {
+            signer: signer("old/tool"),
+            repository_id: Some("42".into()),
+            repository_owner_id: Some("7".into()),
+            ..Default::default()
+        };
+        let renamed = PlatformInfo {
+            signer: signer("new/tool"),
+            ..old.clone()
+        };
+        let backend = "packslip:github.com/old/tool";
+        assert!(ensure_no_downgrade(&old, &renamed, backend).is_ok());
+        assert!(ensure_no_downgrade(&old, &old, backend).is_ok());
+
+        // A recreated name keeps the signer string but not the repository.
+        let squatted = PlatformInfo {
+            repository_id: Some("43".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &squatted, backend).is_err());
+        // Another owner is a transfer, not a rename.
+        let transferred = PlatformInfo {
+            signer: signer("acme/tool"),
+            repository_owner_id: Some("8".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &transferred, backend).is_err());
+        // Even under the same name and signer: the owner commitment does not
+        // change without a transfer someone accepted.
+        let retaken = PlatformInfo {
+            repository_owner_id: Some("8".into()),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &retaken, backend).is_err());
+        // A resolution under explicit signer options records no IDs: the same
+        // signer keeps the old entry's, and another signer cannot drop them.
+        let unchecked = PlatformInfo {
+            repository_id: None,
+            repository_owner_id: None,
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &unchecked, backend).is_ok());
+        let mut carried = unchecked.clone();
+        carry_forge_ids(&old, &mut carried);
+        assert_eq!(carried, old);
+        let unchecked_renamed = PlatformInfo {
+            signer: signer("new/tool"),
+            ..unchecked.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &unchecked_renamed, backend).is_err());
+        let mut not_carried = unchecked_renamed.clone();
+        carry_forge_ids(&old, &mut not_carried);
+        assert_eq!(not_carried.repository_id, None);
+        // A certificate with the repository's ID but not its owner's keeps
+        // the owner ID recorded for the same repository, and only for it.
+        let ownerless = PlatformInfo {
+            repository_owner_id: None,
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &ownerless, backend).is_ok());
+        let mut kept = ownerless.clone();
+        carry_forge_ids(&old, &mut kept);
+        assert_eq!(kept, old);
+        let mut other_repository = PlatformInfo {
+            repository_id: Some("43".into()),
+            ..ownerless
+        };
+        carry_forge_ids(&old, &mut other_repository);
+        assert_eq!(other_repository.repository_owner_id, None);
+        // Another workflow of the same repository is another signer.
+        let other_workflow = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/new/tool/.github/workflows/other.yml".into(),
+            ),
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &other_workflow, backend).is_err());
+
+        // An entry locked before mise recorded forge IDs keeps the exact
+        // signer comparison, and gains the IDs from the next resolution.
+        let legacy = PlatformInfo {
+            repository_id: None,
+            repository_owner_id: None,
+            ..old.clone()
+        };
+        assert!(ensure_no_downgrade(&legacy, &old, backend).is_ok());
+        assert!(ensure_no_downgrade(&legacy, &renamed, backend).is_err());
     }
 
     #[test]

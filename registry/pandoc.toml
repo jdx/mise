@@ -1,4 +1,7 @@
-backends = ["github:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
+backends = [
+  { full = "github:jgm/pandoc", attestations_since = "3.10.1" },
+  "asdf:Fbrisset/asdf-pandoc",
+]
 bins = ["pandoc", "pandoc-lua", "pandoc-server"]
 description = "Universal markup converter"
 version_order = "source"

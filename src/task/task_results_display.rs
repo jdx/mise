@@ -4,7 +4,7 @@ use crate::ui::{style, time};
 use crate::{Result, request_exit};
 
 /// Handles display of task execution results and failure summaries
-pub(crate) struct TaskResultsDisplay {
+pub struct TaskResultsDisplay {
     output_handler: OutputHandler,
     failed_tasks: FailedTasks,
     continue_on_error: bool,
@@ -13,7 +13,7 @@ pub(crate) struct TaskResultsDisplay {
 }
 
 impl TaskResultsDisplay {
-    pub(crate) fn new(
+    pub fn new(
         output_handler: OutputHandler,
         failed_tasks: FailedTasks,
         continue_on_error: bool,
@@ -30,11 +30,7 @@ impl TaskResultsDisplay {
     }
 
     /// Display final results and handle failures
-    pub(crate) fn display_results(
-        &self,
-        num_tasks: usize,
-        timer: std::time::Instant,
-    ) -> Result<()> {
+    pub fn display_results(&self, num_tasks: usize, timer: std::time::Instant) -> Result<()> {
         self.display_keep_order_output();
         self.display_timing_summary(num_tasks, timer);
         if self.interrupted {

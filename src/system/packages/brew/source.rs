@@ -23,7 +23,7 @@ use super::tag;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP_FETCH;
 use crate::result::Result;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
@@ -196,7 +196,7 @@ pub(super) async fn build(
 /// return the path to its `ruby` executable.
 pub(crate) async fn ruby_bin() -> Result<PathBuf> {
     let mut config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let mut ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
@@ -219,7 +219,7 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
 
 pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
     let config = Config::get().await?;
-    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let tool: crate::args::ToolArg = "ruby".parse()?;
     let ts = ToolsetBuilder::new()
         .with_args(&[tool])
         .with_default_to_latest(true)
@@ -298,8 +298,9 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
         return Ok(dest);
     }
     pr.set_message(format!("download {basename}"));
-    HTTP.download_file(&src.url, &dest, Some(pr)).await?;
-    crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
+    // GNU formulae point at ftpmirror.gnu.org, which may redirect to a
+    // plain-HTTP mirror; brew follows it, and the pinned sha256 makes it safe.
+    crate::http::download_file_checksum_pinned(&src.url, &dest, sha256, Some(pr)).await?;
     Ok(dest)
 }
 
@@ -546,5 +547,60 @@ mod tests {
         let mut no_url = formula(&[]);
         no_url.urls.clear();
         assert!(check_buildable(&no_url).is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_pathname_write_creates_parents() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        let cellar = tmp.path().join("Cellar");
+        crate::file::create_dir_all(&buildpath)?;
+        crate::file::write(&shim, SHIM_RB)?;
+        // both install-time helpers that write through Pathname#write
+        crate::file::write(
+            &formula_rb,
+            r#"class Example < Formula
+  def install
+    (share/"example/greeting").write("hello")
+    (share/"example/greeting").write(", world", mode: "a")
+    generate_completions_from_executable("echo", "completions", shells: [:fish])
+  end
+end
+"#,
+        )?;
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let keg = cellar.join("example/1.0.0");
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/example/greeting"))?,
+            "hello, world"
+        );
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/fish/vendor_completions.d/example.fish"))?,
+            "completions fish\n"
+        );
+        Ok(())
     }
 }

@@ -22,9 +22,16 @@ by a config file (active) whether or not they are installed.
 - **`--truncate`** — Truncate long terminal output to fit the available width
 
   **Default:** `true`
+- **`-b --backend <BACKEND>`** — Only show tools from this backend, e.g. aqua, cargo, core, go
+
+  Registry shorthands count as the backend they resolve to, so `jq` is listed
+  under aqua. Repeat the flag to show several backends.
 - **`-c --current`** — Only show tool versions currently specified in a mise.toml
 - **`-g --global`** — Only show tool versions currently specified in the global mise.toml
 - **`-i --installed`** — Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+- **`--grouped`** — List tools in a separate section for each backend
+
+  Cannot be combined with --json; use --backend to filter JSON output.
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show tool versions currently specified in the local mise.toml
 - **`-m --missing`** — Display missing tool versions
@@ -77,6 +84,18 @@ Include references from every tracked configuration file
 
 ```
 mise ls --all-sources
+```
+
+Show only tools from the go or cargo backends
+
+```
+mise ls --backend go --backend cargo
+```
+
+List tools in a separate section for each backend
+
+```
+mise ls --grouped
 ```
 
 <!-- generated reference navigation -->

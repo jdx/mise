@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+# An exclusion that cannot be compiled is not read as no exclusion: the
+# capture refuses, naming the rule and the file that declares it, rather
+# than storing the very files the rule was written to leave out.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+mkdir -p ~/.codex/sessions
+echo 'model = "x"' >~/.codex/config.toml
+echo 'a transcript' >~/.codex/sessions/session.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+before=$(git --git-dir="$repo" rev-parse HEAD)
+
+# the same list with one rule the matcher cannot compile
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["["]
+TOML
+echo 'changed' >~/.codex/config.toml
+assert_fail 'mise dot save' 'cannot be applied'
+assert_fail 'mise dot save' '"[" in ~/.config/mise/config.toml'
+assert "git --git-dir=$repo rev-parse HEAD" "$before"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+
+# but only writing refuses. The command the refusal sends the user to has
+# to work, or the rule cannot be found and fixed: listing, previewing and
+# starting the watcher all succeed and report the same rule.
+assert_succeed 'mise dot paths'
+assert_contains 'mise dot paths 2>&1' 'cannot be applied'
+assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
+assert_contains 'mise dot paths' '~/.codex'
+assert_succeed 'mise dot status'
+assert_succeed 'mise dot track --dry-run ~/.codex'
+# the watcher gets all the way up — it builds its watch set from the same
+# walk — and then declines to capture, rather than failing before it can
+# watch or report anything
+assert_fail 'mise dot watch --once' 'nothing was saved'
+assert_fail 'mise dot watch --once' 'cannot be applied'
+assert_fail 'mise dot watch --once' '"[" in ~/.config/mise/config.toml'
+assert "git --git-dir=$repo rev-parse HEAD" "$before"
+
+# fixing the rule lets the capture through again
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'changed'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+
+# And mise never writes a rule mise would then refuse. `mise dot untrack`
+# of a covered path writes that path into the same list, and a path is a
+# literal, not a glob: written as-is, a name holding `[` is an unclosed
+# character class that would disable every later capture.
+echo 'one' >"$HOME/.codex/cache[1]"
+echo 'other' >~/.codex/cacheX
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/cache[1]'"
+# the rule that was written is the escaped one
+assert_contains "mise dot paths --json | jq -r '.exclude[]'" 'cache[[]1[]]'
+# and it is usable: a later capture still runs, and the rule names that
+# one path — the sibling the unescaped form would have swallowed is
+# still captured
+echo 'edited' >~/.codex/cacheX
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'home/.codex/cacheX'
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
+
+# `$` has no escape in this pattern language, so such a path is reported
+# rather than written: the configuration stays loadable either way.
+# and the escape does not break the undo: `mise dot include` takes the
+# rule out whichever spelling it was written in, and the path is captured
+# again. Asserted on the capture, since the message was the thing that
+# was wrong.
+# the rule is stored as the path is displayed, so the message has to
+# name the spelling that undoes it
+assert_contains "mise dot untrack '$HOME/.codex/cacheX' 2>&1" "mise dot include '~/.codex/cacheX'"
+# a plain file, and a file whose name holds a glob metacharacter
+assert_succeed "mise dot include '~/.codex/cacheX'"
+assert_succeed "mise dot include '~/.codex/cache[1]'"
+echo 'back' >"$HOME/.codex/cache[1]"
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cacheX'
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'cache'
+
+# a directory, whose rule carries the `/**` the message does not
+mkdir -p "$HOME/.codex/logs[a]"
+echo 'noise' >"$HOME/.codex/logs[a]/today.log"
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/logs[a]'"
+assert_contains "mise dot paths --json | jq -r '.exclude[]'" 'logs[[]a[]]/**'
+assert_succeed 'mise dot save'
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'today.log'
+assert_succeed "mise dot include '~/.codex/logs[a]'"
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'logs'
+echo 'kept after all' >"$HOME/.codex/logs[a]/today.log"
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'today.log'
+
+# `foo*` and `foo[*]` are two different rules that happen to be each
+# other's escaping. Including one must not take the other with it.
+count() { echo "mise dot paths --json | jq '[.exclude[] | select(. == \"$1\")] | length'"; }
+assert_succeed "mise dot exclude 'foo*'"
+assert_succeed "mise dot exclude 'foo[*]'"
+assert "$(count 'foo*')" 1
+assert "$(count 'foo[*]')" 1
+assert_succeed "mise dot include 'foo*'"
+assert "$(count 'foo*')" 0
+assert "$(count 'foo[*]')" 1
+
+# and the same two rules in rooted form, where the argument is both a
+# glob a user typed and a path `untrack` could have escaped. Taking the
+# glob back must leave the rule for the file actually named `foo*`.
+assert_succeed "mise dot exclude '~/.codex/bar*'"
+echo 'literal' >"$HOME/.codex/bar*"
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/bar*'"
+assert "$(count '~/.codex/bar*')" 1
+assert "$(count '~/.codex/bar[*]')" 1
+# and it says so rather than claiming the path is captured again: the
+# rule for the file named `bar*` is still in force. Run once and assert
+# on the captured output — each assertion would otherwise run the
+# command again, against a list the first one already changed.
+mise dot include '~/.codex/bar*' >include-bar.log 2>&1
+assert_contains 'cat include-bar.log' 'still excludes it'
+assert_contains 'cat include-bar.log' '~/.codex/bar[*]'
+assert "$(count '~/.codex/bar*')" 0
+assert "$(count '~/.codex/bar[*]')" 1
+# the escaped rule is still the one that undoes the untrack, once
+# nothing in the list spells the argument
+assert_succeed "mise dot include '~/.codex/bar*'"
+assert "$(count '~/.codex/bar[*]')" 0
+# with nothing left to exclude it, the claim is the plain one again
+assert_contains "mise dot exclude '~/.codex/solo' 2>&1" 'excluded from capture'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'removed exclusion rule'
+
+# the $ is the point: it stays literal
+# shellcheck disable=SC2016
+dollar='~/.codex/price$x'
+echo 'dear' >"$HOME/.codex/price\$x"
+assert_fail "mise dot untrack '$dollar'" 'environment variables are not supported'
+# A later invalid rule must not change an earlier child or declaration.
+cp "$MISE_CONFIG_DIR/config.toml" before-untrack.toml
+before_untrack=$(git --git-dir="$repo" rev-parse HEAD)
+for earlier in '~/.codex/cacheX' '~/.codex'; do
+  assert_fail "mise dot untrack '$earlier' '$dollar'" 'environment variables are not supported'
+  assert_succeed "cmp before-untrack.toml '$MISE_CONFIG_DIR/config.toml'"
+  assert "git --git-dir=$repo rev-parse HEAD" "$before_untrack"
+done
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'price'
+assert_succeed 'mise dot save'
+
+# Nothing acts on a rule set it could not fully build. A pull would
+# delete, so it refuses with the same diagnostic rather than proceeding
+# with the rules it managed to compile — while the command the refusal
+# names keeps working.
+origin="$PWD/refusal-origin.git"
+git init -q --bare -b main "$origin"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["["]
+TOML
+assert_fail 'mise dot pull --yes' 'cannot be applied'
+assert_fail 'mise dot sync' 'cannot be applied'
+assert_fail 'mise dot rollback ~/.codex/config.toml --yes' 'cannot be applied'
+assert "cat ~/.codex/config.toml" 'changed'
+assert_succeed 'mise dot paths'
+assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
+
+# Removing a specific rule does not promise inclusion under a broader rule.
+mise dot exclude '~/.codex/**'
+mise dot exclude '~/.codex/solo'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'removed exclusion rule'
+assert_contains 'mise dot paths' 'exclude: ~/.codex/**'

@@ -4,10 +4,10 @@ use std::{
     sync::Arc,
 };
 
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
@@ -218,7 +218,7 @@ impl ZigPlugin {
     }
 
     async fn get_community_mirrors(&self) -> Option<Vec<String>> {
-        let cache_path = self.ba.cache_path.join(MIRRORS_FILENAME);
+        let cache_path = self.ba.cache_path().join(MIRRORS_FILENAME);
         let recent_cache =
             file::modified_duration(&cache_path).is_ok_and(|updated_at| updated_at < DAILY);
         if !recent_cache {

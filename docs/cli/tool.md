@@ -23,6 +23,7 @@ Show information about a tool
 - **`--installed`** — Only show installed versions
 - **`--requested`** — Only show requested versions
 - **`--tool-options`** — Only show tool options
+- **`--url`** — Only show the project URL from the registry
 - **`-h --help`** — Print help
 
 ## Examples

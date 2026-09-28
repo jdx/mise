@@ -57,6 +57,20 @@ You can also use static URLs without templating:
 "http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v1.0.0.tar.gz" }
 ```
 
+#### Local files
+
+A `file://` URL installs an archive that is already on disk, such as one downloaded by hand on a
+restricted network. mise copies it instead of downloading it, then extracts, verifies, and links it
+the same way. Add a `checksum` so a local file is verified too:
+
+```toml
+[tools]
+"http:my-tool" = { version = "1.0.0", url = "file:///opt/archives/my-tool-v1.0.0-linux-x64.tar.gz", checksum = "sha256:..." }
+```
+
+The URL is recorded in `mise.lock` as written, so a lockfile that names a local path only works on
+machines that have the file at that path.
+
 #### Template Variables
 
 The following template functions are available in URLs (use double curly braces, e.g., `version` becomes <code v-pre>{{version}}</code>):

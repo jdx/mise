@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# `mise dot apply` runs the `[history.reload]` commands whose glob matches a
+# target it wrote, once each, after every write — like pull, rollback and undo.
+# Each case appends to its own marker file, so a case never sees another's.
+# shellcheck disable=SC2016
+
+config="$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$MISE_CONFIG_DIR/dotfiles/app" "$MISE_CONFIG_DIR/dotfiles/hypr" ~/.zshrc.d
+echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+echo 'monitor=DP-1' >"$MISE_CONFIG_DIR/dotfiles/hypr/monitors.conf"
+echo 'keep me' >~/.zshrc.d/local.zsh
+
+# the base entries, with reload commands appending to the given marker
+write_config() {
+  cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/.config/hypr" = "dotfiles/hypr"
+"~/.zshrc.d/local.zsh/activate" = { block = 'eval "\$(mise activate zsh)"' }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/$1"
+"~/.config/hypr/**" = "echo hypr >> $HOME/$1"
+"~/.zshrc.d/**" = "echo zsh >> $HOME/$1"
+"~/.config/other/**" = "echo other >> $HOME/$1"
+EOF
+}
+
+# a dry run writes nothing and reloads nothing
+write_config reloads-dry-run
+assert_succeed "mise dot apply --dry-run"
+assert_fail "test -e ~/reloads-dry-run"
+assert_fail "test -e ~/.config/app/settings.toml"
+
+# every matching command runs once, after the writes; an unmatched one never
+write_config reloads-apply
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/app/settings.toml" "theme = dark"
+assert "readlink ~/.config/hypr" "$MISE_CONFIG_DIR/dotfiles/hypr"
+assert_contains "cat ~/.zshrc.d/local.zsh" "mise activate zsh"
+assert "cat ~/reloads-apply" $'app\nhypr\nzsh'
+
+# nothing to write, nothing to reload
+write_config reloads-noop
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e ~/reloads-noop"
+
+# only the commands matching what was actually written run
+write_config reloads-changed
+echo 'theme = light' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/app/settings.toml" "theme = light"
+assert "cat ~/reloads-changed" "app"
+
+# a single command runs once even when several written targets and globs
+# match it
+echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/.config/app/keys.toml" = { content = "leader = space\n" }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads-once"
+"~/.config/app/keys.toml" = "echo app >> $HOME/reloads-once"
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat ~/reloads-once" "app"
+
+# a later entry that fails still leaves the earlier ones written, so their
+# commands run before the error is reported; the target that was never
+# written reloads nothing (root can write anywhere, so the failure cannot be
+# provoked there)
+if [ "$(id -u)" != 0 ]; then
+  mkdir -p ~/locked
+  chmod 555 ~/locked
+  cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/locked/sub/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads-partial"
+"~/locked/**" = "echo locked >> $HOME/reloads-partial"
+EOF
+  echo 'theme = light' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+  assert_fail "mise dot apply --yes"
+  assert "cat ~/.config/app/settings.toml" "theme = light"
+  assert_fail "test -e ~/locked/sub/settings.toml"
+  assert "cat ~/reloads-partial" "app"
+
+  # a directory copy that fails part-way reloads for the files it did write
+  # and not for the ones it never reached
+  mkdir -p "$MISE_CONFIG_DIR/dotfiles/multi/sub" ~/multi/sub
+  echo 'a' >"$MISE_CONFIG_DIR/dotfiles/multi/a.conf"
+  echo 'b' >"$MISE_CONFIG_DIR/dotfiles/multi/sub/b.conf"
+  chmod 555 ~/multi/sub
+  cat <<EOF >"$config"
+[dotfiles]
+"~/multi" = { source = "dotfiles/multi", mode = "copy" }
+
+[history.reload]
+"~/multi/a.conf" = "echo a >> $HOME/reloads-multi"
+"~/multi/sub/**" = "echo b >> $HOME/reloads-multi"
+EOF
+  assert_fail "mise dot apply --yes"
+  assert "cat ~/multi/a.conf" "a"
+  assert_fail "test -e ~/multi/sub/b.conf"
+  assert "cat ~/reloads-multi" "a"
+fi

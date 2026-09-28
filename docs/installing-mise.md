@@ -40,6 +40,16 @@ mise then periodically checks before eligible interactive commands, installs a n
 updating plugins, and re-runs the original command with the new binary. Configure the interval with
 [`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
 
+For releases from v2026.9.3 onward, self-update also verifies the release's
+[packslip](https://packslip.dev): its signed archive digest, version, release
+workflow, and transparency-log entry. The signer is pinned to mise's immutable
+GitHub repository ID, so repository renames and moves between organizations do
+not change which project is trusted. The minimum release age also applies to the
+verified log timestamp; explicit versions bypass the delay. Older releases retain
+the embedded archive-signature check, which is also required for newer releases.
+Mirrors must preserve the original manifest and archive bytes. Missing or invalid
+manifests for modern releases fail the update without replacing mise.
+
 Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
 setting [`self_update.repository`](/configuration/settings.html#self_update.repository). Private
 repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
@@ -115,7 +125,8 @@ Options:
 - `MISE_DEBUG=1` – enable debug logging
 - `MISE_QUIET=1` – disable non-error output
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
-- `MISE_VERSION=v2025.12.0` – install a specific version
+- `MISE_VERSION=v2025.12.0` – install a specific version, bypassing the release-age delay
+- `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=7d` – override the minimum age for mise releases; falls back to `MISE_MINIMUM_RELEASE_AGE`, then `24h`. Use `0s` for immediate releases. The installer supports integer `s`, `m`, `h`, `d`, and `w` durations and reads environment variables, not TOML settings.
 - `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
 - `MISE_INSTALL_MUSL=1` – use the static musl build on systems with older glibc
 
@@ -136,9 +147,19 @@ sh ./install.sh
 ```
 
 ::: tip
-Unless you change the version with `MISE_VERSION`, the install script is pinned to whatever the latest
-version was when it was downloaded, with checksums inside the file. Downloading the script and committing it to
-a project is therefore a great way to ensure that anyone who installs with it fetches the exact same mise binary.
+The installer selects the newest stable release published at least 24 hours ago. It evaluates
+release ages when run, even if you saved the script earlier. Set `MISE_VERSION` to pin a version
+for reproducible installs. Unpinned installs keep an existing version if it is already as new as
+or newer than the eligible release.
+
+```sh
+curl -fsSL https://mise.run | MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE=7d sh
+```
+
+For subsequent updates, `mise self-update` uses `[settings].self_update.minimum_release_age`,
+falling back to `[settings].minimum_release_age` and then `24h`. Its
+`--minimum-release-age` flag overrides both settings, and an explicit version bypasses the delay.
+Automatic updates and update notifications use the same cutoff.
 :::
 
 Supported OS/arch:
@@ -294,7 +315,16 @@ sudo snap install mise --classic
 
 ### Docker
 
-See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Docker.
+Official images are available from `ghcr.io/jdx/mise` and Docker Hub (`jdxcode/mise`)
+for Linux amd64 and arm64:
+
+- Use `ghcr.io/jdx/mise:2026.9.11-debian` as a CI or development image. It includes
+  mise, `curl`, `git`, and CA certificates; install project tools with `mise install`.
+- Use `ghcr.io/jdx/mise:2026.9.11` as a `COPY --from=` source for the static mise
+  binary at `/usr/local/bin/mise`. This scratch image has no shell.
+
+See the [Docker cookbook](/mise-cookbook/docker.html) for tags, digest pinning,
+migration from the previous image, and other installation methods.
 
 ::: details Example Dockerfile
 
@@ -304,16 +334,7 @@ context. This example copies that configuration, installs its tools, and uses
 lockfile, hook inputs, or application files that your real project needs.
 
 ```dockerfile
-FROM debian:13-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV MISE_INSTALL_PATH=/usr/local/bin/mise
-RUN curl -fsSL https://mise.run -o /tmp/install-mise.sh \
-    && sh /tmp/install-mise.sh \
-    && rm /tmp/install-mise.sh
+FROM ghcr.io/jdx/mise:2026.9.11-debian
 
 WORKDIR /app
 COPY mise.toml ./mise.toml
@@ -371,9 +392,24 @@ mise_platform=linux-x64
 curl -fL -o mise "https://github.com/jdx/mise/releases/download/v${mise_version}/mise-v${mise_version}-${mise_platform}"
 ```
 
-Change both values for your chosen release and platform. Verify the artifact
-against that release's checksum/signature metadata before installing it. The
-`mise.run` installer handles platform selection and checksum checking for you.
+Change both values for your chosen release and platform. Each release also
+ships `SHASUMS256.txt`, signed with minisign (`SHASUMS256.txt.minisig`) and
+GPG (`SHASUMS256.asc`). Verify the checksum file's signature, then the
+download against it, before installing. The following commands require
+`minisign` and `sha256sum` (use `shasum -a 256 -c` on macOS in place of
+`sha256sum -c`), and reuse the variables and `mise` file from the download above:
+
+```sh
+base="https://github.com/jdx/mise/releases/download/v${mise_version}"
+curl -fL -O "$base/SHASUMS256.txt" -O "$base/SHASUMS256.txt.minisig"
+minisign -Vm SHASUMS256.txt -P RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ &&
+  grep " ./mise-v${mise_version}-${mise_platform}$" SHASUMS256.txt | sed 's| ./mise-.*| mise|' | sha256sum -c
+```
+
+The minisign public key is
+[`minisign.pub`](https://github.com/jdx/mise/blob/main/minisign.pub) in the
+repository. The `mise.run` installer handles platform selection and checksum
+checking for you.
 
 After verifying a downloaded Unix executable, install it to a user-writable path:
 
@@ -633,18 +669,12 @@ mise completion bash > ~/.local/share/bash-completion/completions/mise
 # Generate into a directory owned by your user:
 mkdir -p ~/.zfunc
 mise completion zsh > ~/.zfunc/_mise
-```
 
-Add the `fpath` update to `.zshrc` before its existing `compinit` call (including
-one made by a shell framework):
-
-```sh
+# Then add the fpath update to ~/.zshrc, before its existing compinit call
+# (including one made by a shell framework):
 fpath=(~/.zfunc $fpath)
-```
 
-If `.zshrc` does not already initialize completions, also add:
-
-```sh
+# If ~/.zshrc does not already initialize completions, also add:
 autoload -Uz compinit
 compinit
 ```

@@ -1,23 +1,22 @@
+mod packslip;
+
+use crate::github::GithubAsset as ReleaseAsset;
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 use console::style;
 #[cfg(windows)]
 use indoc::formatdoc;
-use self_update::backends::github::Update;
-use self_update::update::ReleaseAsset;
-use self_update::{VersionStatus, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS, SelfUpdateSource};
-use crate::config::Settings;
+use crate::cli::version::SelfUpdateSource;
+use crate::config::{Settings, SettingsExt};
 use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
-use std::collections::BTreeMap;
+use crate::platform::{ARCH, OS};
 use std::ffi::OsStr;
+#[cfg(windows)]
 use std::fs;
-#[cfg(target_os = "macos")]
 use std::path::Path;
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -45,68 +44,11 @@ fn release_archive_asset(assets: &[ReleaseAsset], archive_name: &str) -> Option<
     // archive is missing, which can select a raw binary or another architecture.
     assets
         .iter()
-        .find(|asset| asset.name() == archive_name)
+        .find(|asset| asset.name == archive_name)
         .cloned()
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
-struct InstructionsToml {
-    message: Option<String>,
-    #[serde(flatten)]
-    commands: BTreeMap<String, String>,
-}
-
-fn read_instructions_file(path: &PathBuf) -> Option<String> {
-    let body = fs::read_to_string(path).ok()?;
-    let parsed: InstructionsToml = toml::from_str(&body).ok()?;
-    if let Some(msg) = parsed.message {
-        return Some(msg);
-    }
-    if let Some((_k, v)) = parsed.commands.into_iter().next() {
-        return Some(v);
-    }
-    None
-}
-
-pub(crate) fn upgrade_instructions_text() -> Option<String> {
-    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
-        && let Some(msg) = read_instructions_file(path)
-    {
-        return Some(msg);
-    }
-    None
-}
-
-/// Shown when mise cannot update itself and the packager shipped no instructions
-/// file. Without it, telling the user their mise is out of date is a dead end on
-/// every install that disables self-update: a marker file (Homebrew, the AUR
-/// `mise-bin` package), a build without the `self_update` feature (Arch), or
-/// `MISE_SELF_UPDATE_AVAILABLE=false`. The wording stays neutral about which of
-/// those applies — being unable to self-update is not by itself proof that a
-/// package manager owns the install.
-pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
-    "self-update is disabled for this install, update mise the same way you installed it";
-
-/// How to update mise when `mise self-update` is not available: the packager's
-/// instructions when they shipped some, otherwise the generic hint.
-pub(crate) fn upgrade_instructions_or_hint() -> String {
-    upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
-}
-
-/// Appends self-update guidance and packaging instructions (if any) to a message.
-pub(crate) fn append_self_update_instructions(mut message: String) -> String {
-    if SelfUpdate::is_available() {
-        message.push_str("\nRun `mise self-update` to update mise");
-    }
-    if let Some(instructions) = upgrade_instructions_text() {
-        message.push('\n');
-        message.push_str(&instructions);
-    } else if !SelfUpdate::is_available() {
-        message.push('\n');
-        message.push_str(SELF_UPDATE_DISABLED_HINT);
-    }
-    message
-}
+pub(crate) use crate::upgrade_hint::{upgrade_instructions_or_hint, upgrade_instructions_text};
 
 /// Checks for and installs an update before an eligible interactive command.
 /// Failures are deliberately non-fatal so the requested command still runs.
@@ -170,8 +112,9 @@ pub(crate) async fn maybe_auto_update(
         force: false,
         yes: true,
         no_plugins: true,
+        minimum_release_age: None,
     };
-    if let Err(err) = update.run().await {
+    if let Err(err) = update.run_with_age_policy(true).await {
         debug!("automatic mise update failed: {err:#}");
         return Ok(());
     }
@@ -250,7 +193,8 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 
 /// Update mise itself
 ///
-/// Uses the GitHub Releases API to find the latest release and binary.
+/// Selects the newest stable release satisfying the minimum release age (24h by default).
+/// Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 /// By default, this will also update any installed plugins.
 /// Uses mise's GitHub token resolution chain for authenticated requests.
 ///
@@ -262,6 +206,10 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
+
+    /// Override the minimum release age for unpinned updates (default: 24h)
+    #[usage(long)]
+    minimum_release_age: Option<String>,
 
     /// Update even if already up to date
     #[usage(long, short)]
@@ -414,8 +362,175 @@ fn update_plugins(bin: &std::path::Path) {
     }
 }
 
+/// Whether a failed write probe of the install directory means the update cannot proceed.
+///
+/// Only the errors that say "this user cannot write here" stop the update. Anything else -- a
+/// directory that has gone missing, an exotic filesystem error -- is left to the update itself,
+/// which is where the real operation and the error that describes it are.
+fn write_probe_is_fatal(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+    )
+}
+
+/// Create and remove a file in `dir`, the way replacing the binary is about to.
+fn probe_install_dir(dir: &Path) -> std::io::Result<()> {
+    tempfile::Builder::new()
+        .prefix(".mise-self-update-probe")
+        .tempfile_in(dir)
+        .map(|_| ())
+}
+
+/// Whether a sticky directory stops this user from renaming a file in it.
+///
+/// On a sticky directory (`S_ISVTX`, the bit `/tmp` carries) creating a file is allowed but
+/// renaming or removing one is restricted to the file's owner, the directory's owner, and root.
+/// Replacing mise renames the *existing* binary out of the way, so a bindir that is group-writable
+/// and sticky with a root-owned mise in it passes the write probe -- the probe's own file belongs
+/// to the prober -- and then fails at the rename. Taking the four facts as arguments keeps the
+/// rule testable without a second user to own the file.
+#[cfg(unix)]
+fn sticky_blocks_rename(dir_mode: u32, dir_uid: u32, file_uid: u32, euid: u32) -> bool {
+    const S_ISVTX: u32 = 0o1000;
+
+    dir_mode & S_ISVTX != 0 && euid != 0 && dir_uid != euid && file_uid != euid
+}
+
+/// [`sticky_blocks_rename`] against the real directory and binary. A stat that fails says nothing,
+/// so it reports no obstruction and leaves the outcome to the update.
+#[cfg(unix)]
+fn sticky_dir_blocks_replacing(dir: &Path, exe: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Ok(dir_meta), Ok(exe_meta)) = (std::fs::metadata(dir), std::fs::metadata(exe)) else {
+        return false;
+    };
+    sticky_blocks_rename(
+        dir_meta.mode(),
+        dir_meta.uid(),
+        exe_meta.uid(),
+        nix::unistd::geteuid().as_raw(),
+    )
+}
+
+/// Why the running binary cannot be replaced.
+#[derive(Clone, Copy)]
+enum Unreplaceable {
+    /// The install directory refuses writes from this user.
+    DirectoryNotWritable,
+    /// The install directory is sticky and the binary belongs to someone else, so only its owner
+    /// can rename it.
+    #[cfg(unix)]
+    StickyForeignBinary,
+}
+
+/// What to print when the install directory cannot be written to.
+///
+/// Names the binary as well as the directory: the install that is stuck is frequently not the one
+/// the user thinks they are running -- a root-owned `/usr/local/bin/mise` shadowing a packaged
+/// `/usr/bin/mise` produces exactly this failure, and the path is what gives that away.
+fn install_dir_not_writable_message(exe: &Path, dir: &Path, why: Unreplaceable) -> String {
+    let cause = match why {
+        Unreplaceable::DirectoryNotWritable => {
+            format!("{} is not writable by the current user", dir.display())
+        }
+        #[cfg(unix)]
+        Unreplaceable::StickyForeignBinary => format!(
+            "{} is sticky and {} belongs to another user, so only its owner can replace it",
+            dir.display(),
+            exe.display()
+        ),
+    };
+    let elevate = if cfg!(windows) {
+        "run mise self-update again from an elevated (Administrator) prompt"
+    } else {
+        "run `sudo mise self-update` to update this install"
+    };
+    let mut msg = format!(
+        "cannot replace {exe}: {cause}\n\nEither {elevate}, or update mise the same way you installed it.",
+        exe = exe.display(),
+    );
+    if let Some(instructions) = upgrade_instructions_text() {
+        msg.push_str("\n\n");
+        msg.push_str(&instructions);
+    }
+    msg
+}
+
+/// Stage a verified executable without touching the installed binary.
+fn stage_update_binary(archive: &Path, dest: &Path, keys: &[[u8; 32]]) -> Result<()> {
+    verify_update_archive(archive, keys)?;
+    extract_update_binary(archive, dest)
+}
+
+/// Verify the embedded signature and archive filename before extracting anything.
+fn verify_update_archive(path: &Path, keys: &[[u8; 32]]) -> Result<()> {
+    eyre::ensure!(!keys.is_empty(), "self-update requires a verification key");
+    let context = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| eyre::eyre!("non-UTF8 archive path"))?;
+    let keys = zipsign_api::verify::collect_keys(keys.iter().copied().map(Ok))
+        .map_err(|err| eyre::eyre!("invalid verification keys: {err}"))?;
+    let mut archive = std::fs::File::open(path)?;
+    if context.ends_with(".tar.gz") {
+        zipsign_api::verify::verify_tar(&mut archive, &keys, Some(context.as_bytes()))
+            .map_err(|err| eyre::eyre!("release signature verification failed: {err}"))?;
+    } else if context.ends_with(".zip") {
+        zipsign_api::verify::verify_zip(&mut archive, &keys, Some(context.as_bytes()))
+            .map_err(|err| eyre::eyre!("release signature verification failed: {err}"))?;
+    } else {
+        bail!("unsupported self-update archive: {context}");
+    }
+    Ok(())
+}
+
+/// Extract only the expected regular executable to a fixed temporary path.
+fn extract_update_binary(archive: &Path, dest: &Path) -> Result<()> {
+    let file = std::fs::File::open(archive)?;
+    if archive.extension().is_some_and(|ext| ext == "zip") {
+        let mut archive = zip::ZipArchive::new(file)?;
+        let mut entry = archive.by_name("mise/bin/mise.exe")?;
+        eyre::ensure!(
+            entry.is_file() && !entry.is_symlink(),
+            "release executable is not a regular file"
+        );
+        std::io::copy(&mut entry, &mut std::fs::File::create(dest)?)?;
+    } else {
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if entry.path()? == Path::new("mise/bin/mise") {
+                eyre::ensure!(
+                    entry.header().entry_type().is_file(),
+                    "release executable is not a regular file"
+                );
+                std::io::copy(&mut entry, &mut std::fs::File::create(dest)?)?;
+                return Ok(());
+            }
+        }
+        bail!("release archive has no mise/bin/mise executable");
+    }
+    Ok(())
+}
+
+// A fresh explicitly installed release must survive an unpinned update, even
+// with --force. Explicit targets still allow intentional downgrades.
+fn skip_selected_update(target: &str, current: &str, explicit: bool, force: bool) -> Result<bool> {
+    Ok((!explicit
+        && crate::cli::version::mise_release_key(target)?
+            < crate::cli::version::mise_release_key(current)?)
+        || (!force && target == current))
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
+        let enforce_age = self.version.is_none();
+        self.run_with_age_policy(enforce_age).await
+    }
+
+    async fn run_with_age_policy(self, enforce_age: bool) -> Result<()> {
         if !Self::is_available() && !self.force {
             if let Some(instructions) = upgrade_instructions_text() {
                 warn!("{}", instructions);
@@ -431,10 +546,9 @@ impl SelfUpdate {
         sweep_helper_orphans();
         #[cfg(windows)]
         Self::ensure_temp_dir_can_replace_binary()?;
-        let status = self.do_update()?;
+        let version = self.do_update(enforce_age).await?;
 
-        if status.is_updated() {
-            let version = status.version().to_string();
+        if let Some(version) = version {
             let styled_version = style(&version).bright().yellow();
             miseprintln!("Updated mise to {styled_version}");
             // On Windows, "exe"/"hardlink" shims are copies of mise-shim.exe and
@@ -495,89 +609,256 @@ impl SelfUpdate {
         bail!("{msg}");
     }
 
-    fn do_update(&self) -> Result<VersionStatus> {
-        // Use block_in_place to allow self_update's blocking HTTP calls
-        // to work within mise's async runtime
-        tokio::task::block_in_place(|| self.do_update_blocking())
+    /// Stop before anything is downloaded when the running binary cannot be replaced.
+    ///
+    /// `self-replace` renames the running mise out of its directory and writes the new binary in
+    /// its place, so an update needs write permission on the *directory*, not on the file. A
+    /// root-owned install being updated by a normal user -- `/usr/local/bin/mise`, an install
+    /// under `/opt` -- therefore fails, but only after the release has been downloaded, and with
+    /// a message that names a temp file nobody asked for and no directory at all:
+    /// `Permission denied (os error 13) at path "/usr/local/bin/.mise.__temp__XKV5Oz"`. Probing
+    /// first turns that into the two things the user needs: which install is stuck, and what to
+    /// do about it.
+    ///
+    /// Deliberately after the up-to-date comparison, so a mise that has nothing to update still
+    /// reports that rather than a permission problem it was never going to hit.
+    fn ensure_install_dir_writable() -> Result<()> {
+        let exe = std::env::current_exe().unwrap_or_else(|_| env::MISE_BIN.clone());
+        let Some(dir) = exe.parent() else {
+            return Ok(());
+        };
+        match probe_install_dir(dir) {
+            // Writing to the directory is necessary but not sufficient: the update also renames
+            // the binary that is already there, which a sticky directory reserves to its owner.
+            Ok(()) => {
+                #[cfg(unix)]
+                if sticky_dir_blocks_replacing(dir, &exe) {
+                    bail!(
+                        "{}",
+                        install_dir_not_writable_message(
+                            &exe,
+                            dir,
+                            Unreplaceable::StickyForeignBinary
+                        )
+                    );
+                }
+                Ok(())
+            }
+            Err(err) if write_probe_is_fatal(&err) => {
+                bail!(
+                    "{}",
+                    install_dir_not_writable_message(
+                        &exe,
+                        dir,
+                        Unreplaceable::DirectoryNotWritable
+                    )
+                )
+            }
+            Err(err) => {
+                debug!("could not probe {} for writability: {err}", dir.display());
+                Ok(())
+            }
+        }
     }
 
-    fn do_update_blocking(&self) -> Result<VersionStatus> {
-        let settings = Settings::try_get();
-        let source = settings
-            .as_ref()
-            .map(|settings| SelfUpdateSource::from_settings(settings))
-            .unwrap_or_default();
+    async fn do_update(&self, enforce_age: bool) -> Result<Option<String>> {
+        let settings = Settings::get();
+        let source = SelfUpdateSource::from_settings(&settings);
         source.validate()?;
-        let (repo_owner, repo_name) = source.repository_parts()?;
-        let mut update = Update::configure();
-        update.reqwest_client(Self::http_client()?);
-        if let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url) {
-            update.auth_token(&token);
+        source.repository_parts()?;
+        let explicit = self.version.is_some();
+        let version = match &self.version {
+            Some(version) => version.trim_start_matches('v').to_string(),
+            None => {
+                crate::cli::version::eligible_self_update_version(
+                    &source,
+                    self.minimum_release_age.as_deref(),
+                )
+                .await?
+            }
+        };
+        if !explicit {
+            miseprintln!(
+                "Selected mise {version} (minimum release age: {})",
+                crate::cli::version::self_update_release_age(self.minimum_release_age.as_deref())
+            );
         }
-        #[cfg(windows)]
-        let bin_path_in_archive = "mise/bin/mise.exe";
-        #[cfg(not(windows))]
-        let bin_path_in_archive = "mise/bin/mise";
-        update
-            .repo_owner(repo_owner)
-            .repo_name(repo_name)
-            .api_base_url(&source.api_url)
-            .bin_name("mise")
-            .current_version(cargo_crate_version!())
-            .bin_path_in_archive(bin_path_in_archive);
-
-        let v = self
-            .version
-            .clone()
-            .map_or_else(
-                || -> Result<String> {
-                    Ok(update
-                        .build()?
-                        .get_latest_release()?
-                        .latest()
-                        .ok_or_else(|| {
-                            eyre::eyre!("no GitHub releases found for {}", source.repository)
-                        })?
-                        .version()
-                        .to_string())
-                },
-                Ok,
-            )
-            .map(|v| format!("v{v}"))?;
-
-        // Check if already up to date (unless --force is specified)
-        let current_version = format!("v{}", cargo_crate_version!());
-        if !self.force && v == current_version {
-            return Ok(VersionStatus::UpToDate(current_version));
+        if skip_selected_update(&version, env!("CARGO_PKG_VERSION"), explicit, self.force)? {
+            return Ok(None);
         }
-
-        let target = release_archive_name(&v, &OS, &ARCH, crate::build_time::TARGET);
-        // Always set release_tag to ensure we download the correct release
-        // (fixes semver mismatch across year boundaries, e.g. 2025.x -> 2026.x)
-        update.release_tag(&v);
-        let status = update
-            .verifying_keys([*include_bytes!("../../zipsign.pub")])
-            .show_download_progress(true)
-            .target(&target)
-            .asset_matcher(move |assets| release_archive_asset(assets, &target))
-            .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
-            .build()?
-            .update()?;
-
-        // Verify macOS binary signature after update
-        #[cfg(target_os = "macos")]
-        if status.is_updated() {
-            Self::verify_macos_signature(&env::MISE_BIN)?;
+        Self::ensure_install_dir_writable()?;
+        let client = Self::http_client()?;
+        let mut url = url::Url::parse(&format!(
+            "{}/repos/{}/releases/tags/",
+            source.api_url, source.repository
+        ))?;
+        url.path_segments_mut()
+            .map_err(|()| eyre::eyre!("invalid release API URL"))?
+            .pop_if_empty()
+            .push(&format!("v{version}"));
+        let release: crate::github::GithubRelease = client
+            .get(url.clone())
+            .headers(Self::request_headers(&source, url.as_str())?)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        let manifest = Self::release_packslip(&client, &source, &release, &version).await?;
+        let before = enforce_age
+            .then(|| {
+                crate::duration::parse_into_timestamp(
+                    &crate::cli::version::self_update_release_age(
+                        self.minimum_release_age.as_deref(),
+                    ),
+                )
+            })
+            .transpose()?;
+        let archive_name = release_archive_name(
+            &format!("v{version}"),
+            &OS,
+            &ARCH,
+            crate::build_time::TARGET,
+        );
+        let asset = release_archive_asset(&release.assets, &archive_name)
+            .ok_or_else(|| eyre::eyre!("release v{version} has no asset named {archive_name}"))?;
+        if !(self.yes
+            || settings.yes
+            || crate::ui::prompt::confirm(format!("Update mise to {version}?"))?.is_yes())
+        {
+            bail!("self-update cancelled; use --yes to update non-interactively");
         }
-
-        Ok(status)
+        let dir = tempfile::tempdir()?;
+        let archive_path = dir.path().join(&archive_name);
+        Self::download_archive(&client, &source, &asset.url, &archive_path).await?;
+        let binary = dir
+            .path()
+            .join(if cfg!(windows) { "mise.exe" } else { "mise" });
+        let new_binary = binary.clone();
+        let selected_version = version.clone();
+        // Verification and archive I/O are blocking; no unverified contents are
+        // extracted, and the running executable is untouched on any failure.
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            if let Some(manifest) = manifest {
+                packslip::verify(&manifest, &selected_version, &archive_path, before)?;
+            }
+            stage_update_binary(
+                &archive_path,
+                &new_binary,
+                &[*include_bytes!("../../zipsign.pub")],
+            )?;
+            #[cfg(target_os = "macos")]
+            Self::verify_macos_signature(&new_binary)?;
+            self_replace::self_replace(&new_binary)?;
+            Ok(())
+        })
+        .await??;
+        Ok(Some(version))
     }
 
-    fn http_client() -> Result<self_update::reqwest::blocking::Client> {
-        Ok(self_update::reqwest::blocking::Client::builder()
+    fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
+        let mut headers = crate::github::get_headers(url)?;
+        // A configured API may use any HTTPS host/path. Resolve its token
+        // explicitly, but never send it to an asset on another origin.
+        if url::Url::parse(url)?.origin() == url::Url::parse(&source.api_url)?.origin()
+            && let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url)
+        {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                crate::tokens::bearer_header("GitHub", &token)?,
+            );
+        }
+        Ok(headers)
+    }
+
+    async fn release_packslip(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        release: &crate::github::GithubRelease,
+        version: &str,
+    ) -> Result<Option<String>> {
+        match release
+            .assets
+            .iter()
+            .find(|asset| asset.name == "packslip.sigstore.json")
+        {
+            Some(asset) => Ok(Some(
+                Self::download_packslip(client, source, &asset.url).await?,
+            )),
+            None if packslip::required(version)? => {
+                bail!("release v{version} is missing its required packslip.sigstore.json")
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn download_packslip(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        url: &str,
+    ) -> Result<String> {
+        let mut headers = Self::request_headers(source, url)?;
+        headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
+        let mut response = client
+            .get(url)
+            .headers(headers)
+            .send()
+            .await?
+            .error_for_status()?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            eyre::ensure!(
+                bytes.len() + chunk.len() <= 4 * 1024 * 1024,
+                "self-update packslip exceeds 4 MiB"
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(String::from_utf8(bytes)?)
+    }
+
+    fn http_client() -> Result<reqwest::Client> {
+        let settings = Settings::get();
+        Ok(reqwest::Client::builder()
+            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
             .https_only(true)
             .redirect(Self::redirect_policy())
+            .connect_timeout(settings.http_timeout())
+            .read_timeout(settings.http_timeout())
+            .timeout(settings.http_download_timeout())
+            .no_gzip()
+            .no_zstd()
             .build()?)
+    }
+
+    async fn download_archive(
+        client: &reqwest::Client,
+        source: &SelfUpdateSource,
+        url: &str,
+        path: &Path,
+    ) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+        let mut headers = Self::request_headers(source, url)?;
+        headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
+        let mut response = client
+            .get(url)
+            .headers(headers)
+            .send()
+            .await?
+            .error_for_status()?;
+        let progress =
+            crate::ui::multi_progress_report::MultiProgressReport::get().add("self-update");
+        progress.set_message("downloading release".into());
+        if let Some(length) = response.content_length() {
+            progress.set_length(length);
+        }
+        let mut file = tokio::fs::File::create(path).await?;
+        while let Some(chunk) = response.chunk().await? {
+            file.write_all(&chunk).await?;
+            progress.inc(chunk.len() as u64);
+        }
+        file.flush().await?;
+        progress.finish();
+        Ok(())
     }
 
     fn redirect_policy() -> reqwest::redirect::Policy {
@@ -648,7 +929,7 @@ impl SelfUpdate {
         let settings = Settings::get();
         let request_timeout = settings.http_timeout();
         let archive = reqwest::Client::builder()
-            .user_agent(format!("mise/{}", cargo_crate_version!()))
+            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
             .https_only(true)
             .redirect(Self::redirect_policy())
             .connect_timeout(request_timeout)
@@ -664,8 +945,15 @@ impl SelfUpdate {
             .await?;
         fs::write(&zip_path, archive)?;
 
+        let manifest =
+            Self::release_packslip(&Self::http_client()?, source, &release, version).await?;
+        if let Some(manifest) = manifest {
+            // The main executable already enforced age for this exact release.
+            crate::file::run_blocking(|| packslip::verify(&manifest, version, &zip_path, None))?;
+        }
+
         // Verify the archive signature using the same key as the main update
-        Self::verify_zip_signature(&zip_path)?;
+        verify_update_archive(&zip_path, &[*include_bytes!("../../zipsign.pub")])?;
 
         let file = fs::File::open(&zip_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
@@ -697,34 +985,8 @@ impl SelfUpdate {
         Ok(())
     }
 
-    #[cfg(windows)]
-    fn verify_zip_signature(path: &std::path::Path) -> Result<()> {
-        let context = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.as_bytes())
-            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 archive path"))?;
-
-        let keys = zipsign_api::verify::collect_keys(
-            [*include_bytes!("../../zipsign.pub")].into_iter().map(Ok),
-        )
-        .map_err(|e| color_eyre::eyre::eyre!("failed to load verification keys: {e}"))?;
-
-        let mut file = fs::File::open(path)?;
-        zipsign_api::verify::verify_zip(&mut file, &keys, Some(context))
-            .map_err(|e| color_eyre::eyre::eyre!("zip signature verification failed: {e}"))?;
-
-        debug!("Verified zip signature for {}", path.display());
-        Ok(())
-    }
-
     pub(crate) fn is_available() -> bool {
-        if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
-            return b;
-        }
-        let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
-        let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
-        !(has_disable || has_instructions)
+        crate::upgrade_hint::self_update_available()
     }
 
     #[cfg(target_os = "macos")]
@@ -772,7 +1034,16 @@ impl SelfUpdate {
 #[cfg(test)]
 mod release_asset_tests {
     use super::*;
-    use self_update::update::Release;
+
+    #[test]
+    fn age_filter_never_implicitly_downgrades() {
+        assert!(skip_selected_update("2026.9.15", "2026.9.16", false, false).unwrap());
+        assert!(skip_selected_update("2026.9.15", "2026.9.16", false, true).unwrap());
+        assert!(!skip_selected_update("2026.9.15", "2026.9.16", true, false).unwrap());
+        assert!(skip_selected_update("2026.9.16", "2026.9.16", false, false).unwrap());
+        assert!(!skip_selected_update("2026.9.16", "2026.9.16", false, true).unwrap());
+        assert!(!skip_selected_update("2026.10.0", "2026.9.30", false, false).unwrap());
+    }
 
     #[test]
     fn archive_names_match_release_platforms() {
@@ -847,12 +1118,18 @@ mod release_asset_tests {
         }
     }
 
-    fn release_with_assets(names: &[&str]) -> Release {
-        Release::builder()
-            .version("2026.9.3")
-            .assets(names.iter().map(|name| ReleaseAsset::new(*name, "")))
-            .build()
-            .unwrap()
+    fn release_with_assets(names: &[&str]) -> Vec<ReleaseAsset> {
+        names
+            .iter()
+            .map(|name| ReleaseAsset {
+                name: (*name).into(),
+                url: String::new(),
+                browser_download_url: String::new(),
+                digest: None,
+                updated_at: None,
+                from_versions_host: false,
+            })
+            .collect()
     }
 
     #[test]
@@ -869,8 +1146,8 @@ mod release_asset_tests {
             "armv7-unknown-linux-musleabi",
         ] {
             let name = release_archive_name("v2026.9.3", "linux", "arm", build_target);
-            let asset = release_archive_asset(release.assets(), &name).unwrap();
-            assert_eq!(asset.name(), name);
+            let asset = release_archive_asset(&release, &name).unwrap();
+            assert_eq!(asset.name, name);
         }
     }
 
@@ -887,7 +1164,138 @@ mod release_asset_tests {
         ]);
         let name =
             release_archive_name("v2026.9.3", "linux", "arm", "armv7-unknown-linux-gnueabihf");
-        assert!(release_archive_asset(release.assets(), &name).is_none());
+        assert!(release_archive_asset(&release, &name).is_none());
+    }
+}
+
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    fn signed_archive(dir: &Path, zip: bool) -> (std::path::PathBuf, [u8; 32]) {
+        let key = zipsign_api::SigningKey::from_bytes(&[7; 32]);
+        let public_key = key.verifying_key().to_bytes();
+        let path = dir.join(if zip {
+            "mise-test.zip"
+        } else {
+            "mise-test.tar.gz"
+        });
+        let mut output = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        if zip {
+            let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            archive
+                .start_file(
+                    "mise/bin/mise.exe",
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .unwrap();
+            archive.write_all(b"new executable").unwrap();
+            let mut input = archive.finish().unwrap();
+            zipsign_api::sign::copy_and_sign_zip(
+                &mut input,
+                &mut output,
+                &[key],
+                Some(b"mise-test.zip"),
+            )
+            .unwrap();
+        } else {
+            let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            let mut archive = tar::Builder::new(encoder);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(14);
+            header.set_mode(0o755);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, "mise/bin/mise", &b"new executable"[..])
+                .unwrap();
+            let bytes = archive.into_inner().unwrap().finish().unwrap();
+            zipsign_api::sign::copy_and_sign_tar(
+                &mut Cursor::new(bytes),
+                &mut output,
+                &[key],
+                Some(b"mise-test.tar.gz"),
+            )
+            .unwrap();
+        }
+        (path, public_key)
+    }
+
+    #[test]
+    fn signed_tar_and_zip_extract_only_the_executable() {
+        for zip in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let (archive, key) = signed_archive(dir.path(), zip);
+            let dest = dir.path().join("staged-binary");
+            stage_update_binary(&archive, &dest, &[key]).unwrap();
+            assert_eq!(std::fs::read(&dest).unwrap(), b"new executable");
+            assert!(!dir.path().join("mise").exists());
+        }
+    }
+
+    #[test]
+    fn invalid_signatures_cannot_overwrite_the_destination() {
+        for zip in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let (archive, key) = signed_archive(dir.path(), zip);
+            let dest = dir.path().join("existing-binary");
+            std::fs::write(&dest, b"existing executable").unwrap();
+            let wrong_key = zipsign_api::SigningKey::from_bytes(&[8; 32])
+                .verifying_key()
+                .to_bytes();
+            assert!(stage_update_binary(&archive, &dest, &[wrong_key]).is_err());
+            assert!(stage_update_binary(&archive, &dest, &[]).is_err());
+            let renamed = dir
+                .path()
+                .join(if zip { "other.zip" } else { "other.tar.gz" });
+            std::fs::copy(&archive, &renamed).unwrap();
+            assert!(stage_update_binary(&renamed, &dest, &[key]).is_err());
+            let mut bytes = std::fs::read(&archive).unwrap();
+            bytes[20] ^= 1;
+            std::fs::write(&archive, bytes).unwrap();
+            assert!(stage_update_binary(&archive, &dest, &[key]).is_err());
+            assert_eq!(std::fs::read(&dest).unwrap(), b"existing executable");
+        }
+    }
+
+    #[test]
+    fn tar_executable_must_be_a_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("symlink.tar.gz");
+        let encoder = flate2::write::GzEncoder::new(
+            std::fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        header.set_mode(0o755);
+        archive
+            .append_link(&mut header, "mise/bin/mise", "../../outside")
+            .unwrap();
+        archive.into_inner().unwrap().finish().unwrap();
+        let dest = dir.path().join("staged-binary");
+        assert!(extract_update_binary(&path, &dest).is_err());
+        assert!(!dest.exists());
+    }
+
+    #[tokio::test]
+    async fn self_update_transport_requires_https() {
+        assert!(
+            SelfUpdate::http_client()
+                .unwrap()
+                .get("http://127.0.0.1:1/release")
+                .send()
+                .await
+                .is_err()
+        );
     }
 }
 
@@ -1005,6 +1413,118 @@ mod post_update_tests {
         // And the step swallows it. There is no error here to propagate — which is exactly what
         // the `?` this replaces used to do.
         update_plugins(&missing);
+    }
+}
+
+#[cfg(test)]
+mod install_dir_tests {
+    use super::*;
+
+    #[test]
+    fn a_writable_directory_probes_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        probe_install_dir(dir.path()).unwrap();
+        // The probe cleans up after itself; an update that then fails must not leave a 40MB
+        // artifact of its own behind either, so the directory has to come back empty.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn only_a_permission_failure_stops_the_update() {
+        use std::io::{Error, ErrorKind};
+
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::PermissionDenied
+        )));
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::ReadOnlyFilesystem
+        )));
+        // Everything else belongs to the update itself, which reports the operation that really
+        // failed rather than a probe standing in for it.
+        assert!(!write_probe_is_fatal(&Error::from(ErrorKind::NotFound)));
+        assert!(!write_probe_is_fatal(&Error::other("something else")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unwritable_directory_is_a_permission_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("bin");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        match probe_install_dir(&dir) {
+            // Root ignores the mode bits, so under a root test runner there is nothing to assert.
+            Ok(()) => assert_eq!(nix::unistd::geteuid().as_raw(), 0),
+            Err(err) => assert!(write_probe_is_fatal(&err), "{err:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sticky_directory_reserves_renaming_to_the_owner() {
+        const STICKY: u32 = 0o41777;
+        const PLAIN: u32 = 0o40755;
+
+        // The shape the write probe cannot see: a group-writable, sticky bindir holding a
+        // root-owned mise. Creating a file there works; renaming root's does not.
+        assert!(sticky_blocks_rename(STICKY, 0, 0, 1000));
+
+        // Not sticky: ordinary directory permissions decide, and the probe already covered them.
+        assert!(!sticky_blocks_rename(PLAIN, 0, 0, 1000));
+        // The sticky rule exempts the file's owner, the directory's owner, and root.
+        assert!(!sticky_blocks_rename(STICKY, 0, 1000, 1000));
+        assert!(!sticky_blocks_rename(STICKY, 1000, 0, 1000));
+        assert!(!sticky_blocks_rename(STICKY, 0, 0, 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_users_own_binary_in_a_sticky_directory_is_replaceable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let exe = dir.path().join("mise");
+        std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+
+        // Both the file and the temporary directory belong to the test runner, so the sticky bit
+        // takes nothing away here -- the check must not fire merely because the bit is set.
+        assert!(!sticky_dir_blocks_replacing(dir.path(), &exe));
+    }
+
+    #[test]
+    fn the_message_names_the_binary_and_its_directory() {
+        let msg = install_dir_not_writable_message(
+            Path::new("/usr/local/bin/mise"),
+            Path::new("/usr/local/bin"),
+            Unreplaceable::DirectoryNotWritable,
+        );
+        // The binary is the part that identifies which of several mise installs is stuck.
+        assert!(msg.contains("/usr/local/bin/mise"), "{msg}");
+        assert!(msg.contains("/usr/local/bin is not writable"), "{msg}");
+        if cfg!(windows) {
+            assert!(msg.contains("Administrator"), "{msg}");
+        } else {
+            assert!(msg.contains("sudo mise self-update"), "{msg}");
+        }
+        assert!(msg.contains("the same way you installed it"), "{msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_sticky_message_says_why_the_binary_cannot_be_replaced() {
+        let msg = install_dir_not_writable_message(
+            Path::new("/usr/local/bin/mise"),
+            Path::new("/usr/local/bin"),
+            Unreplaceable::StickyForeignBinary,
+        );
+        assert!(msg.contains("/usr/local/bin is sticky"), "{msg}");
+        assert!(msg.contains("belongs to another user"), "{msg}");
+        // Still writable, so the directory wording from the other case would be wrong here.
+        assert!(!msg.contains("not writable"), "{msg}");
     }
 }
 

@@ -12,11 +12,14 @@ description = "templated unit"
 exec_start = "{{ vars.svc_root }}/bin/serve"
 working_directory = "{{ vars.svc_root }}"
 environment_file = ["{{ vars.svc_root }}/.env", "-%h/extra.env"]
+part_of = ["graphical-session.target"]
+exec_start_pre = ["-{{ vars.svc_root }}/bin/check"]
 EOF
 
 # a templated unit is accepted, not reported as malformed
 assert_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.templated.service"
 assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "failed to render"
+assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "unknown field"
 
 # validation sees the rendered value, not the template: an umask that renders to
 # a path is rejected with the path it rendered to

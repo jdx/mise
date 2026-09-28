@@ -99,20 +99,38 @@ if [ -L "$fslock" ] || [ ! -d "$fslock" ]; then
 fi
 "${SUDO[@]}" chmod 1777 "$fslock"
 
-msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
-if [ -z "$msrv" ]; then
-	echo "failed to parse rust-version from Cargo.toml" >&2
-	exit 1
+# Track latest stable (not the Cargo.toml MSRV) so clippy/rustfmt match what
+# contributors run. On an existing stable this also syncs to the newest release.
+rustup toolchain install stable --profile minimal --no-self-update -c rustfmt,clippy
+rustup default stable
+
+# Builds run checkout-controlled build scripts and task config; keep every
+# GitHub token name mise reads (src/github.rs) out of their environment.
+no_tokens=(env -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN)
+
+# Agents build through `mise run build`, where mise.toml's [wrappers.cargo]
+# (mbx) sets HOST_CC/CMAKE and leaves read-only outputs in target/. A bare
+# `cargo build` would dirty those -sys crates and cannot overwrite them, so:
+# - warm: refresh the existing binary through the wrapper (config trusted for
+#   this one process only);
+# - old binary cannot run this checkout's config: bare build in its own dir;
+# - cold (no target/ yet): bare build in target/; `mise run build` below
+#   then brings it under the wrapper.
+boot_bin="$PWD/target/debug/mise"
+if [ -x "$boot_bin" ] &&
+	"${no_tokens[@]}" MISE_YES=1 MISE_TRUSTED_CONFIG_PATHS="$PWD" "$boot_bin" run build; then
+	:
+elif [ -d target/debug ]; then
+	"${no_tokens[@]}" CARGO_TARGET_DIR="$PWD/target/bootstrap" \
+		cargo build --all-features --ignore-rust-version
+	boot_bin="$PWD/target/bootstrap/debug/mise"
+else
+	"${no_tokens[@]}" cargo build --all-features --ignore-rust-version
 fi
-
-rustup toolchain install "$msrv" --profile minimal --no-self-update -c rustfmt,clippy
-rustup default "$msrv"
-
-cargo build --all-features --ignore-rust-version
 # Always invoke this binary. `mise activate --shims` prepends shims that may
 # point at an older mise which still ran tool-level postinstall under MISE_SAFE.
 mise_bin=/usr/local/bin/mise
-"${SUDO[@]}" ln -sfn "$PWD/target/debug/mise" "$mise_bin"
+"${SUDO[@]}" ln -sfn "$boot_bin" "$mise_bin"
 hash -r
 
 export MISE_YES=1
@@ -130,6 +148,11 @@ MISE_SAFE=1 "$mise_bin" install
 # safe mode so a branch-defined hook or tool-level postinstall could not run
 # with GitHub tokens.
 "$mise_bin" trust
+# Leave target/ warm for the wrapped cargo agents use (a no-op when the warm
+# refresh above already ran) and point mise at the binary it produces.
+"${no_tokens[@]}" "$mise_bin" run build
+"${SUDO[@]}" ln -sfn "$PWD/target/debug/mise" "$mise_bin"
+hash -r
 hk install --mise
 
 # Snapshots keep disk state but reset process env, so `eval "$(mise activate …)"`

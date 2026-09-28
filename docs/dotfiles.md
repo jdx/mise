@@ -35,6 +35,21 @@ configuration (`~/.config/mise/config.toml` by default):
 "~/.zshrc" = { mode = "track" }
 ```
 
+Tracking a directory saves everything under it, so preview a large one
+first. `mise dot track --dry-run <dir>` (or `mise dot paths --preview <dir>`)
+prints how many files and bytes it expands to and what is left out, and
+writes nothing:
+
+```sh
+$ mise dot track --dry-run ~/.codex
+~/.codex: 22,972 files, 1.2 GiB
+```
+
+The confirmation prompt shows the same count and size, and mise warns when
+a tree is larger than 5,000 files or 256 MiB. Trim a directory with a
+scoped exclusion before tracking it, for example
+`mise dot exclude '~/.codex/sessions/**'`.
+
 ### Save edits automatically
 
 Add the watcher service to the same global configuration file:
@@ -183,7 +198,10 @@ and configuration before changing the original file.
 
 `apply` also runs as part of [`mise bootstrap`](/bootstrap.html), with the
 configured `pre-dotfiles` and `post-dotfiles` hooks. `mise install` and
-`mise bootstrap packages` leave dotfiles alone.
+`mise bootstrap packages` leave dotfiles alone. After `mise dot apply` or
+the dotfiles phase of `mise bootstrap` writes a target, it runs the matching
+[`[history.reload]` commands](/history.html#reload-an-application-after-restoring-files),
+for example to reload the application that reads it.
 
 To save history for a source or target you manage this way, [track that
 path](#tracking-files-in-place) too.
@@ -198,6 +216,7 @@ Choose how mise creates a target from its source:
 | `symlink-each` | Create directories and link each file within them.                | The target directory also holds files you want mise to leave alone.   |
 | `copy`         | Copy a file or directory, overwriting matching files.             | The application needs a regular file or writes its own configuration. |
 | `template`     | Render a source file with the [template engine](/templates.html). | The output depends on machine-specific variables.                     |
+| `absent`       | Remove a file or symlink at the target; takes no source.          | A file you no longer use should not exist on any machine.             |
 
 For example, to link a directory:
 
@@ -215,6 +234,81 @@ or remove previously created links.
 Directory copies keep existing target files when you delete or exclude their
 sources. Review and remove those leftover copies yourself.
 
+### Relative symlinks {#relative}
+
+By default, links point at their source by an absolute path. Set
+[`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks)
+to link by a path relative to the link's directory instead, as GNU Stow does.
+Relative links keep working when the home directory is mounted at a different
+path on another machine, for example over NFS, or when the whole tree moves:
+
+```toml
+[settings]
+dotfiles.relative_symlinks = true
+
+[dotfiles]
+"~/.config/foo" = { source = "~/dotfiles/foo", mode = "symlink" } # ~/.config/foo -> ../dotfiles/foo
+"~/.bashrc" = { source = "~/dotfiles/bashrc", relative = false }  # stays absolute
+```
+
+An entry's `relative` key overrides the setting. `relative = true` requires
+`symlink` or `symlink-each`. When relative links are on, the next apply
+re-points absolute links to the same source. Turning them off leaves relative
+links that already reach the source in place. Windows ignores the option,
+because directory links there are junctions, which cannot be relative.
+
+### Removing files {#absent}
+
+Use `mode = "absent"` to remove a file you no longer want on your
+machines, such as the configuration of a tool you replaced:
+
+```toml
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+```
+
+`mise dot apply` deletes `~/.oldrc` if it exists and does nothing once it
+is gone. The entry is the instruction, so mise removes a regular file or a
+symlink without comparing its content. It removes a symlink itself, never
+the file or directory the link points to.
+
+An `absent` entry never removes a directory, or anything else that is
+not a regular file or symlink, such as a socket or FIFO. For those
+targets, `status` and `apply` report an error naming the path, even with
+`--force`. Remove it yourself. The one exception is a parent directory mise
+created when an earlier entry wrote this target: once the file is gone and
+the directory is empty, it goes too, as [for templates](#remove-empty).
+
+An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
+`permissions`, `encrypt`, `remove_empty`, `relative`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
+and an edit entry cannot change the file it removes.
+
+An `absent` target names exactly one path, so it cannot contain `*`, `?`,
+or `[`. To remove a file whose name contains those characters, declare
+`state = "absent"` under
+[`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
+
+`mise dot status` shows the entry as `absent` once the target is gone, and
+as `would remove` while a file or symlink is still there.
+`mise dot apply --dry-run` prints `rm <target>`.
+
+When a [tracked](#tracking-files-in-place) path is removed, the removal is
+recorded like any other apply, so `mise dot undo` restores the file.
+`mise dot unapply` leaves the target alone, because mise did not create
+the file. `mise oci build` adds an OCI whiteout for an `absent` target, so a
+file the base image has there is hidden.
+
+[Destination variants](#platform-specific-destinations) work with
+`absent`, so you can remove a file on some machines only:
+
+```toml
+[dotfiles."~/.bash_profile"]
+mode = "absent"
+variants = [{ os = "macos" }]
+```
+
+Machines that match no variant skip the entry.
+
 ### Platform-specific destinations
 
 Use `variants` to deploy one source to different paths on different machines:
@@ -230,8 +324,8 @@ variants = [
 ]
 ```
 
-Destination variants work with `copy`, `symlink`, `symlink-each`, and
-`template`. They share the [tracking variant selectors](#variants): `os`
+Destination variants work with `copy`, `symlink`, `symlink-each`,
+`template`, and [`absent`](#absent). They share the [tracking variant selectors](#variants): `os`
 (optionally with an architecture), `profile` (a mise environment selected
 with `-E` or `MISE_ENV`), and `default = true`. The most specific matching
 variant wins; ties are reported as invalid, and no match without a default
@@ -295,7 +389,8 @@ Templates can use `env`, `vars`, `exec()`, and the rest of the
 <span v-pre>`{{ secret(name="logical_name") }}`</span>. Use
 `--prompt-secrets` with a dotfiles command to securely prompt for missing
 values. Applying a template writes its rendered content and gives the target
-the source file's permissions. A later apply also repairs changed permissions.
+the source file's permissions, or the ones [`permissions`](#permissions) sets.
+A later apply also repairs changed permissions.
 
 `status`, `diff`, and `apply` render templates to check their output. This
 executes any `exec()` calls in those templates, using your trusted config.
@@ -307,6 +402,66 @@ layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.
+
+#### Removing a target when a template renders empty {#remove-empty}
+
+A template normally writes its output even when that output is empty. With
+`remove_empty = true`, an output that is empty or contains only whitespace
+removes the target instead. This lets one template decide whether a file
+exists at all, for example a work-only config:
+
+```toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "work.toml.tera", mode = "template", remove_empty = true }
+```
+
+<div v-pre>
+
+```jinja
+{% if env.WORK == "1" %}
+[proxy]
+url = "http://proxy.example.com"
+{% endif %}
+```
+
+</div>
+
+With `WORK=1`, `mise dot apply` writes the file. Without it, the template
+renders empty and the next apply removes the file. Setting the variable again
+recreates it. `status` and `diff` show a pending removal before any apply.
+
+mise removes a target only when it can tell the file is its own. The target
+must be empty or whitespace-only, or it must still hold exactly the content
+mise last wrote there. Otherwise, apply reports a conflict and keeps the file,
+as it does for other [conflicts](#conflicts). Use `mise dot apply --force` to
+remove it anyway. mise never removes a directory at the target without
+`--force`, and a target it cannot read (for example one written with
+`permissions = "0200"`) is also a conflict, because mise cannot confirm the
+content is its own.
+
+Parent directories that mise created for the target are removed with it once
+they are empty. In the example, if `~/.config/app` did not exist before the
+first apply, removing `work.toml` also removes `app`. Directories that already
+existed, directories that still hold other files, and directories another entry
+needs are kept. Only directories physically inside your home directory are
+removed: your home directory itself and anything outside it are kept. That
+covers `/opt/app` for a target `/opt/app/app.toml`, and `~/.config/app` when
+`~/.config` is a symlink to a directory outside your home.
+
+mise stores a digest of what it last wrote to each template target, and the
+directories it created, in `$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
+`remove_empty` later still allows a safe removal. An apply that finds a target
+already byte-for-byte identical to the render also records it, so that file
+counts as written by mise: removing it loses nothing the template cannot
+produce again, and any later edit makes it a conflict. Because the record is
+local, a machine that has never applied the template treats an existing
+target with other non-empty content as a conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
+[history](#tracking-files-in-place) tracks it.
+
+`remove_empty` is valid only with `mode = "template"`. With it set, `mise oci
+build` leaves the file out of the image when the template renders empty. It
+also adds an OCI whiteout for that path, so a file the base image has there is
+hidden too.
 
 See [Windows](#windows) for differences in link behavior on that platform.
 
@@ -343,7 +498,8 @@ always written explicitly.
 
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. On Unix, the resulting file has permissions `0600`,
-so only its owner can read and write it:
+so only its owner can read and write it, unless
+[`permissions`](#permissions) sets others:
 
 ```toml
 [dotfiles]
@@ -353,6 +509,49 @@ so only its owner can read and write it:
 Use `content` on its own. It cannot be combined with `source`, `mode`,
 `exclude`, `manifest`, or the edit options `block`, `line`, `template`, and
 `comment`.
+
+### Permissions
+
+Set `permissions` to an octal string to give the target those permissions
+instead of the ones it would otherwise get. It works with `copy` and
+`template` entries that have a file source, and with inline `content`:
+
+```toml
+[dotfiles]
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600" }
+```
+
+`mise dot status` reports a target whose permissions have changed since, and
+the next apply sets them again.
+
+On its own, `permissions` manages only the permissions of a file or
+directory that already exists. mise never creates it, never changes its
+content, and never infers a source for it from `dotfiles.root`:
+
+```toml
+[dotfiles]
+"~/.ssh" = { permissions = "0700" }
+"~/.ssh/config" = { permissions = "0600" }
+```
+
+When the target does not exist, there is nothing to adjust: apply warns and
+skips it, and status counts it as applied with the reason
+`target absent; permissions not applied`, so `mise dot status --missing`
+does not fail. A directory that another entry creates in the same apply still
+gets its permissions. When the target is a symlink, mise does not follow it:
+status reports it and apply skips it with a warning, and a link swapped in
+while mise runs is refused rather than followed. `mise dot edit` does not
+create a missing target. Unapply never removes a target whose permissions are
+all mise manages.
+
+A declared mode may deny even the owner read access, such as `0200`. mise
+then checks only the target's permissions, because it cannot read the
+content back.
+
+`permissions` cannot be combined with `symlink` or `symlink-each`, which have
+no permissions of their own, with `track`, whose history records the file's
+mode, or with a directory source. A permissions-only target cannot contain
+wildcards. On Windows, `permissions` is ignored with a warning.
 
 ### Matching multiple source files
 
@@ -371,9 +570,10 @@ matching wildcards so each source expands to a unique target:
 ## Excluding files
 
 Modes that walk a source directory — `symlink-each`, and `copy` with a
-directory source — take an `exclude` list of glob patterns. This is the way
-to point an entry at a directory you don't fully own, such as the one holding
-`mise.toml` itself:
+directory source — take an `exclude` list of glob patterns, as does a
+[tracked directory](#files-directories-and-symlinks) (relative to the
+tracked path). This is the way to point an entry at a directory you don't
+fully own, such as the one holding `mise.toml` itself:
 
 ```toml
 [dotfiles]
@@ -383,8 +583,20 @@ to point an entry at a directory you don't fully own, such as the one holding
 A pattern without `/` matches any single path component, so `"mise.toml"`
 skips that file wherever it appears in the tree and `"*.md"` skips every
 markdown file. A pattern containing `/` is anchored to the source root:
-`"nvim/spell"` skips only that path. Either kind matching a directory skips
-everything under it.
+`"nvim/spell"` skips only that path. A leading `/` anchors a pattern the
+same way, as in `.gitignore`, so `"/cache"` skips only a top-level `cache`
+and `"/nvim/spell"` is the same as `"nvim/spell"`. Either kind matching a
+directory skips everything under it. Use `**` to match across directories:
+`"nvim/**/*.bak"` skips `nvim/init.bak` and `nvim/after/init.bak`.
+
+::: warning Deprecated: `*` crossing `/` in exclusions
+In an exclusion containing `/`, `*` still matches across directories, so
+`"nvim/*.bak"` also skips `nvim/after/init.bak`. mise warns when a pattern
+skips a path only for that reason. Write `**` instead: `*` will stop at `/`
+in exclusions, as it already does in `.gitignore`,
+[include lists](#select-files-within-a-tracked-directory), and patterns
+with a leading `/`.
+:::
 
 For `symlink-each`, excluding a previously managed file removes its recorded link on the
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
@@ -413,6 +625,32 @@ the previous source. This makes `mise bootstrap -E home` and
 `mise bootstrap -E work` usable as profile switches: links unique to the old
 profile are removed, shared paths are repointed, and unmanaged neighbors are
 preserved.
+
+## Visible source names {#dot-prefix}
+
+Set `dot_prefix = true` on a directory-walking entry to keep the files in
+your dotfiles repository visible. Like GNU Stow's `--dotfiles` option, every
+path component named `dot-<name>` deploys as `.<name>`, and other names deploy
+unchanged:
+
+```toml
+[dotfiles]
+"~" = { source = "home", mode = "symlink-each", dot_prefix = true, exclude = ["README.md"] }
+```
+
+| Source                            | Target                      |
+| --------------------------------- | --------------------------- |
+| `home/dot-bashrc`                 | `~/.bashrc`                 |
+| `home/dot-config/foo/config.toml` | `~/.config/foo/config.toml` |
+| `home/bin/dot-helper`             | `~/bin/.helper`             |
+| `home/.editorconfig`              | `~/.editorconfig`           |
+
+`exclude` and `manifest = "git"` still work with source names, such as
+`dot-bashrc`. If two source paths deploy to the same target, such as
+`dot-bashrc` and `.bashrc`, apply fails and reports both paths. `dot_prefix`
+requires a directory source and `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
+a `dot_prefix` entry because it would copy target names into the source; edit
+the source directly instead.
 
 ## Edit entries
 
@@ -497,7 +735,10 @@ For a symlink, point the edit at the real file you want to change.
 
 Removing an entry from config leaves its file, block, or line in place.
 To remove them too, run `mise dot unapply` before deleting
-the entry from your config.
+the entry from your config. To remove a file from machines that already
+applied an old entry, or one that no entry created, replace the entry with
+[`mode = "absent"`](#absent), or with a `state = "absent"` declaration
+under [`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
 
 ## Unapplying
 
@@ -513,8 +754,19 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
   matches. Modified targets require `--force`.
 - Directory copies are removed file by file. Unmanaged neighbors always
   survive, and directories are removed only when empty.
+- Targets with only [`permissions`](#permissions) are never removed.
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
+- `absent` entries are skipped. mise does not recreate the file they removed.
+
+When a `symlink`, `copy`, `template`, or inline `content` target is removed,
+the parent directories mise created for it go too, once they are empty.
+Directories that existed before mise wrote the target, or that hold other
+files, are kept, as are directories another remaining entry needs. Only
+directories physically inside your home directory are removed, never the home
+directory itself or anything outside it, including through a symlinked parent. mise records the directories it creates in
+`$MISE_STATE_DIR/dotfiles/`, so targets written by an older version remove
+none.
 
 If you deleted a source file from a copied directory, unapply cannot
 identify its old copy. Remove that leftover file yourself. Use `--dry-run`
@@ -567,7 +819,14 @@ change. mise also records which paths the operation touched. Run
 ### JSON output
 
 `mise dot status --json` uses `source_missing` for the
-`source missing` state. Each entry also includes an `origin` object
+`source missing` state. A `differs` entry also carries a human-readable
+`reason`, and so does a permissions-only entry whose target does not
+exist. An entry that sets `permissions` includes them as an octal string.
+An `absent` entry has `"mode": "absent"` and
+`"source": null`. Its state is `applied` once the target is gone and
+`differs` while a file or symlink is still there, with a `reason` such as
+`present; will be removed`, or a template that renders empty and will be
+removed. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved
 source path.
@@ -595,6 +854,24 @@ source under `dotfiles.root`. For an already-managed target, it updates the
 existing source from the live target.
 
 ## Tracking options
+
+### Preview before tracking
+
+Preview a directory before tracking it:
+
+```sh
+mise dot track --dry-run ~/.config/nvim
+mise dot paths --preview ~/.config/nvim
+```
+
+Both commands report the file count and size without changing configuration
+or saving a checkpoint. `paths --preview` also lists the files. Check the
+omissions and nested repositories, then exclude unwanted subtrees, for
+example with `mise dot exclude '~/.config/nvim/plugged/**'`.
+
+Tracking shows the count and size before confirmation and warns above
+5,000 files or 256 MiB. These warnings do not prevent tracking. A scan
+that reaches its limit is reported as incomplete.
 
 ### Saving and encryption {#policies}
 
@@ -644,12 +921,20 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files and `*.local.toml` files are excluded by default; see
-[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+Built-in credential rules can omit files even when their parent directory
+is tracked. `mise dot save`, `mise dot track`, and `mise dot status` report
+these omissions; `mise dot paths` lists the affected files and reasons.
+See [credential filtering](/history.html#credential-filtering-and-omissions)
+for the filename rules and [encrypted tracking](/history.html#encrypted-shared-files)
+to save credentials. Files ending in `.local.toml` are never captured.
 
 Tracking a symlink saves the link itself. Track its target separately to
 save the target's contents. If a parent directory is a symlink, track that
 link and use the real directory path to track files beneath it.
+
+Repositories found inside a tracked directory are skipped and reported.
+To save a repository's working files, track its root as a separate entry;
+`.git` is always excluded. See [nested repositories](/history.html#nested-repositories).
 
 Your home directory and mise configuration directory can themselves be
 symlinks. mise maps these roots to the corresponding directories on each
@@ -657,10 +942,52 @@ machine when sharing history.
 
 Add an explicit tracking entry for each file or directory you want to
 save, including the mise configuration directory or `dotfiles.root`.
-Track entries cannot contain `source`, `content`, `exclude`, or `manifest`.
+Track entries cannot contain `source`, `content`, or `manifest`.
 `mise dot paths` reports such combinations as invalid and
 leaves them out of history. The `track` command exits non-zero if the
 entry it writes is not active.
+
+### Select files within a tracked directory
+
+Use per-entry exclusions to omit files beneath one directory:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+The patterns are relative to `~/.codex`. `sessions` excludes directories
+with that name and their contents; `*.log` excludes matching files at any
+depth. Patterns containing `/` are anchored to the tracked directory, and
+a leading `/` anchors any pattern to it: `/cache` excludes only
+`~/.codex/cache`, not a `cache` directory deeper down. Use `**` to match
+across directories, as in `logs/**/*.log`; a `*` that matches across `/`
+is [deprecated](#excluding-files).
+Global `[history] exclude` rules also apply and cannot override the entry's
+exclusions with `!glob`.
+
+If you only want a few files, use an include list instead:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+```
+
+Includes follow the same pattern rules, except that `*` never crosses a
+`/`, as in `.gitignore`: `rules/*.md` selects the markdown files directly in
+`rules`, and `rules/**/*.md` also selects those in its subdirectories. A
+leading `/` is optional, so `/rules/*.md` selects the same files. No
+`include` field considers the whole directory; `include = []` selects
+nothing. Explicit exclusions always win. Includes also select
+credential-named files, so use `encrypt = true` for private contents. See
+[choosing files](/history.html#choose-which-files-a-directory-saves) for
+matching rules, previews, and compatibility requirements.
+
+These lists travel with the shared setup and are recorded in checkpoints,
+so rollback knows which files were outside their coverage. Upgrade every
+machine sharing the setup before using this field. See
+[history selection rules](/history.html#explicit-tracking-and-exclusions)
+for details.
 
 ### Stop tracking a file
 
@@ -685,6 +1012,14 @@ versions of `~/.zshrc` for macOS and Linux:
 Add this to your global configuration, or use
 `mise dot track ~/.zshrc --os macos` to add one variant.
 The `os` selector accepts an optional `/arch`, as in bootstrap packages.
+Use `os = "unix"` to share one version between Linux and macOS and skip
+the path on Windows:
+
+```toml
+[dotfiles]
+"~/.zshrc" = { mode = "track", variants = [{ os = "unix" }] }
+```
+
 Use `profile` to select a [mise environment](/configuration/environments.html):
 
 ```toml
@@ -692,10 +1027,11 @@ Use `profile` to select a [mise environment](/configuration/environments.html):
 "~/.gitconfig-work" = { mode = "track", variants = [{ profile = "work" }, { default = true }] }
 ```
 
-When several variants match, mise scores each one: `profile` adds two
-points, `os` adds one, and an architecture adds one more. The highest
-score wins. A profile-only variant therefore ties with an OS-and-architecture
-variant. If the highest score is tied, mise reports the ambiguity and
+When several variants match, mise scores each one: `profile` adds four
+points, `os` adds two (the `unix` family adds one), and an architecture
+adds two more. The highest score wins. On a Mac, `os = "macos"` therefore
+beats `os = "unix"`, and a profile-only variant ties with an
+OS-and-architecture variant. If the highest score is tied, mise reports the ambiguity and
 skips the path until you fix it.
 
 When nothing matches, mise uses the variant marked `default = true`.

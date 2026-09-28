@@ -1,9 +1,10 @@
-use crate::semver::{chunkify_version, split_version_prefix};
+use crate::semver::{chunkify_version, semver_precedence_cmp, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, backend::ABackend, config::Config};
 use serde::Serialize;
 use std::{
+    cmp::Ordering,
     collections::BTreeSet,
     fmt::{Display, Formatter},
     path::PathBuf,
@@ -13,7 +14,7 @@ use tabled::Tabled;
 use versions::Version;
 
 #[derive(Debug, Serialize, Clone, Tabled, PartialEq, Eq, Hash)]
-pub(crate) struct OutdatedInfo {
+pub struct OutdatedInfo {
     pub name: String,
     #[serde(skip)]
     #[tabled(skip)]
@@ -40,7 +41,7 @@ pub(crate) struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    pub(crate) fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
+    pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
         let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
@@ -196,7 +197,12 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
-            if let Some(bumped_version) = check_semver_bump(old, new)
+            let bumped_version = check_semver_bump(old, new).or_else(|| {
+                oi.tool_version
+                    .request_pinned_this_version()
+                    .then(|| new.to_string())
+            });
+            if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
             {
                 oi.bump = match oi.tool_request.clone() {
@@ -275,7 +281,7 @@ impl Display for OutdatedInfo {
     }
 }
 
-pub(crate) fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
+pub fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<String> {
     let prefix = prefix.trim();
     if prefix.is_empty()
         || prefix_version.is_empty()
@@ -343,7 +349,7 @@ pub(crate) fn check_semver_bump(old: &str, new: &str) -> Option<String> {
 
 /// Represents a config file update needed when a CLI-specified version doesn't match
 /// the current config prefix.
-pub(crate) struct ConfigBump {
+pub struct ConfigBump {
     pub tool_name: String,
     pub config_path: std::path::PathBuf,
     pub old_version: String,
@@ -353,7 +359,7 @@ pub(crate) struct ConfigBump {
 
 /// Compute config bumps needed when CLI-specified versions don't match current config prefixes.
 /// Returns a list of bumps to apply (or preview in dry-run mode).
-pub(crate) fn compute_config_bumps(
+pub fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
 ) -> Vec<ConfigBump> {
@@ -365,7 +371,7 @@ pub(crate) fn compute_config_bumps(
 ///
 /// This lets callers that intentionally target a subset of the loaded config
 /// hierarchy avoid updating shadowed parent configs.
-pub(crate) fn compute_config_bumps_for_paths(
+pub fn compute_config_bumps_for_paths(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
     config_paths: &BTreeSet<PathBuf>,
@@ -448,7 +454,7 @@ pub(crate) fn compute_config_bumps_for_paths(
 }
 
 /// Apply config bumps by writing the new versions to their config files.
-pub(crate) fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
+pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     for bump in bumps {
         let Some(cf) = config.config_files.get(&bump.config_path) else {
             continue;
@@ -465,7 +471,13 @@ pub(crate) fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Resul
     Ok(())
 }
 
-pub(crate) fn is_outdated_version(current: &str, latest: &str) -> bool {
+/// Checks whether the current version is older than a backend-selected candidate.
+/// Uses SemVer precedence when possible, then the general version comparison;
+/// versions that cannot be ordered are considered outdated when they differ.
+pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+    if let Some(ordering) = semver_precedence_cmp(current, latest) {
+        return ordering == Ordering::Less;
+    }
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
     } else {
@@ -480,16 +492,26 @@ mod tests {
     use test_log::test;
 
     use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
 
+    /// Guards against offering a downgrade when installed versions and backend
+    /// candidates use different prefixes, while retaining non-SemVer comparisons.
     #[test]
     fn test_is_outdated_version() {
         assert_eq!(is_outdated_version("3.7b", "3.7c"), true);
         assert_eq!(is_outdated_version("3.7c", "3.7b"), false);
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
         assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
+
+        assert_eq!(is_outdated_version("v2.1.280", "2.1.278"), false);
+        assert_eq!(is_outdated_version("v0.156.0", "0.155.1"), false);
+        assert_eq!(is_outdated_version("2.1.278", "V2.1.280"), true);
+        assert_eq!(is_outdated_version("V1.2.3", "v1.2.3"), false);
+        assert_eq!(is_outdated_version("v1.2.3-rc.1", "1.2.3"), true);
+        assert_eq!(is_outdated_version("1.2.3", "v1.2.3-rc.1"), false);
+        assert_eq!(is_outdated_version("v1.2.3+one", "1.2.3+two"), false);
 
         assert_eq!(
             is_outdated_version("1.10.0-SNAPSHOT", "1.12.0-SNAPSHOT"),
@@ -628,8 +650,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -652,8 +674,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -677,8 +699,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
         let request = ToolRequest::new(Arc::new(backend), "1.25", ToolSource::Argument).unwrap();
@@ -700,8 +722,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.9");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.9");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.9");
 
@@ -724,8 +746,8 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
-        let install_path = backend.installs_path.join("1.25.10");
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
+        let install_path = backend.installs_path().join("1.25.10");
         std::fs::create_dir_all(&install_path).unwrap();
         install_state::add_tool_version(&backend, &install_path, "1.25.10");
 
@@ -748,7 +770,7 @@ mod tests {
             Some(ToolVersionOptions::default()),
             BackendResolution::new(true),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(short);
+        backend.set_installs_path(temp_dir.path().join("installs").join(short));
         let request = ToolRequest::new(Arc::new(backend), "1.25", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.25.10".into());
         OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap()

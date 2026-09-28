@@ -27,7 +27,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
-        if path.endswith("/releases"):
+        parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "repos":
+            # What GitHub says a repository name stands for, as the test
+            # writes it to repos.json: {"owner/repo": {"id": ..., ...}}.
+            repos = state / "repos.json"
+            found = json.loads(repos.read_text()).get(f"{parts[1]}/{parts[2]}") if repos.exists() else None
+            if found is None:
+                self.send_error(404)
+                return
+            data = json.dumps(found).encode()
+        elif path.endswith("/releases"):
             data = json.dumps([release]).encode()
         elif path.endswith("/tags"):
             data = json.dumps([{"name": f"v{version}", "commit": None}]).encode()

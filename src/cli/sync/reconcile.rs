@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::install_state;
@@ -80,7 +80,7 @@ pub(super) fn reconcile_all(
                 .or_insert_with(|| (provider_index, target.clone()));
         }
     }
-    let installs_path = &tool.installs_path;
+    let installs_path = &tool.installs_path();
     let mut versions = desired.keys().cloned().collect::<BTreeSet<_>>();
 
     if installs_path.exists() {
@@ -98,7 +98,7 @@ pub(super) fn reconcile_all(
     file::create_dir_all(installs_path)?;
     let mut changed = vec![BTreeSet::new(); providers.len()];
     for version in versions {
-        let _state_lock = install_state::lock_tool_version(&tool.short, &version)?;
+        let _state_lock = install_state::lock_tool_version(tool, &version)?;
         let link = installs_path.join(&version);
         let runtime_link = is_runtime_symlink(&link);
         let source_link = !runtime_link && providers_own(&providers, &link)?;
@@ -110,7 +110,7 @@ pub(super) fn reconcile_all(
         };
 
         if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
-            install_state::clear_incomplete_marker(&tool.short, &version)?;
+            install_state::clear_incomplete_marker(tool, &version)?;
             continue;
         }
 
@@ -123,7 +123,7 @@ pub(super) fn reconcile_all(
 
         file::make_symlink(target, &link)?;
         if target.exists() {
-            install_state::clear_incomplete_marker(&tool.short, &version)?;
+            install_state::clear_incomplete_marker(tool, &version)?;
         }
         changed[*provider_index].insert(version);
     }
@@ -161,7 +161,7 @@ mod tests {
         file::make_symlink_or_file(Path::new("./3.0.0"), &installs_path.join("latest")).unwrap();
 
         let mut tool = BackendArg::from("node");
-        tool.installs_path = installs_path.clone();
+        tool.set_installs_path(installs_path.clone());
 
         reconcile(&tool, LinkOwnership::in_namespace(&source_root), vec![]).unwrap();
 
@@ -186,7 +186,7 @@ mod tests {
         file::make_symlink(&direct_target, &installs_path.join("22")).unwrap();
 
         let mut tool = BackendArg::from("node");
-        tool.installs_path = installs_path.clone();
+        tool.set_installs_path(installs_path.clone());
         std::fs::remove_file(&direct_target).unwrap();
 
         reconcile(&tool, LinkOwnership::in_namespace(&direct_root), vec![]).unwrap();
@@ -207,7 +207,7 @@ mod tests {
         file::make_symlink(&storage_target, &installs_path.join("22")).unwrap();
 
         let mut tool = BackendArg::from("node");
-        tool.installs_path = installs_path.clone();
+        tool.set_installs_path(installs_path.clone());
 
         reconcile(&tool, LinkOwnership::in_namespace(&direct_root), vec![]).unwrap();
 
@@ -232,7 +232,7 @@ mod tests {
         file::make_symlink(&stale_target, &installs_path.join("1.0.0")).unwrap();
 
         let mut tool = BackendArg::from("node");
-        tool.installs_path = installs_path.clone();
+        tool.set_installs_path(installs_path.clone());
         let providers = vec![
             ProviderLinks::new(
                 LinkOwnership::in_namespace(&earlier_root),
@@ -256,15 +256,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let source_root = dir.path().join("source");
         let target = source_root.join("1.0.0");
-        let mut tool = BackendArg::from("node");
-        tool.short = format!(
+        // A unique tool name keeps this lock (keyed by the tool's cache dir)
+        // away from any real install.
+        let mut tool = BackendArg::from(format!(
             "sync-lock-test-{}",
             dir.path().file_name().unwrap().to_string_lossy()
-        );
-        tool.installs_path = dir.path().join("installs");
+        ));
+        tool.set_installs_path(dir.path().join("installs"));
         file::create_dir_all(&target).unwrap();
 
-        let held_lock = install_state::lock_tool_version(&tool.short, "1.0.0").unwrap();
+        let held_lock = install_state::lock_tool_version(&tool, "1.0.0").unwrap();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (done_tx, done_rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {

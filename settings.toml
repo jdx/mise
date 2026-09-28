@@ -322,9 +322,14 @@ default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
 docs = """
 The age of the cache before it is considered stale. mise will occasionally delete cache files which
-have not been accessed in this amount of time.
+have not been accessed in this amount of time, and `mise cache prune` sweeps by the same age.
 
-Set to `0s` to keep cache files indefinitely.
+Set to `0s` to keep cache files indefinitely. Both the occasional sweep and `mise cache prune` stop
+for it; the command says so rather than pruning anyway. Sub-second durations such as `500ms` are
+ages like any other, not a way to disable it.
+
+This governs the cache directories only. Cached environments expire by
+[`env_cache_ttl`](/configuration/settings.html#env_cache_ttl) and are pruned on their own terms.
 """
 env = "MISE_CACHE_PRUNE_AGE"
 type = "Duration"
@@ -575,6 +580,19 @@ default = "symlink"
 description = "Default mode for dotfile entries when mode is omitted. Options: `symlink`, `symlink-each`, `copy`, `template`."
 env = "MISE_DOTFILES_DEFAULT_MODE"
 type = "String"
+
+[dotfiles.relative_symlinks]
+default = false
+description = "Create dotfile symlinks with relative targets instead of absolute ones."
+docs = """
+Applies to `symlink` and `symlink-each` entries; an entry's `relative` key overrides it.
+Relative links keep working when the home directory is mounted at a different path on
+another machine or the tree is moved, as long as the target and source stay in the same
+place relative to each other. Ignored on Windows, where directory links are junctions,
+which cannot be relative.
+"""
+env = "MISE_DOTFILES_RELATIVE_SYMLINKS"
+type = "Bool"
 
 [dotfiles.root]
 default = "~/.dotfiles"
@@ -1576,6 +1594,13 @@ Relative paths in `.miserc.toml` are resolved from the directory containing that
 file. Relative paths from the environment or CLI are resolved from the directory
 where mise was invoked. Glob patterns are supported, including recursive `**`
 patterns. Paths without glob metacharacters retain directory-prefix matching.
+
+Commands that act on every tracked config (`mise prune`, `mise ls --prunable`,
+and the stale-version check in `mise upgrade`) honor only the environment
+variable and the global/system `miserc.toml` files. A project's own
+`.miserc.toml` ignores do not hide other projects' configs from them or change
+their result. Relative paths in `MISE_IGNORED_CONFIG_PATHS` still resolve from
+the directory where mise was invoked.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -2117,12 +2142,27 @@ of a tool you already have.
 spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
 traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
 install and run in one step — since both materialise the whole configured toolset whatever the
-backend. The tool also has to be configured in a config file that applies to the current directory:
-mise will not install something you have not asked for.
+backend. By default, the tool also has to be configured in a config file that applies to the current
+directory. Set [`not_found_auto_install_registry`](#not_found_auto_install_registry) to install an
+unconfigured tool when a single registry entry provides the command.
 
 This also runs in shims.
 """
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
+type = "Bool"
+
+[not_found_auto_install_registry]
+default = false
+description = "Automatically install an unconfigured tool when its registry bin matches a missing command."
+docs = """
+When the command-not-found handler cannot install a configured tool, look for a matching binary in
+mise's registry. If exactly one enabled tool provides the command, install its latest version and
+add it to the global config, as with `mise use --global TOOL`. Ambiguous matches are skipped.
+
+This is disabled by default. [`not_found_auto_install`](#not_found_auto_install) and
+[`auto_install_disable_tools`](#auto_install_disable_tools) also apply.
+"""
+env = "MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY"
 type = "Bool"
 
 [not_found_system_fallback]
@@ -2268,6 +2308,44 @@ description = "OS to use for precompiled binaries."
 env = "MISE_OS"
 optional = true
 type = "String"
+
+[otel.enabled]
+default = false
+description = "[experimental] Enable OpenTelemetry trace export for task executions."
+docs = """
+When `true`, mise exports OpenTelemetry traces for `mise run` executions, provided a
+traces endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`).
+
+Configure the collector endpoint and other options using the standard OpenTelemetry
+environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_SERVICE_NAME`, etc.).
+
+Log export (task stdout/stderr) is a separate, explicit opt-in — see `otel.logs`.
+
+This flag prevents mise from unexpectedly emitting spans in environments that set
+`OTEL_EXPORTER_OTLP_ENDPOINT` for other tools.
+"""
+env = "MISE_OTEL_ENABLED"
+type = "Bool"
+
+[otel.logs]
+default = false
+description = "[experimental] Enable OpenTelemetry log export for task stdout/stderr."
+docs = """
+When `true` (and a logs endpoint is configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`), mise exports each line of task stdout/stderr as
+an OTLP log record linked to the task span.
+
+This is a separate opt-in from `otel.enabled` because log export ships task output
+to the collector, which is a different trust boundary than traces — secrets that
+appear in stdout/stderr will leave the machine. It also changes task stdio behaviour:
+in `interleave`/`quiet` mode the child process's stdio is piped (not a TTY) so mise
+can tee every line to the collector, which can affect `isatty()`-dependent behaviour
+(buffering, colour, progress bars, prompts).
+"""
+env = "MISE_OTEL_LOGS"
+type = "Bool"
 
 [override_config_filenames]
 default = []
@@ -2874,6 +2952,29 @@ env = "MISE_SELF_UPDATE_API_URL"
 global_only = true
 type = "Url"
 
+[self_update.minimum_release_age]
+description = "Minimum release age for mise itself; inherits minimum_release_age (24h by default)."
+docs = """
+Overrides [`minimum_release_age`](#minimum_release_age) for `mise self-update`, automatic
+updates, and update notifications. Accepts the same durations and cutoff dates. Set to
+`0s` to receive releases immediately. Explicit versions bypass the delay; `--force` does not.
+The `mise self-update --minimum-release-age` flag takes precedence over this setting.
+
+```toml
+[settings]
+minimum_release_age = "7d"
+self_update.minimum_release_age = "24h"
+```
+
+The bootstrap installer also accepts `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE`, falling back
+to `MISE_MINIMUM_RELEASE_AGE` and then `24h`. It reads environment variables, not TOML files,
+and supports integer durations in seconds (`s`), minutes (`m`), hours (`h`), days (`d`), or
+weeks (`w`). An explicit `MISE_VERSION` bypasses the delay.
+"""
+env = "MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE"
+optional = true
+type = "String"
+
 [self_update.repository]
 default = "jdx/mise"
 description = "GitHub repository used by `mise self-update`."
@@ -3305,7 +3406,7 @@ OIDC claims.
 """
 enum = ["read-write", "read-only", "write-only"]
 env = "MISE_TASK_CACHE_REMOTE_MODE"
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache.remote_namespace]
@@ -3422,7 +3523,7 @@ description = "Compatibility alias for task.cache.remote_mode."
 enum = ["read-write", "read-only", "write-only"]
 hide = true
 optional = true
-rust_type = "crate::cache::CacheRemoteMode"
+rust_type = "mise_cache_core::RemoteCacheMode"
 type = "String"
 
 [task.cache_remote_namespace]
@@ -3588,7 +3689,7 @@ enum = [
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task.quiet]
@@ -3681,7 +3782,7 @@ deprecated_warn_at = "2026.8.0"
 description = "Change output style when executing tasks."
 hide = true
 optional = true
-rust_type = "crate::task::TaskOutput"
+rust_type = "TaskOutput"
 type = "String"
 
 [task_remote_no_cache]
@@ -3852,6 +3953,8 @@ mise-managed interpreter, for example — and the old version is left in place w
 removal.
 
 Versions that another tracked config or tool stub still needs are kept regardless of this setting.
+Once such a version is due, mise checks it again at most once a day, so it can be pruned up to a
+day after the last reference to it goes away.
 `mise upgrade --prune` removes the replaced version immediately, and `--no-prune` leaves it in
 place without scheduling removal.
 """
@@ -3877,6 +3980,11 @@ description = "Map of URL patterns to replacement URLs applied to all requests."
 docs = '''
 Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
 and advanced regex-based URL transformations for download mirroring and custom registries.
+
+Rerouting `api.github.com` (or a repository's release and attestation API paths)
+also stops mise from using [mise-versions](#use_versions_host) for that GitHub
+metadata, so it all comes from the replacement. Rerouting only release
+downloads does not.
 
 See [URL Replacements](/url-replacements.html) for more information.
 '''
@@ -3911,6 +4019,12 @@ If the versions host does not have the requested metadata yet, mise falls back t
 GitHub's API. Private repositories, GitHub Enterprise, custom GitHub API URLs, and
 users who disable this setting still need normal GitHub authentication when they
 would otherwise exceed GitHub's rate limits.
+
+When [`url_replacements`](#url_replacements) reroutes `api.github.com`, or a
+repository's release or attestation API paths, mise does not use this host for
+that GitHub metadata. The replacement is the only source, since this host only
+describes github.com itself. Rules that only reroute release downloads don't
+change this, and version lists for registry tools still come from this host.
 
 mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
 with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
