@@ -288,47 +288,33 @@ impl Backend for GoBackend {
         let raw_opts = tv.request.options();
         let opts = GoOptions::new(&raw_opts);
 
-        // Hoisted: the closure below runs twice (with and without a `v` prefix), and the
-        // program does not change between attempts.
         let go = self.spawn_program(&ctx.config, Some(&ctx.ts), "go").await;
+        let mut cmd = CmdLineRunner::new(&go).arg("install").arg("-mod=readonly");
 
-        let install = async |v| {
-            let mut cmd = CmdLineRunner::new(&go).arg("install").arg("-mod=readonly");
-
-            if let Some(tags) = opts.tags() {
-                cmd = cmd.arg("-tags").arg(tags);
-            }
-
-            cmd.arg(format!("{}@{v}", self.tool_name()))
-                .with_pr(ctx.pr.as_ref())
-                .envs(self.dependency_env(&ctx.config).await?)
-                // `go` derives GOROOT from where its own executable lives, so it
-                // does not need one. An inherited GOROOT does harm: mise exports
-                // one for the Go it manages and `mise activate` carries it into
-                // the shell, and on unix `spawn_program` hands back the bare name
-                // `go`, so which Go actually runs is up to the child's PATH. The
-                // moment that is a different Go, every compile fails with
-                // `compile: version "..." does not match go tool version "..."`
-                // (#8261, #8877). Dropped before `install_env` so a GOROOT set
-                // there deliberately still wins.
-                .env_remove("GOROOT")
-                .env_values(tv.install_env())
-                .env("GOBIN", tv.install_path().join("bin"))
-                .execute()
-        };
-
-        // try "v" prefix if the version starts with semver
-        let use_v = regex!(r"^\d+\.\d+\.\d+").is_match(&install_version);
-
-        if use_v {
-            if install(format!("v{}", install_version)).await.is_err() {
-                warn!("Failed to install, trying again without added 'v' prefix");
-            } else {
-                return Ok(tv);
-            }
+        if let Some(tags) = opts.tags() {
+            cmd = cmd.arg("-tags").arg(tags);
         }
 
-        install(install_version).await?;
+        cmd.arg(format!(
+            "{}@{}",
+            self.tool_name(),
+            go_install_version(&install_version)
+        ))
+        .with_pr(ctx.pr.as_ref())
+        .envs(self.dependency_env(&ctx.config).await?)
+        // `go` derives GOROOT from where its own executable lives, so it
+        // does not need one. An inherited GOROOT does harm: mise exports
+        // one for the Go it manages and `mise activate` carries it into
+        // the shell, and on unix `spawn_program` hands back the bare name
+        // `go`, so which Go actually runs is up to the child's PATH. The
+        // moment that is a different Go, every compile fails with
+        // `compile: version "..." does not match go tool version "..."`
+        // (#8261, #8877). Dropped before `install_env` so a GOROOT set
+        // there deliberately still wins.
+        .env_remove("GOROOT")
+        .env_values(tv.install_env())
+        .env("GOBIN", tv.install_path().join("bin"))
+        .execute()?;
 
         Ok(tv)
     }
@@ -346,6 +332,14 @@ impl Backend for GoBackend {
 /// Returns install-time-only option keys for Go backend.
 pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec!["tags".into()]
+}
+
+fn go_install_version(version: &str) -> String {
+    if regex!(r"^\d+\.\d+\.\d+").is_match(version) {
+        format!("v{version}")
+    } else {
+        version.to_string()
+    }
 }
 
 const DEFAULT_GOPROXY: &str = "https://proxy.golang.org,direct";
@@ -1011,6 +1005,15 @@ mod tests {
                 "{version} should use remote discovery"
             );
         }
+    }
+
+    #[test]
+    fn install_versions_use_go_module_semver_syntax() {
+        assert_eq!(go_install_version("1.2.3"), "v1.2.3");
+        assert_eq!(go_install_version("1.2.3-rc.1"), "v1.2.3-rc.1");
+        assert_eq!(go_install_version("v1.2.3"), "v1.2.3");
+        assert_eq!(go_install_version("main"), "main");
+        assert_eq!(go_install_version("e16a340"), "e16a340");
     }
 
     #[test]
