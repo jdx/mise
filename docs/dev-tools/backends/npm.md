@@ -121,12 +121,12 @@ the committed dependencies.
 
 External installers need a version that supports the forwarded flag:
 
-| Installer | Minimum version | Flag                                   |
-| --------- | --------------- | -------------------------------------- |
-| pnpm      | 10.16.0         | `--config.minimumReleaseAge=<minutes>` |
-| Bun       | 1.3.0           | `--minimum-release-age <seconds>`      |
-| npm       | 6.9.0           | `--before <timestamp>`                 |
-| npm       | 11.10.0         | `--min-release-age=<days>`             |
+| Installer | Minimum version | Flag                                     |
+| --------- | --------------- | ---------------------------------------- |
+| pnpm      | 10.16.0         | `--config.minimum-release-age=<minutes>` |
+| Bun       | 1.3.0           | `--minimum-release-age <seconds>`        |
+| npm       | 6.9.0           | `--before <timestamp>`                   |
+| npm       | 11.10.0         | `--min-release-age=<days>`               |
 
 npm still uses `--before` for sub-day windows because `--min-release-age` only
 accepts whole days. Older package-manager versions may fail on the forwarded
