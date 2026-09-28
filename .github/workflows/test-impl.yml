@@ -410,6 +410,27 @@ jobs:
       # unless something runs them here.
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise
+  # Not a duplicate of the Linux lint: `#[cfg]` decides whether code exists, so
+  # Windows-only code is never seen by Clippy on Linux. A job of its own keeps it
+  # off windows-unit's time limit. Default features only: `aws-lc-sys` needs NASM
+  # to build on Windows, and feature combinations are covered on Linux.
+  windows-lint:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      # Clippy builds the checked-out code and its build scripts, and nothing here needs git auth.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+        with:
+          shared-key: windows-lint
+          save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
+      - run: rustup component add clippy
+      - name: Run Clippy on Windows
+        run: cargo clippy --workspace --all-targets --ignore-rust-version -- -D warnings
   windows-e2e:
     permissions:
       contents: read
@@ -450,6 +471,7 @@ jobs:
       - e2e
       - bootstrap-linux-host
       - windows-unit
+      - windows-lint
       - windows-e2e
     # Evaluate skipped and failed dependencies, but do not waste a runner when
     # the workflow is cancelled.
@@ -496,6 +518,10 @@ jobs:
               echo "windows-unit failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.windows-lint.result }}" != "success" ]; then
+              echo "windows-lint failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
               echo "windows-e2e failed or was skipped"
               exit 1
@@ -507,6 +533,7 @@ jobs:
               "${{ needs.e2e.result }}" \
               "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
+              "${{ needs.windows-lint.result }}" \
               "${{ needs.windows-e2e.result }}"; do
               if [ "$result" != "skipped" ]; then
                 echo "docs-only jobs should be skipped"

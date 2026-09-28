@@ -753,7 +753,7 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
         } else {
             fs::read(path).unwrap_or_default()
         };
-        return Ok(has_mise_native_shim_fingerprint(&contents));
+        Ok(has_mise_native_shim_fingerprint(&contents))
     }
 
     #[cfg(not(windows))]

@@ -42,10 +42,8 @@ pub fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
         if !bytes.len().is_multiple_of(2) {
             eyre::bail!("invalid completion specification path");
         }
-        let wide: Vec<_> = bytes
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
-            .collect();
+        let (pairs, _) = bytes.as_chunks::<2>();
+        let wide: Vec<_> = pairs.iter().map(|b| u16::from_le_bytes(*b)).collect();
         std::ffi::OsString::from_wide(&wide)
     };
     Ok(path.into())
