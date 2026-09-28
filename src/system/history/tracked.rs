@@ -206,7 +206,10 @@ impl TrackedEntry {
         // by `encrypt`. So a credential-like file selected for plaintext
         // capture is captured, and said out loud everywhere selection is
         // shown.
-        if reason == CREDENTIAL_REASON && self.selected_by_pattern(path) {
+        if reason == CREDENTIAL_REASON
+            && (self.selected_by_pattern(path)
+                || (self.policy.allow_plaintext && self.path == path))
+        {
             return None;
         }
         Some(reason)
@@ -399,6 +402,11 @@ impl TrackedSet {
                 path,
                 autosave: request.policy.autosave,
                 encrypt: request.policy.encrypt,
+                allow_plaintext: request
+                    .policy
+                    .explicit
+                    .allow_plaintext
+                    .then_some(request.policy.allow_plaintext),
                 variants: request.variants.clone(),
                 exclude: declared_exclude(&request),
                 include: request.include.as_ref().map(|patterns| {
@@ -462,6 +470,12 @@ impl TrackedSet {
                 self.invalid.push(PathReason {
                     path: display_path(&entry.path),
                     reason: "overlapping declarations disagree about encryption".into(),
+                });
+            }
+            if existing.policy.allow_plaintext != entry.policy.allow_plaintext {
+                self.invalid.push(PathReason {
+                    path: display_path(&entry.path),
+                    reason: "overlapping declarations disagree about plaintext tracking".into(),
                 });
             }
             return;
@@ -726,7 +740,12 @@ impl TrackedSet {
                 if capture_exclusion(path, policy).is_some() {
                     walk.plaintext.push(PathReason {
                         path: display_path(path),
-                        reason: "selected by an include list; saved in plaintext".into(),
+                        reason: if owner.selected_by_pattern(path) {
+                            "selected by an include list; saved in plaintext"
+                        } else {
+                            "explicitly allowed for plaintext tracking"
+                        }
+                        .into(),
                     });
                 }
                 return true;
@@ -742,8 +761,8 @@ impl TrackedSet {
         // `mise dot paths`: it goes to any connected origin as plaintext
         for plaintext in &walk.plaintext {
             walk.capture_warnings.push(format!(
-                "{}: an include list selects it, so it is saved in plaintext although it looks like a credential store; `encrypt = true` saves it encrypted instead",
-                plaintext.path
+                "{}: {}; this credential-like file may be shared with an origin; `encrypt = true` saves it encrypted instead",
+                plaintext.path, plaintext.reason
             ));
         }
         walk.entries = set.entries.clone();
@@ -1118,7 +1137,7 @@ pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static
 }
 
 /// Whether the builtin rules protect a file of this name at this path.
-pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
+pub fn is_builtin_credential(path: &Path, name: &str) -> bool {
     static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
     static GLOBS: std::sync::LazyLock<GlobSet> =
         std::sync::LazyLock::new(|| glob_set(CREDENTIAL_GLOBS));
@@ -2477,6 +2496,7 @@ mod tests {
                 path: roots.branch_path(&alias.join("config"), None).unwrap(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,

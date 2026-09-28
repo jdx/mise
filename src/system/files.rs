@@ -161,6 +161,8 @@ fn warn_permissions_ignored() {
 pub struct FilePolicy {
     pub autosave: bool,
     pub encrypt: bool,
+    #[serde(default)]
+    pub allow_plaintext: bool,
     /// Which fields the declaration wrote, so a later layer repeating it
     /// overrides only what it says and inherits the rest.
     pub explicit: ExplicitFields,
@@ -171,6 +173,8 @@ pub struct FilePolicy {
 pub struct ExplicitFields {
     pub autosave: bool,
     pub encrypt: bool,
+    #[serde(default)]
+    pub allow_plaintext: bool,
     pub variants: bool,
     pub enabled: bool,
     pub exclude: bool,
@@ -184,6 +188,7 @@ impl FilePolicy {
         Self {
             autosave: true,
             encrypt: false,
+            allow_plaintext: false,
             explicit: ExplicitFields::default(),
         }
     }
@@ -403,6 +408,9 @@ pub(crate) enum FileTomlEntry {
         autosave: Option<bool>,
         #[serde(default)]
         encrypt: Option<bool>,
+        /// Allow an explicitly tracked credential-named file in plaintext.
+        #[serde(default)]
+        allow_plaintext: Option<bool>,
         /// Platform / profile selectors, with optional deployment destinations
         #[serde(default)]
         variants: Option<Vec<FileVariant>>,
@@ -438,6 +446,9 @@ impl FileRequest {
         if explicit.encrypt {
             self.policy.encrypt = later.policy.encrypt;
         }
+        if explicit.allow_plaintext {
+            self.policy.allow_plaintext = later.policy.allow_plaintext;
+        }
         if explicit.variants {
             self.variants = later.variants;
         }
@@ -453,6 +464,7 @@ impl FileRequest {
         self.policy.explicit = ExplicitFields {
             autosave: mine.autosave || explicit.autosave,
             encrypt: mine.encrypt || explicit.encrypt,
+            allow_plaintext: mine.allow_plaintext || explicit.allow_plaintext,
             variants: mine.variants || explicit.variants,
             enabled: mine.enabled || explicit.enabled,
             exclude: mine.exclude || explicit.exclude,
@@ -845,6 +857,14 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 bail!("dotfile {target}: encrypt must be a boolean");
             }
             if value.as_table().is_some_and(|t| {
+                t.contains_key("allow_plaintext")
+                    && t.get("allow_plaintext")
+                        .and_then(toml::Value::as_bool)
+                        .is_none()
+            }) {
+                bail!("dotfile {target}: allow_plaintext must be a boolean");
+            }
+            if value.as_table().is_some_and(|t| {
                 t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
                     && ["content", "block", "line", "template"]
                         .iter()
@@ -886,6 +906,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "permissions"
                             | "autosave"
                             | "encrypt"
+                            | "allow_plaintext"
                             | "variants"
                             | "enabled"
                             | "remove_empty"
@@ -909,6 +930,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 manifest,
                 exclude,
                 encrypt,
+                allow_plaintext,
                 include,
                 permissions,
                 variants,
@@ -946,6 +968,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     && (source.is_some() || content.is_some() || manifest.is_some())
                 {
                     bail!("tracked file {target} cannot declare source, content, or manifest");
+                }
+                if allow_plaintext.is_some() && mode != FileMode::Track {
+                    bail!("dotfile {target}: allow_plaintext requires mode = \"track\"");
+                }
+                if allow_plaintext == Some(true)
+                    && std::fs::symlink_metadata(resolve_target_arg(&target))
+                        .is_ok_and(|meta| meta.is_dir())
+                {
+                    bail!("dotfile {target}: allow_plaintext applies only to a tracked file");
                 }
                 if mode == FileMode::Absent
                     && (source.is_some()
@@ -1241,6 +1272,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("manifest")
                 || table.contains_key("autosave")
                 || table.contains_key("encrypt")
+                || table.contains_key("allow_plaintext")
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
@@ -1286,6 +1318,7 @@ fn merge_file_entry(
         permissions,
         autosave,
         encrypt,
+        allow_plaintext,
         variants,
         enabled,
         remove_empty,
@@ -1294,6 +1327,7 @@ fn merge_file_entry(
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1318,6 +1352,7 @@ fn merge_file_entry(
             permissions,
             autosave,
             encrypt,
+            allow_plaintext,
             variants,
             enabled,
             remove_empty,
@@ -1333,6 +1368,7 @@ fn merge_file_entry(
             permissions,
             autosave,
             encrypt,
+            allow_plaintext,
             variants,
             enabled,
             remove_empty,
@@ -1364,6 +1400,7 @@ fn merge_file_entry(
     let explicit = ExplicitFields {
         autosave: autosave.is_some(),
         encrypt: encrypt.is_some(),
+        allow_plaintext: allow_plaintext.is_some(),
         variants: variants.is_some(),
         enabled: enabled.is_some(),
         exclude: exclude.is_some(),
@@ -1392,9 +1429,18 @@ fn merge_file_entry(
         FilePolicy {
             autosave: autosave.unwrap_or(defaults.autosave),
             encrypt: encrypt.unwrap_or(false),
+            allow_plaintext: allow_plaintext.unwrap_or(false),
             explicit,
         }
     };
+    if allow_plaintext.is_some() && mode.as_deref() != Some("track") {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "allow_plaintext applies only to mode = \"track\"",
+        );
+        return;
+    }
     if mode.as_deref() != Some("track") && include.is_some() {
         record_invalid(
             &target_raw,
@@ -1425,6 +1471,14 @@ fn merge_file_entry(
             return;
         }
         let target = resolve_target_arg(&target_raw);
+        if allow_plaintext == Some(true) && target.is_dir() {
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "allow_plaintext applies only to a tracked file",
+            );
+            return;
+        }
         if target.is_relative() {
             record_invalid(
                 &target_raw,

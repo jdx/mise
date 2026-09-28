@@ -4352,6 +4352,11 @@
                 "default": false,
                 "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext"
               },
+              "allow_plaintext": {
+                "type": "boolean",
+                "default": false,
+                "description": "allow this directly tracked credential-named file to be saved in plaintext history and any connected origin"
+              },
               "source": {
                 "type": "string",
                 "description": "source file or directory"
@@ -4730,6 +4735,23 @@
                   {
                     "properties": {
                       "include": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["allow_plaintext", "mode"],
+                    "properties": {
+                      "mode": {
+                        "const": "track"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "allow_plaintext": false
                     }
                   }
                 ]

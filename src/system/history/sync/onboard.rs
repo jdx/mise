@@ -633,6 +633,7 @@ mod preview_tests {
                 path: "home/preview-secret".into(),
                 autosave: true,
                 encrypt: true,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,

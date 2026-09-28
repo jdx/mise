@@ -610,9 +610,24 @@ throughout the history.
 
 Include lists apply only to tracked directories. For a single file,
 track it directly, or track its parent and select the file by relative
-path. Use `--encrypt` when directly tracking a credential file. Invalid
-include or exclude globs make a tracked entry invalid; fix the declaration
-before tracking it again.
+path. Invalid include or exclude globs make a tracked entry invalid; fix
+the declaration before tracking it again.
+
+When a directly tracked filename looks like a credential store, `mise dot
+track` asks whether to save it in plaintext. The default is no. For a
+noninteractive command, use `--allow-plaintext` only after checking that
+the file is safe to put in Git history and any connected origin:
+
+```sh
+mise dot track --allow-plaintext ~/commit-mossy-token.md
+```
+
+The choice is saved as `allow_plaintext = true` on that file's `[dotfiles]`
+entry, so later saves and other machines use the same policy. Use
+`mise dot track --encrypt` for a real credential; encryption requires
+configured recipients. `--yes` does not accept plaintext tracking. Upgrade
+other machines sharing the history before using this option; older mise
+versions cannot read its enrollment metadata.
 
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being

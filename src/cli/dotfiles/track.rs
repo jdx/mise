@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
@@ -13,7 +13,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedEntry, TrackedSet, normalize_target,
+    CREDENTIAL_REASON, TrackedEntry, TrackedSet, is_builtin_credential, normalize_target,
 };
 
 /// Track a file or directory in place
@@ -49,6 +49,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     encrypt: bool,
 
+    /// Save an explicitly tracked credential-named file in plaintext
+    #[usage(long)]
+    allow_plaintext: bool,
+
     /// Accept without prompting
     #[usage(long, short)]
     yes: bool,
@@ -73,6 +77,9 @@ impl DotfilesTrack {
             Some(declaration_lock()?)
         };
         let config = Config::get().await?;
+        if self.encrypt && self.allow_plaintext {
+            bail!("dotfiles: --encrypt and --allow-plaintext cannot be used together");
+        }
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
         }
@@ -128,6 +135,7 @@ impl DotfilesTrack {
             ..Default::default()
         };
         let mut resolved: Vec<(PathBuf, PathBuf)> = vec![];
+        let mut approved_plaintext = BTreeSet::new();
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -174,7 +182,44 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let normalized = normalize_target(&target);
-            let mut entry = TrackedEntry::new(normalized.clone(), "track", self.policy(existing));
+            if self.allow_plaintext && !target.is_file() && !target.is_symlink() {
+                bail!("{target_raw}: --allow-plaintext requires an existing file");
+            }
+            let credential_name = target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| is_builtin_credential(&target, name));
+            if self.allow_plaintext && !credential_name {
+                bail!("{target_raw}: --allow-plaintext is only needed for a credential-named file");
+            }
+            if credential_name
+                && !target.is_dir()
+                && (target.exists() || target.is_symlink())
+                && !self.encrypt
+                && !existing
+                    .is_some_and(|request| request.policy.encrypt || request.policy.allow_plaintext)
+                && !self.allow_plaintext
+                && !self.dry_run
+            {
+                if !console::user_attended_stderr()
+                    || !crate::ui::prompt::confirm_with_default(
+                        format!(
+                            "dotfiles: {target_raw} looks like a credential store. Save it in plaintext history, including any connected origin?"
+                        ),
+                        false,
+                    )?
+                    .is_yes()
+                {
+                    bail!("{target_raw}: use --encrypt for credentials or --allow-plaintext to save this file in plaintext without a terminal");
+                }
+                approved_plaintext.insert(normalized.clone());
+            }
+            let allow_plaintext = self.allow_plaintext || approved_plaintext.contains(&normalized);
+            let mut entry = TrackedEntry::new(
+                normalized.clone(),
+                "track",
+                self.policy(existing, allow_plaintext),
+            );
             // re-tracking previews under the entry's effective exclude
             // and include lists: the saved one when this machine's
             // declaration says nothing, its own when it does.
@@ -275,7 +320,13 @@ impl DotfilesTrack {
                 .and_then(|table| table.get("include"))
                 .and_then(Item::as_array)
                 .cloned();
-            let entry = self.entry(existing, &previous, previous_exclude, previous_include);
+            let entry = self.entry(
+                existing,
+                &previous,
+                previous_exclude,
+                previous_include,
+                self.allow_plaintext || approved_plaintext.contains(&normalized),
+            );
             let retrack = existing.is_some_and(|req| req.origin.config == config_path)
                 && previous_item.is_some_and(|previous| same_declaration(previous, &entry));
             if retrack {
@@ -293,7 +344,10 @@ impl DotfilesTrack {
                 edit.changed = true;
             }
             locations.insert(target_key.clone(), config_path);
-            let policy = self.policy(existing);
+            let policy = self.policy(
+                existing,
+                self.allow_plaintext || approved_plaintext.contains(&normalized),
+            );
             has_autosave |= policy.autosave;
             if !policy.autosave && !retrack {
                 manual.push(target_key.clone());
@@ -481,7 +535,11 @@ impl DotfilesTrack {
 
     /// The policy a target is tracked under: the existing entry's, with
     /// this command's flags on top.
-    fn policy(&self, existing: Option<&FileRequest>) -> crate::system::files::FilePolicy {
+    fn policy(
+        &self,
+        existing: Option<&FileRequest>,
+        allow_plaintext: bool,
+    ) -> crate::system::files::FilePolicy {
         let mut policy = existing
             .map(|req| req.policy)
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
@@ -490,6 +548,9 @@ impl DotfilesTrack {
         }
         if self.encrypt {
             policy.encrypt = true;
+            policy.allow_plaintext = false;
+        } else if allow_plaintext {
+            policy.allow_plaintext = true;
         }
         policy
     }
@@ -506,10 +567,11 @@ impl DotfilesTrack {
         previous: &[String],
         previous_exclude: Option<Array>,
         previous_include: Option<Array>,
+        allow_plaintext: bool,
     ) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
-        let policy = self.policy(existing);
+        let policy = self.policy(existing, allow_plaintext);
         // a policy is written when this command sets it or this file wrote
         // it before; one inherited from another layer stays unwritten so
         // that layer keeps deciding it
@@ -518,6 +580,12 @@ impl DotfilesTrack {
             table.insert(
                 "encrypt",
                 Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
+            );
+        }
+        if allow_plaintext || written("allow_plaintext") {
+            table.insert(
+                "allow_plaintext",
+                Value::Boolean(toml_edit::Formatted::new(policy.allow_plaintext)),
             );
         }
         if self.no_autosave || written("autosave") {
@@ -1251,6 +1319,7 @@ mod declaration_tests {
             profile: None,
             no_autosave: false,
             encrypt: false,
+            allow_plaintext: false,
             yes: true,
             dry_run: false,
         };
@@ -1286,15 +1355,15 @@ mod declaration_tests {
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);
-        let table = command.entry(Some(&existing), &previous, None, None);
+        let table = command.entry(Some(&existing), &previous, None, None, false);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
         // another layer wrote them (the composed flags say explicit): this
         // file must not pin the inherited values
-        let table = command.entry(Some(&existing), &["mode".to_string()], None, None);
+        let table = command.entry(Some(&existing), &["mode".to_string()], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
-        let table = command.entry(None, &[], None, None);
+        let table = command.entry(None, &[], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         // an inherited non-default value is not pinned either; this
@@ -1302,27 +1371,28 @@ mod declaration_tests {
         let mut inherited = existing.clone();
         inherited.policy.autosave = false;
         inherited.policy.encrypt = true;
-        let table = command.entry(Some(&inherited), &["mode".to_string()], None, None);
+        let table = command.entry(Some(&inherited), &["mode".to_string()], None, None, false);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         let flagged = DotfilesTrack {
             no_autosave: true,
             ..command
         };
-        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None, None);
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None, None, false);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
         // an inherited exclude list is not pinned either; one this file
         // wrote is kept, even when empty
         let mut listed = existing.clone();
         listed.exclude = vec![glob::Pattern::new("sessions").unwrap()];
-        let table = flagged.entry(Some(&listed), &["mode".to_string()], None, None);
+        let table = flagged.entry(Some(&listed), &["mode".to_string()], None, None, false);
         assert!(table.get("exclude").is_none());
         let table = flagged.entry(
             Some(&listed),
             &["mode".to_string(), "exclude".to_string()],
             None,
             None,
+            false,
         );
         assert_eq!(
             table
@@ -1344,6 +1414,7 @@ mod declaration_tests {
             &["mode".to_string(), "exclude".to_string()],
             Some(raw),
             None,
+            false,
         );
         assert_eq!(
             table
@@ -1359,6 +1430,7 @@ mod declaration_tests {
             &["mode".to_string(), "exclude".to_string()],
             None,
             None,
+            false,
         );
         assert_eq!(
             table
