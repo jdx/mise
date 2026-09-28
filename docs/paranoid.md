@@ -30,6 +30,9 @@ do not need it. Direct file approval hashes the contents, so editing the file re
 Automatic trust for execution commands and the usual CI trust exemption are disabled. Trust is not
 shared between Git worktrees in this mode.
 
+`--yes`, `MISE_YES=1`, and CI auto-confirmation do not approve configuration trust in paranoid mode.
+For unattended runs, review the configuration and run `mise trust` explicitly before loading it.
+
 Inspect the file before accepting it:
 
 ```sh

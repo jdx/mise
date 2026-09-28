@@ -547,7 +547,9 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
-        let ans = if settings::is_loaded() && Settings::get().yes {
+        let ans = if settings::is_loaded()
+            && Settings::try_get().is_ok_and(|settings| settings.yes && !settings.paranoid)
+        {
             Confirmation::Yes
         } else {
             prompt::confirm_with_all(format!(
