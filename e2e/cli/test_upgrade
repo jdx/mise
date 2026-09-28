@@ -278,3 +278,35 @@ assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 rm -f mise.toml
 mise settings unset minimum_release_age
+
+plugin_dir="$MISE_DATA_DIR/plugins/patch-release"
+mkdir -p "$plugin_dir/bin"
+cat <<'LISTALL' >"$plugin_dir/bin/list-all"
+#!/usr/bin/env bash
+echo 29.1 29.1.1
+LISTALL
+cat <<'INSTALL' >"$plugin_dir/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH"
+touch "$ASDF_INSTALL_PATH/version-$ASDF_INSTALL_VERSION"
+INSTALL
+chmod +x "$plugin_dir/bin/list-all" "$plugin_dir/bin/install"
+
+cat <<'CONFIG' >mise.toml
+[tools]
+patch-release = "29.1"
+CONFIG
+mise install
+mise upgrade --bump
+assert_contains "mise ls --current patch-release" "29.1.1"
+assert_contains "cat mise.toml" 'patch-release = "29.1.1"'
+
+cat <<'CONFIG' >mise.toml
+[tools]
+patch-release = "29"
+CONFIG
+mise uninstall --all patch-release
+mise install patch-release@29.1
+mise upgrade --bump
+assert_contains "mise ls --current patch-release" "29.1.1"
+assert_contains "cat mise.toml" 'patch-release = "29"'

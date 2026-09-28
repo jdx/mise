@@ -197,7 +197,12 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
-            if let Some(bumped_version) = check_semver_bump(old, new)
+            let bumped_version = check_semver_bump(old, new).or_else(|| {
+                oi.tool_version
+                    .request_pinned_this_version()
+                    .then(|| new.to_string())
+            });
+            if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
             {
                 oi.bump = match oi.tool_request.clone() {
