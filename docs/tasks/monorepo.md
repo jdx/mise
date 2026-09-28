@@ -82,7 +82,8 @@ config_roots = ["foo/bar/baz/abc/123"]
 for every task in that root, including task patterns such as `//123:*`. The full
 path remains the task's canonical name, and it continues to work too. An alias
 must be a single path segment and must point to a root listed in
-`[monorepo].config_roots`. It cannot overlap an existing configured root path.
+`[monorepo].config_roots`. It cannot contain the `...` wildcard or overlap an
+existing configured root path, including one selected by a glob.
 
 ## Task Path Syntax
 

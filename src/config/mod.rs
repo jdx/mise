@@ -827,12 +827,14 @@ impl Config {
         let roots = config.monorepo.config_roots.as_deref().ok_or_else(|| {
             eyre!("[monorepo].config_roots is required for [monorepo.path_aliases]")
         })?;
+        let root_dirs = expand_config_root_dirs(&config.root, roots, None)?;
         let canonical_root = config.root.canonicalize()?;
         let mut aliases = BTreeMap::new();
         for (alias, target) in &config.monorepo.path_aliases {
             if alias.is_empty()
                 || alias == "."
                 || alias == ".."
+                || alias.contains("...")
                 || !alias
                     .chars()
                     .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
@@ -854,38 +856,28 @@ impl Config {
             if !target_dir.starts_with(&canonical_root) {
                 bail!("[monorepo.path_aliases]: {alias:?} points outside the monorepo root");
             }
-            let target = target_path
-                .components()
-                .map(|component| component.as_os_str().to_string_lossy())
-                .join("/");
-            let matches_root = |pattern: &str, path: &str| {
-                if !pattern.contains('*') {
-                    pattern == path
-                } else {
-                    glob::Pattern::new(pattern).is_ok_and(|pattern| {
-                        pattern.matches_with(
-                            path,
-                            glob::MatchOptions {
-                                require_literal_separator: true,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                }
-            };
-            if !roots.iter().any(|pattern| matches_root(pattern, &target))
-                || !has_mise_config_with_filenames(&target_dir, &DEFAULT_CONFIG_FILENAMES)
-            {
+            let selected_root = root_dirs
+                .iter()
+                .find(|root| root.canonicalize().is_ok_and(|root| root == target_dir));
+            let Some(selected_root) = selected_root else {
                 bail!(
                     "[monorepo.path_aliases]: {alias:?} must point to a root in [monorepo].config_roots"
                 );
-            }
-            if roots.iter().any(|pattern| {
-                matches_root(pattern, alias) || pattern.starts_with(&format!("{alias}/"))
+            };
+            let relative = |root: &Path| {
+                root.strip_prefix(&config.root).map(|path| {
+                    path.components()
+                        .map(|component| component.as_os_str().to_string_lossy())
+                        .join("/")
+                })
+            };
+            if root_dirs.iter().any(|root| {
+                relative(root)
+                    .is_ok_and(|path| path == *alias || path.starts_with(&format!("{alias}/")))
             }) {
                 bail!("[monorepo.path_aliases]: {alias:?} conflicts with a config root path");
             }
-            aliases.insert(alias.clone(), target);
+            aliases.insert(alias.clone(), relative(selected_root)?);
         }
         Ok(aliases)
     }
@@ -1353,25 +1345,27 @@ impl Config {
         }
         let path_aliases = self.monorepo_path_aliases()?;
         for task in tasks.values_mut() {
-            let Some((path, name)) = task
-                .name
-                .strip_prefix("//")
-                .and_then(|name| name.split_once(':'))
-            else {
-                continue;
-            };
-            for (alias, target) in &path_aliases {
-                let suffix = if path == target {
-                    Some("")
-                } else {
-                    path.strip_prefix(target)
-                        .filter(|suffix| suffix.starts_with('/'))
-                };
-                if let Some(suffix) = suffix {
-                    let name = format!("//{alias}{suffix}:{name}");
-                    if !task.aliases.contains(&name) {
-                        task.aliases.push(name);
+            let paths = std::iter::once(task.name.as_str())
+                .chain(task.aliases.iter().map(String::as_str))
+                .filter_map(|name| name.strip_prefix("//")?.split_once(':'))
+                .collect_vec();
+            let mut aliases = Vec::new();
+            for (path, name) in paths {
+                for (alias, target) in &path_aliases {
+                    let suffix = if path == target {
+                        Some("")
+                    } else {
+                        path.strip_prefix(target)
+                            .filter(|suffix| suffix.starts_with('/'))
+                    };
+                    if let Some(suffix) = suffix {
+                        aliases.push(format!("//{alias}{suffix}:{name}"));
                     }
+                }
+            }
+            for alias in aliases {
+                if !task.aliases.contains(&alias) {
+                    task.aliases.push(alias);
                 }
             }
         }
