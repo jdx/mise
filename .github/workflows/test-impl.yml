@@ -177,7 +177,7 @@ jobs:
       - run: mise run test:e2e macos
       # Linux runs this in the full suite; Windows has the equivalent Pester
       # wrapper. Always replace a disposable copy, never the CI runner binary.
-      - run: mise run test:e2e '^test_self_update_install$'
+      - run: mise run test:e2e cli/test_self_update_install
       # Tracked history shells out to git and needs the Xcode Command
       # Line Tools guard exercised on a real macOS runner. Each test has its
       # own HOME, TMPDIR, and mise directories, so these run concurrently.
