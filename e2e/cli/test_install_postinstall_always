@@ -30,6 +30,13 @@ mise install --dry-run
 mise install --dry-run-code
 assert "wc -l < postinstall.log | tr -d ' '" "3"
 
+# A hook-only result must still be returned to `mise use` so it can write its config.
+mise use --path selected.toml \
+  --tool-option 'postinstall={run="echo selected >> use-hook.log",when="always"}' \
+  dummy@1.0.0
+assert_contains "cat selected.toml" 'when = "always"'
+assert "cat use-hook.log" "selected"
+
 # The default string form retains install-only behavior.
 cat >mise.toml <<'EOF'
 [tools]

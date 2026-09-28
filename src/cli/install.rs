@@ -385,8 +385,11 @@ impl Install {
         // Tools that actually installed successfully. `versions` is mutated
         // below (retained to current versions for the lockfile/shim rebuild),
         // so capture the set now for the "installed but not activated" warning.
-        let installed_shorts: HashSet<String> =
-            versions.iter().map(|tv| tv.short().to_string()).collect();
+        let installed_shorts: HashSet<String> = versions
+            .iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .map(|tv| tv.short().to_string())
+            .collect();
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
@@ -397,6 +400,8 @@ impl Install {
             }
             return install_error;
         }
+
+        versions.retain(|tv| tv.install_satisfied != Some(true));
 
         if install_error.is_ok() || !versions.is_empty() {
             // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
@@ -706,6 +711,13 @@ impl Install {
             }
             return install_error;
         }
+
+        // An `always` postinstall on an existing tool is a successful request,
+        // but no installation needs a shim or lockfile rebuild.
+        let versions = versions
+            .into_iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .collect::<Vec<_>>();
         if install_error.is_ok() || !versions.is_empty() {
             measure!("rebuild_shims_and_runtime_symlinks", {
                 let rebuild_config = self.effective_config(&install_config, None).await?;
