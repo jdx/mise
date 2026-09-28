@@ -135,6 +135,7 @@ class ReleaseAgeTests(unittest.TestCase):
             ("2026.10.0", 0),
             ("2026.10.0-DEBUG", 0),
             ("2026.9.29-DEBUG", 77),
+            ("", 1),
         ]:
             with self.subTest(version=version), tempfile.TemporaryDirectory() as tmp:
                 binary = Path(tmp) / "mise"

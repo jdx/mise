@@ -329,6 +329,7 @@ install_mise() {
   # Keep a newer manually installed release when resolving an unpinned install.
   if [ -z "${MISE_VERSION:-}" ] && [ -x "$install_path" ]; then
     existing_version="$(installed_mise_version "$install_path")"
+    [ -n "$existing_version" ] || error "cannot compare installed mise version; set MISE_VERSION explicitly"
     if [ -n "$existing_version" ]; then
       compare_version="${existing_version%-DEBUG}"
       newest=$(printf 'v%s 0\nv%s 0\n' "$compare_version" "$version" | select_release 0) || error "cannot compare installed mise version; set MISE_VERSION explicitly"
