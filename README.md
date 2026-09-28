@@ -183,10 +183,11 @@ A [text transcript](https://mise.jdx.dev/demo.html) is also available.
 
 ## GitHub Issues & Discussions
 
-Use [GitHub Discussions](https://github.com/jdx/mise/discussions) for support and
-feature requests. GitHub Issues are not used for new reports.
+Report bugs in [GitHub Issues](https://github.com/jdx/mise/issues). Use
+[GitHub Discussions](https://github.com/jdx/mise/discussions) for questions and feature ideas.
 
-- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports): include a minimal config, the command you ran, expected behavior, and relevant error output. See the [troubleshooting guide](https://mise.jdx.dev/troubleshooting.html) first.
+- [Issues](https://github.com/jdx/mise/issues): report a bug with a minimal config, the command you ran, expected behavior, and relevant error output. See the [troubleshooting guide](https://mise.jdx.dev/troubleshooting.html) first.
+- [Troubleshooting](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports): ask for help when you are not sure whether something is a bug.
 - [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): suggest a feature or describe a workflow mise could support.
 - [Announcements](https://github.com/jdx/mise/discussions/categories/announcements): follow project updates.
 

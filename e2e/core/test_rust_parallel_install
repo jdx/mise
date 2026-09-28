@@ -6,8 +6,6 @@ export MISE_RUSTUP_HOME="$PWD/rustup"
 export MISE_CARGO_HOME="$PWD/cargo"
 
 SERVER_ROOT="$PWD/server"
-PORT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mise-rustup-init.XXXXXX")
-PORT_FILE="$PORT_DIR/port"
 mkdir -p "$SERVER_ROOT"
 
 cat >"$SERVER_ROOT/rustup-init" <<'INIT'
@@ -64,33 +62,11 @@ chmod +x "$CARGO_HOME/bin/rustup" "$CARGO_HOME/bin/rustc" "$CARGO_HOME/bin/cargo
 touch "$RUSTUP_HOME/settings.toml"
 INIT
 
-python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
-import http.server
-import os
-import socketserver
-import sys
-
-root, port_file = sys.argv[1:]
-os.chdir(root)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as file:
-        file.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() {
-  kill "$SERVER_PID" 2>/dev/null || true
-  rm -rf "$PORT_DIR"
-}
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "rustup-init HTTP server port" 30 "$SERVER_PID"
-SERVER_PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SERVER_ROOT"
 
 cat >mise.toml <<EOF
 [settings]
-url_replacements = { 'regex:^https://sh\.rustup\.rs/?$' = "http://127.0.0.1:$SERVER_PORT/rustup-init" }
+url_replacements = { 'regex:^https://sh\.rustup\.rs/?$' = "http://127.0.0.1:$HTTP_PORT/rustup-init" }
 EOF
 
 mise install rust@1.80.0 >install-1.log 2>&1 &

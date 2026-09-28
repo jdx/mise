@@ -17,8 +17,8 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
+use crate::args::BackendArg;
 use crate::backend::unalias_backend;
-use crate::cli::args::BackendArg;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
 };
@@ -381,7 +381,7 @@ fn replace_tool_entries_preserving_position(
 }
 
 #[derive(Default, Deserialize)]
-pub(crate) struct MiseToml {
+pub struct MiseToml {
     #[serde(rename = "_")]
     custom: Option<toml::Value>,
     #[serde(default, deserialize_with = "deserialize_min_version")]
@@ -408,6 +408,8 @@ pub(crate) struct MiseToml {
     daemons: IndexMap<String, crate::daemons::Declaration>,
     #[serde(default)]
     daemons_settings: Option<crate::daemons::DaemonSettings>,
+    #[serde(default)]
+    daemon_providers: IndexMap<String, toml::Table>,
     #[serde(default)]
     daemon_groups: IndexMap<String, crate::daemons::GroupDeclaration>,
     #[serde(default)]
@@ -500,14 +502,17 @@ pub(crate) struct Tasks(pub BTreeMap<String, Task>);
 pub(crate) struct TaskTemplates(pub IndexMap<String, TaskTemplate>);
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct EnvList(pub(crate) Vec<EnvDirective>);
+pub struct EnvList(pub Vec<EnvDirective>);
 
 /// Configuration for the [monorepo] section in mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
-pub(crate) struct MonorepoConfig {
+pub struct MonorepoConfig {
     /// Explicit list of config roots for monorepo task discovery.
     /// Supports single-level glob patterns (*).
     pub config_roots: Option<Vec<String>>,
+    /// Short names for configured monorepo task roots.
+    #[serde(default)]
+    pub path_aliases: BTreeMap<String, String>,
     /// Use a single lockfile at the monorepo root for descendant config roots.
     /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,
@@ -522,7 +527,7 @@ pub(crate) struct MonorepoConfig {
 }
 
 impl EnvList {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
@@ -556,7 +561,7 @@ impl MiseToml {
         }
         Ok(())
     }
-    pub(crate) fn init(path: &Path) -> Self {
+    pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert(
             "config_root",
@@ -572,7 +577,7 @@ impl MiseToml {
         rf
     }
 
-    pub(crate) fn from_file(path: &Path) -> eyre::Result<Self> {
+    pub fn from_file(path: &Path) -> eyre::Result<Self> {
         let body = file::read_to_string(path)?;
         Self::from_str(&body, path)
     }
@@ -586,7 +591,19 @@ impl MiseToml {
         Ok(parsed)
     }
 
-    pub(crate) fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
+    /// Decode only the static monorepo declarations of a config, without
+    /// trusting or evaluating it, applying the same legacy
+    /// `experimental_monorepo_root` alias as normal loading. The deprecation
+    /// warning is left to normal loading.
+    pub(crate) fn for_monorepo_inspection(body: &str, path: &Path) -> eyre::Result<Self> {
+        let mut parsed = Self::for_history_preflight(body, path)?;
+        if let Some(legacy_monorepo_root) = parsed.experimental_monorepo_root.take() {
+            parsed.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
+        Ok(parsed)
+    }
+
+    pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
         if !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
         }
@@ -702,7 +719,7 @@ impl MiseToml {
         Ok(self.doc.lock().unwrap())
     }
 
-    pub(crate) fn set_backend_alias(&mut self, fa: &BackendArg, to: &str) -> eyre::Result<()> {
+    pub fn set_backend_alias(&mut self, fa: &BackendArg, to: &str) -> eyre::Result<()> {
         self.doc_mut()?
             .get_mut()
             .unwrap()
@@ -714,7 +731,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
+    pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
         self.tool_alias
             .entry(fa.short.to_string())
             .or_default()
@@ -738,7 +755,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
+    pub fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let doc = doc.get_mut().unwrap();
         // Remove from both tool_alias and deprecated alias sections
@@ -753,7 +770,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
+    pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
         // Remove from both tool_alias and deprecated alias in memory
         for alias_map in [&mut self.tool_alias, &mut self.alias] {
             if let Some(aliases) = alias_map.get_mut(&fa.short) {
@@ -791,7 +808,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
+    pub fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
         self.shell_alias.insert(name.into(), command.into());
         let mut doc = self.doc_mut()?;
         let shell_alias = doc
@@ -803,7 +820,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn remove_shell_alias(&mut self, name: &str) -> eyre::Result<()> {
+    pub fn remove_shell_alias(&mut self, name: &str) -> eyre::Result<()> {
         self.shell_alias.shift_remove(name);
         let mut doc = self.doc_mut()?;
         let doc = doc.get_mut().unwrap();
@@ -816,7 +833,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
+    pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let mut env_tbl = doc
             .get_mut()
@@ -844,11 +861,7 @@ impl MiseToml {
 
     /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
     /// creating the tables as needed ("latest" means no pin)
-    pub(crate) fn update_bootstrap_package(
-        &mut self,
-        spec: &str,
-        version: &str,
-    ) -> eyre::Result<()> {
+    pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
         let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
         let (preserve_options, reset_absent) = match packages.get_mut(spec) {
             Some(PackageTomlConfig::Options(options)) => {
@@ -907,7 +920,7 @@ impl MiseToml {
 
     /// Update a package while inheriting table-form options when this file does not declare it.
     #[cfg(unix)]
-    pub(crate) fn update_bootstrap_package_with_fallback(
+    pub fn update_bootstrap_package_with_fallback(
         &mut self,
         spec: &str,
         version: &str,
@@ -970,7 +983,7 @@ impl MiseToml {
     /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
     /// tables as needed. Only used by the `#[cfg(unix)]` brew CLI commands.
     #[cfg(unix)]
-    pub(crate) fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
+    pub fn update_bootstrap_brew_tap(&mut self, tap: &str, url: &str) -> eyre::Result<()> {
         self.bootstrap
             .get_or_insert_with(Default::default)
             .brew
@@ -1005,7 +1018,7 @@ impl MiseToml {
     }
 
     #[cfg(unix)]
-    pub(crate) fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
+    pub fn remove_bootstrap_brew_tap(&mut self, tap: &str) -> eyre::Result<()> {
         if let Some(bootstrap) = &mut self.bootstrap {
             bootstrap.brew.taps.shift_remove(tap);
         }
@@ -1029,7 +1042,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn update_env_age(
+    pub fn update_env_age(
         &mut self,
         key: &str,
         value: &str,
@@ -1079,7 +1092,7 @@ impl MiseToml {
         Ok(())
     }
 
-    pub(crate) fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
+    pub fn remove_env(&mut self, key: &str) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let env_tbl = doc
             .get_mut()
@@ -1264,6 +1277,10 @@ impl ConfigFile for MiseToml {
 
     fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
         self.daemons.clone()
+    }
+
+    fn daemon_providers(&self) -> IndexMap<String, toml::Table> {
+        self.daemon_providers.clone()
     }
 
     fn daemon_settings(&self) -> Option<crate::daemons::DaemonSettings> {
@@ -1976,6 +1993,7 @@ impl Clone for MiseToml {
             shell_alias: self.shell_alias.clone(),
             daemons: self.daemons.clone(),
             daemons_settings: self.daemons_settings.clone(),
+            daemon_providers: self.daemon_providers.clone(),
             daemon_groups: self.daemon_groups.clone(),
             wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),

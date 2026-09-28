@@ -2,7 +2,6 @@
 set -euo pipefail
 
 FIXTURES="$TMPDIR/http-install-storage"
-PORT_FILE="$TMPDIR/http-install-storage-port"
 INSTALLS="$MISE_DATA_DIR/installs"
 TARBALLS="$MISE_DATA_DIR/http-tarballs"
 
@@ -19,40 +18,25 @@ echo raw-tool-ok
 EOF
 chmod +x "$FIXTURES/raw-tool"
 
-python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
-import functools
-import http.server
-import socketserver
-import sys
-from pathlib import Path
-
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
-with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
-    Path(sys.argv[2]).write_text(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-wait_for_file "$PORT_FILE" "HTTP install storage test server" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$FIXTURES"
 
 # Default installs own their files, including raw binaries with a nested bin_path.
 # A postinstall hook must not modify another installation of the same artifact.
 cat >mise.toml <<EOF
 [tools."http:direct-a"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/archive.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/archive.tar.gz"
 bin_path = "archive/bin"
 postinstall = 'echo local > "\$MISE_TOOL_INSTALL_PATH/archive/marker"'
 
 [tools."http:direct-b"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/archive.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/archive.tar.gz"
 bin_path = "archive/bin"
 
 [tools."http:raw"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/raw-tool"
+url = "http://127.0.0.1:$HTTP_PORT/raw-tool"
 bin_path = "nested/bin"
 EOF
 
@@ -78,7 +62,7 @@ assert_contains "'$DIRECT_B/archive/bin/storage-tool'" storage-tool-ok
 cat >mise.toml <<EOF
 [tools."http:direct-b"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/archive.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/archive.tar.gz"
 bin_path = "archive/bin"
 EOF
 mise prune --dry-run http:raw
@@ -94,19 +78,19 @@ cat >>mise.toml <<EOF
 
 [tools."http:shared-a"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/archive.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/archive.tar.gz"
 bin_path = "archive/bin"
 shared_extraction = true
 
 [tools."http:shared-b"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/archive.tar.gz"
+url = "http://127.0.0.1:$HTTP_PORT/archive.tar.gz"
 bin_path = "archive/bin"
 shared_extraction = true
 
 [tools."http:raw"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/raw-tool"
+url = "http://127.0.0.1:$HTTP_PORT/raw-tool"
 bin_path = "nested/bin"
 shared_extraction = true
 EOF
@@ -161,20 +145,20 @@ for kind in raw compressed; do
   cat >mise.toml <<EOF
 [tools."http:named-a-$kind"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/$artifact"
+url = "http://127.0.0.1:$HTTP_PORT/$artifact"
 bin = "first-name"
 shared_extraction = true
 
 [tools."http:named-b-$kind"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/$artifact"
+url = "http://127.0.0.1:$HTTP_PORT/$artifact"
 bin = "second-name"
 bin_path = "nested/bin"
 shared_extraction = true
 
 [tools."http:named-copy-$kind"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/$artifact"
+url = "http://127.0.0.1:$HTTP_PORT/$artifact"
 bin = "first-name"
 bin_path = "another/bin"
 shared_extraction = true
@@ -197,7 +181,7 @@ for kind in raw compressed; do
   cat >mise.toml <<EOF
 [tools."http:nested-$kind"]
 version = "1.0.0"
-url = "http://127.0.0.1:$PORT/$artifact"
+url = "http://127.0.0.1:$HTTP_PORT/$artifact"
 bin = "nested/alpha"
 bin_path = "custom/bin"
 shared_extraction = true

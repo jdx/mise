@@ -18,7 +18,7 @@ const TURBO_JSON: &str = "turbo.json";
 
 /// Discovers Node projects from npm, pnpm, Yarn, and Bun workspace definitions.
 #[derive(Debug, Default)]
-pub(crate) struct NodeWorkspaceProvider;
+pub struct NodeWorkspaceProvider;
 
 struct WorkspaceDefinition {
     source: &'static str,

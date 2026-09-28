@@ -351,7 +351,7 @@ fn commit_lock_path() -> PathBuf {
 /// disabled. Bottle download and preparation happen before acquiring this lock;
 /// source builds hold it while writing directly into the final Cellar.
 pub(super) fn commit_lock(pr: &dyn SingleReport) -> Result<fslock::LockFile> {
-    crate::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|| {
+    crate::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|_| {
         pr.set_message("waiting for another brew install".to_string());
     })
 }

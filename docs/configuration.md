@@ -56,7 +56,55 @@ Notes:
 
 - Paths that start with `mise` can be dotfiles, e.g. `.mise.toml` or `.mise/config.toml`.
 - This list doesn't include [Configuration Environments](/configuration/environments), which allow environment-specific config files like `mise.development.toml`—selected with `MISE_ENV=development`. Platform-specific environments like `mise.windows.toml` or `mise.macos-arm64.toml` can be enabled automatically with the [`auto_env` setting](/configuration/environments.html#platform-environments).
+- A folder inside any `conf.d` directory is also a fragment. See [conf.d folders](/configuration.html#conf-d-folders).
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
+
+## conf.d folders
+
+A folder inside a `conf.d` directory is a fragment that keeps its config next to the files it
+uses. This works in the global (`~/.config/mise/conf.d`), system (`/etc/mise/conf.d`), and project
+`conf.d` directories:
+
+```text
+~/.config/mise/conf.d/
+├── git.toml                  # single-file fragment
+└── git-tools/                # folder fragment
+    ├── mise.toml             # always loaded
+    ├── mise.local.toml       # always loaded, usually gitignored
+    ├── mise.linux.toml       # loaded when the linux environment is active
+    ├── mise.linux.local.toml
+    └── gitconfig
+```
+
+The folder is the config root for its files. Relative paths, such as a
+[dotfile](/dotfiles.html) source of `"gitconfig"`, resolve inside the folder, and
+<code v-pre>{{ config_root }}</code> is the folder's path. Tasks defined in the folder run
+there by default. The folder can be a symlink, so a dotfiles checkout can keep its own layout:
+
+```sh
+ln -s ~/src/dotfiles/git ~/.config/mise/conf.d/git-tools
+```
+
+For tasks, a folder behaves like its own project root. Its `[task_config]` applies only to the tasks
+it defines, and `task_config.includes` resolve inside the folder, so `includes = ["tasks"]` loads
+file tasks from `git-tools/tasks/` without replacing the default task directories of the config
+around it, such as `~/.config/mise/tasks`. The folder counts as a config root inside the surrounding
+directory, so `[task_config]` values that config or a parent sets with `cascade = true` still apply,
+except `includes`. When a folder and other config define a task with the same name, the task from the
+higher-precedence file wins, following the load order below. A task found only in a default task
+directory, such as `.mise/tasks`, loses to one that a config file defines.
+
+Only `mise.toml`, `mise.local.toml`, `mise.<env>.toml`, and `mise.<env>.local.toml` are read from a
+folder, and folders are not searched recursively. Folders whose names start with `.` are ignored.
+`mise.<env>.toml` files load for explicit [config environments](/configuration/environments.html)
+and [platform environments](/configuration/environments.html#platform-environments); they are not
+affected by the `env_conf_d` migration.
+
+Folder fragments load after single-file fragments in the same `conf.d` directory, in alphabetical
+order by folder name, and before the directory's regular config such as `config.toml`. Their
+environment and local files take the same place as `conf.d/<name>.<env>.toml` and
+`conf.d/<name>.local.toml` would. Tools declared in a project folder fragment share the project's
+lockfile.
 
 ## Configuration Hierarchy
 
@@ -279,9 +327,18 @@ _new_ plugin installations; existing plugins can use any URL.
 ```toml
 [plugins]
 elixir = "https://github.com/my-org/mise-elixir.git"
-node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gitref
+node = "https://github.com/my-org/mise-node.git#v1.2.0" # supports a branch, tag, or full commit SHA
 "vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
 ```
+
+A gitref pinned to a commit must be the full SHA; abbreviated SHAs can't be
+fetched from the remote and are rejected.
+
+Changing an entry doesn't touch a plugin that is already installed. When the
+installed checkout no longer matches its entry (a different URL, or a gitref
+that isn't checked out), `mise install`, `mise plugins install`, and
+`mise doctor` warn about it. Run `mise plugins install --force <NAME>` to
+reinstall the plugin from `[plugins]`.
 
 The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional.
 If omitted, mise clones the plugin first and then detects the plugin type from
@@ -507,6 +564,7 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 | goreleaser    | `.config/goreleaser.yml`, `.config/goreleaser.yaml`, `.goreleaser.yml`, `.goreleaser.yaml`, `goreleaser.yml`, `goreleaser.yaml`                                                                                                                                                                            |
 | java          | `.java-version`, `.sdkmanrc`                                                                                                                                                                                                                                                                               |
 | lefthook      | `lefthook.yml`, `lefthook.yaml`, `.lefthook.yml`, `.lefthook.yaml`, `lefthook.toml`, `.lefthook.toml`, `lefthook.json`, `.lefthook.json`, `lefthook.jsonc`, `.lefthook.jsonc`, `.config/lefthook.yml`, `.config/lefthook.yaml`, `.config/lefthook.toml`, `.config/lefthook.json`, `.config/lefthook.jsonc` |
+| nim           | `.nim-version`                                                                                                                                                                                                                                                                                             |
 | node          | `.nvmrc`, `.node-version`, `package.json`                                                                                                                                                                                                                                                                  |
 | npm           | `package.json`                                                                                                                                                                                                                                                                                             |
 | opentofu      | `.opentofu-version`                                                                                                                                                                                                                                                                                        |

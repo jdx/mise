@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# `mode = "absent"` removes a file or symlink without checking its content,
+# refuses directories, stays inert on dry runs, and journals the removal so
+# `undo` restores it.
+
+require_cmd git
+
+echo 'old rc' >~/.oldrc
+echo 'elsewhere' >~/.link-target
+ln -s ~/.link-target ~/.oldlink
+mkdir -p ~/.olddir
+echo 'keep' >~/.olddir/keep
+echo 'other os' >~/.other-os-rc
+
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+"~/.oldlink" = { mode = "absent" }
+
+[dotfiles."~/.this-os-rc"]
+mode = "absent"
+variants = [{ os = ["linux", "macos"] }]
+
+[dotfiles."~/.other-os-rc"]
+mode = "absent"
+variants = [{ os = "windows" }]
+TOML
+echo 'this os' >~/.this-os-rc
+
+# status shows what apply would remove
+assert_contains "mise dot status" "would remove (present)"
+assert_contains "mise dot status" "would remove (present (symlink))"
+assert_not_contains "mise dot status" ".other-os-rc"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | [.mode, .state, (.source == null)] | join(\",\")'" "absent,differs,true"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | .reason'" "present; will be removed"
+assert_contains "mise bootstrap status --json 2>/dev/null" "present; will be removed"
+assert_fail "mise dot status --missing"
+
+# a dry run lists the removals and changes nothing
+assert_contains "mise dot apply --dry-run" "rm ~/.oldrc"
+assert_contains "mise dot apply --dry-run" "rm ~/.oldlink"
+assert "cat ~/.oldrc" "old rc"
+assert_succeed "test -L ~/.oldlink"
+
+# apply removes files and symlinks (never what a symlink points at), only
+# for the variant that selects this OS
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e ~/.oldrc"
+assert_fail "test -L ~/.oldlink"
+assert "cat ~/.link-target" "elsewhere"
+assert_fail "test -e ~/.this-os-rc"
+assert "cat ~/.other-os-rc" "other os"
+assert_contains "mise dot status" "absent"
+assert_succeed "mise dot status --missing"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.oldrc\") | .state'" "applied"
+
+# idempotent: nothing left to do
+assert_contains "mise dot apply --yes 2>&1" "all files are applied"
+
+# unapply does not recreate anything or remove anything else
+echo 'recreated' >~/.oldrc
+assert_succeed "mise dot unapply --yes"
+assert "cat ~/.oldrc" "recreated"
+assert "cat ~/.link-target" "elsewhere"
+
+# a removal inside tracked history is journaled, so undo restores the file
+mkdir -p ~/.config/app
+echo 'retired setting' >~/.config/app/old.conf
+assert_succeed "mise dot track ~/.config/app"
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+
+[dotfiles."~/.config/app/old.conf"]
+mode = "absent"
+TOML
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e ~/.config/app/old.conf"
+assert "mise dot history --json | jq -r '.[0].operation.affected | join(\",\")'" "~/.config/app/old.conf"
+assert_succeed "mise dot undo --yes"
+assert "cat ~/.config/app/old.conf" "retired setting"
+
+# a directory is refused, even with --force, and survives
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.olddir" = { mode = "absent" }
+TOML
+assert_contains "mise dot status" "is a directory"
+assert_not_contains "mise dot status ~/.olddir" "would remove"
+assert_fail "mise dot apply --yes" "~/.olddir is a directory"
+assert_fail "mise dot apply --yes --force" "~/.olddir is a directory"
+assert "cat ~/.olddir/keep" "keep"
+
+# absent entries take no source
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent", source = "oldrc" }
+TOML
+echo 'kept' >~/.oldrc
+assert_contains "mise dot status 2>&1" 'mode = "absent" removes the target and takes no source'
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.oldrc" "kept"
+
+# nor permissions, which would describe a file that must not exist
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent", permissions = "0600" }
+TOML
+assert_contains "mise dot status 2>&1" 'takes no source, content, exclude, manifest, permissions, or encrypt'
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.oldrc" "kept"
+
+# a wildcard target is rejected rather than checked as a literal path
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.old*" = { mode = "absent" }
+TOML
+assert_contains "mise dot status 2>&1" "an absent target cannot use wildcards"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.oldrc" "kept"
+
+# an edit on a file an absent entry removes is refused before anything runs
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+"~/.oldrc/greeting" = { line = "hello" }
+TOML
+assert_fail "mise dot apply --yes" 'mode = "absent" removes the file that the edit line:greeting changes'
+assert_fail "mise bootstrap --only dotfiles --yes" 'mode = "absent" removes the file'
+assert "cat ~/.oldrc" "kept"

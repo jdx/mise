@@ -6,6 +6,9 @@ license = "MIT"
 description = "Native executable shim for mise"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
+# Built from the workspace and shipped inside mise releases; it reads
+# src/assets/native-shim-marker from the mise crate, so it cannot be packaged alone.
+publish = false
 
 [[bin]]
 name = "mise-shim"

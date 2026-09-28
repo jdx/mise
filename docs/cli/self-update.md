@@ -11,7 +11,8 @@ description: "Update mise itself"
 
 Update mise itself
 
-Uses the GitHub Releases API to find the latest release and binary.
+Selects the newest stable release satisfying the minimum release age (24h by default).
+Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 By default, this will also update any installed plugins.
 Uses mise's GitHub token resolution chain for authenticated requests.
 
@@ -23,6 +24,7 @@ package manager instead. See
 - **`[VERSION]`** — Update to a specific version
 
 ## Flags
+- **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Override the minimum release age for unpinned updates (default: 24h)
 - **`-f --force`** — Update even if already up to date
 - **`-y --yes`** — Skip confirmation prompt
 - **`--no-plugins`** — Disable auto-updating plugins

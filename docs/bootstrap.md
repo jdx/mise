@@ -117,6 +117,15 @@ before sharing them. They let bootstrap recreate tools and services and
 render templates on the next machine. Tracked files can still be restored
 when the repository contains no global mise configuration.
 
+Put machine setup that files alone do not cover, such as installing shell
+plugins or fixing permissions, in the shared configuration's
+[`[tasks.bootstrap]`](#what-goes-where). Adoption runs it from the restored
+configuration. Later, `mise dot pull` and the watcher restore shared changes
+without running setup; run `mise bootstrap` to apply them, which runs the task
+again. `[history.reload]` commands react to restored files, but mise reads them
+before the restore, so a reload table that arrives in the same update,
+including the first adoption, does not run for it.
+
 If an existing file differs, mise asks you to resolve the conflict before
 restoring files or running the remaining bootstrap steps. Use `--dry-run`
 to preview the plan. See [history](/history.html#sharing-across-machines)
@@ -323,7 +332,153 @@ want to check one part without installing anything.
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
 such as checking authentication or seeding local data. The task runs again on
-every bootstrap, so guard operations that should happen only once.
+every bootstrap, so guard operations that should happen only once. On machines
+that share a [setup repository](#shared-dotfile-history), the task runs when a
+machine adopts it and on each `mise bootstrap` after a shared update.
+
+## Modules
+
+Use [config environments](/configuration/environments.html) to group optional
+machine setup by application or role. Each environment file can declare its
+packages, dotfiles, and services together. These files act as modules using
+mise's existing configuration system.
+
+### Define a module
+
+Keep shared setup in `~/.config/mise/config.toml` and put optional setup in
+`config.<name>.toml` alongside it. For example, this SSH module targets a Linux
+machine using apt and a systemd user session. It installs the client, links an
+existing SSH config from your dotfiles checkout, and runs an agent:
+
+```toml [~/.config/mise/config.ssh.toml]
+[bootstrap.packages]
+"apt:openssh-client" = "latest"
+
+[dotfiles]
+"~/.ssh/config" = "~/src/dotfiles/ssh/config"
+
+[bootstrap.services.ssh-agent]
+scope = "user"
+command = "ssh-agent -D -a %t/ssh-agent.socket"
+```
+
+Create the source file at `~/src/dotfiles/ssh/config` before applying this
+module. To use the agent from your shell, set `SSH_AUTH_SOCK` to
+`$XDG_RUNTIME_DIR/ssh-agent.socket`.
+
+For a [bootstrap project](#a-bootstrap-project), use `mise.toml` and
+`mise.ssh.toml` in the project directory instead.
+
+### Select and preview modules
+
+Choose a machine's default modules in
+[`miserc.toml`](/configuration/environments.html#setting-mise-env-in-miserc-toml).
+For example, after defining `config.ssh.toml` and `config.gpg.toml`:
+
+```toml [~/.config/mise/miserc.toml]
+env = ["ssh", "gpg"]
+```
+
+The base `config.toml` still loads. Preview the combined setup, then apply it:
+
+```sh
+mise bootstrap --dry-run
+mise bootstrap
+```
+
+To select modules for a single invocation, use `mise -E ssh,gpg bootstrap`.
+For [remote bootstrap](/bootstrap/remote.html), set each host's `mise_env` list
+in the inventory. One repository can then describe machines with different
+combinations of modules.
+
+### How modules combine
+
+Declarations with different keys contribute to the same run. Within the same
+directory, the environment listed later takes precedence when both declare
+the same key. For example, with `env = ["ssh", "gpg"]`, a service declared in
+both files uses the definition from `config.gpg.toml`.
+
+Use `mise config` to inspect the loaded files. `mise bootstrap plan --json`
+includes `origin.config` and `origin.environment` for each managed file and
+service, so you can trace those resources back to their declarations.
+
+If setup should always load, use the base config or a
+[`conf.d`](/configuration/environments.html#conf-d-environments) fragment
+without an environment suffix, such as `conf.d/ssh.toml`.
+
+To keep a piece of setup together with its source files, use a
+[`conf.d` folder](/configuration.html#conf-d-folders). Relative dotfile
+sources resolve inside the folder, and `mise.<env>.toml` files in it load only
+for that environment:
+
+```text
+~/.config/mise/conf.d/ssh/
+├── mise.toml          # always loaded; "~/.ssh/config" = "ssh_config"
+├── mise.linux.toml    # when the linux environment is active
+└── ssh_config
+```
+
+### Remove a module's resources
+
+Removing a module from `env` stops loading its declarations but leaves its
+resources on the machine. Use [`mise bootstrap unapply`](/cli/bootstrap/unapply.html)
+to remove its managed files, directories, user services, and dotfile entries
+and edits.
+
+First, remove the module from `env` in `miserc.toml` so the next bootstrap
+will not apply it again. Keep the module's configuration file on disk, then
+preview and confirm the removal:
+
+```sh
+mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+```
+
+The command temporarily selects `ssh` alongside your remaining environments
+to read its declarations. You can also remove several modules in one run:
+
+```sh
+mise bootstrap unapply ssh gpg --dry-run
+mise bootstrap unapply ssh gpg
+```
+
+Unapply asks for confirmation before removing resources. Use `--yes` to
+approve removal without a prompt. The global `--yes` flag, `MISE_YES`, and
+mise's `yes` setting also apply; mise enables that setting in CI.
+
+#### How removal is planned
+
+Mise compares the current configuration with and without the named environments.
+It uses the declarations still on disk, not a record of earlier bootstrap runs.
+Keep those declarations until cleanup is complete: deleting a module's file
+first leaves mise without the information it needs to remove its resources.
+
+- Resources still declared present by the base configuration or another selected
+  module are kept. A `state = "absent"` declaration does not protect a resource.
+- Targets that no longer match their declarations are skipped with a reason.
+  Review the output before using `--force` to remove changed targets.
+- Directories are removed only if they will be empty after the planned removals.
+  Unreadable directories and managed paths with an unexpected type are kept,
+  even with `--force`.
+
+Source files and configuration entries are preserved. Unapply does not restore
+resources previously removed by a `state = "absent"` declaration.
+
+#### Resources that need separate cleanup
+
+Unapply reports package, repository, and Compose declarations with guidance for
+removing them separately:
+
+- **Packages:** follow the manager-specific
+  [pruning guidance](/bootstrap/packages/#import-and-prune). Preview the plan;
+  pruning is not limited to packages from one module.
+- **Compose projects:** set `state = "absent"` and apply the change while the
+  module is selected, for example with `mise -E ssh bootstrap --only compose`.
+- **Repositories:** remove the checkout declared in
+  [`[bootstrap.repos]`](/bootstrap/repos.html) when you no longer need it.
+
+Other bootstrap sections, including system services, are outside unapply's scope.
+Use their resource-specific removal procedures.
 
 ## Templates
 

@@ -4,8 +4,8 @@ export MISE_LOCKFILE_MODE=generate
 export MISE_HTTP_RETRIES=0
 detect_platform
 
-python3 -u - <<'PY' >server.port &
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+start_http_server --handler - <<'PY'
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 import threading
 
@@ -23,27 +23,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "7")
         self.end_headers()
         self.wfile.write(b"fixture")
-
-    def log_message(self, *_):
-        pass
-
-server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-print(server.server_port, flush=True)
-server.serve_forever()
 PY
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-for _ in {1..100}; do
-  [[ -s server.port ]] && break
-  sleep 0.05
-done
-PORT=$(cat server.port)
 
 configure() {
   cat >mise.toml <<EOF
 [tools."http:concurrent"]
 version = "1.0"
-url = "http://127.0.0.1:$PORT/$1"
+url = "http://127.0.0.1:$HTTP_PORT/$1"
 EOF
 }
 

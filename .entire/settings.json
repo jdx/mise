@@ -4,5 +4,11 @@
     "primary": {
       "type": "git-refs"
     }
+  },
+  "strategy_options": {
+    "checkpoint_remote": {
+      "provider": "github",
+      "repo": "jdx/mise-checkpoints"
+    }
   }
 }

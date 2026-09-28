@@ -4,11 +4,11 @@ use crate::errors::Error;
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion};
-use crate::{cli::args::BackendArg, config::Config};
+use crate::{args::BackendArg, config::Config};
 
 /// represents several versions of a tool for a particular plugin
 #[derive(Debug, Clone)]
-pub(crate) struct ToolVersionList {
+pub struct ToolVersionList {
     pub backend: Arc<BackendArg>,
     pub versions: Vec<ToolVersion>,
     pub requests: Vec<ToolRequest>,
@@ -35,11 +35,20 @@ impl ToolVersionList {
             // explicitly specify "latest". This ensures `mise x node@20 npm@latest` only
             // fetches latest for npm, not node.
             // However, we always respect the caller's use_locked_version setting.
-            let request_opts = if tvr.version() == "latest"
-                || tvr
-                    .ba()
-                    .backend()
-                    .is_ok_and(|backend| backend.is_rolling_channel(&tvr.version()))
+            let version = tvr.version();
+            let backend = tvr.ba().backend();
+            // An installed version equal to the request is an exact pin, which
+            // resolves to itself; looking for newer releases of it could only
+            // fail. Runtime symlinks such as `22` are not listed as installed.
+            let bump_request = opts.latest_versions_for_all_requests
+                && !backend
+                    .as_ref()
+                    .is_ok_and(|backend| backend.list_installed_versions().contains(&version));
+            let request_opts = if bump_request
+                || version == "latest"
+                || backend
+                    .as_ref()
+                    .is_ok_and(|backend| backend.is_rolling_channel(&version))
             {
                 opts.clone()
             } else {
@@ -64,13 +73,13 @@ impl ToolVersionList {
         Ok(())
     }
 
-    pub(crate) fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
+    pub fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
         self.versions
             .iter()
             .filter(|tv| tv.request.is_os_supported())
     }
 
-    pub(crate) fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
+    pub fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
         self.requests.iter().filter(|tvr| tvr.is_os_supported())
     }
 }

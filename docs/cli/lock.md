@@ -43,6 +43,8 @@ platforms when available, or the common platform defaults for a new lockfile.
   advances without installing anything. Config files are never modified:
   exactly pinned versions resolve to themselves and stay unchanged
   (use `mise upgrade --bump` to rewrite pins in mise.toml).
+  If the remote versions cannot be fetched, it fails rather than keep
+  the locked version.
 - **`--json`** — Output version changes as JSON
 
   Prints an array of objects describing lockfile version changes:

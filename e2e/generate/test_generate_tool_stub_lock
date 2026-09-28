@@ -6,9 +6,10 @@
 # Disable GPG verification to avoid test failures
 export MISE_GPG_VERIFY=false
 
-# Create test project directory
+# Create test project directory; the stub's lock data goes into its mise.lock
 mkdir -p generate_tool_stub_lock_test/bin
 cd generate_tool_stub_lock_test
+echo '[tools]' >mise.toml
 
 # Test 1: Lock a non-HTTP tool stub (github:jdx/tiny)
 cat >bin/tiny <<'EOF'
@@ -23,19 +24,17 @@ chmod +x bin/tiny
 
 assert_succeed "mise generate tool-stub bin/tiny --lock"
 
-# Verify version was pinned to an exact version (not just "1")
-assert_not_contains "cat bin/tiny" 'version = "1"'
-assert_contains "cat bin/tiny" 'version = "1.'
+# The stub keeps its version request; mise.lock records the exact version
+assert_contains "cat bin/tiny" 'version = "1"'
+assert_not_contains "cat bin/tiny" "[lock"
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/tiny"]'
+assert_contains "cat mise.lock" 'version = "1.'
+assert_contains "cat mise.lock" 'specifiers = ["1"]'
+assert_contains "cat mise.lock" "url ="
+assert_contains "cat mise.lock" "checksum ="
 
-# Verify [lock.platforms.*] sections were added
-assert_contains "cat bin/tiny" "[lock.platforms."
-assert_contains "cat bin/tiny" "url ="
-assert_contains "cat bin/tiny" "checksum ="
-
-# Verify the shebang is preserved
+# Verify the shebang and tool field are preserved
 assert_contains "cat bin/tiny" "#!/usr/bin/env -S mise tool-stub"
-
-# Verify the tool field is preserved
 assert_contains "cat bin/tiny" 'tool = "github:jdx/tiny"'
 
 # The stub's OS selector is the support boundary. Lock coverage only controls which artifacts are
@@ -44,14 +43,9 @@ assert_fail "test -f bin/tiny.cmd"
 
 # Test 2: Bump version with --lock --version
 assert_succeed "mise generate tool-stub bin/tiny --lock --version 2"
-
-# Verify version was bumped
-assert_contains "cat bin/tiny" 'version = "2.'
-assert_not_contains "cat bin/tiny" 'version = "1.'
-
-# Verify lock sections still present after bump
-assert_contains "cat bin/tiny" "[lock.platforms."
-assert_contains "cat bin/tiny" "url ="
+assert_contains "cat bin/tiny" 'version = "2"'
+assert_contains "cat mise.lock" 'version = "2.'
+assert_contains "cat mise.lock" 'specifiers = ["2"]'
 
 # Test 3: Execute the locked stub to verify it works
 if mise version | grep -q "windows-"; then
@@ -60,20 +54,16 @@ else
   assert_contains "mise tool-stub bin/tiny" "tiny v2."
 fi
 
-# Test 4: Re-lock preserves version and respects lockfile_platforms
-locked_version=$(grep 'version = ' bin/tiny | head -1 | sed 's/.*"\(.*\)".*/\1/')
+# Test 4: A new lockfile respects lockfile_platforms
+rm mise.lock
 export MISE_LOCKFILE_PLATFORMS=macos-arm64,linux-x64
 export MISE_OS=macos
 export MISE_ARCH=x64
 assert_succeed "mise generate tool-stub bin/tiny --lock"
-
-# Version should be the same after re-locking
-assert_contains "cat bin/tiny" "version = \"$locked_version\""
-
-assert_contains "cat bin/tiny" "lock.platforms.macos-arm64"
-assert_contains "cat bin/tiny" "lock.platforms.linux-x64"
-assert_contains "cat bin/tiny" "lock.platforms.macos-x64"
-assert_not_contains "cat bin/tiny" "lock.platforms.windows-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.macos-x64"
+assert_not_contains "cat mise.lock" "platforms.windows-x64"
 unset MISE_LOCKFILE_PLATFORMS MISE_OS MISE_ARCH
 
 # Test 5: Lock fails on nonexistent file

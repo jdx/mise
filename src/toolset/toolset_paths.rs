@@ -47,7 +47,7 @@ impl Toolset {
             .collect())
     }
 
-    pub(crate) async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
+    pub async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
         // Build a stable cache key based on project_root and current installed versions
         let mut key_parts = vec![];
         if let Some(root) = &config.project_root {
@@ -93,7 +93,7 @@ impl Toolset {
     }
 
     /// same as list_paths but includes config.list_paths, venv paths, and MISE_ADD_PATHs from self.env()
-    pub(crate) async fn list_final_paths(
+    pub async fn list_final_paths(
         &self,
         config: &Arc<Config>,
         env_results: EnvResults,

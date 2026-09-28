@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+
+# `mise bootstrap unapply <env>` removes what one config environment contributes
+# and keeps everything the rest of the configuration still declares.
+
+mkdir -p sources
+echo "ssh config" >sources/sshconfig
+
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/base.conf"]
+content = "base"
+EOF
+
+cat <<EOF >mise.ssh.toml
+[bootstrap.files."$PWD/ssh.conf"]
+content = "ssh"
+
+[bootstrap.directories."$PWD/ssh.d"]
+mode = "0755"
+
+[bootstrap.files."$PWD/ssh.d/inner.conf"]
+content = "inner"
+
+[bootstrap.files."$PWD/shared.conf"]
+content = "shared"
+
+[bootstrap.packages]
+"apt:openssh-client" = "latest"
+
+[dotfiles]
+"~/.sshconfig" = "$PWD/sources/sshconfig"
+"~/.sshcopy" = { source = "$PWD/sources/sshconfig", mode = "copy" }
+EOF
+
+cat <<EOF >mise.gpg.toml
+[bootstrap.files."$PWD/shared.conf"]
+content = "shared"
+EOF
+
+assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
+assert "cat ssh.conf" "ssh"
+assert "cat shared.conf" "shared"
+assert_directory_exists "$PWD/ssh.d"
+assert_succeed "test -L $HOME/.sshconfig"
+
+# A dry run reports the module's resources without touching them. Packages keep
+# their own removal command and are reported instead of removed.
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "file:$PWD/ssh.conf"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "directory:$PWD/ssh.d"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "dotfile:~/.sshconfig"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run 2>&1" "[bootstrap.packages]"
+assert_not_contains "mise -E gpg bootstrap unapply ssh --dry-run" "file:$PWD/shared.conf"
+assert "cat ssh.conf" "ssh"
+
+# A target that no longer matches its declaration is kept without --force, and
+# keeping it does not stop the rest of the module from being removed.
+echo "edited by hand" >ssh.conf
+echo "edited by hand" >"$HOME/.sshcopy"
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "changed since it was applied"
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "keeping it"
+assert "cat ssh.conf" "edited by hand"
+assert "cat $HOME/.sshcopy" "edited by hand"
+assert_fail "test -L $HOME/.sshconfig"
+assert_succeed "mise -E gpg bootstrap unapply ssh --force --yes"
+assert_fail "test -e $PWD/ssh.conf"
+assert_fail "test -e $HOME/.sshcopy"
+
+# The environment does not have to be selected: unapply selects it for this run,
+# on top of the selection the rest of the machine uses.
+assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
+assert_succeed "mise -E gpg bootstrap unapply ssh --yes"
+assert_fail "test -e $PWD/ssh.conf"
+assert_directory_not_exists "$PWD/ssh.d"
+assert_fail "test -L $HOME/.sshconfig"
+assert_fail "test -e $HOME/.sshcopy"
+
+# The base configuration and the other environment are untouched, and the
+# dotfile source survives its target.
+assert "cat base.conf" "base"
+assert "cat shared.conf" "shared"
+assert "cat sources/sshconfig" "ssh config"
+
+# Each remaining case gets its own module and targets: a managed path whose type
+# is not what the declaration describes is kept even with --force, because the
+# apply refuses it and failing there would remove a module only partly.
+cat <<EOF >mise.mismatch.toml
+[bootstrap.files."$PWD/mismatch.conf"]
+content = "mismatch"
+EOF
+mkdir -p mismatch.conf
+assert_contains "mise -E mismatch bootstrap unapply mismatch --force --yes 2>&1" "unexpected path type"
+assert_directory_exists "$PWD/mismatch.conf"
+
+# A directory that still holds something this plan does not remove is kept:
+# removal is never recursive.
+cat <<EOF >mise.keepdir.toml
+[bootstrap.directories."$PWD/keep.d"]
+mode = "0755"
+
+[bootstrap.files."$PWD/keep.d/inner.conf"]
+content = "inner"
+EOF
+assert_succeed "mise -E keepdir bootstrap --only files --yes"
+touch keep.d/unmanaged
+assert_contains "mise -E keepdir bootstrap unapply keepdir --yes 2>&1" "not empty"
+assert_directory_exists "$PWD/keep.d"
+assert_fail "test -e $PWD/keep.d/inner.conf"
+assert_succeed "test -e $PWD/keep.d/unmanaged"
+
+# A directory mise cannot read is kept rather than scheduled for a removal the
+# apply would fail on. Root can read it regardless, so only check this as a
+# normal user.
+if [[ "$(id -u)" != "0" ]]; then
+  cat <<EOF >mise.locked.toml
+[bootstrap.directories."$PWD/locked.d"]
+mode = "0000"
+EOF
+  mkdir -p locked.d
+  touch locked.d/inside
+  chmod 000 locked.d
+  assert_contains "mise -E locked bootstrap unapply locked --yes 2>&1" "cannot read it"
+  # Not cleanup: the harness cannot remove a directory it cannot enter.
+  chmod 755 locked.d
+  assert_directory_exists "$PWD/locked.d"
+fi
+
+# A resource the rest of the configuration declares absent is not shared with
+# the module: only the module wanted it present, so unapply removes it.
+cat <<EOF >>mise.toml
+
+[bootstrap.files."$PWD/contested.conf"]
+state = "absent"
+EOF
+cat <<EOF >mise.contested.toml
+[bootstrap.files."$PWD/contested.conf"]
+content = "contested"
+EOF
+assert_succeed "mise -E contested bootstrap --only files --yes"
+assert "cat contested.conf" "contested"
+assert_contains "mise bootstrap unapply contested --yes" "file:$PWD/contested.conf"
+assert_fail "test -e $PWD/contested.conf"
+
+# Without consent there is nobody to ask in a non-interactive run, and consent
+# is not assumed. The harness sets MISE_YES for every test, so drop it here.
+assert_succeed "mise -E contested bootstrap --only files --yes"
+assert_fail_contains "env -u MISE_YES mise bootstrap unapply contested" "pass --yes"
+assert "cat contested.conf" "contested"
+
+# The global flag and the yes setting answer that question as much as the
+# subcommand flag does.
+assert_succeed "mise bootstrap unapply contested"
+assert_fail "test -e $PWD/contested.conf"
+
+# The re-invocation must not enter the directory twice. MISE_CD is inherited,
+# so a relative value would be applied again by the child.
+mkdir -p sub
+assert_succeed "mise -E contested bootstrap --only files --yes"
+assert_succeed "MISE_CD=sub mise bootstrap unapply contested"
+assert_fail "test -e $PWD/contested.conf"
+
+# A declaration of absence describes nothing the module applied, so unapplying
+# it is not a removal.
+cat <<EOF >mise.absent.toml
+[bootstrap.files."$PWD/never.conf"]
+state = "absent"
+EOF
+assert_contains "mise -E absent bootstrap unapply absent --yes 2>&1" "nothing to remove for absent"
+
+# Nothing is left to remove on a second run.
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "nothing to remove for ssh"

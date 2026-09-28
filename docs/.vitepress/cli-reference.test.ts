@@ -5,7 +5,7 @@ import {
   replaceCommandIndex,
   withCommandDescription,
   type Command,
-} from "./cli-reference";
+} from "./cli-reference.ts";
 
 function command(usage: string, overrides: Partial<Command> = {}): Command {
   return {

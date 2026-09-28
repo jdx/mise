@@ -42,7 +42,7 @@ use crate::task::task_source_checker::expand_glob_braces;
 /// Shared base for all deps providers, holding the id, project root, and config.
 /// Provides common implementations for `id` and `is_auto`.
 #[derive(Debug)]
-pub(crate) struct ProviderBase {
+pub struct ProviderBase {
     pub(crate) id: String,
     pub(crate) project_root: PathBuf,
     pub(crate) config: DepsProviderConfig,

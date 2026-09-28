@@ -10,27 +10,7 @@ cat <<'JSON' >"$VERSION_LIST_DIR/versions.json"
 {"old":["0.1.0"],"current":["1.0.0","2.0.0"]}
 JSON
 
-HTTP_PORT_FILE="$TMPDIR/http_version_list_port"
-python3 -c "
-import http.server, socketserver
-s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
-with open('$HTTP_PORT_FILE', 'w') as f:
-    f.write(str(s.server_address[1]))
-s.serve_forever()
-" &
-HTTP_SERVER_PID=$!
-
-wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
-
-cleanup() {
-  kill $HTTP_SERVER_PID 2>/dev/null || true
-}
-trap cleanup EXIT
-
-if ! curl --retry 5 --retry-connrefused --retry-delay 1 -fsS "http://localhost:$HTTP_PORT/versions.json" >/dev/null; then
-  fail "HTTP server failed to respond"
-fi
+start_http_server --dir "$VERSION_LIST_DIR"
 
 mkdir -p "$MISE_DATA_DIR/installs"
 cat <<EOF >"$MISE_DATA_DIR/installs/.mise-installs.toml"

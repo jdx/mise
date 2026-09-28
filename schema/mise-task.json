@@ -929,8 +929,27 @@
                   "uniqueItems": true
                 },
                 "postinstall": {
-                  "description": "command to run after tool installation",
-                  "type": "string"
+                  "description": "command to run after tool installation, or on every install when requested",
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "run": {
+                          "type": "string"
+                        },
+                        "when": {
+                          "type": "string",
+                          "enum": ["install", "always"],
+                          "default": "install"
+                        }
+                      },
+                      "required": ["run"],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
@@ -1245,7 +1264,14 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+      "examples": [
+        "linux",
+        "macos",
+        "windows",
+        "unix",
+        "macos/arm64",
+        "linux/x64"
+      ]
     }
   }
 }

@@ -156,7 +156,19 @@ fn source_for_target(
                 warn_if_the_edit_escapes_history(config, &req.target);
                 req.target.clone()
             }
-            FileMode::Content => req.origin.config.clone(),
+            // neither has a source file: the declaring config is what
+            // changes them
+            FileMode::Content | FileMode::Absent => req.origin.config.clone(),
+            // mise manages only the permissions; the file itself is the
+            // only copy of its content, and mise never creates it
+            FileMode::Permissions => {
+                if std::fs::symlink_metadata(&req.target).is_err() {
+                    bail!(
+                        "{raw}: only its permissions are managed and it does not exist; create it first"
+                    );
+                }
+                req.target.clone()
+            }
             _ => req.source.clone(),
         }));
     }
@@ -265,7 +277,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             force_hint: "use `mise dot apply --force`",
             yes: true,
         };
-        system::files::apply(&config, &files, &opts, &secrets)?;
+        system::files::apply(&config, &files, &opts, &secrets, &mut vec![])?;
     }
     if !edits.is_empty() {
         let opts = system::edits::ApplyOpts {
@@ -274,7 +286,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             verbose: false,
             yes: true,
         };
-        system::edits::apply(&config, &edits, &opts)?;
+        system::edits::apply(&config, &edits, &opts, &mut vec![])?;
     }
     Ok(())
 }

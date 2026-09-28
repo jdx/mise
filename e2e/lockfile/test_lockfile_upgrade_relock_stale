@@ -11,29 +11,9 @@ else
 fi
 
 SRV="$PWD/relock-server"
-PORT_FILE="$TMPDIR/relock-server-port"
 mkdir -p "$SRV"
 
-python3 - "$SRV" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
-import http.server
-import os
-import socketserver
-import sys
-
-srv, port_file = sys.argv[1], sys.argv[2]
-os.chdir(srv)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as f:
-        f.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "relock HTTP server port file" 30 "$SERVER_PID"
-PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SRV"
 
 CURRENT_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 EXTRA_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -66,8 +46,8 @@ dummy = "1"
 
 [tools."http:relock-target"]
 version = "2.0.0"
-url = "http://127.0.0.1:${PORT}/relock-target-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
-checksum_url = "http://127.0.0.1:${PORT}/checksums.json"
+url = "http://127.0.0.1:${HTTP_PORT}/relock-target-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${HTTP_PORT}/checksums.json"
 checksum_expr = '"sha256:" + fromJSON(body).platforms[os + "-" + arch]'
 bin_path = "bin"
 EOF
@@ -76,8 +56,8 @@ cat >mise.lock <<EOF
 [[tools."http:relock-target"]]
 version = "1.0.0"
 backend = "http:relock-target"
-"platforms.$PLATFORM" = { url = "http://127.0.0.1:${PORT}/relock-target-1.0.0-${PLATFORM}.tar.gz", checksum = "sha256:${OLD_CURRENT_SHA}" }
-"platforms.$EXTRA_PLATFORM" = { url = "http://127.0.0.1:${PORT}/relock-target-1.0.0-${EXTRA_PLATFORM}.tar.gz", checksum = "sha256:${OLD_EXTRA_SHA}" }
+"platforms.$PLATFORM" = { url = "http://127.0.0.1:${HTTP_PORT}/relock-target-1.0.0-${PLATFORM}.tar.gz", checksum = "sha256:${OLD_CURRENT_SHA}" }
+"platforms.$EXTRA_PLATFORM" = { url = "http://127.0.0.1:${HTTP_PORT}/relock-target-1.0.0-${EXTRA_PLATFORM}.tar.gz", checksum = "sha256:${OLD_EXTRA_SHA}" }
 
 [[tools.dummy]]
 version = "1.0.0"

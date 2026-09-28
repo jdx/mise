@@ -62,6 +62,7 @@ ARCH_TYPE = ""
 ---@field rootPath string Installation root path
 ---@field runtimeVersion string Runtime version
 ---@field sdkInfo table<string, SdkInfo> SDK info for installed versions
+---@field options table Tool options from mise.toml
 
 ---@class SdkInfo
 ---@field path string Installation path
@@ -100,6 +101,15 @@ ARCH_TYPE = ""
 ---@class MisePathCtx
 ---@field options table Plugin options from mise.toml
 
+---@class MiseInstallSatisfiedCtx
+---@field version string Installed version
+---@field path string Installation path
+---@field options table Tool options from mise.toml
+
+---@class MiseInstallSatisfiedResult
+---@field satisfied boolean Whether the install matches the request
+---@field reason? string Why it does not, shown in debug output
+
 ---@class BackendListVersionsCtx
 ---@field tool string Tool name
 
@@ -122,6 +132,13 @@ ARCH_TYPE = ""
 ---@class BackendExecEnvResult
 ---@field env_vars EnvKey[] Environment variables to set
 
+---@class BackendUninstallCtx
+---@field tool string Tool name
+---@field version string Installed version
+---@field install_path string Installation path, still present when the hook runs
+---@field download_path string Download path
+---@field options table<string, any> Tool options from the current config
+
 ---@class Plugin
 ---@field name string Plugin name
 ---@field Available? fun(self: Plugin, ctx: AvailableCtx): AvailableVersion[]
@@ -131,9 +148,11 @@ ARCH_TYPE = ""
 ---@field ParseLegacyFile? fun(self: Plugin, ctx: ParseLegacyFileCtx): ParseLegacyFileResult
 ---@field MiseEnv? fun(self: Plugin, ctx: MiseEnvCtx): MiseEnvResult|EnvKey[]
 ---@field MisePath? fun(self: Plugin, ctx: MisePathCtx): string[]
+---@field MiseInstallSatisfied? fun(self: Plugin, ctx: MiseInstallSatisfiedCtx): MiseInstallSatisfiedResult|boolean|nil
 ---@field BackendListVersions? fun(self: Plugin, ctx: BackendListVersionsCtx): BackendListVersionsResult
 ---@field BackendInstall? fun(self: Plugin, ctx: BackendInstallCtx): BackendInstallResult
 ---@field BackendExecEnv? fun(self: Plugin, ctx: BackendExecEnvCtx): BackendExecEnvResult
+---@field BackendUninstall? fun(self: Plugin, ctx: BackendUninstallCtx)
 PLUGIN = {}
 
 ------------------------------------------------------------------------

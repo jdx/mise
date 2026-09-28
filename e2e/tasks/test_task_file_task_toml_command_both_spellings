@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# `[tasks.build]` and `[tasks."build.sh"]` name one script, so a command under
+# either claims it. The stem is what `mise tasks ls` shows and `mise run` takes,
+# so which spelling a config used must not change what runs.
+
+mkdir -p mise-tasks
+
+cat <<'EOF' >mise-tasks/build.sh
+#!/usr/bin/env bash
+echo sh-script-ran
+EOF
+chmod +x mise-tasks/build.sh
+
+# A second script sharing the stem, so the two spellings can be told apart:
+# the stem reaches both, the full name only the one it spells.
+cat <<'EOF' >mise-tasks/build.bash
+#!/usr/bin/env bash
+echo bash-script-ran
+EOF
+chmod +x mise-tasks/build.bash
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo inline-ran"
+EOF
+
+# The stem names both scripts, so the command speaks for both and neither is
+# left behind to be run by "mise run build".
+assert "mise run build" "inline-ran"
+assert_fail "mise run build.sh"
+assert_fail "mise run build.bash"
+
+cat <<'EOF' >mise.toml
+[tasks."build.sh"]
+run = "echo inline-ran"
+EOF
+
+# The full name is the narrower claim: the sibling is untouched and still runs.
+assert "mise run build.sh" "inline-ran"
+assert "mise run build.bash" "bash-script-ran"
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo inline-ran"
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks."build.sh"]
+description = "configured under the other spelling"
+EOF
+
+# A block written with the script's name still configures the task that claimed
+# it, so the spelling stays a matter of taste for metadata too. (Two blocks in
+# one config are one definition competing for one slot, which is a separate
+# rule -- this one is above the command, in `mise.local.toml`.)
+assert "mise run build" "inline-ran"
+assert_contains "mise tasks" "configured under the other spelling"
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo loses-the-slot"
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks."build.sh"]
+run = "echo keeps-the-slot"
+EOF
+
+# Two commands, two spellings: the higher one keeps the single slot and the
+# lower one is dropped. The lower one claims nothing either, so `build.bash` --
+# which the winning name never reached -- is still a task of its own rather than
+# disappearing along with the block that would have claimed it.
+assert "mise run build.sh" "keeps-the-slot"
+assert "mise run build.bash" "bash-script-ran"
+
+cat <<'EOF' >mise.toml
+[tasks."build.sh"]
+run = "echo inline-ran"
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks.build]
+description = "written with the stem"
+EOF
+
+# The stem names both scripts, so a block written with it configures the task
+# that claimed one of them and the sibling that is still a script.
+assert "mise run build.sh" "inline-ran"
+assert "mise run build.bash" "bash-script-ran"
+assert_contains "mise tasks ls --no-header" "written with the stem"
+count="$(mise tasks ls --no-header | grep -c 'written with the stem')"
+if [[ $count != "2" ]]; then
+  fail "expected both the claimant and the sibling to carry the stem block's description, got $count"
+fi

@@ -49,6 +49,17 @@ mise bootstrap packages upgrade --manager mas
 Both commands require numeric ADAM IDs; bundle identifiers such as
 `com.apple.dt.Xcode` are not valid package names.
 
+`mise bootstrap packages status` shows the app name that `mas list` reports
+next to each installed ID, and `--json` includes it as `name`:
+
+```text
+Manager    Package               Installed    State
+mas        497799835 (Xcode)     16.2         installed
+```
+
+Missing apps show only their ID, because `mas list` reports only apps that are
+already installed.
+
 ## Caveats
 
 `mas` is macOS-only and must be on `PATH`. On other platforms, or when the

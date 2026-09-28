@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# `rust = "nightly"` installs a dated toolchain, and mise gives rustup a
+# matching `nightly-<host>` toolchain so `cargo +nightly` keeps working.
+
+set -euo pipefail
+
+export MISE_CARGO_HOME="$PWD/cargo"
+export MISE_RUSTUP_HOME="$PWD/rustup"
+TOOLCHAINS="$MISE_RUSTUP_HOME/toolchains"
+ALIAS="$TOOLCHAINS/nightly-fakehost"
+
+SERVER_ROOT="$PWD/server"
+MANIFEST="$SERVER_ROOT/dist/channel-rust-nightly.toml"
+mkdir -p "$SERVER_ROOT/dist" "$SERVER_ROOT/repos/rust-lang/rust" "$MISE_CARGO_HOME/bin" "$TOOLCHAINS"
+touch "$MISE_RUSTUP_HOME/settings.toml"
+printf '[]\n' >"$SERVER_ROOT/repos/rust-lang/rust/releases"
+
+write_manifest() {
+  printf 'manifest-version = "2"\ndate = "%s"\n' "$2" >"$1"
+}
+
+cat >"$MISE_CARGO_HOME/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-} ${2:-}" in
+	"show profile")
+		echo minimal
+		;;
+	"toolchain install")
+		dir="$RUSTUP_HOME/toolchains/$3-fakehost"
+		mkdir -p "$dir/bin" "$dir/lib/rustlib"
+		echo "$3" >"$dir/bin/rustc"
+		printf 'manifest-version = "2"\ndate = "%s"\n' "${3#nightly-}" >"$dir/lib/rustlib/multirust-channel-manifest.toml"
+		;;
+	"toolchain uninstall" | "component list" | "target list") ;;
+	*)
+		echo "unexpected rustup args: $*" >&2
+		exit 1
+		;;
+esac
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+sysroot="$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN-fakehost"
+test -d "$sysroot"
+if [[ "$*" == "--print sysroot" ]]; then
+	echo "$sysroot"
+else
+	echo "rustc $RUSTUP_TOOLCHAIN"
+fi
+EOF
+
+# Like rustup's proxy: `+<toolchain>` must name an installed toolchain and wins
+# over RUSTUP_TOOLCHAIN. Nothing is ever auto-installed.
+cat >"$MISE_CARGO_HOME/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+toolchain="$RUSTUP_TOOLCHAIN"
+if [[ "${1:-}" == +* ]]; then
+	toolchain="${1#+}"
+	shift
+fi
+sysroot="$RUSTUP_HOME/toolchains/$toolchain-fakehost"
+if [[ ! -d "$sysroot" ]]; then
+	echo "error: toolchain '$toolchain-fakehost' is not installed" >&2
+	exit 1
+fi
+echo "cargo from $(cat "$sysroot/bin/rustc")"
+EOF
+
+chmod +x "$MISE_CARGO_HOME/bin/rustup" "$MISE_CARGO_HOME/bin/rustc" "$MISE_CARGO_HOME/bin/cargo"
+
+start_http_server --dir "$SERVER_ROOT"
+
+write_config() {
+  cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$HTTP_PORT", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
+
+[tools]
+rust = "$1"
+EOF
+}
+
+ALIAS_DATE="grep '^date' '$ALIAS/lib/rustlib/multirust-channel-manifest.toml'"
+
+# The rolling channel gives rustup a nightly toolchain matching the dated one.
+write_manifest "$MANIFEST" 2026-08-12
+write_config nightly
+mise install
+assert "mise exec -- cargo +nightly build" "cargo from nightly-2026-08-12"
+assert "$ALIAS_DATE" 'date = "2026-08-12"'
+assert "ls -A '$TOOLCHAINS' | grep -c '^\.mise-' || true" "0"
+
+# A newer nightly refreshes rustup's copy and forgets rustup's update hash so
+# `rustup update nightly` does not skip it.
+mkdir -p "$MISE_RUSTUP_HOME/update-hashes"
+echo stale >"$MISE_RUSTUP_HOME/update-hashes/nightly-fakehost"
+write_manifest "$MANIFEST" 2026-08-13
+mise upgrade rust --no-prune
+assert "mise exec -- cargo +nightly build" "cargo from nightly-2026-08-13"
+assert "test ! -e '$MISE_RUSTUP_HOME/update-hashes/nightly-fakehost'"
+
+# rustup rewrites its metadata in place; that must not reach mise's toolchain.
+write_manifest "$ALIAS/lib/rustlib/multirust-channel-manifest.toml" 2026-09-01
+assert "grep '^date' '$TOOLCHAINS/nightly-2026-08-13-fakehost/lib/rustlib/multirust-channel-manifest.toml'" 'date = "2026-08-13"'
+
+# A rustup nightly that is already newer is left alone.
+mise install -f rust
+assert "$ALIAS_DATE" 'date = "2026-09-01"'
+
+# An explicitly dated nightly never touches rustup's nightly.
+rm -rf "$ALIAS"
+write_config nightly-2026-08-13
+mise install -f rust
+assert "test ! -e '$ALIAS'"
+assert_fail_contains "mise exec -- cargo +nightly build 2>&1" "toolchain 'nightly-fakehost' is not installed"

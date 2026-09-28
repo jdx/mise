@@ -42,7 +42,7 @@ pub(super) const BUILTIN_PROVIDERS: &[&str] = &[
 /// Custom providers require explicit sources, outputs, and run.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DepsProviderConfig {
+pub struct DepsProviderConfig {
     /// Whether to auto-run this provider before mise x/run (default: false)
     #[serde(default)]
     pub auto: bool,
@@ -230,7 +230,7 @@ fn expand_shell_vars(
 /// - `[deps.npm]` - built-in npm provider
 /// - `[deps.codegen]` - custom provider
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub(crate) struct DepsConfig {
+pub struct DepsConfig {
     /// List of provider IDs to disable at runtime
     #[serde(default)]
     pub disable: Vec<String>,

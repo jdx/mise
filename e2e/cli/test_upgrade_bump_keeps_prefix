@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# `--bump` keeps the specificity of a version request. When the request still
+# covers the latest release, upgrading installs that release but leaves the
+# config alone rather than pinning it (e.g. "20" must not become "20.5.3").
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/prefixtest"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "19.0.0 20.0.0 20.5.0 20.5.3"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH"
+touch "$ASDF_INSTALL_PATH/version-$ASDF_INSTALL_VERSION"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+for case in 20:20.0.0 20.5:20.5.0; do
+  request=${case%%:*}
+  installed=${case#*:}
+  cat <<CONFIG >mise.toml
+[tools]
+prefixtest = "$request"
+CONFIG
+  mise uninstall --all prefixtest 2>/dev/null || true
+  mise install "prefixtest@$installed"
+  assert_contains "mise ls --current prefixtest" "$installed"
+  before=$(cat mise.toml)
+
+  output=$(mise upgrade --bump --dry-run 2>&1)
+  assert_contains_text "$output" "Would install prefixtest@20.5.3"
+  assert_not_contains_text "$output" "Would bump"
+  mise upgrade --bump
+  assert "cat mise.toml" "$before"
+  assert_contains "mise ls --current prefixtest" "20.5.3"
+done

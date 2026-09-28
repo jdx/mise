@@ -26,5 +26,6 @@
     "adapter": "markdown",
     "result_type": "trail_summary",
     "trail_field": "body"
-  }
+  },
+  "debounce_ms": 120000
 }

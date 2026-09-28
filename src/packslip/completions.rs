@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::toolset::Toolset;
 
 /// Keep native paths intact while passing them through shell source as ASCII.
-pub(crate) fn encode_spec_path(path: &std::path::Path) -> String {
+pub fn encode_spec_path(path: &std::path::Path) -> String {
     use base64::Engine;
     #[cfg(unix)]
     let bytes = {
@@ -28,7 +28,7 @@ pub(crate) fn encode_spec_path(path: &std::path::Path) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-pub(crate) fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
+pub fn decode_spec_path(encoded: &str) -> eyre::Result<std::path::PathBuf> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded)?;
     #[cfg(unix)]
@@ -66,7 +66,7 @@ pub(crate) fn clear(shell: &str) -> &'static str {
     }
 }
 
-pub(crate) fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
+pub fn activate(config: &Arc<Config>, ts: &Toolset, shell: &str) -> String {
     let Some(completion_shell) = Shell::from_name(shell) else {
         return String::new();
     };

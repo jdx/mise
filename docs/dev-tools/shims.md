@@ -283,6 +283,10 @@ with both `mise activate` and `mise activate --shims`, and takes precedence over
 an executable with the same name. When it delegates, mise removes its dispatch
 directories from `PATH`, so `mbx` resolves Cargo from mise-managed Rust when
 configured and otherwise falls through to rustup or the system installation.
+If the configured tool that provides the wrapper's command is not installed,
+the wrapper installs it first, as that command's own shim would (subject to
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
+unless the tool is lazy).
 
 A short form is available when no arguments or environment variables are needed:
 

@@ -1,20 +1,20 @@
-use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
+use crate::backend::{SecurityFeature, VersionInfo};
 
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
-use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
-use crate::config::Settings;
+use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
+use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
-use crate::registry::{REGISTRY, shorts_for_full};
+use crate::registry::REGISTRY;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -25,9 +25,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{
-        self, Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata,
-    },
+    backend::{self, Backend, MISE_BINS_DIR, strict_metadata},
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -39,6 +37,7 @@ use itertools::Itertools;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::sync::LazyLock;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
@@ -52,6 +51,9 @@ pub(crate) struct AquaBackend {
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
     verification_target: Option<PlatformTarget>,
+    /// The tool's `libc` option, set on the copy that installs or locks it. See
+    /// [`AquaBackend::with_tool_libc`].
+    tool_libc: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -81,6 +83,21 @@ impl<'a> AquaOptions<'a> {
         self.values.bool("symlink_bins")
     }
 
+    /// The per-tool `libc` option, normalized to `gnu` or `musl`. It makes Linux asset
+    /// selection strict for this tool, like the `libc` setting does for every tool.
+    fn libc(&self) -> Result<Option<&'static str>> {
+        let Some(value) = self.values.raw().opts.get("libc") else {
+            return Ok(None);
+        };
+        match value.as_str() {
+            Some("gnu" | "glibc") => Ok(Some("gnu")),
+            Some("musl") => Ok(Some("musl")),
+            _ => bail!(
+                "invalid aqua `libc` option {value}: expected \"glibc\", \"gnu\", or \"musl\""
+            ),
+        }
+    }
+
     fn var(&self, name: &str) -> Result<Option<String>> {
         self.canonical_var_options()?
             .get(name)
@@ -89,19 +106,25 @@ impl<'a> AquaOptions<'a> {
     }
 
     fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
-        Ok(self
+        let mut options: BTreeMap<String, String> = self
             .canonical_var_options()?
             .into_iter()
             .filter_map(|(key, value)| {
                 toml_value_to_string(value).map(|value| (format!("vars.{key}"), value))
             })
-            .collect())
+            .collect();
+        if let Some(libc) = self.libc()? {
+            options.insert("libc".to_string(), libc.to_string());
+        }
+        Ok(options)
     }
 
     fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
         let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+            if matches!(key.as_str(), "symlink_bins" | "libc")
+                || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            {
                 continue;
             }
 
@@ -170,6 +193,44 @@ struct ResolvedPackage {
     v_prefixed: Option<String>,
 }
 
+/// The versions an aqua fuzzy `query` selects. Resolution runs this for every
+/// aqua tool, so only `latest`, which has a fixed pattern, uses a regex; any
+/// other query is matched as a literal, optionally followed by `-` or `.` and
+/// at least one more character.
+fn aqua_fuzzy_match(versions: Vec<String>, query: &str, filter_prereleases: bool) -> Vec<String> {
+    static LATEST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\D*[0-9].*([-.].+)?$").unwrap());
+    let latest = query == "latest";
+    let exact = if latest {
+        r"\D*[0-9].*".to_string()
+    } else {
+        regex::escape(query)
+    };
+    let matches = |v: &str| {
+        if latest {
+            return LATEST.is_match(v);
+        }
+        v.strip_prefix(query).is_some_and(|rest| {
+            rest.is_empty()
+                || rest
+                    .strip_prefix(['-', '.'])
+                    .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
+        })
+    };
+    versions
+        .into_iter()
+        .filter(|v| {
+            if exact == *v {
+                return true;
+            }
+            if filter_prereleases && VERSION_REGEX.is_match(v) {
+                return false;
+            }
+            matches(v)
+        })
+        .collect()
+}
+
 #[async_trait]
 impl Backend for AquaBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
@@ -212,24 +273,15 @@ impl Backend for AquaBackend {
         count
     }
 
-    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
-        use crate::backend::SecurityFeature;
-
+    async fn security_info(&self) -> Vec<SecurityFeature> {
         // Keyed by aqua package name, same as `description` above.
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(_) => return vec![],
         };
 
-        let mut features = vec![];
-
-        // Check base package and all version overrides for security features
-        // This gives a complete picture of available security features across all versions
-        let all_pkgs: Vec<&AquaPackage> = std::iter::once(&pkg)
-            .chain(pkg.version_overrides.iter())
-            .collect();
-
-        // Fetch release assets to detect actual security features
+        // Release assets inform only the checksum entry: mise can verify the
+        // GitHub API digest even without checksum config.
         let release_assets = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
             let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
             github::list_releases(&repo)
@@ -242,108 +294,7 @@ impl Backend for AquaBackend {
             vec![]
         };
 
-        // Checksum - check registry config OR actual release assets
-        let has_checksum_config = all_pkgs.iter().any(|p| {
-            p.checksum
-                .as_ref()
-                .is_some_and(|checksum| checksum.enabled())
-        });
-        let has_checksum_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.contains("sha256")
-                || name.contains("checksum")
-                || name.ends_with(".sha256")
-                || name.ends_with(".sha512")
-        });
-        if has_checksum_config || has_checksum_assets {
-            let algorithm = all_pkgs
-                .iter()
-                .filter_map(|p| p.checksum.as_ref())
-                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
-                .or_else(|| {
-                    if has_checksum_assets {
-                        Some("sha256".to_string())
-                    } else {
-                        None
-                    }
-                });
-            features.push(SecurityFeature::Checksum { algorithm });
-        }
-
-        // GitHub Artifact Attestations require registry config so the badge
-        // matches lock/install provenance verification behavior.
-        if all_pkgs
-            .iter()
-            .any(|p| Self::has_github_attestations_config(p))
-        {
-            let signer_workflow = all_pkgs
-                .iter()
-                .filter_map(|p| {
-                    p.github_artifact_attestations
-                        .as_ref()
-                        .filter(|a| a.enabled != Some(false))
-                })
-                .chain(all_pkgs.iter().filter_map(|p| {
-                    Self::checksum_github_attestations_config(p)
-                        .map(|(_, attestations)| attestations)
-                }))
-                .find_map(|a| a.signer_workflow.clone());
-            features.push(SecurityFeature::GithubAttestations { signer_workflow });
-        }
-
-        // SLSA - check registry config OR actual release assets
-        let has_slsa_config = all_pkgs.iter().any(|p| {
-            p.slsa_provenance
-                .as_ref()
-                .is_some_and(|s| s.enabled.unwrap_or(true))
-        });
-        let has_slsa_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.contains(".intoto.jsonl")
-                || name.contains("provenance")
-                || name.ends_with(".attestation")
-        });
-        if has_slsa_config || has_slsa_assets {
-            features.push(SecurityFeature::Slsa { level: None });
-        }
-
-        // Cosign - check registry config OR actual release assets
-        let has_cosign_config = all_pkgs.iter().any(|p| {
-            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
-        });
-        let has_cosign_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.ends_with(".sig") || name.contains("cosign")
-        });
-        if has_cosign_config || has_cosign_assets {
-            features.push(SecurityFeature::Cosign);
-        }
-
-        // Minisign - check registry config OR actual release assets
-        let has_minisign_config = all_pkgs.iter().any(|p| {
-            p.minisign
-                .as_ref()
-                .is_some_and(|m| m.enabled.unwrap_or(true))
-                || Self::checksum_minisign_config(p).is_some()
-        });
-        let has_minisign_assets = release_assets.iter().any(|a| {
-            let name = a.name.to_lowercase();
-            name.ends_with(".minisig")
-        });
-        if has_minisign_config || has_minisign_assets {
-            let public_key = all_pkgs
-                .iter()
-                .filter_map(|p| p.minisign.as_ref().filter(|m| m.enabled != Some(false)))
-                .chain(
-                    all_pkgs
-                        .iter()
-                        .filter_map(|p| Self::checksum_minisign_config(p).map(|(_, m)| m)),
-                )
-                .find_map(|m| m.public_key.clone());
-            features.push(SecurityFeature::Minisign { public_key });
-        }
-
-        features
+        Self::security_features(&pkg, &release_assets)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -387,7 +338,7 @@ impl Backend for AquaBackend {
 
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
         let mut versions = Vec::new();
         for (tag, created_at, prerelease) in tags_with_timestamps.into_iter().rev() {
             let (version, versioned_pkg) = match versioned_package_from_tag(
@@ -436,7 +387,8 @@ impl Backend for AquaBackend {
         if self.include_prereleases(&opts) {
             return Ok(None);
         }
-        self.latest_marked_release_info().await
+        let tool_libc = AquaOptions::new(&opts).libc()?;
+        self.latest_marked_release_info(tool_libc).await
     }
 
     /// aqua knows, from the registry entry alone, when a version cannot be installed here:
@@ -452,6 +404,9 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        if let Some(backend) = self.with_tool_libc(&tv)? {
+            return backend.install_version_(ctx, tv).await;
+        }
         let ResolvedPackage {
             platform_key,
             existing_platform,
@@ -483,7 +438,10 @@ impl Backend for AquaBackend {
                             asset_name_matches_expected(
                                 &cached_filename,
                                 expected,
-                                libc_asset_preference(&PlatformTarget::from_current()),
+                                libc_asset_preference(
+                                    &PlatformTarget::from_current(),
+                                    self.tool_libc,
+                                ),
                             )
                         })
                 });
@@ -725,25 +683,7 @@ impl Backend for AquaBackend {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
-        let escaped_query = regex::escape(query);
-        let query = if query == "latest" {
-            "\\D*[0-9].*"
-        } else {
-            &escaped_query
-        };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
-        versions
-            .into_iter()
-            .filter(|v| {
-                if query == v {
-                    return true;
-                }
-                if filter_prereleases && VERSION_REGEX.is_match(v) {
-                    return false;
-                }
-                query_regex.is_match(v)
-            })
-            .collect()
+        aqua_fuzzy_match(versions, query, filter_prereleases)
     }
 
     /// Resolve platform-specific lock information for any target platform.
@@ -753,6 +693,9 @@ impl Backend for AquaBackend {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        if let Some(backend) = self.with_tool_libc(tv)? {
+            return backend.resolve_lock_info(tv, target).await;
+        }
         let (target_os, target_arch) = Self::to_aqua_platform(target);
 
         // Get version tag
@@ -789,9 +732,13 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
-        let target_libc = Self::target_variant_libc(target);
+        let target_libc = Self::target_variant_libc(target, self.tool_libc);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
+        let pkg = Self::apply_aqua_libc_replacement(
+            pkg,
+            target_os,
+            Self::target_libc(target, self.tool_libc),
+        );
         let mut pkg = Self::apply_var_options(pkg, &opts)?;
 
         // Apply version prefix if present
@@ -966,6 +913,7 @@ impl Backend for AquaBackend {
         {
             let mut verifier = Self::from_arg(self.ba.as_ref().clone());
             verifier.verification_target = Some(target.clone());
+            verifier.tool_libc = self.tool_libc;
             match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
@@ -1107,13 +1055,18 @@ impl AquaBackend {
         pkg: AquaPackage,
         versions: &[&str],
     ) -> Result<AquaPackage> {
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
-        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
+        let tool_libc = opts.libc()?;
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, tool_libc);
+        let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
+        let pkg = Self::apply_aqua_libc_replacement(
+            pkg,
+            target_os,
+            Self::target_libc(&target, tool_libc),
+        );
         Self::apply_var_options(pkg, &opts)
     }
 
@@ -1133,8 +1086,15 @@ impl AquaBackend {
         (target_os, target_arch)
     }
 
-    fn target_libc(target: &PlatformTarget) -> Option<String> {
-        target.libc().map(str::to_string).or_else(|| {
+    /// The libc to select assets for. A libc the target platform names wins, then the tool's
+    /// `libc` option, then the `libc` setting on the current platform.
+    ///
+    /// The platform wins even over the tool option because a lockfile entry is keyed by it: a
+    /// gnu build recorded under `linux-x64-musl` would break every musl machine using the
+    /// lockfile. That includes the current platform when `libc = "musl"` is set, since
+    /// `Platform::current()` turns the setting into its qualifier.
+    fn target_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        target.libc().or(tool_libc).map(str::to_string).or_else(|| {
             if target.is_current() {
                 Settings::get().libc().map(str::to_string)
             } else {
@@ -1143,22 +1103,26 @@ impl AquaBackend {
         })
     }
 
-    fn target_variant_libc(target: &PlatformTarget) -> Option<String> {
+    fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
         if target.os_name() != "linux" {
             return None;
         }
-        let settings_libc = if target.is_current() {
-            Settings::get().libc().map(str::to_string)
-        } else {
-            None
-        };
-        Some(
-            target
-                .libc()
-                .map(str::to_string)
-                .or(settings_libc)
-                .unwrap_or_else(|| "gnu".to_string()),
-        )
+        Some(Self::target_libc(target, tool_libc).unwrap_or_else(|| "gnu".to_string()))
+    }
+
+    /// A copy of `self` that carries `tv`'s `libc` option, or `None` when `self` already
+    /// does. Install and lock run on that copy so every asset they look up, including
+    /// checksum, signature and provenance files, agrees on one libc.
+    fn with_tool_libc(&self, tv: &ToolVersion) -> Result<Option<Self>> {
+        let raw_opts = tv.request.options();
+        let tool_libc = AquaOptions::new(&raw_opts).libc()?;
+        if tool_libc == self.tool_libc {
+            return Ok(None);
+        }
+        let mut backend = Self::from_arg(self.ba.as_ref().clone());
+        backend.verification_target = self.verification_target.clone();
+        backend.tool_libc = tool_libc;
+        Ok(Some(backend))
     }
 
     fn apply_aqua_libc_replacement(
@@ -1216,6 +1180,106 @@ impl AquaBackend {
             }
         }
         pkg.with_var_values(var_values)
+    }
+
+    /// Security checks mise performs when installing `pkg`, across the base
+    /// package and every version override.
+    ///
+    /// Provenance and signatures come from registry config only, because mise
+    /// verifies nothing else: a `.sig` or `.intoto.jsonl` release asset without
+    /// matching config is never checked.
+    fn security_features(
+        pkg: &AquaPackage,
+        release_assets: &[github::GithubAsset],
+    ) -> Vec<SecurityFeature> {
+        let mut features = vec![];
+        let all_pkgs: Vec<&AquaPackage> = std::iter::once(pkg)
+            .chain(pkg.version_overrides.iter())
+            .collect();
+
+        // Checksum - check registry config OR actual release assets
+        let has_checksum_config = all_pkgs.iter().any(|p| {
+            p.checksum
+                .as_ref()
+                .is_some_and(|checksum| checksum.enabled())
+        });
+        let has_checksum_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.contains("sha256")
+                || name.contains("checksum")
+                || name.ends_with(".sha256")
+                || name.ends_with(".sha512")
+        });
+        if has_checksum_config || has_checksum_assets {
+            let algorithm = all_pkgs
+                .iter()
+                .filter_map(|p| p.checksum.as_ref())
+                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
+                .or_else(|| {
+                    if has_checksum_assets {
+                        Some("sha256".to_string())
+                    } else {
+                        None
+                    }
+                });
+            features.push(SecurityFeature::Checksum { algorithm });
+        }
+
+        // GitHub Artifact Attestations require registry config so the badge
+        // matches lock/install provenance verification behavior.
+        if all_pkgs
+            .iter()
+            .any(|p| Self::has_github_attestations_config(p))
+        {
+            let signer_workflow = all_pkgs
+                .iter()
+                .filter_map(|p| {
+                    p.github_artifact_attestations
+                        .as_ref()
+                        .filter(|a| a.enabled != Some(false))
+                })
+                .chain(all_pkgs.iter().filter_map(|p| {
+                    Self::checksum_github_attestations_config(p)
+                        .map(|(_, attestations)| attestations)
+                }))
+                .find_map(|a| a.signer_workflow.clone());
+            features.push(SecurityFeature::GithubAttestations { signer_workflow });
+        }
+
+        if all_pkgs.iter().any(|p| {
+            p.slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.enabled.unwrap_or(true) && s.has_signer_identity())
+        }) {
+            features.push(SecurityFeature::Slsa { level: None });
+        }
+
+        // Only a key or bundle is verified natively; Cosign `opts` are not run.
+        if all_pkgs.iter().any(|p| {
+            Self::binary_cosign_config(p).is_some() || Self::checksum_cosign_config(p).is_some()
+        }) {
+            features.push(SecurityFeature::Cosign);
+        }
+
+        if all_pkgs.iter().any(|p| {
+            p.minisign
+                .as_ref()
+                .is_some_and(|m| m.enabled.unwrap_or(true))
+                || Self::checksum_minisign_config(p).is_some()
+        }) {
+            let public_key = all_pkgs
+                .iter()
+                .filter_map(|p| p.minisign.as_ref().filter(|m| m.enabled != Some(false)))
+                .chain(
+                    all_pkgs
+                        .iter()
+                        .filter_map(|p| Self::checksum_minisign_config(p).map(|(_, m)| m)),
+                )
+                .find_map(|m| m.public_key.clone());
+            features.push(SecurityFeature::Minisign { public_key });
+        }
+
+        features
     }
 
     fn has_native_cosign(cosign: &AquaCosign) -> bool {
@@ -1309,6 +1373,7 @@ impl AquaBackend {
             && settings.aqua.slsa
             && let Some(slsa) = &pkg.slsa_provenance
             && slsa.enabled != Some(false)
+            && slsa.has_signer_identity()
         {
             return Some(ProvenanceType::Slsa { url: None });
         }
@@ -1701,6 +1766,35 @@ impl AquaBackend {
         }
     }
 
+    fn slsa_signer_identity(
+        &self,
+        pkg: &AquaPackage,
+        version: &str,
+    ) -> Result<Option<(String, String)>> {
+        let Some(slsa) = pkg
+            .slsa_provenance
+            .as_ref()
+            .filter(|s| s.has_signer_identity())
+        else {
+            return Ok(None);
+        };
+        let identity = pkg.parse_aqua_str(
+            slsa.signer_identity.as_deref().unwrap(),
+            version,
+            &Default::default(),
+            self.verification_os(),
+            self.verification_arch(),
+        )?;
+        let issuer = pkg.parse_aqua_str(
+            slsa.signer_issuer.as_deref().unwrap(),
+            version,
+            &Default::default(),
+            self.verification_os(),
+            self.verification_arch(),
+        )?;
+        Ok(Some((identity, issuer)))
+    }
+
     /// Download SLSA provenance file and verify against an already-downloaded artifact.
     /// Returns the provenance download URL on success.
     async fn run_slsa_check(
@@ -1711,6 +1805,13 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
+        let (identity, issuer) = self.slsa_signer_identity(pkg, v)?.ok_or_else(|| {
+            eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
+        })?;
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+        };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
             .resolve_slsa_url(
@@ -1727,8 +1828,13 @@ impl AquaBackend {
         HTTP.download_file(&download_url, &provenance_path, pr)
             .await?;
 
-        match crate::github::sigstore::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
-            .await
+        match crate::github::sigstore::verify_slsa_provenance(
+            artifact_path,
+            &provenance_path,
+            1u8,
+            signer,
+        )
+        .await
         {
             Ok(true) => {
                 debug!("SLSA provenance verified");
@@ -1740,7 +1846,7 @@ impl AquaBackend {
                     "SLSA provenance did not cover downloaded artifact; trying archive content subjects: {e}"
                 );
                 match self
-                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v)
+                    .run_slsa_archive_content_check(artifact_path, &provenance_path, pkg, v, signer)
                     .await?
                 {
                     true => Ok(provenance_url),
@@ -1757,6 +1863,7 @@ impl AquaBackend {
         provenance_path: &Path,
         pkg: &AquaPackage,
         v: &str,
+        signer: crate::github::sigstore::SlsaSignerIdentity<'_>,
     ) -> Result<bool> {
         let format = pkg.format(v, self.verification_os(), self.verification_arch())?;
         let format = Self::effective_extraction_format(pkg, format)?;
@@ -1777,9 +1884,14 @@ impl AquaBackend {
                 sha256: content.sha256,
             })
             .collect::<Vec<_>>();
-        crate::github::sigstore::verify_slsa_provenance_artifacts(provenance_path, &artifacts, 1u8)
-            .await
-            .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
+        crate::github::sigstore::verify_slsa_provenance_artifacts(
+            provenance_path,
+            &artifacts,
+            1u8,
+            signer,
+        )
+        .await
+        .map_err(|e| eyre!("content-level SLSA verification failed: {e}"))
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
@@ -2084,11 +2196,12 @@ impl AquaBackend {
                     id
                 });
         }
-        let cache_path = ba.cache_path.clone();
+        let cache_path = ba.cache_path().to_path_buf();
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
             verification_target: None,
+            tool_libc: None,
             // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
             // by the inline `prerelease` opt, so previously cached lists could be
             // missing pre-release tags needed at install/lock time. The new cache
@@ -2101,11 +2214,11 @@ impl AquaBackend {
         }
     }
 
+    /// mise-versions serves any public github.com repo, but only the package's
+    /// own repo may come from it: an aqua package that reads another repo's
+    /// releases (a foreign attestation signer, say) asks GitHub directly.
     fn use_versions_host_for_github_metadata(&self, repo: &str) -> bool {
         let full = self.ba.full_without_opts();
-        if !backend_arg_matches_registry_backend(&self.ba) && shorts_for_full(&full).is_empty() {
-            return false;
-        }
         let Some(aqua_id) = full.strip_prefix("aqua:") else {
             return false;
         };
@@ -2132,7 +2245,12 @@ impl AquaBackend {
     /// cached remote-version list, and a list that has not yet caught up with
     /// upstream makes an eligible release look ineligible. See
     /// `latest_stable_candidate_allowed_by_before_date`.
-    async fn latest_marked_release_info(&self) -> Result<Option<VersionInfo>> {
+    /// `tool_libc` is the tool's `libc` option. This fast path is per tool, unlike the version
+    /// list, which is one cache shared by every configuration of the tool.
+    async fn latest_marked_release_info(
+        &self,
+        tool_libc: Option<&str>,
+    ) -> Result<Option<VersionInfo>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -2172,7 +2290,7 @@ impl AquaBackend {
 
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target);
+        let target_libc = Self::target_variant_libc(&target, tool_libc);
         match marked_release_version_info(
             &pkg,
             &release,
@@ -2205,7 +2323,7 @@ impl AquaBackend {
                         let tags = get_tags(&pkg).await?;
                         let target = PlatformTarget::from_current();
                         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-                        let target_libc = Self::target_variant_libc(&target);
+                        let target_libc = Self::target_variant_libc(&target, None);
                         for tag in tags.into_iter().rev() {
                             let (version, _) = match versioned_package_from_tag(
                                 &pkg,
@@ -2332,8 +2450,13 @@ impl AquaBackend {
         // Aqua metadata sometimes names only one libc variant even when the release
         // publishes both. Prefer the target libc sibling while retaining the exact
         // metadata asset as a fallback for unqualified Linux targets.
-        self.github_release_asset_matching(pkg, v, asset_strs, libc_asset_preference(target))
-            .await
+        self.github_release_asset_matching(
+            pkg,
+            v,
+            asset_strs,
+            libc_asset_preference(target, self.tool_libc),
+        )
+        .await
     }
 
     /// Returns `(browser_download_url, api_asset_url, digest)`.
@@ -2585,9 +2708,8 @@ impl AquaBackend {
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
-        // Skip provenance verification if the lockfile already has both a checksum and
-        // provenance entry for this platform — the artifact integrity is already guaranteed
-        // by the checksum, so re-verifying attestations would just be redundant API calls.
+        // Reuse checksum-backed non-SLSA provenance. SLSA locks always re-verify
+        // the certificate against the current expected signer identity.
         // However, still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
@@ -2606,7 +2728,24 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        if has_lockfile_integrity && !force_verify {
+        if locked_provenance
+            .as_ref()
+            .is_some_and(ProvenanceType::is_slsa)
+            && !pkg
+                .slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.has_signer_identity())
+        {
+            return Err(eyre!(
+                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Add the expected signer or refresh the lockfile."
+            ));
+        }
+        if has_lockfile_integrity
+            && !force_verify
+            && !locked_provenance
+                .as_ref()
+                .is_some_and(ProvenanceType::is_slsa)
+        {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(
@@ -2619,7 +2758,24 @@ impl AquaBackend {
         }
 
         let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &tarball_path) {
+            let url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|platform| platform.url.clone());
+            return Err(match url {
+                Some(url) => {
+                    github::with_checksum_mismatch_note(
+                        err,
+                        &url,
+                        &tarball_path,
+                        lockfile_has_checksum,
+                    )
+                    .await
+                }
+                None => err,
+            });
+        }
         Ok(())
     }
 
@@ -2936,6 +3092,10 @@ impl AquaBackend {
         if let Some(slsa) = &pkg.slsa_provenance {
             if slsa.enabled == Some(false) {
                 debug!("slsa is disabled for {tv}");
+                return Ok(());
+            }
+            if !slsa.has_signer_identity() {
+                debug!("skipping SLSA for {tv}: Aqua registry has no expected signer identity");
                 return Ok(());
             }
 
@@ -3335,11 +3495,10 @@ impl AquaBackend {
         arch: &str,
     ) -> Result<Option<AquaFileLink>> {
         let explicit_link = f.link.is_some();
-        let src = match f.src(pkg, version, os, arch)? {
-            Some(src) => src,
-            None if explicit_link => f.name.clone(),
-            None => return Ok(None),
-        };
+        // Like aqua, a file without `src` is found at its `name`.
+        let src = f
+            .src(pkg, version, os, arch)?
+            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
 
         let mut src = install_path.join(src);
@@ -3735,6 +3894,94 @@ mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
 
+    /// The regex filter [`aqua_fuzzy_match`] replaced, kept to show the two agree.
+    fn aqua_fuzzy_match_by_regex(
+        versions: Vec<String>,
+        query: &str,
+        filter_prereleases: bool,
+    ) -> Vec<String> {
+        let escaped_query = regex::escape(query);
+        let query = if query == "latest" {
+            "\\D*[0-9].*"
+        } else {
+            &escaped_query
+        };
+        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        versions
+            .into_iter()
+            .filter(|v| {
+                if query == v {
+                    return true;
+                }
+                if filter_prereleases && VERSION_REGEX.is_match(v) {
+                    return false;
+                }
+                query_regex.is_match(v)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_aqua_fuzzy_match_agrees_with_the_regex_it_replaced() {
+        let queries = [
+            "latest",
+            "1",
+            "1.2",
+            "1.2.3",
+            "v1",
+            "v1.2",
+            "go1.2",
+            "jq-1",
+            "jq-",
+            "",
+            "1.2-rc1",
+            "1+x",
+            "a.b",
+            "é",
+            "1\n",
+            r"\D*[0-9].*",
+        ];
+        let versions: Vec<String> = [
+            "",
+            "1",
+            "1.2",
+            "1.2.3",
+            "1.20",
+            "1.2-rc1",
+            "1.2-dev.5",
+            "1.2+build",
+            "1.2.",
+            "1.2-",
+            "1.2.\n",
+            "v1.2",
+            "v1.2.3",
+            "go1.2.3",
+            "jq-1.7",
+            "jq-1.7-rc1",
+            "latest",
+            "x",
+            "é-1",
+            "٣1.0",
+            "a٣1",
+            "\n1",
+            "1\n",
+            "1.2+b.4",
+            r"\D*[0-9].*",
+            "a.b.c",
+        ]
+        .map(String::from)
+        .to_vec();
+        for query in queries {
+            for filter_prereleases in [true, false] {
+                assert_eq!(
+                    aqua_fuzzy_match(versions.clone(), query, filter_prereleases),
+                    aqua_fuzzy_match_by_regex(versions.clone(), query, filter_prereleases),
+                    "query {query:?} filter_prereleases {filter_prereleases}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn aqua_uses_go_arch_name_for_32_bit_arm() {
         assert_eq!(to_aqua_arch("arm"), "arm");
@@ -3974,7 +4221,7 @@ packages:
     }
 
     #[test]
-    fn test_use_versions_host_for_github_metadata_only_for_registry_tools() {
+    fn test_use_versions_host_for_github_metadata_only_for_the_package_repo() {
         let registry_backend = AquaBackend::from_arg(BackendArg::new(
             "act".to_string(),
             Some("aqua:nektos/act".to_string()),
@@ -3998,9 +4245,10 @@ packages:
             "aws/session-manager-plugin".to_string(),
             Some("aqua:aws/session-manager-plugin".to_string()),
         ));
-        assert!(
-            !direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin")
-        );
+        assert!(direct_backend.use_versions_host_for_github_metadata("aws/session-manager-plugin"));
+        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/other"));
+        // A repo name that merely shares a prefix is a different repo.
+        assert!(!direct_backend.use_versions_host_for_github_metadata("aws/session-manager"));
     }
 
     #[test]
@@ -4599,6 +4847,41 @@ packages:
     }
 
     #[test]
+    fn test_libc_option_is_not_an_aqua_var() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("glibc".into()));
+
+        let aqua_opts = AquaOptions::new(&opts);
+        assert_eq!(aqua_opts.libc().unwrap(), Some("gnu"));
+        assert_eq!(aqua_opts.var("libc").unwrap(), None);
+        let lock_opts = aqua_opts.lockfile_options().unwrap();
+        assert_eq!(lock_opts.get("libc"), Some(&"gnu".to_string()));
+        assert!(!lock_opts.contains_key("vars.libc"));
+
+        // A registry var that happens to be named `libc` is still reachable.
+        opts.opts.shift_remove("libc");
+        opts.opts
+            .insert("vars.libc".to_string(), toml::Value::String("x".into()));
+        let aqua_opts = AquaOptions::new(&opts);
+        assert_eq!(aqua_opts.libc().unwrap(), None);
+        assert_eq!(aqua_opts.var("libc").unwrap(), Some("x".to_string()));
+    }
+
+    #[test]
+    fn test_libc_option_rejects_unknown_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("uclibc".into()));
+
+        let err = AquaOptions::new(&opts).libc().unwrap_err();
+        assert!(
+            err.to_string().contains("invalid aqua `libc` option"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn test_lockfile_options_canonicalize_equivalent_aqua_vars() {
         let mut top_level = ToolVersionOptions::default();
         top_level.opts.insert(
@@ -4712,6 +4995,47 @@ packages:
                 hard: false,
                 explicit_link: true,
             }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_default_src_to_file_name() {
+        // mvdan/sh and (on Windows) astral-sh/uv list files by name only.
+        // `symlink_bins` builds `.mise-bins` from these links, so dropping
+        // them left the directory missing while PATH pointed at it.
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![
+            AquaFile {
+                name: "uv".to_string(),
+                ..Default::default()
+            },
+            AquaFile {
+                name: "uvx".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+                .unwrap();
+
+        let exe = |name: &str| PathBuf::from("install").join(format!("{name}.exe"));
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: exe("uv"),
+                    dst: exe("uv"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: exe("uvx"),
+                    dst: exe("uvx"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
         );
     }
 
@@ -5020,7 +5344,7 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 fn version_from_tag(pkg: &AquaPackage, tag: &str) -> Result<Option<String>> {
     let target = PlatformTarget::from_current();
     let (target_os, target_arch) = AquaBackend::to_aqua_platform(&target);
-    let target_libc = AquaBackend::target_variant_libc(&target);
+    let target_libc = AquaBackend::target_variant_libc(&target, None);
     Ok(
         versioned_package_from_tag(pkg, tag, target_os, target_arch, target_libc.as_deref())?
             .map(|(version, _)| version),
@@ -5231,11 +5555,11 @@ enum LibcAssetPreference {
     MuslStrict,
 }
 
-fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
+fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> LibcAssetPreference {
     if target.os_name() != "linux" {
         return LibcAssetPreference::Exact;
     }
-    match AquaBackend::target_libc(target).as_deref() {
+    match AquaBackend::target_libc(target, tool_libc).as_deref() {
         Some("gnu") => LibcAssetPreference::GlibcStrict,
         Some("musl") => LibcAssetPreference::MuslStrict,
         _ => LibcAssetPreference::GlibcWithFallback,
@@ -5365,6 +5689,7 @@ fn to_aqua_arch(arch: &str) -> &str {
 #[cfg(test)]
 mod lock_candidate_tests {
     use crate::github::GithubAsset;
+    use crate::platform::Platform;
 
     use super::*;
 
@@ -5732,6 +6057,127 @@ version_overrides:
         pkg
     }
 
+    fn release_asset(name: &str) -> github::GithubAsset {
+        github::GithubAsset {
+            from_versions_host: false,
+            name: name.to_string(),
+            browser_download_url: String::new(),
+            url: String::new(),
+            digest: None,
+            updated_at: None,
+        }
+    }
+
+    #[test]
+    fn security_features_ignore_signature_assets_without_config() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+asset: tool.tar.gz
+"#,
+        );
+        let assets =
+            ["tool.tar.gz.sig", "multiple.intoto.jsonl", "tool.minisig"].map(release_asset);
+
+        assert_eq!(AquaBackend::security_features(&pkg, &assets), vec![]);
+    }
+
+    #[test]
+    fn security_features_count_cosign_only_with_a_key_or_bundle() {
+        // Keyless Cosign expressed as CLI `opts` is not run by mise's native verifier.
+        let opts_only = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+checksum:
+  type: github_release
+  asset: checksums.txt
+  algorithm: sha256
+  cosign:
+    opts:
+      - --certificate-identity
+      - https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main
+"#,
+        );
+        assert_eq!(
+            AquaBackend::security_features(&opts_only, &[]),
+            vec![SecurityFeature::Checksum {
+                algorithm: Some("sha256".to_string())
+            }]
+        );
+
+        let bundle = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+checksum:
+  type: github_release
+  asset: checksums.txt
+  algorithm: sha256
+  cosign:
+    bundle:
+      type: github_release
+      asset: checksums.txt.sigstore.json
+"#,
+        );
+        assert!(AquaBackend::security_features(&bundle, &[]).contains(&SecurityFeature::Cosign));
+    }
+
+    #[test]
+    fn security_features_include_config_from_version_overrides() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+version_constraint: "false"
+version_overrides:
+  - version_constraint: "true"
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+      signer_identity: https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0
+      signer_issuer: https://token.actions.githubusercontent.com
+    minisign:
+      type: github_release
+      asset: tool.minisig
+      public_key: RWQexample
+"#,
+        );
+
+        assert_eq!(
+            AquaBackend::security_features(&pkg, &[]),
+            vec![
+                SecurityFeature::Slsa { level: None },
+                SecurityFeature::Minisign {
+                    public_key: Some("RWQexample".to_string())
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn security_features_skip_slsa_without_signer() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+slsa_provenance:
+  type: github_release
+  asset: provenance.intoto.jsonl
+"#,
+        );
+        assert!(
+            !AquaBackend::security_features(&pkg, &[])
+                .contains(&SecurityFeature::Slsa { level: None })
+        );
+    }
+
     #[test]
     fn test_version_from_tag_rejects_version_filter_mismatch() {
         let pkg = pkg_from_yaml(
@@ -5904,10 +6350,12 @@ no_asset: true
 
     fn asset(name: &str) -> GithubAsset {
         GithubAsset {
+            from_versions_host: false,
             name: name.to_string(),
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 
@@ -6009,6 +6457,57 @@ no_asset: true
         assert!(
             select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn test_libc_asset_preference_uses_tool_libc() {
+        let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
+        assert_eq!(
+            libc_asset_preference(&linux, Some("musl")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert_eq!(
+            libc_asset_preference(&linux, Some("gnu")),
+            LibcAssetPreference::GlibcStrict
+        );
+
+        // The target platform's own libc wins: a gnu build cannot run on a musl target.
+        let linux_musl = PlatformTarget::new(Platform::parse("linux-arm64-musl").unwrap());
+        assert_eq!(
+            libc_asset_preference(&linux_musl, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+
+        let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+        assert_eq!(
+            libc_asset_preference(&macos, Some("musl")),
+            LibcAssetPreference::Exact
+        );
+        assert_eq!(AquaBackend::target_variant_libc(&macos, Some("musl")), None);
+    }
+
+    #[test]
+    fn test_tool_libc_musl_keeps_registry_musl_asset() {
+        // domcyrus/rustnet: the registry names the static musl build, and the release also
+        // ships a gnu build that links libpcap dynamically.
+        let assets = vec![
+            asset("rustnet-v1.6.0-aarch64-unknown-linux-gnu.tar.gz"),
+            asset("rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"),
+        ];
+        let asset_strs =
+            IndexSet::from(["rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz".to_string()]);
+        let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
+
+        let selected = select_github_release_asset(
+            &assets,
+            &asset_strs,
+            libc_asset_preference(&linux, Some("musl")),
+        )
+        .unwrap();
+        assert_eq!(
+            selected.name,
+            "rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"
         );
     }
 

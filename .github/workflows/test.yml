@@ -5,7 +5,8 @@ on:
     tags: ["v*"]
     branches: ["main", "mise", "release"]
   pull_request:
-    branches: ["main"]
+    # Stacked PRs need the same platform checks before their base reaches main.
+    branches: ["main", "codex/**"]
   workflow_dispatch:
   workflow_call:
     secrets:

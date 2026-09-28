@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};

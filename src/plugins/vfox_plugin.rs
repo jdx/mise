@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::errors::Error::PluginNotInstalled;
 use crate::git::Git;
 use crate::http::HTTP;
@@ -41,7 +41,7 @@ pub(crate) struct MiseEnvResponse {
 use xx::regex;
 
 #[derive(Debug)]
-pub(crate) struct VfoxPlugin {
+pub struct VfoxPlugin {
     pub name: String,
     pub full: Option<String>,
     pub plugin_path: PathBuf,

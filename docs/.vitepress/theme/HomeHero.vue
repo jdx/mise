@@ -11,7 +11,7 @@ const examples = [
       "✓ node, python, terraform installed",
       "Tool versions ready for this project.",
     ],
-    caption: "The right versions, in every project.",
+    caption: "Tool versions for this project",
     link: "/dev-tools/",
   },
   {
@@ -23,7 +23,7 @@ const examples = [
     ],
     command: "mise env",
     output: ["export DATABASE_URL=postgres://localhost/app"],
-    caption: "Your environment, ready when you cd.",
+    caption: "Project environment variables",
     link: "/environments/",
   },
   {
@@ -32,7 +32,7 @@ const examples = [
     lines: ['run = "python -m unittest"'],
     command: "mise run test",
     output: ["[test] $ python -m unittest", "Ran 42 tests", "OK"],
-    caption: "Project commands, without the guesswork.",
+    caption: "A named command to run tests",
     link: "/tasks/",
   },
   {
@@ -41,7 +41,7 @@ const examples = [
     lines: ['"brew:jq" = "latest"', '"apt:build-essential" = "latest"'],
     command: "mise bootstrap",
     output: ["✓ System packages installed", "✓ Dev tools ready"],
-    caption: "A fresh machine. A familiar setup.",
+    caption: "System packages to install",
     link: "/bootstrap",
   },
 ];
@@ -102,15 +102,14 @@ onUnmounted(() => clearTimeout(copyTimeout));
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
       <h1 id="home-title" class="hero-title">mise-en-place</h1>
-      <p class="hero-meaning">Everything in its place.</p>
+      <p class="hero-meaning">Development tools, environments, and tasks</p>
       <p class="hero-pronunciation">
         mise is pronounced <strong>“meez”</strong>
       </p>
       <p class="hero-lede">
-        Declare your tool versions, environment variables, and commands in
-        <code>mise.toml</code>. Use them in your shell, editor, and CI. Add
-        machine setup with <code>mise bootstrap</code> when you need system
-        packages, dotfiles, or services.
+        Define your tool versions, environment variables, and project commands
+        in <code>mise.toml</code>. mise installs the tools and makes the
+        configuration available in your shell, editor, and CI.
       </p>
       <div class="hero-actions">
         <a class="action-btn action-btn-brand" href="/getting-started">
@@ -184,7 +183,7 @@ onUnmounted(() => clearTimeout(copyTimeout));
     </div>
   </section>
   <div class="hero-footnote">
-    <span>A comfortable home for your development workflow.</span>
+    <span>Project configuration in mise.toml</span>
     <ul aria-label="About mise">
       <li>Open source &amp; MIT licensed</li>
       <li>macOS, Linux &amp; Windows</li>

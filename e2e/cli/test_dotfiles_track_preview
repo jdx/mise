@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Tracking a directory says what it expands to before and after the
+# declaration is written, and --dry-run says it without writing anything.
+require_cmd git
+mkdir -p ~/.codex/sessions ~/.codex/config
+printf 'model = "x"\n' >~/.codex/config/config.toml
+printf 'a session\n' >~/.codex/sessions/one.jsonl
+printf 'another\n' >~/.codex/sessions/two.jsonl
+printf 'synthetic\n' >~/.codex/auth-token
+
+# A dry run prints the count, size, and what a save would leave out, and
+# declares nothing.
+assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 3 files, 30 B'
+assert_contains 'mise dot track --dry-run ~/.codex' 'omitted: ~/.codex/auth-token (credential store'
+assert_contains 'mise dot track --dry-run ~/.codex 2>&1' 'dry run; nothing was tracked'
+# Every omission is listed, however many: nothing is tracked yet for
+# `mise dot paths` to list later.
+mkdir -p ~/.many
+for i in $(seq 1 12); do echo x >~/.many/token-"$i"; done
+assert "mise dot track --dry-run ~/.many | grep -c 'omitted: ~/.many/token-'" 12
+for i in $(seq 13 25); do echo x >~/.many/token-"$i"; done
+assert "mise dot track --dry-run ~/.many | grep -c 'omitted: ~/.many/token-'" 20
+assert_contains 'mise dot track --dry-run ~/.many' '... 5 more'
+# Symlinks and nested repositories add no bytes to the count.
+ln -s token-1 ~/.many/link
+assert_contains 'mise dot track --dry-run ~/.many' '~/.many: 1 file, 0 B'
+assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
+assert "mise dot paths --json | jq '.entries | length'" 0
+
+# Nested targets in one command partition: the outer one does not count
+# the inner one's files.
+assert_contains 'mise dot track --dry-run ~/.codex ~/.codex/sessions' '~/.codex: 1 file, 12 B'
+assert_contains 'mise dot track --dry-run ~/.codex ~/.codex/sessions' '~/.codex/sessions: 2 files, 18 B'
+
+# A preview lists the files under the same header.
+assert_contains 'mise dot paths --preview ~/.codex' 'Tracking ~/.codex would capture 3 files, 30 B:'
+assert_contains 'mise dot paths --preview ~/.codex' '~/.codex/sessions/two.jsonl'
+
+# A scoped exclusion trims the tree before it is tracked.
+assert_succeed "mise dot exclude '~/.codex/sessions/**'"
+assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 1 file, 12 B'
+assert_contains 'mise dot track --dry-run ~/.codex' 'exclude: ~/.codex/sessions/**'
+
+# Tracking reports the same count and size.
+assert_contains 'mise dot track ~/.codex 2>&1' 'tracking ~/.codex (1 file, 12 B; declared in'
+assert "mise dot paths --json | jq -r '.entries[0].path'" '~/.codex'
+
+# Re-tracking previews the flags of this invocation, not the policy the
+# entry already carries: --encrypt lifts the credential guard in the
+# preview exactly as it would in the capture.
+assert_contains 'mise dot track --dry-run ~/.codex' 'omitted: ~/.codex/auth-token (credential store'
+assert_contains 'mise dot track --dry-run --encrypt ~/.codex' '~/.codex: 2 files, 22 B'
+assert_not_contains 'mise dot track --dry-run --encrypt ~/.codex' 'omitted: ~/.codex/auth-token'

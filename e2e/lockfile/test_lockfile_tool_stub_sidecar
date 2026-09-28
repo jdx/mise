@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# A tool stub's lock data lives in its project's mise.lock, found by walking
+# up from where the stub lives.
+
+export MISE_LOCKFILE=1
+
+mkdir -p proj/bin elsewhere pathbin
+cd proj || exit 1
+echo '[tools]' >mise.toml
+# A committed stub locks the same way everywhere, so local configs are skipped.
+echo '[tools]' >mise.local.toml
+
+cat >bin/jq <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "aqua:jqlang/jq"
+version = "1.7"
+EOF
+chmod +x bin/jq
+
+# Without an entry, locked mode rejects the stub. This runs before anything
+# installs jq, since an installed version would satisfy the request.
+assert_fail_contains "MISE_LOCKED=1 mise tool-stub bin/jq --version 2>&1" "is not in the lockfile"
+
+assert_contains "mise generate tool-stub bin/jq --lock" "Updated lockfile:"
+# The stub keeps its request; the lockfile records the resolution and the stub.
+assert_not_contains "cat bin/jq" "[lock"
+assert_contains "cat bin/jq" 'version = "1.7"'
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "cat mise.lock" '[[tools."aqua:jqlang/jq"]]'
+assert_fail "test -f mise.local.lock"
+
+# Checksums from mise.lock are verified. This runs before jq is installed.
+cp mise.lock mise.lock.good
+sed -e "s/^checksum = .*/checksum = \"sha256:$(printf '0%.0s' {1..64})\"/" mise.lock.good >mise.lock
+assert_fail_contains "mise tool-stub bin/jq --version 2>&1" "Checksum mismatch"
+cp mise.lock.good mise.lock
+
+# Locked mode works from any directory, and through a symlink to the stub.
+ln -s "$PWD/bin/jq" ../pathbin/jq
+cd ../elsewhere || exit 1
+assert_contains "MISE_LOCKED=1 mise tool-stub ../pathbin/jq --version" "jq-1.7"
+cd ../proj || exit 1
+
+# `mise lock` keeps the stub's entry even though no config declares the tool.
+assert_succeed "mise lock"
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
+assert_contains "cat mise.lock" '[[tools."aqua:jqlang/jq"]]'
+
+# A selective run reaches the stub too.
+assert_contains "mise lock aqua:jqlang/jq 2>&1" "aqua:jqlang/jq@1.7"
+
+# Once the stub is gone, `mise lock` drops its reference and its entry.
+mv bin/jq jq.bak
+assert_succeed "mise lock"
+assert_not_contains "cat mise.lock" "tool-stubs"
+assert_not_contains "cat mise.lock" "jqlang"
+mv jq.bak bin/jq
+
+# Outside a project there is no mise.lock to record into.
+cp bin/jq ../elsewhere/jq
+assert_fail_contains "mise generate tool-stub ../elsewhere/jq --lock 2>&1" "no project config found"
+
+# Lock data only lives in mise.lock, so --lock removes a `[lock]` section.
+cat >>bin/jq <<'EOF'
+
+[lock.platforms.linux-x64]
+url = "https://example.com/jq"
+EOF
+assert_succeed "mise generate tool-stub bin/jq --lock"
+assert_not_contains "cat bin/jq" "[lock"
+
+# In a monorepo with a root lockfile, a subproject's stub uses the root
+# mise.lock even when run from outside the monorepo.
+cd "$HOME/workdir" || exit 1
+mkdir -p mono/packages/a/bin
+# The deprecated alias still declares the monorepo root.
+cat >mono/mise.toml <<'TOML'
+experimental_monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+echo '[tools]' >mono/packages/a/mise.toml
+# A local override is not committed, so it must not move a committed stub.
+cat >mono/mise.local.toml <<'TOML'
+[monorepo]
+lockfile = false
+TOML
+cat >mono/packages/a/bin/jq <<'STUB'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "aqua:jqlang/jq"
+version = "1.7"
+STUB
+chmod +x mono/packages/a/bin/jq
+assert_succeed "cd mono/packages/a && MISE_EXPERIMENTAL=1 mise generate tool-stub bin/jq --lock"
+assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/jq"]'
+assert_fail "test -f mono/packages/a/mise.lock"
+# An installed version would satisfy locked mode without the lockfile.
+rm -rf "$MISE_DATA_DIR/installs/aqua-jqlang-jq"
+assert_fail "test -d $MISE_DATA_DIR/installs/aqua-jqlang-jq"
+assert_contains "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_LOCKED=1 mise tool-stub ../mono/packages/a/bin/jq --version" "jq-1.7"

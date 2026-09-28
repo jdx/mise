@@ -122,7 +122,7 @@ impl DotfilesUnapply {
             system::edits::execute_unapply(&edit_plan, &edit_opts)?;
         }
         if !files.is_empty() {
-            system::files::execute_unapply(&file_plan, &file_opts)?;
+            system::files::execute_unapply(&config, &file_plan, &file_opts)?;
         }
         Ok(())
     }

@@ -32,6 +32,14 @@ system-cargo"
 assert "cargo check" "mbx:1
 system-cargo"
 
+# Windows exe- and file-mode shims do not run mise as cargo. They run
+# `mise x -- cargo` with __MISE_SHIM_PATH naming themselves, which used to skip
+# the wrapper's own shim as the active one and run the real cargo (#13671).
+assert "__MISE_SHIM_PATH='$MISE_DATA_DIR/command-wrappers/bin/cargo' mise x -- cargo check" "mbx:1
+system-cargo"
+assert "__MISE_SHIM_PATH='$MISE_DATA_DIR/shims/cargo' mise x -- cargo check" "mbx:1
+system-cargo"
+
 # Disabling tool shim activation preserves configured wrappers.
 export MISE_ACTIVATE_SHIMS=false
 eval "$(mise activate bash --no-hook-env)"

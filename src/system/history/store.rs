@@ -20,14 +20,23 @@ use serde::{Deserialize, Serialize};
 use super::journal::JournalEntry;
 use crate::file::{self, display_path};
 
-pub(crate) const SCHEMA_VERSION: u32 = 1;
+/// The version of what a checkpoint records about itself.
+///
+/// **Bumped whenever a reader that does not understand the addition
+/// would draw a wrong conclusion from its absence.** Version 2 added an
+/// entry's `include` list: an older mise ignores the field, reads the
+/// entry as covering its whole tree, and a rollback then deletes the
+/// files the list never selected. It refuses a newer schema instead —
+/// `replay::validate` rejects anything above its own — and that is the
+/// answer wanted here: refuse rather than misinterpret.
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The state directory the store lives under.
-pub(crate) fn state_dir() -> PathBuf {
+pub fn state_dir() -> PathBuf {
     crate::dirs::STATE.to_path_buf()
 }
 
-pub(crate) fn store_dir_in(state_dir: &Path) -> PathBuf {
+pub fn store_dir_in(state_dir: &Path) -> PathBuf {
     state_dir.join("history")
 }
 
@@ -179,7 +188,7 @@ pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
 
 /// Display context for an in-progress local operation, never durable history.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Machine {
+pub struct Machine {
     pub id: String,
     pub name: String,
 }
@@ -192,8 +201,16 @@ pub(crate) fn machine() -> Machine {
 }
 
 fn hostname() -> String {
-    std::env::var("HOSTNAME")
+    #[cfg(unix)]
+    let system_hostname = nix::unistd::gethostname()
         .ok()
+        .map(|name| name.to_string_lossy().into_owned());
+    #[cfg(not(unix))]
+    let system_hostname: Option<String> = None;
+
+    system_hostname
+        .filter(|name| !name.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
         .filter(|name| !name.is_empty())
         .or_else(|| {
             std::fs::read_to_string("/etc/hostname")
@@ -207,7 +224,7 @@ fn hostname() -> String {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Trigger {
+pub enum Trigger {
     Edit,
     Save,
     Agent,
@@ -226,7 +243,7 @@ pub(crate) enum Trigger {
 }
 
 impl Trigger {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Edit => "edit",
             Self::Save => "save",
@@ -246,7 +263,7 @@ impl Trigger {
         }
     }
 
-    pub(crate) fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Option<Self> {
         Some(match text {
             "edit" => Self::Edit,
             "save" => Self::Save,
@@ -277,7 +294,7 @@ impl Trigger {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum DescriptionSource {
+pub enum DescriptionSource {
     Computed,
     User,
     Agent,
@@ -286,7 +303,7 @@ pub(crate) enum DescriptionSource {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum OperationKind {
+pub enum OperationKind {
     Capture,
     Bootstrap,
     Rollback,
@@ -295,7 +312,7 @@ pub(crate) enum OperationKind {
 }
 
 impl OperationKind {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Capture => "capture",
             Self::Bootstrap => "bootstrap",
@@ -308,7 +325,7 @@ impl OperationKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum OperationStatus {
+pub enum OperationStatus {
     /// The command that owns this operation has not finished (or died).
     Pending,
     Completed,
@@ -316,7 +333,7 @@ pub(crate) enum OperationStatus {
 }
 
 impl OperationStatus {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
             Self::Completed => "completed",
@@ -328,7 +345,7 @@ impl OperationStatus {
 /// Derived checkpoint metadata. Durable metadata lives in ordinary commits;
 /// descriptions, labels, and pins change through annotations.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Checkpoint {
+pub struct Checkpoint {
     pub schema_version: u32,
     /// Committed records use the Git commit OID. Pending operation records
     /// reserve a provisional UUID before their outcome commit exists.
@@ -353,32 +370,58 @@ pub(crate) struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// The snapshot-tree path a display path travels as, under whichever
+    /// coverage entry owns it, or `None` when no entry does.
+    ///
+    /// **The one conversion between how a path is shown and how it
+    /// travels.** A display path is for a person: it keeps the host's
+    /// separator, and only on unix is `$HOME` shown as `~`. A tree path is
+    /// portable, and a reader rebuilds a display path from it with
+    /// [`super::tracked::tree_path_to_display`] — which always writes `~/`
+    /// with `/`. The two display spellings of one path are therefore not
+    /// the same string on Windows, so anything matching a written record
+    /// against a walked one compares tree paths, or display paths both
+    /// derived from a tree path, and never one of each.
+    pub(crate) fn portable_path(&self, path: &String) -> Option<String> {
+        let path = super::tracked::normalize_target(Path::new(path));
+        let entry = self
+            .tree
+            .coverage
+            .entries
+            .iter()
+            .filter(|entry| {
+                path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
+            })
+            .max_by_key(|entry| Path::new(&entry.path).components().count())?;
+        super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
+    }
+
     /// Only tracked-file metadata may travel with the ordinary history.
     /// Recovery material and command invocation details remain local.
     pub(crate) fn for_commit(&self) -> CommitRecord {
-        let portable = |path: &String| {
-            let path = super::tracked::normalize_target(Path::new(path));
-            let entry = self
-                .tree
-                .coverage
-                .entries
-                .iter()
-                .filter(|entry| {
-                    path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
-                })
-                .max_by_key(|entry| entry.path.len())?;
-            super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
-        };
+        let portable = |path: &String| self.portable_path(path);
         CommitRecord {
             trigger: self.trigger,
             description_source: self.description_source,
             task: self.task.clone(),
             labels: self.labels.clone(),
+            // **A repository the capture skipped is recorded here, not
+            // only in `coverage.nested`.** The trailer is format-frozen
+            // for released clients, so `nested` cannot become a field of
+            // its own; without this, a machine that rebuilt its index
+            // from Git would know nothing about the skip, and if the
+            // directory has since lost its `.git` it would look like an
+            // ordinary part of the tracked tree whose files the
+            // checkpoint "did not hold" — which is how a rollback
+            // deletes them. As an omission it reads, on this mise and on
+            // an older one, as what it is: a path this commit did not
+            // capture.
             omitted: self
                 .tree
                 .coverage
                 .omitted
                 .iter()
+                .chain(self.tree.coverage.nested.iter())
                 .filter_map(|item| portable(&item.path))
                 .collect(),
             incomplete: self
@@ -419,11 +462,11 @@ impl Checkpoint {
     }
 
     /// The trigger label plus the operation kind, for tables.
-    pub(crate) fn kind_label(&self) -> String {
+    pub fn kind_label(&self) -> String {
         self.trigger.as_str().to_string()
     }
 
-    pub(crate) fn status(&self) -> Option<OperationStatus> {
+    pub fn status(&self) -> Option<OperationStatus> {
         self.operation.as_ref().map(|operation| operation.status)
     }
 }
@@ -517,7 +560,7 @@ impl CommitOperation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct TreeInfo {
+pub struct TreeInfo {
     /// The ordinary tracked-file tree of this commit.
     pub snapshot: Option<String>,
     /// False when no content snapshot could be taken (no usable `git`).
@@ -534,7 +577,7 @@ pub(crate) struct TreeInfo {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct RootRecord {
+pub struct RootRecord {
     /// `home` for `$HOME`, `fs` for everything outside it.
     pub label: String,
     pub path: PathBuf,
@@ -545,19 +588,36 @@ pub(crate) struct RootRecord {
 /// The effective rules a capture ran under, persisted so a checkpoint can
 /// say for any path whether it was captured, known absent, uncovered, or
 /// omitted.
+///
+/// Unknown fields are refused rather than skipped: what this record does
+/// not say decides whether a live file is deleted, so a reader that
+/// cannot see all of it must not answer from the part it understands.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Coverage {
+#[serde(deny_unknown_fields)]
+pub struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// Which matcher read `exclude` when this checkpoint was written.
+    ///
+    /// Added later, so its absence marks a checkpoint written by a mise
+    /// that read exclusion globs differently. A replay cannot know what
+    /// such a checkpoint covered, so it says so rather than treating an
+    /// unmatched path as one the snapshot held and deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<PathReason>,
+    /// Nested repositories saved as a commit pointer without their files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<PathReason>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct CoverageEntry {
+#[serde(deny_unknown_fields)]
+pub struct CoverageEntry {
     /// `~`-relative when under `$HOME`, absolute otherwise.
     pub path: String,
     /// The explicit tracking mode.
@@ -571,10 +631,21 @@ pub(crate) struct CoverageEntry {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one, which clears what another machine published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, when it declared a list.
+    /// Recorded so a replay knows which paths the checkpoint never set
+    /// out to hold: without it an unselected file looks known-absent, and
+    /// a rollback deletes something the checkpoint never managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct PathReason {
+pub struct PathReason {
     pub path: String,
     pub reason: String,
 }
@@ -582,7 +653,7 @@ pub(crate) struct PathReason {
 /// What changed since the previous checkpoint's snapshot, as `~`-relative
 /// (or absolute) paths.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Changes {
+pub struct Changes {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -596,16 +667,16 @@ pub(crate) struct Changes {
 }
 
 impl Changes {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.modified.is_empty() && self.removed.is_empty()
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.added.len() + self.modified.len() + self.removed.len()
     }
 
     /// Whether `path` (or anything under it) changed.
-    pub(crate) fn touches(&self, path: &str) -> bool {
+    pub fn touches(&self, path: &str) -> bool {
         let under = |candidate: &String| {
             candidate == path
                 || candidate
@@ -620,7 +691,7 @@ impl Changes {
 
 /// The outcome half of an operation pair.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Operation {
+pub struct Operation {
     pub id: String,
     pub kind: OperationKind,
     pub status: OperationStatus,
@@ -663,13 +734,13 @@ pub(crate) struct Operation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct OperationSource {
+pub struct OperationSource {
     pub checkpoint: String,
     pub paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Summary {
+pub struct Summary {
     pub message: Option<String>,
 }
 
@@ -718,7 +789,7 @@ pub(crate) fn write_index_in(state_dir: &Path, index: &Index) -> Result<()> {
 
 /// A checkpoint together with its local handle.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct Entry {
+pub struct Entry {
     pub id: u64,
     pub commit: String,
     #[serde(flatten)]
@@ -727,7 +798,7 @@ pub(crate) struct Entry {
 
 /// A description or label edit appended as metadata in ordinary Git history.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct Annotation {
+pub struct Annotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -858,7 +929,7 @@ pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
 
 /// Private write-ahead bookkeeping for an unfinished operation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Pending {
+pub struct Pending {
     pub id: u64,
     pub checkpoint: Checkpoint,
     pub recovery: RecoveryState,
@@ -866,7 +937,7 @@ pub(crate) struct Pending {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum RecoveryState {
+pub enum RecoveryState {
     /// An interrupted batch or an explicitly incomplete all-or-nothing apply.
     Pending,
     /// A normally returned command; retain its completed phases.
@@ -884,7 +955,7 @@ pub(crate) fn write_pending_in(state_dir: &Path, pending: &Pending) -> Result<()
 
 /// Every pending record with the file holding it. Unreadable records stop
 /// recovery; never hide them or discard possibly referenced preimages.
-pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+pub fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
     let mut pending = vec![];
     let directory = match std::fs::read_dir(pending_dir_in(state_dir)) {
         Ok(directory) => directory,
@@ -913,7 +984,7 @@ pub(crate) fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)
 
 /// Read-only status lookup. A record removed concurrently is skipped, but
 /// corruption must remain visible rather than reporting healthy empty state.
-pub(crate) fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+pub fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
     list_pending_in(state_dir)
 }
 
@@ -923,7 +994,7 @@ pub(crate) fn remove_pending_in(state_dir: &Path, uuid: &str) {
 
 /// The marker of an operation in progress, next to the lock that owns it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct OperationMarker {
+pub struct OperationMarker {
     pub uuid: String,
     pub kind: OperationKind,
     pub started_at: String,
@@ -934,7 +1005,7 @@ pub(crate) fn write_marker_in(state_dir: &Path, marker: &OperationMarker) -> Res
     write_json(&operation_marker_in(state_dir), marker)
 }
 
-pub(crate) fn read_marker_in(state_dir: &Path) -> Result<Option<OperationMarker>> {
+pub fn read_marker_in(state_dir: &Path) -> Result<Option<OperationMarker>> {
     let path = operation_marker_in(state_dir);
     if !path.exists() {
         return Ok(None);
@@ -1020,7 +1091,7 @@ pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
     }
 }
 
-pub(crate) fn now_rfc3339() -> String {
+pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 

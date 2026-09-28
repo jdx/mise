@@ -366,16 +366,18 @@ fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// a ruby that can run the brew shims (>= 3), for tests that execute them
+#[cfg(test)]
+pub(super) async fn test_ruby() -> Result<Option<PathBuf>> {
+    if let Some(ruby) = usable_system_ruby().await {
+        return Ok(Some(ruby));
+    }
+    super::source::installed_ruby_bin().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    async fn test_ruby() -> Result<Option<PathBuf>> {
-        if let Some(ruby) = usable_system_ruby().await {
-            return Ok(Some(ruby));
-        }
-        super::super::source::installed_ruby_bin().await
-    }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]

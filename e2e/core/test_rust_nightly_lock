@@ -7,8 +7,6 @@ export MISE_CARGO_HOME="$PWD/cargo"
 export MISE_RUSTUP_HOME="$PWD/rustup"
 
 SERVER_ROOT="$PWD/server"
-PORT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mise-rust-nightly.XXXXXX")
-PORT_FILE="$PORT_DIR/port"
 MANIFEST="$SERVER_ROOT/dist/channel-rust-nightly.toml"
 mkdir -p "$SERVER_ROOT/dist" "$SERVER_ROOT/repos/rust-lang/rust" "$MISE_CARGO_HOME/bin" "$MISE_RUSTUP_HOME"
 touch "$MISE_RUSTUP_HOME/settings.toml"
@@ -60,34 +58,12 @@ EOF
 
 chmod +x "$MISE_CARGO_HOME/bin/rustup" "$MISE_CARGO_HOME/bin/rustc" "$MISE_CARGO_HOME/bin/cargo"
 
-python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
-import http.server
-import os
-import socketserver
-import sys
-
-root, port_file = sys.argv[1:]
-os.chdir(root)
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
-    with open(port_file, "w") as file:
-        file.write(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-cleanup() {
-  kill "$SERVER_PID" 2>/dev/null || true
-  rm -rf "$PORT_DIR"
-}
-trap cleanup EXIT
-
-wait_for_file "$PORT_FILE" "Rust nightly manifest HTTP server port" 30 "$SERVER_PID"
-SERVER_PORT=$(cat "$PORT_FILE")
+start_http_server --dir "$SERVER_ROOT"
 
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
-url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$HTTP_PORT", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
 
 [tools]
 rust = "dev"
@@ -105,7 +81,7 @@ assert_fail_contains "MISE_OFFLINE=1 mise exec -- rustc -V 2>&1" "cannot resolve
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
-url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$HTTP_PORT", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
 
 [tools]
 rust = "nightly"
@@ -150,7 +126,7 @@ assert_contains "cat '$MISE_CARGO_HOME/rustup.log'" "toolchain install nightly-2
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
-url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$HTTP_PORT", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
 
 [tools]
 rust = "nightly-2026-08-12"
@@ -166,7 +142,7 @@ assert_contains "cat '$MISE_CARGO_HOME/rustup.log'" "toolchain install nightly-2
 cat >mise.toml <<EOF
 [settings]
 lockfile = true
-url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$HTTP_PORT", "https://api.github.com" = "http://127.0.0.1:$HTTP_PORT" }
 
 [tools]
 rust = "nightly"

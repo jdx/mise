@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
-use crate::cli::oci::common::{perform_build, short_digest};
+use crate::cli::oci::common::{mise_binary_path, perform_build, short_digest};
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::oci::{BuildOptions, LayerOwner, OciCopy};
@@ -14,8 +14,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
       any configs at-or-below the project root). Tools from
       `~/.config/mise/config.toml` are not included; pass --include-global
       to package them too.
-    - asdf and vfox plugins are not supported in v1; use a different backend
-      (core, aqua, ubi, github, cargo, npm, go, pipx, spm, http) for each tool.
+    - asdf plugins are not supported; use a vfox plugin or another backend
+      (core, aqua, github, cargo, npm, go, pipx, spm, http) for each tool.
+      vfox plugins are copied into the image next to the tools they install.
     - The host mise binary is embedded at /usr/local/bin/mise by default;
       build on the same OS/arch as your target image (or pass --no-mise).
 "#
@@ -31,7 +32,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 ///
 /// Build on Linux with the target architecture: this packages host tool installs
 /// and, by default, the running mise binary. `--no-mise` omits that binary but does
-/// not cross-compile tools installed for another OS. asdf/vfox tools are unsupported.
+/// not cross-compile tools installed for another OS. asdf tools are unsupported.
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
@@ -105,7 +106,7 @@ impl Build {
             tag: self.tag.clone(),
             mount_point: self.mount_point.clone(),
             owner: self.owner,
-            include_mise: !self.no_mise,
+            mise_binary: mise_binary_path(self.no_mise),
             copy: self.copy.clone(),
             // Layer reuse would leave blob-less holes in the layout; `build`
             // must produce a complete, standalone image directory.

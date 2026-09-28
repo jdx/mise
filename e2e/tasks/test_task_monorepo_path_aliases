@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+
+mkdir -p foo/bar/baz/abc/123/sub other
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123", "foo/bar/baz/abc/123/sub", "other"]
+
+[monorepo.path_aliases]
+"123" = "foo/bar/baz/abc/123"
+TOML
+cat >foo/bar/baz/abc/123/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo deep-build'
+
+[tasks.test]
+run = 'echo deep-test'
+
+[tasks.ci]
+depends = ['//123:build']
+run = 'echo deep-ci'
+TOML
+cat >foo/bar/baz/abc/123/sub/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo child-build'
+TOML
+cat >other/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo other-build'
+TOML
+
+assert_contains 'mise run //123:build' 'deep-build'
+assert_contains 'mise run //foo/bar/baz/abc/123:build' 'deep-build'
+assert_contains 'mise run //123:ci' 'deep-ci'
+assert_contains 'mise run //123/sub:build' 'child-build'
+assert_contains 'mise run //123:*' 'deep-test'
+assert_contains 'mise tasks info //123:build' '//foo/bar/baz/abc/123:build'
+
+cat >>mise.toml <<'TOML'
+"other" = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //other:build' 'conflicts with a config root path'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["./foo/bar/baz/abc/123"]
+
+[monorepo.path_aliases]
+"123" = "foo/bar/baz/abc/123"
+TOML
+assert_contains 'mise run //123:build' 'deep-build'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123", "./other"]
+
+[monorepo.path_aliases]
+"other" = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //other:build' 'conflicts with a config root path'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["*"]
+
+[monorepo.path_aliases]
+"short" = "other"
+TOML
+assert_contains 'mise run //short:build' 'other-build'
+
+ln -s other linked
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["linked", "other"]
+
+[monorepo.path_aliases]
+"short" = "other"
+TOML
+assert_contains 'mise tasks info //short:build' '//other:build'
+
+mkdir -p abc/sub
+cat >abc/sub/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo conflicting-build'
+TOML
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123", "foo/bar/baz/abc/123/sub", "*/sub"]
+
+[monorepo.path_aliases]
+"abc" = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //abc/sub:build' 'conflicts with a config root path'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123"]
+
+[monorepo.path_aliases]
+"..." = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //...:build' 'must be a single path segment'
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123"]
+
+[monorepo.path_aliases]
+"123" = "foo/bar/baz/abc/123"
+
+[settings]
+task.auto_infer = ["node"]
+TOML
+cat >package.json <<'JSON'
+{"packageManager":"npm@11.0.0","workspaces":["foo/bar/baz/abc/*"]}
+JSON
+cat >foo/bar/baz/abc/123/package.json <<'JSON'
+{"name":"short-app","scripts":{"inferred":"echo inferred-build"}}
+JSON
+assert_contains 'MISE_EXPERIMENTAL=1 mise tasks info //123:inferred' 'node:short-app#inferred'

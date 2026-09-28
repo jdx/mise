@@ -1,6 +1,6 @@
 backends = [
   { full = "packslip:github.com/jdx/fnox", min_version = "1.35.1" },
-  "github:jdx/fnox",
+  { full = "github:jdx/fnox", attestations_since = "1.27.1" },
 ]
 bins = ["fnox"]
 description = "Fort Knox for your secrets"

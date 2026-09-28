@@ -1,7 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
-use crate::cli::args::TruncateOptions;
+use crate::args::TruncateOptions;
 use crate::config::Config;
 use crate::path::PathExt;
 use crate::system;
@@ -66,25 +66,56 @@ impl DotfilesStatus {
             })
             .cloned()
             .collect::<Vec<_>>();
+        // the history walk decides what a tracked entry really saves, so a
+        // tracked row can say how many of its files every save leaves out
+        let history = super::history_status::report().await?;
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
-            let state = match system::files::check(&config, req, &secrets) {
-                Ok(state) => state,
-                Err(err) => FileState::Differs(format!("{err}")),
+            // an absent entry that cannot be checked (a directory at the
+            // target, say) is an error, not a pending removal
+            let (state, removable) = match system::files::check(&config, req, &secrets) {
+                Ok(state) => (state, true),
+                Err(err) => (FileState::Differs(format!("{err}")), false),
             };
+            let removal = req.mode == system::files::FileMode::Absent && removable;
+            let (omitted, nested) = match state {
+                FileState::Tracked => (
+                    paths_under(&history.omitted, &req.target),
+                    paths_under(&history.nested, &req.target),
+                ),
+                _ => (0, 0),
+            };
+            let absent = matches!(state, FileState::Applied)
+                .then(|| system::files::permissions_target_absent(req))
+                .flatten();
             let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
+                FileState::Applied if removal => "absent".to_string(),
+                FileState::Applied => match absent {
+                    Some(reason) => format!("applied ({reason})"),
+                    None => "applied".to_string(),
+                },
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) if removal => format!("would remove ({reason})"),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked if omitted > 0 || nested > 0 => {
+                    let mut parts = vec![];
+                    if omitted > 0 {
+                        parts.push(format!("{omitted} omitted"));
+                    }
+                    if nested > 0 {
+                        parts.push(format!("{nested} nested"));
+                    }
+                    format!("tracked ({})", parts.join(", "))
+                }
                 FileState::Tracked => "tracked".to_string(),
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
-                json_files.push(json!({
+                let mut entry = json!({
                     "target": req.target_raw,
-                    "source": (req.mode != system::files::FileMode::Content)
+                    "source": req.mode.has_source()
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
@@ -95,15 +126,33 @@ impl DotfilesStatus {
                         FileState::Differs(_) => "differs",
                         FileState::Tracked => "tracked",
                     },
-                }));
+                    "omitted": omitted,
+                    "nested": nested,
+                });
+                if let Some(permissions) = req.permissions {
+                    entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                // e.g. an absent target that is still present, or a
+                // permissions-only target that does not exist
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(if removal {
+                        format!("{reason}; will be removed")
+                    } else {
+                        reason.clone()
+                    });
+                } else if let Some(reason) = absent {
+                    entry["reason"] = json!(reason);
+                }
+                json_files.push(entry);
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    if req.mode == system::files::FileMode::Content {
-                        "inline".to_string()
-                    } else {
-                        req.source.display_user()
+                    match req.mode {
+                        system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Absent => "-".to_string(),
+                        system::files::FileMode::Permissions => "-".to_string(),
+                        _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
                     state_str,
@@ -170,7 +219,6 @@ impl DotfilesStatus {
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
         }
-        let history = super::history_status::report().await?;
         if self.json {
             miseprintln!(
                 "{}",
@@ -208,4 +256,17 @@ impl DotfilesStatus {
         }
         Ok(())
     }
+}
+
+/// How many reported paths are `target` itself or lie beneath it.
+fn paths_under(
+    reported: &[crate::system::history::store::PathReason],
+    target: &std::path::Path,
+) -> usize {
+    let target = crate::system::history::tracked::normalize_target(target);
+    let display = crate::file::display_path(&target);
+    reported
+        .iter()
+        .filter(|reported| crate::system::history::tracked::display_under(&reported.path, &display))
+        .count()
 }

@@ -1,12 +1,12 @@
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Config;
 use crate::config::Settings;
+use crate::config::{Config, SettingsExt};
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Semaphore;
 use versions::Versioning;
-use xx::regex;
 
 #[derive(Debug)]
 pub(crate) struct GoBackend {
@@ -288,8 +287,7 @@ impl Backend for GoBackend {
         let raw_opts = tv.request.options();
         let opts = GoOptions::new(&raw_opts);
 
-        // Hoisted: the closure below runs twice (with and without a `v` prefix), and the
-        // program does not change between attempts.
+        // The program does not change if an explicitly requested version needs a retry.
         let go = self.spawn_program(&ctx.config, Some(&ctx.ts), "go").await;
 
         let install = async |v| {
@@ -317,18 +315,17 @@ impl Backend for GoBackend {
                 .execute()
         };
 
-        // try "v" prefix if the version starts with semver
-        let use_v = regex!(r"^\d+\.\d+\.\d+").is_match(&install_version);
-
-        if use_v {
-            if install(format!("v{}", install_version)).await.is_err() {
+        let (version, fallback) = go_install_versions(&install_version, &tv.request.version());
+        if let Err(first_error) = install(version).await {
+            if let Some(fallback) = fallback {
                 warn!("Failed to install, trying again without added 'v' prefix");
+                if let Err(retry_error) = install(fallback).await {
+                    return Err(go_install_retry_error(first_error, retry_error));
+                }
             } else {
-                return Ok(tv);
+                return Err(first_error);
             }
         }
-
-        install(install_version).await?;
 
         Ok(tv)
     }
@@ -341,6 +338,19 @@ impl Backend for GoBackend {
         let raw_opts = request.options();
         Ok(GoOptions::new(&raw_opts).lockfile_options())
     }
+}
+
+fn go_install_versions(version: &str, requested_version: &str) -> (String, Option<String>) {
+    if !version.starts_with('v') && versions::SemVer::new(version).is_some() {
+        let fallback = (requested_version == version).then(|| version.to_string());
+        (format!("v{version}"), fallback)
+    } else {
+        (version.to_string(), None)
+    }
+}
+
+fn go_install_retry_error(first_error: eyre::Report, retry_error: eyre::Report) -> eyre::Report {
+    eyre!("{first_error:#}\nRetry without the 'v' prefix also failed: {retry_error:#}")
 }
 
 /// Returns install-time-only option keys for Go backend.
@@ -971,6 +981,38 @@ async fn fetch_proxy_version_infos(
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
+
+    #[test]
+    fn go_install_versions_only_retry_explicit_unprefixed_semver() {
+        assert_eq!(
+            go_install_versions("0.23.0", "latest"),
+            ("v0.23.0".to_string(), None)
+        );
+        assert_eq!(
+            go_install_versions("0.23.0", "0.23.0"),
+            ("v0.23.0".to_string(), Some("0.23.0".to_string()))
+        );
+        assert_eq!(
+            go_install_versions("0.23.0", "v0.23.0"),
+            ("v0.23.0".to_string(), None)
+        );
+        assert_eq!(
+            go_install_versions("v0.23.0", "v0.23.0"),
+            ("v0.23.0".to_string(), None)
+        );
+        assert_eq!(
+            go_install_versions("main", "main"),
+            ("main".to_string(), None)
+        );
+    }
+
+    #[test]
+    fn go_install_retry_reports_original_error_first() {
+        let error = go_install_retry_error(eyre!("original failure"), eyre!("retry failure"));
+        let message = format!("{error:#}");
+        assert!(message.starts_with("original failure"));
+        assert!(message.contains("retry failure"));
+    }
 
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {

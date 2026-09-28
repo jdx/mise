@@ -80,6 +80,7 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
             PackageStatus {
                 request: req.clone(),
                 state,
+                display_name: None,
             }
         })
         .collect()

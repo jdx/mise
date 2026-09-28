@@ -1,3 +1,4 @@
+use crate::config::SettingsExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{
@@ -8,8 +9,8 @@ use std::{
 use eyre::{Result, bail, eyre};
 use xx::file;
 
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cli::args::BackendArg;
 use crate::config::config_file::config_root;
 use crate::dirs;
 use crate::env;
@@ -28,7 +29,7 @@ use crate::{
 
 /// Lockfile ownership is independent of the request's original provenance.
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
-pub(crate) enum LockfileScope {
+pub enum LockfileScope {
     /// Preserve ordinary source-based reads, including merged reads for CLI requests.
     #[default]
     Default,
@@ -39,7 +40,7 @@ pub(crate) enum LockfileScope {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) enum ToolRequest {
+pub enum ToolRequest {
     Version {
         backend: Arc<BackendArg>,
         version: String,
@@ -86,11 +87,11 @@ pub(crate) enum ToolRequest {
 }
 
 impl ToolRequest {
-    pub(crate) fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
+    pub fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
         Self::new_with_options(backend, s, ToolVersionOptions::default(), source)
     }
 
-    pub(crate) fn new_with_options(
+    pub fn new_with_options(
         backend: Arc<BackendArg>,
         s: &str,
         request_options: ToolVersionOptions,
@@ -210,7 +211,7 @@ impl ToolRequest {
         }
     }
 
-    pub(crate) fn set_source(&mut self, source: ToolSource) -> Self {
+    pub fn set_source(&mut self, source: ToolSource) -> Self {
         match self {
             Self::Version { source: s, .. }
             | Self::Prefix { source: s, .. }
@@ -222,7 +223,7 @@ impl ToolRequest {
         self.set_lockfile_scope(LockfileScope::Default);
         self.clone()
     }
-    pub(crate) fn ba(&self) -> &Arc<BackendArg> {
+    pub fn ba(&self) -> &Arc<BackendArg> {
         match self {
             Self::Version { backend, .. }
             | Self::Prefix { backend, .. }
@@ -232,7 +233,7 @@ impl ToolRequest {
             | Self::System { backend, .. } => backend,
         }
     }
-    pub(crate) fn backend(&self) -> Result<ABackend> {
+    pub fn backend(&self) -> Result<ABackend> {
         self.ba().backend()
     }
     /// Reapply registry defaults after an alias, prefix, or subtraction resolves
@@ -265,7 +266,7 @@ impl ToolRequest {
         self
     }
 
-    pub(crate) fn source(&self) -> &ToolSource {
+    pub fn source(&self) -> &ToolSource {
         match self {
             Self::Version { source, .. }
             | Self::Prefix { source, .. }
@@ -327,7 +328,7 @@ impl ToolRequest {
     pub(crate) fn os(&self) -> &Option<Vec<String>> {
         &self.resolved_options().effective().os
     }
-    pub(crate) fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
+    pub fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
         let resolved = self
             .ba()
             .resolve_opts_with_config_and_request(None, Some(options));
@@ -345,7 +346,7 @@ impl ToolRequest {
             | Self::System { options: o, .. } => o,
         }
     }
-    pub(crate) fn version(&self) -> String {
+    pub fn version(&self) -> String {
         match self {
             Self::Version { version: v, .. } => v.clone(),
             Self::Prefix { prefix: p, .. } => format!("prefix:{p}"),
@@ -360,7 +361,7 @@ impl ToolRequest {
         }
     }
 
-    pub(crate) fn options(&self) -> ToolVersionOptions {
+    pub fn options(&self) -> ToolVersionOptions {
         self.resolved_options().effective().clone()
     }
 
@@ -452,7 +453,7 @@ impl ToolRequest {
             return Ok(());
         }
         let options = self.options();
-        if options.get("postinstall").is_some() {
+        if options.postinstall().is_some() {
             Settings::ensure_not_safe(&format!(
                 "running tool-level postinstall hooks for {}",
                 self.ba().short
@@ -467,7 +468,7 @@ impl ToolRequest {
         Ok(())
     }
 
-    pub(crate) async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
+    pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
                 Ok(tv) if tv.uv_lock.is_some() || tv.aube_lock.is_some() => {
@@ -510,7 +511,7 @@ impl ToolRequest {
             Self::Version {
                 backend, version, ..
             } => {
-                let path = backend.installs_path.join(version);
+                let path = backend.installs_path().join(version);
                 Some(env::find_in_shared_installs(
                     path,
                     &backend.tool_dir_name(),
@@ -524,7 +525,7 @@ impl ToolRequest {
                 ..
             } => {
                 let pathname = format!("{ref_type}-{ref_}");
-                let path = backend.installs_path.join(&pathname);
+                let path = backend.installs_path().join(&pathname);
                 Some(env::find_in_shared_installs(
                     path,
                     &backend.tool_dir_name(),
@@ -546,7 +547,7 @@ impl ToolRequest {
                     let pathname = version_sub(&v, sub.as_str())
                         .inspect_err(|e| warn!("ToolRequest.version_sub: {e:#}"))
                         .ok()?;
-                    let path = backend.installs_path.join(&pathname);
+                    let path = backend.installs_path().join(&pathname);
                     Some(env::find_in_shared_installs(
                         path,
                         &backend.tool_dir_name(),
@@ -557,7 +558,7 @@ impl ToolRequest {
                 backend, prefix, ..
             } => {
                 // Check primary install path first
-                let found = match file::ls(&backend.installs_path) {
+                let found = match file::ls(backend.installs_path()) {
                     Ok(installs) => installs
                         .iter()
                         .find(|p| {
@@ -667,7 +668,7 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub(crate) async fn resolve(
+    pub async fn resolve(
         &self,
         config: &Arc<Config>,
         opts: &ResolveOptions,
@@ -675,18 +676,18 @@ impl ToolRequest {
         ToolVersion::resolve(config, self.clone(), opts).await
     }
 
-    pub(crate) fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
+    pub fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
         let minimum_release_age = self.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
         opts.apply_before_date_for_tool(self.ba(), minimum_release_age.as_deref())?;
         Ok(opts)
     }
 
-    pub(crate) fn is_os_supported(&self) -> bool {
+    pub fn is_os_supported(&self) -> bool {
         if let Some(os_list) = self.os() {
             let matched = os_list
                 .iter()
-                .any(|entry| crate::cli::version::os_selector_matches(entry));
+                .any(|entry| crate::platform::os_selector_matches(entry));
             if !matched {
                 return false;
             }
@@ -939,7 +940,7 @@ mod tests {
     use super::{
         LockfileScope, ToolRequest, validate_ref_string, validate_version_string, version_sub,
     };
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;

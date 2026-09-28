@@ -4,6 +4,7 @@ version_order = "semver"
 
 bins = ["railway"]
 [[backends]]
+attestations_since = "5.43.4"
 full = "github:railwayapp/cli"
 
 [[backends]]

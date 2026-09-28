@@ -6,14 +6,14 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::args::BackendArg;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::normalize_idiomatic_contents;
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::cli::args::BackendArg;
 use crate::config::env_directive::EnvResults;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
@@ -57,12 +57,12 @@ impl AsdfBackend {
         Self {
             cache: ExternalPluginCache::default(),
             latest_stable_caches: Mutex::new(HashMap::new()),
-            alias_cache: CacheManagerBuilder::new(ba.cache_path.join("aliases.msgpack.z"))
+            alias_cache: CacheManagerBuilder::new(ba.cache_path().join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases"))
                 .build(),
             idiomatic_filename_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("idiomatic_filenames.msgpack.z"),
+                ba.cache_path().join("idiomatic_filenames.msgpack.z"),
             )
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/list-legacy-filenames"))
@@ -107,7 +107,7 @@ impl AsdfBackend {
 
     fn idiomatic_cache_file_path(&self, idiomatic_file: &Path) -> PathBuf {
         self.ba
-            .cache_path
+            .cache_path()
             .join("idiomatic")
             .join(&self.name)
             .join(hash_to_str(&idiomatic_file.to_string_lossy()))
@@ -168,7 +168,7 @@ impl AsdfBackend {
             .entry(map_key)
             .or_insert_with(|| {
                 let mut cm =
-                    CacheManagerBuilder::new(self.ba.cache_path.join("latest_stable.msgpack.z"))
+                    CacheManagerBuilder::new(self.ba.cache_path().join("latest_stable.msgpack.z"))
                         .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                         .with_fresh_file(self.plugin_path.clone())
                         .with_fresh_file(self.plugin_path.join("bin/latest-stable"));
@@ -467,7 +467,7 @@ impl Backend for AsdfBackend {
         ctx.pr.set_message("bin/install".into());
         run_script(&Install)?;
         verify_install_script_output(&self.ba.short, &tv.install_path())?;
-        file::remove_dir(&self.ba.downloads_path)?;
+        file::remove_dir(self.ba.downloads_path())?;
 
         Ok(tv)
     }
@@ -559,9 +559,9 @@ impl Debug for AsdfBackend {
         f.debug_struct("AsdfPlugin")
             .field("name", &self.name)
             .field("plugin_path", &self.plugin_path)
-            .field("cache_path", &self.ba.cache_path)
-            .field("downloads_path", &self.ba.downloads_path)
-            .field("installs_path", &self.ba.installs_path)
+            .field("cache_path", &self.ba.cache_path())
+            .field("downloads_path", &self.ba.downloads_path())
+            .field("installs_path", &self.ba.installs_path())
             .field("repo_url", &self.repo_url)
             .finish()
     }

@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::dirs;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::plugins::warn_if_env_plugin_shadows_registry;
+use crate::plugins::{plugin_drift, warn_if_env_plugin_shadows_registry, warn_plugin_drift};
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -98,6 +98,7 @@ impl PluginsInstall {
         if missing_plugins.is_empty() {
             warn!("all plugins already installed");
         }
+        warn_plugin_drift(config);
         self.install_many(config, missing_plugins).await?;
         Ok(())
     }
@@ -118,7 +119,8 @@ impl PluginsInstall {
             let plugin_name = plugin.clone();
             spawn_plugin_task(&mut jset, &mut task_names, plugin_name, async move {
                 let _permit = semaphore.acquire_owned().await?;
-                println!("installing {plugin}");
+                // Progress only: a closed stdout must not skip the install.
+                let _ = miseprint!("installing {plugin}\n");
                 this.install_one(&config, plugin, None).await
             });
         }
@@ -144,11 +146,17 @@ pub(crate) async fn install_plugin(
 ) -> Result<()> {
     let explicit_type = name.contains(':');
     let (mut plugin_type, name) = PluginType::from_plugin_config(name);
-    let git_url = git_url.or_else(|| {
-        config
-            .get_repo_url(name)
-            .filter(|url| url.starts_with("packslip:"))
-    });
+    // `[plugins]` says what to install, so `--force` reinstalls from it rather
+    // than from the existing checkout's origin. Without `--force` the plugin
+    // resolves the entry itself, keeping the untrusted-plugin prompt that an
+    // explicit URL skips.
+    let git_url = git_url
+        .or_else(|| force.then(|| config.configured_plugin_url(name)).flatten())
+        .or_else(|| {
+            config
+                .get_repo_url(name)
+                .filter(|url| url.starts_with("packslip:"))
+        });
     if git_url
         .as_deref()
         .is_some_and(|url| url.starts_with("packslip:"))
@@ -171,6 +179,9 @@ pub(crate) async fn install_plugin(
     if !force && plugin.is_installed() {
         warn!("Plugin {name} already installed");
         warn!("Use --force to install anyway");
+        if let Some(drift) = plugin_drift(config).into_iter().find(|d| d.name == name) {
+            warn!("{drift}");
+        }
     } else {
         let mpr = MultiProgressReport::get();
         plugin

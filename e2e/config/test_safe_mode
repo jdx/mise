@@ -110,6 +110,13 @@ assert_fail "test -e safe-install-into"
 
 cat <<'EOF' >mise.toml
 [tools]
+"http:safe-install" = { version = "1.0.0", url = "https://example.invalid/archive.tar.gz", postinstall = { run = "touch postinstall-ran", when = "always" } }
+EOF
+assert_fail "MISE_SAFE=1 mise install --force" "running tool-level postinstall hooks for http:safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "test -e postinstall-ran"
+
+cat <<'EOF' >mise.toml
+[tools]
 "http:safe-install" = { version = "1.0.0", url = "https://example.invalid/archive.tar.gz", install_env = { BASH_ENV = "./untrusted.sh" } }
 EOF
 assert_fail "MISE_SAFE=1 mise install --force" "using tool-level install_env for http:safe-install is disabled in safe mode (MISE_SAFE=1)"

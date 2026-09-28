@@ -106,16 +106,8 @@ NO_DEVICE_OAUTH="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BRO
 assert_contains "$NO_DEVICE_OAUTH mise token github 127.0.0.1" "(none)"
 
 # Test 9: native GitHub OAuth device flow via token alias
-MOCK_PORT_FILE="$HOME/mock-github-oauth-port"
-MOCK_GITHUB_OAUTH_PORT_FILE="$MOCK_PORT_FILE" python3 "$ROOT/e2e/fixtures/mock-github-oauth.py" &
-MOCK_PID=$!
-for _ in $(seq 1 30); do
-  if [ -f "$MOCK_PORT_FILE" ]; then
-    break
-  fi
-  sleep 0.1
-done
-MOCK_PORT="$(cat "$MOCK_PORT_FILE")"
+start_http_server --handler "$ROOT/e2e/fixtures/mock-github-oauth.py"
+MOCK_PORT=$HTTP_PORT
 OAUTH_ENV="MISE_GITHUB_OAUTH_CLIENT_ID=Iv1.mock MISE_GITHUB_OAUTH_OPEN_BROWSER=false MISE_GITHUB_OAUTH_AUTH_URL=http://127.0.0.1:$MOCK_PORT/login MISE_GITHUB_OAUTH_API_URL=http://127.0.0.1:$MOCK_PORT/api"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --oauth --raw" "ghu-native-oauth-token"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 --unmask" "GitHub OAuth"
@@ -157,7 +149,7 @@ assert_not_contains "$OAUTH_ENV mise env --shell bash" "ghu-native-oauth-token"
 assert_not_contains "$OAUTH_ENV mise exec -- true 2>&1" "GitHub OAuth refresh was rejected"
 assert_contains "$OAUTH_ENV mise token github 127.0.0.1 2>&1" "GitHub OAuth refresh was rejected"
 
-kill "$MOCK_PID"
+kill "$HTTP_SERVER_PID"
 
 # Test 10: git credential fill
 

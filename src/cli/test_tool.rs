@@ -1,6 +1,6 @@
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::cmd::cmd;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::{contains_template_syntax, get_tera, render_str};
@@ -327,29 +327,32 @@ impl TestTool {
         let mut cleaned_any = false;
 
         // Remove entire installs directory for this tool
-        if tool.ba.installs_path.exists() {
+        if tool.ba.installs_path().exists() {
             info!(
                 "Removing installs directory: {}",
-                tool.ba.installs_path.display()
+                tool.ba.installs_path().display()
             );
-            file::remove_all(&tool.ba.installs_path)?;
+            file::remove_all(tool.ba.installs_path())?;
             cleaned_any = true;
         }
 
         // Clear cache directory (contains metadata)
-        if tool.ba.cache_path.exists() {
-            info!("Removing cache directory: {}", tool.ba.cache_path.display());
-            file::remove_all(&tool.ba.cache_path)?;
+        if tool.ba.cache_path().exists() {
+            info!(
+                "Removing cache directory: {}",
+                tool.ba.cache_path().display()
+            );
+            file::remove_all(tool.ba.cache_path())?;
             cleaned_any = true;
         }
 
         // Clear downloads directory
-        if tool.ba.downloads_path.exists() {
+        if tool.ba.downloads_path().exists() {
             info!(
                 "Removing downloads directory: {}",
-                tool.ba.downloads_path.display()
+                tool.ba.downloads_path().display()
             );
-            file::remove_all(&tool.ba.downloads_path)?;
+            file::remove_all(tool.ba.downloads_path())?;
             cleaned_any = true;
         }
 

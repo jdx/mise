@@ -74,6 +74,7 @@ fn parse_flatpak_list(output: &str, requests: &[PackageRequest]) -> Vec<PackageS
             PackageStatus {
                 request: request.clone(),
                 state,
+                display_name: None,
             }
         })
         .collect()

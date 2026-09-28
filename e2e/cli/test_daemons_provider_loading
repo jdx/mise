@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+mkdir -p "$MISE_CONFIG_DIR" project
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[daemon_providers.broken]
+preset = "not-a-preset"
+version = "18"
+[daemon_providers.pg]
+preset = "postgres"
+version = "18"
+port = 54321
+TOML
+cd project
+cat >mise.toml <<'TOML'
+[env]
+LOADING_OK = "yes"
+[tasks.probe]
+run = "true"
+TOML
+export MISE_EXPERIMENTAL=1
+assert_contains 'mise env --json' 'LOADING_OK'
+mise run probe
+cat >>mise.toml <<'TOML'
+[daemons.db]
+provider = "pg"
+TOML
+assert_contains 'mise env --json' '54321'
+cat >mise.local.toml <<'TOML'
+[daemons.db]
+provider = "broken"
+TOML
+MISE_EXPERIMENTAL=0 assert_contains 'mise env --json' 'LOADING_OK'
+MISE_SAFE=1 mise env --json >/dev/null
+assert_fail 'mise env --json'
+assert "test ! -d '$MISE_STATE_DIR/daemon-providers'"

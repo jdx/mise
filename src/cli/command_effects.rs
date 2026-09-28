@@ -46,6 +46,9 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("activate", Read),
     ("backends", Read),
     ("backends ls", Read),
+    // Rewrites lock entries and reinstalls the same versions from another
+    // backend, like `upgrade`; nothing is left uninstalled.
+    ("backends switch", Write),
     ("bin-paths", Read),
     ("bootstrap", Destructive),
     ("bootstrap __apply-account-plan", Destructive),
@@ -146,6 +149,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap secrets", Read),
     ("bootstrap secrets status", Read),
     ("bootstrap status", Read),
+    ("bootstrap unapply", Destructive),
     // Changes the current user's login shell.
     ("bootstrap user", Read),
     ("bootstrap user apply", Write),
@@ -165,7 +169,10 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("current", Read),
     ("deactivate", Read),
     ("daemons", Read),
+    ("daemons register", Write),
     ("daemons ls", Read),
+    ("daemons providers", Read),
+    ("daemons providers ls", Read),
     // Deletes the state and database data of projects that no longer exist.
     ("daemons prune", Destructive),
     ("daemons status", Read),
@@ -359,6 +366,17 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("daemons stop", "runs daemon stop hooks"),
     ("daemons tui", "interactively manages daemons"),
     ("daemons __init", "initializes daemon data"),
+    (
+        "daemons providers start",
+        "installs tools and starts shared servers",
+    ),
+    ("daemons providers stop", "stops shared servers"),
+    ("daemons providers restart", "restarts shared servers"),
+    (
+        "daemons __provider-exec",
+        "executes a generated provider command",
+    ),
+    ("daemons __resource", "provisions a shared service resource"),
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap dotfiles capture",
@@ -371,6 +389,10 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     (
         "bootstrap repos exec",
         "runs an arbitrary command in each repo",
+    ),
+    (
+        "bootstrap __service-exec",
+        "runs the command a user service declares",
     ),
     ("direnv exec", "runs an arbitrary command"),
     ("doctor project", "runs project-defined diagnostic commands"),
@@ -486,12 +508,18 @@ mod tests {
                 .find(|f| f.flag.name == name)
                 .unwrap_or_else(|| panic!("`mise completion` has no --{name}"))
         };
-        assert_eq!(flag("install").effect, Some(usage_rs::spec::Effect::Write));
+        assert_eq!(
+            flag("install").extra.effect,
+            Some(usage_rs::spec::Effect::Write)
+        );
         // `--force` only widens which file an install may replace, so it writes for that reason
         // rather than one of its own.
-        assert_eq!(flag("force").effect, Some(usage_rs::spec::Effect::Write));
+        assert_eq!(
+            flag("force").extra.effect,
+            Some(usage_rs::spec::Effect::Write)
+        );
         // And a flag that changes only what is printed stays unset.
-        assert_eq!(flag("include-bash-completion-lib").effect, None);
+        assert_eq!(flag("include-bash-completion-lib").extra.effect, None);
     }
 
     /// Adding a command without deciding what it does to the world is the

@@ -6,6 +6,10 @@
     v-model="filter"
     autofocus="autofocus"
   />
+  <label class="verified-filter">
+    <input type="checkbox" v-model="verifiedOnly" />
+    Only show tools with signature or provenance verification
+  </label>
   <table class="full-width">
     <thead>
       <tr>
@@ -23,13 +27,33 @@
         v-for="(entry, index) in filteredData"
         :key="`backend-${index}`"
       >
-        <td v-html="highlightMatches(entry.short)"></td>
+        <td>
+          <a
+            v-if="entry.url"
+            :href="entry.url"
+            v-html="highlightMatches(entry.short)"
+          ></a>
+          <span v-else v-html="highlightMatches(entry.short)"></span>
+          <a
+            class="mise-versions"
+            :href="`https://mise-versions.jdx.dev/tools/${encodeURIComponent(entry.short)}`"
+            title="Versions and security info on mise-versions"
+            >details ↗</a
+          >
+        </td>
         <td>
           <span v-for="(backend, index) in entry.backends">
             <a
               :href="`${backend.url}`"
               v-html="highlightMatches(backend.name)"
             ></a>
+            <span
+              v-for="feature in backend.verification"
+              :key="feature"
+              class="verification"
+              :title="verificationLabels[feature].title"
+              >{{ verificationLabels[feature].label }}</span
+            >
             <span v-if="index < entry.backends.length - 1"><br /></span>
           </span>
         </td>
@@ -51,13 +75,34 @@ export default {
     return {
       filter:
         new URLSearchParams(globalThis?.location?.search).get("filter") || "",
+      verifiedOnly:
+        new URLSearchParams(globalThis?.location?.search).get("verified") ===
+        "1",
       data: data,
+      verificationLabels: {
+        packslip: {
+          label: "packslip",
+          title: "Signed packslip release manifest",
+        },
+        "github-attestations": {
+          label: "attestations",
+          title: "GitHub artifact attestations",
+        },
+        slsa: { label: "SLSA", title: "SLSA provenance" },
+        cosign: { label: "cosign", title: "Cosign signature" },
+        minisign: { label: "minisign", title: "Minisign signature" },
+      },
     };
   },
   computed: {
     filteredData() {
-      if (this.filter.trim() === "") return this.data;
-      return this.data.filter((entry) => {
+      const data = this.verifiedOnly
+        ? this.data.filter((entry) =>
+            entry.backends.some((b) => b.verification.length > 0),
+          )
+        : this.data;
+      if (this.filter.trim() === "") return data;
+      return data.filter((entry) => {
         const searchTerm = this.filter.toLowerCase();
         const short = entry.short.toString().toLowerCase();
 
@@ -70,17 +115,37 @@ export default {
   },
   watch: {
     filter(newFilter = "") {
-      const url = new URL(window.location);
-      url.hash = "tools";
-      if (newFilter.trim() === "") {
-        url.searchParams.delete("filter");
-      } else {
-        url.searchParams.set("filter", newFilter);
-      }
-      window.history.pushState({}, "", url);
+      this.pushQuery("filter", newFilter.trim() === "" ? null : newFilter);
+    },
+    verifiedOnly(verifiedOnly) {
+      this.pushQuery("verified", verifiedOnly ? "1" : null);
     },
   },
+  mounted() {
+    window.addEventListener("popstate", this.readQuery);
+  },
+  beforeUnmount() {
+    window.removeEventListener("popstate", this.readQuery);
+  },
   methods: {
+    // Back/Forward restores the filters from the URL. The watchers then see a
+    // query that already matches and push nothing, keeping forward history.
+    readQuery() {
+      const params = new URLSearchParams(window.location.search);
+      this.filter = params.get("filter") || "";
+      this.verifiedOnly = params.get("verified") === "1";
+    },
+    pushQuery(key, value) {
+      const url = new URL(window.location);
+      if (value === null) {
+        url.searchParams.delete(key);
+      } else {
+        url.searchParams.set(key, value);
+      }
+      if (url.search === window.location.search) return;
+      url.hash = "tools";
+      window.history.pushState({}, "", url);
+    },
     highlightMatches(text) {
       if (this.filter.trim() === "") return text;
       const matchExists = text
@@ -136,6 +201,31 @@ export default {
 .full-width th,
 .full-width td {
   word-wrap: break-word; /* Allows text to wrap within cells */
+}
+
+.verified-filter {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+
+.mise-versions {
+  display: block;
+  font-size: 12px;
+  color: var(--vp-c-text-2);
+}
+
+.verification {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--vp-c-green-soft);
+  color: var(--vp-c-green-1);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .no-matches {

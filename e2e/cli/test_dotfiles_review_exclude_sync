@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Narrowing a tracked directory with `exclude` stops managing a file; it
+# is not a deletion for the other machines to replay. A file deleted
+# while it is still selected still is.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/exclude-sync-origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.sample
+echo keep >~/.sample/keep
+echo leave >~/.sample/leave
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.sample" = { mode = "track" }
+TOML
+assert_succeed 'mise dot save'
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed 'mise dot sync'
+
+second="$(dirname "$HOME")/second"
+mkdir -p "$second/.config/mise" "$second/.local/state/mise/history" "$second/.sample"
+git clone -q --bare "$origin" "$second/.local/state/mise/history/repo.git"
+echo keep >"$second/.sample/keep"
+echo leave >"$second/.sample/leave"
+cat >"$second/.config/mise/config.toml" <<'TOML'
+[dotfiles]
+"~/.sample" = { mode = "track" }
+TOML
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" \
+      MISE_HISTORY_NOTIFY=false mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b dot origin set file://$origin --sync manual --yes"
+assert_succeed 'b dot sync --fetch-only'
+assert_succeed 'b dot pull --yes'
+
+# machine one stops managing ~/.sample/leave
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.sample" = { mode = "track", exclude = ["leave"] }
+TOML
+assert_succeed 'mise dot save'
+assert "cat ~/.sample/leave" 'leave'
+assert_succeed 'mise dot sync'
+
+# machine two keeps its copy: narrowing selection is not a deletion
+assert_succeed 'b dot sync --fetch-only'
+assert_not_contains 'b dot pull --dry-run' 'home/.sample/leave'
+assert_succeed 'b dot pull --yes'
+assert "cat $second/.sample/leave" 'leave'
+
+# a file deleted while it is still selected is still propagated
+rm ~/.sample/keep
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+assert_succeed 'b dot sync --fetch-only'
+assert_succeed 'b dot pull --yes'
+assert_fail "test -e $second/.sample/keep"
+assert "cat $second/.sample/leave" 'leave'

@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::file::display_path;
 use crate::system::files::FileMode;
-use crate::system::history::tracked::{Policy, TrackedEntry, TrackedSet};
+use crate::system::history::tracked::{Policy, TrackedSet, preview_set};
 use crate::ui::table::MiseTable;
 
 /// Show what history tracks and under which policies
@@ -40,6 +40,22 @@ struct PathRow {
     files: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one — which clears a list another machine published.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, relative to its path; absent
+    /// when the entry declares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    include: Option<Vec<String>>,
+    /// How many files the entry's tree holds in all, when an `include`
+    /// list means that is more than the number captured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    considered: Option<u64>,
+    /// Whether the walk skipped a directory the include list could not
+    /// reach into, which makes `considered` a floor rather than a total.
+    searched_partially: bool,
 }
 
 impl DotfilesPaths {
@@ -48,23 +64,11 @@ impl DotfilesPaths {
             return self.print_noisy();
         }
         let tracked = match &self.preview {
-            Some(path) => {
-                let mut set = TrackedSet {
-                    exclude: crate::system::history::config::exclude_globs()?,
-                    ..Default::default()
-                };
-                set.push(TrackedEntry {
-                    path: crate::system::history::tracked::normalize_target(path),
-                    mode: "track".into(),
-                    policy: Policy::for_mode(FileMode::Track),
-                    variant: None,
-                    declared_in: None,
-                });
-                set
-            }
+            Some(path) => preview_set(path, Policy::for_mode(FileMode::Track))?,
             None => TrackedSet::effective().await?,
         };
         let walk = tracked.walk()?;
+        walk.report_warnings();
         let mut counts = vec![0u64; tracked.entries.len()];
         for (owner, _) in walk.files.values() {
             if let Some(count) = counts.get_mut(*owner) {
@@ -82,6 +86,10 @@ impl DotfilesPaths {
                 autosave: entry.policy.autosave,
                 files: counts[index],
                 declared_in: entry.declared_in.as_deref().map(display_path),
+                exclude: entry.exclude.clone(),
+                include: entry.include.clone(),
+                considered: walk.considered.get(&index).copied(),
+                searched_partially: walk.skipped.contains(&index),
             })
             .collect();
         if self.json {
@@ -90,13 +98,19 @@ impl DotfilesPaths {
                 "exclude": tracked.exclude,
                 "invalid": tracked.invalid,
                 "omitted": walk.omitted,
+                "plaintext": walk.plaintext,
+                "nested": walk.nested,
                 "incomplete": walk.incomplete,
             });
             miseprintln!("{}", serde_json::to_string_pretty(&out)?);
             return Ok(());
         }
         if let Some(path) = &self.preview {
-            miseprintln!("Tracking {} would capture:", display_path(path));
+            miseprintln!(
+                "Tracking {} would capture {}:",
+                display_path(path),
+                walk.summary()
+            );
             for root in &walk.roots {
                 for rel in &root.files {
                     miseprintln!("  {}", display_path(root.path.join(rel)));
@@ -123,12 +137,46 @@ impl DotfilesPaths {
             for glob in &tracked.exclude {
                 miseprintln!("  exclude: {glob}");
             }
+            for row in &rows {
+                for glob in row.exclude.iter().flatten() {
+                    miseprintln!("  exclude ({}): {glob}", row.path);
+                }
+                for glob in row.include.iter().flatten() {
+                    miseprintln!("  include ({}): {glob}", row.path);
+                }
+                if let Some(considered) = row.considered {
+                    // "of N" is only said when N is the whole tree: a
+                    // directory the list could not reach into is skipped
+                    // unopened, and counting it would mean doing the
+                    // work the list exists to avoid
+                    if row.searched_partially {
+                        miseprintln!(
+                            "  {}: {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                        );
+                    } else {
+                        miseprintln!(
+                            "  {}: {} of {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                            crate::system::history::tracked::with_separators(considered as usize)
+                        );
+                    }
+                }
+            }
         }
         for invalid in &tracked.invalid {
             miseprintln!("  invalid: {} ({})", invalid.path, invalid.reason);
         }
         for omitted in &walk.omitted {
             miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);
+        }
+        for nested in &walk.nested {
+            miseprintln!("  nested: {} ({})", nested.path, nested.reason);
+        }
+        for plaintext in &walk.plaintext {
+            miseprintln!("  plaintext: {} ({})", plaintext.path, plaintext.reason);
         }
         for incomplete in &walk.incomplete {
             miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);
@@ -178,19 +226,33 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
     if glob.is_empty() {
         eyre::bail!("a glob is required");
     }
+    // the refusal lives in the writer, so every caller gets it
     let global = crate::config::global_config_path();
-    let changed = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
-    match (add, changed) {
+    let edit = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
+    match (add, edit.changed) {
         (true, true) => info!(
             "history: {glob} is excluded from capture ({})",
             display_path(&global)
         ),
         (true, false) => info!("history: {glob} was already excluded"),
-        (false, true) => info!(
-            "history: {glob} is captured again ({})",
+        // **Only say it is captured again when nothing still excludes
+        // it.** A list can hold both a glob a user typed and the escaped
+        // rule `mise dot untrack` writes for a file of that name, and
+        // taking back the one they named leaves the other in force.
+        (false, true) if !edit.still_excluding.is_empty() => info!(
+            "history: {glob} is out of the exclude list, but {} still excludes it ({}); run `mise dot include` on that rule to take it out too",
+            edit.still_excluding
+                .iter()
+                .map(|rule| format!("`{rule}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
             display_path(&global)
         ),
-        (false, false) => info!("history: {glob} was not excluded"),
+        (false, true) => info!(
+            "history: removed exclusion rule {glob} ({})",
+            display_path(&global)
+        ),
+        (false, false) => info!("history: exclusion rule {glob} was not present"),
     }
     Ok(())
 }

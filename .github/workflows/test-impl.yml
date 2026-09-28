@@ -128,6 +128,11 @@ jobs:
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
+      # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
+      MBX_DISABLE: "0"
+      MBX_CACHE_DIR: ${{ github.workspace }}/.mbx-cache
+      # Keep the bootstrap binary at target/debug/mise with either backend.
+      MBX_TARGET_VIEWS: "0"
       MISE_CARGO_BUILD_COMMAND: cargo build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
       # Untrusted runs land on a shared macos-14 runner that is roughly twice as
@@ -138,14 +143,30 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+      - name: Cache mbx objects on Namespace
+        if: inputs.trusted
+        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
         with:
-          shared-key: unit-macos
-          save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
+          path: ${{ env.MBX_CACHE_DIR }}
+      - name: Cache Cargo downloads on Namespace
+        if: inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main')
+        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+      # Namespace builds reuse local objects. Main also publishes a target/registry
+      # archive so GitHub-hosted untrusted builds have a cache to restore.
+      # Install mbx before bootstrapping this checkout's mise.
+      - uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
+        with:
+          backend: ${{ inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
+          cache-generation: unit-macos-v1
       - name: Install test tools
         run: brew install fd tmux
       - run: |
-          cargo build --all-features --ignore-rust-version
+          mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       # The CI profile fails ordinary tests after one second and explicitly
@@ -154,22 +175,36 @@ jobs:
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
+      # Linux runs this in the full suite; Windows has the equivalent Pester
+      # wrapper. Always replace a disposable copy, never the CI runner binary.
+      - run: mise run test:e2e cli/test_self_update_install
       # Tracked history shells out to git and needs the Xcode Command
-      # Line Tools guard exercised on a real macOS runner.
-      - run: >-
+      # Line Tools guard exercised on a real macOS runner. Each test has its
+      # own HOME, TMPDIR, and mise directories, so these run concurrently.
+      # They are listed longest first so the slowest start immediately.
+      # macos-14 runners have 3 cores; Namespace runners have 6.
+      - name: Test dotfiles and bootstrap e2e
+        env:
+          E2E_JOBS: ${{ inputs.trusted && '3' || '2' }}
+        run: >-
           mise run test:e2e
-          '^test_dotfiles_history_bootstrap$' '^test_dotfiles_history$'
-          '^test_dotfiles_recovery_journey$' '^test_dotfiles_capture$'
-          '^test_dotfiles_onboarding$' '^test_dotfiles_track$'
-          '^test_dotfiles_history_policies$' '^test_dotfiles_rollback$'
-          '^test_dotfiles_rollback_types$' '^test_bootstrap_user_services$'
-          '^test_bootstrap_unit_templates$'
-          '^test_dotfiles_rollback_review$' '^test_dotfiles_sync_permissions$'
-          '^test_dotfiles_managed_manual$' '^test_bootstrap_from_git_dumb_http$'
-          '^test_dotfiles_alias_enrollment$'
-          '^test_dotfiles_watch$' '^test_dotfiles_watch_pending$'
-          '^test_dotfiles_watch_throttle$' '^test_dotfiles_sync$'
-          '^test_dotfiles_sync_files_encrypted$' '^test_dotfiles_directory_permissions$'
+          '^test_dotfiles_rollback_types$' '^test_dotfiles_sync_files_encrypted$'
+          '^test_dotfiles_rollback$' '^test_dotfiles_capture$'
+          '^test_dotfiles_track$' '^test_dotfiles_rollback_review$'
+          '^test_bootstrap_user_services$' '^test_dotfiles_sync_permissions$'
+          '^test_dotfiles_recovery_journey$' '^test_dotfiles_sync$'
+          '^test_dotfiles_managed_manual$' '^test_dotfiles_history_bootstrap$'
+          '^test_dotfiles_history$' '^test_dotfiles_directory_permissions$'
+          '^test_bootstrap_unit_templates$' '^test_dotfiles_history_policies$'
+          '^test_dotfiles_onboarding$' '^test_dotfiles_alias_enrollment$'
+          '^test_bootstrap_from_git_dumb_http$'
+      # The watcher tests assert on debounce and throttle windows. Keep them
+      # serial so concurrent tests cannot delay filesystem events.
+      - name: Test dotfiles watcher e2e
+        run: >-
+          mise run test:e2e
+          '^test_dotfiles_watch_throttle$' '^test_dotfiles_watch$'
+          '^test_dotfiles_watch_pending$'
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
@@ -193,7 +228,7 @@ jobs:
               path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- bun i
+      - run: mise x -- aube install
       # build-ubuntu produced this commit's binary, downloaded above.
       - run: mise run render
         env:

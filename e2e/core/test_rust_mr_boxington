@@ -115,6 +115,15 @@ EOF
 assert "mise run wrapped 2>/dev/null" "mbx:1
 cargo:1.81.0:check"
 assert "mise run check 2>/dev/null" "cargo:1.81.0:check"
+# A Windows exe- or file-mode shim runs `mise x -- cargo` with __MISE_SHIM_PATH
+# set, and must still see the task's tools to find its wrapper (#13671).
+cat >>mise.toml <<'EOF'
+[tasks.wrapped-native]
+tools = { rust = { version = "1.81.0", mr_boxington = true } }
+run = '__MISE_SHIM_PATH="$MISE_DATA_DIR/command-wrappers/bin/cargo" mise x -- cargo check'
+EOF
+assert "mise run wrapped-native 2>/dev/null" "mbx:1
+cargo:1.81.0:check"
 assert "mise run wrapped 2>/dev/null" "mbx:1
 cargo:1.81.0:check"
 mise reshim

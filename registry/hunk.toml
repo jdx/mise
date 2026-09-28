@@ -8,6 +8,7 @@ bins = ["hunk"]
 full = "aqua:modem-dev/hunk"
 
 [[backends]]
+attestations_since = "0.13.1"
 full = "github:modem-dev/hunk"
 
 [backends.options]

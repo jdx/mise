@@ -9,13 +9,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct NoisyRecord {
+pub struct NoisyRecord {
     #[serde(default)]
     pub paths: BTreeMap<String, NoisyPath>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct NoisyPath {
+pub struct NoisyPath {
     /// The stretched autosave interval.
     pub interval_secs: u64,
     /// Changes seen since the last save.
@@ -24,7 +24,7 @@ pub(crate) struct NoisyPath {
     pub last_seen: String,
 }
 
-pub(crate) fn read(path: &Path) -> NoisyRecord {
+pub fn read(path: &Path) -> NoisyRecord {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())

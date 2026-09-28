@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::cli::args::ToolArg;
+use crate::args::ToolArg;
 use crate::config::Config;
 use crate::dirs;
 use crate::file;
@@ -101,7 +101,7 @@ impl Which {
             .sorted()
             .collect_vec();
         for bin in bins {
-            println!("{bin}");
+            miseprintln!("{bin}");
         }
         Ok(())
     }

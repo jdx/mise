@@ -1,6 +1,7 @@
 description = "The Julia Programming Language"
 detect = ["Project.toml", "Manifest.toml"]
 test = { cmd = "julia --version", expected = "julia version" }
+url = "https://julialang.org"
 version_order = "semver"
 
 bins = ["julia"]

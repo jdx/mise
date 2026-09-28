@@ -7,10 +7,10 @@ use eyre::Result;
 use serde::Deserialize;
 use versions::Versioning;
 
+use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::options::BackendOptions;
 use crate::backend::{VersionInfo, platform_target::PlatformTarget};
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};

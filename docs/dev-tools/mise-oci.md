@@ -89,11 +89,13 @@ jq = "1.8.1"
 2. **mise binary** at `/usr/local/bin/mise` (skip with `--no-mise`).
 3. **Configured apt or apk `[bootstrap.packages]`**, if any, installed into the
    base rootfs and emitted as one package layer.
-4. **One layer per tool**, each rooted at
+4. **One layer per [vfox plugin](#vfox-plugins)** that installed a tool, if any,
+   at `/mise/plugins/<name>/`. Annotated with `dev.mise.plugin`.
+5. **One layer per tool**, each rooted at
    `/mise/installs/<plugin>/<version>/`. Annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-5. **Configured `[dotfiles]`**, if any, baked as image files.
-6. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
+6. **Configured `[dotfiles]`**, if any, baked as image files.
+7. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
    directory.
 
 Changing Node.js leaves unrelated tool archives reusable. The generated
@@ -205,9 +207,9 @@ including when using `--cache-from` or `--no-cache`. Builds that install
 `[bootstrap.packages]` still download the base layers to unpack the filesystem;
 `oci build` and `oci run` also download them to produce complete local images.
 
-Tool layers whose cache key (tool, version, in-image prefix, and file
-owner) matches the previously pushed image are **reused from the
-registry instead of rebuilt** — skipping the tar/gzip work entirely.
+Tool layers whose cache key (tool, version, in-image prefix, file
+owner, and — for vfox tools — the plugin's contents) matches the previously
+pushed image are **reused from the registry instead of rebuilt** — skipping the tar/gzip work entirely.
 Reused tools don't even need to be installed locally, which makes CI
 pushes fast: only tools whose version actually changed get installed
 and packaged.
@@ -228,9 +230,10 @@ and packaged.
 
 One caveat: environment derivation (`JAVA_HOME`-style `exec_env` vars)
 runs against local installs. For a reused tool that isn't installed,
-most backends still derive paths correctly, but exotic backends may
-contribute incomplete env — pass `--no-cache` (with the tool installed)
-if the image config looks wrong.
+most backends still derive paths correctly, but exotic backends — including
+vfox plugins whose env hook inspects the install directory — may contribute
+incomplete env. Pass `--no-cache` (with the tool installed) if the image
+config looks wrong.
 
 ```sh
 mise oci push [--image-dir DIR]
@@ -429,9 +432,33 @@ external runtimes, or paths outside its installation may still be needed.
 Declare required runtimes alongside their tools and verify the resulting image
 with the commands your project actually runs.
 
-asdf and vfox plugins, including custom vfox backend plugins, are rejected. Their
-installation hooks can write outside the per-version directory, which the
-per-tool layer model cannot capture reliably.
+asdf plugins are rejected. Their bash install scripts can write outside the
+per-version directory, which the per-tool layer model cannot capture reliably,
+and their `exec-env` scripts expect bash at runtime.
+
+### vfox plugins
+
+Tools installed by [vfox plugins](/dev-tools/backends/vfox.html), including
+custom [backend plugins](/backend-plugin-development.html) (`my-plugin:tool`),
+are packaged like any other tool. mise also copies each plugin into its own
+layer at `/mise/plugins/<name>/` (without `.git`), so the image's embedded mise
+can resolve these tools without cloning the plugin. Plugins embedded in the mise
+binary are not copied. The build logs each plugin directory it copies. A
+symlink inside a plugin that resolves to a file outside the plugin directory
+fails the build instead of copying a host file into the image; replace it with
+a copy. Links that are already broken on the build host are kept as-is.
+
+The plugin's env hook (`EnvKeys` or `BackendExecEnv`) runs on the build host.
+Paths under the host install directory are rewritten to the in-image path;
+other values are baked in as-is. mise warns when a value points under the build
+host's home directory, since that path usually doesn't exist in the container.
+Override such variables with [`[oci].env`](/dev-tools/mise-oci.html#oci-section-in-mise-toml).
+
+A plugin's `PostInstall` or `BackendInstall` hook can run arbitrary commands.
+Only files written to the tool's install directory end up in the image.
+
+A tool layer is reused from the registry only when the plugin's contents
+match the plugin that built it, so updating a plugin rebuilds its tools' layers.
 
 ## Registry base-image support
 
@@ -534,7 +561,7 @@ different runners can race — sequence them as above.
 
 ## Known limitations (v1)
 
-- `asdf` / `vfox` backends are rejected (see above).
+- `asdf` backends are rejected (see [Supported backends](#supported-backends)).
 - Cross-platform builds produce broken images (binaries are host-native);
   run the build on a Linux host.
 - The base image must supply a compatible libc and other runtime libraries.

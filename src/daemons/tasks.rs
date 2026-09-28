@@ -6,7 +6,7 @@
 //! ready.
 
 use super::{DaemonSet, runtime};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
@@ -16,7 +16,7 @@ use std::sync::Arc;
 /// Whether a task asks for any daemon. `false` and an empty list ask for none,
 /// so such a task never touches daemon configuration and must not be judged
 /// against it.
-pub(crate) fn declares_daemons(task: &Task) -> bool {
+pub fn declares_daemons(task: &Task) -> bool {
     match &task.daemons {
         None | Some(crate::task::TaskDaemons::All(false)) => false,
         Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),
@@ -111,7 +111,7 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// dependency task can live in a different subproject, and two subprojects may
 /// each declare a daemon of the same name; each task's names are therefore
 /// looked up in its own configuration hierarchy.
-pub(crate) async fn start(
+pub async fn start(
     config: &Arc<Config>,
     tasks: &[Task],
     dry_run: bool,
@@ -211,6 +211,8 @@ pub(crate) async fn start(
         if set.daemons.is_empty() {
             continue;
         }
+        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        super::presets::ensure_set_runnable_as_user(&will_start)?;
         let previous = runtime::read_state(&root)?;
         let (scoped, ts) = if install_tools {
             runtime::toolset(&scoped, true).await?
@@ -232,9 +234,11 @@ pub(crate) async fn start(
         };
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
-        // This root's own configuration, which is the only view that knows
-        // about imports the referenced project itself declares.
-        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        // `will_start` comes from this root's own configuration, which is the
+        // only view that knows about imports the referenced project declares.
+        if install_tools {
+            super::providers::install_set(&will_start).await?;
+        }
         super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
@@ -365,8 +369,10 @@ mod tests {
                             root: PathBuf::from("/project"),
                             table: toml::Table::new(),
                             preset: None,
+                            data_dir: None,
                             task: None,
                             tool: None,
+                            provider: None,
                             exports: Default::default(),
                             imported: false,
                             port: None,

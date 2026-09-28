@@ -29,8 +29,11 @@ This also updates mise.lock if lockfiles are enabled, see <https://mise.jdx.dev/
   For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
   this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
-  It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
-  would change your config to `node = "22"`.
+  With a bare tool, it keeps the same precision as what was there before, so if you instead had
+  `node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
+  provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
+  For version selectors, `settings.pin` persists the resolved concrete version. Requests from non-writable
+  sources are not persisted. For example, `mise upgrade node@latest --bump` writes `latest`.
 - **`-i --interactive`** — Choose which tools to upgrade from a multiselect menu
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1

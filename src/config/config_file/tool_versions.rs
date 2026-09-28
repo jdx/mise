@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use tera::Context;
 
-use crate::cli::args::BackendArg;
+use crate::args::BackendArg;
 use crate::config::config_file::{ConfigFile, trust_check};
 use crate::file;
 use crate::file::display_path;

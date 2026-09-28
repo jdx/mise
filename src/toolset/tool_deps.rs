@@ -16,7 +16,7 @@ pub(crate) fn tool_key(tr: &ToolRequest) -> ToolKey {
 /// Multiple option variants cannot safely share one install destination.
 /// Reject them before any install job starts instead of letting one variant
 /// silently satisfy (or race with) another.
-pub(crate) fn ensure_compatible_install_requests(requests: &[ToolRequest]) -> Result<()> {
+pub fn ensure_compatible_install_requests(requests: &[ToolRequest]) -> Result<()> {
     let mut options_by_destination = std::collections::HashMap::new();
     for request in requests {
         let key = tool_key(request);
@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use crate::cli::args::BackendArg;
+    use crate::args::BackendArg;
     use crate::config::Config;
     use crate::toolset::{CoreToolOptions, ToolSource, ToolVersionOptions, parse_tool_options};
 

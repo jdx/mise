@@ -10,7 +10,8 @@
     "sandbox": {
       "base_template": "claude",
       "repo_token": "read"
-    }
+    },
+    "model": "haiku"
   },
   "automation": {
     "kind": "trail_prompt"
@@ -30,5 +31,6 @@
       "value_type": "percent",
       "polarity": "higher_is_better"
     }
-  }
+  },
+  "debounce_ms": 120000
 }

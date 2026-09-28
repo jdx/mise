@@ -1,3 +1,4 @@
+# GitHub OAuth device-flow stand-in, loaded with `start_http_server --handler`
 import http.server
 import json
 import os
@@ -8,10 +9,6 @@ TOKEN = os.environ.get("MOCK_GITHUB_OAUTH_TOKEN", "ghu-native-oauth-token")
 REFRESH_TOKEN = os.environ.get("MOCK_GITHUB_OAUTH_REFRESH_TOKEN", "ghr-native-refresh-token")
 REFRESHED_TOKEN = os.environ.get(
     "MOCK_GITHUB_OAUTH_REFRESHED_TOKEN", f"{TOKEN}-refreshed"
-)
-PORT_FILE = os.environ.get(
-    "MOCK_GITHUB_OAUTH_PORT_FILE",
-    os.path.join(os.environ["HOME"], "mock-github-oauth-port"),
 )
 
 
@@ -74,11 +71,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             }
         return {"error": "unsupported_grant_type"}
 
-    def log_message(self, format, *args):
-        pass
 
-
-server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-with open(PORT_FILE, "w") as f:
-    f.write(str(server.server_address[1]))
-server.serve_forever()
+# One request at a time, so device_token_count numbers them in order
+SERVER_CLASS = http.server.HTTPServer
