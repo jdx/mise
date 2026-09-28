@@ -70,6 +70,7 @@ pub mod jobs;
 pub mod lock_file;
 pub mod lockfile;
 pub mod logger;
+pub mod lookup;
 pub(crate) mod maplit;
 pub mod migrate;
 pub mod minisign;

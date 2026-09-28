@@ -29,6 +29,17 @@ In that case, using this example again, `/some/other/python` will be after mise'
 env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
 
+[activate_mise_lookup]
+default = "self"
+description = "Select the mise command used by an activated interactive shell."
+docs = """
+`self` keeps the existing full activation behavior. Use `env_path` for repositories that provide their own mise executable in trusted project `env._.path` entries. The activating mise maintains the parent shell's PATH and shell integration, while the selected mise resolves tools and supplies the project environment for commands.
+
+See [Select a repository's mise](/configuration/mise-lookup.html) for setup, executable compatibility, command lookup, and limitations.
+"""
+enum = ["self", "env_path"]
+type = "String"
+
 [activate_shims]
 default = true
 description = "Allow full shell activation to add tool shims to PATH."

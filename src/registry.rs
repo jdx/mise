@@ -755,16 +755,7 @@ fn is_backend_override_key(key: &str) -> bool {
 
 impl RegistryTool {
     pub(crate) fn provides_bin(&self, bin_name: &str) -> bool {
-        let exe_suffix = std::env::consts::EXE_SUFFIX;
-        let bin_name = if exe_suffix.is_empty() {
-            bin_name
-        } else {
-            let suffix_start = bin_name.len().saturating_sub(exe_suffix.len());
-            match (bin_name.get(..suffix_start), bin_name.get(suffix_start..)) {
-                (Some(name), Some(suffix)) if suffix.eq_ignore_ascii_case(exe_suffix) => name,
-                _ => bin_name,
-            }
-        };
+        let bin_name = crate::shims::command_name_without_exe_suffix(bin_name);
         self.bins.iter().any(|bin| {
             if cfg!(windows) {
                 bin.eq_ignore_ascii_case(bin_name)

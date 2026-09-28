@@ -13,6 +13,8 @@ add-zsh-hook -d chpwd _mise_hook_chpwd 2>/dev/null
 unset MISE_SHELL
 unset __MISE_DIFF
 unset __MISE_SESSION
+unset __MISE_LOOKUP_EXE
+unset __MISE_LOOKUP_ERROR
 unset __MISE_ZSH_PRECMD_RUN
 unset __MISE_ZSH_CHPWD_RAN
 unset __MISE_ZSH_ACTIVATE_PATH

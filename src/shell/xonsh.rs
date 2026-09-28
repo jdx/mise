@@ -41,7 +41,7 @@ impl Shell for Xonsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.display();
+        let exe = xonsh_escape_sq(&exe.to_string_lossy()).into_owned();
 
         let mut out = String::new();
         out.push_str(&shell::build_deactivation_script(self));
@@ -50,12 +50,27 @@ impl Shell for Xonsh {
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
         out.push_str(&formatdoc! {r#"
             from xonsh.built_ins import XSH
+            import os
+            import subprocess
 
-            def _mise(args):
-              if args and args[0] in ('deactivate', 'shell', 'sh'):
-                execx($(mise @(args)))
+            def _mise(args, stdin=None, stdout=None, stderr=None):
+              if args and args[0] in ('deactivate', 'shell', 'sh') and not any(arg in ('-h', '--help') for arg in args):
+                script = subprocess.run(['{exe}', *args], env=XSH.env.detype(), capture_output=True, text=True)
+                if script.returncode == 0:
+                  execx(script.stdout)
+                else:
+                  print(script.stderr, end='', file=__import__('sys').stderr)
+                return script.returncode
               else:
-                mise @(args)
+                failure = XSH.env.get('__MISE_LOOKUP_ERROR')
+                if failure:
+                  print(failure, file=__import__('sys').stderr)
+                  return 127
+                target = XSH.env.get('__MISE_LOOKUP_EXE', '{exe}')
+                if not os.path.isfile(target):
+                  print(f'mise: selected executable disappeared: {{target}}', file=__import__('sys').stderr)
+                  return 127
+                return subprocess.run([target, *args], env=XSH.env.detype(), stdin=stdin, stdout=stdout, stderr=stderr).returncode
 
             XSH.env['MISE_SHELL'] = 'xonsh'
             XSH.aliases['mise'] = _mise
@@ -103,6 +118,8 @@ impl Shell for Xonsh {
             XSH.env.pop('MISE_SHELL', None)
             XSH.env.pop('__MISE_DIFF', None)
             XSH.env.pop('__MISE_SESSION', None)
+            XSH.env.pop('__MISE_LOOKUP_EXE', None)
+            XSH.env.pop('__MISE_LOOKUP_ERROR', None)
             "#}
     }
 

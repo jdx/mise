@@ -1547,25 +1547,26 @@ async fn get_desired_shims(
     Ok(shims)
 }
 
-/// Normalize a shim name so every variant [`platform_shim_names`] can generate for a
-/// single command compares equal. Windows "file" mode emits both an extensionless shim
-/// and a `.cmd` shim, so stripping only `EXE_SUFFIX` would leave `python.cmd` behind
-/// when `python` is excluded. Case is folded where the filesystem is case-insensitive.
+/// Normalize executable names for dispatcher discovery and shim exclusions.
+/// Windows executable suffixes and filesystem case must not distinguish the same command.
 ///
 /// Suffixes are stripped repeatedly. `platform_shim_names` cannot produce a compound
 /// name (`Path::with_extension` replaces rather than appends), but plugin farms
 /// contribute arbitrary filenames from disk, so `python.exe.cmd` still normalizes.
-fn shim_name_key(name: &str) -> String {
+pub(crate) fn command_name_key(name: &str) -> String {
     let mut name = name;
     loop {
-        let mut stripped = command_name_without_exe_suffix(name);
-        if cfg!(windows)
-            && let Some((stem, ext)) = stripped.rsplit_once('.')
-            && ext.eq_ignore_ascii_case("cmd")
-        {
-            stripped = stem;
-        }
-        // each pass strictly shortens the name or changes nothing, so this terminates
+        let stripped = if cfg!(windows) {
+            name.rsplit_once('.')
+                .filter(|(_, ext)| {
+                    ["exe", "cmd", "bat", "com", "ps1"]
+                        .iter()
+                        .any(|suffix| ext.eq_ignore_ascii_case(suffix))
+                })
+                .map_or(name, |(stem, _)| stem)
+        } else {
+            name
+        };
         if stripped == name {
             break;
         }
@@ -1580,8 +1581,8 @@ fn shim_name_key(name: &str) -> String {
 
 /// Whether `shims.exclude` covers this shim name.
 pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
-    let key = shim_name_key(name);
-    excluded.iter().any(|e| shim_name_key(e) == key)
+    let key = command_name_key(name);
+    excluded.iter().any(|e| command_name_key(e) == key)
 }
 
 fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
@@ -1609,7 +1610,7 @@ fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
-async fn list_tool_bins(
+pub(crate) async fn list_tool_bins(
     config: &Arc<Config>,
     t: Arc<dyn Backend>,
     tv: &ToolVersion,

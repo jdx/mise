@@ -1803,6 +1803,9 @@ pub fn canonicalize_or_self(path: &Path) -> PathBuf {
 /// so symlinked roots (e.g. `/usr/local/share` → `/private/usr/local/share` on
 /// macOS) still match — the cached helper keeps this off the filesystem hot path.
 pub fn is_mise_shims_dir(path: &Path) -> bool {
+    if is_lookup_shims_dir(path) {
+        return true;
+    }
     let resolved = replace_path(path);
     let user_shims = dirs::shims();
     let sys_shims = dirs::system_shims();
@@ -1813,6 +1816,22 @@ pub fn is_mise_shims_dir(path: &Path) -> bool {
     let canon_user = canonicalize_or_self(&user_shims);
     let canon_sys = canonicalize_or_self(&sys_shims);
     paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
+}
+
+pub fn lookup_shims_root() -> PathBuf {
+    dirs::DATA.join("lookup-shims")
+}
+
+/// Lookup dispatcher directories are immediate children of the managed lookup root.
+pub fn is_lookup_shims_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    let root = lookup_shims_root();
+    resolved
+        .parent()
+        .is_some_and(|parent| paths_eq(parent, &root))
+        || canonicalize_or_self(&resolved)
+            .parent()
+            .is_some_and(|parent| paths_eq(parent, &canonicalize_or_self(&root)))
 }
 
 /// Returns true if `path` resolves to the shim that delegated to this mise

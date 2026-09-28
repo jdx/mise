@@ -47,6 +47,7 @@ impl Reshim {
         } else {
             shims::ShimScope::User
         };
-        shims::reshim_for(&config, &ts, self.force, scope).await
+        shims::reshim_for(&config, &ts, self.force, scope).await?;
+        crate::lookup::invalidate_shims()
     }
 }

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+root=$PWD
+host=$(command -v mise)
+export MISE_TRUSTED_CONFIG_PATHS="$root/trusted"
+mkdir -p untrusted
+cat >untrusted/mise.toml <<'EOF'
+[settings]
+activate_mise_lookup = "self"
+[env]
+LOOKUP_MARK = "TRUSTED"
+EOF
+
+eval "$("$host" activate bash --no-hook-env)"
+cd untrusted
+_mise_hook --force
+[[ -z ${__MISE_LOOKUP_ERROR:-} ]] || fail "Default activation created lookup failure state."
+assert_contains "mise trust --help" "Mark a config file as trusted"
+mise trust
+_mise_hook --force
+assert "printf '%s' \"\$LOOKUP_MARK\"" "TRUSTED"
+mise deactivate

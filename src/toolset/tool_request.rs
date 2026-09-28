@@ -365,6 +365,20 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    pub(crate) fn declared_bin_names(&self) -> impl Iterator<Item = &str> {
+        self.resolved_options()
+            .effective()
+            .lazy_bins
+            .iter()
+            .map(String::as_str)
+            .chain(
+                self.ba()
+                    .registry_tool()
+                    .into_iter()
+                    .flat_map(|tool| tool.bins.iter().copied()),
+            )
+    }
+
     /// Command names that should receive bootstrap shims before a lazy tool is installed.
     /// Registry metadata is authoritative when the config does not provide an explicit list.
     pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {

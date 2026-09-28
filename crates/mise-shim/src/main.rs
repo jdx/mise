@@ -63,17 +63,34 @@ fn run() -> Result<i32, String> {
     // which one this is has to come from what is beside it. `mise x -- <name>` is the shim's job
     // and stays the default: a tool shim has no sibling stub, and a stub that cannot be read is
     // not a reason to stop running as a shim.
-    let mut command = match task_stub_beside(&exe) {
-        Some(TaskStub { mise_bin, task }) => {
-            let mut command = Command::new(mise_bin);
-            command.arg("run").arg(task);
+    let lookup_host = lookup_host_beside(&exe);
+    // Missing lookup metadata must not turn a checkout dispatcher into a PATH-based shim.
+    if lookup_host.is_none()
+        && exe.parent().and_then(Path::parent).is_some_and(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("lookup-shims"))
+        })
+    {
+        return Err("mise-shim: checkout lookup metadata is missing".to_string());
+    }
+    let mut command = match lookup_host {
+        Some(host) => {
+            let mut command = Command::new(host);
+            command.arg("__lookup-dispatch").arg(&tool);
             command
         }
-        None => {
-            let mut command = Command::new("mise");
-            command.arg("x").arg("--").arg(&tool);
-            command
-        }
+        None => match task_stub_beside(&exe) {
+            Some(TaskStub { mise_bin, task }) => {
+                let mut command = Command::new(mise_bin);
+                command.arg("run").arg(task);
+                command
+            }
+            None => {
+                let mut command = Command::new("mise");
+                command.arg("x").arg("--").arg(&tool);
+                command
+            }
+        },
     };
 
     let status = command.env(MISE_SHIM_PATH_ENV, &exe).args(args).status();
@@ -86,6 +103,12 @@ fn run() -> Result<i32, String> {
              See https://mise.jdx.dev for installation instructions."
         )),
     }
+}
+
+fn lookup_host_beside(exe: &Path) -> Option<String> {
+    let host = std::fs::read_to_string(exe.with_extension("lookup")).ok()?;
+    let host = host.trim_end_matches(['\r', '\n']);
+    (!host.is_empty()).then(|| host.to_string())
 }
 
 /// What `mise generate task-stubs` wrote into the stub beside this executable.

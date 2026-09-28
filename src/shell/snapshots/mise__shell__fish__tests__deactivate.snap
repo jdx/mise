@@ -11,3 +11,5 @@ set -e __mise_skip_first_prompt_pwd
 set -e MISE_SHELL
 set -e __MISE_DIFF
 set -e __MISE_SESSION
+set -e __MISE_LOOKUP_EXE
+set -e __MISE_LOOKUP_ERROR

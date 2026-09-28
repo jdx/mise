@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+root=$PWD
+host=$(command -v mise)
+mise_name=mise
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    export PATHEXT="${PATHEXT:-.COM;.EXE;.BAT;.CMD}"
+    mise_name=mise.exe
+    ;;
+esac
+export MISE_TRUSTED_CONFIG_PATHS="$root"
+mkdir -p a/tools/bin b/tools/bin first-entry/tools/bin missing
+mkdir -p global-bin
+printf '#!/bin/sh\necho GLOBAL_FALLBACK\n' >global-bin/lookup-tool
+chmod +x global-bin/lookup-tool
+printf '#!/bin/sh\necho GLOBAL_NODE_FALLBACK\n' >global-bin/node
+chmod +x global-bin/node
+if [[ $mise_name == mise.exe ]]; then
+  printf '@echo off\necho GLOBAL_FALLBACK\n' >global-bin/lookup-tool.cmd
+  printf '@echo off\necho GLOBAL_NODE_FALLBACK\n' >global-bin/node.cmd
+fi
+export PATH="$root/global-bin:$PATH"
+assert "lookup-tool" "GLOBAL_FALLBACK"
+
+assert_parent_mise_fails() {
+  local output
+  if output=$(mise --version 2>&1); then
+    fail "The parent shell's mise command succeeded without a valid checkout selection."
+  fi
+  if [[ $output != *"$1"* ]]; then
+    fail "The parent shell's mise command did not report '$1': $output"
+  fi
+}
+
+for checkout in a b; do
+  lookup_mark=$(printf '%s' "$checkout" | tr '[:lower:]' '[:upper:]')
+  cp "$host" "$checkout/tools/bin/$mise_name"
+  if [[ $mise_name == mise.exe ]]; then
+    cat >"$checkout/tools/bin/lookup-tool.cmd" <<'EOF'
+@echo off
+setlocal
+if "%PATH:;=%"=="%PATH%" exit /b 1
+for %%D in ("%~dp0.") do set "EXPECTED_BIN=%%~fD"
+for %%D in ("%PATH:;=" "%") do if /I "%%~fD"=="%EXPECTED_BIN%" set "BIN_FOUND=1"
+if not defined BIN_FOUND exit /b 1
+"%__APPDIR__%where.exe" lookup-tool.cmd >nul 2>&1 || exit /b 1
+echo %LOOKUP_MARK%
+EOF
+  else
+    cat >"$checkout/tools/bin/lookup-tool" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$LOOKUP_MARK"
+EOF
+    chmod +x "$checkout/tools/bin/lookup-tool"
+  fi
+  cat >"$checkout/mise.toml" <<EOF
+[settings]
+activate_mise_lookup = "env_path"
+[tools]
+node = { version = "system", lazy_bins = ["lookup-tool"] }
+[env]
+_.path = ["{{config_root}}/tools/bin"]
+LOOKUP_MARK = "$lookup_mark"
+EOF
+done
+
+cat >missing/mise.toml <<'EOF'
+[settings]
+activate_mise_lookup = "env_path"
+EOF
+
+cat >first-entry/mise.toml <<'EOF'
+[settings]
+activate_mise_lookup = "env_path"
+[tools]
+node = { version = "24", lazy_bins = ["lookup-tool"] }
+[env]
+_.path = ["{{config_root}}/tools/bin"]
+EOF
+
+eval "$("$host" activate bash)"
+cd first-entry
+_mise_hook
+assert_parent_mise_fails "no executable mise"
+assert_fail "lookup-tool" "no executable mise"
+assert_fail "node" "no executable mise"
+assert_contains "command -v lookup-tool" "lookup-shims"
+shim=$(command -v lookup-tool)
+rm "$shim"
+_mise_hook
+assert_fail "lookup-tool" "no executable mise"
+_mise_hook
+assert_fail "lookup-tool" "no executable mise"
+cd "$root"
+_mise_hook
+assert "lookup-tool" "GLOBAL_FALLBACK"
+assert "node" "GLOBAL_NODE_FALLBACK"
+cd a
+_mise_hook --force
+[[ -z ${LOOKUP_MARK:-} ]] || fail "The parent shell received project environment values."
+assert "mise exec -- sh -c 'printf %s \"\$LOOKUP_MARK\"'" "A"
+assert "lookup-tool" "A"
+assert "test \"\$__MISE_LOOKUP_EXE\" -ef \"$root/a/tools/bin/$mise_name\"" ""
+assert_contains "command -v lookup-tool" "lookup-shims"
+shim=$(command -v lookup-tool)
+rm "$shim"
+_mise_hook
+assert "lookup-tool" "A"
+assert "test \"\$(command -v lookup-tool)\" = \"$shim\"" ""
+
+cd ../b
+_mise_hook --force
+[[ -z ${LOOKUP_MARK:-} ]] || fail "The parent shell received project environment values."
+assert "lookup-tool" "B"
+assert "test \"\$__MISE_LOOKUP_EXE\" -ef \"$root/b/tools/bin/$mise_name\"" ""
+
+mv "tools/bin/$mise_name" "tools/bin/$mise_name.broken"
+assert_parent_mise_fails "selected executable disappeared"
+assert_fail "mise --version" "no executable mise"
+assert_fail "lookup-tool" "no executable mise"
+_mise_hook --force
+assert_fail "lookup-tool" "no executable mise"
+assert_contains "command -v lookup-tool" "lookup-shims"
+_mise_hook --force
+assert_fail "lookup-tool" "no executable mise"
+cd "$root"
+_mise_hook --force
+[[ -z ${LOOKUP_MARK:-} ]] || fail "Leaving the checkout retained project environment values."
+assert_contains "mise --version" "2026."
+assert "lookup-tool" "GLOBAL_FALLBACK"
+
+cd missing
+_mise_hook --force
+assert_parent_mise_fails "requires a trusted project env._.path"
+cd ../a
+_mise_hook --force
+assert "lookup-tool" "A"
+mise deactivate

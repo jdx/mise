@@ -691,8 +691,7 @@ pub(crate) fn clear_old_env(shell: &dyn Shell) -> String {
     build_env_commands(shell, &clear_old_env_patches(shell))
 }
 
-/// Clear all aliases from the previous session. Called only during deactivation.
-pub(crate) fn clear_aliases(shell: &dyn Shell) -> String {
+pub fn clear_aliases(shell: &dyn Shell) -> String {
     let mut output = String::new();
     for name in PREV_SESSION.aliases.keys() {
         output.push_str(&shell.unset_alias(name));
@@ -700,8 +699,8 @@ pub(crate) fn clear_aliases(shell: &dyn Shell) -> String {
     output
 }
 
-/// Compute PATH after deactivation, preserving user additions
-fn compute_deactivated_path() -> String {
+/// Compute the PATH that would remain after deactivation while preserving user additions.
+pub fn compute_deactivated_path() -> String {
     // Get current PATH (may include user additions since last hook-env)
     let current_path = env::var("PATH").unwrap_or_default();
 
@@ -720,8 +719,7 @@ fn compute_deactivated_path() -> String {
     });
     let pristine_path = crate::windows_posix::orig_path_for_windows(&pristine_path).into_owned();
 
-    if current_path.is_empty() || mise_paths.is_empty() {
-        // If no current PATH or no mise PATH, just return pristine
+    if current_path.is_empty() {
         return pristine_path;
     }
 

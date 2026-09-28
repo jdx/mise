@@ -7,4 +7,6 @@ Remove-Item -ErrorAction Ignore function:__mise_restore_double_dash
 Remove-Item -ErrorAction Ignore -Path Env:/MISE_SHELL
 Remove-Item -ErrorAction Ignore -Path Env:/__MISE_DIFF
 Remove-Item -ErrorAction Ignore -Path Env:/__MISE_SESSION
+Remove-Item -ErrorAction Ignore -Path Env:/__MISE_LOOKUP_EXE
+Remove-Item -ErrorAction Ignore -Path Env:/__MISE_LOOKUP_ERROR
 Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction Ignore

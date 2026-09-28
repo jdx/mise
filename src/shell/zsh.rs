@@ -39,11 +39,7 @@ impl Shell for Zsh {
             mise() {{
               local command
               command="${{1:-}}"
-              if [ "$#" = 0 ]; then
-                command {exe}
-                return
-              fi
-              shift
+              if [ "$#" != 0 ]; then shift; fi
 
               case "$command" in
               deactivate|shell|sh)
@@ -54,7 +50,19 @@ impl Shell for Zsh {
                 fi
                 ;;
               esac
-              command {exe} "$command" "$@"
+              if [ -n "${{__MISE_LOOKUP_ERROR:-}}" ]; then
+                print -u2 -- "$__MISE_LOOKUP_ERROR"
+                return 127
+              fi
+              if [ -n "${{__MISE_LOOKUP_EXE:-}}" ]; then
+                if [ ! -f "$__MISE_LOOKUP_EXE" ]; then
+                  print -u2 -- "mise: selected executable disappeared: $__MISE_LOOKUP_EXE"
+                  return 127
+                fi
+                command "$__MISE_LOOKUP_EXE" ${{command:+"$command"}} "$@"
+              else
+                command {exe} ${{command:+"$command"}} "$@"
+              fi
             }}
         "#});
 
@@ -158,6 +166,8 @@ impl Shell for Zsh {
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
+        unset __MISE_LOOKUP_EXE
+        unset __MISE_LOOKUP_ERROR
         unset __MISE_ZSH_PRECMD_RUN
         unset __MISE_ZSH_CHPWD_RAN
         unset __MISE_ZSH_ACTIVATE_PATH

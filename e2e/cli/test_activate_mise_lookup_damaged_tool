@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) exit 0 ;;
+esac
+
+root=$PWD
+host=$(command -v mise)
+export MISE_TRUSTED_CONFIG_PATHS="$root"
+export MISE_AUTO_INSTALL=1
+mkdir -p tools/bin payload global-bin
+cp "$host" tools/bin/mise
+for name in probe-tool extra-tool; do
+  printf '#!/bin/sh\necho SELECTED_PROVIDER\n' >"payload/$name"
+  chmod +x "payload/$name"
+done
+tar -cf "$root/probe.tar" -C payload probe-tool extra-tool
+printf 'The declared executable is absent from this archive.\n' >payload/placeholder.txt
+tar -cf "$root/missing.tar" -C payload placeholder.txt
+for name in probe-tool extra-tool broken-tool; do
+  printf '#!/bin/sh\necho GLOBAL_FALLBACK\n' >"global-bin/$name"
+  chmod +x "global-bin/$name"
+done
+export PATH="$root/global-bin:$PATH"
+assert "probe-tool" "GLOBAL_FALLBACK"
+assert "extra-tool" "GLOBAL_FALLBACK"
+assert "broken-tool" "GLOBAL_FALLBACK"
+cat >mise.toml <<EOF
+[settings]
+activate_mise_lookup = "env_path"
+[tools]
+"http:probe-tool" = { version = "1", url = "file://$root/probe.tar", lazy = true, lazy_bins = ["probe-tool"] }
+[env]
+_.path = ["{{config_root}}/tools/bin"]
+EOF
+eval "$("$host" activate bash)"
+_mise_hook
+assert "probe-tool" "SELECTED_PROVIDER"
+_mise_hook
+assert "extra-tool" "SELECTED_PROVIDER"
+assert "mise exec -- sh -c 'echo UNRELATED_SYSTEM'" "UNRELATED_SYSTEM"
+installed=$(mise where http:probe-tool)
+rm "$installed/probe-tool" "$installed/extra-tool"
+for name in probe-tool extra-tool; do
+  assert_fail "$name" "does not provide executable"
+  assert_fail "$root/tools/bin/mise exec -- $name" "does not provide executable"
+done
+mise cache clear
+assert_fail "$root/tools/bin/mise exec -- extra-tool" "does not provide executable"
+_mise_hook
+assert_fail "extra-tool" "does not provide executable"
+cat >mise.toml <<EOF
+[settings]
+activate_mise_lookup = "env_path"
+[tools]
+"http:broken-tool" = { version = "1", url = "file://$root/missing.tar", lazy = true, lazy_bins = ["broken-tool"] }
+[env]
+_.path = ["{{config_root}}/tools/bin"]
+EOF
+_mise_hook
+assert_fail "broken-tool" "does not provide executable"
+assert_fail "$root/tools/bin/mise exec -- broken-tool" "does not provide executable"
+mise deactivate

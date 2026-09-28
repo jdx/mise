@@ -4397,6 +4397,7 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
                 .wrap_err("failed to rebuild system shims")?;
         }
     });
+    crate::lookup::tools_changed(config, new_versions).await?;
     if Settings::get().generate_lockfiles() {
         return Ok(());
     }

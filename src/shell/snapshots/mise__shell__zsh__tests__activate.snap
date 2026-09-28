@@ -12,11 +12,7 @@ export __MISE_ZSH_CHPWD_RAN=0
 mise() {
   local command
   command="${1:-}"
-  if [ "$#" = 0 ]; then
-    command /some/dir/mise
-    return
-  fi
-  shift
+  if [ "$#" != 0 ]; then shift; fi
 
   case "$command" in
   deactivate|shell|sh)
@@ -27,7 +23,19 @@ mise() {
     fi
     ;;
   esac
-  command /some/dir/mise "$command" "$@"
+  if [ -n "${__MISE_LOOKUP_ERROR:-}" ]; then
+    print -u2 -- "$__MISE_LOOKUP_ERROR"
+    return 127
+  fi
+  if [ -n "${__MISE_LOOKUP_EXE:-}" ]; then
+    if [ ! -f "$__MISE_LOOKUP_EXE" ]; then
+      print -u2 -- "mise: selected executable disappeared: $__MISE_LOOKUP_EXE"
+      return 127
+    fi
+    command "$__MISE_LOOKUP_EXE" ${command:+"$command"} "$@"
+  else
+    command /some/dir/mise ${command:+"$command"} "$@"
+  fi
 }
 
 autoload -Uz add-zsh-hook

@@ -114,19 +114,37 @@ impl Shell for Pwsh {
                     [Console]::OutputEncoding = $previous_console_out_encoding
                 }}
 
+                $target = '{exe}'
+                $isShellMutation = $arguments.Count -gt 0 -and $arguments[0] -in @('deactivate', 'shell', 'sh') -and $arguments -notcontains '-h' -and $arguments -notcontains '--help'
+                if (-not $isShellMutation -and $env:__MISE_LOOKUP_ERROR) {{
+                    [Console]::Error.WriteLine($env:__MISE_LOOKUP_ERROR)
+                    $global:LASTEXITCODE = 127
+                    _reset_output_encoding
+                    return
+                }}
+                if (-not $isShellMutation -and $env:__MISE_LOOKUP_EXE) {{
+                    $target = $env:__MISE_LOOKUP_EXE
+                    if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {{
+                        [Console]::Error.WriteLine("mise: selected executable disappeared: $target")
+                        $global:LASTEXITCODE = 127
+                        _reset_output_encoding
+                        return
+                    }}
+                }}
+
                 if ($arguments.count -eq 0) {{
                     if ($MyInvocation.ExpectingInput) {{
-                        $input | & '{exe}'
+                        $input | & $target
                     }} else {{
-                        & '{exe}'
+                        & $target
                     }}
                     _reset_output_encoding
                     return
                 }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
                     if ($MyInvocation.ExpectingInput) {{
-                        $input | & '{exe}' @arguments
+                        $input | & $target @arguments
                     }} else {{
-                        & '{exe}' @arguments
+                        & $target @arguments
                     }}
                     _reset_output_encoding
                     return
@@ -150,9 +168,9 @@ impl Shell for Pwsh {
                     }}
                     default {{
                         if ($MyInvocation.ExpectingInput) {{
-                            $input | & '{exe}' $command @remainingArgs
+                            $input | & $target $command @remainingArgs
                         }} else {{
-                            & '{exe}' $command @remainingArgs
+                            & $target $command @remainingArgs
                         }}
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
@@ -366,6 +384,8 @@ impl Shell for Pwsh {
         Remove-Item -ErrorAction Ignore -Path Env:/MISE_SHELL
         Remove-Item -ErrorAction Ignore -Path Env:/__MISE_DIFF
         Remove-Item -ErrorAction Ignore -Path Env:/__MISE_SESSION
+        Remove-Item -ErrorAction Ignore -Path Env:/__MISE_LOOKUP_EXE
+        Remove-Item -ErrorAction Ignore -Path Env:/__MISE_LOOKUP_ERROR
         Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction Ignore
         "#}
     }

@@ -585,6 +585,12 @@
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
           "type": "boolean"
         },
+        "activate_mise_lookup": {
+          "default": "self",
+          "description": "Select the mise command used by an activated interactive shell.",
+          "type": "string",
+          "enum": ["self", "env_path"]
+        },
         "activate_shims": {
           "default": true,
           "description": "Allow full shell activation to add tool shims to PATH.",

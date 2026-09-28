@@ -5,17 +5,17 @@ use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::file::{self, canonicalize_cached, display_path, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
-use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
+use crate::shell::{EXAMPLE_SHELL, Shell, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{env, hook_env, hooks, watch_files};
+use crate::{env, hook_env, hooks, lookup, watch_files};
 use console::truncate_str;
-use eyre::Result;
+use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{borrow::Cow, sync::Arc};
 
 pub(crate) use crate::hook_env::HookReason;
@@ -47,13 +47,49 @@ pub(crate) struct HookEnv {
     shell_pid: Option<u32>,
 }
 
+enum LookupStatus<'a> {
+    Selected(&'a Path),
+    Failed(&'a eyre::Report),
+}
+
 impl HookEnv {
+    pub(super) fn clear_lookup_on_error(&self, err: &eyre::Report) -> Result<()> {
+        if !lookup::was_active() {
+            return Ok(());
+        }
+        let shell = require_shell(
+            self.shell,
+            &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
+        )?;
+        self.emit_lookup_error(&*shell, err, None)
+    }
+
+    fn refresh_result<T>(&self, shell: &dyn Shell, result: Result<T>) -> Result<T> {
+        if let Err(err) = &result
+            && lookup::was_active()
+        {
+            self.emit_lookup_error(shell, err, None)?;
+        }
+        result
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         let shell = require_shell(
             self.shell,
             &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
         )?;
-        let config = match Config::get().await {
+        match Settings::get().activate_mise_lookup.as_str() {
+            "env_path" => return self.run_lookup(&*shell),
+            "self" => {}
+            value => {
+                let err = eyre!(
+                    "invalid activate_mise_lookup value {value:?}; expected self or env_path"
+                );
+                self.emit_lookup_error(&*shell, &err, None)?;
+                return Err(err);
+            }
+        }
+        let config = match self.refresh_result(&*shell, Config::get().await) {
             Ok(config) => config,
             Err(err) => {
                 let Some(config_path) = hook_env::untrusted_config_error_path(&err) else {
@@ -83,13 +119,16 @@ impl HookEnv {
         };
         // Shell activation must stay fast and non-networked; missing tools are
         // handled by the normal install paths instead of hook-env.
-        let ts = ToolsetBuilder::new()
-            .with_resolve_options(ResolveOptions {
-                offline: true,
-                ..Default::default()
-            })
-            .build(&config)
-            .await?;
+        let ts = self.refresh_result(
+            &*shell,
+            ToolsetBuilder::new()
+                .with_resolve_options(ResolveOptions {
+                    offline: true,
+                    ..Default::default()
+                })
+                .build(&config)
+                .await,
+        )?;
         time!("hook-env");
 
         // Try to use cached watch_files for early exit check if env_cache is enabled
@@ -139,7 +178,7 @@ impl HookEnv {
 
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
-            ts.env_with_path_and_split(&config).await?;
+            self.refresh_result(&*shell, ts.env_with_path_and_split(&config).await)?;
         let daemon_commands = match crate::daemons::hook_env::emit(
             &config,
             &ts,
@@ -185,6 +224,9 @@ impl HookEnv {
             _ => true,
         });
         let mut patches = diff_patches;
+
+        patches.push(EnvDiffOperation::Remove("__MISE_LOOKUP_EXE".into()));
+        patches.push(EnvDiffOperation::Remove("__MISE_LOOKUP_ERROR".into()));
 
         // Combine paths for __MISE_DIFF tracking (all mise-managed paths)
         let all_paths: Vec<PathBuf> = user_paths
@@ -260,6 +302,84 @@ impl HookEnv {
         watch_files::execute_runs(&config, &ts).await;
         hooks::take_output_error()?;
 
+        Ok(())
+    }
+
+    fn run_lookup(&self, shell: &dyn Shell) -> Result<()> {
+        let snapshot = match lookup::bootstrap() {
+            Ok(snapshot) => snapshot,
+            Err(err) => return self.emit_lookup_error(shell, &err, None),
+        };
+        match snapshot.prepare() {
+            Ok(selection) => {
+                let paths = std::iter::once(selection.directory)
+                    .chain(snapshot.paths)
+                    .collect();
+                self.emit_lookup_update(shell, paths, LookupStatus::Selected(&selection.executable))
+            }
+            Err(err) => self.emit_lookup_error(shell, &err, Some(&snapshot.command_names)),
+        }
+    }
+
+    fn emit_lookup_error(
+        &self,
+        shell: &dyn Shell,
+        err: &eyre::Report,
+        names: Option<&BTreeSet<String>>,
+    ) -> Result<()> {
+        let paths = lookup::failure_shims(names)?;
+        self.emit_lookup_update(shell, paths, LookupStatus::Failed(err))
+    }
+
+    fn emit_lookup_update(
+        &self,
+        shell: &dyn Shell,
+        paths: Vec<PathBuf>,
+        status: LookupStatus<'_>,
+    ) -> Result<()> {
+        let clean_paths: IndexSet<_> = split_paths(&hook_env::compute_deactivated_path()).collect();
+        let mut paths: IndexSet<_> = paths.into_iter().collect();
+        let mut diff = EnvDiff::new(&env::PRISTINE_ENV, EnvMap::new());
+        diff.path = paths
+            .iter()
+            .filter(|path| file::is_lookup_shims_dir(path) || !clean_paths.contains(*path))
+            .cloned()
+            .collect();
+        paths.extend(clean_paths);
+        let path = join_paths(paths)?;
+
+        let mut patches = hook_env::clear_old_env_patches(shell);
+        patches.extend(
+            ["__MISE_SESSION", "__MISE_LOOKUP_EXE", "__MISE_LOOKUP_ERROR"]
+                .map(|name| EnvDiffOperation::Remove(name.into())),
+        );
+        patches.push(EnvDiffOperation::Change(
+            PATH_KEY.to_string(),
+            path.to_string_lossy().into_owned(),
+        ));
+        patches.push(self.build_diff_operation(&diff)?);
+        match status {
+            LookupStatus::Selected(selected) => {
+                let selected = if matches!(shell.to_string().as_str(), "bash" | "zsh" | "fish") {
+                    crate::windows_posix::executable_for_shell(&selected.to_string_lossy())
+                        .into_owned()
+                } else {
+                    selected.to_string_lossy().into_owned()
+                };
+                patches.push(EnvDiffOperation::Add("__MISE_LOOKUP_EXE".into(), selected));
+            }
+            LookupStatus::Failed(err) => {
+                patches.push(EnvDiffOperation::Add(
+                    "__MISE_LOOKUP_ERROR".into(),
+                    format!("mise: {err:#}"),
+                ));
+            }
+        }
+        miseprint!(
+            "{}{}",
+            hook_env::build_env_commands(shell, &patches),
+            hook_env::clear_aliases(shell)
+        )?;
         Ok(())
     }
 

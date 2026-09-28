@@ -15,11 +15,7 @@ __MISE_BASH_CHPWD_RAN=0
 mise() {
 	local command
 	command="${1:-}"
-	if [ "$#" = 0 ]; then
-		command __MISE_EXE_VALUE__
-		return
-	fi
-	shift
+	if [ "$#" != 0 ]; then shift; fi
 
 	case "$command" in
 	deactivate | shell | sh)
@@ -30,12 +26,24 @@ mise() {
 		fi
 		;;
 	esac
-	command __MISE_EXE_VALUE__ "$command" "$@"
+	if [ -n "${__MISE_LOOKUP_ERROR:-}" ]; then
+		printf '%s\n' "$__MISE_LOOKUP_ERROR" >&2
+		return 127
+	fi
+	if [ -n "${__MISE_LOOKUP_EXE:-}" ]; then
+		if [ ! -f "$__MISE_LOOKUP_EXE" ]; then
+			printf 'mise: selected executable disappeared: %s\n' "$__MISE_LOOKUP_EXE" >&2
+			return 127
+		fi
+		command "$__MISE_LOOKUP_EXE" ${command:+"$command"} "$@"
+	else
+		command __MISE_EXE_VALUE__ ${command:+"$command"} "$@"
+	fi
 }
 
 _mise_hook() {
 	local previous_exit_status=$?
-	eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash "$@")"
+	eval "$(command __MISE_EXE_VALUE__ hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash "$@")"
 	return $previous_exit_status
 }
 
@@ -51,14 +59,14 @@ if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 			unset __MISE_BASH_SKIP_FIRST_PROMPT
 			return $previous_exit_status
 		fi
-		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash --reason precmd)"
+		eval "$(command __MISE_EXE_VALUE__ hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash --reason precmd)"
 		return $previous_exit_status
 	}
 
 	_mise_hook_chpwd() {
 		local previous_exit_status=$?
 		__MISE_BASH_CHPWD_RAN=1
-		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash --reason chpwd)"
+		eval "$(command __MISE_EXE_VALUE__ hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} --shell-pid $$ -s bash --reason chpwd)"
 		return $previous_exit_status
 	}
 

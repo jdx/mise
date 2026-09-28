@@ -36,31 +36,35 @@ impl Shell for Fish {
             end
 
             function mise
-              if test (count $argv) -eq 0
-                command {exe}
-                return
-              end
-
-              set command $argv[1]
-              set -e argv[1]
-
-              if contains -- --help $argv
-                command {exe} "$command" $argv
-                return $status
+              set -l command ''
+              if test (count $argv) -gt 0
+                set command $argv[1]
+                set -e argv[1]
               end
 
               switch "$command"
               case deactivate shell sh
-                # if help is requested, don't eval
-                if contains -- -h $argv
-                  command {exe} "$command" $argv
-                else if contains -- --help $argv
-                  command {exe} "$command" $argv
-                else
+                if not contains -- -h $argv; and not contains -- --help $argv
                   source (command {exe} "$command" $argv |psub)
+                  return $status
                 end
-              case '*'
-                command {exe} "$command" $argv
+              end
+              if set -q __MISE_LOOKUP_ERROR
+                echo $__MISE_LOOKUP_ERROR >&2
+                return 127
+              end
+              set -l target {exe}
+              if set -q __MISE_LOOKUP_EXE
+                set target $__MISE_LOOKUP_EXE
+                if not test -f "$target"
+                  echo "mise: selected executable disappeared: $target" >&2
+                  return 127
+                end
+              end
+              if test -n "$command"
+                command "$target" "$command" $argv
+              else
+                command "$target" $argv
               end
             end
         "#});
@@ -144,6 +148,8 @@ impl Shell for Fish {
           set -e MISE_SHELL
           set -e __MISE_DIFF
           set -e __MISE_SESSION
+          set -e __MISE_LOOKUP_EXE
+          set -e __MISE_LOOKUP_ERROR
         "#}
     }
 

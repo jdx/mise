@@ -41,12 +41,7 @@ impl Shell for Elvish {
             }}
 
             fn mise {{|@a|
-              if (== (count $a) 0) {{
-                (external {exe})
-                return
-              }}
-
-              if (not (or (has-value $a -h) (has-value $a --help))) {{
+              if (and (> (count $a) 0) (not (or (has-value $a -h) (has-value $a --help)))) {{
                 var command = $a[0]
                 if (==s $command shell) {{
                   try {{ eval ((external {exe}) $@a) }} catch {{ }}
@@ -59,7 +54,12 @@ impl Shell for Elvish {
                   return
                 }}
               }}
-              (external {exe}) $@a
+              var target = {exe}
+              var lookup-error = ''
+              try {{ set target = (get-env __MISE_LOOKUP_EXE) }} catch {{ }}
+              try {{ set lookup-error = (get-env __MISE_LOOKUP_ERROR) }} catch {{ }}
+              if (not-eq $lookup-error '') {{ fail $lookup-error }}
+              (external $target) $@a
             }}
             "#, hook_enabled = !opts.no_hook_env});
         out
@@ -70,6 +70,8 @@ impl Shell for Elvish {
             unset-env MISE_SHELL
             unset-env __MISE_DIFF
             unset-env __MISE_SESSION
+            unset-env __MISE_LOOKUP_EXE
+            unset-env __MISE_LOOKUP_ERROR
         "#}
     }
 

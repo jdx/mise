@@ -88,19 +88,37 @@ function mise {
         [Console]::OutputEncoding = $previous_console_out_encoding
     }
 
+    $target = '/some/dir/mise'
+    $isShellMutation = $arguments.Count -gt 0 -and $arguments[0] -in @('deactivate', 'shell', 'sh') -and $arguments -notcontains '-h' -and $arguments -notcontains '--help'
+    if (-not $isShellMutation -and $env:__MISE_LOOKUP_ERROR) {
+        [Console]::Error.WriteLine($env:__MISE_LOOKUP_ERROR)
+        $global:LASTEXITCODE = 127
+        _reset_output_encoding
+        return
+    }
+    if (-not $isShellMutation -and $env:__MISE_LOOKUP_EXE) {
+        $target = $env:__MISE_LOOKUP_EXE
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            [Console]::Error.WriteLine("mise: selected executable disappeared: $target")
+            $global:LASTEXITCODE = 127
+            _reset_output_encoding
+            return
+        }
+    }
+
     if ($arguments.count -eq 0) {
         if ($MyInvocation.ExpectingInput) {
-            $input | & '/some/dir/mise'
+            $input | & $target
         } else {
-            & '/some/dir/mise'
+            & $target
         }
         _reset_output_encoding
         return
     } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
         if ($MyInvocation.ExpectingInput) {
-            $input | & '/some/dir/mise' @arguments
+            $input | & $target @arguments
         } else {
-            & '/some/dir/mise' @arguments
+            & $target @arguments
         }
         _reset_output_encoding
         return
@@ -124,9 +142,9 @@ function mise {
         }
         default {
             if ($MyInvocation.ExpectingInput) {
-                $input | & '/some/dir/mise' $command @remainingArgs
+                $input | & $target $command @remainingArgs
             } else {
-                & '/some/dir/mise' $command @remainingArgs
+                & $target $command @remainingArgs
             }
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook

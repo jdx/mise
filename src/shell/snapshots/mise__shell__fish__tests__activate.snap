@@ -8,31 +8,35 @@ if not set -q __MISE_ORIG_PATH
 end
 
 function mise
-  if test (count $argv) -eq 0
-    command /some/dir/mise
-    return
-  end
-
-  set command $argv[1]
-  set -e argv[1]
-
-  if contains -- --help $argv
-    command /some/dir/mise "$command" $argv
-    return $status
+  set -l command ''
+  if test (count $argv) -gt 0
+    set command $argv[1]
+    set -e argv[1]
   end
 
   switch "$command"
   case deactivate shell sh
-    # if help is requested, don't eval
-    if contains -- -h $argv
-      command /some/dir/mise "$command" $argv
-    else if contains -- --help $argv
-      command /some/dir/mise "$command" $argv
-    else
+    if not contains -- -h $argv; and not contains -- --help $argv
       source (command /some/dir/mise "$command" $argv |psub)
+      return $status
     end
-  case '*'
-    command /some/dir/mise "$command" $argv
+  end
+  if set -q __MISE_LOOKUP_ERROR
+    echo $__MISE_LOOKUP_ERROR >&2
+    return 127
+  end
+  set -l target /some/dir/mise
+  if set -q __MISE_LOOKUP_EXE
+    set target $__MISE_LOOKUP_EXE
+    if not test -f "$target"
+      echo "mise: selected executable disappeared: $target" >&2
+      return 127
+    end
+  end
+  if test -n "$command"
+    command "$target" "$command" $argv
+  else
+    command "$target" $argv
   end
 end
 

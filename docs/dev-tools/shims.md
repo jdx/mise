@@ -44,6 +44,8 @@ Use shims when a program needs a stable path to a tool, such as an IDE configure
 with a Python executable. For scripts, `mise exec -- <command>` loads both tools
 and environment variables explicitly.
 
+Repositories that provide their own mise executable can [select it for tool resolution and execution](/configuration/mise-lookup.html) with `activate_mise_lookup`.
+
 ### Shims {#mise-activate-shims}
 
 ::: warning

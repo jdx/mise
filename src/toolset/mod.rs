@@ -724,6 +724,57 @@ impl Toolset {
         None
     }
 
+    /// Resolve known checkout commands only within their configured provider's bin directories.
+    pub async fn resolve_lookup_command(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+        require_provider: bool,
+    ) -> Result<Option<PathBuf>> {
+        let name = crate::shims::command_name_key(bin_name);
+        let mut versions = self.list_current_versions();
+        Self::sort_by_overrides(&mut versions)?;
+        let mut providers = Vec::new();
+        for (backend, version) in versions {
+            let declared = version
+                .request
+                .declared_bin_names()
+                .any(|bin| crate::shims::command_name_key(bin) == name)
+                || version.ba().matches_bin_name(&name);
+            let discovered =
+                crate::lookup::known_tool_bins(config, backend.clone(), &version).await?;
+            if declared || discovered.contains(&name) {
+                providers.push((backend, version));
+            }
+        }
+        let Some((preferred, version)) = providers.first() else {
+            if require_provider {
+                bail!("mise: no configured tool provides checkout command {bin_name}");
+            }
+            return Ok(None);
+        };
+        if matches!(version.request, ToolRequest::System { .. }) {
+            return Ok(None);
+        }
+        for (backend, candidate) in &providers {
+            if backend.ba() == preferred.ba() {
+                if matches!(candidate.request, ToolRequest::System { .. }) {
+                    return Ok(None);
+                }
+                if backend.is_version_installed(config, candidate, true)
+                    && let Some(path) = backend.which_spawnable(config, candidate, bin_name).await?
+                {
+                    return Ok(Some(path));
+                }
+            }
+        }
+        bail!(
+            "mise: configured tool {version} does not provide executable {bin_name}; reinstall it with `mise install --force {}@{}`",
+            version.ba().short,
+            version.version
+        )
+    }
+
     pub(crate) async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
         let mut installed = self.list_current_installed_versions(config);
         Self::sort_by_overrides(&mut installed).unwrap();

@@ -51,6 +51,8 @@ unset MISE_SHELL
 unset __MISE_DIFF
 unset __MISE_SESSION
 unset __MISE_EXE
+unset __MISE_LOOKUP_EXE
+unset __MISE_LOOKUP_ERROR
 unset __MISE_FLAGS
 unset __MISE_HOOK_ENABLED
 unset __MISE_BASH_CHPWD_RAN

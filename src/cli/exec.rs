@@ -260,7 +260,7 @@ impl Exec {
             ts.resolve_with_opts(&config, &opts.resolve_options).await?;
         }
 
-        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+        let (mut program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
 
         // Running a lazy tool's command is what installs it, and `mise x -- <cmd>`
         // names that command directly. Install its provider here: program resolution
@@ -283,6 +283,22 @@ impl Exec {
             // Commands started by the child (a shell, a script) reach lazy tools
             // through their bootstrap shims, which a hand-edited declaration lacks.
             warn!("failed to create shims for lazy tools: {err:#}");
+        }
+
+        if Settings::get().activate_mise_lookup == "env_path" && !program.contains(['/', '\\']) {
+            let require_provider = !strip_dispatch_dirs
+                && env::MISE_SHIM_PATH
+                    .read()
+                    .unwrap()
+                    .as_deref()
+                    .and_then(std::path::Path::parent)
+                    .is_some_and(crate::file::is_lookup_shims_dir);
+            if let Some(path) = ts
+                .resolve_lookup_command(&config, &program, require_provider)
+                .await?
+            {
+                program = path.to_string_lossy().into_owned();
+            }
         }
 
         let warned = warn_if_command_falls_back(

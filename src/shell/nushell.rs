@@ -109,16 +109,25 @@ impl Shell for Nushell {
           export def --env --wrapped main [command?: string, --help, ...rest: string] {{
             let commands = ["deactivate", "shell", "sh"]
 
-            if ($command == null) {{
-              ^"{exe}"
-            }} else if ($command == "activate") {{
+            if ($command == "activate") {{
               $env.MISE_SHELL = "nu"
             }} else if ($command in $commands) {{
               ^"{exe}" $command ...$rest
               | parse vars
               | update-env
             }} else {{
-              ^"{exe}" $command ...$rest
+              if ('__MISE_LOOKUP_ERROR' in $env) {{
+                error make {{ msg: $env.__MISE_LOOKUP_ERROR }}
+              }}
+              let target = ($env.__MISE_LOOKUP_EXE? | default "{exe}")
+              if ('__MISE_LOOKUP_EXE' in $env) and (not ($target | path exists)) {{
+                error make {{ msg: $"mise: selected executable disappeared: ($target)" }}
+              }}
+              if ($command == null) {{
+                run-external $target ...$rest
+              }} else {{
+                run-external $target $command ...$rest
+              }}
             }}
           }}
 
@@ -137,6 +146,8 @@ impl Shell for Nushell {
             self.unset_env("MISE_SHELL"),
             self.unset_env("__MISE_DIFF"),
             self.unset_env("__MISE_SESSION"),
+            self.unset_env("__MISE_LOOKUP_EXE"),
+            self.unset_env("__MISE_LOOKUP_ERROR"),
         ]
         .join("")
     }

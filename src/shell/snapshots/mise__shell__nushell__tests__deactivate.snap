@@ -6,3 +6,5 @@ snapshot_kind: text
 hide,MISE_SHELL,
 hide,__MISE_DIFF,
 hide,__MISE_SESSION,
+hide,__MISE_LOOKUP_EXE,
+hide,__MISE_LOOKUP_ERROR,

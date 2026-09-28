@@ -4,12 +4,27 @@ expression: "xonsh.activate(exe, \" --status\".into())"
 snapshot_kind: text
 ---
 from xonsh.built_ins import XSH
+import os
+import subprocess
 
-def _mise(args):
-  if args and args[0] in ('deactivate', 'shell', 'sh'):
-    execx($(mise @(args)))
+def _mise(args, stdin=None, stdout=None, stderr=None):
+  if args and args[0] in ('deactivate', 'shell', 'sh') and not any(arg in ('-h', '--help') for arg in args):
+    script = subprocess.run(['/some/dir/mise', *args], env=XSH.env.detype(), capture_output=True, text=True)
+    if script.returncode == 0:
+      execx(script.stdout)
+    else:
+      print(script.stderr, end='', file=__import__('sys').stderr)
+    return script.returncode
   else:
-    mise @(args)
+    failure = XSH.env.get('__MISE_LOOKUP_ERROR')
+    if failure:
+      print(failure, file=__import__('sys').stderr)
+      return 127
+    target = XSH.env.get('__MISE_LOOKUP_EXE', '/some/dir/mise')
+    if not os.path.isfile(target):
+      print(f'mise: selected executable disappeared: {target}', file=__import__('sys').stderr)
+      return 127
+    return subprocess.run([target, *args], env=XSH.env.detype(), stdin=stdin, stdout=stdout, stderr=stderr).returncode
 
 XSH.env['MISE_SHELL'] = 'xonsh'
 XSH.aliases['mise'] = _mise

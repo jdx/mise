@@ -75,6 +75,7 @@ mod latest;
 mod link;
 mod local;
 pub(crate) mod lock;
+mod lookup;
 mod ls;
 mod ls_remote;
 mod mcp;
@@ -1055,6 +1056,14 @@ impl Cli {
         measure!("logger", { logger::init() });
         check_working_directory();
         measure!("handle_shim", { shim::handle_shim().await })?;
+        if args.get(1).map(String::as_str) == Some("__lookup-dispatch") {
+            Settings::try_get()?;
+            return lookup::dispatch(args);
+        }
+        if args.get(1).map(String::as_str) == Some("__lookup-shim-names") {
+            Settings::try_get()?;
+            return lookup::list_shim_names(args).await;
+        }
         let print_version = version::print_version_if_requested(args)?;
         // Clap's tool argument parsers consult installed plugin/tool metadata while
         // resolving registry options. Initialize that filesystem-only state before
@@ -1115,7 +1124,20 @@ impl Cli {
         // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
         // avoid it, it only defers it: `BASE_SETTINGS` stays empty, so the next `Settings::get()`
         // repeats the same failure and unwraps it.
-        measure!("settings", { Settings::try_get() })?;
+        if let Err(err) = measure!("settings", { Settings::try_get() }) {
+            if let Some(Commands::HookEnv(command)) = &cli.command {
+                command.clear_lookup_on_error(&err)?;
+            }
+            return Err(err);
+        }
+        if Settings::get().activate_mise_lookup != "self"
+            && matches!(&cli.command, Some(Commands::HookEnv(_)))
+        {
+            let Some(Commands::HookEnv(command)) = cli.command.take() else {
+                unreachable!("hook-env command was checked");
+            };
+            return command.run().await;
+        }
         // Git may hold installation locks while asking for credentials. Do not
         // refresh registries, migrate, or auto-update from its helper process.
         if let Some(Commands::Token(token)) = &cli.command
