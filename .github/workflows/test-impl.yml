@@ -130,6 +130,9 @@ jobs:
     env:
       # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
       MBX_DISABLE: "0"
+      MBX_CACHE_DIR: ${{ github.workspace }}/.mbx-cache
+      # Keep the bootstrap binary at target/debug/mise with either backend.
+      MBX_TARGET_VIEWS: "0"
       MISE_CARGO_BUILD_COMMAND: cargo build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
       # Untrusted runs land on a shared macos-14 runner that is roughly twice as
@@ -140,10 +143,25 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      # Seed the target/registry cache on main; all PRs (including forks)
-      # restore only. Install mbx before bootstrapping this checkout's mise.
+      - name: Cache mbx objects on Namespace
+        if: inputs.trusted
+        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
+        with:
+          path: ${{ env.MBX_CACHE_DIR }}
+      - name: Cache Cargo downloads on Namespace
+        if: inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main')
+        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+      # Namespace builds reuse local objects. Main also publishes a target/registry
+      # archive so GitHub-hosted untrusted builds have a cache to restore.
+      # Install mbx before bootstrapping this checkout's mise.
       - uses: jdx/mr-boxington-action@9df1d4b18b2147788a7ee7a2c7b84ecf62fd89d3 # v1.5.0
         with:
+          backend: ${{ inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
           cache-generation: unit-macos-v1
       - name: Install test tools
         run: brew install fd tmux
