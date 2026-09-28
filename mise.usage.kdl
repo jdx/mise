@@ -1160,6 +1160,7 @@ Linux box can share the same live path with different contents.
             }
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
+            flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
             flag "-y --yes" help="Accept without prompting"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -2927,6 +2928,7 @@ Linux box can share the same live path with different contents.
         }
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
+        flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
         flag "-y --yes" help="Accept without prompting"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true

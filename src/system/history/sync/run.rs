@@ -1301,6 +1301,7 @@ mod capture_tests {
                 path: roots.branch_path(&path, None).unwrap(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,

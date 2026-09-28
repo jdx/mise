@@ -115,6 +115,9 @@ pub(crate) fn resolve(
                 if enrolled.include.is_none() {
                     enrolled.include = reconciled.include.clone();
                 }
+                if enrolled.allow_plaintext.is_none() {
+                    enrolled.allow_plaintext = reconciled.allow_plaintext;
+                }
             }
             manifest.enrollment.retain(|entry| entry.path != portable);
             manifest.enrollment.push(enrolled);
@@ -180,6 +183,9 @@ fn reconcile(
                 if entry.encrypt != old.encrypt {
                     existing.encrypt = entry.encrypt;
                 }
+                if entry.allow_plaintext != old.allow_plaintext {
+                    existing.allow_plaintext = entry.allow_plaintext;
+                }
                 if entry.variants != old.variants {
                     existing.variants = entry.variants.clone();
                 }
@@ -218,12 +224,16 @@ fn reconcile(
                 // clears it: that is an opinion.
                 let exclude = existing.exclude.clone();
                 let include = existing.include.clone();
+                let allow_plaintext = existing.allow_plaintext;
                 *existing = entry.clone();
                 if existing.exclude.is_none() {
                     existing.exclude = exclude;
                 }
                 if existing.include.is_none() {
                     existing.include = include;
+                }
+                if existing.allow_plaintext.is_none() {
+                    existing.allow_plaintext = allow_plaintext;
                 }
             }
         } else {
@@ -295,12 +305,26 @@ mod tests {
                 path: path.into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn plaintext_approval_survives_a_silent_machine_and_can_be_revoked() {
+        let mut saved = manifest("home/commit-mossy-token.md");
+        saved.enrollment[0].allow_plaintext = Some(true);
+        let silent = manifest("home/commit-mossy-token.md");
+
+        let merged = reconcile(&saved, &silent, Some(&silent), &[]);
+        assert_eq!(merged.enrollment[0].allow_plaintext, Some(true));
+
+        let revoked = reconcile(&saved, &silent, Some(&saved), &[]);
+        assert_eq!(revoked.enrollment[0].allow_plaintext, None);
     }
 
     /// **Where an entry's `exclude` list comes from is reconcile's

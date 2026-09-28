@@ -275,7 +275,8 @@ assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 
 printf '[dotfiles]\n"~/.config/fish/functions/secrets.fish" = { mode = "track" }\n' >"$MISE_CONFIG_DIR/config.toml"
 assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
 assert_not_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
-assert_contains 'mise dot track ~/.config/fish/functions/secrets.fish 2>&1' 'omitted from every save'
+assert_fail 'mise dot track ~/.config/fish/functions/secrets.fish 2>&1' '--allow-plaintext'
+assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
 
 # A list selects paths *inside* a tracked directory, so no pattern can
 # name the entry itself. On an entry that is a file the list could never
