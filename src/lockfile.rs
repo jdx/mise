@@ -78,6 +78,78 @@ pub fn invalidate_caches() {
 
 pub const CURRENT_LOCKFILE_VERSION: u32 = 3;
 const FORGE_IDS_LOCKFILE_VERSION: u32 = 3;
+// Keep the release dates of format bumps here. An older format gets an install
+// warning six calendar months after the first newer format was introduced.
+const LOCKFILE_VERSION_DATES: &[(u32, jiff::civil::Date)] = &[
+    (1, jiff::civil::date(2026, 8, 22)),
+    (2, jiff::civil::date(2026, 9, 13)),
+    (3, jiff::civil::date(2026, 9, 27)),
+];
+
+fn outdated_lockfile_version(version: u32, today: jiff::civil::Date) -> bool {
+    LOCKFILE_VERSION_DATES
+        .iter()
+        .any(|&(bumped_version, date)| {
+            bumped_version > version
+                && date
+                    .checked_add(jiff::Span::new().months(6))
+                    .is_ok_and(|deadline| today > deadline)
+        })
+}
+
+/// Warn about active lockfiles whose format has been superseded for six months.
+pub fn warn_outdated_lockfiles(config: &Config) {
+    if !Settings::get().lockfile_enabled() {
+        return;
+    }
+    let monorepo_root = config.monorepo_lockfile_root();
+    let today = jiff::Zoned::now().date();
+    let mut seen = HashSet::new();
+    for (path, cf) in &config.config_files {
+        if !cf.source().is_mise_toml() {
+            continue;
+        }
+        let (path, _) = lockfile_path_for_config(path, monorepo_root.as_deref());
+        let Some(root) = path.parent() else { continue };
+        for candidate in active_lockfile_paths_in_dir(root) {
+            if !seen.insert(candidate.clone()) || !candidate.exists() {
+                continue;
+            }
+            warn_outdated_lockfile(&candidate, today);
+        }
+    }
+    for candidate in monorepo_legacy_lockfile_paths(config) {
+        if !seen.insert(candidate.clone()) || !candidate.exists() {
+            continue;
+        }
+        warn_outdated_lockfile(&candidate, today);
+    }
+}
+
+fn warn_outdated_lockfile(path: &Path, today: jiff::civil::Date) {
+    if let Ok(lockfile) = Lockfile::read(path)
+        && outdated_lockfile_version(lockfile.lockfile_version(), today)
+    {
+        warn!(
+            "{} uses old lockfile format version {}; run `mise lock --upgrade`",
+            display_path(path),
+            lockfile.lockfile_version()
+        );
+    }
+}
+
+fn active_lockfile_paths_in_dir(root: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
+        paths.push(root.join(format!("mise.{env_name}.local.lock")));
+    }
+    paths.push(root.join("mise.local.lock"));
+    for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
+        paths.push(root.join(format!("mise.{env_name}.lock")));
+    }
+    paths.push(root.join("mise.lock"));
+    paths
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AubeLock {
@@ -4075,18 +4147,9 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         // 4. mise.lock
         // AUTO_ENV_NAMES is ordered least to most specific, so reverse it here
         // to read the most specific (e.g. macos-arm64) first.
-        for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
-            let p = root.join(format!("mise.{env_name}.local.lock"));
-            push_existing_lockfile(&mut all, &p);
+        for path in active_lockfile_paths_in_dir(&root) {
+            push_existing_lockfile(&mut all, &path);
         }
-        let local_path = root.join("mise.local.lock");
-        push_existing_lockfile(&mut all, &local_path);
-        for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
-            let p = root.join(format!("mise.{env_name}.lock"));
-            push_existing_lockfile(&mut all, &p);
-        }
-        let main_path = root.join("mise.lock");
-        push_existing_lockfile(&mut all, &main_path);
     }
     let roots_end = all.len();
     for legacy_path in legacy_lockfiles {
@@ -5128,6 +5191,23 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
+        use jiff::civil::date;
+
+        assert_eq!(
+            LOCKFILE_VERSION_DATES.last().unwrap().0,
+            CURRENT_LOCKFILE_VERSION
+        );
+        assert!(!outdated_lockfile_version(0, date(2027, 2, 22)));
+        assert!(outdated_lockfile_version(0, date(2027, 2, 23)));
+        assert!(!outdated_lockfile_version(1, date(2027, 3, 13)));
+        assert!(outdated_lockfile_version(1, date(2027, 3, 14)));
+        assert!(!outdated_lockfile_version(2, date(2027, 3, 27)));
+        assert!(outdated_lockfile_version(2, date(2027, 3, 28)));
+        assert!(!outdated_lockfile_version(3, date(2028, 1, 1)));
+    }
 
     #[test]
     fn test_url_contradicts_version_reports_a_different_release() {
