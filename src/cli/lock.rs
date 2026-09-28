@@ -420,6 +420,7 @@ impl Lock {
         installed: Option<&[crate::toolset::ToolVersion]>,
         config: Arc<Config>,
     ) -> Result<()> {
+        lockfile::suppress_outdated_lockfile_warning(&config);
         if self.upgrade && !self.tool.is_empty() {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
         }
