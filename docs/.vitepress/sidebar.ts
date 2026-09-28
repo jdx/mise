@@ -271,7 +271,7 @@ export const sidebar: SidebarItem[] = [
     text: "About",
     items: [
       { text: "About mise", link: "/about" },
-      { text: "mise-en-place: The Song", link: "/mise-en-place" },
+      { text: "Meez Run", link: "/mise-en-place" },
       { text: "Glossary", link: "/glossary" },
       { text: "FAQs", link: "/faq" },
       { text: "Troubleshooting", link: "/troubleshooting" },

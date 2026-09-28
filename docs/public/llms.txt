@@ -141,7 +141,7 @@
 ## About
 
 - [About mise](https://mise.jdx.dev/about.html): mise (pronounced “meez”), short for mise-en-place, helps you set up and work in development environments.
-- [mise-en-place: The Song](https://mise.jdx.dev/mise-en-place.html): Listen to the mise theme song with the player below, or download the MP3. The lyrics are also available as text. For setup instructions, start with Getting Started.
+- [Meez Run](https://mise.jdx.dev/mise-en-place.html): Everything in its place, set to a beat. Meez Run is a music video about mise, with animated lyrics and illustrations of tools, environments, and tasks.
 - [Glossary](https://mise.jdx.dev/glossary.html): Definitions for the concepts used in the guides and CLI reference. Follow a term's link for configuration syntax and examples.
 - [FAQs](https://mise.jdx.dev/faq.html): Quick answers about daily commands, shell integration, and configuration. For a failed command, start with Troubleshooting or Errors.
 - [Troubleshooting](https://mise.jdx.dev/troubleshooting.html): If you're looking for help with a specific error message, see Errors — this page is organized by symptom instead.
