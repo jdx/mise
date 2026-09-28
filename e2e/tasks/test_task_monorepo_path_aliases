@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+mkdir -p foo/bar/baz/abc/123/sub other
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123", "foo/bar/baz/abc/123/sub", "other"]
+
+[monorepo.path_aliases]
+"123" = "foo/bar/baz/abc/123"
+TOML
+cat >foo/bar/baz/abc/123/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo deep-build'
+
+[tasks.test]
+run = 'echo deep-test'
+
+[tasks.ci]
+depends = ['//123:build']
+run = 'echo deep-ci'
+TOML
+cat >foo/bar/baz/abc/123/sub/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo child-build'
+TOML
+cat >other/mise.toml <<'TOML'
+[tasks.build]
+run = 'echo other-build'
+TOML
+
+assert_contains 'mise run //123:build' 'deep-build'
+assert_contains 'mise run //foo/bar/baz/abc/123:build' 'deep-build'
+assert_contains 'mise run //123:ci' 'deep-ci'
+assert_contains 'mise run //123/sub:build' 'child-build'
+assert_contains 'mise run //123:*' 'deep-test'
+assert_contains 'mise tasks info //123:build' '//foo/bar/baz/abc/123:build'
+
+cat >>mise.toml <<'TOML'
+"other" = "foo/bar/baz/abc/123"
+TOML
+assert_fail_contains 'mise run //other:build' 'conflicts with a config root path'

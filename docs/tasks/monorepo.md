@@ -64,6 +64,26 @@ With this structure, tasks are automatically namespaced:
 - `//projects/backend:build`
 - `//projects/backend:test`
 
+### Short names for project paths
+
+Give a configured root a shorter path name with `[monorepo.path_aliases]`:
+
+```toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["foo/bar/baz/abc/123"]
+
+[monorepo.path_aliases]
+"123" = "foo/bar/baz/abc/123"
+```
+
+`mise run //123:build` then runs `//foo/bar/baz/abc/123:build`. The alias works
+for every task in that root, including task patterns such as `//123:*`. The full
+path remains the task's canonical name, and it continues to work too. An alias
+must be a single path segment and must point to a root listed in
+`[monorepo].config_roots`. It cannot overlap an existing configured root path.
+
 ## Task Path Syntax
 
 Monorepo tasks use special path syntax with `//` and `:` prefixes. You can run these tasks directly with `mise` or with `mise run`. For non-monorepo tasks, the guidance is to avoid the direct syntax in scripts because a task name could conflict with a future core mise command. mise will never define commands with a `//` or `:` prefix, however, so this guidance does not apply to monorepo tasks.
