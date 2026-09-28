@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
+python3 scripts/test-install-release-age.py
+
 BASE_DIR="$(pwd)"
 RELEASE_DIR="$(pwd)/tmp"
 MISE_VERSION="v$(curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 https://mise.jdx.dev/VERSION)"

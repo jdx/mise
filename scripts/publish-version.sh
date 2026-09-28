@@ -8,7 +8,8 @@ if ! [[ $TAG =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
 fi
 
 version_file=$(mktemp)
-trap 'rm -f "$version_file"' EXIT
+release_index=$(mktemp)
+trap 'rm -f "$version_file" "$release_index"' EXIT
 printf '%s\n' "${TAG#v}" >"$version_file"
 
 export AWS_REGION=auto
@@ -45,6 +46,21 @@ for platform in windows-arm64 windows-x64; do
 		--key "$TAG/mise-$TAG-$platform.zip" >/dev/null
 done
 aws s3api head-object --bucket mise --key "$TAG/SHASUMS256.txt" >/dev/null
+
+# Publish the complete stable release history after GitHub publication. Consumers
+# apply their cutoff at runtime, so aging into eligibility needs no deployment.
+gh api --paginate "repos/${GITHUB_REPOSITORY:-jdx/mise}/releases?per_page=100" |
+	jq -sr '
+		add | map(select(.draft == false and .prerelease == false)) |
+		map(select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) |
+		if length == 0 then error("no stable mise releases") else . end |
+		sort_by(.tag_name | ltrimstr("v") | split(".") | map(tonumber)) | reverse |
+		.[] | [.tag_name, (.published_at | fromdateiso8601)] | @tsv
+	' >"$release_index"
+awk -v tag="$TAG" '$1 == tag { found = 1 } END { exit !found }' "$release_index"
+aws s3 cp "$release_index" s3://mise/releases.tsv \
+	--cache-control "max-age=300,s-maxage=300,public" \
+	--no-progress --content-type "text/plain"
 
 aws s3 cp "$version_file" s3://mise/VERSION \
 	--cache-control "max-age=86400,s-maxage=86400,public,immutable" \

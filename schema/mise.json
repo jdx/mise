@@ -1922,6 +1922,10 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "minimum_release_age": {
+              "description": "Minimum release age for mise itself; inherits minimum_release_age (24h by default).",
+              "type": "string"
+            },
             "api_url": {
               "default": "https://api.github.com",
               "description": "GitHub API base URL used by `mise self-update`.",

@@ -2924,6 +2924,29 @@ description = "Deny filesystem writes by default for `mise run` and `mise exec`.
 env = "MISE_SANDBOX_DENY_WRITE"
 type = "Bool"
 
+[self_update.minimum_release_age]
+description = "Minimum release age for mise itself; inherits minimum_release_age (24h by default)."
+docs = """
+Overrides [`minimum_release_age`](#minimum_release_age) for `mise self-update`, automatic
+updates, and update notifications. Accepts the same durations and cutoff dates. Set to
+`0s` to receive releases immediately. Explicit versions bypass the delay; `--force` does not.
+The `mise self-update --minimum-release-age` flag takes precedence over this setting.
+
+```toml
+[settings]
+minimum_release_age = "7d"
+self_update.minimum_release_age = "24h"
+```
+
+The bootstrap installer also accepts `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE`, falling back
+to `MISE_MINIMUM_RELEASE_AGE` and then `24h`. It reads environment variables, not TOML files,
+and supports integer durations in seconds (`s`), minutes (`m`), hours (`h`), days (`d`), or
+weeks (`w`). An explicit `MISE_VERSION` bypasses the delay.
+"""
+env = "MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE"
+optional = true
+type = "String"
+
 [self_update.api_url]
 default = "https://api.github.com"
 description = "GitHub API base URL used by `mise self-update`."

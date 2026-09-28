@@ -319,7 +319,10 @@ async fn get_latest_version(duration: Duration) -> Option<String> {
         debug!("invalid self-update source: {err:#}");
         return None;
     }
-    let version_file_path = source.cache_path();
+    let age = self_update_release_age(None);
+    let version_file_path = source
+        .cache_path()
+        .with_extension(crate::hash::hash_to_str(&age));
     if let Cached::Fresh(version) = cached_latest_version(&version_file_path, duration) {
         return version;
     }
@@ -338,59 +341,152 @@ async fn get_latest_version_call(_source: &SelfUpdateSource) -> Option<String> {
 
 #[cfg(not(test))]
 async fn get_latest_version_call(source: &SelfUpdateSource) -> Option<String> {
-    if source.is_default() {
-        fetch_latest_version(&crate::http::HTTP).await
-    } else {
-        fetch_latest_github_version(source).await
-    }
-}
-
-async fn fetch_latest_version(client: &crate::http::Client) -> Option<String> {
-    let url = "https://mise.jdx.dev/VERSION";
-    debug!("checking mise version from {}", url);
-    match client.get_text(url).await {
-        Ok(text) => {
-            debug!("got version {text}");
-            Some(text.trim().to_string())
-        }
+    match eligible_self_update_version(source, None).await {
+        Ok(version) => Some(version),
         Err(err) => {
-            debug!("failed to check for version: {:#?}", err);
+            debug!("failed to check for version: {err:#}");
             None
         }
     }
 }
 
-#[cfg(not(test))]
-async fn fetch_latest_github_version(source: &SelfUpdateSource) -> Option<String> {
-    debug!(
-        "checking mise version from {}/{}",
-        source.api_url, source.repository
-    );
-    match crate::github::get_release_for_url_with_versions_host(
-        &source.api_url,
-        &source.repository,
-        "latest",
-        false,
+pub(crate) fn self_update_release_age(cli: Option<&str>) -> String {
+    let settings = Settings::try_get().ok();
+    effective_release_age(
+        cli,
+        settings
+            .as_ref()
+            .and_then(|s| s.self_update.minimum_release_age.as_deref()),
+        settings
+            .as_ref()
+            .and_then(|s| s.minimum_release_age.as_deref()),
     )
-    .await
-    {
-        Ok(release) => Some(
-            release
-                .tag_name
-                .strip_prefix('v')
-                .unwrap_or(&release.tag_name)
-                .to_string(),
-        ),
-        Err(err) => {
-            debug!("failed to check for version: {err:#?}");
-            None
+    .to_string()
+}
+
+fn effective_release_age<'a>(
+    cli: Option<&'a str>,
+    override_age: Option<&'a str>,
+    global: Option<&'a str>,
+) -> &'a str {
+    cli.or(override_age).or(global).unwrap_or("24h")
+}
+
+// Only official mise release tags use this calendar-version format. This is not
+// a comparator for arbitrary tool versions or backend resolution.
+pub(crate) fn mise_release_key(version: &str) -> Result<(u32, u32, u32)> {
+    let parts = version
+        .trim_start_matches('v')
+        .split('.')
+        .collect::<Vec<_>>();
+    eyre::ensure!(parts.len() == 3, "invalid mise release version: {version}");
+    Ok((parts[0].parse()?, parts[1].parse()?, parts[2].parse()?))
+}
+
+fn select_eligible_release(index: &str, cutoff: jiff::Timestamp) -> Result<String> {
+    let mut candidates = Vec::new();
+    for line in index.lines().filter(|line| !line.trim().is_empty()) {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        eyre::ensure!(fields.len() == 2, "invalid mise release index row");
+        let key = mise_release_key(fields[0])?;
+        let published = jiff::Timestamp::from_second(fields[1].parse()?)?;
+        if published <= cutoff {
+            candidates.push((key, fields[0].trim_start_matches('v')));
         }
     }
+    candidates.sort_unstable_by_key(|(key, _)| *key);
+    candidates.last().map(|(_, version)| (*version).to_string())
+        .ok_or_else(|| eyre::eyre!("no mise release satisfies minimum release age; lower self_update.minimum_release_age or specify a version"))
+}
+
+pub(crate) async fn eligible_self_update_version(
+    source: &SelfUpdateSource,
+    cli_age: Option<&str>,
+) -> Result<String> {
+    source.validate()?;
+    let age = self_update_release_age(cli_age);
+    let cutoff = crate::duration::parse_into_timestamp(&age)?;
+    let index = if source.is_default() {
+        crate::http::HTTP
+            .get_text("https://mise.jdx.dev/releases.tsv")
+            .await?
+    } else {
+        // Fetch every page: an age cutoff can reach beyond the first 100 releases.
+        // Do not reuse the tool-release cache or its bounded pagination.
+        let mut index = String::new();
+        for page in 1.. {
+            let url = format!(
+                "{}/repos/{}/releases?per_page=100&page={page}",
+                source.api_url, source.repository
+            );
+            let headers = crate::github::get_headers(&url)?;
+            let (releases, _): (Vec<crate::github::GithubRelease>, _) = crate::http::HTTP
+                .json_headers_with_headers(&url, &headers)
+                .await?;
+            let done = releases.len() < 100;
+            for release in releases.into_iter().filter(|r| !r.draft && !r.prerelease) {
+                let published = release.published_at.ok_or_else(|| {
+                    eyre::eyre!("missing publication date for {}", release.tag_name)
+                })?;
+                let published: jiff::Timestamp = published.parse()?;
+                index.push_str(&format!(
+                    "{}\t{}\n",
+                    release.tag_name,
+                    published.as_second()
+                ));
+            }
+            if done {
+                break;
+            }
+        }
+        index
+    };
+    select_eligible_release(&index, cutoff)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn self_update_age_precedence() {
+        assert_eq!(effective_release_age(None, None, None), "24h");
+        assert_eq!(effective_release_age(None, None, Some("7d")), "7d");
+        assert_eq!(effective_release_age(None, Some("0s"), Some("7d")), "0s");
+        assert_eq!(
+            effective_release_age(Some("2d"), Some("0s"), Some("7d")),
+            "2d"
+        );
+    }
+
+    #[test]
+    fn release_age_selection_is_inclusive_and_uses_mise_release_order() {
+        let index = "v2026.10.0 200\nv2026.9.30 100\nv2026.9.29 300\n";
+        assert_eq!(
+            select_eligible_release(index, jiff::Timestamp::from_second(200).unwrap()).unwrap(),
+            "2026.10.0"
+        );
+        assert_eq!(
+            select_eligible_release(index, jiff::Timestamp::from_second(199).unwrap()).unwrap(),
+            "2026.9.30"
+        );
+        assert!(select_eligible_release(index, jiff::Timestamp::from_second(99).unwrap()).is_err());
+    }
+
+    #[test]
+    fn release_index_fails_closed() {
+        let cutoff = jiff::Timestamp::from_second(1000).unwrap();
+        for index in [
+            "",
+            "v2026.1.0",
+            "v2026.1.0 unknown",
+            "latest 1",
+            "v2026.1.0 1 extra",
+            "v2026.1.0 1\nv2026.2.0 unknown",
+        ] {
+            assert!(select_eligible_release(index, cutoff).is_err(), "{index}");
+        }
+    }
 
     const HOUR: Duration = Duration::from_secs(3600);
 
@@ -517,13 +613,6 @@ mod tests {
                 .validate()
                 .is_err()
         );
-    }
-
-    #[tokio::test]
-    async fn latest_version_ignores_http_client_initialization_errors() {
-        let client = crate::http::Client::with_init_error("builder error: OpenSSL error");
-
-        assert_eq!(fetch_latest_version(&client).await, None);
     }
 
     /// Regression: freshness must not depend on the cached version being newer
