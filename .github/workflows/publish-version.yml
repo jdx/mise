@@ -1,83 +1,68 @@
-name: publish-version
+name: publish release index only
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Published release tag to expose (e.g., v2026.9.3)"
-        required: true
-        type: string
 
 concurrency:
-  # s3://mise/VERSION has one writer, so every run shares one group rather than
-  # grouping per tag. Two runs for different tags each pass the latest-release
-  # check below before either publishes, so overlapping them lets an older run
-  # finish last and move the pointer backwards. Serialized, a run that is no
-  # longer publishing the latest release re-resolves and refuses.
   group: publish-version
-  # One group also means one pending slot, and the default `queue: single` lets
-  # an arriving run cancel whatever is pending — which could drop a release run
-  # that nothing else will retry. Queue them instead. (actionlint 1.7.12 does
-  # not know this key yet; GitHub documents it and accepts it.)
   queue: max
 
+permissions:
+  contents: read
+
 jobs:
-  publish-version:
-    if: |
-      (github.event_name == 'release' &&
-       startsWith(github.event.release.tag_name, 'v') &&
-       !github.event.release.prerelease) ||
-      github.event_name == 'workflow_dispatch'
+  release-index:
     runs-on: ubuntu-24.04
-    # Release lookups and index generation may take hours, but only because they
-    # wait out a rate-limit window. This is the outer ceiling; each step sets
-    # its own bound so the generous value here never applies to work that
-    # should be quick — a run holds the concurrency group until it ends.
-    timeout-minutes: 180
-    permissions:
-      contents: read
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        timeout-minutes: 5
         with:
-          # Release events normally check out the tag. Use the trusted default
-          # branch so recovery also works for tags created before this script.
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Resolve published release
-        id: release
-        # One reset wait (capped below) plus the short backoffs, with slack.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Generate stable release index
         timeout-minutes: 75
         env:
-          EVENT_TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
           source scripts/gh-api-retry.sh
-
-          TAG="${EVENT_TAG:-$INPUT_VERSION}"
-          if ! [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
-            echo "::error::Invalid release tag: $TAG" >&2
-            exit 1
-          fi
-          # /releases/latest is by definition the newest release that is neither
-          # a draft nor a prerelease, so matching it proves the tag is a
-          # published stable release without spending a second API call.
-          LATEST_TAG="$(gh_api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
-          if [[ "$TAG" != "$LATEST_TAG" ]]; then
-            echo "::error::$TAG is not the latest stable release ($LATEST_TAG)" >&2
-            exit 1
-          fi
-          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
-
-      - name: Publish VERSION and purge release caches
-        # Index pagination uses the same reset-aware retry policy as the lookup.
-        timeout-minutes: 75
+          gh_api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          jq -sr '
+            add | map(select(.draft == false and .prerelease == false)) |
+            map(select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) |
+            if length == 0 then error("no stable mise releases") else . end |
+            sort_by(.tag_name | ltrimstr("v") | split(".") | map(tonumber)) | reverse |
+            .[] | [.tag_name, (.published_at | fromdateiso8601)] | @tsv
+          ' "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/releases.tsv"
+          test -s "$RUNNER_TEMP/releases.tsv"
+          wc -l "$RUNNER_TEMP/releases.tsv"
+          sha256sum "$RUNNER_TEMP/releases.tsv"
+      - name: Upload only releases.tsv
+        timeout-minutes: 5
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          AWS_REGION: auto
+          AWS_ENDPOINT_URL: https://6e243906ff257b965bcae8025c2fc344.r2.cloudflarestorage.com
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+          AWS_RETRY_MODE: adaptive
+          AWS_MAX_ATTEMPTS: 10
+        run: |
+          aws s3 cp "$RUNNER_TEMP/releases.tsv" s3://mise/releases.tsv \
+            --cache-control "max-age=300,s-maxage=300,public" \
+            --no-progress --content-type "text/plain"
+      - name: Purge only the release index URL
+        timeout-minutes: 2
+        env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-        run: ./scripts/publish-version.sh "${{ steps.release.outputs.tag }}"
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -X POST https://api.cloudflare.com/client/v4/zones/90dfd7997bdcfa8579c52d8ee8dd4cd1/purge_cache \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"files":["https://mise.jdx.dev/releases.tsv"]}' | jq -e '.success == true'
+      - name: Verify public release index
+        timeout-minutes: 2
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            https://mise.jdx.dev/releases.tsv -o "$RUNNER_TEMP/public-releases.tsv"
+          cmp "$RUNNER_TEMP/releases.tsv" "$RUNNER_TEMP/public-releases.tsv"
+          sha256sum "$RUNNER_TEMP/public-releases.tsv"
