@@ -816,6 +816,77 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    fn monorepo_path_aliases(&self) -> Result<BTreeMap<String, String>> {
+        let Some(config) = find_monorepo_config(&self.config_files) else {
+            return Ok(BTreeMap::new());
+        };
+        if config.monorepo.path_aliases.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let roots = config.monorepo.config_roots.as_deref().ok_or_else(|| {
+            eyre!("[monorepo].config_roots is required for [monorepo.path_aliases]")
+        })?;
+        let root_dirs = expand_config_root_dirs(&config.root, roots, None)?;
+        let canonical_root = config.root.canonicalize()?;
+        let mut aliases = BTreeMap::new();
+        for (alias, target) in &config.monorepo.path_aliases {
+            if alias.is_empty()
+                || alias == "."
+                || alias == ".."
+                || alias.contains("...")
+                || !alias
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+            {
+                bail!("[monorepo.path_aliases]: {alias:?} must be a single path segment");
+            }
+            let target_path = Path::new(target);
+            if target.contains('\\')
+                || target_path.components().next().is_none()
+                || !target_path
+                    .components()
+                    .all(|component| matches!(component, Component::Normal(_)))
+            {
+                bail!("[monorepo.path_aliases]: {target:?} must be a relative config root");
+            }
+            let target_dir = config.root.join(target_path).canonicalize().map_err(|_| {
+                eyre!("[monorepo.path_aliases]: {alias:?} points to missing config root {target:?}")
+            })?;
+            if !target_dir.starts_with(&canonical_root) {
+                bail!("[monorepo.path_aliases]: {alias:?} points outside the monorepo root");
+            }
+            let relative = |root: &Path| {
+                root.strip_prefix(&config.root).map(|path| {
+                    path.components()
+                        .filter(|component| !matches!(component, Component::CurDir))
+                        .map(|component| component.as_os_str().to_string_lossy())
+                        .join("/")
+                })
+            };
+            let target = target_path
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .join("/");
+            let selected_root = root_dirs
+                .iter()
+                .find(|root| relative(root).is_ok_and(|path| path == target));
+            let Some(selected_root) = selected_root else {
+                bail!(
+                    "[monorepo.path_aliases]: {alias:?} must point to a root in [monorepo].config_roots"
+                );
+            };
+            if root_dirs.iter().any(|root| {
+                relative(root)
+                    .is_ok_and(|path| path == *alias || path.starts_with(&format!("{alias}/")))
+            }) {
+                bail!("[monorepo.path_aliases]: {alias:?} conflicts with a config root path");
+            }
+            aliases.insert(alias.clone(), relative(selected_root)?);
+        }
+        Ok(aliases)
+    }
+
     pub(crate) fn monorepo_lockfile_discovery_key(
         &self,
     ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
@@ -1029,9 +1100,17 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
+        let path_aliases = self.monorepo_path_aliases()?;
+        let expanded_ctx = ctx.map(|ctx| {
+            let mut ctx = ctx.clone();
+            for hint in &mut ctx.path_hints {
+                *hint = expand_monorepo_path_alias(hint, &path_aliases);
+            }
+            ctx
+        });
         // Use the entire context as cache key
         // Default context (None) becomes TaskLoadContext::default()
-        let cache_key = ctx.cloned().unwrap_or_default();
+        let cache_key = expanded_ctx.clone().unwrap_or_default();
 
         // Check if already cached
         if let Some(cached) = self.tasks_cache.get(&cache_key) {
@@ -1040,7 +1119,8 @@ impl Config {
 
         // Not cached, load tasks
         let tasks = measure!("config::load_all_tasks_with_context", {
-            self.load_all_tasks_with_context(ctx).await?
+            self.load_all_tasks_with_context(expanded_ctx.as_ref())
+                .await?
         });
         let tasks_arc = Arc::new(tasks);
 
@@ -1054,7 +1134,11 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        let cache_key = ctx.cloned().unwrap_or_default();
+        let path_aliases = self.monorepo_path_aliases()?;
+        let mut cache_key = ctx.cloned().unwrap_or_default();
+        for hint in &mut cache_key.path_hints {
+            *hint = expand_monorepo_path_alias(hint, &path_aliases);
+        }
         self.tasks_cache.remove(&cache_key);
         self.tasks_with_context(ctx).await
     }
@@ -1262,6 +1346,32 @@ impl Config {
                     }
                 }
                 _ => {}
+            }
+        }
+        let path_aliases = self.monorepo_path_aliases()?;
+        for task in tasks.values_mut() {
+            let paths = std::iter::once(task.name.as_str())
+                .chain(task.aliases.iter().map(String::as_str))
+                .filter_map(|name| name.strip_prefix("//")?.split_once(':'))
+                .collect_vec();
+            let mut aliases = Vec::new();
+            for (path, name) in paths {
+                for (alias, target) in &path_aliases {
+                    let suffix = if path == target {
+                        Some("")
+                    } else {
+                        path.strip_prefix(target)
+                            .filter(|suffix| suffix.starts_with('/'))
+                    };
+                    if let Some(suffix) = suffix {
+                        aliases.push(format!("//{alias}{suffix}:{name}"));
+                    }
+                }
+            }
+            for alias in aliases {
+                if !task.aliases.contains(&alias) {
+                    task.aliases.push(alias);
+                }
             }
         }
         let all_tasks = tasks.clone();
@@ -1899,6 +2009,15 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConf
         .find_map(|root| resolve_monorepo_config_at_root(&root, config_files))
 }
 
+fn expand_monorepo_path_alias(path: &str, aliases: &BTreeMap<String, String>) -> String {
+    let (first, rest) = path.split_once('/').unwrap_or((path, ""));
+    match aliases.get(first) {
+        Some(target) if rest.is_empty() => target.clone(),
+        Some(target) => format!("{target}/{rest}"),
+        None => path.to_string(),
+    }
+}
+
 fn resolve_monorepo_config_at_root(
     root: &Path,
     config_files: &ConfigMap,
@@ -1922,6 +2041,7 @@ fn resolve_monorepo_config_at_root(
         if layer.config_roots.is_some() {
             monorepo.config_roots.clone_from(&layer.config_roots);
         }
+        monorepo.path_aliases.extend(layer.path_aliases.clone());
         if layer.lockfile.is_some() {
             monorepo.lockfile = layer.lockfile;
         }
