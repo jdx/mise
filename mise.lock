@@ -682,7 +682,7 @@ specifiers = ["latest"]
 
 [[tools."npm:markdownlint-cli"]]
 version = "0.49.1"
-aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:fe5316574a2dbd0cbda258dcdbcfb323969b58550ab5ff0ee354f6628dda5d68" }
+aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:6fcd571b114deda5bf5e897bf5bb12f8b29f7d9395a13a77b70fbd4a3448b979" }
 backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 
