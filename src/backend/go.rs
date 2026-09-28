@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Semaphore;
 use versions::Versioning;
-use xx::regex;
 
 #[derive(Debug)]
 pub(crate) struct GoBackend {
@@ -334,8 +333,9 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec!["tags".into()]
 }
 
+/// Return the version query Go expects, prefixing only valid semantic versions.
 fn go_install_version(version: &str) -> String {
-    if regex!(r"^\d+\.\d+\.\d+").is_match(version) {
+    if versions::SemVer::new(version).is_some() {
         format!("v{version}")
     } else {
         version.to_string()
@@ -1014,6 +1014,8 @@ mod tests {
         assert_eq!(go_install_version("v1.2.3"), "v1.2.3");
         assert_eq!(go_install_version("main"), "main");
         assert_eq!(go_install_version("e16a340"), "e16a340");
+        assert_eq!(go_install_version("1.2.3foo"), "1.2.3foo");
+        assert_eq!(go_install_version("1.2.3.4"), "1.2.3.4");
     }
 
     #[test]

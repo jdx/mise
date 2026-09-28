@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# A failed semver install must preserve the original error instead of retrying
+# the invalid unprefixed version and replacing that error.
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$HOME/go-invocations"
+echo "original semver install failure: $*" >&2
+exit 42
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+
+output="$(mise install go:github.com/jdx/go-example@0.1.0 2>&1)" &&
+  fail "Go install unexpectedly succeeded"
+
+assert_contains "printf '%s' \"$output\"" \
+  "original semver install failure: install -mod=readonly github.com/jdx/go-example@v0.1.0"
+assert "wc -l <\"$HOME/go-invocations\" | tr -d ' '" "1"
