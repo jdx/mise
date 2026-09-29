@@ -60,7 +60,7 @@ mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-featur
 mise-settings = { path = "../mise-settings", version = "2026" }
 mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features = false }
 netrc-rs = "0.1"
-nodejs-semver = "5"
+nodejs-semver = "6"
 nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
