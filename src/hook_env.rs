@@ -598,18 +598,26 @@ pub async fn build_session(
         max_modtime = std::cmp::max(modified, max_modtime);
     }
 
-    let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
+    let included_paths: Vec<PathBuf> = config
+        .config_files
+        .values()
+        .flat_map(|cf| cf.included_paths())
+        .collect();
     // A remote include is stored in a cache file that is rewritten when it
     // refreshes. It is checked on every prompt like any loaded config, so
     // latest_update has to cover it or one refresh would make every later
     // prompt run in full.
-    for (path, cf) in &config.config_files {
-        if path.as_path() != cf.get_path()
-            && let Ok(Ok(modified)) = path.metadata().map(|m| m.modified())
-        {
+    for path in &included_paths {
+        if let Ok(Ok(modified)) = path.metadata().map(|m| m.modified()) {
             max_modtime = std::cmp::max(modified, max_modtime);
         }
     }
+    let loaded_configs: IndexSet<PathBuf> = config
+        .config_files
+        .keys()
+        .cloned()
+        .chain(included_paths)
+        .collect();
 
     let settings = Settings::get();
     let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)

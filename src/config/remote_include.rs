@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use eyre::{Result, WrapErr, bail};
 
+use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::config_file::{ConfigFile, trust_include_cache_file};
 use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::file;
 use crate::remote_source::RemoteSource;
@@ -30,29 +30,26 @@ use crate::{dirs, hash};
 const FRAGMENT_FILE: &str = "mise.toml";
 const DEFAULT_TTL: Duration = Duration::from_secs(60 * 60);
 
-/// A fetched fragment and the file it is stored in, which keys it in the
-/// loaded configs.
-pub(crate) type Fragment = (PathBuf, Arc<dyn ConfigFile>);
-
-/// Fetch every remote fragment `parent` includes, in the order they rank.
-pub(crate) async fn resolve(parent: &Arc<dyn ConfigFile>) -> Result<Vec<Fragment>> {
-    let references = parent.remote_includes()?;
+/// `cf` with everything it includes merged in, or `cf` itself when it includes
+/// nothing. A fragment never becomes a config file of its own: it is part of
+/// the file that includes it, so trust, paths and the lockfile are that file's.
+pub(crate) async fn apply(cf: Arc<dyn ConfigFile>) -> Result<Arc<dyn ConfigFile>> {
+    let references = cf.remote_includes()?;
     // Safe mode loads untrusted project config without a trust prompt, and
     // fetching a URL is not something such a config gets to do.
-    if references.is_empty() || Settings::safe_mode() && !is_global_config(parent.get_path()) {
-        return Ok(vec![]);
+    if references.is_empty() || Settings::safe_mode() && !is_global_config(cf.get_path()) {
+        return Ok(cf);
     }
     let mut fragments = Vec::with_capacity(references.len());
     for reference in references {
-        let (cache, body) = load(parent.get_path(), &reference)
+        let fragment = load(cf.get_path(), &reference)
             .await
             .wrap_err_with(|| format!("failed to load config include {reference}"))?;
-        let fragment = MiseToml::from_remote_fragment(&body, parent.get_path())
-            .wrap_err_with(|| format!("invalid config include {reference}"))?;
-        trust_include_cache_file(&cache);
-        fragments.push((cache, Arc::new(fragment) as Arc<dyn ConfigFile>));
+        fragments.push(fragment);
     }
-    Ok(fragments)
+    cf.with_remote_fragments(fragments)
+        .wrap_err("invalid config include")
+        .map(|merged| merged.unwrap_or(cf))
 }
 
 /// The cached copy of a fragment, refreshed first when it is due.
@@ -79,7 +76,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     // A body is only cached once it is known to load, so a bad edit upstream
     // can never replace a copy that works.
     let fetched = match fetch(reference).await {
-        Ok(body) => MiseToml::from_remote_fragment(&body, parent)
+        Ok(body) => MiseToml::parse_remote_fragment(&body, parent)
             .map(|_| body)
             .wrap_err_with(|| format!("invalid config include {reference}")),
         Err(err) => Err(err),

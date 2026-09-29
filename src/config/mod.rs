@@ -1590,11 +1590,9 @@ impl Config {
             .config_files
             .iter()
             .rev()
-            .map(|(_, cf)| {
-                // not the map key: an include is keyed by its cache file, but
-                // resolves against the file that includes it
+            .map(|(source, cf)| {
                 cf.env_entries()
-                    .map(|ee| ee.into_iter().map(|e| (e, cf.get_path().to_path_buf())))
+                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -3561,7 +3559,6 @@ async fn load_all_config_files(
     groups.sort_by_key(|(root, _)| root.components().count());
 
     let mut parsed = HashMap::new();
-    let mut fragments = HashMap::new();
     for (_, paths) in groups {
         let mut root_configs = ConfigMap::new();
         for f in paths {
@@ -3577,17 +3574,6 @@ async fn load_all_config_files(
             if let Err(err) = Tracker::track(f) {
                 warn!("tracking config: {err:#}");
             }
-            match remote_include::resolve(&cf).await {
-                Ok(included) => {
-                    fragments.insert(f.clone(), included);
-                }
-                Err(err) => {
-                    return Err(err.wrap_err(format!(
-                        "error parsing config file: {}",
-                        style::ebold(display_path(f))
-                    )));
-                }
-            }
             parsed.insert(f.clone(), cf.clone());
             root_configs.insert(f.clone(), cf);
         }
@@ -3602,13 +3588,9 @@ async fn load_all_config_files(
         }
     }
 
-    // an include ranks right below the file that names it
     Ok(config_filenames
         .iter()
-        .filter_map(|path| parsed.remove(path).map(|cf| (path, cf)))
-        .flat_map(|(path, cf)| {
-            std::iter::once((path.clone(), cf)).chain(fragments.remove(path).into_iter().flatten())
-        })
+        .filter_map(|path| parsed.remove(path).map(|cf| (path.clone(), cf)))
         .collect())
 }
 
@@ -3636,14 +3618,7 @@ pub async fn load_config_files_from_paths(
             }
         };
 
-        let included = remote_include::resolve(&cf).await.map_err(|err| {
-            err.wrap_err(format!(
-                "error parsing config file: {}",
-                style::ebold(display_path(f))
-            ))
-        })?;
         config_map.insert(f.clone(), cf);
-        config_map.extend(included);
     }
     Ok(config_map)
 }
@@ -3655,7 +3630,7 @@ async fn parse_config_file(
     warn_on_dotted_conf_d_file(f);
     let plugins = matching_idiomatic_tools(f, idiomatic_filenames);
     if plugins.is_empty() {
-        config_file::parse(f).await
+        remote_include::apply(config_file::parse(f).await?).await
     } else {
         trace!("idiomatic version file: {}", display_path(f));
         let tools = backend::list()
@@ -3773,9 +3748,9 @@ pub(crate) async fn resolve_vars_from_config_files(
     let entries = config_files
         .iter()
         .rev()
-        .map(|(_, cf)| {
+        .map(|(source, cf)| {
             cf.vars_entries()
-                .map(|ee| ee.into_iter().map(|e| (e, cf.get_path().to_path_buf())))
+                .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -3803,10 +3778,9 @@ fn bootstrap_dry_run_vars(
     mut vars: IndexMap<String, String>,
     mut preceding_layer_changed: bool,
 ) -> Result<IndexMap<String, String>> {
-    for (key, config_file) in config_files.iter().rev() {
-        let source = &config_file.get_path().to_path_buf();
+    for (source, config_file) in config_files.iter().rev() {
         let unchanged = original_config_files
-            .and_then(|files| files.get(key))
+            .and_then(|files| files.get(source))
             .is_some_and(|original| Arc::ptr_eq(original, config_file));
         for directive in config_file.vars_entries()? {
             if directive.options().tools {

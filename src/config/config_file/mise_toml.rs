@@ -9,6 +9,7 @@ use serde::{Deserializer, de};
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{Mutex, MutexGuard},
@@ -392,11 +393,10 @@ pub struct MiseToml {
     path: PathBuf,
     #[serde(default, deserialize_with = "deserialize_arr")]
     include: Vec<String>,
-    /// Set for a remote `include` fragment. Its `path` is the including file's,
-    /// so trust, config root and lockfile follow that file, and it is never
-    /// written back.
+    /// The cache files of the remote `include` fragments merged into this
+    /// config, so `hook-env` notices when one is refreshed.
     #[serde(skip)]
-    remote_fragment: bool,
+    included_paths: Vec<PathBuf>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -589,27 +589,45 @@ impl MiseToml {
         Self::from_str(&body, path)
     }
 
-    /// Load a remote `include` fragment on behalf of `including`. The fragment
-    /// takes that file's path, so trust, config root and lockfile follow it.
-    /// Trust is not checked again: `including` was loaded first and `include`
-    /// is not something a config can use without it.
-    pub(crate) fn from_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
+    /// Merge the remote `include` fragments (`(cache file, body)`, in the order
+    /// they were listed) into a copy of this config. A fragment becomes part of
+    /// the including file, so trust, config root, lockfile and every path that
+    /// is resolved from this file apply to it unchanged, and it is never
+    /// written back. Later fragments outrank earlier ones, and this file
+    /// outranks them all.
+    pub(crate) fn with_remote_fragments(
+        &self,
+        fragments: Vec<(PathBuf, String)>,
+    ) -> eyre::Result<Self> {
+        let mut merged = self.clone();
+        for (cache, body) in fragments.iter().rev() {
+            let fragment = Self::parse_remote_fragment(body, &self.path)?;
+            if let Some(spec) = &fragment.min_version {
+                crate::config::Config::enforce_min_version_spec(spec)?;
+            }
+            merged.merge_fragment_below(fragment);
+            merged.included_paths.push(cache.clone());
+        }
+        Ok(merged)
+    }
+
+    /// Decode one remote fragment. Trust is not checked: the including file
+    /// was loaded first, and `include` is not something a config can use
+    /// without trust.
+    pub(crate) fn parse_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
         if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
-            // Only what is resolved from the loaded config and relative to the
-            // including file. `[settings]` and the monorepo keys are read before
-            // any include exists, tasks are discovered from files, and the system
-            // sections (dotfiles, daemons, ...) resolve paths from the file the
-            // fragment is stored in.
+            // Only what is resolved from the merged config. `[settings]` and the
+            // monorepo keys are read before any include exists, tasks are
+            // discovered from files, and the system sections (dotfiles,
+            // daemons, ...) are loaded per file.
             const ALLOWED: &[&str] = &[
                 "_",
                 "min_version",
                 "tools",
                 "tool_alias",
-                "tool_config",
                 "alias",
                 "shell_alias",
                 "plugins",
-                "redactions",
                 "wrappers",
                 "hooks",
                 "env",
@@ -626,11 +644,33 @@ impl MiseToml {
                 }
             }
         }
-        let mut fragment = Self::parse_body(body, including, false)?;
-        fragment.remote_fragment = true;
-        // never re-read the including file's text as this one's
-        fragment.doc = Mutex::new(OnceCell::from(body.parse::<DocumentMut>()?));
-        Ok(fragment)
+        Self::parse_body(body, including, false)
+    }
+
+    /// Add the entries of `fragment` below this file's own.
+    fn merge_fragment_below(&mut self, fragment: Self) {
+        fn below<T>(own: &mut Vec<T>, mut lower: Vec<T>) {
+            lower.append(own);
+            *own = lower;
+        }
+        fn fill<K: std::hash::Hash + Eq, V>(own: &mut IndexMap<K, V>, lower: IndexMap<K, V>) {
+            for (key, value) in lower {
+                own.entry(key).or_insert(value);
+            }
+        }
+        below(&mut self.env.0, fragment.env.0);
+        below(&mut self.vars.0, fragment.vars.0);
+        below(&mut self.env_path, fragment.env_path);
+        fill(&mut self.alias, fragment.alias);
+        fill(&mut self.tool_alias, fragment.tool_alias);
+        fill(&mut self.shell_alias, fragment.shell_alias);
+        fill(&mut self.wrappers, fragment.wrappers);
+        fill(&mut self.hooks, fragment.hooks);
+        for (name, url) in fragment.plugins {
+            self.plugins.entry(name).or_insert(url);
+        }
+        let mut tools = self.tools.lock().unwrap();
+        fill(&mut tools, fragment.tools.into_inner().unwrap());
     }
 
     /// Decode a proposed configuration without trusting, evaluating, or
@@ -1561,10 +1601,6 @@ impl ConfigFile for MiseToml {
     }
 
     fn save(&self) -> eyre::Result<()> {
-        if self.remote_fragment {
-            // its path is the including file's; that file is what gets edited
-            return Ok(());
-        }
         let contents = self.dump()?;
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
@@ -1774,6 +1810,19 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|include| self.parse_template(include))
             .collect()
+    }
+
+    fn with_remote_fragments(
+        &self,
+        fragments: Vec<(PathBuf, String)>,
+    ) -> eyre::Result<Option<Arc<dyn ConfigFile>>> {
+        Ok(Some(Arc::new(MiseToml::with_remote_fragments(
+            self, fragments,
+        )?)))
+    }
+
+    fn included_paths(&self) -> Vec<PathBuf> {
+        self.included_paths.clone()
     }
 
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
@@ -2051,7 +2100,7 @@ impl Clone for MiseToml {
             context: self.context.clone(),
             path: self.path.clone(),
             include: self.include.clone(),
-            remote_fragment: self.remote_fragment,
+            included_paths: self.included_paths.clone(),
             env_file: self.env_file.clone(),
             dotenv: self.dotenv.clone(),
             env: self.env.clone(),
@@ -5061,25 +5110,60 @@ run = "cargo build"
     }
 
     #[tokio::test]
-    async fn test_remote_fragment_takes_the_including_files_path() {
+    async fn test_remote_fragments_merge_below_the_including_file() {
         let _config = Config::get().await.unwrap();
-        let including = Path::new("/work/project/mise.toml");
-        let fragment = MiseToml::from_remote_fragment(
-            "[tools]\nnode = \"20\"\n\n[env]\nFOO = \"bar\"\n",
-            including,
-        )
-        .unwrap();
-        // trust, config root and the lockfile all derive from the path
-        assert_eq!(fragment.get_path(), including);
-        assert_eq!(
-            fragment.source(),
-            ToolSource::MiseToml(including.to_path_buf())
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            node = "22"
+
+            [env]
+            OWN = "1"
+        "#});
+        let (first, second) = (
+            PathBuf::from("/cache/a.toml"),
+            PathBuf::from("/cache/b.toml"),
         );
-        assert_eq!(fragment.env_entries().unwrap().len(), 1);
-        assert!(fragment.dump().unwrap().contains("node"));
-        // it is never written over the file it was included from
-        assert!(fragment.save().is_ok());
-        assert!(!including.exists());
+        let merged = cf
+            .with_remote_fragments(vec![
+                (
+                    first.clone(),
+                    "[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n"
+                        .to_string(),
+                ),
+                (
+                    second.clone(),
+                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n".to_string(),
+                ),
+            ])
+            .unwrap();
+
+        let trs = merged.to_tool_request_set().unwrap();
+        let versions = |short: &str| {
+            trs.tools
+                .iter()
+                .find(|(ba, _)| ba.short == short)
+                .map(|(_, reqs)| reqs.iter().map(|r| r.version()).collect_vec())
+        };
+        // the including file wins, then the later fragment
+        assert_eq!(versions("node"), Some(vec!["22".to_string()]));
+        assert_eq!(versions("python"), Some(vec!["3.11".to_string()]));
+        // lower entries come first so the ones after them override
+        let keys = merged
+            .env_entries()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                EnvDirective::Val(key, ..) => Some(key),
+                _ => None,
+            })
+            .collect_vec();
+        assert_eq!(keys, ["FIRST", "SECOND", "OWN"]);
+        // it is still the including file: same path, source and lockfile
+        assert_eq!(merged.get_path(), cf.get_path());
+        assert_eq!(merged.source(), cf.source());
+        assert_eq!(merged.included_paths(), vec![second, first]);
+        // and what gets written back is untouched
+        assert_eq!(merged.dump().unwrap(), cf.dump().unwrap());
     }
 
     #[test]
@@ -5092,8 +5176,9 @@ run = "cargo build"
             ("[tasks.a]\nrun = \"echo\"\n", "tasks"),
             ("[dotfiles]\n", "dotfiles"),
             ("[daemons.a]\ncommand = \"x\"\n", "daemons"),
+            ("[redactions]\nenv = [\"X\"]\n", "redactions"),
         ] {
-            let err = MiseToml::from_remote_fragment(body, including)
+            let err = MiseToml::parse_remote_fragment(body, including)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains(key) && err.contains("not supported"), "{err}");
