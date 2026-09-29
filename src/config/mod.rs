@@ -29,7 +29,7 @@ use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::{
-    TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
 };
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
@@ -5955,6 +5955,33 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// Includes that are fetched from a remote source instead of read from disk.
+fn is_remote_task_include(include: &str) -> bool {
+    include.starts_with("git::") || include.starts_with(OCI_INCLUDE_PREFIX)
+}
+
+async fn resolve_oci_url_to_path(oci_url: &str) -> Result<TaskFileArtifact> {
+    let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+    let providers = TaskFileProvidersBuilder::new()
+        .with_cache(!no_cache)
+        .build();
+    let provider = providers
+        .get_provider(oci_url)
+        .ok_or_else(|| eyre!("No provider found for OCI URL: {}", oci_url))?;
+    if !no_cache {
+        return provider.get_local_artifact(oci_url).await;
+    }
+    // Pull a given artifact once per run, even when several configs include it.
+    let pulled = REMOTE_TASK_INCLUDE_ARTIFACTS
+        .entry((oci_url.to_string(), None))
+        .or_insert_with(|| Arc::new(OnceCell::new()))
+        .clone();
+    Ok(pulled
+        .get_or_try_init(|| provider.get_local_artifact(oci_url))
+        .await?
+        .clone())
+}
+
 async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     if !no_cache {
@@ -6102,7 +6129,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
-            if p.starts_with("git::") {
+            if is_remote_task_include(&p) {
                 return vec![];
             }
             expand_task_include(&resolve_dir, &p)
@@ -6155,7 +6182,7 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
     };
     if let Some(path) = includes
         .iter()
-        .filter(|include| !include.starts_with("git::"))
+        .filter(|include| !is_remote_task_include(include))
         .flat_map(|include| expand_task_include(&resolve_dir, include))
         .find(|path| path.is_dir())
     {
@@ -6680,6 +6707,8 @@ async fn load_task_sources_from_configs(
     for include in &includes {
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
+        } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+            vec![resolve_oci_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
                 .into_iter()

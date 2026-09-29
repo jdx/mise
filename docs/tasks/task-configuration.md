@@ -1432,6 +1432,36 @@ When `path` points at a directory, mise loads both executable file tasks and any
 
 Included `.toml` files use the [task toml file format](#task_config.includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository is cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include are loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
+#### Remote OCI Includes
+
+You can include a task catalog published as an OCI artifact by prefixing an image-style reference with `oci::`:
+
+```mise-toml
+[task_config]
+includes = [
+    "oci::ghcr.io/myorg/shared-tasks:1.0.0",
+    "oci::registry.example.com/platform/tasks@sha256:0f1e2d3c...",
+]
+```
+
+The reference uses the same syntax as `docker pull`: `<registry>/<repository>` followed by `:<tag>` or `@sha256:<digest>`. Pin a version tag or a digest — tags such as `latest` are mutable, and mise reuses a cached pull for the same reference.
+
+The artifact is unpacked into a directory and loaded like a local task directory: executable file tasks and `.toml` [task files](#task_config.includes) are both picked up. Files that start with a `#!` line are made executable, because artifacts do not carry file modes.
+
+mise reads the layers of the artifact like this:
+
+- A layer with an `org.opencontainers.image.title` annotation becomes a file at that relative path. This is what [`oras push`](https://oras.land/docs/commands/oras_push/) and [`podman artifact add`](https://docs.podman.io/en/stable/markdown/podman-artifact-add.1.html) produce.
+- A tar layer with that annotation and `io.deis.oras.content.unpack=true` (an `oras push` of a directory) is extracted into the directory of that name.
+- A tar, tar+gzip, or tar+zstd layer without a title is extracted at the root, with whiteouts applied, so an artifact made of tar layers (for example with `crane append`) works too. This is not a general container-image reader: an image whose layers contain symlinks or device files is rejected.
+
+```sh
+oras push ghcr.io/myorg/shared-tasks:1.0.0 build.toml scripts/deploy
+```
+
+Every blob is verified against the digest in the manifest, and symlinks or other special files in an artifact are rejected. Credentials come from the same places as `mise oci push`: `docker login` / `podman login` configuration, with anonymous access when none is found. Registries on loopback addresses are contacted over plain HTTP; add other plain-HTTP registries to [`oci.insecure_registries`](/configuration/settings.html#oci.insecure_registries).
+
+Pulls are cached per reference in `MISE_CACHE_DIR/remote-oci-tasks-cache`, so a tag that later moves to a new digest is not picked up automatically. To refresh, reference a new tag or digest, delete that directory, or set `MISE_TASK_REMOTE_NO_CACHE=true` to pull on every run.
+
 ### `task_config.excludes` {#task_config.excludes}
 
 Set paths or glob patterns to exclude from file-task discovery. Relative entries resolve from the
