@@ -740,6 +740,23 @@ Use `mise daemons ls --json` to inspect assignments. Each listed daemon includes
 Presets export their usual connection variables with the resolved port, including
 `PGPORT` and `DATABASE_URL` for PostgreSQL and `REDIS_URL` for Redis.
 
+A preset's named ports are exported too, as `<NAME>_<PORT_NAME>` with the daemon's
+name folded the same way, so a daemon named `crdb` from the `cockroachdb` preset
+exports `CRDB_HTTP_PORT` and a `spicedb` daemon named `authz` exports
+`AUTHZ_HTTP_PORT` and `AUTHZ_METRICS_PORT`. The value is the port the daemon's
+command uses: the default, the worktree offset from `port = "auto"`, or a
+`ports.<name>` you set. Read it instead of adding the offset yourself.
+
+```toml
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+port = "auto"
+
+[env]
+COCKROACH_CONSOLE = "http://127.0.0.1:{{ env.CRDB_HTTP_PORT }}"
+```
+
 Custom daemons with an integer or automatic `port` export `<NAME>_PORT`. Mise
 uppercases the daemon name and replaces punctuation with underscores:
 `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]` exports `WEB_UI_PORT`.
@@ -747,7 +764,9 @@ These variables are available through `mise env`, `mise x`, and the daemon's mis
 environment. Explicit `[env]` values take precedence over daemon exports.
 
 If a name starts with a digit, or two names map to the same variable (such as
-`web-ui` and `web_ui`), mise warns and omits the affected exports. The daemons can
+`web-ui` and `web_ui`), mise warns and omits the affected exports. A preset's own
+variables take precedence over a derived one, so a custom daemon whose
+`<NAME>_PORT` matches a named-port variable gives way to the preset. The daemons can
 still run. Pitchfork also provides `$PORT` to the process it starts.
 
 ### Port conflicts
@@ -901,6 +920,13 @@ per-worktree suffix, so `namespace_per_worktree` keeps separating daemon IDs whi
 the worktree component does the separating in hostnames. Without an explicit
 namespace, both mise and pitchfork name the project after the primary checkout's
 directory.
+
+Mise registers each project under a namespace that includes a hash of its path, so
+two unrelated checkouts never share daemon IDs. Pitchfork would otherwise take that
+namespace as the project's hostname and serve `api.shop-528f92b13a6784f0.localhost`, so
+mise also passes the project component to `pitchfork config add --label`. It does this
+only when the installed pitchfork has the flag; with an older one, the hostname mise
+prints routes only if you set an explicit `namespace`.
 
 A bare repository has no primary checkout, so each worktree beside it names itself
 and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not
