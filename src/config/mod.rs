@@ -3559,6 +3559,7 @@ async fn load_all_config_files(
     groups.sort_by_key(|(root, _)| root.components().count());
 
     let mut parsed = HashMap::new();
+    let mut fragments = HashMap::new();
     for (_, paths) in groups {
         let mut root_configs = ConfigMap::new();
         for f in paths {
@@ -3574,6 +3575,17 @@ async fn load_all_config_files(
             if let Err(err) = Tracker::track(f) {
                 warn!("tracking config: {err:#}");
             }
+            match remote_include::resolve(&cf).await {
+                Ok(included) => {
+                    fragments.insert(f.clone(), included);
+                }
+                Err(err) => {
+                    return Err(err.wrap_err(format!(
+                        "error parsing config file: {}",
+                        style::ebold(display_path(f))
+                    )));
+                }
+            }
             parsed.insert(f.clone(), cf.clone());
             root_configs.insert(f.clone(), cf);
         }
@@ -3588,9 +3600,13 @@ async fn load_all_config_files(
         }
     }
 
+    // an include ranks right below the file that names it
     Ok(config_filenames
         .iter()
-        .filter_map(|path| parsed.remove(path).map(|cf| (path.clone(), cf)))
+        .filter_map(|path| parsed.remove(path).map(|cf| (path, cf)))
+        .flat_map(|(path, cf)| {
+            std::iter::once((path.clone(), cf)).chain(fragments.remove(path).into_iter().flatten())
+        })
         .collect())
 }
 
@@ -3618,7 +3634,14 @@ pub async fn load_config_files_from_paths(
             }
         };
 
+        let included = remote_include::resolve(&cf).await.map_err(|err| {
+            err.wrap_err(format!(
+                "error parsing config file: {}",
+                style::ebold(display_path(f))
+            ))
+        })?;
         config_map.insert(f.clone(), cf);
+        config_map.extend(included);
     }
     Ok(config_map)
 }
@@ -3630,9 +3653,7 @@ async fn parse_config_file(
     warn_on_dotted_conf_d_file(f);
     let plugins = matching_idiomatic_tools(f, idiomatic_filenames);
     if plugins.is_empty() {
-        let cf = config_file::parse(f).await?;
-        remote_include::apply(&cf).await?;
-        Ok(cf)
+        config_file::parse(f).await
     } else {
         trace!("idiomatic version file: {}", display_path(f));
         let tools = backend::list()

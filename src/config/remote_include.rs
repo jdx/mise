@@ -1,11 +1,17 @@
 //! Remote config fragments (`include = [...]` in `mise.toml`).
 //!
-//! A fragment is read on every config load, so it is fetched once and served
+//! A fragment is a whole config file that another config pulls in, ranking just
+//! below it. It is read on every config load, so it is fetched once and served
 //! from a cache of its own. A reference that names immutable content (a git
 //! commit sha or an OCI digest) is cached forever; a branch, tag or OCI tag is
 //! refreshed once the cache is older than `fetch_remote_versions_cache`, and
-//! the stale copy keeps working when the refresh fails. Either way the
-//! fragment is inert: it may only request tool versions, so it needs no trust.
+//! the cached copy keeps working when a refresh fails or returns something
+//! that does not load.
+//!
+//! Trust is the including file's. Outside paranoid mode a trusted config already
+//! runs whatever its repository holds after the next `git pull`, so a fragment
+//! that moves is no different. Paranoid mode binds trust to content, so there
+//! an include must be pinned: the including file's hash then covers it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,9 +19,9 @@ use std::time::Duration;
 
 use eyre::{Result, WrapErr, bail};
 
-use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{Settings, SettingsExt};
+use crate::config::config_file::{ConfigFile, trust_include_cache_file};
+use crate::config::{Settings, SettingsExt, is_global_config};
 use crate::file;
 use crate::remote_source::RemoteSource;
 use crate::task::task_file_providers::{OCI_INCLUDE_PREFIX, TaskFileProvidersBuilder};
@@ -24,52 +30,77 @@ use crate::{dirs, hash};
 const FRAGMENT_FILE: &str = "mise.toml";
 const DEFAULT_TTL: Duration = Duration::from_secs(60 * 60);
 
-/// Fetch every remote fragment `cf` includes and merge its tools into it.
-pub(crate) async fn apply(cf: &Arc<dyn ConfigFile>) -> Result<()> {
-    for reference in cf.remote_includes()? {
-        let path = load(&reference)
+/// A fetched fragment and the file it is stored in, which keys it in the
+/// loaded configs.
+pub(crate) type Fragment = (PathBuf, Arc<dyn ConfigFile>);
+
+/// Fetch every remote fragment `parent` includes, in the order they rank.
+pub(crate) async fn resolve(parent: &Arc<dyn ConfigFile>) -> Result<Vec<Fragment>> {
+    let references = parent.remote_includes()?;
+    // Safe mode loads untrusted project config without a trust prompt, and
+    // fetching a URL is not something such a config gets to do.
+    if references.is_empty() || Settings::safe_mode() && !is_global_config(parent.get_path()) {
+        return Ok(vec![]);
+    }
+    let mut fragments = Vec::with_capacity(references.len());
+    for reference in references {
+        let (cache, body) = load(parent.get_path(), &reference)
             .await
             .wrap_err_with(|| format!("failed to load config include {reference}"))?;
-        let body = file::read_to_string(&path)?;
-        cf.add_included_tools_from(&body, &path)
+        let fragment = MiseToml::from_remote_fragment(&body, parent.get_path())
             .wrap_err_with(|| format!("invalid config include {reference}"))?;
+        trust_include_cache_file(&cache);
+        fragments.push((cache, Arc::new(fragment) as Arc<dyn ConfigFile>));
     }
-    Ok(())
+    Ok(fragments)
 }
 
 /// The cached copy of a fragment, refreshed first when it is due.
-async fn load(reference: &str) -> Result<PathBuf> {
+async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     let pin = classify(reference)?;
+    if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid) {
+        bail!(
+            "paranoid mode binds trust to content, so a config include must be pinned to a \
+             commit sha or an OCI digest: {reference}"
+        );
+    }
+    // per including file, so each one has a file of its own to be keyed by
+    let key = hash::hash_sha256_to_str(&format!("{}\n{reference}", parent.display()));
     let cache = dirs::CACHE
         .join("config-includes")
-        .join(format!("{}.toml", hash::hash_sha256_to_str(reference)));
+        .join(format!("{key}.toml"));
     let age = file::modified_duration(&cache).ok();
     let ttl = ttl();
     debug!("config include {reference}: {pin:?}, cached {age:?} ago, ttl {ttl:?}");
     if !is_due(pin, age, ttl) {
-        return Ok(cache);
+        return Ok((cache.clone(), file::read_to_string(&cache)?));
     }
     file::create_dir_all(cache.parent().unwrap())?;
     // A body is only cached once it is known to load, so a bad edit upstream
     // can never replace a copy that works.
     let fetched = match fetch(reference).await {
-        Ok(body) => MiseToml::parse_remote_fragment(&body, &cache)
+        Ok(body) => MiseToml::from_remote_fragment(&body, parent)
             .map(|_| body)
             .wrap_err_with(|| format!("invalid config include {reference}")),
         Err(err) => Err(err),
     };
-    match fetched {
-        Ok(body) => file::write_atomic(&cache, body)?,
+    let body = match fetched {
+        Ok(body) => {
+            file::write_atomic(&cache, &body)?;
+            body
+        }
         // An unreachable or broken remote must not break every prompt: keep
         // the copy that works, and rewrite it so the next attempt waits a
         // full ttl.
         Err(err) if age.is_some() => {
             warn!("using the cached config include {reference}: {err:#}");
-            file::write_atomic(&cache, file::read_to_string(&cache)?)?;
+            let body = file::read_to_string(&cache)?;
+            file::write_atomic(&cache, &body)?;
+            body
         }
         Err(err) => return Err(err),
-    }
-    Ok(cache)
+    };
+    Ok((cache, body))
 }
 
 /// `None` is offline mode, where a cached fragment is always used.

@@ -181,21 +181,9 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.task_config().includes.clone())
     }
 
-    /// The pinned remote config fragments this file's `include` names.
+    /// The remote config fragments this file's `include` names.
     fn remote_includes(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![])
-    }
-
-    /// Merge the tools of a fetched remote fragment into this file. They keep
-    /// this file as their source, so they lock and display as its tools.
-    fn add_included_tools_from(&self, _body: &str, _source: &Path) -> eyre::Result<()> {
-        Ok(())
-    }
-
-    /// The local files the merged remote fragments were read from. `hook-env`
-    /// watches them next to the config files, so a refresh reloads the shell.
-    fn included_paths(&self) -> Vec<PathBuf> {
-        vec![]
     }
 
     fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
@@ -675,6 +663,17 @@ pub fn is_trusted(path: &Path) -> bool {
 
 static IS_TRUSTED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static IS_IGNORED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+/// Trust a fetched include fragment's cache file for this process only. The
+/// including config was trusted before anything was fetched, and that trust is
+/// what the fragment rests on, so nothing is recorded on disk.
+pub(crate) fn trust_include_cache_file(path: &Path) {
+    for p in [path.to_path_buf(), config_trust_root(path)] {
+        if let Ok(p) = p.canonicalize() {
+            add_trusted(p);
+        }
+    }
+}
 
 fn add_trusted(path: PathBuf) {
     IS_TRUSTED.lock().unwrap().insert(path);

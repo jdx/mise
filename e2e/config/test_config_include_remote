@@ -39,7 +39,7 @@ publish() {
   mise x crane@latest -- crane digest "$ref"
 }
 
-mkdir -p base env-fragment
+mkdir -p base env-fragment bad-fragment task-fragment
 cat >base/mise.toml <<'TOML'
 [tools]
 tiny = "1"
@@ -48,9 +48,20 @@ TOML
 cat >env-fragment/mise.toml <<'TOML'
 [env]
 FROM_FRAGMENT = "1"
+OVERRIDDEN = "fragment"
+TOML
+cat >bad-fragment/mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+cat >task-fragment/mise.toml <<'TOML'
+[tasks.a]
+run = "echo a"
 TOML
 BASE="$(publish base base)"
 ENV_FRAGMENT="$(publish env-fragment envfrag)"
+BAD_FRAGMENT="$(publish bad-fragment badfrag)"
+TASK_FRAGMENT="$(publish task-fragment taskfrag)"
 
 version_of() {
   mise ls --json | jq -r --arg t "$1" '.[$t][0].requested_version // empty'
@@ -101,11 +112,43 @@ include = ["git::https://github.com/jdx/mise.git//tasks?ref=main"]
 TOML
 assert_fail_contains "mise ls" "must point at a .toml file"
 
-# A fragment cannot carry anything that is not a plain tool version.
+# A fragment is a whole config file: its env applies and the including file's
+# own entries win.
 cat >mise.toml <<TOML
 include = ["oci::$REGISTRY/e2e/envfrag@$ENV_FRAGMENT"]
+
+[env]
+OVERRIDDEN = "local"
 TOML
-assert_fail_contains "mise ls" "may only contain"
+assert "mise env --json | jq -r .FROM_FRAGMENT" "1"
+assert "mise env --json | jq -r .OVERRIDDEN" "local"
+
+# [settings] is read before an include can be resolved, so it is refused rather
+# than silently ignored.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/badfrag@$BAD_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "is not supported in a config include"
+
+# Tasks are discovered from files, not loaded configs; point at task_config.includes.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/taskfrag@$TASK_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "task_config.includes"
+
+# Paranoid mode binds trust to content, so an include must be pinned there.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+TOML
+export MISE_PARANOID=1
+assert_succeed "mise trust"
+assert "version_of tiny" "1"
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base:v1"]
+TOML
+assert_succeed "mise trust"
+assert_fail_contains "mise ls" "must be pinned to a commit sha or an OCI digest"
+unset MISE_PARANOID
 
 # Once cached, a digest-pinned fragment loads without the registry, whatever
 # the ttl, and MISE_TASK_REMOTE_NO_CACHE does not force a refetch.
@@ -152,7 +195,7 @@ else
 fi
 
 # A refresh that is not a valid fragment never replaces the copy that works.
-cp env-fragment/mise.toml base/mise.toml
+cp bad-fragment/mise.toml base/mise.toml
 publish base base >/dev/null
 assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
 assert "version_of tiny" "2"
@@ -171,3 +214,5 @@ cat >mise.toml <<TOML
 include = ["oci::$REGISTRY/e2e/other:v1"]
 TOML
 assert_fail_contains "mise ls" "failed to load config include"
+# safe mode never lets a project config fetch anything
+assert_succeed "MISE_SAFE=1 mise ls"

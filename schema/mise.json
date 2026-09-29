@@ -4114,7 +4114,7 @@
       ]
     },
     "include": {
-      "description": "remote config fragments whose [tools] are merged into this file: git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). A commit sha or digest is cached forever; a branch or tag is refreshed after fetch_remote_versions_cache",
+      "description": "remote config files merged into this one, ranking just below it: git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). Paranoid mode requires a commit sha or digest; otherwise a branch or tag is refreshed after fetch_remote_versions_cache",
       "oneOf": [
         {
           "description": "a remote config fragment",

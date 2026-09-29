@@ -284,27 +284,26 @@ Examples:
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
-### `include` - Share tool versions from a remote file {#include}
+### `include` - Share config from a remote file {#include}
 
-`include` merges the `[tools]` of a remote config fragment into a config file, so an organization can publish one tool baseline and have every repo pull it in:
+`include` pulls a remote config file into this one, so an organization can publish a baseline and have every repo use it:
 
 ```toml
 include = [
-  "git::https://github.com/myorg/platform.git//tools/mise.toml?ref=main",
-  "oci::ghcr.io/myorg/platform-tools@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "git::https://github.com/myorg/platform.git//mise.toml?ref=main",
+  "oci::ghcr.io/myorg/platform-config@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
 ]
 
 [tools]
-node = "22" # a tool listed here overrides the included version
+node = "22" # this file's own entries override the included ones
 ```
 
-A `git::` include points at a `.toml` file; an `oci::` include points at an artifact with a `mise.toml` at its root.
+A `git::` include points at a `.toml` file; an `oci::` include points at an artifact with a `mise.toml` at its root. The fragment is a normal config file (`[tools]`, `[env]`, `[hooks]`, `[vars]` and so on) and ranks just below the file that includes it, above lower-precedence configs. Relative paths and `{{ config_root }}` resolve against the including file, and its tools are locked in the including file's lockfile.
 
-- **Cached.** A fragment is read on every config load, so it is fetched once and kept under `MISE_CACHE_DIR`. A reference to immutable content, a full commit sha (`?ref=<40 hex digits>`) or an OCI digest (`@sha256:…`), is never fetched again. A branch, tag or OCI tag is refreshed once the cache is older than [`fetch_remote_versions_cache`](/configuration/settings#fetch_remote_versions_cache) (one hour by default). Only commands that look at remote versions, such as `mise install`, `mise up` and `mise use`, refresh; hook-env, `mise ls`, `mise exec` and shims, and offline mode, use the cached copy without checking. If a refresh fails, for example offline, mise keeps using the cached copy and warns. `mise cache clear` forces a refetch.
-- **Inert.** A fragment may only contain `min_version` and `[tools]` entries that are plain version strings. Env, hooks, settings, templates, tool options and `[tasks]` are rejected, so a fragment cannot run code even when a branch moves. Share tasks with [`task_config.includes`](/tasks/task-configuration#task_config.includes).
-- **Trusted parent.** The file that contains `include` is not trust-exempt, so an untrusted repo cannot make mise fetch a URL when you `cd` into it.
-
-Fragment tools rank below the including file's own `[tools]` and above lower-precedence configs. They are sourced from, and locked in the lockfile of, the including file.
+- **Trust is the including file's.** `include` is not trust-exempt, so an untrusted repo cannot make mise fetch a URL when you `cd` into it, and [safe mode](/configuration/settings#safe) never fetches for project config. Once trusted, the fragment runs with that trust, like a `mise.toml` that changes on `git pull`.
+- **Paranoid mode needs a pin.** [Paranoid mode](/configuration/settings#paranoid) binds trust to file content, so there an include must be a full commit sha (`?ref=<40 hex digits>`) or an OCI digest (`@sha256:…`). The including file's hash then covers it.
+- **Cached.** A fragment is read on every config load, so it is fetched once and kept under `MISE_CACHE_DIR`. A commit sha or OCI digest is never fetched again. A branch, tag or OCI tag is refreshed once the cache is older than [`fetch_remote_versions_cache`](/configuration/settings#fetch_remote_versions_cache) (one hour by default). Only commands that look at remote versions, such as `mise install`, `mise up` and `mise use`, refresh; hook-env, `mise ls`, `mise exec` and shims, and offline mode, use the cached copy without checking. If a refresh fails, or returns something that does not load, mise keeps the cached copy and warns. `mise cache clear` forces a refetch.
+- **Not supported in a fragment:** `include` (no nesting); `[settings]` and the monorepo keys, which are read before an include can be resolved; and `[tasks]`, `task_config` and `task_templates`, which are discovered from files (share tasks with [`task_config.includes`](/tasks/task-configuration#task_config.includes)). Mise reports an error rather than ignoring them.
 
 ### `[tool_config]` - Config-root-scoped tool policy
 
