@@ -723,7 +723,9 @@ inside a linked worktree and keep the base port inside a primary checkout.
 Independent clones, including `git clone --separate-git-dir`, and projects outside
 Git keep the base port. Worktrees of a bare repository all receive offsets because
 there is no primary checkout. To give one checkout a fixed port, set an integer
-`port` in a checkout-specific configuration such as a gitignored `mise.local.toml`.
+`port` in a checkout-specific configuration such as a gitignored `mise.local.toml`,
+repeating the rest of the daemon's declaration there, since a higher-precedence
+declaration replaces it entirely.
 
 Mise saves resolved ports in the project's generated `state.json` during daemon
 registration and reuses them on later loads. This preserves existing assignments
@@ -782,6 +784,21 @@ These checks do not reserve ports or detect every listener. An unmanaged process
 an unreachable supervisor, or two projects starting simultaneously can still
 cause an ordinary bind failure. Mise keeps the selected port rather than trying
 another one, so existing shells retain the same connection settings.
+
+When pitchfork reports that a port is already in use, the error is pitchfork's own.
+For a daemon with an automatic port, mise then adds a warning naming the daemon and
+the port, and saying whether it is the configured base (a primary checkout keeps the
+base) or the base offset by a linked worktree's path, since nothing in pitchfork's
+message says the number can be changed. To use a different port in this checkout, declare the daemon
+again in a gitignored `mise.local.toml`, with a fixed port or another `base`. That
+declaration replaces the whole daemon, so repeat its other keys:
+
+```toml
+# mise.local.toml
+[daemons.api]
+run = "exec npm run dev -- --port $API_PORT"
+port = 3100
+```
 
 ## Stable URLs per worktree
 
