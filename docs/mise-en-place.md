@@ -1,57 +1,104 @@
 ---
-description: "Listen to the mise theme song with the player below, or download the MP3."
+description: "Watch the mise run music video, the mise theme song, and read the lyrics. Download the video in 1080p or 4K, or the MP3."
 ---
 
-# mise-en-place: The Song
+# mise run: The Song
 
-Listen to the mise theme song with the player below, or [download the MP3](/mise-en-place.mp3).
-The [lyrics](#lyrics) are also available as text. For setup instructions, start with
-[Getting Started](/getting-started.html).
+**mise run** is the mise theme song, and this is its music video. Captions are
+available from the player. You can also download the video in
+[1080p](https://mise.jdx.dev/mise-run.mp4) or
+[4K (HEVC)](https://mise.jdx.dev/mise-run-4k.mp4), both at 120 fps, or
+[download the MP3](/mise-run.mp3). The [lyrics](#lyrics) are also available as
+text. For setup instructions, start with [Getting Started](/getting-started.html).
 
-<audio controls preload="metadata" src="/mise-en-place.mp3">
-  <a href="/mise-en-place.mp3">Download the MP3</a>
-</audio>
+<video controls preload="metadata" playsinline poster="/mise-run.jpg" width="1920" height="1080" style="width: 100%; height: auto; border-radius: 8px;">
+  <source src="https://mise.jdx.dev/mise-run.mp4" type="video/mp4">
+  <track kind="captions" src="/mise-run.en.vtt" srclang="en" label="English">
+  <a href="https://mise.jdx.dev/mise-run.mp4">Download the MP4</a>
+</video>
 
 ## Lyrics
 
 ```text
-I keep a tidy kitchen for the working software engineer,
-Where every runtime's labeled so the shell can find it bright and clear;
-I pin the Node and Python, Rust and Go all reproducibly,
-Then place them in the PATH so every shell behaves predictably.
+[Intro]
+meez... meez... meez-ahn-plahs
+Everything... in its place.
+Put your hands up if your shell just works!
 
-I read the mise.toml and respect the team's intention there,
-I make the CI match the laptop, terminal, and everywhere;
-No source-build ceremony when a plain old binary will do;
-The work remains ergonomic, repeatable, and practical.
+[Verse 1]
+CI's red at three a.m.
+Pinned it once, it drifted again
+Now the lockfile holds the line
+Laptop, CI, same every time
+Hooked my shell, I cd with ease
+Everything in its place... mise
 
-In short, it's Nix for people who have actual work to do now,
-No wrestling stupid flakes to make a shell that simply starts for you;
-The laptop and the CI both become interoperable,
-It's mise-en-place for dev machines: precise and operational.
+[Build-Up]
+Give me one file, give me ease
+Give me one command, give me mise
+One file! (One file!)
+One command! (One command!)
+When I say MISE, you say RUN!
+MISE! (RUN!)
+MISE! (RUN!)
+FIFTY THOUSAND TERMINALS IN THE AIR!
+Say...
 
-With hk at the doorway all my hooks are quite dependable,
-And aube can make the Node work feel suspiciously delectable;
-With fnox I keep the secrets out of all dotfiles accidental,
-And pitchfork keeps the daemons running steady, quite instrumental.
+[Drop]
+MISE RUN!
+MISE RUN!
+meez-meez-meez-meez
+MISE RUN!
+MISE! (RUN!)
+MISE! (RUN!)
 
-They form a tidy lineup for a workflow quite methodical,
-Where every command-line detail turns conveniently practical;
-The hooks, the packages, the secrets, processes, and all of them,
-Are tidied up by mise before I think to make a call of them.
+[Verse 2]
+Who pinned Node? (mise use!)
+New hire Monday? (mise install!)
+Who runs the tests? (mise run test!)
+Where's the config? (mise dot toml!)
+nvm? (Gone!)
+pyenv, rbenv? (Gone!)
+Makefile, direnv? (Gone! Gone! Gone!)
+One tool! (MISE!)
 
-In short, it's Nix for people who have actual work to do now,
-No wrestling stupid flakes to make a shell that simply starts for you;
-The laptop and the CI both become interoperable,
-It's mise-en-place for dev machines: precise and operational.
+[Breakdown]
+Before the doors open
+Before the heat
+Every blade laid out
+And my heart on the beat
+Let the whole world rush
+I'll be standing at ease
+Everything in its place
+'Cause I've got my mise
 
-With aqua I fetch builds where checksums all are verifiable,
-With provenance and policies the pathway is auditable;
-I ask the proper backend for the answer that's most suitable,
-Then lock a concrete version so the build remains repeatable.
+[Build-Up 2]
+Somewhere out there, they're rebuilding the world... just to boil water.
+Your flake's still flaking (flake!)
+Your store's forty gigs (gigs!)
+Still "experimental" (what?)
+Year after year (year!)
+error: infinite recursion encountered
+You spent the weekend configuring (config!)
+We spent it shipping (ship!)
+Ship! Ship! Ship! Ship!
+MISE IS NIX FOR PEOPLE WITH WORK TO DO!
+...so get to work.
 
-From worktrees into CI, every step remains operational,
-Exactly what you'd hope for from any dev-tool professional;
-So raise a tidy terminal, with every tool addressable,
-And start the whole production with the workspace quite impeccable.
+[Drop 2]
+MISE RUN!
+MISE RUN!
+mee-mee-mee-MEEZ!
+MISE RUN!
+Every-thing in its place!
+MISE! (RUN!)
+MISE! (RUN!)
+Let me hear you, people with work to do!
+MISE RUN!
+
+[Outro]
+Everything in its place
+Everything in its place
+I've got my mise
+...exit code zero.
 ```
