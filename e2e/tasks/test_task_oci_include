@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# `task_config.includes` can pull a task catalog from an OCI artifact.
+#
+# Uses `crane registry serve` (an in-memory OCI registry) on a loopback port and
+# `crane append` to publish a tar layer as the artifact.
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+publish() {
+  local dir="$1" ref="$2"
+  tar -czf "$dir.tar.gz" -C "$dir" .
+  mise x crane@latest -- crane append --oci-empty-base -f "$dir.tar.gz" -t "$ref" >/dev/null
+}
+
+mkdir -p catalog-v1 catalog-v2
+cat >catalog-v1/build <<'SCRIPT'
+#!/usr/bin/env bash
+#MISE description="build from the catalog"
+echo "catalog build v1"
+SCRIPT
+chmod +x catalog-v1/build
+cat >catalog-v1/extra.toml <<'TOML'
+[greet]
+run = "echo hello from the catalog"
+TOML
+cp catalog-v1/extra.toml catalog-v2/extra.toml
+cat >catalog-v2/build <<'SCRIPT'
+#!/usr/bin/env bash
+echo "catalog build v2"
+SCRIPT
+chmod +x catalog-v2/build
+publish catalog-v1 "$REGISTRY/e2e/catalog:v1"
+publish catalog-v2 "$REGISTRY/e2e/catalog:v2"
+
+cat >mise.toml <<TOML
+[task_config]
+includes = ["oci::$REGISTRY/e2e/catalog:v1"]
+TOML
+
+assert "mise run build" "catalog build v1"
+assert "mise run greet" "hello from the catalog"
+assert_contains "mise tasks ls" "build from the catalog"
+
+# A different reference is a different cache entry.
+cat >mise.toml <<TOML
+[task_config]
+includes = ["oci::$REGISTRY/e2e/catalog:v2"]
+TOML
+assert "mise run build" "catalog build v2"
+
+# The cached pull keeps working once the registry is gone; --no-cache would not.
+kill "$REGISTRY_PID"
+wait "$REGISTRY_PID" 2>/dev/null || true
+REGISTRY_PID=""
+assert "mise run build" "catalog build v2"
+export MISE_TASK_REMOTE_NO_CACHE=1
+assert_fail "mise run build" "failed to pull OCI task include"

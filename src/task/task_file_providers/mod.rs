@@ -9,12 +9,15 @@ use std::{
 mod local_task;
 mod remote_task_git;
 mod remote_task_http;
+mod remote_task_oci;
 use crate::Result;
 use async_trait::async_trait;
 use local_task::LocalTask;
 use remote_task_git::RemoteTaskGitBuilder;
 pub(crate) use remote_task_git::validate_remote_git_path;
 use remote_task_http::RemoteTaskHttpBuilder;
+pub(crate) use remote_task_oci::OCI_INCLUDE_PREFIX;
+use remote_task_oci::RemoteTaskOciBuilder;
 
 #[async_trait]
 pub(crate) trait TaskFileProvider: Debug + Send + Sync {
@@ -145,6 +148,11 @@ impl TaskFileProviders {
             ),
             Box::new(
                 RemoteTaskHttpBuilder::new()
+                    .with_cache(self.use_cache)
+                    .build(),
+            ),
+            Box::new(
+                RemoteTaskOciBuilder::new()
                     .with_cache(self.use_cache)
                     .build(),
             ),
