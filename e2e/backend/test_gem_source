@@ -20,6 +20,9 @@ TOKEN="ghp_e2eSECRET"
 # auth, one per line, so the assertions below can stay in bash.
 cat >registry.py <<'PYTHON'
 import json
+import os
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -47,6 +50,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(versions)
 
 
+def exit_with_test():
+    # Stop once the test script that started us is gone, so the fixture needs
+    # no cleanup trap and never outlives the test.
+    parent = os.getppid()
+    while os.getppid() == parent:
+        time.sleep(0.5)
+    os._exit(0)
+
+
+threading.Thread(target=exit_with_test, daemon=True).start()
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 Path("registry.port").write_text(str(server.server_port))
 server.serve_forever()
@@ -54,7 +67,6 @@ PYTHON
 
 python3 registry.py &
 registry_pid=$!
-trap 'kill "$registry_pid" 2>/dev/null || true' EXIT
 wait_for_file registry.port "gem registry port" 30 "$registry_pid"
 port="$(cat registry.port)"
 
