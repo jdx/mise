@@ -1153,6 +1153,12 @@ impl Cli {
             config_file::trust_active_config()?
         });
         measure!("logger", { logger::init() });
+        if matches!(cli.command, Some(Commands::Oci(_))) {
+            // The image gets `[oci.env]`, so a `required` var it defines needn't be set
+            // on the build host. Must precede the first config load, which validates
+            // `[env]`.
+            crate::config::env_directive::oci_env_satisfies_required();
+        }
         if !print_version {
             measure!("registry::refresh", { crate::registry::refresh().await });
             let _ = measure!("backend::load_tools", { backend::load_tools().await });
