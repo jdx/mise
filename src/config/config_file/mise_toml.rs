@@ -663,15 +663,18 @@ impl MiseToml {
         // Values rank by position, the later the stronger, so shared ones go
         // first. A PATH entry is the opposite: the earlier one is found first,
         // so shared directories go after this file's own.
+        // `env_path` is emitted ahead of every `[env]` entry, so a shared one
+        // would beat this file's `_.path`; it joins the shared directives after
+        // this file's own instead, exactly as `env_entries` would emit it.
         let (shared_paths, shared_rest): (Vec<_>, Vec<_>) = fragment
-            .env
-            .0
+            .env_path
             .into_iter()
+            .map(|path| EnvDirective::Path(path, Default::default()))
+            .chain(fragment.env.0)
             .partition(|directive| matches!(directive, EnvDirective::Path(..)));
         below(&mut self.env.0, shared_rest);
         self.env.0.extend(shared_paths);
         below(&mut self.vars.0, fragment.vars.0);
-        self.env_path.extend(fragment.env_path);
         fill_aliases(&mut self.alias, fragment.alias);
         fill_aliases(&mut self.tool_alias, fragment.tool_alias);
         fill(&mut self.shell_alias, fragment.shell_alias);
@@ -5170,7 +5173,7 @@ run = "cargo build"
             .with_remote_fragments(vec![
                 (
                     first.clone(),
-                    "[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n_.path = [\"first-bin\"]\n"
+                    "env_path = [\"first-bin\"]\n\n[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n"
                         .to_string(),
                 ),
                 (
