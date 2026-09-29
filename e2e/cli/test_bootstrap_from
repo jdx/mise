@@ -207,7 +207,13 @@ assert "cat ~/bootstrap-ref-marker" "feature-2"
 assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
 assert "cat ~/bootstrap-ref-marker" "main"
 
+# --update follows a tag that moved on the remote
+git -C "$ref_source" tag -f v1 main >/dev/null
+assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main-2"
+
 assert_contains "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-dry' --dry-run" "checkout v1 --"
+assert_contains "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --dry-run" "pull --ff-only (if feature/x is a branch)"
 
 # An unknown ref fails and leaves no checkout that a later run would reuse
 assert_fail "mise bootstrap --from '$ref_source?ref=nope' --from-dir '$PWD/ref-missing' --yes --only task"
