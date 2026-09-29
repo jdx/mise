@@ -237,3 +237,8 @@ TOML
 assert_fail_contains "mise ls" "failed to load config include"
 # safe mode never lets a project config fetch anything
 assert_succeed "MISE_SAFE=1 mise ls"
+# ...and never renders a templated include either
+cat >mise.toml <<'TOML'
+include = ["{{ exec(command='id') }}"]
+TOML
+assert_succeed "MISE_SAFE=1 mise ls"

@@ -34,10 +34,15 @@ const DEFAULT_TTL: Duration = Duration::from_secs(60 * 60);
 /// nothing. A fragment never becomes a config file of its own: it is part of
 /// the file that includes it, so trust, paths and the lockfile are that file's.
 pub(crate) async fn apply(cf: Arc<dyn ConfigFile>) -> Result<Arc<dyn ConfigFile>> {
-    let references = cf.remote_includes()?;
     // Safe mode loads untrusted project config without a trust prompt, and
-    // fetching a URL is not something such a config gets to do.
-    if references.is_empty() || Settings::safe_mode() && !is_global_config(cf.get_path()) {
+    // fetching a URL is not something such a config gets to do. Checked before
+    // the references are rendered, since a template is code an untrusted
+    // config must not get to run either.
+    if Settings::safe_mode() && !is_global_config(cf.get_path()) {
+        return Ok(cf);
+    }
+    let references = cf.remote_includes()?;
+    if references.is_empty() {
         return Ok(cf);
     }
     let mut fragments = Vec::with_capacity(references.len());

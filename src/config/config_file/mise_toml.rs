@@ -663,11 +663,22 @@ impl MiseToml {
         below(&mut self.env.0, fragment.env.0);
         below(&mut self.vars.0, fragment.vars.0);
         below(&mut self.env_path, fragment.env_path);
-        fill(&mut self.alias, fragment.alias);
-        fill(&mut self.tool_alias, fragment.tool_alias);
+        fill_aliases(&mut self.alias, fragment.alias);
+        fill_aliases(&mut self.tool_alias, fragment.tool_alias);
         fill(&mut self.shell_alias, fragment.shell_alias);
         fill(&mut self.wrappers, fragment.wrappers);
-        fill(&mut self.hooks, fragment.hooks);
+        // both run: the shared hooks first, then this file's
+        for (hook, shared) in fragment.hooks {
+            match self.hooks.entry(hook) {
+                indexmap::map::Entry::Occupied(mut own) => {
+                    let mine = own.get().clone();
+                    own.insert(shared.then(mine));
+                }
+                indexmap::map::Entry::Vacant(slot) => {
+                    slot.insert(shared);
+                }
+            }
+        }
         for (name, url) in fragment.plugins {
             self.plugins.entry(name).or_insert(url);
         }
@@ -3159,6 +3170,20 @@ fn toml_table_has_template(table: &toml::Table) -> bool {
         .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
 }
 
+/// Merge version aliases per tool: a name this file defines overrides the same
+/// name in `lower`, but the other names `lower` defines for that tool stay.
+fn fill_aliases(own: &mut AliasMap, lower: AliasMap) {
+    for (tool, lower) in lower {
+        let alias = own.entry(tool).or_default();
+        if alias.backend.is_none() {
+            alias.backend = lower.backend;
+        }
+        for (name, version) in lower.versions {
+            alias.versions.entry(name).or_insert(version);
+        }
+    }
+}
+
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     let mut last = None;
     for k in tools.keys() {
@@ -5120,6 +5145,12 @@ run = "cargo build"
 
             [env]
             OWN = "1"
+
+            [hooks]
+            enter = "echo own"
+
+            [tool_alias.node.versions]
+            mine = "22"
         "#});
         let (first, second) = (
             PathBuf::from("/cache/a.toml"),
@@ -5134,7 +5165,8 @@ run = "cargo build"
                 ),
                 (
                     second.clone(),
-                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n".to_string(),
+                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n\n[hooks]\nenter = \"echo shared\"\n\n[tool_alias.node.versions]\nmine = \"20\"\nshared = \"20\"\n"
+                        .to_string(),
                 ),
             ])
             .unwrap();
@@ -5160,6 +5192,12 @@ run = "cargo build"
             })
             .collect_vec();
         assert_eq!(keys, ["FIRST", "SECOND", "OWN"]);
+        // both files' hooks run, and a shared alias survives one of the same tool
+        assert_eq!(merged.hooks().unwrap().len(), 2);
+        let aliases = merged.aliases().unwrap();
+        let node = &aliases["node"].versions;
+        assert_eq!(node["mine"], "22");
+        assert_eq!(node["shared"], "20");
         // it is still the including file: same path, source and lockfile
         assert_eq!(merged.get_path(), cf.get_path());
         assert_eq!(merged.source(), cf.source());
