@@ -754,7 +754,7 @@ fn is_backend_override_key(key: &str) -> bool {
 }
 
 impl RegistryTool {
-    pub(crate) fn provides_bin(&self, bin_name: &str) -> bool {
+    pub fn provides_bin(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
         let bin_name = if exe_suffix.is_empty() {
             bin_name

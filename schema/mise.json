@@ -1538,6 +1538,11 @@
           "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
+        "not_found_auto_install_registry": {
+          "default": false,
+          "description": "Automatically install an unconfigured tool when its registry bin matches a missing command.",
+          "type": "boolean"
+        },
         "not_found_system_fallback": {
           "default": true,
           "description": "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH.",
@@ -1925,6 +1930,10 @@
             "api_url": {
               "default": "https://api.github.com",
               "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "minimum_release_age": {
+              "description": "Minimum release age for mise itself; inherits minimum_release_age (24h by default).",
               "type": "string"
             },
             "repository": {
@@ -2981,8 +2990,27 @@
                   "uniqueItems": true
                 },
                 "postinstall": {
-                  "description": "command to run after tool installation",
-                  "type": "string"
+                  "description": "command to run after tool installation, or on every install when requested",
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "run": {
+                          "type": "string"
+                        },
+                        "when": {
+                          "type": "string",
+                          "enum": ["install", "always"],
+                          "default": "install"
+                        }
+                      },
+                      "required": ["run"],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               }
             }
@@ -6241,6 +6269,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "git_email": {
+          "type": "string",
+          "description": "email used for history commit authors and committers; {hostname} expands to this machine's hostname"
         },
         "reload": {
           "type": "object",

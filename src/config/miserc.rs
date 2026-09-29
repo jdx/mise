@@ -40,6 +40,7 @@ fn load_global_miserc_settings() -> MisercSettings {
     for path in [
         env::MISE_SYSTEM_CONFIG_DIR.join("miserc.toml"),
         dirs::CONFIG.join("miserc.toml"),
+        dirs::CONFIG.join("miserc.local.toml"),
     ] {
         if let Ok(layer) = load_miserc_files(vec![path]) {
             merge_settings(&mut settings, layer);
@@ -188,7 +189,7 @@ fn render_miserc_template(
 /// Load and merge all miserc settings files.
 /// Precedence (highest to lowest):
 /// 1. Closest directory first: .miserc.local.toml, .miserc.toml, .config/miserc.toml
-/// 2. Global ~/.config/mise/miserc.toml
+/// 2. Global ~/.config/mise/miserc.local.toml, then miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
     load_miserc_files(find_miserc_files())
@@ -287,6 +288,12 @@ fn find_miserc_files() -> Vec<PathBuf> {
                 files.push(path);
             }
         }
+    }
+
+    // Global local overrides the shared global miserc regardless of cwd.
+    let global_local_path = dirs::CONFIG.join("miserc.local.toml");
+    if global_local_path.is_file() {
+        files.push(global_local_path);
     }
 
     // Global: ~/.config/mise/miserc.toml

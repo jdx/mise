@@ -396,10 +396,13 @@ impl Toolset {
             .await;
         // Capture the completed installation itself before config reload, floating-link
         // rebuilds, or a caller's later config write can change what a second lookup sees.
-        // `installed` contains every success even when a sibling failed, so partial-failure
-        // hooks retain the successful installation records.
-        let installed_tools: Vec<InstalledToolInfo> =
-            installed.iter().map(InstalledToolInfo::from).collect();
+        // Hook-only requests must remain in the return value for callers such as
+        // `mise use` that persist the selected version, but they are not installs.
+        let installed_tools: Vec<InstalledToolInfo> = installed
+            .iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .map(InstalledToolInfo::from)
+            .collect();
         let failed_backends = attempted_failures
             .iter()
             .filter_map(|tr| tr.backend().ok())

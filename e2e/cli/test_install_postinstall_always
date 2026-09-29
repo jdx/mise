@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+mkdir first second
+cat >first/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >second/mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = { run = "echo \"$MISE_CONFIG_FILE\" >> postinstall.log", when = "always" } }
+EOF
+
+cd first
+mise install
+cd ../second
+
+# The tool was installed by another config, but this config's hook still runs.
+mise install
+assert "wc -l < postinstall.log | tr -d ' '" "1"
+assert "cat postinstall.log" "$PWD/mise.toml"
+
+# It runs once per invocation, without reinstalling or counting as a new install.
+mise install
+assert "wc -l < postinstall.log | tr -d ' '" "2"
+mise install dummy@1.0.0
+assert "wc -l < postinstall.log | tr -d ' '" "3"
+
+# Dry runs, including --dry-run-code, do not run the hook or report an install.
+mise install --dry-run
+mise install --dry-run-code
+assert "wc -l < postinstall.log | tr -d ' '" "3"
+
+# A hook-only result must still be returned to `mise use` so it can write its config.
+mise use --path selected.toml \
+  --tool-option 'postinstall={run="echo selected >> use-hook.log",when="always"}' \
+  dummy@1.0.0
+assert_contains "cat selected.toml" 'when = "always"'
+assert "cat use-hook.log" "selected"
+
+# The default string form retains install-only behavior.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = "echo unexpected >> postinstall.log" }
+EOF
+mise install
+assert "wc -l < postinstall.log | tr -d ' '" "3"
+
+# A failure in an always hook is surfaced as an install error.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", postinstall = { run = "exit 17", when = "always" } }
+EOF
+assert_fail "mise install"

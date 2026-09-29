@@ -5185,7 +5185,8 @@ cmd self-update help="Update mise itself" effect=write {
     long_help #"""
 Update mise itself
 
-Uses the GitHub Releases API to find the latest release and binary.
+Selects the newest stable release satisfying the minimum release age (24h by default).
+Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 By default, this will also update any installed plugins.
 Uses mise's GitHub token resolution chain for authenticated requests.
 
@@ -5193,6 +5194,9 @@ Packagers can disable this command so that mise is updated through the
 package manager instead. See
 https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 """#
+    flag --minimum-release-age help="Override the minimum release age for unpinned updates (default: 24h)" {
+        arg <MINIMUM_RELEASE_AGE>
+    }
     flag "-f --force" help="Update even if already up to date"
     flag "-y --yes" help="Skip confirmation prompt"
     flag --no-plugins help="Disable auto-updating plugins"

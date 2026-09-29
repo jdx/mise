@@ -1,3 +1,8 @@
-backends = ["aqua:stefanprodan/timoni", "asdf:Smana/asdf-timoni"]
+backends = [
+  { full = "packslip:github.com/stefanprodan/timoni", min_version = "0.35.0" },
+  "aqua:stefanprodan/timoni",
+  "asdf:Smana/asdf-timoni",
+]
+bins = ["timoni"]
 description = "Timoni is a package manager for Kubernetes, powered by CUE and inspired by Helm"
 version_order = "semver"

@@ -438,6 +438,24 @@ unrelated histories intact for you to resolve; it does not force-push.
 Before writing incoming changes, it checks the complete batch, including
 configuration, required sources, committed files, and unsaved local edits.
 
+### Identify commits by machine
+
+History commits use `mise <mise@localhost>` for both author and committer by
+default. To identify the machine that made each new commit in a shared Git
+history, add this to your system or global mise configuration:
+
+```toml
+[history]
+git_email = "mise@{hostname}"
+```
+
+mise replaces `{hostname}` with the machine's hostname when it creates a
+commit. For example, a save on `work-mbp.local` uses
+`mise <mise@work-mbp.local>`. This also applies to automatic commits from
+`history-watch` and to merge commits made by mise. The setting accepts a
+fixed email address as well. It affects new commits only; existing commits
+keep their original identity.
+
 ### Resolve unrelated histories
 
 If local checkpoints and the origin branch have no shared Git ancestry,

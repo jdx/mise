@@ -57,6 +57,29 @@ mkdir bounded
 echo 'env.MISERC_SELECTED = "base"' >bounded/mise.toml
 assert "(cd bounded && MISE_CEILING_PATHS='$PWD' mise exec -- printenv MISERC_SELECTED)" base
 
+# The global local selector overrides global shared settings everywhere.
+rm .miserc.local.toml
+echo 'env = ["development"]' >"$MISE_CONFIG_DIR/miserc.toml"
+echo 'env = ["native"]' >"$MISE_CONFIG_DIR/miserc.local.toml"
+assert "mise exec -- printenv MISERC_SELECTED" native
+mkdir -p "$HOME/../miserc-outside"
+cat >"$HOME/../miserc-outside/mise.toml" <<'TOML'
+[env]
+MISERC_SELECTED = "base"
+TOML
+cat >"$HOME/../miserc-outside/mise.native.toml" <<'TOML'
+[env]
+MISERC_SELECTED = "native"
+TOML
+cat >"$HOME/../miserc-outside/mise.development.toml" <<'TOML'
+[env]
+MISERC_SELECTED = "development"
+TOML
+assert "(cd '$HOME/../miserc-outside' && mise exec -- printenv MISERC_SELECTED)" native
+echo 'env = ["development"]' >"$HOME/../miserc-outside/.miserc.toml"
+assert "(cd '$HOME/../miserc-outside' && mise exec -- printenv MISERC_SELECTED)" development
+assert "(cd '$HOME/../miserc-outside' && MISE_ENV=native mise exec -- printenv MISERC_SELECTED)" native
+
 echo 'env = [' >.miserc.local.toml
 assert_fail "mise config ls" 'Invalid TOML in config file'
 assert_fail "mise config ls" '.miserc.local.toml'

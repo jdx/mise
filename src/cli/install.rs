@@ -295,6 +295,7 @@ impl Install {
         let mut install_config = self
             .effective_config(&config, monorepo_union.as_ref())
             .await?;
+        crate::lockfile::warn_outdated_lockfiles(&install_config);
         let base_trs = match &monorepo_union {
             Some(union) => union.tool_request_set.clone(),
             None => config.get_tool_request_set().await?.clone(),
@@ -384,8 +385,11 @@ impl Install {
         // Tools that actually installed successfully. `versions` is mutated
         // below (retained to current versions for the lockfile/shim rebuild),
         // so capture the set now for the "installed but not activated" warning.
-        let installed_shorts: HashSet<String> =
-            versions.iter().map(|tv| tv.short().to_string()).collect();
+        let installed_shorts: HashSet<String> = versions
+            .iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .map(|tv| tv.short().to_string())
+            .collect();
         // In dry-run mode, check if any tools would be installed before filtering
         if self.is_dry_run() {
             if self.dry_run_code {
@@ -396,6 +400,8 @@ impl Install {
             }
             return install_error;
         }
+
+        versions.retain(|tv| tv.install_satisfied != Some(true));
 
         if install_error.is_ok() || !versions.is_empty() {
             // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
@@ -577,6 +583,7 @@ impl Install {
         let mut install_config = self
             .effective_config(&config, monorepo_union.as_ref())
             .await?;
+        crate::lockfile::warn_outdated_lockfiles(&install_config);
 
         // Install plugins from [plugins] config section first
         // This must happen before checking for missing tools so env-only plugins get installed
@@ -626,7 +633,7 @@ impl Install {
                         tr.is_install_satisfied(&install_config),
                     )
                     .await;
-                    if satisfied {
+                    if satisfied && tr.options().postinstall().is_none_or(|(_, always)| !always) {
                         if let Some(reporter) = reporter {
                             reporter.finish_with_icon(
                                 "already installed".into(),
@@ -696,11 +703,21 @@ impl Install {
             })
         };
         if self.is_dry_run() {
-            if self.dry_run_code && has_work {
+            if self.dry_run_code
+                && has_work
+                && versions.iter().any(|tv| tv.install_satisfied != Some(true))
+            {
                 return Err(exit::request(1));
             }
             return install_error;
         }
+
+        // An `always` postinstall on an existing tool is a successful request,
+        // but no installation needs a shim or lockfile rebuild.
+        let versions = versions
+            .into_iter()
+            .filter(|tv| tv.install_satisfied != Some(true))
+            .collect::<Vec<_>>();
         if install_error.is_ok() || !versions.is_empty() {
             measure!("rebuild_shims_and_runtime_symlinks", {
                 let rebuild_config = self.effective_config(&install_config, None).await?;

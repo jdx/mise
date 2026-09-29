@@ -180,6 +180,19 @@ Run a command immediately after a tool finishes installing by adding a `postinst
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
+To run the command on every `mise install` for the selected tool, even when its
+version is already installed, use `when = "always"`:
+
+```toml
+[tools]
+node = { version = "26", postinstall = { run = "npm install -g corepack", when = "always" } }
+```
+
+This runs once per selected tool request on each `mise install`; it does not
+record completion per config file. The string form (or a table without `when`)
+continues to run only after a fresh install or repair. Dry runs do not execute
+the command.
+
 Behavior:
 
 - The command runs once the install completes successfully for that tool/version.
@@ -458,6 +471,7 @@ If you type a command in your shell (e.g., `node`) and it is not found, mise can
 - **When it triggers:** When a command is not found in the shell and the handler is enabled.
 - **How to control:**
   - Setting: [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) (default: true)
+  - Setting: [`not_found_auto_install_registry`](/configuration/settings.html#not_found_auto_install_registry) (default: false) also installs an unconfigured tool when exactly one enabled registry entry provides the binary. It adds the tool to your global config.
 - **Limitation:** mise identifies the provider from the registry's bin metadata, so this covers configured tools even if they have never been installed — but not tools configured by a raw backend spec (e.g. `cargo:some-crate`), which carry no such metadata. Install those explicitly with `mise install`, or `mise x` to install and run in one step. See [troubleshooting](/troubleshooting.html#auto-install-on-command-not-found-does-not-trigger).
 
 ::: tip

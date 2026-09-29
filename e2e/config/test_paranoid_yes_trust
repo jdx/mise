@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+cat <<'EOF' >mise.toml
+[env]
+PARANOID_TRUST_TEST = "original"
+EOF
+
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+
+# Neither an environment-provided yes nor the CLI flag may approve a new file.
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=1 mise env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise -y env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise trust --show" ": trusted"
+
+cat <<'EOF' >mise.toml
+[env]
+PARANOID_TRUST_TEST = "edited"
+EOF
+
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=1 mise env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+
+# CI's automatic yes decision must not refresh the content-bound trust record.
+assert_fail_contains "env -u MISE_YES CI=1 MISE_PARANOID=1 mise env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=1 mise trust --show" ": untrusted"
+
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise env" "PARANOID_TRUST_TEST=edited"

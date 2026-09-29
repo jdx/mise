@@ -3896,10 +3896,21 @@ pub trait Backend: Debug + Send + Sync {
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
-            ctx.pr.finish_with_icon(
-                "already installed".into(),
-                crate::ui::progress_report::ProgressIcon::Skipped,
-            );
+            if let Some((script, true)) = tv.request.options().postinstall() {
+                tv.install_satisfied = Some(true);
+                ctx.pr
+                    .set_message("running custom postinstall hook".to_string());
+                self.run_postinstall_hook(&ctx, &tv, script).await?;
+                ctx.pr.finish_with_icon(
+                    "postinstall complete".to_string(),
+                    crate::ui::progress_report::ProgressIcon::Skipped,
+                );
+            } else {
+                ctx.pr.finish_with_icon(
+                    "already installed".into(),
+                    crate::ui::progress_report::ProgressIcon::Skipped,
+                );
+            }
             return Ok(tv);
         }
 
@@ -3990,7 +4001,7 @@ pub trait Backend: Debug + Send + Sync {
         if let Err(err) = file::touch_dir(&dirs::DATA) {
             trace!("error touching data directory: {:?}", err);
         }
-        if let Some(script) = tv.request.options().get("postinstall") {
+        if let Some((script, _)) = tv.request.options().postinstall() {
             ctx.pr
                 .set_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(ctx, tv, script).await?;

@@ -27,6 +27,36 @@ pub(crate) struct HistoryTomlConfig {
     pub origin: Option<OriginTomlConfig>,
     #[serde(default)]
     pub encryption: Option<FileEncryptionConfig>,
+    /// Email on history commits, with an optional `{hostname}` placeholder.
+    #[serde(default)]
+    pub git_email: Option<String>,
+}
+
+/// Resolve the history commit identity when the commit is created. A shared
+/// configuration may use `{hostname}` without a per-machine override.
+pub(crate) fn git_email() -> Result<String> {
+    let template = layers()?
+        .into_iter()
+        .filter_map(|(_, layer)| layer.git_email)
+        .next_back()
+        .unwrap_or_else(|| "mise@localhost".to_string());
+    render_git_email(&template, &super::store::machine().name)
+}
+
+fn render_git_email(template: &str, hostname: &str) -> Result<String> {
+    let email = template.replace("{hostname}", hostname);
+    eyre::ensure!(
+        email.split('@').count() == 2
+            && !email.starts_with('@')
+            && !email.ends_with('@')
+            && !email.contains('{')
+            && !email.contains('}')
+            && !email
+                .chars()
+                .any(|c| c.is_whitespace() || c.is_control() || "<>".contains(c)),
+        "[history].git_email must resolve to a Git email address"
+    );
+    Ok(email)
 }
 
 /// Public recipients shared by every encrypted dotfile.
@@ -216,6 +246,23 @@ pub(crate) fn exclusion_sources(pattern: &str) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_git_email_resolves_hostname_and_rejects_invalid_email() {
+        let config: HistoryTomlConfig = toml::from_str("git_email = 'mise@{hostname}'").unwrap();
+        assert_eq!(config.git_email.as_deref(), Some("mise@{hostname}"));
+        assert_eq!(
+            render_git_email(config.git_email.as_deref().unwrap(), "work-mbp.local").unwrap(),
+            "mise@work-mbp.local"
+        );
+        assert!(render_git_email("mise@{hostname}", "bad host").is_err());
+        assert_eq!(
+            render_git_email("mise@static.example", "work-mbp.local").unwrap(),
+            "mise@static.example"
+        );
+        assert!(render_git_email("mise@{host}", "host").is_err());
+        assert!(render_git_email("not-an-email", "host").is_err());
+    }
 
     #[test]
     fn malformed_encryption_is_rejected_and_layer_errors_propagate() {

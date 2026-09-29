@@ -150,6 +150,10 @@ node = { version = "24", postinstall = "node --version" }
 python = { version = "3.12", postinstall = "python --version" }
 ```
 
+Use `postinstall = { run = "...", when = "always" }` to run the command on every
+explicit `mise install` for the selected tool, including when that tool is
+already installed. The string form runs only when mise installs or repairs it.
+
 Tool-level postinstall scripts receive the following environment variables:
 
 - `MISE_TOOL_NAME`: The short name of the tool (e.g., "node", "python")

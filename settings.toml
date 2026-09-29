@@ -2142,12 +2142,27 @@ of a tool you already have.
 spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
 traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
 install and run in one step — since both materialise the whole configured toolset whatever the
-backend. The tool also has to be configured in a config file that applies to the current directory:
-mise will not install something you have not asked for.
+backend. By default, the tool also has to be configured in a config file that applies to the current
+directory. Set [`not_found_auto_install_registry`](#not_found_auto_install_registry) to install an
+unconfigured tool when a single registry entry provides the command.
 
 This also runs in shims.
 """
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
+type = "Bool"
+
+[not_found_auto_install_registry]
+default = false
+description = "Automatically install an unconfigured tool when its registry bin matches a missing command."
+docs = """
+When the command-not-found handler cannot install a configured tool, look for a matching binary in
+mise's registry. If exactly one enabled tool provides the command, install its latest version and
+add it to the global config, as with `mise use --global TOOL`. Ambiguous matches are skipped.
+
+This is disabled by default. [`not_found_auto_install`](#not_found_auto_install) and
+[`auto_install_disable_tools`](#auto_install_disable_tools) also apply.
+"""
+env = "MISE_NOT_FOUND_AUTO_INSTALL_REGISTRY"
 type = "Bool"
 
 [not_found_system_fallback]
@@ -2936,6 +2951,29 @@ This setting is global-only so a project configuration cannot redirect updates o
 env = "MISE_SELF_UPDATE_API_URL"
 global_only = true
 type = "Url"
+
+[self_update.minimum_release_age]
+description = "Minimum release age for mise itself; inherits minimum_release_age (24h by default)."
+docs = """
+Overrides [`minimum_release_age`](#minimum_release_age) for `mise self-update`, automatic
+updates, and update notifications. Accepts the same durations and cutoff dates. Set to
+`0s` to receive releases immediately. Explicit versions bypass the delay; `--force` does not.
+The `mise self-update --minimum-release-age` flag takes precedence over this setting.
+
+```toml
+[settings]
+minimum_release_age = "7d"
+self_update.minimum_release_age = "24h"
+```
+
+The bootstrap installer also accepts `MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE`, falling back
+to `MISE_MINIMUM_RELEASE_AGE` and then `24h`. It reads environment variables, not TOML files,
+and supports integer durations in seconds (`s`), minutes (`m`), hours (`h`), days (`d`), or
+weeks (`w`). An explicit `MISE_VERSION` bypasses the delay.
+"""
+env = "MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE"
+optional = true
+type = "String"
 
 [self_update.repository]
 default = "jdx/mise"
