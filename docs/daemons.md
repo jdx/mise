@@ -848,7 +848,7 @@ proxy_tls = "passthrough"
 Both keys are forwarded to pitchfork unchanged. Update Pitchfork if an older
 supervisor starts the daemons but does not serve their hostnames.
 
-### Stopping idle daemons
+### Stop idle daemons
 
 Opening a daemon's URL starts it, and its `depends`, if it is not running. Nothing
 stops it again by default: pitchfork's idle shutdown is off, so a daemon the proxy
@@ -900,6 +900,9 @@ checks its shape and pitchfork parses it, so it needs pitchfork 2.27.0 or later.
 Shutdown is checked every pitchfork `general.interval` (10 seconds by default), and a
 daemon stops only when no running daemon depends on it and no tracked shell session
 needs it, so it can outlive the timeout by a little.
+See pitchfork's
+[idle shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)
+for the full activity rules.
 
 ### Naming the project and the worktree
 
