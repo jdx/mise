@@ -886,11 +886,12 @@ mod tests {
             format!("Basic {}", BASE64_STANDARD.encode("ghp_secret:"))
         );
 
-        let url: Url = "https://me:p%40ss@gems.example.com/".parse().unwrap();
+        // Percent-decoded, and `+` is literal: userinfo is not form encoding.
+        let url: Url = "https://me:p%40s+s@gems.example.com/".parse().unwrap();
         let (_, headers) = credentials_as_header(url).unwrap();
         assert_eq!(
             headers[AUTHORIZATION].to_str().unwrap(),
-            format!("Basic {}", BASE64_STANDARD.encode("me:p@ss"))
+            format!("Basic {}", BASE64_STANDARD.encode("me:p@s+s"))
         );
 
         let url: Url = "https://rubygems.org/".parse().unwrap();
