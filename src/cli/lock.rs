@@ -233,10 +233,49 @@ pub(crate) struct Lock {
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
 
+    /// List native dependency sidecars instead of updating lockfiles
+    ///
+    /// Prints, for each existing lockfile in scope, the sidecar directory mise
+    /// keeps its native dependency graphs in and every sidecar directory the
+    /// lockfile references. Nothing is resolved, installed, or written.
+    /// Paths are relative to the current directory when they are inside it,
+    /// and absolute otherwise, such as the sidecars of a symlinked lockfile.
+    /// Combine with `--json` for machine-readable output, or with `--local`
+    /// and `--global` to choose the lockfiles.
+    #[usage(long, verbatim_doc_comment)]
+    pub sidecars: bool,
+
     /// Restrict the run to these lockfiles, for callers that relock the
     /// entries they rewrote (`mise backends switch`).
     #[usage(skip)]
     pub lockfiles: Option<BTreeSet<PathBuf>>,
+}
+
+/// A lockfile's sidecar directories, reported by `--sidecars`
+#[derive(serde::Serialize)]
+struct SidecarListing {
+    lockfile: String,
+    root: String,
+    sidecars: Vec<SidecarItem>,
+}
+
+#[derive(serde::Serialize)]
+struct SidecarItem {
+    tool: String,
+    version: String,
+    graph: &'static str,
+    path: String,
+    digest: String,
+    exists: bool,
+}
+
+/// Show a path relative to the current directory when it lies inside it.
+fn sidecar_display_path(path: &Path) -> String {
+    let cwd = crate::env::current_dir().unwrap_or_default();
+    path.strip_prefix(&cwd)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// A lockfile version change reported by `--json`
@@ -409,6 +448,7 @@ impl Lock {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            sidecars: false,
             lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
@@ -423,6 +463,9 @@ impl Lock {
         lockfile::suppress_outdated_lockfile_warning(&config);
         if self.upgrade && !self.tool.is_empty() {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
+        }
+        if self.sidecars {
+            return self.list_sidecars(&config);
         }
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
@@ -1177,6 +1220,63 @@ impl Lock {
 
     /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled during tool request resolution.
+    /// `--sidecars`: report the sidecar directories of each existing lockfile
+    /// without resolving tools or writing anything.
+    fn list_sidecars(&self, config: &Config) -> Result<()> {
+        if !self.tool.is_empty()
+            || self.dry_run
+            || self.bump
+            || self.upgrade
+            || !self.platform.is_empty()
+            || self.minimum_release_age.is_some()
+        {
+            bail!(
+                "`mise lock --sidecars` only lists sidecars; it cannot be combined with tool arguments, --dry-run, --bump, --upgrade, --platform, or --minimum-release-age"
+            );
+        }
+        let mut listings = vec![];
+        for lockfile_path in self.lockfile_targets(config).keys() {
+            if !lockfile_path.exists() {
+                continue;
+            }
+            let sidecars = Lockfile::read(lockfile_path)?
+                .sidecar_refs()
+                .into_iter()
+                .map(|sidecar| SidecarItem {
+                    tool: sidecar.short,
+                    version: sidecar.version,
+                    graph: sidecar.graph,
+                    path: sidecar_display_path(&sidecar.dir),
+                    digest: sidecar.digest,
+                    exists: sidecar.exists,
+                })
+                .collect();
+            listings.push(SidecarListing {
+                lockfile: sidecar_display_path(lockfile_path),
+                root: sidecar_display_path(&lockfile::sidecar_dir_for(lockfile_path)?),
+                sidecars,
+            });
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&listings)?);
+            return Ok(());
+        }
+        for listing in &listings {
+            miseprintln!("{} (sidecars in {})", listing.lockfile, listing.root);
+            for item in &listing.sidecars {
+                let missing = if item.exists { "" } else { " (missing)" };
+                miseprintln!(
+                    "  {}@{} {} {}{missing}",
+                    item.tool,
+                    item.version,
+                    item.graph,
+                    item.path
+                );
+            }
+        }
+        Ok(())
+    }
+
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
         resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
@@ -2437,6 +2537,7 @@ mod tests {
             minimum_release_age: None,
             bump: false,
             upgrade: false,
+            sidecars: false,
             lockfiles: None,
             json: false,
         }

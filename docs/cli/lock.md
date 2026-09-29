@@ -70,6 +70,15 @@ platforms when available, or the common platform defaults for a new lockfile.
   to the latest format with request-specific version bindings.
   Format upgrades always process every configured tool and cannot be
   combined with tool arguments.
+- **`--sidecars`** — List native dependency sidecars instead of updating lockfiles
+
+  Prints, for each existing lockfile in scope, the sidecar directory mise
+  keeps its native dependency graphs in and every sidecar directory the
+  lockfile references. Nothing is resolved, installed, or written.
+  Paths are relative to the current directory when they are inside it,
+  and absolute otherwise, such as the sidecars of a symlinked lockfile.
+  Combine with `--json` for machine-readable output, or with `--local`
+  and `--global` to choose the lockfiles.
 - **`-h --help`** — Print help
 
 ## Examples
