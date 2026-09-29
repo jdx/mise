@@ -767,9 +767,10 @@ cause an ordinary bind failure. Mise keeps the selected port rather than trying
 another one, so existing shells retain the same connection settings.
 
 When pitchfork reports that a port is already in use, the error is pitchfork's own.
-For a daemon whose port mise derived from the checkout's path, mise then adds a
-warning naming the daemon and the port, since nothing in pitchfork's message says the
-number can be changed. To use a different port in this checkout, declare the daemon
+For a daemon with an automatic port, mise then adds a warning naming the daemon and
+the port, and saying whether it is the configured base (a primary checkout keeps the
+base) or the base offset by a linked worktree's path, since nothing in pitchfork's
+message says the number can be changed. To use a different port in this checkout, declare the daemon
 again in a gitignored `mise.local.toml`, with a fixed port or another `base`. That
 declaration replaces the whole daemon, so repeat its other keys:
 

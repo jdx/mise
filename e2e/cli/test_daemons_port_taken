@@ -36,10 +36,11 @@ ready_delay = 0
 port = { auto = true, base = $PORT }
 TOML
 
-# Pitchfork says the port is busy; mise adds how to move it, and does not add
+# Pitchfork says the port is busy; mise adds how to move it (this project is
+# outside Git, so the port is the configured base), and does not add
 # its own exit-status trailer to an error pitchfork already explained.
 output=$(mise daemons start api 2>&1) && fail "start unexpectedly succeeded: $output"
-assert_contains_text "$output" "did not start and its port $PORT"
+assert_contains_text "$output" "did not start and its automatically allocated port $PORT (the configured base)"
 assert_contains_text "$output" "gitignored mise.local.toml"
 assert_not_contains_text "$output" "exited with non-zero status"
 assert_not_contains_text "$output" "Run with --verbose"

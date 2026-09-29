@@ -19,10 +19,26 @@ use tokio::process::Command;
 /// repeated there.
 const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with a fixed `port = <n>`, or with `port = { auto = true, base = <n> }` to move its range. That declaration replaces the whole daemon, so repeat its other keys.";
 
-/// Whether something already listens on this loopback port. Binding is what a
-/// daemon would do next, so a failure to bind is the same answer it would get.
+/// Whether something already listens on this loopback port, on either family.
+/// Binding is what a daemon would do next, so a failure to bind is the same
+/// answer it would get. A daemon may bind `::1` instead of `127.0.0.1`, and an
+/// IPv6-only listener does not conflict on the other family, so both are tried.
+/// A host without IPv6 loopback cannot have anything listening there.
 fn port_is_taken(port: u16) -> bool {
     std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).is_err()
+        || std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port))
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::AddrInUse)
+}
+
+/// Where an automatic port came from, for a message about it being in use.
+fn port_origin(claim: &PortClaim) -> &'static str {
+    if claim.port == claim.base {
+        // A primary checkout and a project outside Git get no path-based offset.
+        "the configured base"
+    } else {
+        // Only a linked worktree is offset by a slot derived from its path.
+        "the base offset by this worktree's path"
+    }
 }
 
 /// What mise knows about one project's daemons, as written beside them.
@@ -652,41 +668,41 @@ impl Runtime {
     /// Start daemons, and if that fails, say how to get out of a port that is
     /// taken.
     ///
-    /// `ports` are the claims this project recorded. Pitchfork reports a busy
-    /// port in its own words, which cannot know that mise derived the number
-    /// from the checkout's path and that it can be pinned somewhere else, so
-    /// mise adds that once pitchfork has said its part.
+    /// `ids` are the daemons to check when the start fails: the ones `args` names
+    /// and the dependencies pitchfork starts with them. `ports` are the claims this
+    /// project recorded. Pitchfork reports a busy port in its own words, which
+    /// cannot know that mise chose the number and that it can be pinned
+    /// somewhere else, so mise adds that once pitchfork has said its part.
     pub async fn start(
         &self,
         root: &Path,
         args: Vec<String>,
+        ids: &[String],
         ports: &BTreeMap<String, PortClaim>,
     ) -> Result<()> {
-        let result = self.exec(root, args.clone()).await;
+        let result = self.exec(root, args).await;
         if result.is_err() {
-            for (name, port) in self.taken_auto_ports(root, &args, ports).await {
+            for (name, claim) in self.taken_auto_ports(root, ids, ports).await {
                 warn!(
-                    "[daemons] {name} did not start and its port {port}, derived from this checkout's path, is in use by another process. To move it, {PIN_A_PORT}"
+                    "[daemons] {name} did not start and its automatically allocated port {} ({}) is in use by another process. To move it, {PIN_A_PORT}",
+                    claim.port,
+                    port_origin(&claim)
                 );
             }
         }
         result
     }
 
-    /// The daemons named in `args` whose automatically allocated port is held by
+    /// The daemons in `ids` whose automatically allocated port is held by
     /// something other than the daemon itself.
     async fn taken_auto_ports(
         &self,
         root: &Path,
-        args: &[String],
+        ids: &[String],
         ports: &BTreeMap<String, PortClaim>,
-    ) -> Vec<(String, u16)> {
+    ) -> Vec<(String, PortClaim)> {
         let mut taken = Vec::new();
-        // Arguments are the action, daemon IDs and flags. Only an ID has a `/`.
-        for id in args
-            .iter()
-            .filter(|a| !a.starts_with('-') && a.contains('/'))
-        {
+        for id in ids {
             let name = id.rsplit('/').next().unwrap_or(id);
             let Some(claim) = ports.get(name).filter(|claim| claim.is_auto()) else {
                 continue;
@@ -703,7 +719,7 @@ impl Runtime {
                 )
             });
             if !running {
-                taken.push((name.to_string(), claim.port));
+                taken.push((name.to_string(), *claim));
             }
         }
         taken
@@ -947,6 +963,32 @@ mod tests {
         assert!(!port_is_taken(port));
     }
 
+    #[test]
+    fn a_port_held_only_on_ipv6_loopback_is_taken() {
+        // A host without IPv6 loopback has nothing to prove here.
+        let Ok(listener) = std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)) else {
+            return;
+        };
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_is_taken(port));
+        drop(listener);
+        assert!(!port_is_taken(port));
+    }
+
+    #[test]
+    fn a_port_is_described_by_where_it_came_from() {
+        let claim = |port| PortClaim {
+            port,
+            base: 3000,
+            stride: 1,
+        };
+        assert_eq!(port_origin(&claim(3000)), "the configured base");
+        assert_eq!(
+            port_origin(&claim(3007)),
+            "the base offset by this worktree's path"
+        );
+    }
+
     /// A failing pitchfork has already explained itself on the terminal, so the
     /// error mise raises is only the status it exits with. A signal has no
     /// status to hand on and stays an ordinary error.
@@ -991,12 +1033,10 @@ mod tests {
             ("web".to_string(), claim(free)),
             ("db".to_string(), PortClaim::fixed(taken)),
         ]);
-        let args: Vec<String> = ["start", "ns/api", "ns/web", "ns/db", "--force"]
-            .map(String::from)
-            .into();
+        let ids: Vec<String> = ["ns/api", "ns/web", "ns/db"].map(String::from).into();
         assert_eq!(
-            runtime.taken_auto_ports(&root, &args, &ports).await,
-            vec![("api".to_string(), taken)],
+            runtime.taken_auto_ports(&root, &ids, &ports).await,
+            vec![("api".to_string(), ports["api"])],
             "a free port and a port the user fixed are not this hint's business"
         );
     }

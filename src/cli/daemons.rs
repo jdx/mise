@@ -603,10 +603,17 @@ impl Daemons {
                 }
             } else {
                 let mut forwarded = vec![action.into()];
-                forwarded.extend(selected);
+                forwarded.extend(selected.iter().cloned());
                 forwarded.extend(flags.clone());
                 if install {
-                    pending.push((runtime, root, forwarded, state.ports.clone(), _project_lock));
+                    pending.push((
+                        runtime,
+                        root,
+                        forwarded,
+                        selected,
+                        state.ports.clone(),
+                        _project_lock,
+                    ));
                 } else {
                     runtime.exec(&root, forwarded).await?;
                 }
@@ -614,8 +621,8 @@ impl Daemons {
         }
         // Register and validate every dependency root before pitchfork starts
         // anything, regardless of the order projects appear in the config.
-        for (runtime, root, forwarded, ports, _project_lock) in pending {
-            runtime.start(&root, forwarded, &ports).await?;
+        for (runtime, root, forwarded, selected, ports, _project_lock) in pending {
+            runtime.start(&root, forwarded, &selected, &ports).await?;
         }
         if matches!(action, "ls" | "urls") {
             if json {
