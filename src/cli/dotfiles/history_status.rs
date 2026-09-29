@@ -203,7 +203,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     let failing = report
         .health
         .as_ref()
-        .is_some_and(|health| health.watcher.last_error.is_some());
+        .is_some_and(|health| health.failing_capture().is_some());
     if failing && report.watcher == super::capture_health::Watcher::Running {
         miseprintln!(
             "  automatic capture: {} but failing (edits are not being saved until a capture succeeds).",

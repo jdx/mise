@@ -59,6 +59,25 @@ pub struct ThrottledPath {
     pub heavy: bool,
 }
 
+impl Health {
+    /// The last capture failure of the watcher that wrote this record, if the
+    /// capture after it has not succeeded. A watcher starts from the previous
+    /// one's record, so an error from before this run started is inherited,
+    /// not this watcher's failure.
+    pub fn failing_capture(&self) -> Option<&str> {
+        let watcher = &self.watcher;
+        let error = watcher.last_error.as_deref()?;
+        let parse = |at: &Option<String>| {
+            at.as_deref()
+                .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        };
+        match (parse(&watcher.last_error_at), parse(&watcher.started_at)) {
+            (Some(failed), Some(started)) if failed < started => None,
+            _ => Some(error),
+        }
+    }
+}
+
 pub(crate) fn path_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("health.json")
 }
@@ -78,4 +97,36 @@ pub fn age_secs(health: &Health) -> Option<u64> {
     let updated = chrono::DateTime::parse_from_rfc3339(&health.updated_at).ok()?;
     let age = chrono::Utc::now().signed_duration_since(updated);
     u64::try_from(age.num_seconds()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn health(started: Option<&str>, failed: Option<&str>) -> Health {
+        Health {
+            watcher: WatcherHealth {
+                started_at: started.map(str::to_string),
+                last_error: failed.map(|_| "boom".to_string()),
+                last_error_at: failed.map(str::to_string),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_error_from_before_this_watcher_started_is_not_its_failure() {
+        let started = "2026-09-29T22:10:00+00:00";
+        let earlier = "2026-09-29T22:05:00+00:00";
+        let later = "2026-09-29T22:15:00+00:00";
+        assert_eq!(health(Some(started), Some(earlier)).failing_capture(), None);
+        assert_eq!(
+            health(Some(started), Some(later)).failing_capture(),
+            Some("boom")
+        );
+        // without a start time to compare to, the error is reported
+        assert_eq!(health(None, Some(earlier)).failing_capture(), Some("boom"));
+        assert_eq!(health(Some(started), None).failing_capture(), None);
+    }
 }

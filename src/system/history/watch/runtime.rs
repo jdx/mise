@@ -55,6 +55,9 @@ const WATCH_LOCK_RETRY: Duration = Duration::from_millis(200);
 /// How often the watcher checks that the executable it started from has
 /// not been replaced by an upgrade.
 const BINARY_CHECK_EVERY: Duration = Duration::from_secs(60);
+/// How long a synchronization in flight may delay the restart an upgrade
+/// asks for; a stalled origin must not keep the old watcher running.
+const UPGRADE_SYNC_GRACE: Duration = Duration::from_secs(30);
 
 /// How many checkpoints may wait for `history.describe_command` before the
 /// oldest keeps its computed description.
@@ -92,6 +95,9 @@ pub struct WatchOptions {
 
 /// Runs the watcher; returns the process exit code.
 pub async fn run(opts: WatchOptions) -> Result<i32> {
+    // the baseline is taken before anything slow, so an upgrade landing
+    // during startup is still seen as one
+    let mut binary = BinaryWatch::new();
     let out = Output { json: opts.json };
     if !Settings::get().history.enabled {
         out.emit(
@@ -241,7 +247,6 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
-    let mut binary = BinaryWatch::new();
     let mut binary_check = tokio::time::interval_at(
         tokio::time::Instant::now() + BINARY_CHECK_EVERY,
         BINARY_CHECK_EVERY,
@@ -619,13 +624,16 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
                         "the mise executable was replaced; stopping so the service restarts the watcher on the new version",
                         json!({ "reason": "upgraded" }),
                     );
-                    if let Some(task) = sync_task.take() {
-                        let outcome = task.await.unwrap_or_else(|err| Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")));
+                    if let Some(task) = sync_task.take()
+                        && let Ok(joined) = tokio::time::timeout(UPGRADE_SYNC_GRACE, task).await
+                    {
+                        let outcome = joined.unwrap_or_else(|err| Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")));
                         finish_sync(&mut capture, &state.tracked, outcome).await;
                     }
-                    // the service restarts the watcher, so throttled files
-                    // keep their schedule
-                    finish(&mut capture, &state.tracked, Restart::Held).await;
+                    // an upgrade happens once, and a watcher started by hand
+                    // has no service to bring it back: everything pending is
+                    // saved now
+                    finish(&mut capture, &state.tracked, Restart::Final).await;
                     debouncer.stop();
                     return Ok(1);
                 }
@@ -1844,7 +1852,7 @@ struct BinaryWatch {
     started: Option<BinaryIdentity>,
     /// A changed identity seen on the previous check: an upgrade still
     /// writing the file is not acted on until it holds still.
-    seen: Option<BinaryIdentity>,
+    seen: Option<Option<BinaryIdentity>>,
 }
 
 type BinaryIdentity = (u64, Option<std::time::SystemTime>, u64);
@@ -1855,8 +1863,14 @@ impl BinaryWatch {
         // retargets, which the resolved `current_exe` on Linux would miss
         let path = std::env::args_os()
             .next()
-            .map(PathBuf::from)
-            .filter(|arg0| arg0.is_absolute() && arg0.is_file())
+            .and_then(|arg0| {
+                let arg0 = PathBuf::from(arg0);
+                if arg0.is_absolute() {
+                    arg0.is_file().then_some(arg0)
+                } else {
+                    which::which(&arg0).ok()
+                }
+            })
             .or_else(|| std::env::current_exe().ok());
         Self::at(path)
     }
@@ -1880,23 +1894,22 @@ impl BinaryWatch {
     }
 
     /// Whether the executable differs from the one this process started
-    /// from, on two checks in a row. A missing file is not a replacement:
-    /// an upgrade in flight leaves none for a moment.
+    /// from, or is gone, on two checks in a row. An upgrade in flight leaves
+    /// no file for a moment, which one check tolerates; one that removes the
+    /// old file for good (a versioned install directory) is a replacement too,
+    /// and the service reports it if it cannot start the new one.
     fn replaced(&mut self) -> bool {
         let (Some(path), Some(started)) = (self.path.as_deref(), self.started) else {
             return false;
         };
-        match Self::identity(path) {
-            Some(now) if now != started => {
-                let settled = self.seen == Some(now);
-                self.seen = Some(now);
-                settled
-            }
-            _ => {
-                self.seen = None;
-                false
-            }
+        let now = Some(Self::identity(path));
+        if now.flatten() == Some(started) {
+            self.seen = None;
+            return false;
         }
+        let settled = self.seen == now;
+        self.seen = now;
+        settled
     }
 }
 
@@ -1980,14 +1993,17 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_executable_is_not_a_replacement() {
+    fn a_missing_executable_is_a_replacement_once_it_stays_missing() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("mise");
         std::fs::write(&exe, "old").unwrap();
         let mut watch = BinaryWatch::at(Some(exe.clone()));
         std::fs::remove_file(&exe).unwrap();
-        assert!(!watch.replaced());
-        assert!(!watch.replaced());
+        assert!(
+            !watch.replaced(),
+            "an upgrade in flight leaves none for a moment"
+        );
+        assert!(watch.replaced());
         assert!(!BinaryWatch::at(None).replaced());
     }
 

@@ -107,8 +107,8 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
 /// it has not succeeded yet.
 pub(crate) fn failing_capture() -> Option<String> {
     crate::system::history::health::read(&crate::system::history::store::state_dir())?
-        .watcher
-        .last_error
+        .failing_capture()
+        .map(str::to_string)
 }
 
 /// Warns when enrollment succeeded but nothing saves edits automatically.
