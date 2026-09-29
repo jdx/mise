@@ -4505,15 +4505,28 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
 
 /// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
 /// that stops here because there is no checkout to continue from.
-fn bootstrap_head_is_branch(checkout: &Path) -> Result<bool> {
+fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<bool> {
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(checkout)
-        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .args(args)
         .stdout(std::process::Stdio::null());
     crate::git::sanitize_git_command(&mut command);
     Ok(command.status()?.success())
+}
+
+/// A tag deleted on origin stays in the checkout, since fetching does not
+/// prune, and would keep resolving. Only the requested tag is checked, so
+/// other local tags are left alone.
+fn ensure_bootstrap_tag_exists_on_origin(checkout: &Path, git_ref: &str) -> Result<()> {
+    let tag = format!("refs/tags/{git_ref}");
+    if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])?
+        && !bootstrap_git_succeeds(checkout, ["ls-remote", "--exit-code", "origin", &tag])?
+    {
+        bail!("tag {git_ref:?} no longer exists on origin");
+    }
+    Ok(())
 }
 
 fn checkout_bootstrap_repository(
@@ -4551,9 +4564,10 @@ fn checkout_bootstrap_repository(
                     // force tags so a moved one is not resolved from the stale local
                     // copy; nothing is pruned, as the checkout may hold other tags
                     run_bootstrap_git(checkout, ["fetch", "--force", "--tags", "origin"])?;
+                    ensure_bootstrap_tag_exists_on_origin(checkout, git_ref)?;
                     run_bootstrap_git(checkout, ["checkout", git_ref, "--"])?;
                     // a tag or commit is detached: there is nothing to pull
-                    if bootstrap_head_is_branch(checkout)? {
+                    if bootstrap_git_succeeds(checkout, ["symbolic-ref", "--quiet", "HEAD"])? {
                         run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
                     }
                 } else {

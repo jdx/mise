@@ -218,3 +218,10 @@ assert_contains "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$
 # An unknown ref fails and leaves no checkout that a later run would reuse
 assert_fail "mise bootstrap --from '$ref_source?ref=nope' --from-dir '$PWD/ref-missing' --yes --only task"
 assert_directory_not_exists "$PWD/ref-missing"
+
+# --update rejects a tag that was deleted upstream instead of using the stale
+# local copy, and keeps the other tags in the checkout
+git -C "$PWD/ref-tag" tag local-only
+git -C "$ref_source" tag -d v1 >/dev/null
+assert_fail "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert_contains "git -C '$PWD/ref-tag' tag" "local-only"
