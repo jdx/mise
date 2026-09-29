@@ -858,8 +858,10 @@ proxy_idle_timeout = "15m"
 
 To apply one timeout to every daemon the proxy starts, set `idle_timeout` under
 `[settings.proxy]` in `~/.config/pitchfork/config.toml` instead. A daemon's own
-`proxy_idle_timeout` overrides it, and a dependency without one inherits the
-timeout of the daemon that was requested.
+`proxy_idle_timeout` overrides it. A dependency without one inherits the timeout
+of the requested daemon only when Pitchfork starts it for that request; a
+dependency that is already running keeps its existing idle-shutdown eligibility
+and timeout.
 
 The timeout applies only to a daemon the proxy started because a request arrived
 at its hostname. A daemon you started with `mise daemons start` or that a task
