@@ -280,9 +280,8 @@ mise daemons stop
 # `--all` covers every daemon in the project, including ones a `default` group
 # leaves out, and never reaches another project. Pitchfork rejects its own `--all`
 # next to the IDs mise passes, so mise must not forward the flag.
-cd ..
-mkdir -p all-bystander all-project
-cd all-bystander
+mkdir -p ../all-bystander ../all-project
+cd ../all-bystander
 cat >mise.toml <<'TOML'
 [tools]
 pitchfork = "system"
