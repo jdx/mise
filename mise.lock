@@ -114,7 +114,7 @@ url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/57961
 [[tools.aube]]
 version = "2.6.0"
 backend = "packslip:github.com/aubepkg/aube"
-specifiers = ["2.6.0"]
+specifiers = ["latest"]
 
 [tools.aube."platforms.linux-arm64"]
 checksum = "sha256:d5ae9aea97605d8b6e06ee055d66744450624de8add3a3021073d32248acd0fe"
