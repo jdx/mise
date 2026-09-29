@@ -271,6 +271,8 @@ struct SidecarItem {
 
 /// Show a path relative to the current directory when it lies inside it.
 fn sidecar_display_path(path: &Path) -> String {
+    // Canonicalizing a symlinked lockfile yields `\\?\C:\…` on Windows.
+    let path = dunce::simplified(path);
     let cwd = crate::env::current_dir().unwrap_or_default();
     path.strip_prefix(&cwd)
         .unwrap_or(path)
@@ -465,7 +467,7 @@ impl Lock {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
         }
         if self.sidecars {
-            return self.list_sidecars(&config);
+            return self.list_sidecars(&config).await;
         }
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
@@ -1218,11 +1220,9 @@ impl Lock {
         changes
     }
 
-    /// Get the before_date from the CLI --minimum-release-age flag only.
-    /// Per-tool and global setting fallbacks are handled during tool request resolution.
     /// `--sidecars`: report the sidecar directories of each existing lockfile
     /// without resolving tools or writing anything.
-    fn list_sidecars(&self, config: &Config) -> Result<()> {
+    async fn list_sidecars(&self, config: &Arc<Config>) -> Result<()> {
         if !self.tool.is_empty()
             || self.dry_run
             || self.bump
@@ -1235,7 +1235,19 @@ impl Lock {
             );
         }
         let mut listings = vec![];
-        for lockfile_path in self.lockfile_targets(config).keys() {
+        // Target the lockfiles a normal run would write. In a monorepo that
+        // includes lockfiles contributed only by sibling configs.
+        let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
+            Some(config.monorepo_lockfile_union().await?)
+        } else {
+            None
+        };
+        let config_files = monorepo_union
+            .as_ref()
+            .map_or(&config.config_files, |union| &union.config_files);
+        let scoped = self.config_paths_in_lock_scope(config, config_files);
+        let targets = self.get_lockfile_targets(config, config_files, &scoped);
+        for lockfile_path in targets.keys() {
             if !lockfile_path.exists() {
                 continue;
             }
@@ -1277,6 +1289,8 @@ impl Lock {
         Ok(())
     }
 
+    /// Get the before_date from the CLI --minimum-release-age flag only.
+    /// Per-tool and global setting fallbacks are handled during tool request resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
         resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }

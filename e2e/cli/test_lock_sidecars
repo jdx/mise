@@ -31,3 +31,18 @@ assert_not_contains "mise lock --sidecars" "mise.lock"
 
 assert_fail_contains "mise lock --sidecars --dry-run" "only lists sidecars"
 assert_fail_contains "mise lock --sidecars npm:cowsay" "only lists sidecars"
+
+# The sidecars of a symlinked lockfile live beside its target, outside the
+# current directory, and are reported by absolute path.
+mkdir -p dotfiles project
+cat >dotfiles/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF2
+mise -C dotfiles lock
+cp dotfiles/mise.toml project/mise.toml
+ln -s "$PWD/dotfiles/mise.lock" project/mise.lock
+assert_contains "mise -C project lock --sidecars" "$PWD/dotfiles/.mise/locks/npm-cowsay/1.6.0"
+assert_contains "mise -C project lock --sidecars --json" "\"root\": \"$PWD/dotfiles/.mise/locks\""
+assert_contains "mise -C project lock --sidecars --json" "\"path\": \"$PWD/dotfiles/.mise/locks/npm-cowsay/1.6.0\""
+assert_not_contains "mise -C project lock --sidecars --json" '"exists": false'
