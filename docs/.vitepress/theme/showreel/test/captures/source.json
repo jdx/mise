@@ -1,0 +1,47 @@
+{
+  "about": "The showreel's reference capture set: one real run of docs/.vitepress/showreel-capture, trimmed to what load.ts reads. Regenerate with `mise run docs:showreel-capture -- --update-reference`.",
+  "run": "a",
+  "recorded_at": "2026-09-28T02:21:00.615411Z",
+  "key": "2608f49c29801825f910d3d82b94c6cf9128f0b9807262bbf0c91af90ebb3401",
+  "keyed": {
+    "schema": 1,
+    "rig": "bd1026ed10bff5a5f9133ba4d2f75152b2e77dec318c9c2bef08fffbeb460cbb",
+    "node_lts_major": 24,
+    "node_other_major": 26
+  },
+  "rig": {
+    "sha256": "bd1026ed10bff5a5f9133ba4d2f75152b2e77dec318c9c2bef08fffbeb460cbb",
+    "files": {
+      "Dockerfile": "6c7d64de957a3292475cb908dc77ca7d6a9abb08afb02f6794f03c84ecd3c778",
+      "entry.sh": "b24c4ba5936f19bb8a869163bf685725056b7ce9c8e31c4b103412871c156e17",
+      "record.py": "a6222dbb827b44d51aad5e20783d0889f328c26345bda3edb54ebdc2b5f4d8ac",
+      "frames.py": "db28d5c7d2c23d9f2a58c9bc44389e462869d4317e006e49deba1d2e09d0f826",
+      "fixtures.py": "267526e85365b26088552d63e59ec6bfb129fe4a015674c90797dc8440125946",
+      "versions.py": "466c8595cbb5736de7166fbcc8e33b986802cbaaa639a91e76be922ab30d5a95",
+      "steps.json": "b5f88f4dc917d7fcf6aa49546762dd3dc7d63080efe8218405e794756dad33f1"
+    }
+  },
+  "cutoff": "2026-09-27T02:00:00Z",
+  "machine2": "systemd",
+  "shape_ok": true,
+  "captures": [
+    "C1",
+    "C2",
+    "C3",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "C10",
+    "C11",
+    "C12",
+    "C13",
+    "C14",
+    "C15",
+    "C17",
+    "C18",
+    "C19"
+  ],
+  "elapsed_s": 330
+}

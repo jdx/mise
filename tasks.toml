@@ -34,6 +34,11 @@ description = 'Build the documentation site'
 depends = ["docs:setup"]
 run = "aube run docs:build"
 
+["docs:showreel-test"]
+description = 'Type-check and test the landing-page showreel'
+depends = ["docs:setup"]
+run = ["aube run typecheck:showreel", "aube run test:showreel"]
+
 ["docs:preview"]
 description = 'Preview the documentation site'
 depends = ["docs:build"]

@@ -174,3 +174,7 @@ dist
 # VitePress
 .vitepress/cache
 .vitepress/dist
+
+# The showreel, rendered by `aube run showreel:video`; never committed.
+public/showreel*.mp4
+public/showreel-poster.jpg

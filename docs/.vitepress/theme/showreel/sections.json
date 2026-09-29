@@ -1,0 +1,1864 @@
+[
+  {
+    "id": "open",
+    "act": "0",
+    "actLabel": "mise",
+    "beats": 14,
+    "start": 0,
+    "end": 14,
+    "captions": [],
+    "captures": ["C1"],
+    "visual": "`~ $ mise` is typed; rows 1-7 of the real 80-column help screen print beside the green block chef. Then the block chef's cells lift and resolve into the white chef. The white chef resolves on M1's F; then the tagline lifts out of the help screen into the name card as the pane falls away, and the name writes on above it. Name card: \"mise-en-place\" / \"Dev tools, env vars, and tasks in one CLI\". The name card gives way to the pitch's terminal at `~/work $`, which holds through the bar line.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 1.737,
+        "name": "help",
+        "what": "`~ $ mise` types; the help screen's rows 1-7 print beside the green block chef (the block art is texture; the usage lines are the read); the pane dims round the tagline and the chef and pushes in slowly while it is read"
+      },
+      {
+        "at": 3.738,
+        "end": 5.237,
+        "name": "lift",
+        "what": "the block chef's cells lift off the help screen and resolve into the white chef (one motion; the score's intro swell, then M1's F on its end)"
+      },
+      {
+        "at": 5.738,
+        "end": 6.487,
+        "name": "tagline",
+        "what": "the tagline lifts out of the help screen into the name card, crossing from mono to Space Grotesk, as the pane falls away"
+      },
+      {
+        "at": 6.988,
+        "end": 7.612,
+        "name": "name",
+        "what": "\"mise-en-place\" writes on above it, a syllable a quarter beat (the celesta's C D♭ C); the card and the chef hold 2 s"
+      },
+      {
+        "at": 10.113,
+        "end": 10.612,
+        "name": "leave",
+        "what": "the name card and the chef leave (no sound of their own)"
+      },
+      {
+        "at": 11.113,
+        "end": 11.612,
+        "name": "pitchTerm",
+        "what": "the pitch's terminal comes up at `~/work $` (open|pitch's rest)"
+      }
+    ]
+  },
+  {
+    "id": "pitch",
+    "act": "0",
+    "actLabel": "mise",
+    "beats": 28,
+    "start": 14,
+    "end": 42,
+    "captions": [
+      {
+        "at": 17,
+        "lines": [
+          "One `mise.toml` per project:",
+          "tools, env vars, and tasks."
+        ],
+        "after": "tables"
+      },
+      {
+        "at": 30.625,
+        "lines": [
+          "With `mise activate`, `cd` in,",
+          "and its tools and env vars load."
+        ],
+        "after": "envLift"
+      },
+      {
+        "at": 36.5,
+        "lines": ["`mise run ci` runs the tasks", "in that environment."],
+        "after": "ci"
+      }
+    ],
+    "captures": ["C2"],
+    "visual": "The terminal waits at `~/work $`. The card writes `node = \"{node.lts_major}\"`, `APP_ENV = \"api\"` and `[tasks.ci] depends = [\"lint\", \"test\", \"build\"]` (its long `run` line folds to a count); [tools] lights pink, [env] gold, [tasks] sage in turn, then caption 1 names them. `~/work $ cd api` (cwd dot hops), `node --version` -> `v{node.lts_version}`, `echo APP_ENV=$APP_ENV` -> `APP_ENV=api`. `mise run ci` streams prefixed lines; holds on the last frame before `Finished in` (`[ci] api ready: node v{node.lts_version}, APP_ENV=api`). `v{node.lts_version}` and `APP_ENV=api` lift out of the terminal onto the card rows that asked for them, with threads; the chips and threads are gone by the bar line, and the card (its three tables lit) and the terminal on that last frame hold into the ticket.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 1,
+        "name": "card",
+        "what": "the card writes `node = \"{node.lts_major}\"`, `APP_ENV = \"api\"`, `[tasks.ci] depends = [...]` (the run line folds to a count); the terminal waits at `~/work $`, dimmed to FOCUS_DIM"
+      },
+      {
+        "at": 1.5,
+        "end": 2.5,
+        "name": "tables",
+        "what": "[tools] pink, [env] gold, [tasks] sage light in turn, a quarter beat apart (one cascade: the palette lesson)"
+      },
+      {
+        "at": 3,
+        "end": 4.25,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b4.25; read by b7.5)"
+      },
+      {
+        "at": 4.75,
+        "end": 6.167,
+        "name": "cd",
+        "what": "`cd api`: the cwd dot hops (a tick); the card dims to FOCUS_DIM while the terminal acts"
+      },
+      {
+        "at": 6.668,
+        "end": 8.807,
+        "name": "node",
+        "what": "`node --version` -> `v{node.lts_version}`"
+      },
+      {
+        "at": 9.308,
+        "end": 10.807,
+        "name": "nodeLift",
+        "what": "`v{node.lts_version}` lifts out of its row onto the card's `node` row, then its thread draws on (the terminal dims, the card comes to focus)"
+      },
+      {
+        "at": 11.308,
+        "end": 14.058,
+        "name": "env",
+        "what": "`echo APP_ENV=$APP_ENV` -> `APP_ENV=api`"
+      },
+      {
+        "at": 14.559,
+        "end": 16.058,
+        "name": "envLift",
+        "what": "`APP_ENV=api` lifts onto the card's `APP_ENV` row, then its thread draws on"
+      },
+      {
+        "at": 16.625,
+        "end": 18.25,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b18.25; read by b22.5)"
+      },
+      {
+        "at": 18.75,
+        "end": 20.266,
+        "name": "ci",
+        "what": "`mise run ci` streams its prefixed lines to the last frame before `Finished in` (HOLDS.C2), then holds to the bar line"
+      },
+      {
+        "at": 22.5,
+        "end": 23.75,
+        "name": "caption3",
+        "what": "caption 3 writes in (landed b23.75; read by b27)"
+      },
+      {
+        "at": 24.25,
+        "end": 24.75,
+        "name": "chipsOut",
+        "what": "the two chips and their threads fade off the card (gone by the bar line); the card's three tables stay lit"
+      }
+    ]
+  },
+  {
+    "id": "tools",
+    "act": "I",
+    "actLabel": "Dev tools",
+    "beats": 2,
+    "start": 42,
+    "end": 44,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Dev tools\" with `[tools]`, pink. The pitch's card and terminal leave under it as it prints; as it lifts off the rail, use's stage comes in under it: the api card and the terminal at `~/work/api $`.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "use",
+    "act": "I",
+    "actLabel": "Dev tools",
+    "beats": 20,
+    "start": 44,
+    "end": 64,
+    "captions": [
+      {
+        "at": 53.75,
+        "lines": [
+          "No `jq`? `mise use jq` installs it",
+          "and adds it to `mise.toml`."
+        ],
+        "after": "seat"
+      }
+    ],
+    "captures": ["C3"],
+    "visual": "`jq .status resp.json` -> `zsh: command not found: jq`. `mise use jq` slams in as big type and shrinks into the pane; progress rows move at 3× under the time-lapse badge and fade while they still move; the entered command holds under the badge, then the terminal dims and `jq = \"latest\"` seats in the card. ⌃L keycap as the terminal brightens on a fresh prompt, then `jq .status resp.json` -> `\"ok\"`. The card holds through both bar lines.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 3.181,
+        "name": "notFound",
+        "what": "`jq .status resp.json` -> `zsh: command not found: jq`"
+      },
+      {
+        "at": 3.682,
+        "end": 5.618,
+        "name": "slam",
+        "what": "`mise use jq` slams in as big type under the pane (the pane dims to half), holds at full size 1.25 b (rule 7), shrinks into its cells on the prompt row, where the take cuts to the command typed; the not-found line stays on screen, dimmed under it, for its read hold (Enter waits for it)"
+      },
+      {
+        "at": 6.119,
+        "end": 7.978,
+        "name": "install",
+        "what": "Enter; jq's rows move at 3x under the time-lapse badge and fade out while still moving (tail)"
+      },
+      {
+        "at": 8.479,
+        "end": 9.228,
+        "name": "seat",
+        "what": "the terminal dims to FOCUS_DIM; `jq = \"latest\"` seats in the card (rows part, it drops in, [tools] bumps)"
+      },
+      {
+        "at": 9.75,
+        "end": 11.5,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b11.5; read by b15.5)"
+      },
+      {
+        "at": 12,
+        "end": 12.875,
+        "name": "clear",
+        "what": "the ⌃L keycap presses on the key's time; the terminal brightens on the fresh prompt it cleared to (the card dims)"
+      },
+      {
+        "at": 13.375,
+        "end": 16.035,
+        "name": "ok",
+        "what": "`jq .status resp.json` -> `\"ok\"`"
+      },
+      {
+        "at": 18.036,
+        "end": 18.41,
+        "name": "leave",
+        "what": "the terminal leaves, clearing the left column for the registry's rivers"
+      }
+    ]
+  },
+  {
+    "id": "registry",
+    "act": "I",
+    "actLabel": "Dev tools",
+    "beats": 12,
+    "start": 64,
+    "end": 76,
+    "captions": [
+      {
+        "at": 68,
+        "lines": ["1,000+ tools by short name,", "from `node` to `terraform`."],
+        "after": "lit",
+        "until": "read"
+      }
+    ],
+    "captures": ["C4"],
+    "visual": "Three rivers of real registry names; `node` and `terraform` glow. The card stays at rest through the section and both its bar lines.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 2,
+        "name": "rivers",
+        "what": "three rivers of real registry names flow in beside the card, then slow to a drift dimmed to FOCUS_DIM (texture: nothing else moves over it)"
+      },
+      {
+        "at": 2.5,
+        "end": 3.5,
+        "name": "lit",
+        "what": "`node` then `terraform` glow in their rivers (a half-beat cascade); the streams then ease to a stop by caption 1's anchor and hold still while it names them"
+      },
+      {
+        "at": 4,
+        "end": 5.25,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b5.25; read by b8.5); until \"read\": it leaves once read"
+      },
+      {
+        "at": 9.25,
+        "end": 10,
+        "name": "riversOut",
+        "what": "the still rivers drain away (diagrams are gone by the bar line)"
+      }
+    ]
+  },
+  {
+    "id": "backends",
+    "act": "I",
+    "actLabel": "Dev tools",
+    "beats": 34,
+    "start": 76,
+    "end": 110,
+    "captions": [
+      {
+        "at": 84.625,
+        "lines": [
+          "`npm:` installs npm CLIs per project,",
+          "even without a `package.json`."
+        ],
+        "after": "seat"
+      },
+      {
+        "at": 104.375,
+        "lines": [
+          "Other backends install from",
+          "PyPI, crates.io, GitHub, and Go."
+        ],
+        "after": "backendChips"
+      }
+    ],
+    "captures": ["C5", "C6"],
+    "visual": "`npm:` types into a slot in front of `prettier` in pink kinetic type beside the card, then shrinks into `mise use npm:prettier`. Rows move at 3× (with the `↳ 1/1 pkgs` sub-row); cut to the card before any ✓; `\"npm:prettier\" = \"latest\"` seats. ⌃L, then `prettier --check README.md .github` prints `Checking formatting...` / `All matched files use Prettier code style!`, which zooms out of its row and holds about 2 s; then file chips README.md and .github/workflows/ci.yml come up and tick in turn. Footnote: \"Runs on the project's `node`.\" One pane at `~/work/tools $` (gh installed beforehand): `mise use github:cli/cli` -> `mise ~/work/tools/mise.toml tools: github:cli/cli@<v>` (the progress header it flashes is cut); `gh --version` -> two real lines. Text chips `pypi:`, `cargo:`, `go:`. Footnote: \"Some backends need their ecosystem's tool, like `uv`.\" The pane narrows back into the left column with gh's lines on it, and the card slides back beside it; both hold into the Versions ticket, which takes them down.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 4.5,
+        "name": "npm",
+        "what": "the pane and `prettier` rise in; `mise use ` types at TYPE_RATE; half a beat later `npm:` types into the slot in front of `prettier` in pink kinetic type, a key an eighth (8/s), holds whole at full size a beat (rule 7; nothing types meanwhile), then shrinks into `mise use npm:prettier` on the prompt, where the take cuts to the command typed"
+      },
+      {
+        "at": 5,
+        "end": 6.86,
+        "name": "install",
+        "what": "Enter; the rows (with the `↳ 1/1 pkgs` sub-row) move at 3x and fade before any ✓"
+      },
+      {
+        "at": 7.361,
+        "end": 8.11,
+        "name": "seat",
+        "what": "`\"npm:prettier\" = \"latest\"` seats in the card (terminal dimmed)"
+      },
+      {
+        "at": 8.625,
+        "end": 10,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b10; read by b13.5)"
+      },
+      {
+        "at": 10.5,
+        "end": 11.375,
+        "name": "clear",
+        "what": "⌃L: the terminal brightens on the cleared prompt; the card folds up for the shelf"
+      },
+      {
+        "at": 11.875,
+        "end": 15.899,
+        "name": "check",
+        "what": "`prettier --check README.md .github` -> `Checking formatting...` / `All matched files use Prettier code style!`"
+      },
+      {
+        "at": 16.4,
+        "end": 17.149,
+        "name": "verdict",
+        "what": "the verdict line zooms out of its row and holds (the pane dims under it)"
+      },
+      {
+        "at": 17.65,
+        "end": 18.399,
+        "name": "chips",
+        "what": "file chips README.md and .github/workflows/ci.yml come up and tick in turn"
+      },
+      {
+        "at": 18.9,
+        "end": 19.399,
+        "name": "foot1",
+        "what": "footnote \"Runs on the project's `node`.\""
+      },
+      {
+        "at": 19.9,
+        "end": 20.899,
+        "name": "toTools",
+        "what": "the card, the verdict, the chips and the footnote go; the pane widens across the stage into C6 at `~/work/tools $`"
+      },
+      {
+        "at": 21.4,
+        "end": 24.1,
+        "name": "gh",
+        "what": "`mise use github:cli/cli` -> `mise ~/work/tools/mise.toml tools: github:cli/cli@<v>` (its progress header is cut, as now)"
+      },
+      {
+        "at": 24.601,
+        "end": 26.579,
+        "name": "ghVersion",
+        "what": "`gh --version` -> its two real lines"
+      },
+      {
+        "at": 27.08,
+        "end": 27.829,
+        "name": "backendChips",
+        "what": "text chips `pypi:`, `cargo:`, `go:` land in turn beside the pane"
+      },
+      {
+        "at": 28.375,
+        "end": 29.75,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b29.75; read by b33)"
+      },
+      {
+        "at": 30.25,
+        "end": 30.75,
+        "name": "foot2",
+        "what": "footnote \"Some backends need their ecosystem's tool, like `uv`.\""
+      },
+      {
+        "at": 31.25,
+        "end": 32.5,
+        "name": "narrow",
+        "what": "the chips and footnote go; the pane narrows back into the left column with gh's lines, and the card slides back beside it"
+      }
+    ]
+  },
+  {
+    "id": "versions",
+    "act": "II",
+    "actLabel": "Versions",
+    "beats": 2,
+    "start": 110,
+    "end": 112,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Versions\" with `tool@version`, pink. The api card and gh's pane leave under it as it prints; as it lifts off the rail, the switch's folder diagram (api/ current) and terminal come in under it.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "switch",
+    "act": "II",
+    "actLabel": "Versions",
+    "beats": 22,
+    "start": 112,
+    "end": 134,
+    "captions": [
+      {
+        "at": 120.625,
+        "lines": [
+          "`cd` switches `node` to the version",
+          "each project's `mise.toml` sets."
+        ],
+        "after": "dashVersion"
+      }
+    ],
+    "captures": ["C7"],
+    "visual": "Folder diagram: `api/` card `node = \"{node.lts_major}\"`, `dashboard/` card `node = \"{node.other_major}\"`; the cards and the terminal hold from the ticket. `~/work/api $ cd ../dashboard` moves the key to D♭; `node --version` -> `v{node.other_version}`; `cd ../api` returns home; `node --version` -> `v{node.lts_version}`. Both versions hold on their folder cards, set in the terminal's face. Poster frame: just after both have landed (reel.ts POSTER_TIME); then each version's thread draws from the row that printed it to its chip. The diagram folds away; the terminal's last screen holds through the bar line into packslip.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 2.728,
+        "name": "cdDashboard",
+        "what": "`~/work/api $ cd ../dashboard`: the key moves to D♭ on Enter; the cwd hops"
+      },
+      {
+        "at": 3.229,
+        "end": 3.978,
+        "name": "toDashboard",
+        "what": "the folder diagram's current mark moves to `dashboard/`"
+      },
+      {
+        "at": 4.479,
+        "end": 6.597,
+        "name": "nodeDashboard",
+        "what": "`node --version` -> `v{node.other_version}`"
+      },
+      {
+        "at": 7.098,
+        "end": 8.097,
+        "name": "dashVersion",
+        "what": "`v{node.other_version}` lifts out of its row and settles on the dashboard/ card"
+      },
+      {
+        "at": 8.625,
+        "end": 10,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b10; read by b13.5)"
+      },
+      {
+        "at": 10.5,
+        "end": 12.187,
+        "name": "cdApi",
+        "what": "`cd ../api`: home again (a tick); the cwd hops"
+      },
+      {
+        "at": 12.688,
+        "end": 13.437,
+        "name": "toApi",
+        "what": "the current mark moves back to `api/`"
+      },
+      {
+        "at": 13.938,
+        "end": 16.056,
+        "name": "nodeApi",
+        "what": "`node --version` -> `v{node.lts_version}`"
+      },
+      {
+        "at": 16.557,
+        "end": 17.556,
+        "name": "apiVersion",
+        "what": "`v{node.lts_version}` settles on the api/ card: both versions hold on their folder cards, everything lit (the poster frame, beat 18)"
+      },
+      {
+        "at": 18.25,
+        "end": 19,
+        "name": "threads",
+        "what": "after the poster each version's thread draws from the row that printed it to its chip, dashboard's then api's"
+      },
+      {
+        "at": 19.5,
+        "end": 20.375,
+        "name": "fold",
+        "what": "the folder diagram folds away: api/ grows into the station card's place with the card coming in over it; the terminal's last screen stays"
+      }
+    ]
+  },
+  {
+    "id": "packslip",
+    "act": "II",
+    "actLabel": "Versions",
+    "beats": 36,
+    "start": 134,
+    "end": 170,
+    "captions": [
+      {
+        "at": 137.75,
+        "lines": [
+          "hk's signed packslip releases carry",
+          "completions and agent skills."
+        ],
+        "after": "slip"
+      },
+      {
+        "at": 151.875,
+        "lines": ["Upgrade hk, and Tab completes", "the new version's flags."],
+        "after": "junit"
+      },
+      {
+        "at": 161.375,
+        "lines": [
+          "`mise skills sync` links that",
+          "version's skills for your agent."
+        ],
+        "after": "link",
+        "until": "read"
+      }
+    ],
+    "captures": ["C8"],
+    "visual": "Switch's last screen dissolves into C8's prompt over the first quarter beat. `hk = \"2.1.0\"` lights in [tools]; the terminal shortens and a slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): 28 px rows read from the packslip statement mise saved when it installed each version (C8, off camera): `version`, `resources` (the completion shells and the skill names) and `identity`. `hk check --j` + Tab keycap lists 2 rows. `mise use hk@2.2.0` (its progress header cut) -> `mise ~/work/api/mise.toml tools: hk@2.2.0`; the card flips to \"2.2.0\"; the slip re-stamps from 2.2.0's statement. Tab lists 3 rows, `--junit-xml` lights; footnote \"In a shell with `mise activate`.\" `mise skills sync` prints `linked .claude/skills/...` rows, dimmed; the drawn link takes the slip's place and lights only `2.2.0`. Caption 3 is read, then the drawn link folds away; the card and the dimmed, shortened terminal hold into the Environments ticket.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.25,
+        "name": "dissolve",
+        "what": "switch's last screen dissolves into C8's prompt (restScreen)"
+      },
+      {
+        "at": 0.75,
+        "end": 1.75,
+        "name": "pin",
+        "what": "`hk = \"2.1.0\"` lights in [tools]"
+      },
+      {
+        "at": 2.25,
+        "end": 3.25,
+        "name": "slip",
+        "what": "the terminal shortens and the slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): version, resources, identity rows stamp in a cascade"
+      },
+      {
+        "at": 3.75,
+        "end": 5,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b5; read by b8)"
+      },
+      {
+        "at": 5.5,
+        "end": 7.347,
+        "name": "tabOld",
+        "what": "`hk check --j` types; the Tab keycap rises and Tab lists 2 rows (--jobs, --json); the slip dims"
+      },
+      {
+        "at": 9.348,
+        "end": 11.476,
+        "name": "use",
+        "what": "once the list is read, ⌃C (a cut past the take's idle gap) then `mise use hk@2.2.0` -> `mise ~/work/api/mise.toml tools: hk@2.2.0` (the progress header cut)"
+      },
+      {
+        "at": 11.977,
+        "end": 12.726,
+        "name": "flip",
+        "what": "the card's `hk` value flips to \"2.2.0\""
+      },
+      {
+        "at": 13.227,
+        "end": 13.976,
+        "name": "restamp",
+        "what": "the slip re-stamps from 2.2.0's statement"
+      },
+      {
+        "at": 14.477,
+        "end": 16.32,
+        "name": "tabNew",
+        "what": "`hk check --j` Tab: 3 rows"
+      },
+      {
+        "at": 16.821,
+        "end": 17.32,
+        "name": "junit",
+        "what": "`--junit-xml` lights"
+      },
+      {
+        "at": 17.875,
+        "end": 19,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b19; read by b22)"
+      },
+      {
+        "at": 19.5,
+        "end": 20,
+        "name": "foot",
+        "what": "footnote \"In a shell with `mise activate`.\""
+      },
+      {
+        "at": 21.5,
+        "end": 23.86,
+        "name": "sync",
+        "what": "once the list is read, ⌃C (cut past its idle gap) then `mise skills sync`: the `linked …` rows print (texture: the link reads them)"
+      },
+      {
+        "at": 24.361,
+        "end": 26.86,
+        "name": "link",
+        "what": "the slip hands its chips on: they fly into the drawn link in its place, which forms round them; its arrows draw on and light only `2.2.0`"
+      },
+      {
+        "at": 27.375,
+        "end": 28.75,
+        "name": "caption3",
+        "what": "caption 3 writes in (landed b28.75; read by b32.5); until \"read\""
+      },
+      {
+        "at": 33.25,
+        "end": 33.75,
+        "name": "linkOut",
+        "what": "half a beat after caption 3 has gone, the drawn link folds away; the card and the dimmed, shortened terminal hold"
+      }
+    ]
+  },
+  {
+    "id": "env",
+    "act": "III",
+    "actLabel": "Environments",
+    "beats": 2,
+    "start": 170,
+    "end": 172,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Environments\" with `[env]`, gold. Packslip's card and dimmed terminal leave under it as it prints; as it lifts off the rail, the api card (at [env]) and the terminal come in under it.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "vars",
+    "act": "III",
+    "actLabel": "Environments",
+    "beats": 20,
+    "start": 172,
+    "end": 192,
+    "captions": [
+      {
+        "at": 178.625,
+        "lines": ["Leave, and mise restores", "the environment."],
+        "after": "envEmpty"
+      },
+      {
+        "at": 187,
+        "lines": ["`.env` files load too,", "with `_.file`."],
+        "after": "port"
+      }
+    ],
+    "captures": ["C9"],
+    "visual": "`cd ..` folds values off the shell-env strip; `echo APP_ENV=$APP_ENV` -> `APP_ENV=`. `_.file = \".env\"` seats; a `.env` file card shows `PORT=3000`. `cd api`, `echo PORT=$PORT` -> `PORT=3000`. The card and the terminal, on its last screen, hold from the ticket and into redact. Ends at rest.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 1.827,
+        "name": "cdOut",
+        "what": "`cd ..`"
+      },
+      {
+        "at": 2.328,
+        "end": 2.827,
+        "name": "strip",
+        "what": "the values fold off the shell-env strip"
+      },
+      {
+        "at": 3.328,
+        "end": 6.078,
+        "name": "envEmpty",
+        "what": "`echo APP_ENV=$APP_ENV` -> `APP_ENV=`"
+      },
+      {
+        "at": 6.625,
+        "end": 7.5,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b7.5; read by b11)"
+      },
+      {
+        "at": 8,
+        "end": 8.75,
+        "name": "seatFile",
+        "what": "`_.file = \".env\"` seats in the card"
+      },
+      {
+        "at": 9.25,
+        "end": 9.75,
+        "name": "envCard",
+        "what": "the `.env` file card comes in: `PORT=3000`"
+      },
+      {
+        "at": 10.25,
+        "end": 11.667,
+        "name": "cdIn",
+        "what": "`cd api`: the values fold back onto the strip with the cwd hop"
+      },
+      {
+        "at": 12.168,
+        "end": 14.377,
+        "name": "port",
+        "what": "`echo PORT=$PORT` -> `PORT=3000`"
+      },
+      {
+        "at": 15,
+        "end": 15.75,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b15.75; read by b19)"
+      },
+      {
+        "at": 16.25,
+        "end": 17,
+        "name": "envCardOut",
+        "what": "the `.env` card folds into the card's `_.file` row (vars|redact keeps the card and the terminal only)"
+      },
+      {
+        "at": 17.5,
+        "end": 18.125,
+        "name": "stripOut",
+        "what": "the shell-env strip folds away before the rest (vars|redact keeps the card and the terminal only)"
+      }
+    ]
+  },
+  {
+    "id": "redact",
+    "act": "III",
+    "actLabel": "Environments",
+    "beats": 18,
+    "start": 192,
+    "end": 210,
+    "captions": [
+      {
+        "at": 203,
+        "lines": [
+          "Mark a `.env` file `redact = true`:",
+          "task output shows `[redacted]`."
+        ],
+        "after": "stamp"
+      }
+    ],
+    "captures": ["C10"],
+    "visual": "The card and vars' last screen hold from vars; the screen dissolves into C10's prompt as it comes up. Its `_.file` line zooms out of it to full width and is rewritten in place as `_.file = [\".env\", { path = \".env.deploy\", redact = true }]`, and the card folds away. `.env.deploy` card (\"gitignored\") shows the fixture token; `mise-tasks/deploy` card shows its body line. `mise run deploy staging` prints its real line with `[redacted]`; a thread runs from the token to `[redacted]` and stamps it. Footnote while `[redacted]` is visible: \"Masks captured task output. Does not encrypt the file.\" The file cards fold back into the card, [env] folded; the card, the terminal (the `[redacted]` line) and the footnote hold into the Tasks ticket.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "dissolve",
+        "what": "vars' last screen dissolves into C10's prompt as it comes up"
+      },
+      {
+        "at": 1,
+        "end": 1.75,
+        "name": "zoom",
+        "what": "the card's `_.file` line zooms out of it to full width"
+      },
+      {
+        "at": 2.25,
+        "end": 3,
+        "name": "rewrite",
+        "what": "it is rewritten in place as `_.file = [\".env\", { path = \".env.deploy\", redact = true }]`"
+      },
+      {
+        "at": 3.5,
+        "end": 4,
+        "name": "fold",
+        "what": "the card folds away"
+      },
+      {
+        "at": 4.5,
+        "end": 5.25,
+        "name": "files",
+        "what": "`.env.deploy` (\"gitignored\", the fixture token) and `mise-tasks/deploy` (its body line) cards come in, a quarter beat apart"
+      },
+      {
+        "at": 5.75,
+        "end": 8.701,
+        "name": "deploy",
+        "what": "`mise run deploy staging` -> its real line with `[redacted]`"
+      },
+      {
+        "at": 9.202,
+        "end": 10.451,
+        "name": "stamp",
+        "what": "a thread runs from the token to `[redacted]` and stamps it"
+      },
+      {
+        "at": 11,
+        "end": 12.5,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b12.5; read by b16)"
+      },
+      {
+        "at": 13,
+        "end": 13.5,
+        "name": "foot",
+        "what": "footnote \"Masks captured task output. Does not encrypt the file.\""
+      },
+      {
+        "at": 14,
+        "end": 16.25,
+        "name": "foldBack",
+        "what": "the file cards fold back into the card, [env] folded"
+      }
+    ]
+  },
+  {
+    "id": "tasks",
+    "act": "IV",
+    "actLabel": "Tasks",
+    "beats": 2,
+    "start": 210,
+    "end": 212,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Tasks\" with `[tasks]`, sage. Redact's folded card, terminal and footnote leave under it as it prints; as it lifts off the rail, the api card (at [tasks.ci]) and the terminal come in under it.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "depends",
+    "act": "IV",
+    "actLabel": "Tasks",
+    "beats": 20,
+    "start": 212,
+    "end": 232,
+    "captions": [
+      {
+        "at": 218.625,
+        "lines": [
+          "`ci` depends on lint, test, build.",
+          "They can run in parallel."
+        ],
+        "after": "lanes"
+      },
+      {
+        "at": 224,
+        "lines": ["Each output line is labeled", "with its task."],
+        "after": "labels"
+      }
+    ],
+    "captures": ["C11"],
+    "visual": "`mise run ci`: three lanes fill in the capture's order and ANSI colours, then `ci`. Badge: \"Order from one real run. Not to scale.\" The lanes settle into [tasks], and the terminal comes back for skip with skip's own prompt in it. The card holds through both bar lines.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 2.021,
+        "name": "ci",
+        "what": "`mise run ci` prints to the frame before `Finished in`, and its output holds 2 s in the pane (rule 3) before the lanes read its lines"
+      },
+      {
+        "at": 4.022,
+        "end": 6.021,
+        "name": "lanes",
+        "what": "the window dissolves round the output and its task lines fly into three lanes in the capture's order and ANSI colours, then `ci` (badge: \"Order from one real run. Not to scale.\")"
+      },
+      {
+        "at": 6.625,
+        "end": 8.25,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b8.25; read by b12)"
+      },
+      {
+        "at": 8.75,
+        "end": 9,
+        "name": "mark",
+        "what": "the card comes back up and marks its `depends` line"
+      },
+      {
+        "at": 9.5,
+        "end": 10.25,
+        "name": "labels",
+        "what": "each line's `[task]` prefix lights in turn in its lane"
+      },
+      {
+        "at": 12,
+        "end": 13.25,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b13.25; read by b16.5)"
+      },
+      {
+        "at": 16.5,
+        "end": 17.437,
+        "name": "settle",
+        "what": "once caption 2 has been read, the lanes settle into [tasks]"
+      },
+      {
+        "at": 17.938,
+        "end": 18.437,
+        "name": "skipPrompt",
+        "what": "the terminal comes back with skip's own prompt in it (restScreen)"
+      }
+    ]
+  },
+  {
+    "id": "skip",
+    "act": "IV",
+    "actLabel": "Tasks",
+    "beats": 16,
+    "start": 232,
+    "end": 248,
+    "captions": [
+      {
+        "at": 240.75,
+        "lines": [
+          "With `sources` and `outputs`,",
+          "up-to-date work is skipped."
+        ],
+        "after": "hero",
+        "until": "read"
+      }
+    ],
+    "captures": ["C12"],
+    "visual": "`sources`/`outputs` seat on the build task. Only the second `mise run ci` is on camera, from its own prompt: `[build] sources up-to-date, skipping` is the hero. The lanes refill with build greyed, its line set large and stamped \"skipped\" (badge: \"Order from one real run. Not to scale.\"). Holds on the last frame before `Finished in`; the terminal comes back with args' prompt in it, and the card holds through the bar line; ends at rest.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 1.125,
+        "name": "seat",
+        "what": "[tasks.build] unfolds and `sources`/`outputs` seat on it"
+      },
+      {
+        "at": 1.625,
+        "end": 3.149,
+        "name": "ci",
+        "what": "the second `mise run ci` from its own prompt, to the frame before `Finished in`: `[build] sources up-to-date, skipping` is the read"
+      },
+      {
+        "at": 5.15,
+        "end": 6.524,
+        "name": "lanes",
+        "what": "the lanes refill with build greyed (badge: \"Order from one real run. Not to scale.\")"
+      },
+      {
+        "at": 7.025,
+        "end": 8.149,
+        "name": "hero",
+        "what": "build's line is set large and stamped \"skipped\""
+      },
+      {
+        "at": 8.75,
+        "end": 9.75,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b9.75; read by b13); until \"read\""
+      },
+      {
+        "at": 13.75,
+        "end": 14.25,
+        "name": "back",
+        "what": "the lanes and the hero line go; the terminal comes back with args' prompt in it"
+      }
+    ]
+  },
+  {
+    "id": "args",
+    "act": "IV",
+    "actLabel": "Tasks",
+    "beats": 22,
+    "start": 248,
+    "end": 270,
+    "captions": [
+      {
+        "at": 254.25,
+        "lines": [
+          "Scripts in `mise-tasks/` are tasks.",
+          "`#USAGE` adds args and `--help`."
+        ],
+        "after": "help"
+      },
+      {
+        "at": 262.75,
+        "lines": ["Bad input stops the task", "before it runs."],
+        "after": "tie",
+        "until": "read"
+      }
+    ],
+    "captures": ["C13"],
+    "visual": "Skip's card slides out right as the deploy card comes in (a title change). The deploy card unfolds `#USAGE arg \"<env>\"` and `choices \"staging\" \"production\"`. `mise run deploy --help` prints; its top 7 rows show, a viewport crop down to `[possible values: staging, production]` (its two Flags rows stay below the crop). `mise run deploy prod` prints its four real `mise ERROR` lines; `prod` shakes (not on the impact frame); a dissonant stab; a thread ties `prod` to the card's `choices` line. The terminal holds through both bar lines, its text dissolving into daemons' prompt at the end.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.875,
+        "name": "slide",
+        "what": "skip's card slides out right as the deploy script card comes in (a title change)"
+      },
+      {
+        "at": 1.375,
+        "end": 2.375,
+        "name": "usage",
+        "what": "the deploy card unfolds `#USAGE arg \"<env>\"` and `choices \"staging\" \"production\"`"
+      },
+      {
+        "at": 2.875,
+        "end": 5.735,
+        "name": "help",
+        "what": "`mise run deploy --help`: its top 7 rows show, cropped at `[possible values: staging, production]` (5 lines read)"
+      },
+      {
+        "at": 6.25,
+        "end": 7.75,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b7.75; read by b11.5)"
+      },
+      {
+        "at": 9.111,
+        "end": 11.79,
+        "name": "bad",
+        "what": "`mise run deploy prod`: four real `mise ERROR` lines; the `Version:` and `--verbose` lines dim to texture (2 read)"
+      },
+      {
+        "at": 12.291,
+        "end": 12.89,
+        "name": "shake",
+        "what": "`prod` shakes (not on the impact frame); the dissonant stab"
+      },
+      {
+        "at": 13.391,
+        "end": 14.14,
+        "name": "tie",
+        "what": "a thread ties `prod` to the card's `choices` line"
+      },
+      {
+        "at": 14.75,
+        "end": 16,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b16; read by b19); until \"read\""
+      },
+      {
+        "at": 19.75,
+        "end": 20.5,
+        "name": "out",
+        "what": "the card leaves and the terminal's text dissolves into daemons' prompt"
+      }
+    ]
+  },
+  {
+    "id": "daemons",
+    "act": "IV",
+    "actLabel": "Tasks",
+    "beats": 18,
+    "start": 270,
+    "end": 288,
+    "captions": [
+      {
+        "at": 274.375,
+        "lines": [
+          "Tasks can declare the daemons",
+          "they need, like `postgres`."
+        ],
+        "after": "card"
+      },
+      {
+        "at": 281.75,
+        "lines": [
+          "`mise run db` starts Postgres",
+          "and waits until it's ready."
+        ],
+        "after": "tie"
+      }
+    ],
+    "captures": ["C14"],
+    "visual": "`cd ../shop`. The shop card: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with `run = 'psql -Atc \"show server_version\"'`. No [settings] table, no badge. `mise run db` plays at real time: dimmed Postgres log lines under pitchfork's own readiness spinner (`waiting for command … pg_isready …`), then `✔ [shop/postgres] started on port 5432`, with caption 2; [daemons] lights sage; `[db] $ psql -Atc \"show server_version\"` prints the real server version, and a thread ties it to `postgres = \"18\"`. Postgres's log lines and their wrapped rows are dimmed to texture. The card and the terminal, on the server's version, hold into the Dotfiles ticket.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 1.778,
+        "name": "cd",
+        "what": "`cd ../shop`"
+      },
+      {
+        "at": 2.279,
+        "end": 3.778,
+        "name": "card",
+        "what": "the shop card comes in: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with its run line"
+      },
+      {
+        "at": 4.375,
+        "end": 5.5,
+        "name": "caption1",
+        "what": "caption 1 writes in (landed b5.5; read by b8.5)"
+      },
+      {
+        "at": 6,
+        "end": 8.41,
+        "name": "db",
+        "what": "`mise run db` at real time: the Postgres log lines (dimmed to texture, LOG_DIM) under pitchfork's readiness spinner, `✔ [shop/postgres] started on port 5432`, `[db] $ psql …`, the server's version (3 lines read)"
+      },
+      {
+        "at": 8.911,
+        "end": 9.41,
+        "name": "lit",
+        "what": "[daemons] lights sage"
+      },
+      {
+        "at": 9.911,
+        "end": 11.16,
+        "name": "tie",
+        "what": "the server's version lifts as a chip and a thread ties it to `postgres = \"18\"`"
+      },
+      {
+        "at": 11.75,
+        "end": 13.25,
+        "name": "caption2",
+        "what": "caption 2 writes in (landed b13.25; read by b17)"
+      },
+      {
+        "at": 16,
+        "end": 16.5,
+        "name": "tieOut",
+        "what": "the chip and its thread fade, as late as the rest allows, while caption 2 is read"
+      }
+    ]
+  },
+  {
+    "id": "dotfiles",
+    "act": "V",
+    "actLabel": "Dotfiles",
+    "beats": 2,
+    "start": 288,
+    "end": 290,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Dotfiles\" with `[dotfiles]`, terracotta. The shop card, held from daemons, slides off and daemons' terminal falls away under the printing paper; the `~/.zshrc` file card slides in (prompt, compinit, `eval \"$(mise activate zsh)\"`); an empty checkpoint rail sits under it; the terminal comes up at `~ $` for track.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "track",
+    "act": "V",
+    "actLabel": "Dotfiles",
+    "beats": 38,
+    "start": 290,
+    "end": 328,
+    "captions": [
+      {
+        "at": 298,
+        "lines": [
+          "`mise dot track` keeps a history.",
+          "A watcher saves each edit."
+        ],
+        "after": "cp1",
+        "until": 308
+      },
+      {
+        "at": 322.875,
+        "lines": ["`mise dot rollback` restores", "an earlier version."],
+        "after": "cp3"
+      }
+    ],
+    "captures": ["C15", "C16"],
+    "visual": "`~ $ mise dot track ~/.zshrc`, its confirm prompt answered on camera; three lines print; the rail gains checkpoint 1 (baseline). Footnote: \"Autosave needs the history watcher, `mise dot watch`.\" `echo \"alias ll='ls -lah'\" >> ~/.zshrc`; the alias lands in the card and the rail gains checkpoint 2 as the watcher saves the edit, labelled with the real trigger; `mise dot history --path ~/.zshrc` (dimmed) then lists baseline and the watcher's save, confirming it. `mise dot rollback ~/.zshrc` (plan table dimmed, prompt answered) -> `mise history: rolled back ~/.zshrc to checkpoint 1`; the alias leaves the card, and the rail gains the checkpoint the rollback records (its id and trigger from C15's history listing after it, off camera), restored from the baseline; the pointer moves to it. Footnote: \"Share the history with `mise dot origin set`.\" Then the hold under caption 2, the tape-rewind cue on the rollback's checkpoint; the card, the rail (its three checkpoints) and the terminal hold into the Everywhere ticket.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 3.852,
+        "name": "confirm",
+        "what": "`~ $ mise dot track ~/.zshrc` types; its confirm prompt"
+      },
+      {
+        "at": 5.403,
+        "end": 6.394,
+        "name": "answer",
+        "what": "the prompt answered on camera (Enter): three lines print"
+      },
+      {
+        "at": 6.895,
+        "end": 7.394,
+        "name": "cp1",
+        "what": "the rail gains checkpoint 1 (baseline); the pointer drops onto it"
+      },
+      {
+        "at": 8,
+        "end": 9.5,
+        "name": "caption1",
+        "what": "caption 1 writes in; it holds until the watcher's save has played (`until`)"
+      },
+      {
+        "at": 10,
+        "end": 10.5,
+        "name": "foot1",
+        "what": "footnote \"Autosave needs the history watcher, `mise dot watch`.\" (it leaves with caption 1)"
+      },
+      {
+        "at": 11,
+        "end": 15.193,
+        "name": "edit",
+        "what": "`echo \"alias ll='ls -lah'\" >> ~/.zshrc`"
+      },
+      {
+        "at": 15.694,
+        "end": 16.943,
+        "name": "alias",
+        "what": "a copy of the quoted line lifts out of the command and lands in the ~/.zshrc card"
+      },
+      {
+        "at": 17.444,
+        "end": 17.943,
+        "name": "cp2",
+        "what": "the rail gains checkpoint 2 as the watcher saves the edit, labelled with the real trigger"
+      },
+      {
+        "at": 18.444,
+        "end": 22.209,
+        "name": "history",
+        "what": "`mise dot history --path ~/.zshrc` lists baseline and the watcher's save (the table dimmed)"
+      },
+      {
+        "at": 22.71,
+        "end": 26.391,
+        "name": "rollbackPlan",
+        "what": "`mise dot rollback ~/.zshrc`: its plan table dimmed, the prompt"
+      },
+      {
+        "at": 27.942,
+        "end": 29.295,
+        "name": "rollback",
+        "what": "the prompt answered -> `mise history: rolled back ~/.zshrc to checkpoint 1`"
+      },
+      {
+        "at": 29.796,
+        "end": 30.545,
+        "name": "aliasOut",
+        "what": "the alias's row takes a seat mark and folds out of the card"
+      },
+      {
+        "at": 31.046,
+        "end": 32.295,
+        "name": "cp3",
+        "what": "the pointer rewinds to the baseline, the arc draws, the rollback's checkpoint snaps in at its end (restored from the baseline) and the pointer rides to it"
+      },
+      {
+        "at": 32.875,
+        "end": 34,
+        "name": "caption2",
+        "what": "caption 2 writes in"
+      },
+      {
+        "at": 34.5,
+        "end": 35,
+        "name": "foot2",
+        "what": "footnote \"Share the history with `mise dot origin set`.\" (it leaves with caption 2)"
+      },
+      {
+        "at": 35.5,
+        "end": 36,
+        "name": "undim",
+        "what": "the tables brighten back and the focus lets go: the card, the rail (three checkpoints) and the terminal hold still"
+      }
+    ]
+  },
+  {
+    "id": "machines",
+    "act": "VI",
+    "actLabel": "Everywhere",
+    "beats": 2,
+    "start": 328,
+    "end": 330,
+    "captions": [],
+    "captures": [],
+    "visual": "Ticket: \"Everywhere\" with `mise.lock`, terracotta. Track's `~/.zshrc` card, rail and terminal leave under it as it prints; as it lifts off the rail, the api card returns and the terminal comes up at `~/work/api $` for lock.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "lock",
+    "act": "VI",
+    "actLabel": "Everywhere",
+    "beats": 22,
+    "start": 330,
+    "end": 352,
+    "captions": [
+      {
+        "at": 338.25,
+        "lines": [
+          "`mise.toml` asks for `{node.lts_major}`.",
+          "`mise.lock` records `{node.lts_version}`."
+        ],
+        "after": "thread"
+      },
+      {
+        "at": 344.625,
+        "lines": [
+          "Commit both. CI and other machines",
+          "can use the same versions."
+        ],
+        "after": "run"
+      }
+    ],
+    "captures": ["C17"],
+    "visual": "The card held from the ticket gives way to the ledger. `~/work/api $ mise lock` prints the platforms it targets and the tools it will process, and the shot holds there, dimmed, before its progress rows (they carry byte counts and elapsed times at real speed and end on checked rows and totals). The ledger unfolds only node: `version = \"{node.lts_version}\"`, `specifiers = [\"{node.lts_major}\"]`, one `sha256:` row per platform, clipped. npm:prettier (its aube sidecar) and hk (its platforms and signer) fold to one line each. A thread runs from `node = \"{node.lts_major}\"` to the version row. A provenance badge sits under each entry whose lock records provenance. The ledger shrinks to a chip and drops into the fixture `.github/workflows/ci.yml` panel (`jdx/mise-action@v4`, `install_args: --locked`, `run: mise run ci`), which pushes in slowly; `install_args: --locked` lights, then `run: mise run ci`. No log. Ends on the reel's one whip.",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 1.772,
+        "name": "lock",
+        "what": "`~/work/api $ mise lock` types and prints the platforms it targets and the tools it will process; the shot holds there, before its progress rows"
+      },
+      {
+        "at": 2.273,
+        "end": 3.522,
+        "name": "request",
+        "what": "the card closes up round its `node` line into the request and travels left under the shortening terminal"
+      },
+      {
+        "at": 4.023,
+        "end": 4.522,
+        "name": "ledger",
+        "what": "half a beat after, the ledger slides into the right column, its entries folded to a line each under their provenance badges"
+      },
+      {
+        "at": 5.023,
+        "end": 6.397,
+        "name": "entry",
+        "what": "half a beat after, node's entry opens (version, specifiers, one clipped sha256 row per platform); the terminal dims once read"
+      },
+      {
+        "at": 6.898,
+        "end": 7.647,
+        "name": "thread",
+        "what": "a thread runs from `node = \"{node.lts_major}\"` to the version row, which takes a seat mark"
+      },
+      {
+        "at": 8.25,
+        "end": 9.25,
+        "name": "caption1",
+        "what": "caption 1 writes in"
+      },
+      {
+        "at": 9.75,
+        "end": 10.625,
+        "name": "panel",
+        "what": "the thread lets go, the terminal leaves, and the request and the ledger shrink into their mise.toml and mise.lock chips"
+      },
+      {
+        "at": 11.125,
+        "end": 13.125,
+        "name": "drop",
+        "what": "the fixture `.github/workflows/ci.yml` panel rises where the terminal stood; once it is up, the chips fly to their docks; `uses: jdx/mise-action@v4` and `install_args: --locked` light as they land"
+      },
+      {
+        "at": 13.625,
+        "end": 14.125,
+        "name": "run",
+        "what": "`run: mise run ci` lights"
+      },
+      {
+        "at": 14.625,
+        "end": 16.25,
+        "name": "caption2",
+        "what": "caption 2 writes in"
+      },
+      {
+        "at": 16.75,
+        "end": 19,
+        "name": "push",
+        "what": "the panel's slow push-in (MOTION.pushIn), once caption 2 has landed; still 1.5 b before the whip, and caption 2 gone by its wind-up"
+      }
+    ]
+  },
+  {
+    "id": "new",
+    "act": "VII",
+    "actLabel": "A new machine",
+    "beats": 2,
+    "start": 352,
+    "end": 354,
+    "captions": [],
+    "captures": [],
+    "visual": "The whip lands on an empty terminal at `~ $`, badged \"fresh machine · mise installed\"; the ticket \"A new machine\" with `mise bootstrap` (terracotta) comes down on the narrow rail beside it, in place over the whip (it is not part of the whipping stage), and prints. The terminal and its badge hold into bootstrap.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.5,
+        "name": "clear",
+        "what": "the inherited stage leaves under the printing ticket (ticketStage)"
+      },
+      {
+        "at": 0.75,
+        "end": 0.75,
+        "name": "tear",
+        "what": "the tear: the ticket drops and hangs"
+      },
+      {
+        "at": 1.2,
+        "end": 1.8,
+        "name": "lift",
+        "what": "it lifts off the rail"
+      },
+      {
+        "at": 1.3,
+        "end": 1.85,
+        "name": "bring",
+        "what": "the next section's stage rises in under it"
+      }
+    ]
+  },
+  {
+    "id": "bootstrap",
+    "act": "VII",
+    "actLabel": "A new machine",
+    "beats": 24,
+    "start": 354,
+    "end": 378,
+    "captions": [
+      {
+        "at": 365.625,
+        "lines": [
+          "`mise bootstrap --adopt` restores",
+          "your dotfiles and mise config."
+        ],
+        "after": "tick1"
+      },
+      {
+        "at": 370.125,
+        "lines": [
+          "Then it starts the watcher",
+          "and installs your global tools."
+        ],
+        "after": "tick2",
+        "until": "read"
+      }
+    ],
+    "captures": ["C18"],
+    "visual": "`~ $ mise bootstrap --adopt you/setup` (\"illustration\" badge while you/setup is on screen), at real time across bars 1-3. Real output in order: repository line; two prose paragraphs, dimmed while the tiles take focus; plan table (the `~/.zshrc` card flies in off its create row); prompt answered; `Wrote 2 file(s) from ...` (Dotfiles and Config tiles tick); `mise bootstrap: user services` and its prompt answered (Watcher tile); `mise bootstrap: dotfiles` / `mise files: all files are applied`; `mise bootstrap: tools`. The shot holds there, before the tools step's first progress row (a transfer rate shows within 0.2 s), and the Tools tile shows the step started (a ring, not a tick). Without systemd: no Watcher tile and caption 2 becomes \"Then it installs your global tools.\"",
+    "plan": [
+      {
+        "at": 0.5,
+        "end": 4.424,
+        "name": "adopt",
+        "what": "`~ $ mise bootstrap --adopt you/setup` types (\"illustration\" while you/setup shows): the repository line, the two prose paragraphs dimmed to texture (BOOTSTRAP_DIM), the plan table and its prompt"
+      },
+      {
+        "at": 4.925,
+        "end": 5.799,
+        "name": "zshrc",
+        "what": "the `~/.zshrc` card lifts off the plan table's create row and flies out along it and up to the top of the empty column"
+      },
+      {
+        "at": 6.3,
+        "end": 6.986,
+        "name": "tiles",
+        "what": "the tiles come in under it, beside the pane, pending (Dotfiles, Config, Watcher, Tools)"
+      },
+      {
+        "at": 7.487,
+        "end": 9.531,
+        "name": "yes1",
+        "what": "the prompt answered: `Wrote 2 file(s) from ...`, `mise bootstrap: user services` and its prompt"
+      },
+      {
+        "at": 10.032,
+        "end": 11.093,
+        "name": "tick1",
+        "what": "threads run from `Wrote 2 file(s)` to the Dotfiles and Config tiles, which tick"
+      },
+      {
+        "at": 11.625,
+        "end": 13,
+        "name": "caption1",
+        "what": "caption 1 writes in"
+      },
+      {
+        "at": 13.5,
+        "end": 14.054,
+        "name": "yes2",
+        "what": "the prompt answered: services applied, `mise bootstrap: dotfiles` / `mise files: all files are applied`, `mise bootstrap: tools`; held on BOOTSTRAP_HOLD, before the first progress row"
+      },
+      {
+        "at": 14.555,
+        "end": 15.554,
+        "name": "tick2",
+        "what": "threads run from `applied mise-history` to Watcher, which ticks, and from `mise bootstrap: tools` to Tools, whose ring starts (never ticked)"
+      },
+      {
+        "at": 16.125,
+        "end": 17.5,
+        "name": "caption2",
+        "what": "caption 2 writes in; it leaves once read (`until: read`)"
+      },
+      {
+        "at": 21.5,
+        "end": 22.125,
+        "name": "tilesOut",
+        "what": "the ~/.zshrc card and the tiles leave, top first (bootstrap|breath keeps the terminal only)"
+      }
+    ]
+  },
+  {
+    "id": "breath",
+    "act": "VII",
+    "actLabel": "A new machine",
+    "beats": 6,
+    "start": 378,
+    "end": 384,
+    "captions": [],
+    "captures": ["C19"],
+    "visual": "Lights dim over bootstrap's last frame, held in the same terminal. A ⌃L keycap as a real Ctrl-L clears that same, not activated, shell (C19 starts on the screen it cleared). The api card rests unlit, `[tools]` and `[env]` open. The lights come back up. Near silence.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.75,
+        "name": "dim",
+        "what": "the lights dim over bootstrap's last frame (dimLights), near silence"
+      },
+      {
+        "at": 1.25,
+        "end": 3.25,
+        "name": "clear",
+        "what": "the ⌃L keycap comes up, and on its press a real Ctrl-L clears that same shell (C19 starts on the screen it cleared); the key lets go and drops out"
+      },
+      {
+        "at": 3.75,
+        "end": 4.5,
+        "name": "up",
+        "what": "the lights come back up as the api card rises in, unlit, `[tools]` and `[env]` open"
+      }
+    ]
+  },
+  {
+    "id": "clone",
+    "act": "VII",
+    "actLabel": "A new machine",
+    "beats": 30,
+    "start": 384,
+    "end": 414,
+    "captions": [
+      {
+        "at": 396.75,
+        "lines": [
+          "On a fresh clone, `mise run ci`",
+          "installs what `mise.lock` pins."
+        ],
+        "after": "toolsLit"
+      },
+      {
+        "at": 408.875,
+        "lines": ["Then its tasks run with", "the project's env vars."],
+        "after": "envLit"
+      }
+    ],
+    "captures": ["C19"],
+    "visual": "`~ $ git clone https://github.com/you/api && cd api && mise run ci` typed at pane size (\"illustration\" on you/api); only `mise run ci` lifts into big type, gone before git's first line; git's real lines print, dimmed to texture. Install rows for jq, npm:prettier and hk move at 3× under the time-lapse badge; npm:prettier and hk flash pink; [tools] lights pink; cut while rows still run; the window holds its command, dimmed, until the lanes take its column, and does not return. Lanes in capture order; [tasks] lights sage; the card folds `[tools]` and `[env]` away to its three headers. Then `[ci] api ready: node v{node.lts_version}, APP_ENV=api` lands as big type in the capture's colours, two lines at 88 px, centred; a bell; [env] lights gold, then caption 2; the line's pieces fly home and ignite their headers. Tables stay folded.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 8.834,
+        "name": "type",
+        "what": "`~ $ git clone https://github.com/you/api && cd api && mise run ci` types (\"illustration\" on you/api); before Enter only `mise run ci` scales up into big type, holds at full size and leaves; Enter; git's lines print (texture)"
+      },
+      {
+        "at": 9.335,
+        "end": 11.138,
+        "name": "rows",
+        "what": "install rows for jq, npm:prettier and hk move at 3x under the time-lapse badge (git's lines dimmed to texture above them), npm:prettier and hk banded pink; cut while the rows still run; the window holds the command under the badge, and once the rows are gone jq's and npm:prettier's versions lift from where their rows stood onto the card beside their own rows"
+      },
+      {
+        "at": 11.639,
+        "end": 12.138,
+        "name": "toolsLit",
+        "what": "[tools] lights pink"
+      },
+      {
+        "at": 12.75,
+        "end": 14.25,
+        "name": "caption1",
+        "what": "caption 1 writes in"
+      },
+      {
+        "at": 14.75,
+        "end": 17.062,
+        "name": "lanes",
+        "what": "the window, dimmed on its command since the rows' cut, gives its column to the run's task lines, which come as lanes in capture order"
+      },
+      {
+        "at": 19.563,
+        "end": 20.625,
+        "name": "tasksLit",
+        "what": "once the lanes have been read (2.5 s), they fly into the card's [tasks] header, which lights sage"
+      },
+      {
+        "at": 21.125,
+        "end": 21.875,
+        "name": "fold",
+        "what": "the card folds `[tools]` and `[env]` away to its three headers; the pinned versions leave with them"
+      },
+      {
+        "at": 22.375,
+        "end": 23.375,
+        "name": "payoff",
+        "what": "`[ci] api ready: node v{node.lts_version}, APP_ENV=api` lands as big type in the capture's colours, two lines at 88 px, centred, on the two bells; the node version underlined pink"
+      },
+      {
+        "at": 23.875,
+        "end": 24.375,
+        "name": "envLit",
+        "what": "`APP_ENV=api` underlined gold as [env] lights"
+      },
+      {
+        "at": 24.875,
+        "end": 26,
+        "name": "caption2",
+        "what": "caption 2 writes in; the line pushes in slowly while it is read"
+      },
+      {
+        "at": 26.813,
+        "end": 28.5,
+        "name": "home",
+        "what": "the climax line's pieces fly home and ignite their headers in reading order (`[ci]` into [tasks], the node version into [tools], `APP_ENV=…` into [env]); the big type is gone (clone|morph keeps the compact card, all lit)"
+      }
+    ]
+  },
+  {
+    "id": "morph",
+    "act": "VIII",
+    "actLabel": "Install mise",
+    "beats": 8,
+    "start": 414,
+    "end": 422,
+    "captions": [],
+    "captures": [],
+    "visual": "b1: the card held from the climax; its three lit headers lift off and become the toque's three lobes as the score's F lands on the downbeat; the card body folds away. b2: the toque settles on the chef, which takes its end-card place; nothing else moves. From beat 6 (6:50.0) the score holds B♭ minor on the organ, no drums. The recording enters at 6:51.48 on the pickup \"It's\": the held chord crossfades out at equal power under its 20 ms fade-in, and the score is silent from 6:51.50 (see the end section's keyed times). The chef holds into the end card.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 2,
+        "name": "lift",
+        "what": "the card's three lit headers lift off and become the toque's lobes as the score's F lands on the downbeat; the card body folds away (kit/chef.ts MORPH_CUE, in beats: 1.25x slower at 60 BPM)"
+      },
+      {
+        "at": 4,
+        "end": 5,
+        "name": "settle",
+        "what": "b2: the toque settles on the chef, which takes its end-card place; nothing else moves"
+      },
+      {
+        "at": 6,
+        "end": 8,
+        "name": "chord",
+        "what": "the score's held B♭ minor on the organ, no drums; the recording enters at b7.48 (E0 - 0.52 s) under it, which crossfades out at equal power (score/song.ts SCORE_END)"
+      }
+    ]
+  },
+  {
+    "id": "end",
+    "act": "VIII",
+    "actLabel": "Install mise",
+    "beats": 14,
+    "start": 422,
+    "end": 436,
+    "captions": [],
+    "captures": [],
+    "visual": "No captions. Keyed to the recording's measured onsets, not the grid: \"mise-en-place\" writes on with the sung \"mise\", \"en\", \"place\"; the tagline \"Dev tools, env vars, and tasks in one CLI\" fades in on \"dev\"; `$ curl https://mise.run | sh` types out across \"precise and operational\"; the 40 px platform line \"macOS & Linux · Windows: `winget install jdx.mise`\" fades in after the voice; \"mise.jdx.dev\" lands on the first button hit; the glint crosses the hat on the second (no eye motion). The chef holds from the morph, and the stack sits high enough that mise.jdx.dev stays clear of a player's controls. The card holds, silent, after the ring-out.",
+    "plan": [
+      {
+        "at": 0,
+        "end": 0.68,
+        "name": "mise",
+        "what": "\"mise-en-place\" writes on with the sung \"mise\" (+0.00 s), \"en\" (+0.36), \"place\" (+0.68)"
+      },
+      {
+        "at": 1.48,
+        "end": 1.98,
+        "name": "dev",
+        "what": "the tagline fades in on \"dev\" (+1.48 s)"
+      },
+      {
+        "at": 2.78,
+        "end": 4.5,
+        "name": "curl",
+        "what": "`$ curl https://mise.run | sh` types out across \"precise\" (+2.78) and \"operational\" (+3.80)"
+      },
+      {
+        "at": 6.25,
+        "end": 6.75,
+        "name": "platform",
+        "what": "the platform line fades in after the voice (+6.25)"
+      },
+      {
+        "at": 7.52,
+        "end": 7.9,
+        "name": "site",
+        "what": "\"mise.jdx.dev\" lands on button hit 1 (+7.52)"
+      },
+      {
+        "at": 8.27,
+        "end": 8.77,
+        "name": "glint",
+        "what": "the glint crosses the hat on hit 2 (+8.27; no eye motion)"
+      },
+      {
+        "at": 11.2,
+        "end": 14,
+        "name": "silence",
+        "what": "ring-out at -62 dBFS (+11.2); the card holds, silent, 2.8 s"
+      }
+    ]
+  }
+]

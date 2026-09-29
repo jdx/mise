@@ -1,0 +1,423 @@
+#!/usr/bin/env bash
+#MISE description="Render the landing-page showreel to docs/public/showreel-120.mp4 and showreel.mp4 with its poster"
+#MISE depends=["docs:setup"]
+# The landing page plays this video under the hero and offers the 60 fps file
+# as og:video for link previews. Builds without it leave the showreel out and
+# are otherwise the same site. Not a render:* task: `mise run render` runs
+# those, and CI fails on the diff.
+#
+#   mise run docs:showreel                  # render from the captures on this machine
+#   mise run docs:showreel -- --capture     # record the captures first if they are out of date
+#   mise run docs:showreel -- --key         # print the render's cache key
+#
+# Needs ffmpeg on PATH and Playwright's Chromium headless shell
+# (`aube exec playwright-core install chromium-headless-shell`), or a Chromium at
+# SHOWREEL_CHROMIUM. --capture also needs Docker (see
+# docs/.vitepress/showreel-capture/README.md). Drafts of part of the reel go
+# through the renderer itself: `aube run showreel:video --help`.
+#
+# The docs deploy (.github/workflows/docs-impl.yml) keeps renders in a cache
+# directory on the Namespace cache volume and renders again only when an
+# input changes:
+#
+#   --cache DIR --lookup    put the render for these inputs from DIR into
+#                           docs/public; prints state=hit, miss or error
+#   --cache DIR             on a miss: reuse DIR's captures for these versions
+#                           or record them, run the reel's tests, render, and
+#                           keep the render in DIR
+#   --cache DIR --promote   also make it the last good render (main, releases)
+#   --cache DIR --fresh     record and render even if DIR has both
+#   --cache DIR --fallback  put the last good render in docs/public
+#
+# The key is the capture set's key (`showreel-capture --resolve-only`: what
+# the captures show and the rig that records them) plus every file the render
+# reads: the reel's code and data (not its tests or notes), the fonts, the
+# logos, the song, the renderer and the capture harness, and the esbuild and
+# playwright-core versions in aube-lock.yaml (playwright-core fixes the Chromium
+# that draws the frames). Nothing else renders it again: a release reuses the
+# last render, which also keeps its versioned URLs stable for link previews.
+#
+# With --cache, a failure (the resolve, the captures, the tests, the render)
+# never fails the command: it warns, puts the last good render in
+# docs/public (or none), and exits 0, so the site builds either way.
+set -euo pipefail
+# Command substitutions keep `set -e`, so a failed step inside $(...) stops
+# the run instead of handing on an empty value. Bash before 4.4 (macOS's
+# 3.2) has no such option; there a failed $(...) is caught where its value
+# is checked.
+shopt -s inherit_errexit 2>/dev/null || true
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+self="$root/xtasks/docs/showreel"
+public="$root/docs/public"
+# Where the capture set is recorded and read, as the capture tool has it.
+out=${SHOWREEL_CAPTURE_OUT:-$root/docs/.vitepress/showreel-capture/out}
+capture="$root/xtasks/docs/showreel-capture"
+files=(showreel-120.mp4 showreel.mp4 showreel-poster.jpg)
+# Kept with each render, from the storyboard and capture set it was made
+# from, so a restored render never pairs an old video with a newer
+# storyboard's chapters: the chapters track (into docs/public) and the
+# chapters with their captions (showreel.data.ts reads SHOWREEL_CHAPTERS).
+chapters_vtt=showreel-chapters.vtt
+chapters_json=chapters.json
+# Bump to render again when nothing in the key changed (a render made with a
+# fault the key cannot see).
+generation=1
+# Kept in DIR besides the last good render: the newest few of each.
+keep_renders=3
+keep_captures=2
+
+mode=render
+cache=""
+promote=false
+fresh=false
+record=false
+inner=false
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--capture) record=true && shift ;;
+	--key) mode=key && shift ;;
+	--cache)
+		[ $# -ge 2 ] || { echo "--cache needs a directory" >&2 && exit 2; }
+		cache=$2 && shift 2
+		;;
+	--lookup) mode=lookup && shift ;;
+	--fallback) mode=fallback && shift ;;
+	--promote) promote=true && shift ;;
+	--fresh) fresh=true && shift ;;
+	--inner) inner=true && shift ;;
+	-h | --help) sed -n '4,/^set /s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" && exit 0 ;;
+	*) echo "unknown argument: $1 (see --help)" >&2 && exit 2 ;;
+	esac
+done
+if [ -z "$cache" ] && { [ "$mode" = lookup ] || [ "$mode" = fallback ] || $promote || $fresh; }; then
+	echo "--lookup, --fallback, --promote and --fresh need --cache DIR" >&2
+	exit 2
+fi
+if [ -n "$cache" ]; then
+	mkdir -p "$cache"
+	cache=$(cd "$cache" && pwd)
+	# The pinned mise release the capture tool downloads and checks, kept in
+	# DIR so a deploy does not fetch it for every resolve.
+	export SHOWREEL_CAPTURE_CACHE="$cache/tools"
+fi
+
+say() { echo "showreel: $*" >&2; }
+# A warning on the run's summary in CI, a line on stderr elsewhere.
+warn() {
+	if [ -n "${GITHUB_ACTIONS:-}" ]; then
+		echo "::warning title=Showreel::$*"
+	else
+		say "warning: $*"
+	fi
+}
+# output NAME VALUE: printed, and a step output in CI.
+output() {
+	echo "$1=$2"
+	if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "$1=$2" >>"$GITHUB_OUTPUT"; fi
+}
+# json_key FILE, or - for stdin: the "key" of a capture set's versions JSON.
+json_key() {
+	python3 -c 'import json, sys
+f = sys.stdin if sys.argv[1] == "-" else open(sys.argv[1])
+print(json.load(f)["key"])' "$1"
+}
+
+# limit DURATION CMD...: CMD, stopped after DURATION with --cache (a CI
+# deploy must fall back in time); unbounded otherwise, where a person watches
+# it and macOS has no timeout(1).
+limit() {
+	local duration=$1
+	shift
+	if [ -n "$cache" ]; then
+		timeout --kill-after=2m "$duration" "$@"
+	else
+		"$@"
+	fi
+}
+
+# The capture set's key for what this machine resolves today.
+versions_key() {
+	local resolved
+	resolved=$("$capture" --resolve-only)
+	json_key - <<<"$resolved"
+}
+
+# Every file the render reads besides the captures, as sha256sum lines.
+inputs() {
+	cd "$root"
+	{
+		find docs/.vitepress/theme/showreel -type f ! -path '*/test/*' ! -name '*.md'
+		find docs/.vitepress/showreel-capture -type f \
+			! -path '*/out/*' ! -path '*/__pycache__/*' ! -name '*.md'
+		find docs/.vitepress/fonts -maxdepth 1 -name '*.ttf'
+		find docs/public -maxdepth 1 -name 'logo*.svg'
+		# showreel.data.ts writes the chapter list kept with each render.
+		printf '%s\n' docs/.vitepress/showreel-video.mjs \
+			docs/.vitepress/showreel-chromium.mjs docs/.vitepress/showreel.data.ts \
+			xtasks/docs/showreel-capture
+	} | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done
+}
+
+# render_key VERSIONS_KEY
+render_key() {
+	{
+		echo "generation $generation"
+		echo "captures $1"
+		grep -oE '^  (esbuild|playwright-core)@[^:(]+' "$root/aube-lock.yaml" | LC_ALL=C sort -u
+		(inputs)
+	} | sha256sum | cut -c1-16
+}
+
+clear_public() {
+	local f
+	for f in "${files[@]}"; do rm -f "$public/$f"; done
+}
+
+# The page's chapter list quotes the captions of the capture set the render
+# was made from; showreel.data.ts reads SHOWREEL_CAPTURES, and the chapters
+# kept with the render (SHOWREEL_CHAPTERS) when it has them. point_page_at
+# RENDER_DIR.
+point_page_at() {
+	if [ -n "${GITHUB_ENV:-}" ] && [ -f "$1/captures/versions.json" ]; then
+		echo "SHOWREEL_CAPTURES=$1/captures" >>"$GITHUB_ENV"
+		if [ -s "$1/$chapters_json" ]; then
+			echo "SHOWREEL_CHAPTERS=$1/$chapters_json" >>"$GITHUB_ENV"
+		fi
+	fi
+}
+
+# write_chapters DIR: the chapters track and the chapters with their
+# captions, as this checkout's storyboard and the capture set in out/ make
+# them, into DIR.
+write_chapters() {
+	(
+		cd "$root"
+		SHOWREEL_CHAPTERS='' SHOWREEL_CAPTURES="$out" node --input-type=module -e '
+			import { writeFileSync } from "node:fs";
+			import { join } from "node:path";
+			import { showreelData } from "./docs/.vitepress/showreel.data.ts";
+			import { chaptersVtt } from "./docs/.vitepress/theme/showreel/timeline.ts";
+			const [dir, vtt, json] = process.argv.slice(1);
+			const data = showreelData();
+			if (!data) throw new Error("no render in docs/public to take the chapters of");
+			writeFileSync(join(dir, vtt), chaptersVtt());
+			writeFileSync(join(dir, json), JSON.stringify(data.chapters, null, 2) + "\n");
+		' "$1" "$chapters_vtt" "$chapters_json"
+	)
+}
+
+# restore KEY: the render kept in DIR under KEY into docs/public, or status 1
+# (and nothing in docs/public) if DIR lacks it. Called as a condition, where
+# bash ignores `set -e`, so every step says what a failure does.
+restore() {
+	local dir="$cache/renders/$1" f
+	for f in "${files[@]}"; do [ -s "$dir/$f" ] || return 1; done
+	mkdir -p "$public" || return 1
+	for f in "${files[@]}"; do
+		if ! { cp "$dir/$f" "$public/.$f.partial" && mv -f "$public/.$f.partial" "$public/$f"; }; then
+			rm -f "$public/.$f.partial"
+			clear_public
+			return 1
+		fi
+	done
+	# The chapters track the render was made with (renders kept before it
+	# was kept with them serve the checkout's).
+	if [ -s "$dir/$chapters_vtt" ]; then
+		cp "$dir/$chapters_vtt" "$public/$chapters_vtt" || return 1
+	fi
+	# Recently used, for pruning.
+	touch "$dir" || true
+	point_page_at "$dir"
+	say "restored render $1 ($(cat "$dir/made.txt" 2>/dev/null || echo "no record of how it was made"))"
+}
+
+# fallback WHY: the last good render into docs/public, or none, and a warning.
+fallback() {
+	local good=""
+	if [ -f "$cache/last-good" ]; then good=$(cat "$cache/last-good"); fi
+	clear_public
+	if [ -n "$good" ] && restore "$good"; then
+		warn "$1; the site keeps the last good showreel ($good)"
+	else
+		warn "$1; there is no earlier showreel to keep, so the site builds without one"
+	fi
+}
+
+# captures KEY: the capture set for these versions in out/, reused from DIR
+# or recorded and kept there. Prints the key of the set that is in out/ (a
+# recording resolves again, and may land on a newer key).
+captures() {
+	local kept="$cache/captures/$1" got tmp
+	if ! $fresh && [ -f "$out/versions.json" ] && [ "$(json_key "$out/versions.json")" = "$1" ]; then
+		say "the captures in out/ are the ones for $1"
+	elif ! $fresh && [ -f "$kept/versions.json" ]; then
+		say "reusing the captures kept for $1"
+		mkdir -p "$out"
+		rm -rf "$out/runs"
+		cp -a "$kept/." "$out/"
+		touch "$kept"
+	else
+		say "recording the captures"
+		limit "${SHOWREEL_CAPTURE_TIMEOUT:-45m}" "$capture"
+		got=$(json_key "$out/versions.json")
+		tmp="$cache/captures/.$got.partial"
+		rm -rf "$tmp"
+		mkdir -p "$tmp"
+		# What the loader and the page read; not a tool cache or a failed run.
+		tar -C "$out" --exclude=./.cache --exclude=./.next --exclude=./failed -cf - . | tar -C "$tmp" -xf -
+		rm -rf "${cache:?}/captures/$got"
+		mv "$tmp" "$cache/captures/$got"
+	fi
+	json_key "$out/versions.json"
+}
+
+# keep KEY: the render in docs/public, with the facts the page quotes, in DIR.
+keep() {
+	local dir="$cache/renders/$1" tmp="$cache/renders/.$1.partial" f r run
+	rm -rf "$tmp"
+	mkdir -p "$tmp/captures"
+	for f in "${files[@]}"; do cp "$public/$f" "$tmp/$f"; done
+	cp "$out/versions.json" "$tmp/captures/"
+	# Without them a restore serves the checkout's chapters, as before.
+	write_chapters "$tmp" || warn "could not keep the chapters with render $1"
+	for r in "$out"/runs/*/run-machine2.json; do
+		[ -f "$r" ] || continue
+		run=$(basename "$(dirname "$r")")
+		mkdir -p "$tmp/captures/runs/$run"
+		cp "$r" "$tmp/captures/runs/$run/"
+	done
+	echo "made $(date -u +%Y-%m-%dT%H:%M:%SZ) at $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo "an unknown commit"), captures $(json_key "$out/versions.json")" >"$tmp/made.txt"
+	rm -rf "$dir"
+	mv "$tmp" "$dir"
+	point_page_at "$dir"
+}
+
+# promote_it KEY: with --promote, the render the fallback puts back.
+promote_it() {
+	if $promote; then
+		echo "$1" >"$cache/last-good"
+		say "render $1 is the last good one"
+	fi
+}
+
+# Keep DIR small: the newest few renders and capture sets, and always the
+# last good render.
+prune() {
+	local good="" d
+	if [ -f "$cache/last-good" ]; then good=$(cat "$cache/last-good"); fi
+	# shellcheck disable=SC2012 # the names are hex keys
+	ls -1t "$cache/renders" | tail -n +$((keep_renders + 1)) | while IFS= read -r d; do
+		if [ "$d" != "$good" ]; then rm -rf "${cache:?}/renders/$d"; fi
+	done
+	# shellcheck disable=SC2012
+	ls -1t "$cache/captures" | tail -n +$((keep_captures + 1)) | while IFS= read -r d; do
+		rm -rf "${cache:?}/captures/$d"
+	done
+	# A mise release the capture pin has moved on from; the capture tool
+	# downloads the pin again when it needs it.
+	if [ -d "$cache/tools" ]; then find "$cache/tools" -maxdepth 1 -type f -mtime +60 -delete; fi
+}
+
+render_now() {
+	local f
+	# A failed render must not leave an earlier one in docs/public for the
+	# build to publish. The renderer replaces the files only once it has made
+	# all of them.
+	clear_public
+	(
+		cd "$root"
+		# With --cache, the capture set is the one captures() put in out/.
+		if [ -n "$cache" ]; then export SHOWREEL_CAPTURES="$out"; fi
+		limit "${SHOWREEL_RENDER_TIMEOUT:-120m}" aube run showreel:video
+	)
+	for f in "${files[@]}"; do
+		if ! [ -s "$public/$f" ]; then
+			say "the render did not write docs/public/$f"
+			return 1
+		fi
+	done
+}
+
+# With --cache, the lookup and the render run as their own process, so
+# `set -e` holds in every function they call (bash ignores it in a function
+# called from an `if`), and any failure falls back instead of failing.
+if [ -n "$cache" ] && ! $inner && { [ "$mode" = lookup ] || [ "$mode" = render ]; }; then
+	args=(--cache "$cache" --inner)
+	if [ "$mode" = lookup ]; then args+=(--lookup); fi
+	if $promote; then args+=(--promote); fi
+	if $fresh; then args+=(--fresh); fi
+	if bash "$self" "${args[@]}"; then exit 0; fi
+	if [ "$mode" = lookup ]; then
+		output state error
+		fallback "the showreel's cache lookup failed (the log above says why)"
+	else
+		fallback "the showreel was not rendered (the log above says why)"
+	fi
+	exit 0
+fi
+
+case "$mode" in
+key)
+	vkey=$(versions_key)
+	render_key "$vkey"
+	;;
+render)
+	if [ -n "$cache" ]; then
+		mkdir -p "$cache/renders" "$cache/captures"
+		# Nothing the reel records or draws needs a GitHub token.
+		unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN MISE_GH_TOKEN GITHUB_API_TOKEN
+		vkey=$(versions_key)
+		vkey=$(captures "$vkey")
+		rkey=$(render_key "$vkey")
+		if ! $fresh && restore "$rkey"; then
+			say "render $rkey is already kept"
+			promote_it "$rkey"
+			exit 0
+		fi
+		# A broken reel stops here, before the minutes-long render.
+		say "testing the reel"
+		(cd "$root" && SHOWREEL_CAPTURES="$out" SHOWREEL_REQUIRE_CHROMIUM=1 SHOWREEL_REQUIRE_CAPTURES=1 \
+			mise run docs:showreel-test)
+		say "rendering $rkey"
+		render_now
+		keep "$rkey"
+		say "kept render $rkey"
+		promote_it "$rkey"
+		prune || warn "could not prune the showreel cache in $cache"
+		exit 0
+	fi
+	if $record; then
+		status=0
+		"$capture" --versions-only || status=$?
+		case "$status" in
+		0) ;;
+		3) "$capture" ;;
+		*) exit "$status" ;;
+		esac
+	fi
+	if ! [ -f "$out/versions.json" ]; then
+		say "no capture run in docs/.vitepress/showreel-capture/out; the reel reads what load.ts finds instead (--capture records one)"
+	fi
+	render_now
+	say "rendered docs/public/${files[*]}"
+	;;
+lookup)
+	if $fresh; then
+		output state miss
+		exit 0
+	fi
+	vkey=$(versions_key)
+	rkey=$(render_key "$vkey")
+	output key "$rkey"
+	if restore "$rkey"; then
+		promote_it "$rkey"
+		output state hit
+	else
+		output state miss
+	fi
+	;;
+fallback)
+	fallback "${SHOWREEL_FALLBACK_REASON:-the showreel was not rendered}"
+	;;
+esac

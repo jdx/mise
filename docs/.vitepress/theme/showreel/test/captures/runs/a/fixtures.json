@@ -1,0 +1,16 @@
+{
+  "manifest.json": "{\n  \"home/.zshrc\": \"d7f560e29e951a198dc6d2e8fb88faa54bddba79667fa06d173344e4d479e4a1\",\n  \"api/mise.toml.tail\": \"5aa91fce85da7d82c2f35ab18f77fea63fb317c8994d6d4e92693e9c647d2164\",\n  \"api/src/server.js\": \"642f58fd3c7f7d0d470bfb99cc3545e8c74a76e073e81063d6ade1c70964f752\",\n  \"api/test/greet.test.js\": \"3cbb72f097aa3e0c644322c166d0055eda749a33d9768afa356b24471fe5ebd6\",\n  \"api/resp.json\": \"ddfa0b70355f6316abe55a9fc6fe7762510185884cd946abc44bb1f2247858bf\",\n  \"api/README.md\": \"cd5419590a32af136eb8bcf54e1399c2879c0eff1449d3a9190d00b1ae9749a9\",\n  \"api/.github/workflows/ci.yml\": \"002805695c2ca60343666b51c2cb781fff9cd22826ca6deab6e5f13dc3bcf325\",\n  \"api/.gitignore\": \"1edd087c04523bd5cbf8b1b5dabe7acb4965ed9553472d08c38a161faa2d2da8\",\n  \"api/.env\": \"97fbfbc6ba76b530dbbd25096d61fb361ec99d4d308b32fda3509441db316385\",\n  \"api/.env.deploy\": \"7b262f2614c7dfe228f23505884ccb5726d27ec514c0212d11772bc6ec864a11\",\n  \"api/mise-tasks/deploy\": \"5218605c568d5fb8216c48fb1ad0b33377b4b8171f692b43db9ddb35b6a838c8\",\n  \"shop/mise.toml.tail\": \"93a2378bd3785c63fdf63c69a68ac8534462ab72dc2f3b36b50fad24c357261d\",\n  \"home/config.toml.services\": \"af8a37f1afeb37eb85ecb76378d692eaf4211b17aa412ceb09cd84a83dc8e2d6\"\n}\n",
+  "api/.env": "PORT=3000\n",
+  "api/.env.deploy": "DEPLOY_TOKEN=tok_demo_4f9a2c71e8\n",
+  "api/.gitignore": "dist/\nnode_modules/\n.env.deploy\n.claude/skills/\n",
+  "api/README.md": "# api\n\nA small Node service.\n\nRun `mise run ci` to lint, test and build it.\n",
+  "api/mise.toml.tail": "\n[env]\nAPP_ENV = \"api\"\n\n[tasks.lint]\nrun = \"node --check src/server.js\"\n\n[tasks.test]\nrun = \"node --test --test-reporter=dot\"\n\n[tasks.build]\nrun = \"mkdir -p dist && cp src/server.js dist/server.js\"\n\n[tasks.ci]\ndepends = [\"lint\", \"test\", \"build\"]\nrun = \"echo \\\"api ready: node $(node --version), APP_ENV=$APP_ENV\\\"\"\n",
+  "api/resp.json": "{ \"status\": \"ok\", \"items\": 3 }\n",
+  "api/.github/workflows/ci.yml": "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v6\n      - uses: jdx/mise-action@v4\n        with:\n          install_args: --locked\n      - run: mise run ci\n",
+  "api/mise-tasks/deploy": "#!/usr/bin/env bash\n#MISE description=\"Deploy the api\"\n#USAGE arg \"<env>\" help=\"Where to deploy\" {\n#USAGE   choices \"staging\" \"production\"\n#USAGE }\necho \"deploying to $usage_env with token $DEPLOY_TOKEN\"\n",
+  "api/src/server.js": "module.exports = function greet(name) {\n  return `hello, ${name}`;\n};\n",
+  "api/test/greet.test.js": "const test = require(\"node:test\");\nconst assert = require(\"node:assert\");\nconst greet = require(\"../src/server.js\");\n\ntest(\"greets\", () => assert.strictEqual(greet(\"api\"), \"hello, api\"));\n",
+  "home/.zshrc": "PROMPT='%~ $ '\nautoload -Uz compinit && compinit\neval \"$(mise activate zsh)\"\n",
+  "home/config.toml.services": "\n[bootstrap.services.mise-history]\nbuiltin = \"history-watch\"\n",
+  "shop/mise.toml.tail": "\n[daemons]\npostgres = \"18\"\n\n[daemons_settings]\nnamespace = \"shop\"\n\n[tasks.db]\ndaemons = \"postgres\"\nrun = 'psql -Atc \"show server_version\"'\n"
+}

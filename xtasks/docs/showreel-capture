@@ -1,0 +1,581 @@
+#!/usr/bin/env bash
+#MISE description="Record the landing-page showreel's terminal captures in containers"
+# Records every capture the showreel shows, end to end from nothing: machine 1
+# (C1 to C17, steps.json) and a fresh machine 2 (C18, C19) in the pinned
+# Debian images, with a released mise binary checked against its pinned
+# sha256. Then it scans the captures and checks their shape. Runs the same on
+# a laptop and on a CI runner (Linux x86_64 with Docker; no TTY needed). See
+# docs/.vitepress/showreel-capture/README.md.
+#
+#   mise run docs:showreel-capture                      # record, scan, check
+#   mise run docs:showreel-capture -- --resolve-only    # print the cache key JSON
+#   mise run docs:showreel-capture -- --versions-only   # do the captures need redoing?
+#   mise run docs:showreel-capture -- --update-reference  # record, then refresh
+#                                                       # the committed reference set
+#
+# A run records into OUT/.next and replaces OUT/runs, OUT/versions.json and
+# the reports only when every capture has its expected shape. Otherwise the
+# last good captures stay where they were, and this run's output moves to
+# OUT/failed.
+#
+# Exit status:
+#   0  every capture has its expected shape (or the key matches)
+#   1  the run failed: Docker, the network, a download or an off-camera step
+#   2  bad arguments
+#   3  --versions-only: the recorded captures are out of date (re-record)
+#   4  a capture's shape changed: it ran, but no longer shows what the scenes
+#      are built around (OUT/failed/shape.json lists each difference)
+#
+# Options:
+#   --mise PATH          record with this mise binary (must be a release build)
+#   --mise-version V     release to download from mise.jdx.dev (default:
+#                        "latest", the newest release, so a change to mise's
+#                        node `lts` alias reaches the reel once it is
+#                        released). The pin below is checked against its
+#                        pinned sha256, any other version against its signed
+#                        SHASUMS256.asc (needs gpg)
+#   --runs N             independent cold runs to record (default 1; 2 or more
+#                        also compares the runs)
+#   --attempts N         tries per run before giving up (default 2); each try
+#                        starts from fresh containers
+#   --cutoff ISO8601     the release-age cutoff (default: 24 hours before now,
+#                        rounded down to the hour); SHOWREEL_CUTOFF also sets it
+#   --out DIR            write the capture set here (default: the rig's out/);
+#                        SHOWREEL_CAPTURE_OUT also sets it. The release binary
+#                        is cached in the rig's out/.cache whatever OUT is
+#                        (SHOWREEL_CAPTURE_CACHE moves it)
+#   --until ID           stop each run after capture ID (left in OUT/.next,
+#                        never published)
+#   --machine2 MODE      auto (default): probe once whether a privileged systemd
+#                        container boots here; every run then records the same
+#                        variant, systemd or the plain fallback. systemd: fail
+#                        instead of falling back. plain: never try systemd
+#   --resolve-only       resolve the versions on this machine (Linux x86_64) and
+#                        print the cache key JSON; installs nothing but mise
+#   --versions-only      resolve, compare the key with OUT/versions.json, and
+#                        stop (exit 3: re-record); with --out pointing at the
+#                        reference set, checks the committed captures
+#   --machine2-only      record machine 2 again from the last run's machine 1
+#                        (OUT/runs/<run>/machine1-repos.tar), for working on
+#                        C18 and C19
+#   --update-reference   after publishing, export run a as the committed
+#                        reference set (docs/.vitepress/theme/showreel/test/captures)
+#   --reference-only     export OUT's published run a as the reference set, and
+#                        record nothing
+#   --rebuild            build the images from nothing (no layer cache, base
+#                        image pulled again), even when they exist
+#   --keep               keep the containers for inspection
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+rig="$root/docs/.vitepress/showreel-capture"
+reference="$root/docs/.vitepress/theme/showreel/test/captures"
+
+# A known-good mise release and the sha256 of its linux-x64 .tar.xz, as its
+# signed SHASUMS256.asc lists it: checked without gpg when asked for. Every
+# other version, including the default (the newest release), is checked
+# against its own SHASUMS256.asc, signed by the release key (SECURITY.md,
+# "Release gpg key"; this is its fingerprint).
+pin_version=2026.9.15
+pin_sha256=ef349bbbcf3526865c551dc3dc317d354d63b26553855014db51caf7a063c7d2
+release_fpr=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
+
+out=${SHOWREEL_CAPTURE_OUT:-$rig/out}
+mise_version=${SHOWREEL_MISE_VERSION:-latest}
+mise_bin=${SHOWREEL_MISE_BIN:-}
+cutoff=${SHOWREEL_CUTOFF:-}
+runs=1
+attempts=2
+until=""
+mode=record
+keep=false
+machine2=auto
+m2only=false
+update_ref=false
+rebuild=false
+usage() {
+	echo "showreel-capture: $*" >&2
+	exit 2
+}
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--mise) mise_bin=${2:?} && shift 2 ;;
+	--mise-version) mise_version=${2:?} && shift 2 ;;
+	--runs) runs=${2:?} && shift 2 ;;
+	--attempts) attempts=${2:?} && shift 2 ;;
+	--cutoff) cutoff=${2:?} && shift 2 ;;
+	--out) out=${2:?} && shift 2 ;;
+	--until) until=${2:?} && shift 2 ;;
+	--machine2) machine2=${2:?} && shift 2 ;;
+	--resolve-only) mode=resolve && shift ;;
+	--versions-only) mode=compare && shift ;;
+	--reference-only) mode=reference && shift ;;
+	--machine2-only) m2only=true && shift ;;
+	--update-reference) update_ref=true && shift ;;
+	--rebuild) rebuild=true && shift ;;
+	--keep) keep=true && shift ;;
+	-h | --help) sed -n '3,/^set /s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" && exit 0 ;;
+	*) usage "unknown argument: $1" ;;
+	esac
+done
+case "$machine2" in auto | systemd | plain) ;; *) usage "--machine2 must be auto, systemd or plain" ;; esac
+[[ $runs =~ ^[1-8]$ ]] || usage "--runs must be 1 to 8"
+[[ $attempts =~ ^[1-9]$ ]] || usage "--attempts must be 1 to 9"
+if [ -n "$cutoff" ] && ! [[ $cutoff =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+	usage "--cutoff must look like 2026-09-27T01:00:00Z"
+fi
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+# the downloaded release, kept out of any --out directory (which may be the
+# committed reference set)
+cache=${SHOWREEL_CAPTURE_CACHE:-$rig/out/.cache}
+
+say() { echo "showreel-capture: $*" >&2; }
+# a failure a CI job shows as an annotation, as well as in its log
+annotate() {
+	if [ "${GITHUB_ACTIONS:-}" = true ]; then
+		local msg=${2//$'\n'/%0A}
+		echo "::$1 title=showreel capture::$msg"
+	fi
+}
+die() {
+	say "$*"
+	annotate error "$*"
+	exit 1
+}
+
+started=$(date +%s)
+work=$(mktemp -d "${TMPDIR:-/tmp}/showreel-capture.XXXXXX")
+containers=()
+cleanup() {
+	if ! $keep; then
+		# ${a[@]+...}: an empty array under `set -u` aborts bash before 4.4 (macOS's 3.2).
+		for c in ${containers[@]+"${containers[@]}"}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
+	fi
+	rm -rf "$work"
+}
+trap cleanup EXIT
+
+# One cutoff for every run, so "latest" means the same thing in each: 24 hours
+# before now (mise's default minimum_release_age), rounded down to the hour.
+if [ -z "$cutoff" ]; then
+	cutoff=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc) - d.timedelta(hours=24)).strftime("%Y-%m-%dT%H:00:00Z"))')
+fi
+
+# export OUT's run a as the committed reference set (the tests' captures in
+# CI). export.py writes it byte for byte (.prettierignore leaves it alone).
+export_reference() {
+	python3 "$rig/export.py" "$out" "$reference" --run a || die "export failed"
+	say "reference set updated: ${reference#"$root/"} (commit it)"
+}
+
+if [ "$mode" = reference ]; then
+	[ -f "$out/shape.json" ] || die "no published captures in $out"
+	export_reference
+	exit 0
+fi
+
+# fetch URL DEST: a download that survives a flaky network
+fetch() {
+	curl -fsSL --retry 6 --retry-delay 3 --retry-all-errors --connect-timeout 20 \
+		--max-time 900 -o "$2" "$1"
+}
+
+# expected_sha VERSION FILE: the sha256 FILE must have, from the pin or from the
+# release's signed SHASUMS256.asc
+expected_sha() {
+	local version=$1 file=$2
+	if [ "$version" = "$pin_version" ]; then
+		echo "$pin_sha256"
+		return
+	fi
+	command -v gpg >/dev/null || die "mise $version is not the pin ($pin_version): checking its SHASUMS256.asc needs gpg"
+	local g="$work/gnupg" status
+	mkdir -p "$g" && chmod 700 "$g"
+	sed -n '/^## Release gpg key/,$p' "$root/SECURITY.md" |
+		sed -n '/-----BEGIN PGP PUBLIC KEY BLOCK-----/,/-----END PGP PUBLIC KEY BLOCK-----/p' >"$g/key.asc"
+	# gpg may complain that it has no agent; the key is imported all the same
+	gpg --homedir "$g" --batch --no-autostart --quiet --import "$g/key.asc" 2>/dev/null || true
+	gpg --homedir "$g" --batch --no-autostart --with-colons --list-keys 2>/dev/null |
+		grep -q "^fpr:::::::::$release_fpr:" ||
+		die "could not import the release key ($release_fpr) from SECURITY.md"
+	fetch "https://mise.jdx.dev/v$version/SHASUMS256.asc" "$work/SHASUMS256.asc" ||
+		die "could not download SHASUMS256.asc for mise $version"
+	status=$(gpg --homedir "$g" --batch --no-autostart --status-fd 1 --verify "$work/SHASUMS256.asc" 2>/dev/null || true)
+	grep -q "^\[GNUPG:\] VALIDSIG $release_fpr " <<<"$status" ||
+		die "SHASUMS256.asc for mise $version is not signed by the release key ($release_fpr)"
+	gpg --homedir "$g" --batch --no-autostart --decrypt "$work/SHASUMS256.asc" 2>/dev/null |
+		awk -v f="./$file" '$2 == f { print $1 }'
+}
+
+# The release binary: downloaded once into the cache, checked, and checked
+# again (its own sha256) every time it is used.
+if [ -z "$mise_bin" ]; then
+	if [ "$mise_version" = latest ]; then
+		fetch https://mise.jdx.dev/VERSION "$work/VERSION" || die "could not read the latest mise version"
+		mise_version=$(tr -d '[:space:]' <"$work/VERSION")
+		mise_version=${mise_version#v}
+	fi
+	mise_version=${mise_version#v} # a release tag (v2026.9.15) names the same release
+	[[ $mise_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage "--mise-version must be a release like $pin_version"
+	mise_bin="$cache/mise-$mise_version"
+	if ! [ -x "$mise_bin" ] || ! [ -f "$mise_bin.sha256" ] ||
+		[ "$(sha256sum "$mise_bin" | cut -d' ' -f1)" != "$(cat "$mise_bin.sha256")" ]; then
+		tarball="mise-v$mise_version-linux-x64.tar.xz"
+		say "downloading mise $mise_version ($tarball)"
+		mkdir -p "$cache" "$work/dl"
+		fetch "https://mise.jdx.dev/v$mise_version/$tarball" "$work/$tarball" ||
+			die "could not download $tarball"
+		want=$(expected_sha "$mise_version" "$tarball")
+		[ -n "$want" ] || die "no sha256 for $tarball"
+		got=$(sha256sum "$work/$tarball" | cut -d' ' -f1)
+		[ "$got" = "$want" ] || die "$tarball has sha256 $got, expected $want"
+		tar -xJf "$work/$tarball" -C "$work/dl"
+		install -m 0755 "$work/dl/mise/bin/mise" "$mise_bin.tmp"
+		mv "$mise_bin.tmp" "$mise_bin"
+		sha256sum "$mise_bin" | cut -d' ' -f1 >"$mise_bin.sha256"
+	fi
+fi
+[ -f "$mise_bin" ] || die "no mise binary at $mise_bin"
+mise_bin=$(cd "$(dirname "$mise_bin")" && pwd)/$(basename "$mise_bin")
+# The binary is linux-x64: it runs on this host only when the host is Linux
+# x86_64. Elsewhere only the containers run it (entry.sh checks its version).
+host_resolves() { [ "$(uname -sm)" = "Linux x86_64" ]; }
+if host_resolves; then
+	got=$("$mise_bin" --version 2>/dev/null) || die "cannot run $mise_bin"
+	case "$got" in *DEBUG*) die "refusing a dev build: $got" ;; esac
+	# A binary passed with --mise and no --mise-version names its own release.
+	[ "$mise_version" = latest ] && mise_version=${got%% *}
+	[ "${got%% *}" = "$mise_version" ] || die "expected mise $mise_version, got $got (pass --mise-version to match it)"
+elif [ "$mise_version" = latest ]; then
+	usage "--mise PATH on this host needs --mise-version V too: the binary runs only in the containers here"
+fi
+
+resolve() { # resolve DEST [key|placeholders]: versions.json for this machine
+	python3 "$rig/versions.py" --mise "$mise_bin" --cutoff "$cutoff" --rig "$rig" \
+		--out "$1" --isolate "$work/resolve" --print "${2:-placeholders}"
+}
+
+if [ "$mode" = resolve ]; then
+	host_resolves || die "--resolve-only runs the linux-x64 mise binary, so it needs a Linux x86_64 host"
+	# stdout is exactly the key JSON: {"key", "keyed", "not_keyed"}
+	resolve "$work/versions.json" key
+	exit 0
+fi
+
+if [ "$mode" = compare ]; then
+	host_resolves || die "--versions-only runs the linux-x64 mise binary, so it needs a Linux x86_64 host"
+	# The cheap check a docs build runs: resolve on this machine and compare
+	# the key with the recorded captures'. Exit 3 means re-record.
+	resolve "$work/versions.json" >/dev/null
+	python3 - "$out/versions.json" "$work/versions.json" <<'PY'
+import json, os, sys
+recorded, resolved = sys.argv[1], sys.argv[2]
+new = json.load(open(resolved))
+if not os.path.exists(recorded):
+    print(f"no recorded captures; key {new['key']}")
+    sys.exit(3)
+old = json.load(open(recorded))
+def show(kind, a, b):
+    for k in sorted(set(a) | set(b)):
+        if a.get(k) != b.get(k):
+            print(f"  {kind}{k}: {a.get(k)} -> {b.get(k)}")
+if old.get("key") == new["key"]:
+    print(f"captures match: key {new['key']}")
+    if old.get("not_keyed") != new["not_keyed"]:
+        print("not keyed (the next capture records these; nothing re-records for them):")
+        show("", old.get("not_keyed") or {}, new["not_keyed"])
+    sys.exit(0)
+print(f"captures are out of date: key {old.get('key')} -> {new['key']}")
+if "keyed" not in old:
+    print("  the recorded set predates the keyed/not_keyed split")
+show("keyed ", old.get("keyed") or {}, new["keyed"])
+sys.exit(3)
+PY
+	exit $?
+fi
+
+command -v docker >/dev/null || die "docker is required"
+docker info >/dev/null 2>&1 || die "docker is not running, or this user cannot use it"
+
+# retry CMD...: a Docker call that may hit a transient registry or mirror error
+retry() {
+	local n
+	for n in 1 2 3; do
+		"$@" && return 0
+		[ "$n" = 3 ] || {
+			say "retrying ($n/3): $*"
+			sleep $((n * 5))
+		}
+	done
+	return 1
+}
+
+image_ref=$(grep -m1 '^FROM ' "$rig/Dockerfile" | cut -d' ' -f2)
+dsum=$(sha256sum "$rig/Dockerfile" | cut -c1-12)
+tag1="mise-showreel-capture:m1-$dsum"
+tag2="mise-showreel-capture:m2-$dsum"
+t_images=$(date +%s)
+for target in machine1 machine2; do
+	tag=$tag1 && [ "$target" = machine2 ] && tag=$tag2
+	if $rebuild || ! docker image inspect "$tag" >/dev/null 2>&1; then
+		say "building $tag (from $image_ref)"
+		# the client sends the Dockerfile; the daemon need not see this filesystem
+		mkdir -p "$work/context"
+		flags=()
+		$rebuild && flags=(--no-cache --pull)
+		retry docker build --platform linux/amd64 -q ${flags[@]+"${flags[@]}"} --target "$target" -t "$tag" \
+			-f "$rig/Dockerfile" "$work/context" >/dev/null ||
+			die "could not build $tag"
+	fi
+done
+images_s=$(($(date +%s) - t_images))
+
+# everything below is written to $next; publish moves it into OUT
+next="$out/.next"
+rm -rf "$next"
+mkdir -p "$next/runs"
+$m2only && cp -a "$out/runs/." "$next/runs/"
+fail() { # fail STATUS MESSAGE: the last good captures stay; this run's output goes to OUT/failed
+	local status=$1
+	shift
+	rm -rf "$out/failed"
+	mv "$next" "$out/failed"
+	say "$*"
+	annotate error "$*"
+	say "the last good captures in ${out} are unchanged; this run is in ${out}/failed"
+	exit "$status"
+}
+names=(a b c d e f g h)
+m2_ids=$(python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(open(sys.argv[1]))["machine2"]["captures"]))' "$rig/steps.json")
+m1_ids=$(python3 -c 'import json,sys; print(" ".join(c["id"] for c in json.load(open(sys.argv[1]))["captures"]))' "$rig/steps.json")
+if [ -n "$until" ] && ! [[ " $m1_ids $m2_ids " == *" $until "* ]]; then
+	usage "--until: no capture $until"
+fi
+want_m2=true
+if [ -n "$until" ] && [[ " $m1_ids " == *" $until "* ]]; then want_m2=false; fi
+if $m2only; then
+	$want_m2 || usage "--machine2-only with --until $until records nothing"
+	# machine 2 uses the cutoff machine 1 resolved with
+	cutoff=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cutoff"])' "$out/runs/a/versions.json")
+fi
+
+# The key this machine resolves, before recording: the recorded runs resolve
+# inside machine 1 and must agree (a release landing mid-run is reported).
+host_key=""
+if host_resolves; then
+	host_key=$(resolve "$work/host-versions.json" key | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])') ||
+		die "resolving the versions failed"
+	say "key $host_key ($(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("node", d["node"]["lts_version"], "/", d["node"]["other_version"])' "$work/host-versions.json"), cutoff $cutoff)"
+fi
+
+put_rig() { # put_rig CONTAINER: the rig and the mise binary
+	tar -C "$rig" --exclude=./out --exclude=./__pycache__ -cf - . | docker cp - "$1:/rig"
+	docker cp "$mise_bin" "$1:/rig-bin/mise"
+}
+
+# boot_machine2 NAME VARIANT: starts machine 2; with systemd, waits until the
+# user manager for `you` is up. 0 when it is ready.
+boot_machine2() {
+	local name=$1 v=$2 state="" _
+	if [ "$v" = plain ]; then
+		docker run -d --platform linux/amd64 --name "$name" --init -e CAPTURE_IMAGE="$image_ref" \
+			"$tag2" sleep infinity >/dev/null
+		return
+	fi
+	# a test hook: a runner that refuses privileged containers
+	[ -z "${SHOWREEL_SYSTEMD_UNAVAILABLE:-}" ] || return 1
+	docker run -d --platform linux/amd64 --name "$name" --privileged --cgroupns=private \
+		--tmpfs /run --tmpfs /run/lock -e CAPTURE_IMAGE="$image_ref" "$tag2" >/dev/null 2>"$work/boot.err" || {
+		say "machine 2: privileged container refused: $(tr '\n' ' ' <"$work/boot.err")"
+		return 1
+	}
+	for _ in $(seq 1 60); do
+		state=$(docker exec "$name" systemctl is-system-running 2>/dev/null || true)
+		if { [ "$state" = running ] || [ "$state" = degraded ]; } &&
+			docker exec "$name" test -S /run/user/1000/systemd/private; then
+			[ "$state" = running ] || say "machine 2: systemd is $state: $(docker exec "$name" systemctl --failed --plain --no-legend 2>&1 | tr '\n' ' ')"
+			return 0
+		fi
+		sleep 1
+	done
+	say "machine 2: systemd did not bring up a user manager in 60 s (state: ${state:-none})"
+	docker logs "$name" 2>&1 | tail -5 >&2 || true
+	return 1
+}
+
+# Machine 2's variant, decided once: every run records the same one, so runs
+# compare, and machine 1 (which declares the watcher service only for
+# systemd) matches its machine 2.
+variant=plain
+if $m2only; then
+	# machine 1's recording decided it (C16 declares the watcher service only
+	# for systemd)
+	variant=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("machine2", "plain"))' "$out/run.json")
+elif $want_m2 && [ "$machine2" != plain ]; then
+	probe="showreel-capture-probe-$$"
+	containers+=("$probe")
+	if boot_machine2 "$probe" systemd; then
+		variant=systemd
+	elif [ "$machine2" = systemd ]; then
+		die "machine 2 needs a privileged systemd container (--machine2 systemd), and none boots here"
+	else
+		say "machine 2: no systemd here; every run records the fallback (no service manager, no watcher tile)"
+		annotate warning "machine 2 recorded without systemd (the fallback): the reel drops the watcher tile"
+	fi
+	docker rm -f "$probe" >/dev/null 2>&1 || true
+fi
+
+# record_run RUN: one cold try at run RUN, into $next/runs/RUN. 0 when it
+# recorded, 1 when something failed on the way.
+record_run() {
+	local run=$1 rd="$next/runs/$1" m1="showreel-capture-$1-m1-$$" m2="showreel-capture-$1-m2-$$" status=0
+	docker rm -f "$m1" "$m2" >/dev/null 2>&1 || true
+	if $want_m2; then
+		containers+=("$m2")
+		boot_machine2 "$m2" "$variant" || {
+			say "run $run: machine 2 did not boot as $variant, as the probe did"
+			return 1
+		}
+	fi
+	if $m2only; then
+		[ -f "$rd/machine1-repos.tar" ] && [ -f "$rd/versions.json" ] || {
+			say "--machine2-only: no machine 1 outputs in $rd"
+			return 1
+		}
+		rm -rf "$rd/setup-machine2" "$rd"/*-machine2.* "$next/runs/$run-machine2.log"
+		for id in $m2_ids; do rm -rf "${rd:?}/$id"; done
+	else
+		rm -rf "$rd" "$next/runs/$run.log" "$next/runs/$run-machine2.log"
+		mkdir -p "$rd"
+		containers+=("$m1")
+		docker create --platform linux/amd64 --name "$m1" --init -e CAPTURE_IMAGE="$image_ref" \
+			-e CAPTURE_MISE_VERSION="$mise_version" "$tag1" \
+			bash /rig/entry.sh machine1 "$run" "$cutoff" "$variant" "$until" >/dev/null
+		# the Docker daemon may not see this filesystem, so files go in with docker cp
+		put_rig "$m1"
+		say "run $run: machine 1 (log: ${next#"$out/"}/runs/$run.log)"
+		docker start -a "$m1" >"$next/runs/$run.log" 2>&1 || status=$?
+		docker cp "$m1:/out/$run/." "$rd" >/dev/null 2>&1 || true
+		if [ "$status" -ne 0 ]; then
+			tail -30 "$next/runs/$run.log" >&2
+			say "run $run: machine 1 failed ($status)"
+			return 1
+		fi
+		# what machine 1 pushed to you/api and you/setup
+		docker cp "$m1:/srv/git" - >"$rd/machine1-repos.tar"
+		$keep || docker rm -f "$m1" >/dev/null
+	fi
+	if $want_m2; then
+		# what machine 1 pushed, and the versions it resolved
+		docker exec "$m2" mkdir -p /srv /in /rig /rig-bin
+		docker cp - "$m2:/srv" <"$rd/machine1-repos.tar"
+		docker cp "$rd/versions.json" "$m2:/in/versions.json"
+		put_rig "$m2"
+		say "run $run: machine 2, $variant (log: ${next#"$out/"}/runs/$run-machine2.log)"
+		status=0
+		docker exec -e CAPTURE_MISE_VERSION="$mise_version" "$m2" \
+			bash /rig/entry.sh machine2 "$run" "$cutoff" "$variant" "$until" \
+			>"$next/runs/$run-machine2.log" 2>&1 || status=$?
+		docker cp "$m2:/out/$run/." "$rd" >/dev/null 2>&1 || true
+		if [ "$status" -ne 0 ]; then
+			tail -30 "$next/runs/$run-machine2.log" >&2
+			say "run $run: machine 2 failed ($status)"
+			return 1
+		fi
+		$keep || docker rm -f "$m2" >/dev/null
+	fi
+}
+
+# Each run gets up to $attempts cold tries. A try that fails, or that records
+# a capture with the wrong shape, is kept in .next/attempts/ and tried again
+# from fresh containers; a flaky mirror or a slow download does not sink it.
+attempt_log="$work/attempts.jsonl"
+: >"$attempt_log"
+say "recording $runs run(s), up to $attempts tries each: cutoff $cutoff, mise $mise_version, machine 2 $($want_m2 && echo "$variant" || echo skipped)"
+for run in "${names[@]:0:runs}"; do
+	n=1
+	while :; do
+		t0=$(date +%s)
+		rc=0
+		record_run "$run" || rc=1
+		if [ "$rc" -eq 0 ]; then
+			python3 "$rig/shape.py" "$next" --run "$run" --quiet --report "$work/shape-$run.json" || rc=4
+		fi
+		result=ok && [ "$rc" = 1 ] && result=failed
+		[ "$rc" = 4 ] && result=shape
+		printf '{"run": "%s", "try": %d, "seconds": %d, "result": "%s"}\n' \
+			"$run" "$n" $(($(date +%s) - t0)) "$result" >>"$attempt_log"
+		say "run $run, try $n: $result in $(($(date +%s) - t0)) s"
+		[ "$rc" -eq 0 ] && break
+		mkdir -p "$next/attempts"
+		keepdir="$next/attempts/$run-$n"
+		mkdir -p "$keepdir"
+		cp -a "$next/runs/$run" "$keepdir/" 2>/dev/null || true
+		for f in "$next/runs/$run.log" "$next/runs/$run-machine2.log" "$work/shape-$run.json"; do
+			[ -f "$f" ] && cp "$f" "$keepdir/"
+		done
+		for c in "showreel-capture-$run-m1-$$" "showreel-capture-$run-m2-$$"; do
+			$keep || docker rm -f "$c" >/dev/null 2>&1 || true
+		done
+		if [ "$n" -ge "$attempts" ]; then
+			if [ "$rc" = 4 ]; then
+				python3 "$rig/shape.py" "$next" --run "$run" --report "$next/shape.json" || true
+				fail 4 "capture shape changed in run $run, on every try ($n of $attempts; listed above, and in ${out}/failed/shape.json)"
+			fi
+			fail 1 "run $run failed on every try ($n of $attempts; logs in ${out}/failed/attempts/)"
+		fi
+		n=$((n + 1))
+		say "run $run: trying again from fresh containers ($n of $attempts)"
+	done
+done
+
+# versions.json: what run a resolved, plus C4's count; C4.json: the names the
+# pinned mise lists (machine 1 saved them), not this checkout's registry/
+python3 - "$next/runs/a" "$next" <<'PY'
+import json, os, sys
+rd, dst = sys.argv[1], sys.argv[2]
+d = json.load(open(os.path.join(rd, "versions.json")))
+reg = os.path.join(rd, "C4", "registry.txt")
+names = [l.split()[0] for l in open(reg) if l.strip()] if os.path.exists(reg) else []
+d["registry_count"] = len(names)
+d["placeholders"]["registry_count"] = str(len(names))
+with open(os.path.join(dst, "versions.json"), "w") as f:
+    json.dump(d, f, indent=2)
+    f.write("\n")
+with open(os.path.join(dst, "C4.json"), "w") as f:
+    json.dump({"id": "C4", "title": "registry names", "count": len(names), "names": names,
+               "source": "mise registry --hide-aliased", "mise": d["mise"]["version"]}, f)
+    f.write("\n")
+PY
+recorded_key=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("key", ""))' "$next/versions.json")
+if [ -n "$host_key" ] && [ "$recorded_key" != "$host_key" ]; then
+	say "note: the recorded key ($recorded_key) differs from the one resolved before the run ($host_key); a release landed meanwhile"
+fi
+
+python3 "$rig/scan.py" "$next" >"$next/scan.txt"
+shape=0
+python3 "$rig/shape.py" "$next" || shape=$?
+elapsed=$(($(date +%s) - started))
+host="$(uname -srm), docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?')"
+python3 - "$next/run.json" "$elapsed" "$runs" "$cutoff" "$variant" "$mise_version" "$recorded_key" "$images_s" "$attempt_log" "$host" <<'PY'
+import json, sys
+p, elapsed, runs, cutoff, variant, mise, key, images, log, host = sys.argv[1:]
+tries = [json.loads(l) for l in open(log) if l.strip()]
+json.dump({"elapsed_s": int(elapsed), "images_s": int(images), "runs": int(runs),
+           "cutoff": cutoff, "machine2": variant, "mise": mise, "key": key,
+           "host": host, "tries": tries}, open(p, "w"), indent=2)
+PY
+say "done in $((elapsed / 60))m$((elapsed % 60))s"
+[ "$shape" -eq 0 ] || fail 4 "capture shapes differ from what the scenes expect (listed above)"
+if [ -n "$until" ]; then
+	say "a partial run (--until $until) is never published; it is in ${next}"
+	exit 0
+fi
+for f in runs versions.json C4.json scan.json scan.txt shape.json run.json; do
+	rm -rf "${out:?}/$f"
+	mv "$next/$f" "$out/$f"
+done
+rm -rf "$next" "$out/failed"
+say "captures published to $out (scan: scan.txt, shape: shape.json)"
+if $update_ref; then export_reference; fi

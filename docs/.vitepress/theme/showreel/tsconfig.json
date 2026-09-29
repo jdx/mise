@@ -1,0 +1,20 @@
+// from jdx/hk@37937824 docs/.vitepress/theme/showreel/tsconfig.json
+// Strict type checking for the showreel and its tests: `aube run
+// typecheck:showreel`. The renderer and the test runner bundle with esbuild,
+// which strips types without checking them.
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.ts"]
+}

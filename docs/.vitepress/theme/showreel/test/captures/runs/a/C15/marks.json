@@ -1,0 +1,10 @@
+[
+  { "name": "start", "t": 0.542333 },
+  { "name": "confirm", "t": 3.207964 },
+  { "name": "track", "t": 5.050127 },
+  { "name": "edit", "t": 9.42546 },
+  { "name": "history", "t": 14.521799 },
+  { "name": "confirm-rollback", "t": 18.882722 },
+  { "name": "rollback", "t": 21.086018 },
+  { "name": "end", "t": 22.887071 }
+]
