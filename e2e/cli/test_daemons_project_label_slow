@@ -12,10 +12,12 @@ if ! "$MISE_TEST_PITCHFORK" config add --help 2>&1 | grep -q -- '--label'; then
 fi
 cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
-# Unix socket paths are short; keep the supervisor's directories under /tmp.
-PF_ROOT="$(mktemp --tmpdir=/tmp --directory mdl.XXXXXX)"
-export PITCHFORK_STATE_DIR="$PF_ROOT/s"
-export PITCHFORK_CONFIG_DIR="$PF_ROOT/c"
+# Unix socket paths are short, so keep these directly under the harness-owned
+# $TMPDIR (which the harness removes) rather than nesting them deeper. This test
+# name is no longer than test_daemons_register_proxy_slow's, which uses the
+# same layout.
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pfc"
 export PITCHFORK_INTERVAL=500ms
 export PITCHFORK_PROXY_ENABLE=true
 export PITCHFORK_PROXY_HTTPS=false
@@ -25,7 +27,7 @@ export PITCHFORK_PROXY_AUTO_TRUST=false
 export PITCHFORK_PROXY_TLD=localhost
 PITCHFORK_PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 export PITCHFORK_PROXY_PORT
-trap 'pitchfork supervisor stop >/dev/null 2>&1 || true; rm -rf "$PF_ROOT"' EXIT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 
 PITCHFORK_MISE_BIN="$(command -v mise)" pitchfork supervisor start
 
@@ -66,7 +68,8 @@ for checkout in "$PWD" "$PWD/../feature"; do
     # A checkout registered a moment ago can take a second to be routable.
     status=000
     for _ in $(seq 20); do
-      status=$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' --max-time 30 --resolve "$hostport:127.0.0.1" "$url/proof")
+      # The harness runs with -e: a refused connection must retry, not abort.
+      status=$(curl --noproxy '*' -s -o /dev/null -w '%{http_code}' --max-time 30 --resolve "$hostport:127.0.0.1" "$url/proof") || status=000
       [[ $status == 200 ]] && break
       sleep 1
     done
