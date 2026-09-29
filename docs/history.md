@@ -1133,8 +1133,8 @@ failures, an unusable history store, and files being saved less often because
 they change constantly. It includes the command to start a stopped watcher.
 
 `status` gives more detail: whether the watcher is running, declared but
-stopped, or not declared; the latest save and full scan; the last failure;
-and each busy file's save interval, last save, and pending edits.
+stopped, or not declared, and whether its captures are failing; the latest save
+and full scan; the last failure; and each busy file's save interval, last save, and pending edits.
 
 Both also report a watcher service whose process is running but is not
 watching this store, which happens when that process comes from an older
@@ -1330,6 +1330,13 @@ The watcher also scans all tracked files to catch changes missed by
 filesystem notifications. It does this at startup, at shutdown, when
 configuration changes, and every `history.watch.reconcile` (ten minutes by
 default). Set that interval to `0` to disable periodic scans.
+
+Every minute the watcher checks that the mise executable it started from has
+not been replaced. After an upgrade it saves what is pending and exits with a
+failure status, so the service manager restarts it on the new version. Without
+this, an old watcher could not read history state written by the newer mise, and
+every capture would fail. A watcher you started by hand with `mise dot watch`
+stops and has to be started again.
 
 Edits to global TOML configuration or `conf.d/` reload the tracked paths
 and update their watches. Setting `history.enabled = false` stops the watcher.

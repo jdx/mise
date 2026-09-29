@@ -200,11 +200,22 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             report.pending_operations
         );
     }
-    miseprintln!(
-        "  automatic capture: {} ({}).",
-        report.watcher.as_str(),
-        super::capture_health::advice(report.watcher)
-    );
+    let failing = report
+        .health
+        .as_ref()
+        .is_some_and(|health| health.watcher.last_error.is_some());
+    if failing && report.watcher == super::capture_health::Watcher::Running {
+        miseprintln!(
+            "  automatic capture: {} but failing (edits are not being saved until a capture succeeds).",
+            report.watcher.as_str()
+        );
+    } else {
+        miseprintln!(
+            "  automatic capture: {} ({}).",
+            report.watcher.as_str(),
+            super::capture_health::advice(report.watcher)
+        );
+    }
     match &report.sync {
         None => miseprintln!(
             "Setup repository: none (`mise dot origin set <url>` synchronizes committed history)."
