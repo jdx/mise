@@ -67,7 +67,12 @@ jobs:
           # from `latest` to the version, so the entry no longer matches
           # mise.toml and `mise run render` re-resolves it from a stale cache.
           mise lock --bump --minimum-release-age 0s aube
-          locked="$(awk '/^\[\[tools\.aube\]\]$/ { getline; gsub(/[^0-9.]/, "", $0); print; exit }' mise.lock)"
+          # read the `version` field by name inside the [[tools.aube]] table
+          locked="$(awk '
+            /^\[\[tools\.aube\]\]$/ { in_tool = 1; next }
+            /^\[/ { in_tool = 0 }
+            in_tool && /^version[ \t]*=/ { gsub(/^[^"]*"|"[^"]*$/, ""); print; exit }
+          ' mise.lock)"
           if [ "$locked" != "$version" ]; then
             echo "::error::mise.lock resolved aube ${locked}, expected ${version}"
             exit 1
