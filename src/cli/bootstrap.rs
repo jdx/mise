@@ -4516,15 +4516,20 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
     Ok(command.status()?.success())
 }
 
-/// A tag deleted on origin stays in the checkout, since fetching does not
-/// prune, and would keep resolving. Only the requested tag is checked, so
-/// other local tags are left alone. A branch of the same name on origin still
-/// makes the ref valid, and a failing `ls-remote` is an error, not a deletion.
-fn ensure_bootstrap_tag_exists_on_origin(checkout: &Path, git_ref: &str) -> Result<()> {
+/// Moves an existing checkout to `git_ref` as origin now has it.
+///
+/// The ref is looked up on origin so that a name is never resolved from a
+/// stale local copy: a tag on origin is checked out as that tag, a branch on
+/// origin is switched to (created from `origin/<ref>` when it has no local
+/// branch, even next to a same-named local tag) and fast-forwarded, and a
+/// tag that only survives locally, since fetching does not prune, is
+/// rejected. Anything else, such as a commit, is checked out as given. Other
+/// local tags are left alone, and a failing `ls-remote` is an error, not a
+/// deletion.
+fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
+    // force tags so a moved one is not resolved from the stale local copy
+    run_bootstrap_git(checkout, ["fetch", "--force", "--tags", "origin"])?;
     let tag = format!("refs/tags/{git_ref}");
-    if !bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])? {
-        return Ok(());
-    }
     let branch = format!("refs/heads/{git_ref}");
     let mut command = Command::new("git");
     command
@@ -4535,14 +4540,30 @@ fn ensure_bootstrap_tag_exists_on_origin(checkout: &Path, git_ref: &str) -> Resu
     let output = command.output()?;
     if !output.status.success() {
         bail!(
-            "could not check origin for tag {git_ref:?}: git ls-remote failed with {}",
+            "could not look up {git_ref:?} on origin: git ls-remote failed with {}",
             output.status
         );
     }
-    if output.stdout.iter().all(u8::is_ascii_whitespace) {
-        bail!("tag {git_ref:?} no longer exists on origin");
+    let listed = String::from_utf8_lossy(&output.stdout);
+    let on_origin = |name: &str| listed.lines().any(|l| l.split('\t').nth(1) == Some(name));
+    if on_origin(&tag) {
+        run_bootstrap_git(checkout, ["checkout", &tag, "--"])
+    } else if on_origin(&branch) {
+        if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
+            run_bootstrap_git(checkout, ["switch", git_ref])?;
+        } else {
+            let remote_branch = format!("origin/{git_ref}");
+            run_bootstrap_git(
+                checkout,
+                ["switch", "--create", git_ref, "--track", &remote_branch],
+            )?;
+        }
+        run_bootstrap_git(checkout, ["pull", "--ff-only"])
+    } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])? {
+        bail!("tag {git_ref:?} no longer exists on origin")
+    } else {
+        run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
     }
-    Ok(())
 }
 
 fn checkout_bootstrap_repository(
@@ -4562,7 +4583,7 @@ fn checkout_bootstrap_repository(
                         checkout.display_user()
                     );
                     miseprintln!(
-                        "Would run: git -C {} checkout {git_ref} --",
+                        "Would run: git -C {} checkout {git_ref} -- (or switch {git_ref} if it is a branch on origin)",
                         checkout.display_user()
                     );
                     miseprintln!(
@@ -4577,15 +4598,7 @@ fn checkout_bootstrap_repository(
                 }
             } else {
                 if let Some(git_ref) = git_ref {
-                    // force tags so a moved one is not resolved from the stale local
-                    // copy; nothing is pruned, as the checkout may hold other tags
-                    run_bootstrap_git(checkout, ["fetch", "--force", "--tags", "origin"])?;
-                    ensure_bootstrap_tag_exists_on_origin(checkout, git_ref)?;
-                    run_bootstrap_git(checkout, ["checkout", git_ref, "--"])?;
-                    // a tag or commit is detached: there is nothing to pull
-                    if bootstrap_git_succeeds(checkout, ["symbolic-ref", "--quiet", "HEAD"])? {
-                        run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
-                    }
+                    update_bootstrap_ref(checkout, git_ref)?;
                 } else {
                     run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
                 }

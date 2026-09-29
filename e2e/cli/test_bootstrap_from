@@ -230,3 +230,14 @@ assert_contains "git -C '$PWD/ref-tag' tag" "local-only"
 # updating that branch
 git -C "$PWD/ref-branch" tag main
 assert_succeed "mise bootstrap --from '$ref_source?ref=main' --from-dir '$PWD/ref-branch' --update --yes --only task"
+
+# A local tag that shadows a branch of the same name on origin does not stop
+# --update from switching to the branch and following it
+git -C "$ref_source" checkout -q -b rel main
+echo rel >"$ref_source/marker"
+git -C "$ref_source" commit -qam rel
+git -C "$ref_source" checkout -q main
+git -C "$PWD/ref-branch" tag rel
+assert_succeed "mise bootstrap --from '$ref_source?ref=rel' --from-dir '$PWD/ref-branch' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "rel"
+assert "git -C '$PWD/ref-branch' symbolic-ref HEAD" "refs/heads/rel"
