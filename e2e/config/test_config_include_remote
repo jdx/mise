@@ -110,6 +110,12 @@ assert "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s version_of tiny" "1"
 assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
 assert "version_of tiny" "2"
 
+# A refresh that is not a valid fragment never replaces the copy that works.
+cp env-fragment/mise.toml base/mise.toml
+publish base base >/dev/null
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
+
 # When the refresh fails, the stale copy keeps working.
 kill "$REGISTRY_PID"
 wait "$REGISTRY_PID" 2>/dev/null || true

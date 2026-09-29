@@ -396,6 +396,9 @@ pub struct MiseToml {
     /// `tools` so `save()` (which writes `doc`) can never write them back.
     #[serde(skip)]
     included_tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
+    /// Where the fetched fragments live, so a refresh is noticed by `hook-env`.
+    #[serde(skip)]
+    included_paths: Mutex<Vec<PathBuf>>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1761,7 +1764,15 @@ impl ConfigFile for MiseToml {
             // the first include to name a tool wins, like the order of the list
             included.entry(ba).or_insert(tools);
         }
+        self.included_paths
+            .lock()
+            .unwrap()
+            .push(source.to_path_buf());
         Ok(())
+    }
+
+    fn included_paths(&self) -> Vec<PathBuf> {
+        self.included_paths.lock().unwrap().clone()
     }
 
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
@@ -2040,6 +2051,7 @@ impl Clone for MiseToml {
             path: self.path.clone(),
             include: self.include.clone(),
             included_tools: Mutex::new(self.included_tools.lock().unwrap().clone()),
+            included_paths: Mutex::new(self.included_paths.lock().unwrap().clone()),
             env_file: self.env_file.clone(),
             dotenv: self.dotenv.clone(),
             env: self.env.clone(),
@@ -5077,6 +5089,8 @@ run = "cargo build"
                 .all(|(_, reqs)| reqs.iter().all(|r| r.source() == &cf.source())),
             "included tools are sourced from the including file so they lock with it"
         );
+        // hook-env watches the fragment files so a refresh reloads the shell
+        assert_eq!(cf.included_paths(), vec![fragment_path.to_path_buf(); 2]);
         // the fragment never reaches what save() writes
         assert!(!cf.dump().unwrap().contains("python"));
     }

@@ -192,6 +192,12 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(())
     }
 
+    /// The local files the merged remote fragments were read from. `hook-env`
+    /// watches them next to the config files, so a refresh reloads the shell.
+    fn included_paths(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
     fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
         Ok(self.task_config().excludes.clone())
     }

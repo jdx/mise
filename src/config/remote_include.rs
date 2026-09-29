@@ -14,6 +14,7 @@ use std::time::Duration;
 use eyre::{Result, WrapErr, bail};
 
 use crate::config::config_file::ConfigFile;
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{Settings, SettingsExt};
 use crate::file;
 use crate::remote_source::RemoteSource;
@@ -49,10 +50,19 @@ async fn load(reference: &str) -> Result<PathBuf> {
         return Ok(cache);
     }
     file::create_dir_all(cache.parent().unwrap())?;
-    match fetch(reference).await {
+    // A body is only cached once it is known to load, so a bad edit upstream
+    // can never replace a copy that works.
+    let fetched = match fetch(reference).await {
+        Ok(body) => MiseToml::parse_remote_fragment(&body, &cache)
+            .map(|_| body)
+            .wrap_err_with(|| format!("invalid config include {reference}")),
+        Err(err) => Err(err),
+    };
+    match fetched {
         Ok(body) => file::write_atomic(&cache, body)?,
-        // An unreachable remote must not break every prompt: keep the stale
-        // copy, and rewrite it so the next attempt waits a full ttl.
+        // An unreachable or broken remote must not break every prompt: keep
+        // the copy that works, and rewrite it so the next attempt waits a
+        // full ttl.
         Err(err) if age.is_some() => {
             warn!("using the cached config include {reference}: {err:#}");
             file::write_atomic(&cache, file::read_to_string(&cache)?)?;

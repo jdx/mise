@@ -598,7 +598,11 @@ pub async fn build_session(
         max_modtime = std::cmp::max(modified, max_modtime);
     }
 
-    let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
+    let loaded_configs: IndexSet<PathBuf> = config
+        .config_files
+        .iter()
+        .flat_map(|(path, cf)| std::iter::once(path.clone()).chain(cf.included_paths()))
+        .collect();
 
     let settings = Settings::get();
     let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
