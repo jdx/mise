@@ -1460,7 +1460,7 @@ oras push ghcr.io/myorg/shared-tasks:1.0.0 build.toml scripts/deploy
 
 Every blob is verified against the digest in the manifest, and symlinks or other special files in an artifact are rejected. Credentials come from the same places as `mise oci push`: `docker login` / `podman login` configuration, with anonymous access when none is found. Registries on loopback addresses are contacted over plain HTTP; add other plain-HTTP registries to [`oci.insecure_registries`](/configuration/settings.html#oci.insecure_registries).
 
-Pulls are cached in `MISE_CACHE_DIR/remote-oci-tasks-cache`. Set `MISE_TASK_REMOTE_NO_CACHE=true` to pull on every run.
+Pulls are cached per reference in `MISE_CACHE_DIR/remote-oci-tasks-cache`, so a tag that later moves to a new digest is not picked up automatically. To refresh, reference a new tag or digest, delete that directory, or set `MISE_TASK_REMOTE_NO_CACHE=true` to pull on every run.
 
 ### `task_config.excludes` {#task_config.excludes}
 
