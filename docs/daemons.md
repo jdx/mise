@@ -265,6 +265,11 @@ include daemons outside the project. Use pitchfork directly for those.
 declares one, and otherwise starts every project daemon. `restart` does the same,
 since it starts daemons too. `stop` without names still covers every project daemon.
 
+Pass `--all` to `start`, `stop` or `restart` to cover every project daemon
+explicitly. For `start` and `restart` this includes daemons a `default` group leaves
+out. Unlike pitchfork's own `--all`, it never reaches daemons of other projects. It
+cannot be combined with daemon names or `--group`.
+
 Each project resolves that on its own. With inherited daemons, a `default` group in
 one project does not limit what another project starts. Group names are project
 scoped in the same way, so nested projects may each declare their own `default`.
