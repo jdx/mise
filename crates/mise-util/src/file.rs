@@ -2076,6 +2076,45 @@ impl ExtractionFormat {
         ext.to_lowercase().parse().ok()
     }
 
+    /// The format a download's name implies, falling back to its leading
+    /// bytes when the name carries no known extension — as brew does, since
+    /// URLs such as `codeload.github.com/<owner>/<repo>/tar.gz/refs/tags/<tag>`
+    /// end without one.
+    pub fn detect(path: &Path, filename: &str) -> Result<Self> {
+        match Self::from_file_name(filename) {
+            ExtractionFormat::Raw => Ok(Self::from_magic(path)?.unwrap_or(ExtractionFormat::Raw)),
+            format => Ok(format),
+        }
+    }
+
+    /// Identify an archive by its content. A compressed stream only counts as
+    /// a tarball when its payload opens with a ustar header, so a bare
+    /// compressed file or a binary is never mistaken for an archive.
+    pub fn from_magic(path: &Path) -> Result<Option<Self>> {
+        let mut magic = [0; 6];
+        let len = File::open(path)?.read(&mut magic)?;
+        let magic = &magic[..len];
+        if magic.starts_with(b"PK\x03\x04") {
+            return Ok(Some(ExtractionFormat::Zip));
+        }
+        let format = if magic.starts_with(&[0x1f, 0x8b]) {
+            ExtractionFormat::TarGz
+        } else if magic.starts_with(b"\xfd7zXZ\0") {
+            ExtractionFormat::TarXz
+        } else if magic.starts_with(b"BZh") {
+            ExtractionFormat::TarBz2
+        } else if magic.starts_with(&[0x28, 0xb5, 0x2f, 0xfd]) {
+            ExtractionFormat::TarZst
+        } else {
+            ExtractionFormat::Tar
+        };
+        let mut header = Vec::with_capacity(512);
+        // a stream that fails to decode is not an archive we can unpack
+        let decoded = open_tar(format, path)?.take(512).read_to_end(&mut header);
+        let is_tar = decoded.is_ok() && header.get(257..262) == Some(&b"ustar"[..]);
+        Ok(is_tar.then_some(format))
+    }
+
     pub fn is_archive(&self) -> bool {
         self.is_tar_archive()
             || matches!(

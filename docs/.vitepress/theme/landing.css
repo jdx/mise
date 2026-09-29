@@ -798,6 +798,55 @@ a:hover > div + .card-link::after {
 .hero-copy {
   min-width: 0;
 }
+/* Announcement chip above the title, linking to the theme song page. */
+.hero-song {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin-bottom: 24px;
+  padding: 5px 14px 5px 5px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 999px;
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-bg-soft);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.hero-song strong {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+}
+.hero-song:hover {
+  color: var(--vp-c-text-1);
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+}
+.hero-song-play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding-left: 2px;
+  border-radius: 50%;
+  color: var(--vp-button-brand-text);
+  background: var(--vp-button-brand-bg);
+  font-size: 0.625rem;
+}
+.hero-song-arrow {
+  flex: none;
+  color: var(--vp-c-brand-1);
+  transition: transform 0.15s;
+}
+.hero-song:hover .hero-song-arrow {
+  transform: translateX(2px);
+}
 .hero-title {
   margin: 0;
   color: var(--vp-c-brand-1);
@@ -1113,6 +1162,9 @@ a:hover > div + .card-link::after {
   .home-hero {
     padding: 40px 24px;
     gap: 32px;
+  }
+  .hero-song-extra {
+    display: none;
   }
   .hero-lede {
     font-size: 1rem;
