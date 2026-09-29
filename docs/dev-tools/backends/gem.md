@@ -93,12 +93,20 @@ resolves (`MISE_GITHUB_TOKEN`, `GITHUB_TOKEN`, `gh`'s login and the rest; see
 `mise token github`). The token needs the `read:packages` scope, which a
 personal access token (classic) can carry. A plain `gh auth login` does not
 grant it; add it with `gh auth refresh -s read:packages`. Without it the
-registry answers 403:
+registry answers 403.
+
+GitHub Packages has no version-listing API mise can read, so pin an exact
+version rather than `latest` or a prefix:
 
 ```toml
 [tools]
-"gem:internal-cli" = { version = "latest", source = "https://rubygems.pkg.github.com/acme" }
+"gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
 ```
+
+`gem install` takes the source, credential included, as a command-line
+argument, so other users on the same machine can see it in `ps` while it runs.
+That is harmless on a single-user machine or in CI; on a shared one, use a
+token scoped to `read:packages` only.
 
 The source is added to the other sources rather than replacing them, so
 dependencies still resolve from rubygems.org, and so can a public gem with the

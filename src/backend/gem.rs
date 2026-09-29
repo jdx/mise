@@ -12,7 +12,7 @@ use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use eyre::{WrapErr, ensure};
+use eyre::{WrapErr, bail, ensure};
 use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
@@ -77,6 +77,14 @@ impl Backend for GemBackend {
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
+            // ponytail: GitHub Packages serves only the compact index and the
+            // Marshal `dependencies` API, not the JSON one read here. Parse
+            // `/info/<gem>` if `latest` there is ever worth supporting.
+            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => bail!(
+                "GitHub Packages has no version-listing API mise can read, so `{}` \
+                 cannot resolve `latest` or a prefix there: pin an exact version",
+                self.ba()
+            ),
             Some(source) => source.join(&format!("api/v1/versions/{}.json", self.tool_name()))?,
             None => format!(
                 "{}api/v1/versions/{}.json",
