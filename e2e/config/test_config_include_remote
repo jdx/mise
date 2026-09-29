@@ -39,7 +39,7 @@ publish() {
   mise x crane@latest -- crane digest "$ref"
 }
 
-mkdir -p base env-fragment bad-fragment task-fragment
+mkdir -p base env-fragment bad-fragment task-fragment min-fragment
 cat >base/mise.toml <<'TOML'
 [tools]
 tiny = "1"
@@ -54,6 +54,9 @@ cat >bad-fragment/mise.toml <<'TOML'
 [settings]
 experimental = true
 TOML
+cat >min-fragment/mise.toml <<'TOML'
+min_version = "2099.1.1"
+TOML
 cat >task-fragment/mise.toml <<'TOML'
 [tasks.a]
 run = "echo a"
@@ -62,6 +65,7 @@ BASE="$(publish base base)"
 ENV_FRAGMENT="$(publish env-fragment envfrag)"
 BAD_FRAGMENT="$(publish bad-fragment badfrag)"
 TASK_FRAGMENT="$(publish task-fragment taskfrag)"
+MIN_FRAGMENT="$(publish min-fragment minfrag)"
 
 version_of() {
   mise ls --json | jq -r --arg t "$1" '.[$t][0].requested_version // empty'
@@ -129,6 +133,12 @@ cat >mise.toml <<TOML
 include = ["oci::$REGISTRY/e2e/badfrag@$BAD_FRAGMENT"]
 TOML
 assert_fail_contains "mise ls" "is not supported in a config include"
+
+# A fragment's min_version is enforced like any config's.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/minfrag@$MIN_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "2099.1.1"
 
 # Tasks are discovered from files, not loaded configs; point at task_config.includes.
 cat >mise.toml <<TOML
