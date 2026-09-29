@@ -131,34 +131,40 @@ impl Backend for GemBackend {
         )
         .await;
 
-        let mut cmd =
-            CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await)
-                .arg("install")
-                .arg(self.tool_name())
-                .arg("--version")
-                .arg(&tv.version)
-                .arg("--install-dir")
-                .arg(tv.install_path().join("libexec"));
-        if let Some(source) = self.configured_source(&ctx.config).await? {
+        let source = self.configured_source(&ctx.config).await?;
+        let mut cmd = match &source {
+            // A credential in argv is visible to other users in `ps`. RubyGems
+            // only reads credentials from the source URL, so run `bin/gem`'s
+            // two lines under `ruby -e` and hand the URL over in the
+            // environment, which only the same user can read.
+            Some(source) if carries_credentials(source) => {
+                CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "ruby").await)
+                    .arg("-e")
+                    .arg(GEM_WITH_ENV_SOURCE)
+                    .arg("--")
+                    .env("MISE_GEM_SOURCE", source.as_str())
+                    // Raw mode would bypass the output redaction below.
+                    .never_raw()
+            }
+            _ => CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await),
+        }
+        .arg("install")
+        .arg(self.tool_name())
+        .arg("--version")
+        .arg(&tv.version)
+        .arg("--install-dir")
+        .arg(tv.install_path().join("libexec"));
+        if let Some(source) = &source {
             // `--source` rather than `--clear-sources --source`: the latter
             // would also cut off the registry holding this gem's dependencies,
             // which commonly still live on rubygems.org.
-            cmd = cmd.arg("--source").arg(source.as_str());
-            // gem's own fetch errors redact the source (`Gem::Uri#redacted`),
-            // but nothing makes that true of everything it might print: `-V`,
-            // a `~/.gemrc` verbosity setting or a wrapper can echo the command
-            // it ran. Its output is streamed straight through and the last
-            // stderr line is carried into the failure, so scrub it here.
-            cmd = cmd.redact(ctx.config.redactions().iter().cloned());
-            // Redacting the stream only helps if there is a stream to redact.
-            // Raw mode hands the child mise's own stdout and stderr, so it
-            // would bypass the line above entirely. Refused for this one
-            // command, and only when the source actually carries a credential:
-            // without one there is nothing to protect and no reason to take
-            // raw mode away from someone who asked for it.
-            if carries_credentials(&source) {
-                cmd = cmd.never_raw();
+            if !carries_credentials(source) {
+                cmd = cmd.arg("--source").arg(source.as_str());
             }
+            // gem's own fetch errors redact the source (`Gem::Uri#redacted`),
+            // but `-V`, a `~/.gemrc` verbosity setting or a wrapper can still
+            // echo it, so scrub the streamed output too.
+            cmd = cmd.redact(ctx.config.redactions().iter().cloned());
         }
         cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
@@ -297,6 +303,11 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
     }
     Ok(Some(url))
 }
+
+/// `bin/gem`, plus `--source` from `MISE_GEM_SOURCE`. The variable is deleted
+/// first so native extension builds do not inherit it.
+const GEM_WITH_ENV_SOURCE: &str = r#"require "rubygems/gem_runner"
+Gem::GemRunner.new.run(ARGV + ["--source", ENV.delete("MISE_GEM_SOURCE")])"#;
 
 /// GitHub Packages' RubyGems registry.
 const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";

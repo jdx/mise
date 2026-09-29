@@ -97,9 +97,6 @@ Packages can't list versions, so pin one:
 "gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
 ```
 
-`gem install` receives the source URL, credential included, as an argument,
-so it is visible in `ps` while it runs.
-
 The source is added to the other sources rather than replacing them, so
 dependencies still resolve from rubygems.org, and so can a public gem with the
 same name. Prefer a registry that proxies rubygems.org, or pin an exact version.
