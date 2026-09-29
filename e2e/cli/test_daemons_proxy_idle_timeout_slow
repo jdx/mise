@@ -4,12 +4,13 @@
 # stop within the test.
 export MISE_EXPERIMENTAL=1
 if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
-  if mise install pitchfork@2.27.0 --minimum-release-age 0s >/dev/null 2>&1; then
-    MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
-  else
-    echo "Skipping: no pitchfork with proxy_idle_timeout; set MISE_TEST_PITCHFORK to pitchfork 2.27.0 or newer"
-    exit 0
+  # A failed install is a failure, not a skip: a run that quietly checks nothing
+  # would report per-daemon idle shutdown as covered.
+  if ! mise install pitchfork@2.27.0 --minimum-release-age 0s; then
+    echo "could not install pitchfork 2.27.0; set MISE_TEST_PITCHFORK to pitchfork 2.27.0 or newer to use a local build"
+    exit 1
   fi
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
 fi
 cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
@@ -42,7 +43,7 @@ namespace = "idle-test"
 run = "exec python3 -m http.server $SHORTLIVED_PORT --bind 127.0.0.1"
 port = { auto = true, base = 35000 }
 ready_cmd = "curl -fsS http://127.0.0.1:$SHORTLIVED_PORT/"
-proxy_idle_timeout = "4s"
+proxy_idle_timeout = "6s"
 [daemons.optout]
 run = "exec python3 -m http.server $OPTOUT_PORT --bind 127.0.0.1"
 port = { auto = true, base = 36000 }
@@ -87,14 +88,19 @@ wait_for_status() {
 }
 export -f request status wait_for_status
 
-for name in SHORTLIVED OPTOUT INHERITS; do
+# Start the two that never idle first, and the short-lived one last, so its timer
+# is running for as little of the setup as possible: every request waits for a
+# new daemon to become ready, which can be slow on a busy runner.
+for name in OPTOUT INHERITS; do
   assert "request $name"
 done
-for name in shortlived optout inherits; do
+for name in optout inherits; do
   assert_contains "status $name" running
 done
+assert "request SHORTLIVED"
+assert_contains "status shortlived" running
 
-# Idle shutdown is checked about every interval, well after the 4s timeout. Only
+# Idle shutdown is checked about every interval, after the 6s timeout. Only
 # the daemon with its own short timeout stops; `false` and the 1h global default
 # keep the other two running through the same idle period.
 assert "wait_for_status shortlived stopped"
