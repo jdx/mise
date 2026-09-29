@@ -294,6 +294,7 @@ impl BackendsSwitch {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            sidecars: false,
             lockfiles: None,
         }
     }

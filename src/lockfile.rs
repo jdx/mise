@@ -384,6 +384,73 @@ pub struct LockfileTool {
     pub uv: Option<GraphRef<UvLock>>,
 }
 
+/// A native dependency sidecar directory a lockfile entry refers to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidecarRef {
+    pub short: String,
+    pub version: String,
+    /// The native graph kind: `aube` or `uv`.
+    pub graph: &'static str,
+    /// Absolute directory, beside the lockfile's symlink target.
+    pub dir: PathBuf,
+    pub digest: String,
+    /// Whether the directory holds the native lockfile the digest covers.
+    pub exists: bool,
+}
+
+impl Lockfile {
+    /// Sidecar directories the entries reference, in lockfile order. Legacy
+    /// inline graphs have no directory yet and are not listed.
+    pub fn sidecar_refs(&self) -> Vec<SidecarRef> {
+        fn reference<T: NativeGraph>(
+            short: &str,
+            entry: &LockfileTool,
+            kind: &'static str,
+            graph: &GraphRef<T>,
+        ) -> Option<SidecarRef> {
+            let dir = graph.dir()?;
+            Some(SidecarRef {
+                short: short.to_string(),
+                version: entry.version.clone(),
+                graph: kind,
+                dir: dir.to_path_buf(),
+                digest: graph.identity(),
+                exists: dir.join(T::GRAPH_FILE).is_file(),
+            })
+        }
+        self.tools
+            .iter()
+            .flat_map(|(short, entries)| entries.iter().map(move |entry| (short, entry)))
+            .flat_map(|(short, entry)| {
+                let aube = entry
+                    .aube
+                    .as_ref()
+                    .and_then(|graph| reference(short, entry, "aube", graph));
+                let uv = entry
+                    .uv
+                    .as_ref()
+                    .and_then(|graph| reference(short, entry, "uv", graph));
+                aube.into_iter().chain(uv)
+            })
+            .collect()
+    }
+}
+
+/// Where mise keeps the sidecars of a lockfile. A symlinked lockfile keeps
+/// them beside its target, as [`Lockfile::read`] does.
+pub fn sidecar_dir_for(lockfile: &Path) -> Result<PathBuf> {
+    let target = if lockfile.is_symlink() {
+        fs::canonicalize(lockfile)?
+    } else {
+        lockfile.to_path_buf()
+    };
+    Ok(if target.is_absolute() {
+        sidecar_root(&target)
+    } else {
+        env::current_dir()?.join(sidecar_root(&target))
+    })
+}
+
 impl Default for Lockfile {
     fn default() -> Self {
         Self {
