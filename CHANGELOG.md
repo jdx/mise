@@ -1,5 +1,81 @@
 # Changelog
 
+## [2026.9.17](https://github.com/jdx/mise/compare/v2026.9.16..v2026.9.17) - 2026-09-29
+
+### 🚀 Features
+
+- **(config)** support global local miserc overrides by @jdx in [#13778](https://github.com/jdx/mise/pull/13778)
+- **(config)** auto-install unconfigured registry bins on command not found by @jdx in [#13781](https://github.com/jdx/mise/pull/13781)
+- **(dotfiles)** identify history commits by machine by @jdx in [#13791](https://github.com/jdx/mise/pull/13791)
+- **(install)** allow tool postinstall on every install by @jdx in [#13789](https://github.com/jdx/mise/pull/13789)
+- **(lock)** warn when old lockfile formats are overdue for upgrade by @jdx in [#13779](https://github.com/jdx/mise/pull/13779)
+- **(self-update)** apply minimum release age to mise updates and installs by @jdx in [#13782](https://github.com/jdx/mise/pull/13782)
+- **(self-update)** verify packslips against the mise repository ID by @jdx in [#13785](https://github.com/jdx/mise/pull/13785)
+
+### 🐛 Bug Fixes
+
+- **(backend)** preserve Go install errors for resolved versions by @jdx in [#13794](https://github.com/jdx/mise/pull/13794)
+- **(brew)** prepend the shim's `Pathname#write` override by @jacobbednarz in [#13760](https://github.com/jdx/mise/pull/13760)
+- **(brew)** define Homebrew's Language::* mixins in both shims by @waynehoover in [#13328](https://github.com/jdx/mise/pull/13328)
+- **(brew)** unpack source archives whose URL names no extension by @jacobbednarz in [#13750](https://github.com/jdx/mise/pull/13750)
+- **(config)** keep edited configs untrusted with --yes in paranoid mode by @jdx in [#13796](https://github.com/jdx/mise/pull/13796)
+- **(npm)** pass minimum release age in kebab-case for pnpm 12 by @Nagato-Yuzuru in [#13764](https://github.com/jdx/mise/pull/13764)
+- **(upgrade)** bump same-prefix exact releases by @ryoikarashi in [#13759](https://github.com/jdx/mise/pull/13759)
+
+### 🚜 Refactor
+
+- **(self-update)** use native downloads and signature verification by @jdx in [#13783](https://github.com/jdx/mise/pull/13783)
+
+### 📚 Documentation
+
+- replace the theme song with the mise run music video by @jdx in [#13799](https://github.com/jdx/mise/pull/13799)
+- add a seven-minute showreel of mise to the landing page by @jdx in [#13797](https://github.com/jdx/mise/pull/13797)
+
+### 🧪 Testing
+
+- **(dotfiles)** fix flaky timeout in retrack prompt test by @jdx in [#13772](https://github.com/jdx/mise/pull/13772)
+- **(pipx)** exercise extras with a smaller CLI fixture by @jdx in [#13775](https://github.com/jdx/mise/pull/13775)
+- **(upgrade)** cover --bump keeping short versions short by @jdx in [#13773](https://github.com/jdx/mise/pull/13773)
+
+### 📦️ Dependency Updates
+
+- refresh markdownlint-cli's locked dependencies by @jdx in [#13769](https://github.com/jdx/mise/pull/13769)
+- update gix to 0.88 by @jdx in [#13771](https://github.com/jdx/mise/pull/13771)
+- lock file maintenance by @renovate[bot] in [#13767](https://github.com/jdx/mise/pull/13767)
+- update jdx crates to v6.12.0 by @renovate[bot] in [#13790](https://github.com/jdx/mise/pull/13790)
+- update docker images by @renovate[bot] in [#13804](https://github.com/jdx/mise/pull/13804)
+- update github actions by @renovate[bot] in [#13803](https://github.com/jdx/mise/pull/13803)
+- update rust crates by @renovate[bot] in [#13806](https://github.com/jdx/mise/pull/13806)
+
+### 📦 Registry
+
+- prefer signed packslips for timoni and worktrunk by @jdx in [#13780](https://github.com/jdx/mise/pull/13780)
+
+### Chore
+
+- **(entire)** store mise checkpoints in a private repository by @jdx in [e5c1488](https://github.com/jdx/mise/commit/e5c1488b668c4fa93415cf8812938c1cd1136d40)
+- **(entire)** commit codex session hooks by @jdx in [7300964](https://github.com/jdx/mise/commit/7300964c455cd109262be695a9fbd7742f1a4144)
+- **(entire)** commit claude session hooks by @jdx in [ad720ea](https://github.com/jdx/mise/commit/ad720ea4c6ee29a5a29e661e678be7d76e6ca337)
+- **(entire)** restore lower-cost trail findings by @jdx in [b979550](https://github.com/jdx/mise/commit/b979550b349db9f58907056439aaa99b8bee5a16)
+
+### Ci
+
+- **(deps)** refresh all aube workspace crates in Renovate aube updates by @jdx in [#13801](https://github.com/jdx/mise/pull/13801)
+- **(deps)** pin the aube mise.lock refresh to the version Renovate selected by @jdx in [#13802](https://github.com/jdx/mise/pull/13802)
+- enable mr-boxington caching for unit-macos by @jdx in [#13776](https://github.com/jdx/mise/pull/13776)
+- report release checks for stacked pull requests by @jdx in [#13786](https://github.com/jdx/mise/pull/13786)
+- allow publishing docs via workflow_dispatch by @jdx in [#13800](https://github.com/jdx/mise/pull/13800)
+
+### New Contributors
+
+- @ryoikarashi made their first contribution in [#13759](https://github.com/jdx/mise/pull/13759)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`jdx/packslip`](https://github.com/jdx/packslip)
+
 ## [2026.9.16](https://github.com/jdx/mise/compare/v2026.9.15..v2026.9.16) - 2026-09-28
 
 ### 🚀 Features
