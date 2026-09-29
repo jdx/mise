@@ -869,30 +869,57 @@ supervisor starts the daemons but does not serve their hostnames.
 
 ### Stop idle daemons
 
-Nothing stops on its own by default. To stop a daemon after a period without
-traffic, set `proxy_idle_timeout` on it. Pitchfork reads the key, so it needs
-Pitchfork 2.27.0 or newer and takes a duration such as `"15m"`, or `false` to
-exempt the daemon:
+Opening a daemon's URL starts it, and its `depends`, if it is not running. Nothing
+stops it again by default: pitchfork's idle shutdown is off, so a daemon the proxy
+started keeps running until you stop it. Set `proxy_idle_timeout` on a daemon to have
+pitchfork stop it after that long without proxy traffic:
 
 ```toml
-[daemons.api]
-run = "exec npm run dev -- --port $API_PORT"
-port = { auto = true, base = 3000 }
-proxy_idle_timeout = "15m"
+[daemons.web]
+run = "npm run dev"
+port = 5173
+depends = ["db"]
+proxy_idle_timeout = "30m"
+
+[daemons.db]
+preset = "postgres"
+version = "18"
 ```
 
-To apply one timeout to every daemon the proxy starts, set `idle_timeout` under
-`[settings.proxy]` in `~/.config/pitchfork/config.toml` instead. A daemon's own
-`proxy_idle_timeout` overrides it. A dependency without one inherits the timeout
-of the requested daemon only when Pitchfork starts it for that request; a
-dependency that is already running keeps its existing idle-shutdown eligibility
-and timeout.
+With this, visiting `https://web.shop.localhost` starts `db` and `web`. Thirty minutes
+after the last request, `web` stops, then `db` if nothing else still needs it, and the
+next visit starts them again.
 
-The timeout applies only to a daemon the proxy started because a request arrived
-at its hostname. A daemon you started with `mise daemons start` or that a task
-started keeps running until you stop it. Open streaming responses and WebSockets
-count as activity. The next request starts the daemon again, and preset data stays
-on disk. See pitchfork's
+The value is a duration string such as `"30m"`, `"1h"` or `"90s"`, or `false`. Mise
+checks its shape and pitchfork parses it, so it needs pitchfork 2.27.0 or later.
+
+- **Default off.** A daemon without `proxy_idle_timeout` is stopped for inactivity
+  only when pitchfork's own `proxy.idle_timeout` setting is on, for example
+  `PITCHFORK_PROXY_IDLE_TIMEOUT=15m` or `idle_timeout = "15m"` under `[settings.proxy]`
+  in pitchfork's user configuration. `proxy_idle_timeout` overrides that default for one
+  daemon.
+- **Only proxy-started daemons.** `mise daemons start`, the shell hook and
+  `boot_start` are explicit starts, and a daemon started that way is exempt along with
+  its dependencies, however long it sits idle.
+- **Dependencies inherit.** A dependency without its own `proxy_idle_timeout` takes the
+  timeout of the daemon the proxy was asked to start, so `db` above also uses `"30m"`,
+  not the global default. One that is already running keeps the timeout it started with.
+- **Open connections count.** A request counts until its response has been sent, and a
+  WebSocket, a streaming response or a TLS passthrough connection keeps the daemon
+  active for as long as it stays open, so a browser tab holding a hot-reload socket
+  keeps a dev server up. Traffic sent straight to the daemon's port does not count, so
+  a client that bypasses the proxy should use `false`.
+- **`false` opts out.** It exempts the daemon even when the proxy started it as a
+  dependency of one that has a timeout, and even when a global `proxy.idle_timeout` is
+  set. Leaving the key out is different in exactly those two cases: the daemon then
+  follows the global default, or the timeout it inherited. With no global setting and no
+  dependent that has a timeout, `false` and leaving it out behave the same. `"0"` is
+  the same as `false`.
+
+Shutdown is checked every pitchfork `general.interval` (10 seconds by default), and a
+daemon stops only when no running daemon depends on it and no tracked shell session
+needs it, so it can outlive the timeout by a little.
+See pitchfork's
 [idle shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)
 for the full activity rules.
 

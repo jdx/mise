@@ -680,8 +680,9 @@ differently named daemon.
 
 A higher-precedence declaration replaces the complete same-name daemon. Explicit
 environment variables override preset exports. `proxy` sets the daemon's hostname
-label, opts it out with `false`, or re-enables it with `true`, and `proxy_tls`
-chooses `"terminate"` or `"passthrough"`. See [Daemons](/daemons) for presets,
+label, opts it out with `false`, or re-enables it with `true`, `proxy_tls` chooses
+`"terminate"` or `"passthrough"`, and `proxy_idle_timeout` (a duration such as `"30m"`,
+or `false`) stops a proxy-started daemon after it sits idle. See [Daemons](/daemons) for presets,
 [project references](/daemons#daemons-from-another-project),
 [stable URLs](/daemons#stable-urls-per-worktree), and lifecycle commands.
 
