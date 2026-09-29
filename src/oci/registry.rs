@@ -780,7 +780,9 @@ enum ArtifactLayerKind {
     /// Raw bytes written to a relative path.
     File(PathBuf),
     /// A tar archive extracted below a relative directory (empty for the root).
-    Tar(PathBuf, ExtractionFormat),
+    /// The flag says whether it is a filesystem layer whose whiteouts delete
+    /// what earlier layers put there; a titled directory is plain content.
+    Tar(PathBuf, ExtractionFormat, bool),
 }
 
 /// Reduce an annotation title to a relative path made of plain components, so
@@ -824,6 +826,7 @@ fn classify_artifact_layer(layer: &Descriptor) -> Result<ArtifactLayerKind> {
         (Some(title), Some(format)) if unpack => Ok(ArtifactLayerKind::Tar(
             artifact_relative_path(title)?,
             format,
+            false,
         )),
         (Some(title), _) => {
             let path = artifact_relative_path(title)?;
@@ -832,7 +835,7 @@ fn classify_artifact_layer(layer: &Descriptor) -> Result<ArtifactLayerKind> {
             }
             Ok(ArtifactLayerKind::File(path))
         }
-        (None, Some(format)) => Ok(ArtifactLayerKind::Tar(PathBuf::new(), format)),
+        (None, Some(format)) => Ok(ArtifactLayerKind::Tar(PathBuf::new(), format, true)),
         (None, None) => bail!(
             "artifact layer {} has media type {} and no {ANNOTATION_TITLE} annotation, so mise cannot tell what file it is",
             short_digest(&layer.digest),
@@ -859,9 +862,10 @@ fn reject_artifact_links(root: &Path) -> Result<()> {
 }
 
 /// Copy a vetted layer tree into the destination, keeping file modes.
-/// Whiteouts (`.wh.<name>`, `.wh..wh..opq`) delete what earlier layers put
-/// there, as they do for container images.
-fn merge_artifact_tree(from: &Path, to: &Path) -> Result<()> {
+/// With `whiteouts`, entries named `.wh.<name>` and `.wh..wh..opq` delete what
+/// earlier layers put there, as they do for container images; otherwise they
+/// are copied like any other file.
+fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
     let mut entries = Vec::new();
     for entry in walkdir::WalkDir::new(from).follow_links(false) {
         let entry = entry?;
@@ -872,7 +876,9 @@ fn merge_artifact_tree(from: &Path, to: &Path) -> Result<()> {
     for (relative, is_dir) in &entries {
         let name = relative.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let parent = to.join(relative.parent().unwrap_or(Path::new("")));
-        if name == ".wh..wh..opq" {
+        if !whiteouts {
+            copies.push((relative, is_dir));
+        } else if name == ".wh..wh..opq" {
             if parent.is_dir() {
                 for child in std::fs::read_dir(&parent)? {
                     crate::file::remove_all(child?.path())?;
@@ -970,7 +976,7 @@ pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
                 }
                 crate::file::write(&target, &bytes)?;
             }
-            ArtifactLayerKind::Tar(dir, format) => {
+            ArtifactLayerKind::Tar(dir, format, whiteouts) => {
                 // Extract away from `dest` and vet the tree first: `dest` must
                 // never hold a link that a later layer's write could follow.
                 let name = layer.digest.replace(':', "-");
@@ -984,7 +990,7 @@ pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
                     &crate::file::ExtractOptions::default(),
                 )?;
                 reject_artifact_links(&unpacked)?;
-                merge_artifact_tree(&unpacked, &dest.join(dir))?;
+                merge_artifact_tree(&unpacked, &dest.join(dir), whiteouts)?;
             }
         }
     }
@@ -2198,12 +2204,12 @@ mod tests {
                 &[(title, "dir"), ("io.deis.oras.content.unpack", "true")]
             ))
             .unwrap(),
-            ArtifactLayerKind::Tar(PathBuf::from("dir"), ExtractionFormat::TarGz)
+            ArtifactLayerKind::Tar(PathBuf::from("dir"), ExtractionFormat::TarGz, false)
         );
         assert_eq!(
             classify_artifact_layer(&layer("application/vnd.oci.image.layer.v1.tar+gzip", &[]))
                 .unwrap(),
-            ArtifactLayerKind::Tar(PathBuf::new(), ExtractionFormat::TarGz)
+            ArtifactLayerKind::Tar(PathBuf::new(), ExtractionFormat::TarGz, true)
         );
         assert!(classify_artifact_layer(&layer("text/plain", &[])).is_err());
     }
@@ -2453,7 +2459,7 @@ mod tests {
         std::fs::write(layer.join("sub/.wh..wh..opq"), "").unwrap();
         std::fs::write(layer.join("sub/b"), "b").unwrap();
 
-        merge_artifact_tree(&layer, &dest).unwrap();
+        merge_artifact_tree(&layer, &dest, true).unwrap();
 
         assert!(!dest.join("old").exists());
         assert!(!dest.join(".wh.old").exists());
@@ -2461,6 +2467,28 @@ mod tests {
         assert!(!dest.join("sub/a").exists());
         assert_eq!(std::fs::read_to_string(dest.join("sub/b")).unwrap(), "b");
         assert!(!dest.join("sub/.wh..wh..opq").exists());
+    }
+
+    #[test]
+    fn titled_directory_layers_keep_whiteout_named_files() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::create_dir_all(&layer).unwrap();
+        std::fs::write(dest.join("build"), "earlier").unwrap();
+        std::fs::write(layer.join(".wh.build"), "literal").unwrap();
+
+        merge_artifact_tree(&layer, &dest, false).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("build")).unwrap(),
+            "earlier"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join(".wh.build")).unwrap(),
+            "literal"
+        );
     }
 
     #[test]
@@ -2473,7 +2501,7 @@ mod tests {
         std::fs::create_dir_all(&layer).unwrap();
         for name in [".wh...", ".wh..", ".wh."] {
             std::fs::write(layer.join(name), "").unwrap();
-            assert!(merge_artifact_tree(&layer, &dest).is_err(), "{name}");
+            assert!(merge_artifact_tree(&layer, &dest, true).is_err(), "{name}");
             std::fs::remove_file(layer.join(name)).unwrap();
         }
         assert!(td.path().join("parent/sibling").exists());
