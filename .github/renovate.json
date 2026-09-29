@@ -43,7 +43,7 @@
       "postUpgradeTasks": {
         "commands": [
           "cargo update -p aube -p aube-registry -p aube-codes -p aube-lockfile -p aube-settings -p aube-linker -p aube-manifest -p aube-resolver -p aube-runtime -p aube-scripts -p aube-store -p aube-util -p aube-workspace --precise {{{newVersion}}}",
-          "mise lock --bump --minimum-release-age 0s aube"
+          "mise lock --bump --minimum-release-age 0s aube@{{{newVersion}}}"
         ],
         "executionMode": "update",
         "fileFilters": ["Cargo.lock", "mise.lock"],
