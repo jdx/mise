@@ -11,6 +11,7 @@ AWS_ACCESS_KEY_ID = "placeholder"
 AWS_ACCESS_KEY_ID = { required = "AWS access key ID for S3", redact = true }
 EOF2
 
+unset AWS_ACCESS_KEY_ID
 # Only the image gets the placeholder; the build host has no such variable.
 assert_succeed "mise oci build --from scratch --no-mise -o out"
 assert_not_contains "mise oci build --from scratch --no-mise -o out 2>&1" "is not defined"
