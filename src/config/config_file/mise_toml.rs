@@ -595,23 +595,33 @@ impl MiseToml {
     /// is not something a config can use without it.
     pub(crate) fn from_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
         if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
-            // `[settings]` and the monorepo declarations are read before any
-            // include can be resolved, so they could never apply. Tasks are
-            // discovered from files on disk, which a fragment is not.
-            for key in [
-                "include",
-                "settings",
-                "monorepo_root",
-                "experimental_monorepo_root",
-                "monorepo",
-                "tasks",
-                "task_config",
-                "task_templates",
-            ] {
-                if table.contains_key(key) {
+            // Only what is resolved from the loaded config and relative to the
+            // including file. `[settings]` and the monorepo keys are read before
+            // any include exists, tasks are discovered from files, and the system
+            // sections (dotfiles, daemons, ...) resolve paths from the file the
+            // fragment is stored in.
+            const ALLOWED: &[&str] = &[
+                "_",
+                "min_version",
+                "tools",
+                "tool_alias",
+                "tool_config",
+                "alias",
+                "shell_alias",
+                "plugins",
+                "redactions",
+                "wrappers",
+                "hooks",
+                "env",
+                "env_path",
+                "vars",
+            ];
+            for key in table.keys() {
+                if !ALLOWED.contains(&key.as_str()) {
                     eyre::bail!(
-                        "`{key}` is not supported in a config include (share tasks with \
-                         `task_config.includes`)"
+                        "`{key}` is not supported in a config include (supported: {}; share \
+                         tasks with `task_config.includes`)",
+                        ALLOWED[1..].join(", ")
                     );
                 }
             }
@@ -5080,6 +5090,8 @@ run = "cargo build"
             ("[settings]\nexperimental = true\n", "settings"),
             ("monorepo_root = true\n", "monorepo_root"),
             ("[tasks.a]\nrun = \"echo\"\n", "tasks"),
+            ("[dotfiles]\n", "dotfiles"),
+            ("[daemons.a]\ncommand = \"x\"\n", "daemons"),
         ] {
             let err = MiseToml::from_remote_fragment(body, including)
                 .unwrap_err()

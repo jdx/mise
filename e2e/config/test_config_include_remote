@@ -49,7 +49,10 @@ cat >env-fragment/mise.toml <<'TOML'
 [env]
 FROM_FRAGMENT = "1"
 OVERRIDDEN = "fragment"
+ROOT = "{{ config_root }}"
+_.file = ".fragment.env"
 TOML
+echo "FROM_DOTENV=yes" >.fragment.env
 cat >bad-fragment/mise.toml <<'TOML'
 [settings]
 experimental = true
@@ -126,6 +129,9 @@ OVERRIDDEN = "local"
 TOML
 assert "mise env --json | jq -r .FROM_FRAGMENT" "1"
 assert "mise env --json | jq -r .OVERRIDDEN" "local"
+# relative paths and config_root resolve against the including file, not the cache
+assert "mise env --json | jq -r .ROOT" "$PWD"
+assert "mise env --json | jq -r .FROM_DOTENV" "yes"
 
 # [settings] is read before an include can be resolved, so it is refused rather
 # than silently ignored.

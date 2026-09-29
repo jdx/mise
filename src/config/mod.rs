@@ -1590,9 +1590,11 @@ impl Config {
             .config_files
             .iter()
             .rev()
-            .map(|(source, cf)| {
+            .map(|(_, cf)| {
+                // not the map key: an include is keyed by its cache file, but
+                // resolves against the file that includes it
                 cf.env_entries()
-                    .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+                    .map(|ee| ee.into_iter().map(|e| (e, cf.get_path().to_path_buf())))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -3771,9 +3773,9 @@ pub(crate) async fn resolve_vars_from_config_files(
     let entries = config_files
         .iter()
         .rev()
-        .map(|(source, cf)| {
+        .map(|(_, cf)| {
             cf.vars_entries()
-                .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+                .map(|ee| ee.into_iter().map(|e| (e, cf.get_path().to_path_buf())))
         })
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -3801,9 +3803,10 @@ fn bootstrap_dry_run_vars(
     mut vars: IndexMap<String, String>,
     mut preceding_layer_changed: bool,
 ) -> Result<IndexMap<String, String>> {
-    for (source, config_file) in config_files.iter().rev() {
+    for (key, config_file) in config_files.iter().rev() {
+        let source = &config_file.get_path().to_path_buf();
         let unchanged = original_config_files
-            .and_then(|files| files.get(source))
+            .and_then(|files| files.get(key))
             .is_some_and(|original| Arc::ptr_eq(original, config_file));
         for directive in config_file.vars_entries()? {
             if directive.options().tools {
