@@ -1,0 +1,5 @@
+backends = ["github:localstack/lstk"]
+bins = ["lstk"]
+description = "The LocalStack CLI for managing and interacting with LocalStack deployments"
+test = { cmd = "lstk --version", expected = "lstk {{version}}" }
+version_order = "semver"

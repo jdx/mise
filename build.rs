@@ -427,6 +427,12 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             );
             url.to_string()
         });
+        let deprecated = info.get("deprecated").map(|deprecated| {
+            deprecated
+                .as_str()
+                .unwrap_or_else(|| panic!("[{short}] 'deprecated' must be a string"))
+                .to_string()
+        });
         let bins = info
             .get("bins")
             .map(|bins| {
@@ -546,13 +552,16 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, url: {url}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, url: {url}, deprecated: {deprecated}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             version_order = version_order,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
             url = url
                 .map(|url| format!("Some({})", raw_string_literal(&url)))
+                .unwrap_or("None".to_string()),
+            deprecated = deprecated
+                .map(|deprecated| format!("Some({})", raw_string_literal(&deprecated)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             bins = bins

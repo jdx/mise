@@ -168,6 +168,10 @@
       "uniqueItems": true,
       "description": "Executable names provided by this tool. Used as discovery hints for shim auto-install."
     },
+    "deprecated": {
+      "type": "string",
+      "description": "Reason the tool is deprecated, including what to use instead. Shown as a warning when the tool is installed"
+    },
     "description": {
       "type": "string",
       "description": "A brief description of the tool"
