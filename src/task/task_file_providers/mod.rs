@@ -237,7 +237,7 @@ mod tests {
     fn test_get_providers() {
         let task_file_providers = TaskFileProvidersBuilder::new().build();
         let providers = task_file_providers.get_providers();
-        assert_eq!(providers.len(), 3);
+        assert_eq!(providers.len(), 4);
     }
 
     #[test]
@@ -285,6 +285,22 @@ mod tests {
             assert!(provider.is_some());
             let provider_name = format!("{:?}", provider.unwrap());
             assert!(provider_name.contains("RemoteTaskGit"));
+        }
+    }
+
+    #[test]
+    fn test_oci_file_match_oci_remote_task_provider() {
+        let task_file_providers = TaskFileProvidersBuilder::new().build();
+        let cases = vec![
+            "oci::ghcr.io/myorg/tasks:1.0.0",
+            "oci::registry.example.com/platform/tasks@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        ];
+
+        for file in cases {
+            let provider = task_file_providers.get_provider(file);
+            assert!(provider.is_some());
+            let provider_name = format!("{:?}", provider.unwrap());
+            assert!(provider_name.contains("RemoteTaskOci"));
         }
     }
 }
