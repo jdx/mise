@@ -35,7 +35,7 @@
       "separateMajorMinor": false
     },
     {
-      "description": "aube crates and the standalone development tool must stay on the same release, so they update together. Renovate only bumps the direct aube and aube-registry entries in Cargo.lock; .github/workflows/aube-crates-lock.yml refreshes the other aube-* crates and mise.lock on the branch (postUpgradeTasks do not run on hosted Renovate).",
+      "description": "aube and aube-registry are released together, so they update together.",
       "matchPackageNames": ["aube", "aube-registry"],
       "matchManagers": ["cargo"],
       "groupName": "aube",
