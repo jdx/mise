@@ -2002,8 +2002,9 @@ impl Bootstrap {
                 .to_path_buf();
             (url.to_string(), None, checkout)
         } else {
-            let (url, git_ref) =
-                parse_bootstrap_source(self.from.as_deref().expect("--from was provided"))?;
+            let (url, git_ref) = mise_util::remote_source::RemoteSource::parse_git_repo(
+                self.from.as_deref().expect("--from was provided"),
+            )?;
             (
                 url,
                 git_ref,
@@ -4504,38 +4505,6 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
 
 /// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
 /// that stops here because there is no checkout to continue from.
-/// Splits a `--from` value into the repository URL and an optional git ref.
-///
-/// Accepts the go-getter spelling used by `git::` task includes and plugin
-/// sources: an optional `git::` prefix and a `?ref=<branch|tag|commit>` query
-/// parameter. Any other query parameters stay on the URL.
-fn parse_bootstrap_source(from: &str) -> Result<(String, Option<String>)> {
-    let from = from.strip_prefix("git::").unwrap_or(from);
-    let Some((url, query)) = from.split_once('?') else {
-        return Ok((from.to_string(), None));
-    };
-    let mut git_ref = None;
-    let mut rest = vec![];
-    for pair in query.split('&') {
-        match pair.strip_prefix("ref=") {
-            Some(value) => git_ref = Some(value),
-            None => rest.push(pair),
-        }
-    }
-    let Some(git_ref) = git_ref else {
-        return Ok((from.to_string(), None));
-    };
-    if git_ref.is_empty() || git_ref.starts_with('-') {
-        bail!("invalid git ref {git_ref:?} in --from {from:?}");
-    }
-    let url = if rest.is_empty() {
-        url.to_string()
-    } else {
-        format!("{url}?{}", rest.join("&"))
-    };
-    Ok((url, Some(git_ref.to_string())))
-}
-
 fn bootstrap_head_is_branch(checkout: &Path) -> Result<bool> {
     let mut command = Command::new("git");
     command
@@ -4581,10 +4550,7 @@ fn checkout_bootstrap_repository(
                 if let Some(git_ref) = git_ref {
                     // force tags so a moved one is not resolved from the stale local
                     // copy; nothing is pruned, as the checkout may hold other tags
-                    run_bootstrap_git(
-                        checkout,
-                        ["fetch", "--force", "--tags", "origin"],
-                    )?;
+                    run_bootstrap_git(checkout, ["fetch", "--force", "--tags", "origin"])?;
                     run_bootstrap_git(checkout, ["checkout", git_ref, "--"])?;
                     // a tag or commit is detached: there is nothing to pull
                     if bootstrap_head_is_branch(checkout)? {
@@ -5468,46 +5434,9 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use super::{
-        bootstrap_from_child_args, parse_bootstrap_source, select_remote_inventory,
-        unapply_child_args,
-    };
+    use super::{bootstrap_from_child_args, select_remote_inventory, unapply_child_args};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
-
-    #[test]
-    fn bootstrap_source_parses_ref_query() {
-        let parse = |from| parse_bootstrap_source(from).unwrap();
-        let with_ref = |url: &str, git_ref: &str| (url.to_string(), Some(git_ref.to_string()));
-        let plain = |url: &str| (url.to_string(), None);
-
-        assert_eq!(
-            parse("https://github.com/o/r.git?ref=feature/x"),
-            with_ref("https://github.com/o/r.git", "feature/x")
-        );
-        assert_eq!(
-            parse("git::https://github.com/o/r.git?ref=v1"),
-            with_ref("https://github.com/o/r.git", "v1")
-        );
-        assert_eq!(
-            parse("git::ssh://git@host/o/r.git?ref=main"),
-            with_ref("ssh://git@host/o/r.git", "main")
-        );
-        assert_eq!(
-            parse("https://host/r.git?a=1&ref=v1&b=2"),
-            with_ref("https://host/r.git?a=1&b=2", "v1")
-        );
-        assert_eq!(
-            parse("git@github.com:o/r.git"),
-            plain("git@github.com:o/r.git")
-        );
-        assert_eq!(
-            parse("https://host/r.git?a=1"),
-            plain("https://host/r.git?a=1")
-        );
-        assert!(parse_bootstrap_source("https://host/r.git?ref=").is_err());
-        assert!(parse_bootstrap_source("https://host/r.git?ref=--upload-pack=x").is_err());
-    }
 
     #[test]
     fn unavailable_defaults_json_retains_configured_entries() {
