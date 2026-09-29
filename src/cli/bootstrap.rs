@@ -4518,12 +4518,28 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
 
 /// A tag deleted on origin stays in the checkout, since fetching does not
 /// prune, and would keep resolving. Only the requested tag is checked, so
-/// other local tags are left alone.
+/// other local tags are left alone. A branch of the same name on origin still
+/// makes the ref valid, and a failing `ls-remote` is an error, not a deletion.
 fn ensure_bootstrap_tag_exists_on_origin(checkout: &Path, git_ref: &str) -> Result<()> {
     let tag = format!("refs/tags/{git_ref}");
-    if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])?
-        && !bootstrap_git_succeeds(checkout, ["ls-remote", "--exit-code", "origin", &tag])?
-    {
+    if !bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])? {
+        return Ok(());
+    }
+    let branch = format!("refs/heads/{git_ref}");
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["ls-remote", "origin", &tag, &branch]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    if !output.status.success() {
+        bail!(
+            "could not check origin for tag {git_ref:?}: git ls-remote failed with {}",
+            output.status
+        );
+    }
+    if output.stdout.iter().all(u8::is_ascii_whitespace) {
         bail!("tag {git_ref:?} no longer exists on origin");
     }
     Ok(())

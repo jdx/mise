@@ -225,3 +225,8 @@ git -C "$PWD/ref-tag" tag local-only
 git -C "$ref_source" tag -d v1 >/dev/null
 assert_fail "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
 assert_contains "git -C '$PWD/ref-tag' tag" "local-only"
+
+# A local tag that shares its name with a branch on origin does not block
+# updating that branch
+git -C "$PWD/ref-branch" tag main
+assert_succeed "mise bootstrap --from '$ref_source?ref=main' --from-dir '$PWD/ref-branch' --update --yes --only task"
