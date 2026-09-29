@@ -4519,13 +4519,13 @@ fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> R
 /// Moves an existing checkout to `git_ref` as origin now has it.
 ///
 /// The ref is looked up on origin so that a name is never resolved from a
-/// stale local copy: a tag on origin is checked out as that tag, a branch on
-/// origin is switched to (created from `origin/<ref>` when it has no local
-/// branch, even next to a same-named local tag) and fast-forwarded, and a
-/// tag that only survives locally, since fetching does not prune, is
-/// rejected. Anything else, such as a commit, is checked out as given. Other
-/// local tags are left alone, and a failing `ls-remote` is an error, not a
-/// deletion.
+/// stale local copy: a branch on origin, which wins over a tag of the same
+/// name, is switched to (created from `origin/<ref>` when it has no local
+/// branch, even next to a same-named local tag) and fast-forwarded, and a tag
+/// on origin is checked out as that tag. A branch or tag that only survives
+/// locally, since fetching does not prune, is rejected. Anything else, such
+/// as a commit, is checked out as given. Other local refs are left alone, and
+/// a failing `ls-remote` is an error, not a deletion.
 fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     // force tags so a moved one is not resolved from the stale local copy
     run_bootstrap_git(checkout, ["fetch", "--force", "--tags", "origin"])?;
@@ -4546,9 +4546,7 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     }
     let listed = String::from_utf8_lossy(&output.stdout);
     let on_origin = |name: &str| listed.lines().any(|l| l.split('\t').nth(1) == Some(name));
-    if on_origin(&tag) {
-        run_bootstrap_git(checkout, ["checkout", &tag, "--"])
-    } else if on_origin(&branch) {
+    if on_origin(&branch) {
         if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
             run_bootstrap_git(checkout, ["switch", git_ref])?;
         } else {
@@ -4559,8 +4557,24 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
             )?;
         }
         run_bootstrap_git(checkout, ["pull", "--ff-only"])
-    } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])? {
-        bail!("tag {git_ref:?} no longer exists on origin")
+    } else if on_origin(&tag) {
+        run_bootstrap_git(checkout, ["checkout", &tag, "--"])
+    } else if ["refs/heads", "refs/tags", "refs/remotes/origin"]
+        .iter()
+        .try_fold(false, |found, prefix| {
+            let name = format!("{prefix}/{git_ref}");
+            Ok::<_, eyre::Report>(
+                found
+                    || bootstrap_git_succeeds(
+                        checkout,
+                        ["show-ref", "--verify", "--quiet", &name],
+                    )?,
+            )
+        })?
+    {
+        // a branch or tag that only survives locally would run stale
+        // configuration, so it must not be picked up as a commit
+        bail!("{git_ref:?} no longer exists on origin")
     } else {
         run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
     }
@@ -4634,7 +4648,7 @@ fn checkout_bootstrap_repository(
         bail!("git clone failed with {status}");
     }
     if let Some(git_ref) = git_ref
-        && let Err(err) = run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
+        && let Err(err) = update_bootstrap_ref(checkout, git_ref)
     {
         // a clone left on the default branch would be reused as if it were
         // the requested ref by the next run

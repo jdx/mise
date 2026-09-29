@@ -241,3 +241,19 @@ git -C "$PWD/ref-branch" tag rel
 assert_succeed "mise bootstrap --from '$ref_source?ref=rel' --from-dir '$PWD/ref-branch' --update --yes --only task"
 assert "cat ~/bootstrap-ref-marker" "rel"
 assert "git -C '$PWD/ref-branch' symbolic-ref HEAD" "refs/heads/rel"
+
+# A branch wins over a tag of the same name, on a fresh clone as on update
+git -C "$ref_source" checkout -q -b both main
+echo both-branch >"$ref_source/marker"
+git -C "$ref_source" commit -qam both
+git -C "$ref_source" tag both main
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=both' --from-dir '$PWD/ref-both' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "both-branch"
+assert "git -C '$PWD/ref-both' symbolic-ref HEAD" "refs/heads/both"
+
+# --update rejects a branch deleted upstream instead of using the local copy
+git -C "$ref_source" branch -q gone main
+assert_succeed "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --yes --only task"
+git -C "$ref_source" branch -q -D gone
+assert_fail "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --update --yes --only task"
