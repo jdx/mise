@@ -2369,6 +2369,8 @@ impl Lock {
         // tools' entries aren't lost.
         let mut completed = 0;
         let mut resolution_errors: Vec<String> = Vec::new();
+        // Per tool: how many platforms failed to resolve, and the first error.
+        let mut skip_errors: BTreeMap<String, (usize, Option<String>)> = BTreeMap::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -2377,11 +2379,19 @@ impl Lock {
                     let version = resolution.1.clone();
                     let platform_key = resolution.3.to_key();
                     let resolution_error = resolution.4.as_ref().err().cloned();
-                    if let Some(msg) = &resolution_error {
-                        debug!("{msg}");
-                    }
                     let error_is_fatal =
                         resolution.7 == crate::lockfile::LockResolutionStatus::Required;
+                    if let Some(msg) = &resolution_error {
+                        // An unsupported target is an expected skip; anything
+                        // else is worth telling the user about once the run ends.
+                        if resolution.7 == crate::lockfile::LockResolutionStatus::Unsupported {
+                            debug!("{msg}");
+                        } else if !error_is_fatal {
+                            let entry = skip_errors.entry(short.clone()).or_default();
+                            entry.0 += 1;
+                            entry.1.get_or_insert_with(|| msg.clone());
+                        }
+                    }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -2414,6 +2424,16 @@ impl Lock {
                 }
                 Err(e) => {
                     warn!("Task failed: {}", e);
+                }
+            }
+        }
+
+        for (count, msg) in skip_errors.into_values() {
+            if let Some(msg) = msg {
+                if count > 1 {
+                    warn!("{msg} (and {} more platform(s))", count - 1);
+                } else {
+                    warn!("{msg}");
                 }
             }
         }
