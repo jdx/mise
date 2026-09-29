@@ -65,6 +65,14 @@ Use `--from` to clone a project and apply its `mise.toml`:
 mise bootstrap --from git@github.com:example/dotfiles.git
 ```
 
+To check out a branch, tag or commit instead of the default branch, append
+`?ref=` to the URL, as in task includes and plugin sources. The `git::` prefix
+is optional:
+
+```sh
+mise bootstrap --from 'git::https://github.com/example/dotfiles.git?ref=v1'
+```
+
 The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`. Use `--from-dir`
 to choose another location. mise trusts the repository you supply for this
 invocation, so review it before running the command.
@@ -75,7 +83,10 @@ matching configuration, such as `mise.work.toml`.
 
 An existing checkout must have the requested URL as its `origin`. mise uses
 the current checkout unless you pass `--update` to pull newer commits first.
-That pull only accepts a fast-forward. With `--dry-run`, mise reports a
+That pull only accepts a fast-forward. With `?ref=`, `--update` looks the ref
+up on the remote again: a branch (which wins over a tag of the same name) is
+switched to and fast-forwarded, a tag is checked out at its current commit, and
+a branch or tag that no longer exists on the remote is an error. With `--dry-run`, mise reports a
 missing checkout and leaves it uncloned.
 
 ### Global mise configuration

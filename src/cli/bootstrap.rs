@@ -82,6 +82,9 @@ pub(crate) struct Bootstrap {
     command: Option<Commands>,
 
     /// Clone a git repository and bootstrap from its configuration
+    ///
+    /// Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the
+    /// default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
     #[usage(long, value_name = "GIT_URL")]
     from: Option<String>,
 
@@ -1987,7 +1990,7 @@ impl Bootstrap {
             }
             return Ok(());
         }
-        let (url, checkout) = if let Some(url) = expanded.as_deref() {
+        let (url, git_ref, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
                 .map(|path| {
@@ -1997,10 +2000,14 @@ impl Bootstrap {
                 })
                 .unwrap_or(*dirs::CONFIG)
                 .to_path_buf();
-            (url, checkout)
+            (url.to_string(), None, checkout)
         } else {
-            (
+            let (url, git_ref) = mise_util::remote_source::RemoteSource::parse_git_repo(
                 self.from.as_deref().expect("--from was provided"),
+            )?;
+            (
+                url,
+                git_ref,
                 self.from_dir
                     .clone()
                     .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo")),
@@ -2010,7 +2017,7 @@ impl Bootstrap {
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
-            validate_bootstrap_checkout(&checkout, url)?;
+            validate_bootstrap_checkout(&checkout, &url)?;
         }
         // The clone or pull changes the config checkout before the child
         // process records the bootstrap itself, so it is a generation of its
@@ -2022,7 +2029,8 @@ impl Bootstrap {
             None
         };
         let checked_out = checkout_bootstrap_repository(
-            url,
+            &url,
+            git_ref.as_deref(),
             &checkout,
             reuse_checkout,
             self.update,
@@ -4497,8 +4505,102 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
 
 /// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
 /// that stops here because there is no checkout to continue from.
+fn bootstrap_git_succeeds<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<bool> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(args)
+        .stdout(std::process::Stdio::null());
+    crate::git::sanitize_git_command(&mut command);
+    Ok(command.status()?.success())
+}
+
+/// Switches to the local branch `git_ref`, creating it from `origin/<ref>` when
+/// it does not exist, even next to a same-named tag.
+fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
+    let branch = format!("refs/heads/{git_ref}");
+    if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
+        run_bootstrap_git(checkout, ["switch", git_ref])
+    } else {
+        // fully qualified so a local ref named `origin/<ref>` cannot shadow it
+        let remote_branch = format!("refs/remotes/origin/{git_ref}");
+        run_bootstrap_git(
+            checkout,
+            ["switch", "--create", git_ref, "--track", &remote_branch],
+        )
+    }
+}
+
+/// Checks out `git_ref` in a fresh clone, using the refs the clone fetched. A
+/// branch wins over a tag of the same name.
+fn checkout_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
+    let remote_branch = format!("refs/remotes/origin/{git_ref}");
+    if bootstrap_git_succeeds(
+        checkout,
+        ["show-ref", "--verify", "--quiet", &remote_branch],
+    )? {
+        switch_to_bootstrap_branch(checkout, git_ref)
+    } else {
+        run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
+    }
+}
+
+/// Moves an existing checkout to `git_ref` as origin now has it.
+///
+/// The ref is looked up on origin so that a name is never resolved from a
+/// stale local copy: a branch on origin, which wins over a tag of the same
+/// name, is switched to and fast-forwarded from `origin/<ref>`, and a tag on
+/// origin is checked out as that tag. A branch or tag that only survives
+/// locally, since fetching does not prune tags, is rejected. Anything else,
+/// such as a commit, is checked out as given. Other local tags are left
+/// alone, and a failing `ls-remote` is an error, not a deletion.
+fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
+    // force tags so a moved one is not resolved from the stale local copy;
+    // pruning removes only the remote-tracking branches deleted on origin
+    run_bootstrap_git(
+        checkout,
+        ["fetch", "--force", "--tags", "--prune", "origin"],
+    )?;
+    let tag = format!("refs/tags/{git_ref}");
+    let branch = format!("refs/heads/{git_ref}");
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["ls-remote", "origin", &tag, &branch]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    if !output.status.success() {
+        bail!(
+            "could not look up {git_ref:?} on origin: git ls-remote failed with {}",
+            output.status
+        );
+    }
+    let listed = String::from_utf8_lossy(&output.stdout);
+    let on_origin = |name: &str| listed.lines().any(|l| l.split('\t').nth(1) == Some(name));
+    if on_origin(&branch) {
+        switch_to_bootstrap_branch(checkout, git_ref)?;
+        // from origin itself, whatever upstream the local branch tracks
+        // fully qualified so a local ref named `origin/<ref>` cannot shadow it
+        let remote_branch = format!("refs/remotes/origin/{git_ref}");
+        run_bootstrap_git(checkout, ["merge", "--ff-only", &remote_branch])
+    } else if on_origin(&tag) {
+        run_bootstrap_git(checkout, ["checkout", &tag, "--"])
+    } else if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])?
+        || bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &tag])?
+    {
+        // a branch or tag that only survives locally would run stale
+        // configuration, so it must not be picked up as a commit
+        bail!("{git_ref:?} no longer exists on origin")
+    } else {
+        run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
+    }
+}
+
 fn checkout_bootstrap_repository(
     url: &str,
+    git_ref: Option<&str>,
     checkout: &Path,
     reuse: bool,
     update: bool,
@@ -4507,12 +4609,31 @@ fn checkout_bootstrap_repository(
     if reuse {
         if update {
             if dry_run {
-                miseprintln!(
-                    "Would run: git -C {} pull --ff-only",
-                    checkout.display_user()
-                );
+                if let Some(git_ref) = git_ref {
+                    miseprintln!(
+                        "Would run: git -C {} fetch --force --tags --prune origin",
+                        checkout.display_user()
+                    );
+                    miseprintln!(
+                        "Would run: git -C {} checkout {git_ref} -- (or switch {git_ref} if it is a branch on origin)",
+                        checkout.display_user()
+                    );
+                    miseprintln!(
+                        "Would run: git -C {} merge --ff-only origin/{git_ref} (if it is a branch)",
+                        checkout.display_user()
+                    );
+                } else {
+                    miseprintln!(
+                        "Would run: git -C {} pull --ff-only",
+                        checkout.display_user()
+                    );
+                }
             } else {
-                run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                if let Some(git_ref) = git_ref {
+                    update_bootstrap_ref(checkout, git_ref)?;
+                } else {
+                    run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                }
                 journal::note(format!(
                     "updated the checkout of {url} in {}",
                     checkout.display_user()
@@ -4523,6 +4644,12 @@ fn checkout_bootstrap_repository(
     }
     if dry_run {
         miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+        if let Some(git_ref) = git_ref {
+            miseprintln!(
+                "Would run: git -C {} checkout {git_ref} --",
+                checkout.display_user()
+            );
+        }
         return Ok(false);
     }
     if let Some(parent) = checkout
@@ -4538,7 +4665,18 @@ fn checkout_bootstrap_repository(
     if !status.success() {
         bail!("git clone failed with {status}");
     }
-    journal::note(format!("cloned {url} into {}", checkout.display_user()));
+    if let Some(git_ref) = git_ref
+        && let Err(err) = checkout_bootstrap_ref(checkout, git_ref)
+    {
+        // a clone left on the default branch would be reused as if it were
+        // the requested ref by the next run
+        let _ = std::fs::remove_dir_all(checkout);
+        return Err(err.wrap_err(format!("could not check out {git_ref:?} from {url}")));
+    }
+    journal::note(match git_ref {
+        Some(git_ref) => format!("cloned {url} at {git_ref} into {}", checkout.display_user()),
+        None => format!("cloned {url} into {}", checkout.display_user()),
+    });
     Ok(true)
 }
 

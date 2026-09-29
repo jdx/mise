@@ -1,3 +1,4 @@
+use eyre::{Result, bail};
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
 
@@ -46,6 +47,40 @@ impl RemoteSource {
             .or_else(|| parse_git_with(&AZURE_DEVOPS_HTTPS_GIT_REGEX, file))
     }
 
+    /// Splits a whole-repository URL into the repository and an optional git ref.
+    ///
+    /// Unlike [`Self::parse_git`], the source has no `//path` and is not limited
+    /// to `.git` URLs: it accepts an optional `git::` prefix and a
+    /// `?ref=<branch|tag|commit>` query parameter on any URL git can clone.
+    /// Other query parameters stay on the URL.
+    pub fn parse_git_repo(file: &str) -> Result<(String, Option<String>)> {
+        let file = file.strip_prefix("git::").unwrap_or(file);
+        let Some((url, query)) = file.split_once('?') else {
+            return Ok((file.to_string(), None));
+        };
+        let mut git_ref = None;
+        let mut rest = vec![];
+        for pair in query.split('&') {
+            match pair.strip_prefix("ref=") {
+                Some(value) => git_ref = Some(value),
+                None => rest.push(pair),
+            }
+        }
+        let Some(git_ref) = git_ref else {
+            return Ok((file.to_string(), None));
+        };
+        // HEAD is not a branch or tag: omit `ref` to use the default branch
+        if git_ref.is_empty() || git_ref.starts_with('-') || git_ref == "HEAD" {
+            bail!("invalid git ref {git_ref:?} in {file:?}");
+        }
+        let url = if rest.is_empty() {
+            url.to_string()
+        } else {
+            format!("{url}?{}", rest.join("&"))
+        };
+        Ok((url, Some(git_ref.to_string())))
+    }
+
     pub fn parse_http(file: &str) -> Option<RemoteHttpSource> {
         let url = url::Url::parse(file).ok()?;
         ((url.scheme() == "http" || url.scheme() == "https")
@@ -88,6 +123,41 @@ fn is_windows_drive_component(component: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_git_repo_ref_query() {
+        let parse = |from| RemoteSource::parse_git_repo(from).unwrap();
+        let with_ref = |url: &str, git_ref: &str| (url.to_string(), Some(git_ref.to_string()));
+        let plain = |url: &str| (url.to_string(), None);
+
+        assert_eq!(
+            parse("https://github.com/o/r.git?ref=feature/x"),
+            with_ref("https://github.com/o/r.git", "feature/x")
+        );
+        assert_eq!(
+            parse("git::https://github.com/o/r.git?ref=v1"),
+            with_ref("https://github.com/o/r.git", "v1")
+        );
+        assert_eq!(
+            parse("git::ssh://git@host/o/r.git?ref=main"),
+            with_ref("ssh://git@host/o/r.git", "main")
+        );
+        assert_eq!(
+            parse("https://host/r.git?a=1&ref=v1&b=2"),
+            with_ref("https://host/r.git?a=1&b=2", "v1")
+        );
+        assert_eq!(
+            parse("git@github.com:o/r.git"),
+            plain("git@github.com:o/r.git")
+        );
+        assert_eq!(
+            parse("https://host/r.git?a=1"),
+            plain("https://host/r.git?a=1")
+        );
+        assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=").is_err());
+        assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=HEAD").is_err());
+        assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=--upload-pack=x").is_err());
+    }
 
     #[test]
     fn parses_git_ssh_sources() {
