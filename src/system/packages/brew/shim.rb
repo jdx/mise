@@ -92,7 +92,9 @@ module MiseDownload
   end
 
   # unpack an archive the way brew stages sources: if the archive contains a
-  # single top-level directory, its contents become the stage root
+  # single top-level directory, its contents become the stage root. A name
+  # without a known extension (GitHub's codeload URLs, for one) falls back to
+  # the content, as brew does
   def unpack(archive, dest)
     dest.mkpath
     case archive.basename.to_s
@@ -105,11 +107,23 @@ module MiseDownload
       raise "failed to decompress #{archive}" unless $?.success?
       (dest + archive.basename.to_s.sub(/\.(gz|xz|bz2)\z/i, "")).binwrite(data)
     else
-      FileUtils.cp archive, dest
+      if File.binread(archive, 4) == "PK\x03\x04".b
+        system_or_die "unzip", "-qo", archive.to_s, "-d", dest.to_s
+      elsif tarball?(archive)
+        system_or_die "tar", "xf", archive.to_s, "-C", dest.to_s
+      else
+        FileUtils.cp archive, dest
+      end
     end
     entries = dest.children
     return entries.first if entries.size == 1 && entries.first.directory?
     dest
+  end
+
+  # tar sniffs the compression itself; an empty file lists as an empty archive
+  def tarball?(archive)
+    archive.size.positive? &&
+      system("tar", "tf", archive.to_s, out: File::NULL, err: File::NULL)
   end
 
   def system_or_die(*args)

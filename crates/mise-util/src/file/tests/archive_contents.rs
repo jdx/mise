@@ -119,6 +119,93 @@ fn test_extract_archive_tar_strip_preserves_root_files() {
     assert!(!dest.join("pkg").exists());
 }
 
+fn tar_bytes() -> Vec<u8> {
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+    let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+    header.set_size(4);
+    header.set_mode(0o644);
+    builder
+        .append_data(&mut header, "pkg/tool", &b"tool"[..])
+        .unwrap();
+    builder.into_inner().unwrap()
+}
+
+#[test]
+fn test_from_magic_identifies_suffixless_tarballs() {
+    use std::io::Write;
+
+    let tar = tar_bytes();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&tar).unwrap();
+    let mut xz = xz2::write::XzEncoder::new(Vec::new(), 6);
+    xz.write_all(&tar).unwrap();
+    let mut bz2 = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
+    bz2.write_all(&tar).unwrap();
+    let cases = [
+        (gz.finish().unwrap(), ExtractionFormat::TarGz),
+        (xz.finish().unwrap(), ExtractionFormat::TarXz),
+        (bz2.finish().unwrap(), ExtractionFormat::TarBz2),
+        (
+            zstd::encode_all(&tar[..], 0).unwrap(),
+            ExtractionFormat::TarZst,
+        ),
+        (tar.clone(), ExtractionFormat::Tar),
+    ];
+
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("v1.0.0");
+    for (bytes, expected) in cases {
+        fs::write(&archive, bytes).unwrap();
+        assert_eq!(
+            ExtractionFormat::from_magic(&archive).unwrap(),
+            Some(expected)
+        );
+        assert_eq!(
+            ExtractionFormat::detect(&archive, "v1.0.0").unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn test_from_magic_leaves_non_archives_alone() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("download");
+
+    // a gzip stream whose payload is not a tarball
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(&[b'x'; 1024]).unwrap();
+    fs::write(&archive, gz.finish().unwrap()).unwrap();
+    assert_eq!(ExtractionFormat::from_magic(&archive).unwrap(), None);
+
+    // gzip magic followed by garbage must not surface as a decode error
+    fs::write(&archive, b"\x1f\x8bnot really gzip").unwrap();
+    assert_eq!(ExtractionFormat::from_magic(&archive).unwrap(), None);
+
+    fs::write(&archive, b"#!/bin/sh\necho hi\n").unwrap();
+    assert_eq!(ExtractionFormat::from_magic(&archive).unwrap(), None);
+    assert_eq!(
+        ExtractionFormat::detect(&archive, "download").unwrap(),
+        ExtractionFormat::Raw
+    );
+
+    fs::write(&archive, b"").unwrap();
+    assert_eq!(ExtractionFormat::from_magic(&archive).unwrap(), None);
+}
+
+#[test]
+fn test_detect_prefers_the_file_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("tool.zip");
+    fs::write(&archive, tar_bytes()).unwrap();
+    assert_eq!(
+        ExtractionFormat::detect(&archive, "tool.zip").unwrap(),
+        ExtractionFormat::Zip
+    );
+}
+
 #[test]
 fn test_display_filename() {
     assert_eq!(display_filename("/tmp/mise.toml"), "mise.toml");
