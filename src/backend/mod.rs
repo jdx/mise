@@ -3766,8 +3766,18 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        if let Some(reason) = REGISTRY.get(self.id()).and_then(|rt| rt.deprecated) {
-            warn_once!("{} is deprecated: {reason}", self.id());
+        // Read the entry through the BackendArg so a tool alias reaches it, and only warn
+        // when the resolved backend is one of its own, so a plugin that overrides the
+        // shorthand doesn't get a warning about a CLI it doesn't install.
+        if let Some((rt, reason)) = self
+            .ba()
+            .registry_tool()
+            .and_then(|rt| rt.deprecated.map(|reason| (rt, reason)))
+            && rt
+                .backends()
+                .contains(&self.ba().full_without_opts().as_str())
+        {
+            warn_once!("{} is deprecated: {reason}", rt.short);
         }
         let graph_install_is_current = !ctx.locked
             && !ctx.force
