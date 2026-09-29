@@ -865,6 +865,35 @@ proxy_tls = "passthrough"
 Both keys are forwarded to pitchfork unchanged. Update Pitchfork if an older
 supervisor starts the daemons but does not serve their hostnames.
 
+### Stop idle daemons
+
+Nothing stops on its own by default. To stop a daemon after a period without
+traffic, set `proxy_idle_timeout` on it. Pitchfork reads the key, so it needs
+Pitchfork 2.27.0 or newer and takes a duration such as `"15m"`, or `false` to
+exempt the daemon:
+
+```toml
+[daemons.api]
+run = "exec npm run dev -- --port $API_PORT"
+port = { auto = true, base = 3000 }
+proxy_idle_timeout = "15m"
+```
+
+To apply one timeout to every daemon the proxy starts, set `idle_timeout` under
+`[settings.proxy]` in `~/.config/pitchfork/config.toml` instead. A daemon's own
+`proxy_idle_timeout` overrides it. A dependency without one inherits the timeout
+of the requested daemon only when Pitchfork starts it for that request; a
+dependency that is already running keeps its existing idle-shutdown eligibility
+and timeout.
+
+The timeout applies only to a daemon the proxy started because a request arrived
+at its hostname. A daemon you started with `mise daemons start` or that a task
+started keeps running until you stop it. Open streaming responses and WebSockets
+count as activity. The next request starts the daemon again, and preset data stays
+on disk. See pitchfork's
+[idle shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)
+for the full activity rules.
+
 ### Naming the project and the worktree
 
 The project component is the explicit `[daemons_settings] namespace`, before any
