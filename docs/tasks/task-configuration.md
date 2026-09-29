@@ -1452,7 +1452,7 @@ mise reads the layers of the artifact like this:
 
 - A layer with an `org.opencontainers.image.title` annotation becomes a file at that relative path. This is what [`oras push`](https://oras.land/docs/commands/oras_push/) and [`podman artifact add`](https://docs.podman.io/en/stable/markdown/podman-artifact-add.1.html) produce.
 - A tar layer with that annotation and `io.deis.oras.content.unpack=true` (an `oras push` of a directory) is extracted into the directory of that name.
-- A tar, tar+gzip, or tar+zstd layer without a title is extracted at the root, so an image built from a directory of tasks works too.
+- A tar, tar+gzip, or tar+zstd layer without a title is extracted at the root, with whiteouts applied, so an artifact made of tar layers (for example with `crane append`) works too. This is not a general container-image reader: an image whose layers contain symlinks or device files is rejected.
 
 ```sh
 oras push ghcr.io/myorg/shared-tasks:1.0.0 build.toml scripts/deploy

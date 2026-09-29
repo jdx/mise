@@ -94,28 +94,19 @@ impl RemoteTaskOci {
     }
 
     /// Pull into a fresh staging directory. Returns the staging root and the
-    /// unpacked artifact inside it; the caller owns the staging root.
+    /// unpacked artifact inside it; the caller owns the staging root. The
+    /// directory is removed by its guard if the pull fails or is cancelled.
     async fn pull_staged(&self, reference: &str) -> Result<(PathBuf, PathBuf)> {
         file::create_dir_all(&self.storage_path)?;
         let staging = tempfile::Builder::new()
             .prefix(".oci-pull-")
-            .tempdir_in(&self.storage_path)?
-            .keep();
-        let unpacked = staging.join("artifact");
-        let result = async {
-            registry::pull_artifact(reference, &unpacked)
-                .await
-                .map_err(|err| {
-                    err.wrap_err(format!("failed to pull OCI task include {reference}"))
-                })?;
-            prepare_unpacked_artifact(&unpacked)
-        }
-        .await;
-        if let Err(err) = result {
-            let _ = file::remove_all(&staging);
-            return Err(err);
-        }
-        Ok((staging, unpacked))
+            .tempdir_in(&self.storage_path)?;
+        let unpacked = staging.path().join("artifact");
+        registry::pull_artifact(reference, &unpacked)
+            .await
+            .map_err(|err| err.wrap_err(format!("failed to pull OCI task include {reference}")))?;
+        prepare_unpacked_artifact(&unpacked)?;
+        Ok((staging.keep(), unpacked))
     }
 }
 

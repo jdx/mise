@@ -859,17 +859,40 @@ fn reject_artifact_links(root: &Path) -> Result<()> {
 }
 
 /// Copy a vetted layer tree into the destination, keeping file modes.
+/// Whiteouts (`.wh.<name>`, `.wh..wh..opq`) delete what earlier layers put
+/// there, as they do for container images.
 fn merge_artifact_tree(from: &Path, to: &Path) -> Result<()> {
+    let mut entries = Vec::new();
     for entry in walkdir::WalkDir::new(from).follow_links(false) {
         let entry = entry?;
-        let target = to.join(entry.path().strip_prefix(from)?);
-        if entry.file_type().is_dir() {
+        let relative = entry.path().strip_prefix(from)?.to_path_buf();
+        entries.push((relative, entry.file_type().is_dir()));
+    }
+    let mut copies = Vec::new();
+    for (relative, is_dir) in &entries {
+        let name = relative.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let parent = to.join(relative.parent().unwrap_or(Path::new("")));
+        if name == ".wh..wh..opq" {
+            if parent.is_dir() {
+                for child in std::fs::read_dir(&parent)? {
+                    crate::file::remove_all(child?.path())?;
+                }
+            }
+        } else if let Some(hidden) = name.strip_prefix(".wh.") {
+            crate::file::remove_all(parent.join(hidden))?;
+        } else {
+            copies.push((relative, is_dir));
+        }
+    }
+    for (relative, is_dir) in copies {
+        let target = to.join(relative);
+        if *is_dir {
             crate::file::create_dir_all(&target)?;
         } else {
             if let Some(parent) = target.parent() {
                 crate::file::create_dir_all(parent)?;
             }
-            std::fs::copy(entry.path(), &target)
+            std::fs::copy(from.join(relative), &target)
                 .wrap_err_with(|| format!("writing {}", crate::file::display_path(&target)))?;
         }
     }
@@ -883,7 +906,10 @@ fn merge_artifact_tree(from: &Path, to: &Path) -> Result<()> {
 /// - A layer annotated with `org.opencontainers.image.title` becomes that file.
 ///   With `io.deis.oras.content.unpack=true` it is a tar archive extracted into
 ///   the directory of that name instead.
-/// - A tar layer without a title is extracted into `dest` itself.
+/// - A tar layer without a title is extracted into `dest` itself, applying
+///   whiteouts. This is meant for artifacts made of tar layers (e.g.
+///   `crane append`), not as a general container-image reader: links and
+///   device files are rejected.
 ///
 /// Every blob is verified against the digest in the manifest, and the
 /// manifest itself against the reference when it is pinned by digest.
@@ -2401,6 +2427,30 @@ mod tests {
         .await;
         assert!(result.is_err());
         assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn merging_a_layer_applies_whiteouts() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(dest.join("sub")).unwrap();
+        std::fs::write(dest.join("old"), "old").unwrap();
+        std::fs::write(dest.join("keep"), "keep").unwrap();
+        std::fs::write(dest.join("sub/a"), "a").unwrap();
+        std::fs::create_dir_all(layer.join("sub")).unwrap();
+        std::fs::write(layer.join(".wh.old"), "").unwrap();
+        std::fs::write(layer.join("sub/.wh..wh..opq"), "").unwrap();
+        std::fs::write(layer.join("sub/b"), "b").unwrap();
+
+        merge_artifact_tree(&layer, &dest).unwrap();
+
+        assert!(!dest.join("old").exists());
+        assert!(!dest.join(".wh.old").exists());
+        assert!(dest.join("keep").exists());
+        assert!(!dest.join("sub/a").exists());
+        assert_eq!(std::fs::read_to_string(dest.join("sub/b")).unwrap(), "b");
+        assert!(!dest.join("sub/.wh..wh..opq").exists());
     }
 
     #[test]
