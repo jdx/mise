@@ -24,6 +24,11 @@ on:
     paths: *docs-paths
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish the docs site to production (main branch only)
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -35,6 +40,7 @@ jobs:
     uses: $/.github/workflows/docs-impl.yml
     with:
       trusted: true
+      deploy: ${{ (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main') }}
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
       CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
