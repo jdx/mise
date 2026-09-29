@@ -323,12 +323,84 @@ pub(crate) async fn toolset_resolved(
         .await
 }
 
-pub async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
+/// The tools of `ts` that installing for `set` needs: pitchfork, each daemon's
+/// tool, and everything those tools depend on to install.
+///
+/// Dependencies come from the same declarations the installer resolves, so a
+/// runtime configured under its full backend id or named in a tool's `depends`
+/// option is found the way the installer finds it.
+fn install_scope(ts: &Toolset, set: &DaemonSet) -> Vec<Arc<crate::args::BackendArg>> {
+    let mut roots = vec![crate::args::BackendArg::from("pitchfork")];
+    for daemon in set.daemons.values().filter(|d| !d.imported) {
+        if let Some((tool, _)) = &daemon.tool {
+            roots.push(crate::args::BackendArg::from(tool.as_str()));
+        }
+    }
+    let mut scope: Vec<Arc<crate::args::BackendArg>> = ts
+        .versions
+        .keys()
+        .filter(|ba| {
+            roots
+                .iter()
+                .any(|root| crate::install_context::backend_args_match(root, ba))
+        })
+        .cloned()
+        .collect();
+    let mut next = 0;
+    while let Some(ba) = scope.get(next).cloned() {
+        next += 1;
+        let Some(list) = ts.versions.get(&ba) else {
+            continue;
+        };
+        for request in &list.requests {
+            let declarations = crate::install_context::install_dependency_declarations(request);
+            for candidate in ts.versions.keys() {
+                if declarations.matches(candidate)
+                    && !scope.iter().any(|s| Arc::ptr_eq(s, candidate))
+                {
+                    scope.push(candidate.clone());
+                }
+            }
+        }
+    }
+    scope
+}
+
+/// Build the daemon toolset, installing what `install` needs when it is given.
+///
+/// `install` is the set of daemons about to be validated and started. Only
+/// pitchfork and the tools those daemons declare are installed: a preset's tool
+/// comes from its daemon declaration, not the command line, so the default
+/// install would leave it out and validation would report a version mismatch.
+/// A tool that belongs to another daemon, or to no daemon, is left alone, so
+/// one that cannot be installed does not keep an unrelated daemon from starting.
+pub async fn toolset(
+    config: &Arc<Config>,
+    install: Option<&DaemonSet>,
+) -> Result<(Arc<Config>, Toolset)> {
     let mut config = config.clone();
-    let mut ts = toolset_resolved(&config, install).await?;
-    if install {
+    let mut ts = toolset_resolved(&config, install.is_some()).await?;
+    if let Some(set) = install {
+        let wanted = install_scope(&ts, set);
+        let mut skip = crate::config::Settings::get()
+            .auto_install_disable_tools
+            .clone()
+            .unwrap_or_default();
+        skip.extend(
+            ts.versions
+                .keys()
+                .filter(|ba| !wanted.iter().any(|w| Arc::ptr_eq(w, ba)))
+                .map(|ba| ba.short.clone()),
+        );
         let (_, missing) = ts
-            .install_missing_versions(&mut config, &Default::default())
+            .install_missing_versions(
+                &mut config,
+                &crate::toolset::InstallOptions {
+                    missing_args_only: false,
+                    auto_install_disable_tools: Some(skip),
+                    ..Default::default()
+                },
+            )
             .await?;
         ts.notify_missing_versions(missing);
     }
