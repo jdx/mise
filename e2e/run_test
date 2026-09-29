@@ -21,6 +21,13 @@ else
   TEST_SCRIPT="$SCRIPT_DIR/$TEST"
 fi
 
+# An external binary a test opts into (a pitchfork build) is used from inside the
+# isolated environment, where the caller's working directory means nothing, and
+# Docker rejects a relative mount destination. Resolve it once, up front.
+if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
+  MISE_TEST_PITCHFORK="$(realpath "$MISE_TEST_PITCHFORK")"
+fi
+
 setup_isolated_env() {
   # macOS's per-user TMPDIR can exceed Pitchfork's Unix socket path limit.
   # Keep daemon fixtures short while preserving other tests' temporary roots.
