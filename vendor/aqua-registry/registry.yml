@@ -53946,6 +53946,36 @@ packages:
             public_key: RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
   - type: github_release
     repo_owner: jdx
+    repo_name: packslip
+    description: A signed release manifest for vendor binaries
+    files:
+      - name: packslip
+        src: "{{.AssetWithoutExt}}/packslip"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        asset: packslip-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: packslip-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+  - type: github_release
+    repo_owner: jdx
     repo_name: pitchfork
     aliases:
       - name: endevco/pitchfork
