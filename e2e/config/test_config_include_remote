@@ -132,6 +132,25 @@ assert "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s version_of tiny" "1"
 assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
 assert "version_of tiny" "2"
 
+# hook-env notices a refreshed fragment once, then settles on the fast path.
+export MISE_ENV_CACHE=0
+eval "$(mise activate bash 2>/dev/null)"
+sleep 1
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a refreshed include bypasses the hook-env fast path once"
+else
+  fail "a refreshed include should bypass the fast path but got: '$output'"
+fi
+eval "$output"
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output ]]; then
+  ok "hook-env takes the fast path after the refresh"
+else
+  fail "expected the fast path after the refresh but got: '$output'"
+fi
+
 # A refresh that is not a valid fragment never replaces the copy that works.
 cp env-fragment/mise.toml base/mise.toml
 publish base base >/dev/null

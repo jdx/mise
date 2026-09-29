@@ -598,10 +598,24 @@ pub async fn build_session(
         max_modtime = std::cmp::max(modified, max_modtime);
     }
 
+    let included_paths: Vec<PathBuf> = config
+        .config_files
+        .values()
+        .flat_map(|cf| cf.included_paths())
+        .collect();
+    // A refreshed remote include is checked on every prompt (see
+    // `loaded_configs`), so latest_update has to cover it or one refresh would
+    // make every later prompt run in full.
+    for path in &included_paths {
+        if let Ok(Ok(modified)) = path.metadata().map(|m| m.modified()) {
+            max_modtime = std::cmp::max(modified, max_modtime);
+        }
+    }
     let loaded_configs: IndexSet<PathBuf> = config
         .config_files
-        .iter()
-        .flat_map(|(path, cf)| std::iter::once(path.clone()).chain(cf.included_paths()))
+        .keys()
+        .cloned()
+        .chain(included_paths)
         .collect();
 
     let settings = Settings::get();
