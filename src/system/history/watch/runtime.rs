@@ -139,6 +139,8 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut capture = Capture::new(store, out, intervals.limits.clone());
     prune_schedule(&mut capture, &state);
     capture.health.watcher.started_at = Some(store::now_rfc3339());
+    // a previous watcher's finding says nothing about this process
+    capture.health.watcher.executable_gone = false;
     if opts.once {
         // A one-shot capture has no installed filesystem watches. Failures
         // from a previous watch installation do not describe this run.
@@ -247,7 +249,6 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
-    let mut executable_gone = false;
     let mut binary_check = tokio::time::interval_at(
         tokio::time::Instant::now() + BINARY_CHECK_EVERY,
         BINARY_CHECK_EVERY,
@@ -620,18 +621,21 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
             }
             _ = binary_check.tick() => {
                 let executable = binary.check();
-                if executable == Executable::Gone {
-                    let advice = "the mise executable this watcher runs from is gone; it keeps running the old version, so run `mise bootstrap services apply` to restart it on the installed one";
-                    if !executable_gone {
-                        executable_gone = true;
-                        capture.out.emit("outdated", advice, json!({ "reason": "executable-removed" }));
+                let gone = match executable {
+                    Executable::Gone => true,
+                    Executable::Current => false,
+                    _ => capture.health.watcher.executable_gone,
+                };
+                if gone != capture.health.watcher.executable_gone {
+                    capture.health.watcher.executable_gone = gone;
+                    if gone {
+                        capture.out.emit(
+                            "outdated",
+                            health::EXECUTABLE_GONE_ADVICE,
+                            json!({ "reason": "executable-removed" }),
+                        );
                     }
-                    // a reinstall of the watches clears the degraded list, so
-                    // the note is put back while the executable stays gone
-                    if !capture.health.watcher.degraded.iter().any(|d| d == advice) {
-                        capture.health.watcher.degraded.push(advice.into());
-                        capture.write_health();
-                    }
+                    capture.write_health();
                 }
                 if executable == Executable::Replaced {
                     capture.out.emit(
@@ -1872,7 +1876,10 @@ struct BinaryWatch {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Executable {
-    Unchanged,
+    /// The file is the one this process started from.
+    Current,
+    /// It differs or is missing, but has not held for two checks yet.
+    Pending,
     /// A different file is there now; the service starts the new version.
     Replaced,
     /// Nothing is there. The service would start the same missing path, so
@@ -1923,17 +1930,17 @@ impl BinaryWatch {
     /// for a moment, or a half-written one.
     fn check(&mut self) -> Executable {
         let (Some(path), Some(started)) = (self.path.as_deref(), self.started) else {
-            return Executable::Unchanged;
+            return Executable::Pending;
         };
         let now = Self::identity(path);
         if now == Some(started) {
             self.seen = None;
-            return Executable::Unchanged;
+            return Executable::Current;
         }
         let settled = self.seen == Some(now);
         self.seen = Some(now);
         match (settled, now) {
-            (false, _) => Executable::Unchanged,
+            (false, _) => Executable::Pending,
             (true, Some(_)) => Executable::Replaced,
             (true, None) => Executable::Gone,
         }
@@ -2010,14 +2017,14 @@ mod tests {
         let exe = dir.path().join("mise");
         std::fs::write(&exe, "old").unwrap();
         let mut watch = BinaryWatch::at(Some(exe.clone()));
-        assert_eq!(watch.check(), Executable::Unchanged);
+        assert_eq!(watch.check(), Executable::Current);
         // an upgrade replaces the file by renaming a new one over it
         let staged = dir.path().join("mise.new");
         std::fs::write(&staged, "a newer version").unwrap();
         std::fs::rename(&staged, &exe).unwrap();
         assert_eq!(
             watch.check(),
-            Executable::Unchanged,
+            Executable::Pending,
             "the first sighting is not acted on"
         );
         assert_eq!(watch.check(), Executable::Replaced);
@@ -2032,11 +2039,11 @@ mod tests {
         std::fs::remove_file(&exe).unwrap();
         assert_eq!(
             watch.check(),
-            Executable::Unchanged,
+            Executable::Pending,
             "an upgrade in flight leaves none for a moment"
         );
         assert_eq!(watch.check(), Executable::Gone);
-        assert_eq!(BinaryWatch::at(None).check(), Executable::Unchanged);
+        assert_eq!(BinaryWatch::at(None).check(), Executable::Pending);
     }
 
     #[test]

@@ -814,6 +814,12 @@ impl Doctor {
                     ));
                 }
             }
+            if running && w.executable_gone {
+                self.warnings.push(format!(
+                    "dotfiles: {}.\n     Captures still run, on the old version.",
+                    crate::system::history::health::EXECUTABLE_GONE_ADVICE
+                ));
+            }
             for degraded in w.degraded.iter().filter(|_| running) {
                 diagnosis.degraded.push(degraded.clone());
                 self.warnings.push(format!(

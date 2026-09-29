@@ -316,6 +316,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                     .unwrap_or_else(|| "unknown".into())
             );
         }
+        if running && w.executable_gone {
+            miseprintln!(
+                "  outdated: {}.",
+                crate::system::history::health::EXECUTABLE_GONE_ADVICE
+            );
+        }
         for degraded in &w.degraded {
             miseprintln!("  degraded: {degraded}");
         }

@@ -43,7 +43,15 @@ pub struct WatcherHealth {
     pub consecutive_failures: u32,
     #[serde(default)]
     pub degraded: Vec<String>,
+    /// The mise executable this watcher started from is gone, so the
+    /// process runs old code that only a service restart replaces. Not a
+    /// degraded watch: captures still run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub executable_gone: bool,
 }
+
+/// What to tell the user when `WatcherHealth::executable_gone` is set.
+pub const EXECUTABLE_GONE_ADVICE: &str = "the mise executable this watcher runs from is gone, so it keeps running the old version; run `mise bootstrap services apply` to restart it on the installed one";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ThrottledPath {

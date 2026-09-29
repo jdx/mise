@@ -1338,8 +1338,9 @@ this, an old watcher could not read history state written by the newer mise, and
 every capture would fail. A watcher you started by hand with `mise dot watch`
 stops and has to be started again.
 If the executable is gone instead, with nothing in its place, the watcher keeps
-running and lists that under `degraded` in `mise dot status`; run
-`mise bootstrap services apply` to restart it.
+running and reports it as outdated in `mise dot status` and `mise doctor`;
+run `mise bootstrap services apply` to restart it. The report clears if the
+executable comes back.
 
 Edits to global TOML configuration or `conf.d/` reload the tracked paths
 and update their watches. Setting `history.enabled = false` stops the watcher.
