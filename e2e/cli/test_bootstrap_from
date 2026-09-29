@@ -213,7 +213,7 @@ assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-
 assert "cat ~/bootstrap-ref-marker" "main-2"
 
 assert_contains "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-dry' --dry-run" "checkout v1 --"
-assert_contains "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --dry-run" "pull --ff-only (if feature/x is a branch)"
+assert_contains "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --dry-run" "merge --ff-only origin/feature/x (if it is a branch)"
 
 # An unknown ref fails and leaves no checkout that a later run would reuse
 assert_fail "mise bootstrap --from '$ref_source?ref=nope' --from-dir '$PWD/ref-missing' --yes --only task"
@@ -257,3 +257,23 @@ git -C "$ref_source" branch -q gone main
 assert_succeed "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --yes --only task"
 git -C "$ref_source" branch -q -D gone
 assert_fail "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --update --yes --only task"
+
+# --update follows origin even when the local branch tracks another remote
+git clone -q "$ref_source" "$PWD/ref-other"
+git -C "$PWD/ref-other" config user.email test@example.com
+git -C "$PWD/ref-other" config user.name "mise test"
+git -C "$PWD/ref-other" checkout -q -B both origin/both
+echo other-remote >"$PWD/ref-other/marker"
+git -C "$PWD/ref-other" commit -qam other
+git -C "$PWD/ref-both" remote add other "$PWD/ref-other"
+git -C "$PWD/ref-both" fetch other
+git -C "$PWD/ref-both" branch -q --set-upstream-to=other/both both
+git -C "$ref_source" checkout -q -B both refs/heads/both
+echo origin-newer >"$ref_source/marker"
+git -C "$ref_source" commit -qam origin-newer
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=both' --from-dir '$PWD/ref-both' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "origin-newer"
+
+# HEAD is a valid ref on a fresh clone, not a leftover remote-tracking name
+assert_succeed "mise bootstrap --from '$ref_source?ref=HEAD' --from-dir '$PWD/ref-head' --yes --only task"
