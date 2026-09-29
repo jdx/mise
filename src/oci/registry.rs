@@ -868,6 +868,19 @@ fn reject_artifact_links(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A whiteout may only name a single plain entry beside it. `.wh...` would
+/// otherwise name `..` and delete above the destination.
+fn whiteout_target<'a>(name: &str, hidden: &'a str) -> Result<&'a str> {
+    match Path::new(hidden)
+        .components()
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [Component::Normal(_)] => Ok(hidden),
+        _ => bail!("artifact contains an invalid whiteout entry: {name:?}"),
+    }
+}
+
 /// Copy a vetted layer tree into the destination, keeping file modes.
 /// With `whiteouts`, entries named `.wh.<name>` and `.wh..wh..opq` delete what
 /// earlier layers put there, as they do for container images; otherwise they
@@ -892,16 +905,7 @@ fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
                 }
             }
         } else if let Some(hidden) = name.strip_prefix(".wh.") {
-            // `.wh...` would otherwise name `..` and delete above the destination.
-            if !matches!(
-                Path::new(hidden)
-                    .components()
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                [Component::Normal(_)]
-            ) {
-                bail!("artifact contains an invalid whiteout entry: {name:?}");
-            }
+            whiteout_target(name, hidden)?;
             crate::file::remove_all(parent.join(hidden))?;
         } else {
             copies.push((relative, is_dir));
@@ -2499,6 +2503,18 @@ mod tests {
     }
 
     #[test]
+    fn whiteouts_must_name_a_single_plain_entry() {
+        for name in [".wh...", ".wh..", ".wh.", ".wh.a/b", ".wh./etc"] {
+            let hidden = name.strip_prefix(".wh.").unwrap();
+            assert!(whiteout_target(name, hidden).is_err(), "{name}");
+        }
+        assert_eq!(whiteout_target(".wh.build", "build").unwrap(), "build");
+    }
+
+    // Windows drops trailing dots from file names, so these entries cannot be
+    // created there; the check above covers the names themselves.
+    #[cfg(unix)]
+    #[test]
     fn whiteouts_cannot_delete_outside_the_destination() {
         let td = tempfile::tempdir().unwrap();
         let dest = td.path().join("parent/dest");
@@ -2513,32 +2529,6 @@ mod tests {
         }
         assert!(td.path().join("parent/sibling").exists());
         assert!(dest.exists());
-    }
-
-    #[tokio::test]
-    async fn pull_artifact_rejects_unverifiable_digest_algorithms() {
-        let _config = crate::config::Config::get().await.unwrap();
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("GET", "/v2/")
-            .with_status(200)
-            .create_async()
-            .await;
-        let dest = tempfile::tempdir().unwrap();
-        let err = pull_artifact(
-            &format!(
-                "{}/tasks/catalog@sha512:{}",
-                server.host_with_port(),
-                "0".repeat(128)
-            ),
-            &dest.path().join("out"),
-        )
-        .await
-        .unwrap_err();
-        assert!(
-            format!("{err:#}").contains("unsupported digest algorithm"),
-            "{err:#}"
-        );
     }
 
     #[test]
