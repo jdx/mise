@@ -1517,7 +1517,11 @@ impl Config {
             return Ok(EnvResults::default());
         }
         time!("load_env start");
-        let cache_enabled = use_cache && CachedNonToolEnv::is_enabled();
+        // `mise oci` lets `[oci.env]` satisfy `required`, so what it resolves must not
+        // be cached for a command that enforces it.
+        let cache_enabled = use_cache
+            && CachedNonToolEnv::is_enabled()
+            && !env_directive::is_oci_env_satisfying_required();
         let cache_key = if cache_enabled {
             let config_files: Vec<(PathBuf, u64)> = self
                 .config_files

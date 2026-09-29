@@ -320,6 +320,21 @@ NODE_ENV = "production"
 "org.opencontainers.image.source" = "https://github.com/me/my-app"
 ```
 
+A variable that `[env]` marks `required` is satisfied by `[oci.env]` during
+`mise oci` commands, so the build host doesn't need it set. This lets you give the
+image a placeholder for a secret that only exists at runtime:
+
+```toml
+[env]
+AWS_ACCESS_KEY_ID = { required = "AWS access key ID for S3", redact = true }
+
+[oci.env]
+AWS_ACCESS_KEY_ID = "placeholder"
+```
+
+Only `[oci.env]` in project configs counts, and other commands still enforce
+`required`.
+
 The copy examples require `dist/my-app` and `assets` to exist.
 `[oci].user` sets the image `USER` directive; it does not create an account, home
 directory, or writable workspace. Use a numeric UID/GID or a user already
