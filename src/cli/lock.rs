@@ -2369,8 +2369,8 @@ impl Lock {
         // tools' entries aren't lost.
         let mut completed = 0;
         let mut resolution_errors: Vec<String> = Vec::new();
-        // Per tool: how many platforms failed to resolve, and the first error.
-        let mut skip_errors: BTreeMap<String, (usize, Option<String>)> = BTreeMap::new();
+        // Per tool version: how many platforms failed to resolve, and the first error.
+        let mut skip_errors: BTreeMap<(String, String), (usize, Option<String>)> = BTreeMap::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -2387,7 +2387,9 @@ impl Lock {
                         if resolution.7 == crate::lockfile::LockResolutionStatus::Unsupported {
                             debug!("{msg}");
                         } else if !error_is_fatal {
-                            let entry = skip_errors.entry(short.clone()).or_default();
+                            let entry = skip_errors
+                                .entry((short.clone(), version.clone()))
+                                .or_default();
                             entry.0 += 1;
                             entry.1.get_or_insert_with(|| msg.clone());
                         }
@@ -2428,12 +2430,15 @@ impl Lock {
             }
         }
 
-        for (count, msg) in skip_errors.into_values() {
+        for ((_, version), (count, msg)) in skip_errors {
             if let Some(msg) = msg {
                 if count > 1 {
-                    warn!("{msg} (and {} more platform(s))", count - 1);
+                    warn!(
+                        "{msg} (version {version}, and {} more platform(s))",
+                        count - 1
+                    );
                 } else {
-                    warn!("{msg}");
+                    warn!("{msg} (version {version})");
                 }
             }
         }
