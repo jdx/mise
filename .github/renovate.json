@@ -35,14 +35,14 @@
       "separateMajorMinor": false
     },
     {
-      "description": "aube crates and the standalone development tool must stay on the same release. Renovate only bumps the direct aube and aube-registry entries in Cargo.lock; the other aube-* workspace crates stay behind (aube requires them only as \"2\") and break the build against the new API, so refresh them all.",
+      "description": "aube crates and the standalone development tool must stay on the same release. Renovate only bumps the direct aube and aube-registry entries in Cargo.lock; the other aube-* workspace crates stay behind (aube requires them only as \"2\") and break the build against the new API, so refresh them all, pinned to the version Renovate selected so a newer release cannot bypass its release-age delay.",
       "matchPackageNames": ["aube", "aube-registry"],
       "matchManagers": ["cargo"],
       "groupName": "aube",
       "separateMajorMinor": false,
       "postUpgradeTasks": {
         "commands": [
-          "cargo update -p aube -p aube-registry -p aube-codes -p aube-lockfile -p aube-settings -p aube-linker -p aube-manifest -p aube-resolver -p aube-runtime -p aube-scripts -p aube-store -p aube-util -p aube-workspace",
+          "cargo update -p aube -p aube-registry -p aube-codes -p aube-lockfile -p aube-settings -p aube-linker -p aube-manifest -p aube-resolver -p aube-runtime -p aube-scripts -p aube-store -p aube-util -p aube-workspace --precise {{{newVersion}}}",
           "mise lock --bump --minimum-release-age 0s aube"
         ],
         "executionMode": "branch",
