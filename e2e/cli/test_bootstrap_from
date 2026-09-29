@@ -275,5 +275,6 @@ git -C "$ref_source" checkout -q main
 assert_succeed "mise bootstrap --from '$ref_source?ref=both' --from-dir '$PWD/ref-both' --update --yes --only task"
 assert "cat ~/bootstrap-ref-marker" "origin-newer"
 
-# HEAD is a valid ref on a fresh clone, not a leftover remote-tracking name
-assert_succeed "mise bootstrap --from '$ref_source?ref=HEAD' --from-dir '$PWD/ref-head' --yes --only task"
+# HEAD is not a branch or tag; omitting ref selects the default branch
+assert_fail "mise bootstrap --from '$ref_source?ref=HEAD' --from-dir '$PWD/ref-head' --yes --only task"
+assert_directory_not_exists "$PWD/ref-head"

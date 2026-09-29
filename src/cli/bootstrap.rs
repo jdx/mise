@@ -4536,13 +4536,10 @@ fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
 /// branch wins over a tag of the same name.
 fn checkout_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     let remote_branch = format!("refs/remotes/origin/{git_ref}");
-    // `origin/HEAD` is the remote's default-branch pointer, not a branch
-    if git_ref != "HEAD"
-        && bootstrap_git_succeeds(
-            checkout,
-            ["show-ref", "--verify", "--quiet", &remote_branch],
-        )?
-    {
+    if bootstrap_git_succeeds(
+        checkout,
+        ["show-ref", "--verify", "--quiet", &remote_branch],
+    )? {
         switch_to_bootstrap_branch(checkout, git_ref)
     } else {
         run_bootstrap_git(checkout, ["checkout", git_ref, "--"])

@@ -69,7 +69,8 @@ impl RemoteSource {
         let Some(git_ref) = git_ref else {
             return Ok((file.to_string(), None));
         };
-        if git_ref.is_empty() || git_ref.starts_with('-') {
+        // HEAD is not a branch or tag: omit `ref` to use the default branch
+        if git_ref.is_empty() || git_ref.starts_with('-') || git_ref == "HEAD" {
             bail!("invalid git ref {git_ref:?} in {file:?}");
         }
         let url = if rest.is_empty() {
@@ -154,6 +155,7 @@ mod tests {
             plain("https://host/r.git?a=1")
         );
         assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=").is_err());
+        assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=HEAD").is_err());
         assert!(RemoteSource::parse_git_repo("https://host/r.git?ref=--upload-pack=x").is_err());
     }
 
