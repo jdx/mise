@@ -247,6 +247,7 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
+    let mut executable_gone = false;
     let mut binary_check = tokio::time::interval_at(
         tokio::time::Instant::now() + BINARY_CHECK_EVERY,
         BINARY_CHECK_EVERY,
@@ -618,7 +619,21 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
                 capture.write_health();
             }
             _ = binary_check.tick() => {
-                if binary.replaced() {
+                let executable = binary.check();
+                if executable == Executable::Gone {
+                    let advice = "the mise executable this watcher runs from is gone; it keeps running the old version, so run `mise bootstrap services apply` to restart it on the installed one";
+                    if !executable_gone {
+                        executable_gone = true;
+                        capture.out.emit("outdated", advice, json!({ "reason": "executable-removed" }));
+                    }
+                    // a reinstall of the watches clears the degraded list, so
+                    // the note is put back while the executable stays gone
+                    if !capture.health.watcher.degraded.iter().any(|d| d == advice) {
+                        capture.health.watcher.degraded.push(advice.into());
+                        capture.write_health();
+                    }
+                }
+                if executable == Executable::Replaced {
                     capture.out.emit(
                         "restarting",
                         "the mise executable was replaced; stopping so the service restarts the watcher on the new version",
@@ -1855,6 +1870,16 @@ struct BinaryWatch {
     seen: Option<Option<BinaryIdentity>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Executable {
+    Unchanged,
+    /// A different file is there now; the service starts the new version.
+    Replaced,
+    /// Nothing is there. The service would start the same missing path, so
+    /// the watcher keeps running and says so instead of stopping.
+    Gone,
+}
+
 type BinaryIdentity = (u64, Option<std::time::SystemTime>, u64);
 
 impl BinaryWatch {
@@ -1893,23 +1918,25 @@ impl BinaryWatch {
         Some((meta.len(), meta.modified().ok(), inode))
     }
 
-    /// Whether the executable differs from the one this process started
-    /// from, or is gone, on two checks in a row. An upgrade in flight leaves
-    /// no file for a moment, which one check tolerates; one that removes the
-    /// old file for good (a versioned install directory) is a replacement too,
-    /// and the service reports it if it cannot start the new one.
-    fn replaced(&mut self) -> bool {
+    /// What became of the executable since this process started, once it
+    /// has held for two checks in a row: an upgrade in flight leaves no file
+    /// for a moment, or a half-written one.
+    fn check(&mut self) -> Executable {
         let (Some(path), Some(started)) = (self.path.as_deref(), self.started) else {
-            return false;
+            return Executable::Unchanged;
         };
-        let now = Some(Self::identity(path));
-        if now.flatten() == Some(started) {
+        let now = Self::identity(path);
+        if now == Some(started) {
             self.seen = None;
-            return false;
+            return Executable::Unchanged;
         }
-        let settled = self.seen == now;
-        self.seen = now;
-        settled
+        let settled = self.seen == Some(now);
+        self.seen = Some(now);
+        match (settled, now) {
+            (false, _) => Executable::Unchanged,
+            (true, Some(_)) => Executable::Replaced,
+            (true, None) => Executable::Gone,
+        }
     }
 }
 
@@ -1983,28 +2010,33 @@ mod tests {
         let exe = dir.path().join("mise");
         std::fs::write(&exe, "old").unwrap();
         let mut watch = BinaryWatch::at(Some(exe.clone()));
-        assert!(!watch.replaced());
+        assert_eq!(watch.check(), Executable::Unchanged);
         // an upgrade replaces the file by renaming a new one over it
         let staged = dir.path().join("mise.new");
         std::fs::write(&staged, "a newer version").unwrap();
         std::fs::rename(&staged, &exe).unwrap();
-        assert!(!watch.replaced(), "the first sighting is not acted on");
-        assert!(watch.replaced());
+        assert_eq!(
+            watch.check(),
+            Executable::Unchanged,
+            "the first sighting is not acted on"
+        );
+        assert_eq!(watch.check(), Executable::Replaced);
     }
 
     #[test]
-    fn a_missing_executable_is_a_replacement_once_it_stays_missing() {
+    fn a_missing_executable_is_reported_gone_not_replaced() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("mise");
         std::fs::write(&exe, "old").unwrap();
         let mut watch = BinaryWatch::at(Some(exe.clone()));
         std::fs::remove_file(&exe).unwrap();
-        assert!(
-            !watch.replaced(),
+        assert_eq!(
+            watch.check(),
+            Executable::Unchanged,
             "an upgrade in flight leaves none for a moment"
         );
-        assert!(watch.replaced());
-        assert!(!BinaryWatch::at(None).replaced());
+        assert_eq!(watch.check(), Executable::Gone);
+        assert_eq!(BinaryWatch::at(None).check(), Executable::Unchanged);
     }
 
     #[test]

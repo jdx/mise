@@ -1332,11 +1332,14 @@ configuration changes, and every `history.watch.reconcile` (ten minutes by
 default). Set that interval to `0` to disable periodic scans.
 
 Every minute the watcher checks that the mise executable it started from has
-not been replaced or removed. After an upgrade it saves what is pending and
+not been replaced. After an upgrade it saves what is pending and
 exits with a failure status, so the service manager restarts it on the new version. Without
 this, an old watcher could not read history state written by the newer mise, and
 every capture would fail. A watcher you started by hand with `mise dot watch`
 stops and has to be started again.
+If the executable is gone instead, with nothing in its place, the watcher keeps
+running and lists that under `degraded` in `mise dot status`; run
+`mise bootstrap services apply` to restart it.
 
 Edits to global TOML configuration or `conf.d/` reload the tracked paths
 and update their watches. Setting `history.enabled = false` stops the watcher.
