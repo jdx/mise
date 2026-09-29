@@ -430,6 +430,51 @@ fn classify_lock_result(
     }
 }
 
+/// Collects why tools were skipped so `mise lock` can explain the
+/// `N skipped` summary, with one warning per tool version.
+#[derive(Default)]
+struct SkipWarnings {
+    /// (short, version) -> platforms that failed, and the first error seen
+    failures: BTreeMap<(String, String), (usize, String)>,
+}
+
+impl SkipWarnings {
+    fn record(
+        &mut self,
+        short: &str,
+        version: &str,
+        error: &str,
+        status: crate::lockfile::LockResolutionStatus,
+    ) {
+        use crate::lockfile::LockResolutionStatus;
+        match status {
+            // An unsupported target is an expected skip.
+            LockResolutionStatus::Unsupported => debug!("{error}"),
+            // Fatal errors are reported by failing the command.
+            LockResolutionStatus::Required => {}
+            LockResolutionStatus::Optional => {
+                self.failures
+                    .entry((short.to_string(), version.to_string()))
+                    .and_modify(|(count, _)| *count += 1)
+                    .or_insert_with(|| (1, error.to_string()));
+            }
+        }
+    }
+
+    fn messages(&self) -> Vec<String> {
+        self.failures
+            .iter()
+            .map(|((_, version), (count, error))| match count {
+                1 => format!("{error} (version {version})"),
+                n => format!(
+                    "{error} (version {version}, and {} more platform(s))",
+                    n - 1
+                ),
+            })
+            .collect()
+    }
+}
+
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         self.run_with_installed(None, Config::get().await?).await
@@ -2369,8 +2414,7 @@ impl Lock {
         // tools' entries aren't lost.
         let mut completed = 0;
         let mut resolution_errors: Vec<String> = Vec::new();
-        // Per tool version: how many platforms failed to resolve, and the first error.
-        let mut skip_errors: BTreeMap<(String, String), (usize, Option<String>)> = BTreeMap::new();
+        let mut skip_warnings = SkipWarnings::default();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -2382,17 +2426,7 @@ impl Lock {
                     let error_is_fatal =
                         resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     if let Some(msg) = &resolution_error {
-                        // An unsupported target is an expected skip; anything
-                        // else is worth telling the user about once the run ends.
-                        if resolution.7 == crate::lockfile::LockResolutionStatus::Unsupported {
-                            debug!("{msg}");
-                        } else if !error_is_fatal {
-                            let entry = skip_errors
-                                .entry((short.clone(), version.clone()))
-                                .or_default();
-                            entry.0 += 1;
-                            entry.1.get_or_insert_with(|| msg.clone());
-                        }
+                        skip_warnings.record(&short, &version, msg, resolution.7);
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -2430,17 +2464,8 @@ impl Lock {
             }
         }
 
-        for ((_, version), (count, msg)) in skip_errors {
-            if let Some(msg) = msg {
-                if count > 1 {
-                    warn!(
-                        "{msg} (version {version}, and {} more platform(s))",
-                        count - 1
-                    );
-                } else {
-                    warn!("{msg} (version {version})");
-                }
-            }
+        for warning in skip_warnings.messages() {
+            warn!("{warning}");
         }
 
         // Report entries actually written, not tasks attempted
@@ -2457,7 +2482,7 @@ impl Lock {
 #[cfg(test)]
 mod tests {
     use super::{
-        Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, classify_lock_result,
+        Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, SkipWarnings, classify_lock_result,
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
         restore_lockfile_snapshots,
     };
@@ -2469,6 +2494,24 @@ mod tests {
     use std::fs;
     use std::str::FromStr;
     use std::sync::Arc;
+
+    #[test]
+    fn skip_warnings_group_by_tool_version() {
+        use crate::lockfile::LockResolutionStatus::{Optional, Required, Unsupported};
+        let mut warnings = SkipWarnings::default();
+        warnings.record("node", "20.0.0", "boom on linux-x64", Optional);
+        warnings.record("node", "20.0.0", "boom on macos-arm64", Optional);
+        warnings.record("node", "22.0.0", "other cause", Optional);
+        warnings.record("node", "22.0.0", "not built for windows", Unsupported);
+        warnings.record("conda:x", "1.0.0", "solve failed", Required);
+        assert_eq!(
+            warnings.messages(),
+            vec![
+                "boom on linux-x64 (version 20.0.0, and 1 more platform(s))".to_string(),
+                "other cause (version 22.0.0)".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn aliased_lockfile_targets_cannot_be_skipped_independently() {
