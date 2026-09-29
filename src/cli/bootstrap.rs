@@ -4523,7 +4523,8 @@ fn switch_to_bootstrap_branch(checkout: &Path, git_ref: &str) -> Result<()> {
     if bootstrap_git_succeeds(checkout, ["show-ref", "--verify", "--quiet", &branch])? {
         run_bootstrap_git(checkout, ["switch", git_ref])
     } else {
-        let remote_branch = format!("origin/{git_ref}");
+        // fully qualified so a local ref named `origin/<ref>` cannot shadow it
+        let remote_branch = format!("refs/remotes/origin/{git_ref}");
         run_bootstrap_git(
             checkout,
             ["switch", "--create", git_ref, "--track", &remote_branch],
@@ -4584,7 +4585,8 @@ fn update_bootstrap_ref(checkout: &Path, git_ref: &str) -> Result<()> {
     if on_origin(&branch) {
         switch_to_bootstrap_branch(checkout, git_ref)?;
         // from origin itself, whatever upstream the local branch tracks
-        let remote_branch = format!("origin/{git_ref}");
+        // fully qualified so a local ref named `origin/<ref>` cannot shadow it
+        let remote_branch = format!("refs/remotes/origin/{git_ref}");
         run_bootstrap_git(checkout, ["merge", "--ff-only", &remote_branch])
     } else if on_origin(&tag) {
         run_bootstrap_git(checkout, ["checkout", &tag, "--"])
@@ -4612,7 +4614,7 @@ fn checkout_bootstrap_repository(
             if dry_run {
                 if let Some(git_ref) = git_ref {
                     miseprintln!(
-                        "Would run: git -C {} fetch --force --tags origin",
+                        "Would run: git -C {} fetch --force --tags --prune origin",
                         checkout.display_user()
                     );
                     miseprintln!(
