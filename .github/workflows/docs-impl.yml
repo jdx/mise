@@ -67,6 +67,15 @@ jobs:
     # A lookup is seconds; a recording and render can take much longer (the
     # render step's timeout is below).
     timeout-minutes: 210
+    # Every trusted showreel job mounts the same Namespace volume, and the
+    # volume keeps whichever job finishes last, so these jobs run one at a
+    # time across main, releases and dispatches (the run's own group only
+    # orders deploys, or runs on one ref). A job never cancels a running one;
+    # GitHub keeps only the newest waiting job, and a docs job whose showreel
+    # job was dropped builds without the reel and warns.
+    concurrency:
+      group: docs-showreel-volume
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -180,7 +189,6 @@ jobs:
     # (without one if it has none).
     if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
-    timeout-minutes: 30
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
@@ -236,6 +244,11 @@ jobs:
         with:
           name: showreel
           path: ${{ runner.temp }}/showreel
+      - name: Note a missing showreel
+        if: inputs.trusted && github.event_name != 'pull_request' && needs.showreel.result != 'success'
+        env:
+          RESULT: ${{ needs.showreel.result }}
+        run: echo "::warning title=Showreel::The showreel job did not succeed ($RESULT), so the site builds without the reel"
       - name: Put the showreel in place
         if: needs.showreel.result == 'success'
         continue-on-error: true
