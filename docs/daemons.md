@@ -851,6 +851,13 @@ the worktree component does the separating in hostnames. Without an explicit
 namespace, both mise and pitchfork name the project after the primary checkout's
 directory.
 
+Mise registers each project under a namespace that includes a hash of its path, so
+two unrelated checkouts never share daemon IDs. Pitchfork would otherwise take that
+namespace as the project's hostname and serve `api.shop-528f92b13a6784f0.localhost`, so
+mise also passes the project component to `pitchfork config add --label`. It does this
+only when the installed pitchfork has the flag; with an older one, the hostname mise
+prints routes only if you set an explicit `namespace`.
+
 A bare repository has no primary checkout, so each worktree beside it names itself
 and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not
 `api.main.shop.localhost`. The directory holding a bare repository often holds

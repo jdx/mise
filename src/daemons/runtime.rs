@@ -14,6 +14,74 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
+/// What a pitchfork's external configuration registration can do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExternalConfig {
+    /// `pitchfork config add --label` exists, so a registration can say what
+    /// hostname label the project is served under.
+    pub label: bool,
+}
+
+/// Whether the `config add` command in pitchfork's `usage` output declares a
+/// `--label` flag. Detected rather than versioned so a build that gains the flag
+/// is used as soon as it is installed.
+fn config_add_takes_label(usage: &str) -> bool {
+    fn indent(line: &str) -> usize {
+        line.len() - line.trim_start().len()
+    }
+    fn command_name(line: &str) -> Option<&str> {
+        let rest = line.trim_start().strip_prefix("cmd ")?;
+        Some(rest.split_whitespace().next()?.trim_matches('"'))
+    }
+    // `long_help #"""` text is prose, often unindented; it says nothing about
+    // structure and would end an indentation scan early.
+    let mut in_prose = false;
+    let structure: Vec<&str> = usage
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            if in_prose {
+                in_prose = trimmed != "\"\"\"#";
+                return false;
+            }
+            in_prose = trimmed.ends_with("#\"\"\"");
+            true
+        })
+        .collect();
+    // The top-level `config` command, then its nested `add`. A `--label` on
+    // another command, or on another `add` such as `pitchfork daemons add`,
+    // does not count.
+    let subtree = |start: usize| {
+        let base = indent(structure[start]);
+        structure[start + 1..]
+            .iter()
+            .copied()
+            .take_while(move |line| indent(line) > base)
+    };
+    let Some(config) = structure
+        .iter()
+        .position(|l| indent(l) == 0 && command_name(l) == Some("config"))
+    else {
+        return false;
+    };
+    let Some(add) = subtree(config)
+        .position(|l| command_name(l) == Some("add"))
+        .map(|offset| config + 1 + offset)
+    else {
+        return false;
+    };
+    subtree(add)
+        .filter_map(|l| l.trim_start().strip_prefix("flag "))
+        .any(|flag| {
+            // `flag --label {` or `flag "-l --label" help=...`
+            let spec = match flag.strip_prefix('"') {
+                Some(quoted) => quoted.split('"').next().unwrap_or_default(),
+                None => flag.split_whitespace().next().unwrap_or_default(),
+            };
+            spec.split_whitespace().any(|name| name == "--label")
+        })
+}
+
 /// What mise knows about one project's daemons, as written beside them.
 ///
 /// Every field defaults, so a state file written by another version still
@@ -43,6 +111,15 @@ pub struct State {
     /// file. Empty means the last check was not clear and must be repeated.
     #[serde(default)]
     pub ports_scan: String,
+    /// The project hostname label this registration wants pitchfork to serve.
+    /// Empty when mise could not name the project.
+    #[serde(default)]
+    pub label: String,
+    /// Whether that label was actually passed to `pitchfork config add`. Only a
+    /// pitchfork that understands `--label` takes it; without it the registry
+    /// keeps naming the project after the namespace, as it always did.
+    #[serde(default)]
+    pub label_registered: bool,
 }
 
 /// Cheap summary of the other projects' state files: their names, sizes and
@@ -299,7 +376,9 @@ impl Runtime {
         Ok(tokio::time::timeout(Duration::from_secs(15), command.output()).await??)
     }
 
-    pub(crate) async fn supports_external_config(&self, root: &Path) -> Result<()> {
+    /// Whether this pitchfork registers external configuration, and if so
+    /// whether `config add` takes `--label`.
+    pub(crate) async fn supports_external_config(&self, root: &Path) -> Result<ExternalConfig> {
         // Probe read-only usage metadata, never an unknown command (pitchfork's fallback starts daemons).
         let usage = self.output(root, &["usage".into()]).await?;
         if !usage.lines().any(|line| {
@@ -310,7 +389,9 @@ impl Runtime {
                 "pitchfork lacks external configuration support; upgrade to pitchfork 2.25.0 or later"
             );
         }
-        Ok(())
+        Ok(ExternalConfig {
+            label: config_add_takes_label(&usage),
+        })
     }
 
     pub async fn status(&self, root: &Path, id: &str) -> Result<serde_json::Value> {
@@ -520,11 +601,17 @@ impl Runtime {
             // IDs from the previous namespace name daemons that are no longer
             // reachable; nothing is running under them, so drop them here rather
             // than forwarding unresolvable IDs to pitchfork.
-            ids: if changed { Vec::new() } else { previous.ids },
+            ids: if changed {
+                Vec::new()
+            } else {
+                previous.ids.clone()
+            },
             bin: self.bin.clone(),
             config_hash: String::new(),
             ports,
             ports_scan: String::new(),
+            label: project_label(set, root),
+            label_registered: false,
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -565,24 +652,41 @@ impl Runtime {
         } else {
             String::new()
         };
+        // The label lives in pitchfork's registry rather than the rendered file,
+        // so the file comparing equal says nothing about it.
+        let label_current = label_is_current(&previous, &state);
         if !force_registration
             && !changed
+            && label_current
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
         {
             // Profile and executable ownership may change without affecting the
             // rendered daemon configuration (for example with mise = false).
+            state.label_registered = previous.label_registered;
             write_if_changed(
                 &state_dir(root).join("state.json"),
                 &serde_json::to_vec_pretty(&state)?,
             )?;
             return Ok((state, lock));
         }
-        self.supports_external_config(root).await?;
+        let external = self.supports_external_config(root).await?;
+        let label = (external.label && !state.label.is_empty()).then(|| state.label.clone());
+        state.label_registered = label.is_some();
         // Pitchfork binds a registered file to its namespace. Detach the old
         // mapping before registering the same file under a different name.
         // The active check above ensures this cannot orphan running daemons.
-        if changed || set.daemons.is_empty() {
+        //
+        // A new label needs no detaching: `config add --label` replaces the one
+        // on record. Only losing the label does, because adding without one
+        // leaves the old one in place. That is done only when nothing runs,
+        // like a namespace change; a running project keeps the stale label
+        // until it is stopped, which only affects how its hostname routes.
+        let dropped_label = previous.label_registered
+            && !state.label_registered
+            && !set.daemons.is_empty()
+            && !self.active(root, &previous).await?;
+        if changed || set.daemons.is_empty() || dropped_label {
             self.output(
                 root,
                 &[
@@ -595,19 +699,20 @@ impl Runtime {
         }
         write_if_changed(&file, content.as_bytes())?;
         if !set.daemons.is_empty() {
-            self.output(
-                root,
-                &[
-                    "config".into(),
-                    "add".into(),
-                    file.to_string_lossy().into_owned(),
-                    "--dir".into(),
-                    root.to_string_lossy().into_owned(),
-                    "--namespace".into(),
-                    state.namespace.clone(),
-                ],
-            )
-            .await?;
+            let mut args = vec![
+                "config".into(),
+                "add".into(),
+                file.to_string_lossy().into_owned(),
+                "--dir".into(),
+                root.to_string_lossy().into_owned(),
+                "--namespace".into(),
+                state.namespace.clone(),
+            ];
+            if let Some(label) = label {
+                args.push("--label".into());
+                args.push(label);
+            }
+            self.output(root, &args).await?;
         }
         write_if_changed(
             &state_dir(root).join("state.json"),
@@ -626,6 +731,32 @@ impl Runtime {
         runner.with_pass_signals();
         runner.execute_async().await
     }
+}
+
+/// Whether the registry already holds the label this state wants.
+///
+/// A label that was never registered because pitchfork could not take one is
+/// retried once the executable changes, the only way it can have learned the
+/// flag. Comparing the executable, not probing it, keeps this off the
+/// shell-hook path.
+fn label_is_current(previous: &State, wanted: &State) -> bool {
+    wanted.label == previous.label
+        && (previous.label_registered || wanted.label.is_empty() || previous.bin == wanted.bin)
+}
+
+/// The hostname label mise advertises for a project, empty when it has none.
+///
+/// Pitchfork treats a registered namespace as the project's hostname label, and
+/// the default namespace is a hash that keeps unrelated checkouts apart. Left
+/// to itself it would serve `web.shop-528f92b13a6784f0.localhost` while mise
+/// prints and exports `web.shop.localhost`, so the registration says what the
+/// label is.
+fn project_label(set: &DaemonSet, root: &Path) -> String {
+    set.labels
+        .get(root)
+        .or_else(|| root.canonicalize().ok().and_then(|r| set.labels.get(&r)))
+        .and_then(|labels| labels.project.clone())
+        .unwrap_or_default()
 }
 
 /// Resolve the pitchfork namespace for a project root.
@@ -855,6 +986,108 @@ pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const USAGE_WITHOUT_LABEL: &str = r##"cmd daemons help="List configured daemons." {
+    cmd add help="Add a new daemon" effect=write {
+        long_help #"""
+Add a new daemon to pitchfork.toml
+
+Examples:
+
+    pitchfork daemons add api --label nope
+"""#
+        flag --label {
+            arg <LABEL>
+        }
+    }
+}
+cmd config help="Attach externally generated configuration to a project." {
+    cmd add help="Register a configuration file." effect=write {
+        flag --dir {
+            arg <DIR>
+        }
+        flag --namespace {
+            arg <NAMESPACE>
+        }
+        arg <FILE>
+    }
+    cmd remove help="Detach a configuration file." {
+        flag --label
+        arg <FILE>
+    }
+}
+"##;
+
+    #[test]
+    fn config_add_label_is_detected_from_usage() {
+        assert!(!config_add_takes_label(""));
+        // `--label` on `daemons add` and on `config remove` is not the flag.
+        assert!(!config_add_takes_label(USAGE_WITHOUT_LABEL));
+        let with = USAGE_WITHOUT_LABEL.replace(
+            "        flag --namespace {\n            arg <NAMESPACE>\n        }\n",
+            "        flag --namespace {\n            arg <NAMESPACE>\n        }\n        flag --label {\n            arg <LABEL>\n        }\n",
+        );
+        assert_ne!(with, USAGE_WITHOUT_LABEL);
+        assert!(config_add_takes_label(&with));
+        // A short-and-long spelling counts too.
+        let quoted = with.replace(
+            "flag --label {\n            arg <LABEL>\n        }\n        arg <FILE>",
+            "flag \"-l --label\" {\n            arg <LABEL>\n        }\n        arg <FILE>",
+        );
+        assert!(config_add_takes_label(&quoted));
+    }
+
+    #[test]
+    fn a_changed_or_unregistered_label_is_registered_again() {
+        let state = |label: &str, registered: bool, bin: &str| State {
+            label: label.into(),
+            label_registered: registered,
+            bin: bin.into(),
+            ..State::default()
+        };
+        let current = state("shop", true, "/pf/2.28");
+        assert!(label_is_current(&current, &state("shop", true, "/pf/2.28")));
+        // A renamed project or directory changes only the label.
+        assert!(!label_is_current(
+            &current,
+            &state("store", true, "/pf/2.28")
+        ));
+        assert!(!label_is_current(&current, &state("", true, "/pf/2.28")));
+        // State written before labels existed has none recorded.
+        assert!(!label_is_current(&State::default(), &current));
+        // An older pitchfork took no label: same executable, nothing to retry,
+        // but a different one may understand the flag.
+        let unregistered = state("shop", false, "/pf/2.25");
+        assert!(label_is_current(
+            &unregistered,
+            &state("shop", false, "/pf/2.25")
+        ));
+        assert!(!label_is_current(
+            &unregistered,
+            &state("shop", false, "/pf/2.29")
+        ));
+        // A project mise cannot name never has a label to retry.
+        let unnamed = state("", false, "/pf/2.25");
+        assert!(label_is_current(&unnamed, &state("", false, "/pf/2.29")));
+    }
+
+    #[test]
+    fn project_label_reads_the_roots_own_labels() {
+        let root = PathBuf::from("/project");
+        let mut set = DaemonSet::default();
+        assert_eq!(project_label(&set, &root), "");
+        set.labels.insert(
+            root.clone(),
+            super::super::urls::RootLabels {
+                project: Some("shop".into()),
+                worktree: Some("feature".into()),
+            },
+        );
+        // The worktree component never becomes part of the registered label.
+        assert_eq!(project_label(&set, &root), "shop");
+        assert_eq!(project_label(&set, Path::new("/other")), "");
+    }
+
     #[test]
     #[cfg(unix)]
     fn symlinked_roots_share_namespace_and_state() {
