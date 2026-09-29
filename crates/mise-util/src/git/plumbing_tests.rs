@@ -33,7 +33,10 @@ fn plumbing_isolates_user_config_and_keeps_the_scratch_index() {
             .flatten(),
         Some(OsString::from("1"))
     );
-    assert!(envs.contains_key(OsStr::new("GIT_CONFIG_GLOBAL")));
+    assert_eq!(
+        envs.get(OsStr::new("GIT_CONFIG_GLOBAL")).cloned().flatten(),
+        Some(OsString::from("/dev/null"))
+    );
     for variable in ["GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"] {
         assert_eq!(envs.get(OsStr::new(variable)), Some(&None));
     }

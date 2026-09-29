@@ -1175,9 +1175,10 @@ impl GitPlumbing {
         let mut hooks_config = OsString::from("core.hooksPath=");
         hooks_config.push(hooks.as_ref().expect("hooks directory initialized").path());
         cmd.arg("-c").arg(hooks_config);
-        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        // Git for Windows maps the literal `/dev/null` to its null device;
+        // its UCRT builds (arm64, and x64 since 2.56) reject `NUL` as a config path.
         cmd.env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", null)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_AUTHOR_NAME", "mise")
