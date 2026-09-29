@@ -249,12 +249,20 @@ pub async fn toolset(
     let mut config = config.clone();
     let mut ts = toolset_resolved(&config, install.is_some()).await?;
     if let Some(set) = install {
-        let mut wanted = vec!["pitchfork".to_string()];
+        let mut wanted = vec![crate::args::BackendArg::from("pitchfork")];
         for daemon in set.daemons.values().filter(|d| !d.imported) {
             if let Some((tool, _)) = &daemon.tool {
-                wanted.push(crate::args::BackendArg::from(tool.as_str()).short.clone());
+                wanted.push(crate::args::BackendArg::from(tool.as_str()));
             }
         }
+        // A tool cannot install without the tools it depends on (an npm tool
+        // needs node), so those are in scope too.
+        for ba in wanted.clone() {
+            if let Ok(backend) = ba.backend() {
+                wanted.extend(backend.get_all_dependencies(true)?);
+            }
+        }
+        let wanted: Vec<String> = wanted.into_iter().map(|ba| ba.short.clone()).collect();
         let mut skip = crate::config::Settings::get()
             .auto_install_disable_tools
             .clone()

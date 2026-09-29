@@ -32,7 +32,10 @@ mise daemons stop
 
 # An explicit [tools] version the preset cannot use is still an error. The
 # version installed above is pinned so nothing else needs installing.
-installed=$(find "$MISE_DATA_DIR/installs/nats-server" -mindepth 1 -maxdepth 1 -name '[0-9]*.[0-9]*.[0-9]*' -printf '%f\n' | head -1)
+for dir in "$MISE_DATA_DIR"/installs/nats-server/[0-9]*.[0-9]*.[0-9]*; do
+  installed=${dir##*/}
+  break
+done
 cd ../conflict
 cat >mise.toml <<TOML
 [tools]
