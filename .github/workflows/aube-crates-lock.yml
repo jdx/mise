@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # mise.toml wraps cargo through mbx, which install: false never provides
+  MBX_DISABLE: "1"
+
 jobs:
   aube-crates-lock:
     # Only react to Renovate's own pushes (checked by the sender's immutable
@@ -75,8 +79,28 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           base="$(git rev-parse HEAD)"
           git commit -m 'chore(deps): refresh aube crates and mise.lock'
-          # The lease pins the push to the tip we built on, so a Renovate
-          # force-push that landed meanwhile is never clobbered; its own push
-          # event starts a fresh run of this workflow.
-          git push --force-with-lease="refs/heads/${BRANCH}:${base}" \
-            "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "HEAD:${BRANCH}"
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git"
+          # aube-lock.yml starts from the same Renovate push and commits
+          # aube-lock.yaml to this branch, so it can land first and make the
+          # lease fail. Its push is not Renovate's, so nothing reruns this job:
+          # rebase onto it and retry. A tip that no longer contains the commit
+          # we built on means Renovate force-pushed; that push starts a fresh
+          # run of this workflow, so drop this one.
+          for attempt in 1 2 3 4 5; do
+            # The lease pins the push to the tip we built on, so a Renovate
+            # force-push that landed meanwhile is never clobbered.
+            if git push --force-with-lease="refs/heads/${BRANCH}:${base}" \
+              "$remote" "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+            git fetch --quiet "$remote" "$BRANCH"
+            tip="$(git rev-parse FETCH_HEAD)"
+            if ! git merge-base --is-ancestor "$base" "$tip"; then
+              echo "::notice::${BRANCH} was force-pushed; the new push reruns this workflow"
+              exit 0
+            fi
+            git rebase "$tip"
+            base="$tip"
+          done
+          echo "::error::could not push the aube lockfile refresh to ${BRANCH}"
+          exit 1
