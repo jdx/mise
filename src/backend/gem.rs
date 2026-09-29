@@ -211,6 +211,9 @@ impl GemBackend {
         let Some(url) = parse_source(raw)? else {
             return Ok(None);
         };
+        let url = with_github_packages_token(url, || {
+            crate::github::resolve_token("github.com").map(|(token, _)| token)
+        });
         config.add_redactions(source_secrets(&url));
         Ok(Some(url))
     }
@@ -284,6 +287,28 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
         url.set_path(&path);
     }
     Ok(Some(url))
+}
+
+/// GitHub Packages' RubyGems registry.
+const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
+
+/// Fill in the GitHub token for a GitHub Packages source that carries none.
+///
+/// The registry accepts the same token as the GitHub API, which mise already
+/// resolves (the `GITHUB_TOKEN` family, `gh`'s login, credential helpers). So
+/// `source = "https://rubygems.pkg.github.com/acme"` works as written, instead
+/// of every config templating a token into the URL. A source that already has
+/// credentials is left exactly as configured, and so is any other host: a token
+/// is only ever sent to the registry it belongs to.
+fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<String>) -> Url {
+    if url.host_str() != Some(GITHUB_PACKAGES_HOST) || carries_credentials(&url) {
+        return url;
+    }
+    if let Some(token) = token().filter(|t| !t.is_empty()) {
+        // GitHub Packages takes the token in the user position, no password.
+        let _ = url.set_username(&token);
+    }
+    url
 }
 
 /// Whether this URL carries basic-auth userinfo.
@@ -760,6 +785,53 @@ mod tests {
                 parse_source(input).unwrap().map(|u| u.to_string()),
                 Some("https://gems.example.com/".to_string()),
                 "{input:?}"
+            );
+        }
+    }
+
+    fn github_packages(raw: &str, token: Option<&str>) -> String {
+        let url = parse_source(raw).unwrap().unwrap();
+        with_github_packages_token(url, || token.map(str::to_string)).to_string()
+    }
+
+    /// A bare GitHub Packages source borrows the resolved GitHub token.
+    #[test]
+    fn a_github_packages_source_gets_the_github_token() {
+        assert_eq!(
+            github_packages("https://rubygems.pkg.github.com/acme", Some("ghp_secret")),
+            "https://ghp_secret@rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// Credentials already in the URL win over the resolved token.
+    #[test]
+    fn a_github_packages_source_keeps_its_own_credentials() {
+        assert_eq!(
+            github_packages(
+                "https://me:mine@rubygems.pkg.github.com/acme",
+                Some("ghp_secret")
+            ),
+            "https://me:mine@rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// The GitHub token never goes to any other registry.
+    #[test]
+    fn other_sources_never_get_the_github_token() {
+        assert_eq!(
+            github_packages("https://gems.example.com/acme", Some("ghp_secret")),
+            "https://gems.example.com/acme/"
+        );
+    }
+
+    /// No token resolved, or an empty one, leaves the source anonymous.
+    #[test]
+    fn a_github_packages_source_without_a_token_stays_anonymous() {
+        for token in [None, Some("")] {
+            assert_eq!(
+                github_packages("https://rubygems.pkg.github.com/acme", token),
+                "https://rubygems.pkg.github.com/acme/",
+                "{token:?}"
             );
         }
     }
