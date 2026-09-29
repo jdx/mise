@@ -90,4 +90,5 @@ assert "cat requests.log" "/acme/api/v1/versions/internal-cli.json Basic"
 
 # And the token appears nowhere, at debug verbosity, in stdout or stderr.
 assert_not_contains_text "$output" "$TOKEN"
-assert_contains_text "$output" "[redacted]"
+# The credential travels as a header, so the logged URL has no userinfo at all.
+assert_contains_text "$output" "GET http://127.0.0.1:${port}/acme/api/v1/versions/internal-cli.json"

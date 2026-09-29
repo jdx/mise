@@ -87,6 +87,16 @@ Private registries take credentials as basic auth in the URL (`token@host` or
 metadata. A source with credentials must use `https` unless it is on
 `localhost`.
 
+An `https` source on `rubygems.pkg.github.com` without credentials uses
+mise's GitHub token (see `mise token github`). It needs `read:packages`, which
+a default `gh auth login` lacks (`gh auth refresh -s read:packages`). GitHub
+Packages can't list versions, so pin one:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
+```
+
 The source is added to the other sources rather than replacing them, so
 dependencies still resolve from rubygems.org, and so can a public gem with the
 same name. Prefer a registry that proxies rubygems.org, or pin an exact version.
