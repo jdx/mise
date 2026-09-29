@@ -87,10 +87,13 @@ Private registries take credentials as basic auth in the URL (`token@host` or
 metadata. A source with credentials must use `https` unless it is on
 `localhost`.
 
-GitHub Packages needs no credentials in the URL. A source on
+GitHub Packages needs no credentials in the URL. An `https` source on
 `rubygems.pkg.github.com` without any uses the GitHub token mise already
 resolves (`MISE_GITHUB_TOKEN`, `GITHUB_TOKEN`, `gh`'s login and the rest; see
-`mise token github`). The token needs `read:packages`:
+`mise token github`). The token needs the `read:packages` scope, which a
+personal access token (classic) can carry. A plain `gh auth login` does not
+grant it; add it with `gh auth refresh -s read:packages`. Without it the
+registry answers 403:
 
 ```toml
 [tools]
