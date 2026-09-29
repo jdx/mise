@@ -238,8 +238,17 @@ pub async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>
     let mut config = config.clone();
     let mut ts = toolset_resolved(&config, install).await?;
     if install {
+        // The default only installs tools named on the command line, which here
+        // is pitchfork alone. A preset's tool comes from the daemon declaration,
+        // and leaving it out reports it as a version mismatch when it is validated.
         let (_, missing) = ts
-            .install_missing_versions(&mut config, &Default::default())
+            .install_missing_versions(
+                &mut config,
+                &crate::toolset::InstallOptions {
+                    missing_args_only: false,
+                    ..Default::default()
+                },
+            )
             .await?;
         ts.notify_missing_versions(missing);
     }
