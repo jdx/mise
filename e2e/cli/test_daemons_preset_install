@@ -47,3 +47,25 @@ version = "3"
 port = "auto"
 TOML
 assert_fail_contains "mise daemons start bus 2>&1" "requires nats-server@3"
+
+# The install covers what the daemon's tool depends on, however that is named,
+# and nothing else in the project. `register` installs without starting.
+mkdir ../scope
+cd ../scope
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+jq = "latest"
+yq = "latest"
+[tools.nats-server]
+version = "latest"
+depends = ["jq"]
+[daemons.bus]
+preset = "nats"
+version = "latest"
+port = "auto"
+TOML
+mise daemons register
+assert "test -d '$MISE_DATA_DIR/installs/nats-server'"
+assert "test -d '$MISE_DATA_DIR/installs/jq'"
+assert "test ! -e '$MISE_DATA_DIR/installs/yq'"

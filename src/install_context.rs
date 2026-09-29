@@ -67,7 +67,7 @@ impl InstallDependencyDeclarations {
     }
 }
 
-fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool {
+pub(crate) fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool {
     let left = left.all_fulls();
     let right = right.all_fulls();
     left.iter().any(|identity| right.contains(identity))

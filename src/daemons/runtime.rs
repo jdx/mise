@@ -234,6 +234,49 @@ pub(crate) async fn toolset_resolved(
         .await
 }
 
+/// The tools of `ts` that installing for `set` needs: pitchfork, each daemon's
+/// tool, and everything those tools depend on to install.
+///
+/// Dependencies come from the same declarations the installer resolves, so a
+/// runtime configured under its full backend id or named in a tool's `depends`
+/// option is found the way the installer finds it.
+fn install_scope(ts: &Toolset, set: &DaemonSet) -> Vec<Arc<crate::args::BackendArg>> {
+    let mut roots = vec![crate::args::BackendArg::from("pitchfork")];
+    for daemon in set.daemons.values().filter(|d| !d.imported) {
+        if let Some((tool, _)) = &daemon.tool {
+            roots.push(crate::args::BackendArg::from(tool.as_str()));
+        }
+    }
+    let mut scope: Vec<Arc<crate::args::BackendArg>> = ts
+        .versions
+        .keys()
+        .filter(|ba| {
+            roots
+                .iter()
+                .any(|root| crate::install_context::backend_args_match(root, ba))
+        })
+        .cloned()
+        .collect();
+    let mut next = 0;
+    while let Some(ba) = scope.get(next).cloned() {
+        next += 1;
+        let Some(list) = ts.versions.get(&ba) else {
+            continue;
+        };
+        for request in &list.requests {
+            let declarations = crate::install_context::install_dependency_declarations(request);
+            for candidate in ts.versions.keys() {
+                if declarations.matches(candidate)
+                    && !scope.iter().any(|s| Arc::ptr_eq(s, candidate))
+                {
+                    scope.push(candidate.clone());
+                }
+            }
+        }
+    }
+    scope
+}
+
 /// Build the daemon toolset, installing what `install` needs when it is given.
 ///
 /// `install` is the set of daemons about to be validated and started. Only
@@ -249,20 +292,7 @@ pub async fn toolset(
     let mut config = config.clone();
     let mut ts = toolset_resolved(&config, install.is_some()).await?;
     if let Some(set) = install {
-        let mut wanted = vec![crate::args::BackendArg::from("pitchfork")];
-        for daemon in set.daemons.values().filter(|d| !d.imported) {
-            if let Some((tool, _)) = &daemon.tool {
-                wanted.push(crate::args::BackendArg::from(tool.as_str()));
-            }
-        }
-        // A tool cannot install without the tools it depends on (an npm tool
-        // needs node), so those are in scope too.
-        for ba in wanted.clone() {
-            if let Ok(backend) = ba.backend() {
-                wanted.extend(backend.get_all_dependencies(true)?);
-            }
-        }
-        let wanted: Vec<String> = wanted.into_iter().map(|ba| ba.short.clone()).collect();
+        let wanted = install_scope(&ts, set);
         let mut skip = crate::config::Settings::get()
             .auto_install_disable_tools
             .clone()
@@ -270,8 +300,8 @@ pub async fn toolset(
         skip.extend(
             ts.versions
                 .keys()
-                .map(|ba| ba.short.clone())
-                .filter(|short| !wanted.contains(short)),
+                .filter(|ba| !wanted.iter().any(|w| Arc::ptr_eq(w, ba)))
+                .map(|ba| ba.short.clone()),
         );
         let (_, missing) = ts
             .install_missing_versions(
