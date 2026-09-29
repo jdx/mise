@@ -181,6 +181,17 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.task_config().includes.clone())
     }
 
+    /// The pinned remote config fragments this file's `include` names.
+    fn remote_includes(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// Merge the tools of a fetched remote fragment into this file. They keep
+    /// this file as their source, so they lock and display as its tools.
+    fn add_included_tools_from(&self, _body: &str, _source: &Path) -> eyre::Result<()> {
+        Ok(())
+    }
+
     fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
         Ok(self.task_config().excludes.clone())
     }

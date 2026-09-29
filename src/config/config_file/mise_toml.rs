@@ -391,6 +391,12 @@ pub struct MiseToml {
     #[serde(skip)]
     path: PathBuf,
     #[serde(default, deserialize_with = "deserialize_arr")]
+    include: Vec<String>,
+    /// Tools contributed by pinned remote `include` fragments. Kept apart from
+    /// `tools` so `save()` (which writes `doc`) can never write them back.
+    #[serde(skip)]
+    included_tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     dotenv: Vec<String>,
@@ -580,6 +586,32 @@ impl MiseToml {
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
         let body = file::read_to_string(path)?;
         Self::from_str(&body, path)
+    }
+
+    /// Decode the tools of a pinned remote fragment. Only `min_version` and
+    /// `[tools]` entries that are plain version strings are accepted, so the
+    /// fragment cannot execute anything and needs no trust: its content is
+    /// bound by the pin (a commit sha or an OCI digest) and by this check.
+    pub(crate) fn parse_remote_fragment(
+        body: &str,
+        source: &Path,
+    ) -> eyre::Result<IndexMap<BackendArg, MiseTomlToolList>> {
+        if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body)
+            && table.contains_key("tasks")
+        {
+            eyre::bail!(
+                "a config include only supports `[tools]`; share tasks with `task_config.includes`"
+            );
+        }
+        if !is_safe_config_body(body) {
+            eyre::bail!(
+                "a config include may only contain `min_version` and `[tools]` entries with plain \
+                 version strings (no env, hooks, settings, templates or tool options)"
+            );
+        }
+        let parsed = Self::for_history_preflight(body, source)?;
+        let tools = parsed.tools.lock().unwrap().clone();
+        Ok(tools)
     }
 
     /// Decode a proposed configuration without trusting, evaluating, or
@@ -1527,6 +1559,7 @@ impl ConfigFile for MiseToml {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
+        let included_tools = self.included_tools.lock().unwrap();
         let mut context = self.context.clone();
         if let Some(config) = Config::maybe_get()
             && let Some(env_results) = config.env_results_cached()
@@ -1552,7 +1585,11 @@ impl ConfigFile for MiseToml {
             context.insert("env", &env_vars);
         }
         Self::insert_resolved_vars(&mut context);
-        for (ba, tvp) in tools.iter() {
+        // this file's own entries win over the ones an include contributes
+        let included_tools = included_tools
+            .iter()
+            .filter(|(ba, _)| !tools.contains_key(*ba));
+        for (ba, tvp) in tools.iter().chain(included_tools) {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.request)?;
                 // taken before `ba` is consumed below
@@ -1708,6 +1745,23 @@ impl ConfigFile for MiseToml {
 
     fn tool_config(&self) -> &ToolConfig {
         &self.tool_config
+    }
+
+    fn remote_includes(&self) -> eyre::Result<Vec<String>> {
+        self.include
+            .iter()
+            .map(|include| self.parse_template(include))
+            .collect()
+    }
+
+    fn add_included_tools_from(&self, body: &str, source: &Path) -> eyre::Result<()> {
+        let fragment = Self::parse_remote_fragment(body, source)?;
+        let mut included = self.included_tools.lock().unwrap();
+        for (ba, tools) in fragment {
+            // the first include to name a tool wins, like the order of the list
+            included.entry(ba).or_insert(tools);
+        }
+        Ok(())
     }
 
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
@@ -1984,6 +2038,8 @@ impl Clone for MiseToml {
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
+            include: self.include.clone(),
+            included_tools: Mutex::new(self.included_tools.lock().unwrap().clone()),
             env_file: self.env_file.clone(),
             dotenv: self.dotenv.clone(),
             env: self.env.clone(),
@@ -4861,6 +4917,8 @@ run = "cargo build"
     #[test]
     fn test_is_safe_config_body() {
         assert!(is_safe_config_body(""));
+        // fetching a URL on load is something only a trusted config may ask for
+        assert!(!is_safe_config_body("include = [\"oci::r/x@sha256:0\"]\n"));
         assert!(is_safe_config_body(indoc! {r#"
         min_version = "2024.1.1"
         [tools]
@@ -4988,6 +5046,61 @@ run = "cargo build"
             Some(&vec![]),
             "an empty user-provided expose should clear the registry default"
         );
+    }
+
+    #[tokio::test]
+    async fn test_included_tools_merge_below_own_tools_and_keep_the_parent_as_source() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            node = "22"
+        "#});
+        let fragment_path = Path::new("/cache/base/mise.toml");
+        cf.add_included_tools_from("[tools]\nnode = \"20\"\npython = \"3.12\"\n", fragment_path)
+            .unwrap();
+        // the first include to name a tool wins
+        cf.add_included_tools_from("[tools]\npython = \"3.11\"\n", fragment_path)
+            .unwrap();
+
+        let trs = cf.to_tool_request_set().unwrap();
+        let versions = |short: &str| {
+            trs.tools
+                .iter()
+                .find(|(ba, _)| ba.short == short)
+                .map(|(_, reqs)| reqs.iter().map(|r| r.version()).collect_vec())
+        };
+        assert_eq!(versions("node"), Some(vec!["22".to_string()]));
+        assert_eq!(versions("python"), Some(vec!["3.12".to_string()]));
+        assert!(
+            trs.tools
+                .iter()
+                .all(|(_, reqs)| reqs.iter().all(|r| r.source() == &cf.source())),
+            "included tools are sourced from the including file so they lock with it"
+        );
+        // the fragment never reaches what save() writes
+        assert!(!cf.dump().unwrap().contains("python"));
+    }
+
+    #[test]
+    fn test_remote_fragment_only_accepts_plain_tools() {
+        let path = Path::new("/cache/base/mise.toml");
+        assert!(MiseToml::parse_remote_fragment("[tools]\nnode = \"22\"\n", path).is_ok());
+        for body in [
+            "[env]\nFOO = \"bar\"\n",
+            "[hooks]\nenter = \"echo hi\"\n",
+            "[tools]\nnode = { version = \"22\", postinstall = \"x\" }\n",
+            "[tools]\nnode = \"{{ exec(command='id') }}\"\n",
+            "include = [\"oci::ghcr.io/o/r@sha256:0\"]\n",
+        ] {
+            assert!(
+                MiseToml::parse_remote_fragment(body, path).is_err(),
+                "{body}"
+            );
+        }
+        let err = MiseToml::parse_remote_fragment("[tasks.a]\nrun = \"echo\"\n", path)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("task_config.includes"), "{err}");
     }
 
     #[tokio::test]

@@ -284,6 +284,28 @@ Examples:
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
+### `include` - Share tool versions from a remote file {#include}
+
+`include` merges the `[tools]` of a remote config fragment into a config file, so an organization can publish one tool baseline and have every repo pull it in:
+
+```toml
+include = [
+  "git::https://github.com/myorg/platform.git//tools/mise.toml?ref=main",
+  "oci::ghcr.io/myorg/platform-tools@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+]
+
+[tools]
+node = "22" # a tool listed here overrides the included version
+```
+
+A `git::` include points at a `.toml` file; an `oci::` include points at an artifact with a `mise.toml` at its root.
+
+- **Cached.** A fragment is read on every config load, so it is fetched once and kept under `MISE_CACHE_DIR`. A reference to immutable content, a full commit sha (`?ref=<40 hex digits>`) or an OCI digest (`@sha256:…`), is never fetched again. A branch, tag or OCI tag is refreshed once the cache is older than [`fetch_remote_versions_cache`](/configuration/settings#fetch_remote_versions_cache) (one hour by default). Only commands that look at remote versions, such as `mise install`, `mise up` and `mise use`, refresh; hook-env, `mise ls`, `mise exec` and shims, and offline mode, use the cached copy without checking. If a refresh fails, for example offline, mise keeps using the cached copy and warns. `mise cache clear` forces a refetch.
+- **Inert.** A fragment may only contain `min_version` and `[tools]` entries that are plain version strings. Env, hooks, settings, templates, tool options and `[tasks]` are rejected, so a fragment cannot run code even when a branch moves. Share tasks with [`task_config.includes`](/tasks/task-configuration#task_config.includes).
+- **Trusted parent.** The file that contains `include` is not trust-exempt, so an untrusted repo cannot make mise fetch a URL when you `cd` into it.
+
+Fragment tools rank below the including file's own `[tools]` and above lower-precedence configs. They are sourced from, and locked in the lockfile of, the including file.
+
 ### `[tool_config]` - Config-root-scoped tool policy
 
 `[tool_config]` applies policy to tools declared by configs sharing the same

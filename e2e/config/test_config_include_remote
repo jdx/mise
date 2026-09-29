@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# `include` merges the [tools] of a pinned remote fragment into a config file.
+#
+# Uses `crane registry serve` (an in-memory OCI registry) on a loopback port and
+# `crane append` to publish the fragment as a tar layer.
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+# publish <dir> <name> prints the digest of the artifact it pushed
+publish() {
+  local dir="$1" ref="$REGISTRY/e2e/$2:v1"
+  tar -czf "$dir.tar.gz" -C "$dir" .
+  mise x crane@latest -- crane append --oci-empty-base -f "$dir.tar.gz" -t "$ref" >/dev/null
+  mise x crane@latest -- crane digest "$ref"
+}
+
+mkdir -p base env-fragment
+cat >base/mise.toml <<'TOML'
+[tools]
+tiny = "1"
+shellcheck = "0.9"
+TOML
+cat >env-fragment/mise.toml <<'TOML'
+[env]
+FROM_FRAGMENT = "1"
+TOML
+BASE="$(publish base base)"
+ENV_FRAGMENT="$(publish env-fragment envfrag)"
+
+version_of() {
+  mise ls --json | jq -r --arg t "$1" '.[$t][0].requested_version // empty'
+}
+source_of() {
+  mise ls --json | jq -r --arg t "$1" '.[$t][0].source.path // empty'
+}
+# assert runs its command in a new bash
+export -f version_of source_of
+
+# The fragment's tools apply, and the including file's own entries win.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+
+[tools]
+shellcheck = "0.10"
+TOML
+assert "version_of tiny" "1"
+assert "version_of shellcheck" "0.10"
+# fragment tools are sourced from the including file, not from the cache
+assert "source_of tiny" "$PWD/mise.toml"
+
+# A git include must point at a .toml file (checked before any fetch).
+cat >mise.toml <<TOML
+include = ["git::https://github.com/jdx/mise.git//tasks?ref=main"]
+TOML
+assert_fail_contains "mise ls" "must point at a .toml file"
+
+# A fragment cannot carry anything that is not a plain tool version.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/envfrag@$ENV_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "may only contain"
+
+# Once cached, a digest-pinned fragment loads without the registry, whatever
+# the ttl, and MISE_TASK_REMOTE_NO_CACHE does not force a refetch.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+TOML
+assert "version_of tiny" "1"
+
+# A tag is mutable: it is served from the cache until the ttl passes, then
+# refetched.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base:v1"]
+TOML
+assert "version_of tiny" "1"
+cat >base/mise.toml <<'TOML'
+[tools]
+tiny = "2"
+TOML
+publish base base >/dev/null
+assert "version_of tiny" "1"
+# `mise ls` (like hook-env, exec and shims) never refreshes; a command that
+# looks at remote versions does, once the cache is older than the ttl.
+assert "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s version_of tiny" "1"
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
+
+# When the refresh fails, the stale copy keeps working.
+kill "$REGISTRY_PID"
+wait "$REGISTRY_PID" 2>/dev/null || true
+REGISTRY_PID=""
+export MISE_FETCH_REMOTE_VERSIONS_CACHE=0s
+assert_succeed "mise config ls"
+assert "version_of tiny" "2"
+export MISE_TASK_REMOTE_NO_CACHE=1
+assert "version_of tiny" "2"
+# but a fragment that was never cached is an error
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/other:v1"]
+TOML
+assert_fail_contains "mise ls" "failed to load config include"

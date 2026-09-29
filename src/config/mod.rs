@@ -53,6 +53,7 @@ pub mod edit;
 pub mod env_directive;
 pub mod miserc;
 pub(crate) mod provenance;
+mod remote_include;
 pub mod settings;
 pub mod tracking;
 
@@ -3629,7 +3630,9 @@ async fn parse_config_file(
     warn_on_dotted_conf_d_file(f);
     let plugins = matching_idiomatic_tools(f, idiomatic_filenames);
     if plugins.is_empty() {
-        config_file::parse(f).await
+        let cf = config_file::parse(f).await?;
+        remote_include::apply(&cf).await?;
+        Ok(cf)
     } else {
         trace!("idiomatic version file: {}", display_path(f));
         let tools = backend::list()
