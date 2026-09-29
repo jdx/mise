@@ -738,6 +738,23 @@ Use `mise daemons ls --json` to inspect assignments. Each listed daemon includes
 Presets export their usual connection variables with the resolved port, including
 `PGPORT` and `DATABASE_URL` for PostgreSQL and `REDIS_URL` for Redis.
 
+A preset's named ports are exported too, as `<NAME>_<PORT_NAME>` with the daemon's
+name folded the same way, so a daemon named `crdb` from the `cockroachdb` preset
+exports `CRDB_HTTP_PORT` and a `spicedb` daemon named `authz` exports
+`AUTHZ_HTTP_PORT` and `AUTHZ_METRICS_PORT`. The value is the port the daemon's
+command uses: the default, the worktree offset from `port = "auto"`, or a
+`ports.<name>` you set. Read it instead of adding the offset yourself.
+
+```toml
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+port = "auto"
+
+[env]
+COCKROACH_CONSOLE = "http://127.0.0.1:{{ env.CRDB_HTTP_PORT }}"
+```
+
 Custom daemons with an integer or automatic `port` export `<NAME>_PORT`. Mise
 uppercases the daemon name and replaces punctuation with underscores:
 `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]` exports `WEB_UI_PORT`.
@@ -745,7 +762,9 @@ These variables are available through `mise env`, `mise x`, and the daemon's mis
 environment. Explicit `[env]` values take precedence over daemon exports.
 
 If a name starts with a digit, or two names map to the same variable (such as
-`web-ui` and `web_ui`), mise warns and omits the affected exports. The daemons can
+`web-ui` and `web_ui`), mise warns and omits the affected exports. A preset's own
+variables take precedence over a derived one, so a custom daemon whose
+`<NAME>_PORT` matches a named-port variable gives way to the preset. The daemons can
 still run. Pitchfork also provides `$PORT` to the process it starts.
 
 ### Port conflicts

@@ -669,6 +669,9 @@ struct LoadState {
     claims: BTreeMap<PathBuf, BTreeMap<String, PortClaim>>,
     /// Port variables already taken, so two names cannot normalize onto one key.
     keys: BTreeMap<String, String>,
+    /// Named-port variables a preset daemon exports, by the daemon that owns
+    /// each, so two names that fold onto one stem cannot both claim it.
+    port_vars: BTreeMap<String, String>,
     ambiguous: std::collections::BTreeSet<String>,
     /// Hostnames two daemons derived independently; neither keeps it.
     /// Keys of the daemons whose hostname this load takes away, which is every
@@ -761,7 +764,7 @@ fn build(
             )?),
             None => None,
         };
-        return presets::expand(
+        let daemon = presets::expand(
             name,
             &preset,
             &version,
@@ -774,7 +777,25 @@ fn build(
             },
             &source,
             &root,
-        );
+        )?;
+        // An imported preset exports into the project that declares it, so its
+        // variables cannot clash with anything here.
+        if !imported {
+            for var in presets::named_port_vars(name, &preset)? {
+                // Two names that differ only by punctuation fold onto one stem.
+                // Picking one would hand the other's port to whoever reads the
+                // variable, so neither is exported and both still run.
+                if let Some(other) = state.port_vars.insert(var.clone(), name.to_string())
+                    && other != name
+                {
+                    warn_once!(
+                        "[daemons] {other} and {name} both map to {var}; their names differ only by punctuation, so neither port is exported. Rename one of them."
+                    );
+                    state.ambiguous.insert(var);
+                }
+            }
+        }
+        return Ok(daemon);
     }
     if version.is_some() || table.contains_key("options") {
         bail!("[daemons.{name}] requires preset when specifying version or options");
@@ -3000,6 +3021,43 @@ mod tests {
         assert_eq!(
             set.daemons["api"].table["port"]["expect"][0].as_integer(),
             Some(i64::from(api))
+        );
+    }
+
+    #[test]
+    fn a_presets_named_ports_are_exported_and_collisions_withheld() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let load_body =
+            |body: &str| load(&files(&[(root.join("mise.toml").to_str().unwrap(), body)])).unwrap();
+        let set = load_body(
+            "[daemons.crdb]\npreset = 'cockroachdb'\nversion = '26'\nports.http_port = 8081\n\
+             [daemons.events]\npreset = 'nats'\nversion = '2'\n",
+        );
+        assert_eq!(set.daemons["crdb"].exports["CRDB_HTTP_PORT"], "8081");
+        assert_eq!(set.daemons["events"].exports["EVENTS_MONITOR_PORT"], "8222");
+
+        // Two names that fold onto one stem would hand one daemon the other's
+        // port, so neither is exported and both still load.
+        let set = load_body(
+            "[daemons.db-a]\npreset = 'cockroachdb'\nversion = '26'\nport = 26257\n\
+             [daemons.db_a]\npreset = 'cockroachdb'\nversion = '26'\nport = 26258\nports.http_port = 8081\n",
+        );
+        assert!(!set.daemons["db-a"].exports.contains_key("DB_A_HTTP_PORT"));
+        assert!(!set.daemons["db_a"].exports.contains_key("DB_A_HTTP_PORT"));
+
+        // A custom daemon whose `<NAME>_PORT` lands on a named port gives way,
+        // as it does for any variable a preset sets.
+        let set = load_body(
+            "[daemons.crdb]\npreset = 'cockroachdb'\nversion = '26'\n\
+             [daemons.crdb-http]\nrun = 'x'\nport = 3000\n",
+        );
+        assert_eq!(set.daemons["crdb"].exports["CRDB_HTTP_PORT"], "8080");
+        assert!(
+            !set.daemons["crdb-http"]
+                .exports
+                .contains_key("CRDB_HTTP_PORT")
         );
     }
 

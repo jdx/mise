@@ -766,6 +766,19 @@ pub(crate) fn expand(
         expect.push(*value);
     }
     table.insert("port".into(), super::expected_ports(&expect));
+    // The values that went into the run command, offset and overrides included,
+    // so nothing has to re-derive a listener from the primary port.
+    if !extras.imported {
+        for (var, value) in named_port_exports(name, &ports) {
+            if exports.contains_key(&var) {
+                warn_once!(
+                    "[daemons] {name} would export {var}, which the {preset_name} preset already sets; the preset's value is kept."
+                );
+                continue;
+            }
+            exports.insert(var, value);
+        }
+    }
     table.insert("mise".into(), toml::Value::Boolean(true));
     // `proxy` and `proxy_tls` were already normalized above; re-applying the raw
     // override here would undo that.
@@ -790,6 +803,39 @@ pub(crate) fn expand(
         port: Some(claim),
         host,
     })
+}
+
+/// The variable a named port is exported as: the daemon's stem, then the port's
+/// name, always ending in `_PORT` (`http_port` on `cockroach` is
+/// `COCKROACH_HTTP_PORT`).
+fn named_port_var(base: &str, key: &str) -> String {
+    let key = key.to_ascii_uppercase().replace('-', "_");
+    if key.ends_with("_PORT") {
+        format!("{base}_{key}")
+    } else {
+        format!("{base}_{key}_PORT")
+    }
+}
+
+/// A daemon's named ports as the variables it exports, empty when its name
+/// cannot be the stem of a shell variable.
+fn named_port_exports(name: &str, ports: &IndexMap<String, u16>) -> Vec<(String, String)> {
+    let Some(base) = super::env_var_base(name) else {
+        return Vec::new();
+    };
+    ports
+        .iter()
+        .map(|(key, port)| (named_port_var(&base, key), port.to_string()))
+        .collect()
+}
+
+/// The variables a preset's named ports are exported as for a daemon of this
+/// name, whether or not something claims them first.
+pub(crate) fn named_port_vars(name: &str, preset_name: &str) -> Result<Vec<String>> {
+    Ok(named_port_exports(name, &preset(preset_name)?.ports)
+        .into_iter()
+        .map(|(var, _)| var)
+        .collect())
 }
 
 /// Database compatibility is preset-specific; tool request strings remain opaque.
@@ -1475,6 +1521,94 @@ mod tests {
             major(&preset("spicedb").unwrap(), "spicedb", "spicedb v1.56.2\n").unwrap(),
             "1"
         );
+    }
+
+    #[test]
+    fn named_ports_are_exported_as_the_run_command_uses_them() {
+        let expand_crdb = |overrides: toml::Table, port: PortClaim, imported: bool| {
+            expand(
+                "crdb",
+                "cockroachdb",
+                "26",
+                overrides,
+                Extras {
+                    init: &[],
+                    port: Some(port),
+                    labels: &labels(),
+                    imported,
+                },
+                Path::new("/p/mise.toml"),
+                Path::new("/p"),
+            )
+            .unwrap()
+        };
+        // The default is exported, and it is the port in the command.
+        let plain = expand_crdb(toml::Table::new(), PortClaim::fixed(26257), false);
+        assert_eq!(plain.exports["CRDB_HTTP_PORT"], "8080");
+        assert!(
+            plain.table["run"]
+                .as_str()
+                .unwrap()
+                .contains("--http-addr=127.0.0.1:8080")
+        );
+        // A worktree slot moves the named port and its export together.
+        let slotted = expand_crdb(
+            toml::Table::new(),
+            PortClaim {
+                port: 26257 + 7,
+                base: 26257,
+                stride: 1,
+            },
+            false,
+        );
+        assert_eq!(slotted.exports["CRDB_HTTP_PORT"], "8087");
+        assert!(
+            slotted.table["run"]
+                .as_str()
+                .unwrap()
+                .contains("--http-addr=127.0.0.1:8087")
+        );
+        // A port set by hand is exactly what is exported.
+        let pinned = expand_crdb(
+            toml::toml! { [ports] http_port = 9999 },
+            PortClaim::fixed(26257),
+            false,
+        );
+        assert_eq!(pinned.exports["CRDB_HTTP_PORT"], "9999");
+        // An imported daemon exports into the project that declares it.
+        let imported = expand_crdb(toml::Table::new(), PortClaim::fixed(26257), true);
+        assert!(!imported.exports.contains_key("CRDB_HTTP_PORT"));
+        // The preset's own variables are untouched.
+        assert!(plain.exports.contains_key("COCKROACH_URL"));
+        // Every named port gets one, on presets with more than one.
+        let spicedb = expand(
+            "authz",
+            "spicedb",
+            "1",
+            toml::Table::new(),
+            Extras {
+                init: &[],
+                port: None,
+                labels: &labels(),
+                imported: false,
+            },
+            Path::new("/p/mise.toml"),
+            Path::new("/p"),
+        )
+        .unwrap();
+        assert_eq!(spicedb.exports["AUTHZ_HTTP_PORT"], "8443");
+        assert_eq!(spicedb.exports["AUTHZ_METRICS_PORT"], "9090");
+        // Punctuation folds into the stem, like `<NAME>_PORT`.
+        assert_eq!(named_port_var("MY_DB", "http_port"), "MY_DB_HTTP_PORT");
+        assert_eq!(named_port_var("DB", "http"), "DB_HTTP_PORT");
+        assert_eq!(
+            named_port_vars("my-db", "cockroachdb").unwrap(),
+            vec!["MY_DB_HTTP_PORT"]
+        );
+        // A name that cannot be a shell variable gets none, and postgres has no
+        // named ports to export.
+        assert!(named_port_vars("9db", "cockroachdb").unwrap().is_empty());
+        assert!(named_port_vars("db", "postgres").unwrap().is_empty());
     }
 
     #[test]
