@@ -71,3 +71,22 @@ native extensions, `MAKEFLAGS` controls parallel make jobs:
 [tools]
 "gem:rubocop" = { version = "latest", install_env = { MAKEFLAGS = "-j4" } }
 ```
+
+### `source`
+
+Install and resolve versions of one gem from a specific registry, without
+changing the machine's `gem sources`:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "latest", source = "https://{{ env.GEM_TOKEN }}@gems.example.com/acme" }
+```
+
+Private registries take credentials as basic auth in the URL (`token@host` or
+`user:token@host`, per your registry). mise redacts them from output and install
+metadata. A source with credentials must use `https` unless it is on
+`localhost`.
+
+The source is added to the other sources rather than replacing them, so
+dependencies still resolve from rubygems.org, and so can a public gem with the
+same name. Prefer a registry that proxies rubygems.org, or pin an exact version.

@@ -686,6 +686,30 @@ fn test_running_pid_guard_removes_pid() {
     assert!(!super::RUNNING_PIDS.lock().unwrap().contains(&pid));
 }
 
+/// Raw mode hands the child mise's own stdout, which is why nothing passes
+/// through the redactor there. `never_raw` is how a command carrying a
+/// credential in its arguments opts out, so the observable contract is that
+/// output is captured even with `raw` requested: in raw mode `on_stdout`
+/// never fires at all.
+#[test]
+fn never_raw_keeps_output_captured_even_when_raw_is_requested() {
+    let seen: Arc<Mutex<Vec<String>>> = Default::default();
+    let sink = seen.clone();
+    super::CmdLineRunner::new("echo")
+        .arg("captured")
+        .raw(true)
+        .never_raw()
+        .with_on_stdout(move |line| sink.lock().unwrap().push(line))
+        .execute()
+        .expect("echo should run");
+
+    assert_eq!(
+        seen.lock().unwrap().as_slice(),
+        &["captured".to_string()],
+        "raw mode was not refused, so nothing could be redacted"
+    );
+}
+
 #[test]
 fn test_cmd_body_args_unix_fallthrough() {
     // On Unix `cmd_body_args` must be exactly `args(flags).arg(body)` — the
