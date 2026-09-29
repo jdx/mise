@@ -34,6 +34,9 @@ pitchfork = "system"
 run = "exec sleep 600"
 ready_delay = 0
 port = { auto = true, base = $PORT }
+[tasks.dev]
+daemons = ["api"]
+run = "true"
 TOML
 
 # Pitchfork says the port is busy; mise adds how to move it (this project is
@@ -45,6 +48,12 @@ assert_contains_text "$output" "gitignored mise.local.toml"
 assert_not_contains_text "$output" "exited with non-zero status"
 assert_not_contains_text "$output" "Run with --verbose"
 assert_fail "mise daemons start api"
+
+# A task that requires the daemon starts it through a different path, which has
+# to hand the same information to the failure diagnostic.
+output=$(mise run dev 2>&1) && fail "task unexpectedly succeeded: $output"
+assert_contains_text "$output" "did not start and its automatically allocated port $PORT (the configured base)"
+assert_contains_text "$output" "gitignored mise.local.toml"
 
 # With the port free again, the same daemon starts.
 kill "$holder"
