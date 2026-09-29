@@ -73,6 +73,28 @@ assert "version_of shellcheck" "0.10"
 # fragment tools are sourced from the including file, not from the cache
 assert "source_of tiny" "$PWD/mise.toml"
 
+# A git include is cloned and read like an OCI one. Only https and ssh URLs are
+# accepted, so rewrite a fake https host onto a local repository.
+git init -q gitsrc
+mkdir gitsrc/base
+cat >gitsrc/base/mise.toml <<'TOML'
+[tools]
+tiny = "3"
+TOML
+git -C gitsrc add base/mise.toml
+git -C gitsrc -c user.email=e2e@example.com -c user.name=e2e commit -q -m base
+GIT_SHA="$(git -C gitsrc rev-parse HEAD)"
+git -C gitsrc branch -M main
+git config --global url."file://$PWD/gitsrc".insteadOf "https://example.test/org/platform.git"
+cat >mise.toml <<TOML
+include = ["git::https://example.test/org/platform.git//base/mise.toml?ref=$GIT_SHA"]
+TOML
+assert "version_of tiny" "3"
+cat >mise.toml <<TOML
+include = ["git::https://example.test/org/platform.git//base/mise.toml?ref=main"]
+TOML
+assert "version_of tiny" "3"
+
 # A git include must point at a .toml file (checked before any fetch).
 cat >mise.toml <<TOML
 include = ["git::https://github.com/jdx/mise.git//tasks?ref=main"]
