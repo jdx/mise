@@ -3827,8 +3827,13 @@ pub async fn resolve_tool_lock_info(
                     ba.short.clone(),
                     tv.version.clone(),
                     ba.stored_full(),
-                    platform,
-                    Err(e.to_string()),
+                    platform.clone(),
+                    Err(format!(
+                        "failed to resolve options for {} on {}: {}",
+                        ba.short,
+                        platform.to_key(),
+                        e
+                    )),
                     BTreeMap::new(),
                     BTreeMap::new(),
                     error_is_fatal,
