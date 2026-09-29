@@ -16,10 +16,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: aube-crates-lock-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   aube-crates-lock:
     # Only react to Renovate's own pushes (checked by the sender's immutable
@@ -27,6 +23,11 @@ jobs:
     # sender, so this also prevents self-retriggering.
     if: github.event.sender.id == 29139614 # renovate[bot]
     runs-on: ubuntu-latest
+    # Job-level, so a push whose job the `if` skips (e.g. aube-lock.yml's
+    # lockfile commit) never cancels a Renovate-triggered refresh in flight.
+    concurrency:
+      group: aube-crates-lock-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       # No GITHUB_TOKEN fallback: it is read-only here and would not retrigger
       # CI, so a missing App secret should fail this step loudly.
