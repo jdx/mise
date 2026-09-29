@@ -51,6 +51,7 @@ FROM_FRAGMENT = "1"
 OVERRIDDEN = "fragment"
 ROOT = "{{ config_root }}"
 _.file = ".fragment.env"
+_.path = ["frag-bin"]
 TOML
 echo "FROM_DOTENV=yes" >.fragment.env
 cat >bad-fragment/mise.toml <<'TOML'
@@ -126,12 +127,15 @@ include = ["oci::$REGISTRY/e2e/envfrag@$ENV_FRAGMENT"]
 
 [env]
 OVERRIDDEN = "local"
+_.path = ["own-bin"]
 TOML
 assert "mise env --json | jq -r .FROM_FRAGMENT" "1"
 assert "mise env --json | jq -r .OVERRIDDEN" "local"
 # relative paths and config_root resolve against the including file, not the cache
 assert "mise env --json | jq -r .ROOT" "$PWD"
 assert "mise env --json | jq -r .FROM_DOTENV" "yes"
+# the including file's PATH entries come before the shared ones
+assert "mise env --json | jq -r '.PATH | split(\":\") | map(select(test(\"-bin$\"))) | map(sub(\".*/\"; \"\")) | join(\",\")'" "own-bin,frag-bin"
 
 # [settings] is read before an include can be resolved, so it is refused rather
 # than silently ignored.

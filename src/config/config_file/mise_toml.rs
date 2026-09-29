@@ -660,9 +660,18 @@ impl MiseToml {
                 own.entry(key).or_insert(value);
             }
         }
-        below(&mut self.env.0, fragment.env.0);
+        // Values rank by position, the later the stronger, so shared ones go
+        // first. A PATH entry is the opposite: the earlier one is found first,
+        // so shared directories go after this file's own.
+        let (shared_paths, shared_rest): (Vec<_>, Vec<_>) = fragment
+            .env
+            .0
+            .into_iter()
+            .partition(|directive| matches!(directive, EnvDirective::Path(..)));
+        below(&mut self.env.0, shared_rest);
+        self.env.0.extend(shared_paths);
         below(&mut self.vars.0, fragment.vars.0);
-        below(&mut self.env_path, fragment.env_path);
+        self.env_path.extend(fragment.env_path);
         fill_aliases(&mut self.alias, fragment.alias);
         fill_aliases(&mut self.tool_alias, fragment.tool_alias);
         fill(&mut self.shell_alias, fragment.shell_alias);
@@ -5145,6 +5154,7 @@ run = "cargo build"
 
             [env]
             OWN = "1"
+            _.path = ["own-bin"]
 
             [hooks]
             enter = "echo own"
@@ -5160,12 +5170,12 @@ run = "cargo build"
             .with_remote_fragments(vec![
                 (
                     first.clone(),
-                    "[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n"
+                    "[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n_.path = [\"first-bin\"]\n"
                         .to_string(),
                 ),
                 (
                     second.clone(),
-                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n\n[hooks]\nenter = \"echo shared\"\n\n[tool_alias.node.versions]\nmine = \"20\"\nshared = \"20\"\n"
+                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n_.path = [\"second-bin\"]\n\n[hooks]\nenter = \"echo shared\"\n\n[tool_alias.node.versions]\nmine = \"20\"\nshared = \"20\"\n"
                         .to_string(),
                 ),
             ])
@@ -5192,6 +5202,17 @@ run = "cargo build"
             })
             .collect_vec();
         assert_eq!(keys, ["FIRST", "SECOND", "OWN"]);
+        // PATH is the other way round: this file's directories are found first
+        let paths = merged
+            .env_entries()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                EnvDirective::Path(path, _) => Some(path),
+                _ => None,
+            })
+            .collect_vec();
+        assert_eq!(paths, ["own-bin", "second-bin", "first-bin"]);
         // both files' hooks run, and a shared alias survives one of the same tool
         assert_eq!(merged.hooks().unwrap().len(), 2);
         let aliases = merged.aliases().unwrap();
