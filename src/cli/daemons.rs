@@ -606,7 +606,7 @@ impl Daemons {
                 forwarded.extend(selected);
                 forwarded.extend(flags.clone());
                 if install {
-                    pending.push((runtime, root, forwarded, _project_lock));
+                    pending.push((runtime, root, forwarded, state.ports.clone(), _project_lock));
                 } else {
                     runtime.exec(&root, forwarded).await?;
                 }
@@ -614,8 +614,8 @@ impl Daemons {
         }
         // Register and validate every dependency root before pitchfork starts
         // anything, regardless of the order projects appear in the config.
-        for (runtime, root, forwarded, _project_lock) in pending {
-            runtime.exec(&root, forwarded).await?;
+        for (runtime, root, forwarded, ports, _project_lock) in pending {
+            runtime.start(&root, forwarded, &ports).await?;
         }
         if matches!(action, "ls" | "urls") {
             if json {

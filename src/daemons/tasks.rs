@@ -271,10 +271,11 @@ pub async fn start(
         }
         // The project lock rides along so every root stays held until the last
         // one has started.
-        pending.push((rt, root, ids, _project_lock));
+        pending.push((rt, root, ids, state.ports, _project_lock));
     }
-    for (rt, root, ids, _project_lock) in pending {
-        rt.exec(&root, [vec!["start".into()], ids].concat()).await?;
+    for (rt, root, ids, ports, _project_lock) in pending {
+        rt.start(&root, [vec!["start".into()], ids].concat(), &ports)
+            .await?;
     }
     Ok(())
 }

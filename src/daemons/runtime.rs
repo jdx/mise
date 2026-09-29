@@ -14,6 +14,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
+/// How to give one checkout a port of its own. A `[daemons.<name>]` declared in a
+/// higher-precedence file replaces the whole daemon, so the other keys are
+/// repeated there.
+const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with a fixed `port = <n>`, or with `port = { auto = true, base = <n> }` to move its range. That declaration replaces the whole daemon, so repeat its other keys.";
+
+/// Whether something already listens on this loopback port. Binding is what a
+/// daemon would do next, so a failure to bind is the same answer it would get.
+fn port_is_taken(port: u16) -> bool {
+    std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).is_err()
+}
+
 /// What mise knows about one project's daemons, as written beside them.
 ///
 /// Every field defaults, so a state file written by another version still
@@ -421,8 +432,7 @@ impl Runtime {
             }
             bail!(
                 "daemon {name} would use port {port}, in use by {other_name} running in {}. \
-                 Stop it, set an explicit port on one of them, or use \
-                 port = {{ auto = true, base = <port> }} to move this project's range.",
+                 Stop it, or {PIN_A_PORT}",
                 other.root.display()
             );
         }
@@ -616,6 +626,12 @@ impl Runtime {
         Ok((state, lock))
     }
 
+    /// Run pitchfork with the terminal, so its own output reaches the user.
+    ///
+    /// A failing command has therefore already said why, in its own words. mise
+    /// keeps its status and adds nothing: the error it would otherwise raise
+    /// reads `pitchfork exited with non-zero status`, then the version and a
+    /// pointer to `--verbose`, none of which the user can act on.
     pub async fn exec(&self, root: &Path, args: Vec<String>) -> Result<()> {
         let mut runner = CmdLineRunner::new(&self.bin)
             .args(args)
@@ -624,7 +640,73 @@ impl Runtime {
             .current_dir(root)
             .raw(true);
         runner.with_pass_signals();
-        runner.execute_async().await
+        match runner.execute_async().await {
+            Err(err) => match crate::errors::ProcessError::get_exit_status(&err) {
+                Some(code) => Err(crate::request_exit(code)),
+                None => Err(err),
+            },
+            ok => ok,
+        }
+    }
+
+    /// Start daemons, and if that fails, say how to get out of a port that is
+    /// taken.
+    ///
+    /// `ports` are the claims this project recorded. Pitchfork reports a busy
+    /// port in its own words, which cannot know that mise derived the number
+    /// from the checkout's path and that it can be pinned somewhere else, so
+    /// mise adds that once pitchfork has said its part.
+    pub async fn start(
+        &self,
+        root: &Path,
+        args: Vec<String>,
+        ports: &BTreeMap<String, PortClaim>,
+    ) -> Result<()> {
+        let result = self.exec(root, args.clone()).await;
+        if result.is_err() {
+            for (name, port) in self.taken_auto_ports(root, &args, ports).await {
+                warn!(
+                    "[daemons] {name} did not start and its port {port}, derived from this checkout's path, is in use by another process. To move it, {PIN_A_PORT}"
+                );
+            }
+        }
+        result
+    }
+
+    /// The daemons named in `args` whose automatically allocated port is held by
+    /// something other than the daemon itself.
+    async fn taken_auto_ports(
+        &self,
+        root: &Path,
+        args: &[String],
+        ports: &BTreeMap<String, PortClaim>,
+    ) -> Vec<(String, u16)> {
+        let mut taken = Vec::new();
+        // Arguments are the action, daemon IDs and flags. Only an ID has a `/`.
+        for id in args
+            .iter()
+            .filter(|a| !a.starts_with('-') && a.contains('/'))
+        {
+            let name = id.rsplit('/').next().unwrap_or(id);
+            let Some(claim) = ports.get(name).filter(|claim| claim.is_auto()) else {
+                continue;
+            };
+            if !port_is_taken(claim.port) {
+                continue;
+            }
+            // A daemon that is up holds its own port, and a sibling's failure
+            // must not make that look like a conflict.
+            let running = self.status(root, id).await.ok().is_some_and(|value| {
+                matches!(
+                    value["status"].as_str(),
+                    Some("running" | "waiting" | "stopping")
+                )
+            });
+            if !running {
+                taken.push((name.to_string(), claim.port));
+            }
+        }
+        taken
     }
 }
 
@@ -855,6 +937,70 @@ pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bound_loopback_port_is_taken() {
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_is_taken(port));
+        drop(listener);
+        assert!(!port_is_taken(port));
+    }
+
+    /// A failing pitchfork has already explained itself on the terminal, so the
+    /// error mise raises is only the status it exits with. A signal has no
+    /// status to hand on and stays an ordinary error.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failing_pitchfork_exits_quietly_with_its_status() {
+        let runtime = Runtime {
+            bin: PathBuf::from("/bin/sh"),
+            env: EnvMap::default(),
+        };
+        let root = std::env::temp_dir();
+        let exec = |script: &str| runtime.exec(&root, vec!["-c".into(), script.into()]);
+        exec("exit 0").await.unwrap();
+        let err = exec("exit 3").await.unwrap_err();
+        assert_eq!(crate::exit::requested_exit_code(&err), Some(3));
+        let err = exec("kill -9 $$").await.unwrap_err();
+        assert_eq!(crate::exit::requested_exit_code(&err), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn only_a_taken_auto_port_of_a_daemon_that_is_not_running_is_reported() {
+        // `sh status ...` fails, which is how an unknown daemon looks.
+        let runtime = Runtime {
+            bin: PathBuf::from("/bin/sh"),
+            env: EnvMap::default(),
+        };
+        let root = std::env::temp_dir();
+        let held = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = held.local_addr().unwrap().port();
+        let free = {
+            let probe = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let claim = |port| PortClaim {
+            port,
+            base: port,
+            stride: 1,
+        };
+        let ports = BTreeMap::from([
+            ("api".to_string(), claim(taken)),
+            ("web".to_string(), claim(free)),
+            ("db".to_string(), PortClaim::fixed(taken)),
+        ]);
+        let args: Vec<String> = ["start", "ns/api", "ns/web", "ns/db", "--force"]
+            .map(String::from)
+            .into();
+        assert_eq!(
+            runtime.taken_auto_ports(&root, &args, &ports).await,
+            vec![("api".to_string(), taken)],
+            "a free port and a port the user fixed are not this hint's business"
+        );
+    }
+
     #[test]
     #[cfg(unix)]
     fn symlinked_roots_share_namespace_and_state() {
