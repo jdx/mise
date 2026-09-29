@@ -234,18 +234,43 @@ pub(crate) async fn toolset_resolved(
         .await
 }
 
-pub async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
+/// Build the daemon toolset, installing what `install` needs when it is given.
+///
+/// `install` is the set of daemons about to be validated and started. Only
+/// pitchfork and the tools those daemons declare are installed: a preset's tool
+/// comes from its daemon declaration, not the command line, so the default
+/// install would leave it out and validation would report a version mismatch.
+/// A tool that belongs to another daemon, or to no daemon, is left alone, so
+/// one that cannot be installed does not keep an unrelated daemon from starting.
+pub async fn toolset(
+    config: &Arc<Config>,
+    install: Option<&DaemonSet>,
+) -> Result<(Arc<Config>, Toolset)> {
     let mut config = config.clone();
-    let mut ts = toolset_resolved(&config, install).await?;
-    if install {
-        // The default only installs tools named on the command line, which here
-        // is pitchfork alone. A preset's tool comes from the daemon declaration,
-        // and leaving it out reports it as a version mismatch when it is validated.
+    let mut ts = toolset_resolved(&config, install.is_some()).await?;
+    if let Some(set) = install {
+        let mut wanted = vec!["pitchfork".to_string()];
+        for daemon in set.daemons.values().filter(|d| !d.imported) {
+            if let Some((tool, _)) = &daemon.tool {
+                wanted.push(crate::args::BackendArg::from(tool.as_str()).short.clone());
+            }
+        }
+        let mut skip = crate::config::Settings::get()
+            .auto_install_disable_tools
+            .clone()
+            .unwrap_or_default();
+        skip.extend(
+            ts.versions
+                .keys()
+                .map(|ba| ba.short.clone())
+                .filter(|short| !wanted.contains(short)),
+        );
         let (_, missing) = ts
             .install_missing_versions(
                 &mut config,
                 &crate::toolset::InstallOptions {
                     missing_args_only: false,
+                    auto_install_disable_tools: Some(skip),
                     ..Default::default()
                 },
             )

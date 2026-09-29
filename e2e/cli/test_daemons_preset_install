@@ -30,15 +30,17 @@ assert_contains "mise daemons ls --json" '"status": "running"'
 assert_contains "mise which nats-server" "nats-server"
 mise daemons stop
 
-# An explicit [tools] version the preset cannot use is still an error.
+# An explicit [tools] version the preset cannot use is still an error. The
+# version installed above is pinned so nothing else needs installing.
+installed=$(find "$MISE_DATA_DIR/installs/nats-server" -mindepth 1 -maxdepth 1 -name '[0-9]*.[0-9]*.[0-9]*' -printf '%f\n' | head -1)
 cd ../conflict
-cat >mise.toml <<'TOML'
+cat >mise.toml <<TOML
 [tools]
 pitchfork = "system"
-nats-server = "1"
+nats-server = "$installed"
 [daemons.bus]
 preset = "nats"
-version = "2"
+version = "3"
 port = "auto"
 TOML
-assert_fail_contains "mise daemons start bus 2>&1" "requires nats-server@2"
+assert_fail_contains "mise daemons start bus 2>&1" "requires nats-server@3"

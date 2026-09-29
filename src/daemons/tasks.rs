@@ -214,15 +214,6 @@ pub async fn start(
         let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
         super::presets::ensure_set_runnable_as_user(&will_start)?;
         let previous = runtime::read_state(&root)?;
-        let (scoped, ts) = if install_tools {
-            runtime::toolset(&scoped, true).await?
-        } else {
-            // Keeps the install path out of this future entirely, so callers
-            // inside a spawned task can await it.
-            let ts = runtime::toolset_resolved(&scoped, false).await?;
-            (scoped, ts)
-        };
-        let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         let owned = !foreign.contains(&root);
         // Another project's root is registered whole but only checked for what
         // this run starts, so an unrelated daemon of theirs cannot fail a
@@ -232,6 +223,16 @@ pub async fn start(
         } else {
             set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>())
         };
+        // The set that is validated below is also the set whose tools are installed.
+        let (scoped, ts) = if install_tools {
+            runtime::toolset(&scoped, Some(&starting)).await?
+        } else {
+            // Keeps the install path out of this future entirely, so callers
+            // inside a spawned task can await it.
+            let ts = runtime::toolset_resolved(&scoped, false).await?;
+            (scoped, ts)
+        };
+        let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
         // `will_start` comes from this root's own configuration, which is the

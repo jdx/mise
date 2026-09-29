@@ -201,7 +201,7 @@ impl Provider {
             .map(|(path, cf)| (path.clone(), cf.clone()))
             .collect();
         let global = Config::load_from_config_files(files, true).await?;
-        let (_, ts) = runtime::toolset(&global, false).await?;
+        let (_, ts) = runtime::toolset(&global, None).await?;
         let root = directory(&self.name);
         let previous = runtime::read_state(&root)?;
         let mut rt = if previous.bin.is_file() {
