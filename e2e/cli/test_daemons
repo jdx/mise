@@ -632,7 +632,8 @@ mise daemons start api
 generated="$(daemon_state_dir)/pitchfork.toml"
 assert_contains "cat '$generated'" 'proxy = "front"'
 assert_contains "cat '$generated'" 'proxy_tls = "passthrough"'
-# The idle timeout reaches pitchfork as written.
+# The idle timeout reaches pitchfork as written. Its effect is covered against a
+# real pitchfork in test_daemons_proxy_idle_timeout_slow.
 assert_contains "cat '$generated'" 'proxy_idle_timeout = "30m"'
 assert_contains "cat '$generated'" 'proxy = false'
 

@@ -681,8 +681,10 @@ pub(crate) fn expand(
     };
     // Resolve the proxy before rendering, so a preset's own default label and a
     // user override both reach `{{ url }}`. `proxy` and `proxy_tls` are the two
-    // override keys that have to be applied early; everything else in
-    // `overrides` still wins at the end, where it cannot change the URL.
+    // override keys that decide the URL, so they have to be applied early.
+    // `proxy_idle_timeout` rides along only so `urls::apply` validates it; it has
+    // no effect on the URL. Everything else in `overrides` still wins at the
+    // end, where it cannot change the URL.
     let mut table = preset.daemon;
     for key in ["proxy", "proxy_tls", "proxy_idle_timeout"] {
         if let Some(value) = overrides.get(key) {
@@ -767,11 +769,11 @@ pub(crate) fn expand(
     }
     table.insert("port".into(), super::expected_ports(&expect));
     table.insert("mise".into(), toml::Value::Boolean(true));
-    // `proxy` and `proxy_tls` were already normalized above; re-applying the raw
-    // override here would undo that.
+    // `proxy` and `proxy_tls` were already normalized above, so re-applying the raw
+    // override here would undo that. `proxy_idle_timeout` is left in `overrides`:
+    // `urls::apply` only validated it, so `extend` re-inserts the same value.
     overrides.remove("proxy");
     overrides.remove("proxy_tls");
-    overrides.remove("proxy_idle_timeout");
     table.extend(overrides);
     if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
         wrap_probe_commands(&mut table);
