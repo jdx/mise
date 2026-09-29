@@ -993,15 +993,72 @@ fn take_all_flag(
     if !matches!(action, "start" | "stop" | "restart") {
         return Ok(false);
     }
-    let before = flags.len();
-    flags.retain(|flag| flag != "--all" && flag != "-a");
-    let all = flags.len() != before;
+    // `flags` holds option values next to the options, so skip a value even when it
+    // is literally `-a` or `--all`, as in `--cmd -a`.
+    let mut kept = Vec::with_capacity(flags.len());
+    let mut all = false;
+    let mut pending = std::mem::take(flags).into_iter();
+    while let Some(flag) = pending.next() {
+        if flag == "--all" || flag == "-a" {
+            all = true;
+            continue;
+        }
+        let value = if takes_value(action, &flag) {
+            pending.next()
+        } else {
+            None
+        };
+        kept.push(flag);
+        kept.extend(value);
+    }
+    *flags = kept;
     if all && (!names.is_empty() || !groups.is_empty()) {
         bail!(
             "--all selects every daemon in this project; drop it or drop the daemon names and --group"
         );
     }
     Ok(all)
+}
+
+/// Whether `arg` is a pitchfork option for `action` that consumes the next
+/// argument as its value, so that value is never mistaken for a flag or a name.
+fn takes_value(action: &str, arg: &str) -> bool {
+    let takes_value = match action {
+        "start" | "restart" => matches!(
+            arg,
+            "--delay"
+                | "--output"
+                | "--http"
+                | "--port"
+                | "--cmd"
+                | "--health-cmd"
+                | "--health-http"
+                | "--health-port"
+                | "--expected-port"
+                | "--shell-pid"
+        ),
+        "logs" => matches!(
+            arg,
+            "-n" | "-s"
+                | "--since"
+                | "-u"
+                | "--until"
+                | "--grep"
+                | "--regex"
+                | "--level"
+                | "--field"
+                | "--jq"
+        ),
+        _ => false,
+    };
+    let short_value = action == "logs"
+        && !arg.starts_with("--")
+        && arg
+            .char_indices()
+            .skip(1)
+            .find(|(_, ch)| matches!(ch, 'n' | 's' | 'u'))
+            .is_some_and(|(index, ch)| index + ch.len_utf8() == arg.len());
+    takes_value || short_value
 }
 
 /// Separate positional IDs, `--group` values, and pitchfork options before matching
@@ -1036,42 +1093,7 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             continue;
         }
         flags.push(arg.clone());
-        let takes_value = match action {
-            "start" | "restart" => matches!(
-                arg.as_str(),
-                "--delay"
-                    | "--output"
-                    | "--http"
-                    | "--port"
-                    | "--cmd"
-                    | "--health-cmd"
-                    | "--health-http"
-                    | "--health-port"
-                    | "--expected-port"
-                    | "--shell-pid"
-            ),
-            "logs" => matches!(
-                arg.as_str(),
-                "-n" | "-s"
-                    | "--since"
-                    | "-u"
-                    | "--until"
-                    | "--grep"
-                    | "--regex"
-                    | "--level"
-                    | "--field"
-                    | "--jq"
-            ),
-            _ => false,
-        };
-        let short_value = action == "logs"
-            && !arg.starts_with("--")
-            && arg
-                .char_indices()
-                .skip(1)
-                .find(|(_, ch)| matches!(ch, 'n' | 's' | 'u'))
-                .is_some_and(|(index, ch)| index + ch.len_utf8() == arg.len());
-        if takes_value || short_value {
+        if takes_value(action, arg) {
             let value = args
                 .next()
                 .ok_or_else(|| eyre::eyre!("{arg} requires a value"))?;
@@ -1220,6 +1242,20 @@ mod tests {
         let mut flags = vec!["-a".to_string()];
         assert!(!take_all_flag("logs", &[], &[], &mut flags).unwrap());
         assert_eq!(flags, ["-a"]);
+    }
+
+    #[test]
+    fn all_flag_ignores_option_values() {
+        // `-a` is the value of `--cmd` here, not a request for every daemon.
+        let args = ["web", "--cmd", "-a", "--force"].map(String::from);
+        let (names, groups, mut flags) = split_args("start", &args).unwrap();
+        assert!(!take_all_flag("start", &names, &groups, &mut flags).unwrap());
+        assert_eq!(flags, ["--cmd", "-a", "--force"]);
+        // A real `--all` after that value is still recognized.
+        let args = ["--cmd", "--all", "-a"].map(String::from);
+        let (names, groups, mut flags) = split_args("start", &args).unwrap();
+        assert!(take_all_flag("start", &names, &groups, &mut flags).unwrap());
+        assert_eq!(flags, ["--cmd", "--all"]);
     }
 
     #[test]
