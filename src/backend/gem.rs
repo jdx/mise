@@ -77,9 +77,7 @@ impl Backend for GemBackend {
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
-            // ponytail: GitHub Packages serves only the compact index and the
-            // Marshal `dependencies` API, not the JSON one read here. Parse
-            // `/info/<gem>` if `latest` there is ever worth supporting.
+            // GitHub Packages has no JSON versions API.
             Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => bail!(
                 "GitHub Packages has no version-listing API mise can read, so `{}` \
                  cannot resolve `latest` or a prefix there: pin an exact version",
@@ -303,17 +301,8 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
 /// GitHub Packages' RubyGems registry.
 const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
 
-/// Fill in the GitHub token for a GitHub Packages source that carries none.
-///
-/// The registry accepts the same token as the GitHub API, which mise already
-/// resolves (the `GITHUB_TOKEN` family, `gh`'s login, credential helpers). So
-/// `source = "https://rubygems.pkg.github.com/acme"` works as written, instead
-/// of every config templating a token into the URL. A source that already has
-/// credentials is left exactly as configured, and so is any other host: a token
-/// is only ever sent to the registry it belongs to.
-///
-/// Only over https: `parse_source` lets an anonymous `http://` source through,
-/// and filling a token into one would send it in clear text.
+/// Add the resolved GitHub token to an https GitHub Packages source that has
+/// no credentials. Other hosts and explicit credentials are left alone.
 fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<String>) -> Url {
     if url.scheme() != "https"
         || url.host_str() != Some(GITHUB_PACKAGES_HOST)
@@ -322,19 +311,14 @@ fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<Strin
         return url;
     }
     if let Some(token) = token().filter(|t| !t.is_empty()) {
-        // GitHub Packages takes the token in the user position, no password.
+        // GitHub Packages takes the token as the username.
         let _ = url.set_username(&token);
     }
     url
 }
 
-/// Move a URL's userinfo into an `Authorization` header.
-///
-/// The HTTP client prints request URLs verbatim in places the redactor never
-/// sees (`MISE_LOG_HTTP`, timeout hints, reqwest's own errors), so a
-/// credential must not ride in the URL it is given. reqwest would turn the
-/// userinfo into this same header anyway, and a header is dropped when a URL
-/// replacement sends the request to another host.
+/// Move a URL's userinfo into an `Authorization` header, since the HTTP
+/// client can print URLs unredacted (e.g. `MISE_LOG_HTTP`).
 fn credentials_as_header(mut url: Url) -> Result<(Url, HeaderMap)> {
     let mut headers = HeaderMap::new();
     if !carries_credentials(&url) {
@@ -866,7 +850,7 @@ mod tests {
         );
     }
 
-    /// An http source would carry the token in clear text, so it gets none.
+    /// An http source never gets the token.
     #[test]
     fn an_http_github_packages_source_never_gets_the_github_token() {
         assert_eq!(
@@ -875,8 +859,7 @@ mod tests {
         );
     }
 
-    /// The HTTP client is handed a URL without the credential, and the
-    /// credential as a Basic header, the form reqwest would have sent.
+    /// Credentials move from the URL to a Basic header.
     #[test]
     fn source_credentials_travel_as_a_header() {
         let url: Url = "https://ghp_secret@rubygems.pkg.github.com/acme/api/v1/versions/x.json"
@@ -894,7 +877,7 @@ mod tests {
             format!("Basic {}", BASE64_STANDARD.encode("ghp_secret:"))
         );
 
-        // Percent-decoded, and `+` is literal: userinfo is not form encoding.
+        // Percent-decoded; `+` stays literal.
         let url: Url = "https://me:p%40s+s@gems.example.com/".parse().unwrap();
         let (_, headers) = credentials_as_header(url).unwrap();
         assert_eq!(

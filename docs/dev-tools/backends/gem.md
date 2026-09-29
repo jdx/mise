@@ -87,26 +87,18 @@ Private registries take credentials as basic auth in the URL (`token@host` or
 metadata. A source with credentials must use `https` unless it is on
 `localhost`.
 
-GitHub Packages needs no credentials in the URL. An `https` source on
-`rubygems.pkg.github.com` without any uses the GitHub token mise already
-resolves (`MISE_GITHUB_TOKEN`, `GITHUB_TOKEN`, `gh`'s login and the rest; see
-`mise token github`). The token needs the `read:packages` scope, which a
-personal access token (classic) can carry. A plain `gh auth login` does not
-grant it; add it with `gh auth refresh -s read:packages`. Without it the
-registry answers 403.
-
-GitHub Packages has no version-listing API mise can read, so pin an exact
-version rather than `latest` or a prefix:
+An `https` source on `rubygems.pkg.github.com` without credentials uses
+mise's GitHub token (see `mise token github`). It needs `read:packages`, which
+a default `gh auth login` lacks (`gh auth refresh -s read:packages`). GitHub
+Packages can't list versions, so pin one:
 
 ```toml
 [tools]
 "gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
 ```
 
-`gem install` takes the source, credential included, as a command-line
-argument, so other users on the same machine can see it in `ps` while it runs.
-That is harmless on a single-user machine or in CI; on a shared one, use a
-token scoped to `read:packages` only.
+`gem install` receives the source URL, credential included, as an argument,
+so it is visible in `ps` while it runs.
 
 The source is added to the other sources rather than replacing them, so
 dependencies still resolve from rubygems.org, and so can a public gem with the
