@@ -602,18 +602,16 @@ impl MiseToml {
         let mut merged = self.clone();
         for (cache, body) in fragments.iter().rev() {
             let fragment = Self::parse_remote_fragment(body, &self.path)?;
-            if let Some(spec) = &fragment.min_version {
-                crate::config::Config::enforce_min_version_spec(spec)?;
-            }
             merged.merge_fragment_below(fragment);
             merged.included_paths.push(cache.clone());
         }
         Ok(merged)
     }
 
-    /// Decode one remote fragment. Trust is not checked: the including file
-    /// was loaded first, and `include` is not something a config can use
-    /// without trust.
+    /// Decode one remote fragment, which must be usable with this mise: a
+    /// `min_version` it does not meet counts like any other reason it cannot
+    /// load. Trust is not checked: the including file was loaded first, and
+    /// `include` is not something a config can use without trust.
     pub(crate) fn parse_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
         if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
             // Only what is resolved from the merged config. `[settings]` and the
@@ -644,7 +642,11 @@ impl MiseToml {
                 }
             }
         }
-        Self::parse_body(body, including, false)
+        let fragment = Self::parse_body(body, including, false)?;
+        if let Some(spec) = &fragment.min_version {
+            crate::config::Config::enforce_min_version_spec(spec)?;
+        }
+        Ok(fragment)
     }
 
     /// Add the entries of `fragment` below this file's own.

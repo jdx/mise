@@ -210,7 +210,12 @@ else
   fail "expected the fast path after the refresh but got: '$output'"
 fi
 
-# A refresh that is not a valid fragment never replaces the copy that works.
+# A refresh that is not usable never replaces the copy that works, whether it
+# is an unsupported section or a min_version this mise does not meet.
+cp min-fragment/mise.toml base/mise.toml
+publish base base >/dev/null
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
 cp bad-fragment/mise.toml base/mise.toml
 publish base base >/dev/null
 assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
