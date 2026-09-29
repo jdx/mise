@@ -3773,8 +3773,8 @@ pub trait Backend: Debug + Send + Sync {
             .ba()
             .registry_tool()
             .and_then(|rt| rt.deprecated.map(|reason| (rt, reason)))
-            && rt.backends().iter().any(|full| {
-                split_bracketed_opts(full).map_or(*full, |(name, _)| name)
+            && rt.backends.iter().any(|rb| {
+                split_bracketed_opts(rb.full).map_or(rb.full, |(name, _)| name)
                     == self.ba().full_without_opts()
             })
         {
