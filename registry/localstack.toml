@@ -1,3 +1,4 @@
+deprecated = "the LocalStack CLI has been superseded by lstk. Run `mise use lstk` instead."
 description = "The LocalStack CLI packaged using pyinstaller"
 test = { cmd = "localstack --version", expected = "LocalStack CLI {{version}}" }
 version_order = "semver"

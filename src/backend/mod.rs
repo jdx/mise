@@ -3766,6 +3766,9 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        if let Some(reason) = REGISTRY.get(self.id()).and_then(|rt| rt.deprecated) {
+            warn_once!("{} is deprecated: {reason}", self.id());
+        }
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
