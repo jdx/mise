@@ -879,6 +879,16 @@ fn merge_artifact_tree(from: &Path, to: &Path) -> Result<()> {
                 }
             }
         } else if let Some(hidden) = name.strip_prefix(".wh.") {
+            // `.wh...` would otherwise name `..` and delete above the destination.
+            if !matches!(
+                Path::new(hidden)
+                    .components()
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                [Component::Normal(_)]
+            ) {
+                bail!("artifact contains an invalid whiteout entry: {name:?}");
+            }
             crate::file::remove_all(parent.join(hidden))?;
         } else {
             copies.push((relative, is_dir));
@@ -2451,6 +2461,23 @@ mod tests {
         assert!(!dest.join("sub/a").exists());
         assert_eq!(std::fs::read_to_string(dest.join("sub/b")).unwrap(), "b");
         assert!(!dest.join("sub/.wh..wh..opq").exists());
+    }
+
+    #[test]
+    fn whiteouts_cannot_delete_outside_the_destination() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("parent/dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(td.path().join("parent/sibling"), "keep").unwrap();
+        std::fs::create_dir_all(&layer).unwrap();
+        for name in [".wh...", ".wh..", ".wh."] {
+            std::fs::write(layer.join(name), "").unwrap();
+            assert!(merge_artifact_tree(&layer, &dest).is_err(), "{name}");
+            std::fs::remove_file(layer.join(name)).unwrap();
+        }
+        assert!(td.path().join("parent/sibling").exists());
+        assert!(dest.exists());
     }
 
     #[test]
