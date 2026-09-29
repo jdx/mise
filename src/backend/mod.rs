@@ -12,7 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::args::{BackendArg, ToolVersionType};
+use crate::args::{BackendArg, ToolVersionType, split_bracketed_opts};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings, SettingsExt, global_config_path};
@@ -3773,9 +3773,10 @@ pub trait Backend: Debug + Send + Sync {
             .ba()
             .registry_tool()
             .and_then(|rt| rt.deprecated.map(|reason| (rt, reason)))
-            && rt
-                .backends()
-                .contains(&self.ba().full_without_opts().as_str())
+            && rt.backends().iter().any(|full| {
+                split_bracketed_opts(full).map_or(*full, |(name, _)| name)
+                    == self.ba().full_without_opts()
+            })
         {
             warn_once!("{} is deprecated: {reason}", rt.short);
         }
