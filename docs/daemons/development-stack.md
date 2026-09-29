@@ -193,6 +193,10 @@ needs it. The next request starts the stack again; preset data remains on disk.
 Closing a browser tab does not immediately stop anything: the idle timeout
 controls when shutdown happens. Idle shutdown is disabled unless configured.
 
+To set the timeout for one daemon instead of the whole machine, add
+`proxy_idle_timeout = "15m"` to its `[daemons.<name>]` table, or `false` to keep
+it running. See [Stop idle daemons](/daemons.html#stop-idle-daemons).
+
 Explicit starts claim the daemon and its dependencies, keeping them running
 until you stop them. If you previously ran `mise daemons start api`, stop that
 stack once with `mise daemons stop api db` before trying the on-demand workflow.
