@@ -4,7 +4,6 @@ use crate::ui::info;
 use crate::{Result, file, minisign};
 use eyre::{bail, eyre};
 use std::path::{Path, PathBuf};
-use xx::regex;
 
 /// Generate a script to download+execute mise
 ///
@@ -126,21 +125,24 @@ impl InstallScript {
 
     /// The bash script, and the mise version it pins.
     async fn generate(&self) -> Result<(String, String)> {
-        let url = if let Some(v) = &self.version {
-            format!("https://mise.jdx.dev/v{v}/install.sh")
-        } else {
-            "https://mise.jdx.dev/install.sh".into()
+        // The installer no longer carries a default version, so the pin comes from here: the
+        // requested version, else the release `mise self-update` would pick.
+        let version = match &self.version {
+            Some(v) => v.trim_start_matches('v').to_string(),
+            None => {
+                crate::cli::version::eligible_self_update_version(
+                    &crate::cli::version::SelfUpdateSource::default(),
+                    None,
+                )
+                .await?
+            }
         };
+        let version = version.as_str();
+        let url = format!("https://mise.jdx.dev/v{version}/install.sh");
         let install = HTTP.get_text(&url).await?;
         let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;
         minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
         let install = info::indent_by(install, "        ");
-        let version = regex!(r#"version="\$\{MISE_VERSION:-v([0-9.]+)\}""#)
-            .captures(&install)
-            .unwrap()
-            .get(1)
-            .unwrap()
-            .as_str();
 
         // install.sh honors MISE_VERSION and MISE_INSTALL_PATH, so the wrapper must not clobber
         // them. The install path is keyed by the requested version rather than the version this
@@ -186,7 +188,9 @@ __mise_bootstrap() {{
         cd -- "$initial_working_dir"
     }}
     local MISE_INSTALL_HELP=0
-    test -f "$MISE_INSTALL_PATH" || install
+    # The installer resolves its own version and would otherwise write whatever release it picks
+    # under the pinned name. A prefix assignment is visible to the installer and gone after it.
+    test -f "$MISE_INSTALL_PATH" || MISE_VERSION="v$mise_version" install
 }}
 __mise_bootstrap
 exec -a "$0" "$MISE_INSTALL_PATH" "$@"
@@ -501,6 +505,7 @@ exit /b 1
 #[cfg(test)]
 mod windows_bootstrap_tests {
     use super::*;
+    use xx::regex;
 
     // Shaped like the real file, including the `./` prefix and the `.zip` beside each `.exe`.
     const SUMS: &str = "\
