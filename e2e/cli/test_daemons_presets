@@ -66,3 +66,31 @@ version = "26"
 options.databases = ["good", "bad; name"]
 TOML
 assert_fail_contains "mise daemons ls 2>&1" 'must match'
+
+# proxy_idle_timeout is a duration string or false; pitchfork parses it, mise
+# refuses the wrong shapes and names the daemon.
+for value in true 30 "'soon'"; do
+  cat >mise.toml <<TOML
+[daemons.api]
+run = "sleep 30"
+port = 3000
+proxy_idle_timeout = $value
+TOML
+  assert_fail_contains "mise daemons ls 2>&1" '[daemons.api].proxy_idle_timeout'
+done
+cat >mise.toml <<'TOML'
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+proxy_idle_timeout = true
+TOML
+assert_fail_contains "mise daemons ls 2>&1" '[daemons.crdb].proxy_idle_timeout'
+for value in "'30m'" false; do
+  cat >mise.toml <<TOML
+[daemons.api]
+run = "sleep 30"
+port = 3000
+proxy_idle_timeout = $value
+TOML
+  assert_contains "mise daemons ls --json" '"name": "api"'
+done

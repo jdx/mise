@@ -684,7 +684,7 @@ pub(crate) fn expand(
     // override keys that have to be applied early; everything else in
     // `overrides` still wins at the end, where it cannot change the URL.
     let mut table = preset.daemon;
-    for key in ["proxy", "proxy_tls"] {
+    for key in ["proxy", "proxy_tls", "proxy_idle_timeout"] {
         if let Some(value) = overrides.get(key) {
             table.insert(key.into(), value.clone());
         }
@@ -771,6 +771,7 @@ pub(crate) fn expand(
     // override here would undo that.
     overrides.remove("proxy");
     overrides.remove("proxy_tls");
+    overrides.remove("proxy_idle_timeout");
     table.extend(overrides);
     if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
         wrap_probe_commands(&mut table);

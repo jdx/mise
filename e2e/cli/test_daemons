@@ -586,6 +586,7 @@ run = "sleep 30"
 port = 5173
 proxy = "front"
 proxy_tls = "passthrough"
+proxy_idle_timeout = "30m"
 [daemons.worker]
 run = "sleep 30"
 [daemons.db]
@@ -631,6 +632,8 @@ mise daemons start api
 generated="$(daemon_state_dir)/pitchfork.toml"
 assert_contains "cat '$generated'" 'proxy = "front"'
 assert_contains "cat '$generated'" 'proxy_tls = "passthrough"'
+# The idle timeout reaches pitchfork as written.
+assert_contains "cat '$generated'" 'proxy_idle_timeout = "30m"'
 assert_contains "cat '$generated'" 'proxy = false'
 
 # Registration includes all local daemons, even outside the default group, and
