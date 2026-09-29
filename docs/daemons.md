@@ -1092,6 +1092,53 @@ after upgrading to get shell PID tracking; old activation scripts display a hint
 Project sessions also apply to native pitchfork daemons configured for automatic
 lifecycle management. See [pitchfork's shell sessions](https://pitchfork.jdx.dev/guides/shell-hook.html).
 
+## Containers, CI, and restricted networks
+
+Cloud sandboxes, CI runners, and dev containers often run as root and can reach only
+an allowlist of hosts. Two things in this guide depend on that.
+
+### Running as root
+
+The `postgres` preset cannot run as root, because `initdb` and `postgres` exit when
+started with root privileges. `mise daemons start` stops before installing anything
+and says so. The other presets and custom daemons are unaffected.
+
+Run mise as a regular user. In a Dockerfile:
+
+```dockerfile
+RUN useradd --create-home dev
+USER dev
+```
+
+From a root shell, switch for one command:
+
+```sh
+runuser -u dev -- mise daemons start postgres
+```
+
+The user needs write access to the project and to its own mise data and state
+directories. Files created earlier as root must be handed over with `chown`.
+
+### Using a pitchfork you already have
+
+`mise daemons` looks for pitchfork among your tools and installs the latest release
+when none is configured. Where that download is blocked, or you have built pitchfork
+yourself, tell mise not to manage it and it uses the `pitchfork` on your `PATH`:
+
+```sh
+MISE_DISABLE_TOOLS=pitchfork mise daemons start
+```
+
+The binary on `PATH` must be at least the version the features you use need; mise
+reports when it is too old. This is the [`disable_tools`](/configuration/settings.html#disable_tools) setting.
+
+### Hosts mise contacts
+
+Installing a preset's tools needs the hosts of the backends it uses. When a host is
+blocked, the install fails with a connection error, and mise retries before giving
+up. Add the hosts to your allowlist, or install the tools ahead of time where the
+network is open and keep `MISE_DATA_DIR` for later runs.
+
 ## Shared server providers
 
 Define shared servers in your global mise configuration. Providers have their own
