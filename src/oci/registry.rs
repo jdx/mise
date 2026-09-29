@@ -448,6 +448,17 @@ async fn fetch_manifest_json(
     url: &str,
     accept: &[&str],
 ) -> Result<(serde_json::Value, String)> {
+    // Tags cannot contain `:`, so `alg:hex` is a digest. Only sha256 can be
+    // verified here; refuse the rest rather than trust the registry.
+    let pinned_digest = url
+        .rsplit('/')
+        .next()
+        .filter(|reference| reference.contains(':'));
+    if let Some(digest) = pinned_digest
+        && !digest.starts_with("sha256:")
+    {
+        bail!("unsupported digest algorithm in {url}: only sha256 digests are supported");
+    }
     let accept_hdr = accept.join(", ");
     let resp = session
         .send(|auth| {
@@ -484,11 +495,7 @@ async fn fetch_manifest_json(
         .wrap_err_with(|| format!("reading response from {url}"))?;
     // A manifest requested by digest must hash to that digest, otherwise a
     // registry could serve different content than the pin promises.
-    if let Some(expected) = url
-        .rsplit('/')
-        .next()
-        .filter(|reference| reference.starts_with("sha256:"))
-    {
+    if let Some(expected) = pinned_digest {
         let actual = sha256_digest(&bytes);
         if actual != expected {
             bail!("digest mismatch for {url}: expected {expected}, registry served {actual}");
@@ -2506,6 +2513,32 @@ mod tests {
         }
         assert!(td.path().join("parent/sibling").exists());
         assert!(dest.exists());
+    }
+
+    #[tokio::test]
+    async fn pull_artifact_rejects_unverifiable_digest_algorithms() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let err = pull_artifact(
+            &format!(
+                "{}/tasks/catalog@sha512:{}",
+                server.host_with_port(),
+                "0".repeat(128)
+            ),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("unsupported digest algorithm"),
+            "{err:#}"
+        );
     }
 
     #[test]
