@@ -1135,12 +1135,13 @@ reports when it is too old. This is the [`disable_tools`](/configuration/setting
 ### Hosts mise contacts
 
 Installing a preset's tools needs the hosts of the backends it uses. When a host is
-blocked, the install fails with a connection error. mise first retries each HTTP
-request, up to [`http_retries`](/configuration/settings.html#http_retries) times with
-a growing delay, so a blocked host can add several seconds before the failure
-appears; the install itself is not retried. Add the hosts to your allowlist, or
-install the tools ahead of time while the network is open and keep `MISE_DATA_DIR`
-for later runs.
+blocked, the install fails. For transient failures, such as a refused connection or a
+5xx response, mise first retries the request, up to
+[`http_retries`](/configuration/settings.html#http_retries) times with a growing
+delay, so some blocked hosts add several seconds before the failure appears. DNS
+failures and ordinary 403 responses are not retried, and the install itself never
+is. Add the hosts to your allowlist, or install the tools ahead of time while the
+network is open and keep `MISE_DATA_DIR` for later runs.
 
 ## Shared server providers
 
