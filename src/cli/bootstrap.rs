@@ -4560,7 +4560,7 @@ fn checkout_bootstrap_repository(
             if dry_run {
                 if let Some(git_ref) = git_ref {
                     miseprintln!(
-                        "Would run: git -C {} fetch --force --prune --prune-tags origin",
+                        "Would run: git -C {} fetch --force --tags origin",
                         checkout.display_user()
                     );
                     miseprintln!(
@@ -4579,11 +4579,11 @@ fn checkout_bootstrap_repository(
                 }
             } else {
                 if let Some(git_ref) = git_ref {
-                    // force and prune tags so a moved or deleted tag is not
-                    // resolved from the stale local copy
+                    // force tags so a moved one is not resolved from the stale local
+                    // copy; nothing is pruned, as the checkout may hold other tags
                     run_bootstrap_git(
                         checkout,
-                        ["fetch", "--force", "--prune", "--prune-tags", "origin"],
+                        ["fetch", "--force", "--tags", "origin"],
                     )?;
                     run_bootstrap_git(checkout, ["checkout", git_ref, "--"])?;
                     // a tag or commit is detached: there is nothing to pull
