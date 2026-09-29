@@ -11,8 +11,10 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use eyre::{WrapErr, ensure};
 use indoc::formatdoc;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
@@ -83,7 +85,8 @@ impl Backend for GemBackend {
             )
             .parse()?,
         };
-        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json(url.clone()).await?;
+        let (url, headers) = credentials_as_header(url)?;
+        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json_with_headers(url, &headers).await?;
 
         // RubyGems API returns newest-first, mise expects oldest-first
         let mut versions: Vec<VersionInfo> = response
@@ -300,8 +303,14 @@ const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
 /// of every config templating a token into the URL. A source that already has
 /// credentials is left exactly as configured, and so is any other host: a token
 /// is only ever sent to the registry it belongs to.
+///
+/// Only over https: `parse_source` lets an anonymous `http://` source through,
+/// and filling a token into one would send it in clear text.
 fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<String>) -> Url {
-    if url.host_str() != Some(GITHUB_PACKAGES_HOST) || carries_credentials(&url) {
+    if url.scheme() != "https"
+        || url.host_str() != Some(GITHUB_PACKAGES_HOST)
+        || carries_credentials(&url)
+    {
         return url;
     }
     if let Some(token) = token().filter(|t| !t.is_empty()) {
@@ -309,6 +318,31 @@ fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<Strin
         let _ = url.set_username(&token);
     }
     url
+}
+
+/// Move a URL's userinfo into an `Authorization` header.
+///
+/// The HTTP client prints request URLs verbatim in places the redactor never
+/// sees (`MISE_LOG_HTTP`, timeout hints, reqwest's own errors), so a
+/// credential must not ride in the URL it is given. reqwest would turn the
+/// userinfo into this same header anyway, and a header is dropped when a URL
+/// replacement sends the request to another host.
+fn credentials_as_header(mut url: Url) -> Result<(Url, HeaderMap)> {
+    let mut headers = HeaderMap::new();
+    if !carries_credentials(&url) {
+        return Ok((url, headers));
+    }
+    let user = urlencoding::decode(url.username())?.into_owned();
+    let password = urlencoding::decode(url.password().unwrap_or_default())?.into_owned();
+    let mut value = HeaderValue::from_str(&format!(
+        "Basic {}",
+        BASE64_STANDARD.encode(format!("{user}:{password}"))
+    ))?;
+    value.set_sensitive(true);
+    headers.insert(AUTHORIZATION, value);
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    Ok((url, headers))
 }
 
 /// Whether this URL carries basic-auth userinfo.
@@ -822,6 +856,47 @@ mod tests {
             github_packages("https://gems.example.com/acme", Some("ghp_secret")),
             "https://gems.example.com/acme/"
         );
+    }
+
+    /// An http source would carry the token in clear text, so it gets none.
+    #[test]
+    fn an_http_github_packages_source_never_gets_the_github_token() {
+        assert_eq!(
+            github_packages("http://rubygems.pkg.github.com/acme", Some("ghp_secret")),
+            "http://rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// The HTTP client is handed a URL without the credential, and the
+    /// credential as a Basic header, the form reqwest would have sent.
+    #[test]
+    fn source_credentials_travel_as_a_header() {
+        let url: Url = "https://ghp_secret@rubygems.pkg.github.com/acme/api/v1/versions/x.json"
+            .parse()
+            .unwrap();
+        let (url, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://rubygems.pkg.github.com/acme/api/v1/versions/x.json"
+        );
+        let value = &headers[AUTHORIZATION];
+        assert!(value.is_sensitive());
+        assert_eq!(
+            value.to_str().unwrap(),
+            format!("Basic {}", BASE64_STANDARD.encode("ghp_secret:"))
+        );
+
+        let url: Url = "https://me:p%40ss@gems.example.com/".parse().unwrap();
+        let (_, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(
+            headers[AUTHORIZATION].to_str().unwrap(),
+            format!("Basic {}", BASE64_STANDARD.encode("me:p@ss"))
+        );
+
+        let url: Url = "https://rubygems.org/".parse().unwrap();
+        let (url, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(url.as_str(), "https://rubygems.org/");
+        assert!(headers.is_empty());
     }
 
     /// No token resolved, or an empty one, leaves the source anonymous.
