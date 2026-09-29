@@ -28,7 +28,6 @@ on:
       - "docs/.vitepress/theme/showreel/**"
       - "docs/index.md"
       - "docs/public/logo*.svg"
-      - "docs/public/mise-en-place.mp3"
       - "docs/public/showreel-chapters.vtt"
       - "xtasks/docs/showreel*"
 

@@ -106,6 +106,17 @@ onUnmounted(() => clearTimeout(copyTimeout));
 <template>
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
+      <a class="hero-song" href="/mise-en-place">
+        <span class="hero-song-play" aria-hidden="true">▶</span>
+        <span
+          >New: <strong>mise run</strong>, the theme song<span
+            class="hero-song-extra"
+          >
+            and music video</span
+          ></span
+        >
+        <span class="hero-song-arrow" aria-hidden="true">→</span>
+      </a>
       <h1 id="home-title" class="hero-title">mise-en-place</h1>
       <p class="hero-meaning">Development tools, environments, and tasks</p>
       <p class="hero-pronunciation">

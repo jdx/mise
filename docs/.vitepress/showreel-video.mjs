@@ -8,7 +8,7 @@
 // docs/.vitepress/showreel-capture/out (theme/showreel/load.ts; a missing
 // take draws a labelled box). The score is rendered offline, and the end
 // card's recording (theme/showreel/score/song.ts) is cut from
-// docs/public/mise-en-place.mp3 and mixed over it with ffmpeg. None of the
+// docs/.vitepress/theme/showreel/score/mise-en-place.mp3 and mixed over it with ffmpeg. None of the
 // outputs is committed (docs/.gitignore).
 //
 // Needs ffmpeg on PATH and a Chromium: SHOWREEL_CHROMIUM (or CHROME_PATH),

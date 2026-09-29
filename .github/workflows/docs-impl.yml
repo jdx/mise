@@ -11,6 +11,10 @@ on:
         required: false
         type: boolean
         default: false
+      deploy:
+        required: false
+        type: boolean
+        default: false
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID:
         required: false
@@ -19,12 +23,13 @@ on:
       MISE_GH_TOKEN:
         required: false
 
-# Only pull requests cancel an earlier run. A run on main may be rendering
-# the showreel, which takes a while and is kept only when its job finishes (a
-# cancelled job's writes to the Namespace cache volume are discarded), so a
-# newer run waits for it, and only the newest waiting run is kept.
+# Only pull requests cancel an earlier run. A deploy may be halfway through
+# uploading, and a run on main may be rendering the showreel, which takes a
+# while and is kept only when its job finishes (a cancelled job's writes to
+# the Namespace cache volume are discarded), so a newer run waits for it, and
+# only the newest waiting run is kept.
 concurrency:
-  group: docs-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'deploy' || 'validation' }}-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'release' || github.head_ref || github.ref }}
+  group: docs-${{ inputs.deploy && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -271,4 +276,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'v') || github.event.release.prerelease }}
+          DRY_RUN: ${{ !inputs.trusted || !inputs.deploy }}

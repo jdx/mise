@@ -1,7 +1,8 @@
 // The recording on the end card (jdx's decision 5, plan v3 §5): chorus 1's
 // sung line, "It's mise-en-place for dev machines, precise and
 // operational", then the record's own button and ring-out, both cut from
-// docs/public/mise-en-place.mp3 and mixed after the score's master chain at
+// score/mise-en-place.mp3 (the original theme song, kept beside the score
+// since the site replaced it with mise run) and mixed after the score's master chain at
 // mux time (showreel-video.mjs), at a fixed gain. Song times are seconds of
 // the decoded audio, where 0 is the first decoded sample (ffmpeg's decode,
 // the one the plan measured on). The end card keys its picture to the
@@ -26,7 +27,7 @@ export interface Segment {
 
 export const SONG = {
   /** From the checkout's root. */
-  file: "docs/public/mise-en-place.mp3",
+  file: "docs/.vitepress/theme/showreel/score/mise-en-place.mp3",
   sha256: "8be51598a9d6195c7fbe852dae24b15f27754d79c8fa4aa2cfb08b89d7d08497",
   /**
    * Both segments, after the master chain: about -16 LUFS for the line, so

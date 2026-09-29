@@ -153,7 +153,7 @@ inputs() {
 		find docs/.vitepress/fonts -maxdepth 1 -name '*.ttf'
 		find docs/public -maxdepth 1 -name 'logo*.svg'
 		# showreel.data.ts writes the chapter list kept with each render.
-		printf '%s\n' docs/public/mise-en-place.mp3 docs/.vitepress/showreel-video.mjs \
+		printf '%s\n' docs/.vitepress/showreel-video.mjs \
 			docs/.vitepress/showreel-chromium.mjs docs/.vitepress/showreel.data.ts \
 			xtasks/docs/showreel-capture
 	} | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done
