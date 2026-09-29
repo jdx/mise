@@ -165,3 +165,50 @@ assert_directory_not_exists "$dry_checkout"
 # an unexpected repository.
 git -C "$checkout" remote set-url origin unexpected
 assert_fail "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes"
+
+# A go-getter style ?ref= selects a branch, tag or commit instead of the
+# default branch; --update follows a branch and switches to a moved ref.
+ref_source="$PWD/bootstrap-ref-source"
+mkdir -p "$ref_source"
+git -C "$ref_source" init -q -b main
+git -C "$ref_source" config user.email test@example.com
+git -C "$ref_source" config user.name "mise test"
+cat <<'EOF' >"$ref_source/mise.toml"
+[tasks.bootstrap]
+run = 'cp "$PWD/marker" "$HOME/bootstrap-ref-marker"'
+EOF
+echo main >"$ref_source/marker"
+git -C "$ref_source" add .
+git -C "$ref_source" commit -qm main
+git -C "$ref_source" tag v1
+git -C "$ref_source" checkout -q -b feature/x
+echo feature >"$ref_source/marker"
+git -C "$ref_source" commit -qam feature
+git -C "$ref_source" checkout -q main
+echo main-2 >"$ref_source/marker"
+git -C "$ref_source" commit -qam main-2
+
+assert_succeed "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "feature"
+assert "git -C '$PWD/ref-branch' remote get-url origin" "$ref_source"
+
+assert_succeed "mise bootstrap --from 'git::$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main"
+
+# --update on a branch ref fast-forwards it
+git -C "$ref_source" checkout -q feature/x
+echo feature-2 >"$ref_source/marker"
+git -C "$ref_source" commit -qam feature-2
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "feature-2"
+
+# --update on a tag ref (detached HEAD) does not try to pull
+assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main"
+
+assert_contains "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-dry' --dry-run" "checkout v1 --"
+
+# An unknown ref fails and leaves no checkout that a later run would reuse
+assert_fail "mise bootstrap --from '$ref_source?ref=nope' --from-dir '$PWD/ref-missing' --yes --only task"
+assert_directory_not_exists "$PWD/ref-missing"

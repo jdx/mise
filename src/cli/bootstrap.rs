@@ -82,6 +82,9 @@ pub(crate) struct Bootstrap {
     command: Option<Commands>,
 
     /// Clone a git repository and bootstrap from its configuration
+    ///
+    /// Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the
+    /// default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
     #[usage(long, value_name = "GIT_URL")]
     from: Option<String>,
 
@@ -1987,7 +1990,7 @@ impl Bootstrap {
             }
             return Ok(());
         }
-        let (url, checkout) = if let Some(url) = expanded.as_deref() {
+        let (url, git_ref, checkout) = if let Some(url) = expanded.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
                 .map(|path| {
@@ -1997,10 +2000,13 @@ impl Bootstrap {
                 })
                 .unwrap_or(*dirs::CONFIG)
                 .to_path_buf();
-            (url, checkout)
+            (url.to_string(), None, checkout)
         } else {
+            let (url, git_ref) =
+                parse_bootstrap_source(self.from.as_deref().expect("--from was provided"))?;
             (
-                self.from.as_deref().expect("--from was provided"),
+                url,
+                git_ref,
                 self.from_dir
                     .clone()
                     .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo")),
@@ -2010,7 +2016,7 @@ impl Bootstrap {
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
         let reuse_checkout = checkout.exists() && !checkout_is_empty;
         if reuse_checkout {
-            validate_bootstrap_checkout(&checkout, url)?;
+            validate_bootstrap_checkout(&checkout, &url)?;
         }
         // The clone or pull changes the config checkout before the child
         // process records the bootstrap itself, so it is a generation of its
@@ -2022,7 +2028,8 @@ impl Bootstrap {
             None
         };
         let checked_out = checkout_bootstrap_repository(
-            url,
+            &url,
+            git_ref.as_deref(),
             &checkout,
             reuse_checkout,
             self.update,
@@ -4497,8 +4504,52 @@ pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
 
 /// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
 /// that stops here because there is no checkout to continue from.
+/// Splits a `--from` value into the repository URL and an optional git ref.
+///
+/// Accepts the go-getter spelling used by `git::` task includes and plugin
+/// sources: an optional `git::` prefix and a `?ref=<branch|tag|commit>` query
+/// parameter. Any other query parameters stay on the URL.
+fn parse_bootstrap_source(from: &str) -> Result<(String, Option<String>)> {
+    let from = from.strip_prefix("git::").unwrap_or(from);
+    let Some((url, query)) = from.split_once('?') else {
+        return Ok((from.to_string(), None));
+    };
+    let mut git_ref = None;
+    let mut rest = vec![];
+    for pair in query.split('&') {
+        match pair.strip_prefix("ref=") {
+            Some(value) => git_ref = Some(value),
+            None => rest.push(pair),
+        }
+    }
+    let Some(git_ref) = git_ref else {
+        return Ok((from.to_string(), None));
+    };
+    if git_ref.is_empty() || git_ref.starts_with('-') {
+        bail!("invalid git ref {git_ref:?} in --from {from:?}");
+    }
+    let url = if rest.is_empty() {
+        url.to_string()
+    } else {
+        format!("{url}?{}", rest.join("&"))
+    };
+    Ok((url, Some(git_ref.to_string())))
+}
+
+fn bootstrap_head_is_branch(checkout: &Path) -> Result<bool> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .stdout(std::process::Stdio::null());
+    crate::git::sanitize_git_command(&mut command);
+    Ok(command.status()?.success())
+}
+
 fn checkout_bootstrap_repository(
     url: &str,
+    git_ref: Option<&str>,
     checkout: &Path,
     reuse: bool,
     update: bool,
@@ -4507,12 +4558,29 @@ fn checkout_bootstrap_repository(
     if reuse {
         if update {
             if dry_run {
-                miseprintln!(
-                    "Would run: git -C {} pull --ff-only",
-                    checkout.display_user()
-                );
+                if let Some(git_ref) = git_ref {
+                    miseprintln!("Would run: git -C {} fetch origin", checkout.display_user());
+                    miseprintln!(
+                        "Would run: git -C {} checkout {git_ref} --",
+                        checkout.display_user()
+                    );
+                } else {
+                    miseprintln!(
+                        "Would run: git -C {} pull --ff-only",
+                        checkout.display_user()
+                    );
+                }
             } else {
-                run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                if let Some(git_ref) = git_ref {
+                    run_bootstrap_git(checkout, ["fetch", "origin"])?;
+                    run_bootstrap_git(checkout, ["checkout", git_ref, "--"])?;
+                    // a tag or commit is detached: there is nothing to pull
+                    if bootstrap_head_is_branch(checkout)? {
+                        run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                    }
+                } else {
+                    run_bootstrap_git(checkout, ["pull", "--ff-only"])?;
+                }
                 journal::note(format!(
                     "updated the checkout of {url} in {}",
                     checkout.display_user()
@@ -4523,6 +4591,12 @@ fn checkout_bootstrap_repository(
     }
     if dry_run {
         miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+        if let Some(git_ref) = git_ref {
+            miseprintln!(
+                "Would run: git -C {} checkout {git_ref} --",
+                checkout.display_user()
+            );
+        }
         return Ok(false);
     }
     if let Some(parent) = checkout
@@ -4538,7 +4612,18 @@ fn checkout_bootstrap_repository(
     if !status.success() {
         bail!("git clone failed with {status}");
     }
-    journal::note(format!("cloned {url} into {}", checkout.display_user()));
+    if let Some(git_ref) = git_ref
+        && let Err(err) = run_bootstrap_git(checkout, ["checkout", git_ref, "--"])
+    {
+        // a clone left on the default branch would be reused as if it were
+        // the requested ref by the next run
+        let _ = std::fs::remove_dir_all(checkout);
+        return Err(err.wrap_err(format!("could not check out {git_ref:?} from {url}")));
+    }
+    journal::note(match git_ref {
+        Some(git_ref) => format!("cloned {url} at {git_ref} into {}", checkout.display_user()),
+        None => format!("cloned {url} into {}", checkout.display_user()),
+    });
     Ok(true)
 }
 
@@ -5371,9 +5456,46 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use super::{bootstrap_from_child_args, select_remote_inventory, unapply_child_args};
+    use super::{
+        bootstrap_from_child_args, parse_bootstrap_source, select_remote_inventory,
+        unapply_child_args,
+    };
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
+
+    #[test]
+    fn bootstrap_source_parses_ref_query() {
+        let parse = |from| parse_bootstrap_source(from).unwrap();
+        let with_ref = |url: &str, git_ref: &str| (url.to_string(), Some(git_ref.to_string()));
+        let plain = |url: &str| (url.to_string(), None);
+
+        assert_eq!(
+            parse("https://github.com/o/r.git?ref=feature/x"),
+            with_ref("https://github.com/o/r.git", "feature/x")
+        );
+        assert_eq!(
+            parse("git::https://github.com/o/r.git?ref=v1"),
+            with_ref("https://github.com/o/r.git", "v1")
+        );
+        assert_eq!(
+            parse("git::ssh://git@host/o/r.git?ref=main"),
+            with_ref("ssh://git@host/o/r.git", "main")
+        );
+        assert_eq!(
+            parse("https://host/r.git?a=1&ref=v1&b=2"),
+            with_ref("https://host/r.git?a=1&b=2", "v1")
+        );
+        assert_eq!(
+            parse("git@github.com:o/r.git"),
+            plain("git@github.com:o/r.git")
+        );
+        assert_eq!(
+            parse("https://host/r.git?a=1"),
+            plain("https://host/r.git?a=1")
+        );
+        assert!(parse_bootstrap_source("https://host/r.git?ref=").is_err());
+        assert!(parse_bootstrap_source("https://host/r.git?ref=--upload-pack=x").is_err());
+    }
 
     #[test]
     fn unavailable_defaults_json_retains_configured_entries() {

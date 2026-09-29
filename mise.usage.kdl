@@ -513,6 +513,11 @@ or `bootstrap plan` for the declarative-resource plan. `--only` and `--skip` acc
 repeated or comma-separated parts and cannot be combined.
 """#
     flag --from help="Clone a git repository and bootstrap from its configuration" {
+        long_help #"""
+Clone a git repository and bootstrap from its configuration
+
+Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
+"""#
         arg <GIT_URL>
     }
     flag --adopt help="Adopt global configuration or shared dotfile history from a Git repository, then bootstrap" conflicts=--from {

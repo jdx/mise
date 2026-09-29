@@ -1419,6 +1419,8 @@ repeated or comma\-separated parts and cannot be combined.
 .TP
 \fB\-\-from\fR \fI<GIT_URL>\fR
 Clone a git repository and bootstrap from its configuration
+
+Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
 .TP
 \fB\-\-adopt\fR \fI<GIT_URL|OWNER/REPO>\fR
 Adopt global configuration or shared dotfile history from a Git repository, then bootstrap

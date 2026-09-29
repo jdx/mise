@@ -34,6 +34,8 @@ repeated or comma-separated parts and cannot be combined.
 
 ## Flags
 - **`--from <GIT_URL>`** — Clone a git repository and bootstrap from its configuration
+
+  Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
 - **`--adopt <GIT_URL|OWNER/REPO>`** — Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
 - **`--replace-history`** — Replace local dotfile history while adopting a setup repository
 - **`--from-dir <DIR>`** — Directory used for the repository cloned by --from
