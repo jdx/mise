@@ -21,6 +21,13 @@ else
   TEST_SCRIPT="$SCRIPT_DIR/$TEST"
 fi
 
+# An external binary a test opts into (a pitchfork build) is used from inside the
+# isolated environment, where the caller's working directory means nothing, and
+# Docker rejects a relative mount destination. Resolve it once, up front.
+if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
+  MISE_TEST_PITCHFORK="$(realpath "$MISE_TEST_PITCHFORK")"
+fi
+
 setup_isolated_env() {
   # macOS's per-user TMPDIR can exceed Pitchfork's Unix socket path limit.
   # Keep daemon fixtures short while preserving other tests' temporary roots.
@@ -257,6 +264,13 @@ run_in_docker() {
   # Same rule as the non-docker path: an empty token var is not an absent one.
   [[ -n ${MISE_GITHUB_TOKEN:-} ]] && docker_args+=(-e MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
   [[ -n ${GITHUB_TOKEN:-} ]] && docker_args+=(-e GITHUB_TOKEN="$GITHUB_TOKEN")
+  # An external binary a test opts into (a pitchfork build) lives on the host, so
+  # it has to be mounted at the same path for the variable to mean anything
+  # inside the container. Without this the test would see an unset variable and
+  # skip.
+  if [[ -n ${MISE_TEST_PITCHFORK:-} && -f $MISE_TEST_PITCHFORK ]]; then
+    docker_args+=(-v "$MISE_TEST_PITCHFORK:$MISE_TEST_PITCHFORK:ro" -e MISE_TEST_PITCHFORK="$MISE_TEST_PITCHFORK")
+  fi
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?
