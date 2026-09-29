@@ -846,8 +846,9 @@ supervisor starts the daemons but does not serve their hostnames.
 ### Stop idle daemons
 
 Nothing stops on its own by default. To stop a daemon after a period without
-traffic, set `proxy_idle_timeout` on it. Pitchfork reads the key, so it takes a
-duration such as `"15m"`, or `false` to exempt the daemon:
+traffic, set `proxy_idle_timeout` on it. Pitchfork reads the key, so it needs
+Pitchfork 2.27.0 or newer and takes a duration such as `"15m"`, or `false` to
+exempt the daemon:
 
 ```toml
 [daemons.api]
