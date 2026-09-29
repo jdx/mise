@@ -791,10 +791,17 @@ impl Doctor {
         }
         if let Some(health) = &health {
             let w = &health.watcher;
-            if let Some(error) = &w.last_error
+            // a running watcher starts from its predecessor's record, so an
+            // error dated before this run is not its failure
+            let error = if running {
+                health.failing_capture()
+            } else {
+                w.last_error.as_deref()
+            };
+            if let Some(error) = error
                 && w.consecutive_failures > 0
             {
-                diagnosis.last_error = Some(error.clone());
+                diagnosis.last_error = Some(error.to_string());
                 if running {
                     self.errors.push(format!(
                     "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise dot status",

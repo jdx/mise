@@ -298,7 +298,15 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 "; the watcher is not running now, so this is what it last reported"
             }
         );
-        if let Some(error) = &w.last_error {
+        let running = report.watcher == super::capture_health::Watcher::Running;
+        // a running watcher starts from its predecessor's record: an error
+        // dated before this run is not its failure
+        let error = if running {
+            health.failing_capture()
+        } else {
+            w.last_error.as_deref()
+        };
+        if let Some(error) = error {
             miseprintln!(
                 "  last capture failure: {error} ({} consecutive; at {}). Edits since then are not protected.",
                 w.consecutive_failures,
