@@ -9,6 +9,7 @@ use serde::{Deserializer, de};
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{Mutex, MutexGuard},
@@ -391,6 +392,12 @@ pub struct MiseToml {
     #[serde(skip)]
     path: PathBuf,
     #[serde(default, deserialize_with = "deserialize_arr")]
+    include: Vec<String>,
+    /// The cache files of the remote `include` fragments merged into this
+    /// config, so `hook-env` notices when one is refreshed.
+    #[serde(skip)]
+    included_paths: Vec<PathBuf>,
+    #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     dotenv: Vec<String>,
@@ -582,6 +589,115 @@ impl MiseToml {
         Self::from_str(&body, path)
     }
 
+    /// Merge the remote `include` fragments (`(cache file, body)`, in the order
+    /// they were listed) into a copy of this config. A fragment becomes part of
+    /// the including file, so trust, config root, lockfile and every path that
+    /// is resolved from this file apply to it unchanged, and it is never
+    /// written back. Later fragments outrank earlier ones, and this file
+    /// outranks them all.
+    pub(crate) fn with_remote_fragments(
+        &self,
+        fragments: Vec<(PathBuf, String)>,
+    ) -> eyre::Result<Self> {
+        let mut merged = self.clone();
+        for (cache, body) in fragments.iter().rev() {
+            let fragment = Self::parse_remote_fragment(body, &self.path)?;
+            merged.merge_fragment_below(fragment);
+            merged.included_paths.push(cache.clone());
+        }
+        Ok(merged)
+    }
+
+    /// Decode one remote fragment, which must be usable with this mise: a
+    /// `min_version` it does not meet counts like any other reason it cannot
+    /// load. Trust is not checked: the including file was loaded first, and
+    /// `include` is not something a config can use without trust.
+    pub(crate) fn parse_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
+        if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
+            // Only what is resolved from the merged config. `[settings]` and the
+            // monorepo keys are read before any include exists, tasks are
+            // discovered from files, and the system sections (dotfiles,
+            // daemons, ...) are loaded per file.
+            const ALLOWED: &[&str] = &[
+                "_",
+                "min_version",
+                "tools",
+                "tool_alias",
+                "alias",
+                "shell_alias",
+                "plugins",
+                "wrappers",
+                "hooks",
+                "env",
+                "env_path",
+                "vars",
+            ];
+            for key in table.keys() {
+                if !ALLOWED.contains(&key.as_str()) {
+                    eyre::bail!(
+                        "`{key}` is not supported in a config include (supported: {}; share \
+                         tasks with `task_config.includes`)",
+                        ALLOWED[1..].join(", ")
+                    );
+                }
+            }
+        }
+        let fragment = Self::parse_body(body, including, false)?;
+        if let Some(spec) = &fragment.min_version {
+            crate::config::Config::enforce_min_version_spec(spec)?;
+        }
+        Ok(fragment)
+    }
+
+    /// Add the entries of `fragment` below this file's own.
+    fn merge_fragment_below(&mut self, fragment: Self) {
+        fn below<T>(own: &mut Vec<T>, mut lower: Vec<T>) {
+            lower.append(own);
+            *own = lower;
+        }
+        fn fill<K: std::hash::Hash + Eq, V>(own: &mut IndexMap<K, V>, lower: IndexMap<K, V>) {
+            for (key, value) in lower {
+                own.entry(key).or_insert(value);
+            }
+        }
+        // Values rank by position, the later the stronger, so shared ones go
+        // first. A PATH entry is the opposite: the earlier one is found first,
+        // so shared directories go after this file's own.
+        // `env_path` is emitted ahead of every `[env]` entry, so a shared one
+        // would beat this file's `_.path`; it joins the shared directives after
+        // this file's own instead, exactly as `env_entries` would emit it.
+        let (shared_paths, shared_rest): (Vec<_>, Vec<_>) = fragment
+            .env_path
+            .into_iter()
+            .map(|path| EnvDirective::Path(path, Default::default()))
+            .chain(fragment.env.0)
+            .partition(|directive| matches!(directive, EnvDirective::Path(..)));
+        below(&mut self.env.0, shared_rest);
+        self.env.0.extend(shared_paths);
+        below(&mut self.vars.0, fragment.vars.0);
+        fill_aliases(&mut self.alias, fragment.alias);
+        fill_aliases(&mut self.tool_alias, fragment.tool_alias);
+        fill(&mut self.shell_alias, fragment.shell_alias);
+        fill(&mut self.wrappers, fragment.wrappers);
+        // both run: the shared hooks first, then this file's
+        for (hook, shared) in fragment.hooks {
+            match self.hooks.entry(hook) {
+                indexmap::map::Entry::Occupied(mut own) => {
+                    let mine = own.get().clone();
+                    own.insert(shared.then(mine));
+                }
+                indexmap::map::Entry::Vacant(slot) => {
+                    slot.insert(shared);
+                }
+            }
+        }
+        for (name, url) in fragment.plugins {
+            self.plugins.entry(name).or_insert(url);
+        }
+        let mut tools = self.tools.lock().unwrap();
+        fill(&mut tools, fragment.tools.into_inner().unwrap());
+    }
+
     /// Decode a proposed configuration without trusting, evaluating, or
     /// activating it. Only static declarations may be inspected on this
     /// value; normal loading still goes through `from_str` and its trust gate.
@@ -604,7 +720,11 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
-        if !Self::is_trust_exempt(body, path) {
+        Self::parse_body(body, path, true)
+    }
+
+    fn parse_body(body: &str, path: &Path, check_trust: bool) -> eyre::Result<Self> {
+        if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
         }
         trace!("parsing: {}", display_path(path));
@@ -1710,6 +1830,26 @@ impl ConfigFile for MiseToml {
         &self.tool_config
     }
 
+    fn remote_includes(&self) -> eyre::Result<Vec<String>> {
+        self.include
+            .iter()
+            .map(|include| self.parse_template(include))
+            .collect()
+    }
+
+    fn with_remote_fragments(
+        &self,
+        fragments: Vec<(PathBuf, String)>,
+    ) -> eyre::Result<Option<Arc<dyn ConfigFile>>> {
+        Ok(Some(Arc::new(MiseToml::with_remote_fragments(
+            self, fragments,
+        )?)))
+    }
+
+    fn included_paths(&self) -> Vec<PathBuf> {
+        self.included_paths.clone()
+    }
+
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
         self.task_config
             .includes
@@ -1984,6 +2124,8 @@ impl Clone for MiseToml {
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
+            include: self.include.clone(),
+            included_paths: self.included_paths.clone(),
             env_file: self.env_file.clone(),
             dotenv: self.dotenv.clone(),
             env: self.env.clone(),
@@ -3038,6 +3180,20 @@ fn toml_table_has_template(table: &toml::Table) -> bool {
     table
         .iter()
         .any(|(k, v)| contains_template_syntax(k) || toml_value_has_template(v))
+}
+
+/// Merge version aliases per tool: a name this file defines overrides the same
+/// name in `lower`, but the other names `lower` defines for that tool stay.
+fn fill_aliases(own: &mut AliasMap, lower: AliasMap) {
+    for (tool, lower) in lower {
+        let alias = own.entry(tool).or_default();
+        if alias.backend.is_none() {
+            alias.backend = lower.backend;
+        }
+        for (name, version) in lower.versions {
+            alias.versions.entry(name).or_insert(version);
+        }
+    }
 }
 
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
@@ -4861,6 +5017,8 @@ run = "cargo build"
     #[test]
     fn test_is_safe_config_body() {
         assert!(is_safe_config_body(""));
+        // fetching a URL on load is something only a trusted config may ask for
+        assert!(!is_safe_config_body("include = [\"oci::r/x@sha256:0\"]\n"));
         assert!(is_safe_config_body(indoc! {r#"
         min_version = "2024.1.1"
         [tools]
@@ -4988,6 +5146,107 @@ run = "cargo build"
             Some(&vec![]),
             "an empty user-provided expose should clear the registry default"
         );
+    }
+
+    #[tokio::test]
+    async fn test_remote_fragments_merge_below_the_including_file() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            node = "22"
+
+            [env]
+            OWN = "1"
+            _.path = ["own-bin"]
+
+            [hooks]
+            enter = "echo own"
+
+            [tool_alias.node.versions]
+            mine = "22"
+        "#});
+        let (first, second) = (
+            PathBuf::from("/cache/a.toml"),
+            PathBuf::from("/cache/b.toml"),
+        );
+        let merged = cf
+            .with_remote_fragments(vec![
+                (
+                    first.clone(),
+                    "env_path = [\"first-bin\"]\n\n[tools]\nnode = \"20\"\npython = \"3.12\"\n\n[env]\nFIRST = \"1\"\n"
+                        .to_string(),
+                ),
+                (
+                    second.clone(),
+                    "[tools]\npython = \"3.11\"\n\n[env]\nSECOND = \"1\"\n_.path = [\"second-bin\"]\n\n[hooks]\nenter = \"echo shared\"\n\n[tool_alias.node.versions]\nmine = \"20\"\nshared = \"20\"\n"
+                        .to_string(),
+                ),
+            ])
+            .unwrap();
+
+        let trs = merged.to_tool_request_set().unwrap();
+        let versions = |short: &str| {
+            trs.tools
+                .iter()
+                .find(|(ba, _)| ba.short == short)
+                .map(|(_, reqs)| reqs.iter().map(|r| r.version()).collect_vec())
+        };
+        // the including file wins, then the later fragment
+        assert_eq!(versions("node"), Some(vec!["22".to_string()]));
+        assert_eq!(versions("python"), Some(vec!["3.11".to_string()]));
+        // lower entries come first so the ones after them override
+        let keys = merged
+            .env_entries()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                EnvDirective::Val(key, ..) => Some(key),
+                _ => None,
+            })
+            .collect_vec();
+        assert_eq!(keys, ["FIRST", "SECOND", "OWN"]);
+        // PATH is the other way round: this file's directories are found first
+        let paths = merged
+            .env_entries()
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| match e {
+                EnvDirective::Path(path, _) => Some(path),
+                _ => None,
+            })
+            .collect_vec();
+        assert_eq!(paths, ["own-bin", "second-bin", "first-bin"]);
+        // both files' hooks run, and a shared alias survives one of the same tool
+        assert_eq!(merged.hooks().unwrap().len(), 2);
+        let aliases = merged.aliases().unwrap();
+        let node = &aliases["node"].versions;
+        assert_eq!(node["mine"], "22");
+        assert_eq!(node["shared"], "20");
+        // it is still the including file: same path, source and lockfile
+        assert_eq!(merged.get_path(), cf.get_path());
+        assert_eq!(merged.source(), cf.source());
+        assert_eq!(merged.included_paths(), vec![second, first]);
+        // and what gets written back is untouched
+        assert_eq!(merged.dump().unwrap(), cf.dump().unwrap());
+    }
+
+    #[test]
+    fn test_remote_fragment_rejects_what_cannot_apply() {
+        let including = Path::new("/work/project/mise.toml");
+        for (body, key) in [
+            ("include = [\"oci::r/x@sha256:0\"]\n", "include"),
+            ("[settings]\nexperimental = true\n", "settings"),
+            ("monorepo_root = true\n", "monorepo_root"),
+            ("[tasks.a]\nrun = \"echo\"\n", "tasks"),
+            ("[dotfiles]\n", "dotfiles"),
+            ("[daemons.a]\ncommand = \"x\"\n", "daemons"),
+            ("[redactions]\nenv = [\"X\"]\n", "redactions"),
+        ] {
+            let err = MiseToml::parse_remote_fragment(body, including)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(key) && err.contains("not supported"), "{err}");
+        }
     }
 
     #[tokio::test]

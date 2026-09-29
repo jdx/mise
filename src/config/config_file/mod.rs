@@ -181,6 +181,25 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.task_config().includes.clone())
     }
 
+    /// The remote config fragments this file's `include` names.
+    fn remote_includes(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// A copy of this file with the fetched remote fragments (`(cache file,
+    /// body)`, in include order) merged in below its own entries.
+    fn with_remote_fragments(
+        &self,
+        _fragments: Vec<(PathBuf, String)>,
+    ) -> eyre::Result<Option<Arc<dyn ConfigFile>>> {
+        Ok(None)
+    }
+
+    /// The cache files of the fragments merged into this file.
+    fn included_paths(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
     fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
         Ok(self.task_config().excludes.clone())
     }
