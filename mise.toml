@@ -9,7 +9,6 @@ mr-boxington = { version = "latest", minimum_release_age = "0s" }
 tak = { version = "latest", minimum_release_age = "0s" }
 age = "latest"
 aube = { version = "latest", minimum_release_age = "0s" }
-bun = "latest"
 cargo-binstall = "latest"
 communique = { version = "latest", minimum_release_age = "0s" }
 cargo-insta = "latest"

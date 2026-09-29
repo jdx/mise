@@ -12,7 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::args::{BackendArg, ToolVersionType};
+use crate::args::{BackendArg, ToolVersionType, split_bracketed_opts};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings, SettingsExt, global_config_path};
@@ -51,7 +51,6 @@ use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use platform_target::PlatformTarget;
-use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
@@ -929,6 +928,7 @@ mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+    use regex::Regex;
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1493,12 +1493,15 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(&short);
-        fs::create_dir_all(&backend.installs_path)?;
+        backend.set_installs_path(temp_dir.path().join("installs").join(&short));
+        fs::create_dir_all(backend.installs_path())?;
 
-        let install_path = backend.installs_path.join("1.0.1");
+        let install_path = backend.installs_path().join("1.0.1");
         fs::create_dir_all(install_path.join("bin"))?;
-        file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
+        file::make_symlink_or_file(
+            Path::new("./1.0.1"),
+            &backend.installs_path().join("latest"),
+        )?;
 
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
@@ -1534,10 +1537,10 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(&short);
-        fs::create_dir_all(&backend.installs_path)?;
+        backend.set_installs_path(temp_dir.path().join("installs").join(&short));
+        fs::create_dir_all(backend.installs_path())?;
 
-        let install_path = backend.installs_path.join("1.0.1");
+        let install_path = backend.installs_path().join("1.0.1");
         fs::create_dir_all(install_path.join("bin"))?;
 
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
@@ -1568,12 +1571,15 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("installs").join(&short);
-        fs::create_dir_all(&backend.installs_path)?;
+        backend.set_installs_path(temp_dir.path().join("installs").join(&short));
+        fs::create_dir_all(backend.installs_path())?;
 
-        let normal_install = backend.installs_path.join("1.0.1");
+        let normal_install = backend.installs_path().join("1.0.1");
         fs::create_dir_all(normal_install.join("bin"))?;
-        file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
+        file::make_symlink_or_file(
+            Path::new("./1.0.1"),
+            &backend.installs_path().join("latest"),
+        )?;
 
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let exact_install = temp_dir.path().join("install-into");
@@ -1606,12 +1612,15 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("user/installs").join(&short);
-        fs::create_dir_all(&backend.installs_path)?;
+        backend.set_installs_path(temp_dir.path().join("user/installs").join(&short));
+        fs::create_dir_all(backend.installs_path())?;
 
-        let normal_install = backend.installs_path.join("1.0.1");
+        let normal_install = backend.installs_path().join("1.0.1");
         fs::create_dir_all(normal_install.join("bin"))?;
-        file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
+        file::make_symlink_or_file(
+            Path::new("./1.0.1"),
+            &backend.installs_path().join("latest"),
+        )?;
 
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let explicit_install = temp_dir
@@ -1648,12 +1657,15 @@ mod tests {
             None,
             BackendResolution::new(false),
         );
-        backend.installs_path = temp_dir.path().join("user/installs").join(&short);
-        fs::create_dir_all(&backend.installs_path)?;
+        backend.set_installs_path(temp_dir.path().join("user/installs").join(&short));
+        fs::create_dir_all(backend.installs_path())?;
 
-        let normal_install = backend.installs_path.join("1.0.0");
+        let normal_install = backend.installs_path().join("1.0.0");
         fs::create_dir_all(normal_install.join("bin"))?;
-        file::make_symlink_or_file(Path::new("./1.0.0"), &backend.installs_path.join("latest"))?;
+        file::make_symlink_or_file(
+            Path::new("./1.0.0"),
+            &backend.installs_path().join("latest"),
+        )?;
 
         let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let shared_install = temp_dir
@@ -1673,6 +1685,135 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// The regex-based matcher [`fuzzy_version_matches`] replaced, kept to show
+    /// the two agree. Returns a matcher for `query` so each regex compiles once.
+    fn fuzzy_version_matcher_by_regex(query: &str) -> impl Fn(&str) -> bool {
+        let escaped_query = regex::escape(query);
+        let query_pattern = if query == "latest" {
+            "v?[0-9].*".to_string()
+        } else if query.starts_with(|c: char| c.is_ascii_digit()) {
+            format!("v?{escaped_query}")
+        } else {
+            escaped_query
+        };
+        let numeric_query = query
+            .strip_prefix(['v', 'V'])
+            .unwrap_or(query)
+            .starts_with(|c: char| c.is_ascii_digit());
+        let sep = if query == "latest" || numeric_query {
+            "[+\\-.]"
+        } else {
+            "[\\-.]"
+        };
+        let query_regex = if query != "latest" && query.ends_with('-') {
+            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
+        };
+        let without_v_regex = (query.starts_with('v') || query.starts_with('V')).then(|| {
+            let without_v = regex::escape(&query[1..]);
+            if query.ends_with('-') {
+                Regex::new(&format!("^{without_v}.*$")).unwrap()
+            } else {
+                Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
+            }
+        });
+        move |version| {
+            query_regex.is_match(version)
+                || without_v_regex
+                    .as_ref()
+                    .is_some_and(|re| re.is_match(version))
+        }
+    }
+
+    #[test]
+    fn test_fuzzy_version_matches_agrees_with_the_regexes_it_replaced() {
+        let queries = [
+            "latest",
+            "1",
+            "1.2",
+            "1.2.3",
+            "10",
+            "v1",
+            "v1.2",
+            "V1.2",
+            "vv1",
+            "v",
+            "V",
+            "",
+            "temurin",
+            "temurin-",
+            "temurin-21",
+            "v-",
+            "1-",
+            "lts",
+            "lts-iron",
+            "truffleruby",
+            "truffleruby+graalvm",
+            "ref:main",
+            "3.14.0a1",
+            "1.2.",
+            "1.2+",
+            "a.b",
+            "é",
+            "1\n",
+        ];
+        let versions = [
+            "",
+            "1",
+            "1.2",
+            "1.2.3",
+            "1.20",
+            "1.2-rc1",
+            "1.2+build",
+            "1.2.",
+            "1.2-",
+            "1.2+",
+            "1.2.\n",
+            "1.2.x\ny",
+            "v1.2",
+            "v1.2.3",
+            "V1.2",
+            "vv1.2",
+            "10",
+            "10.0",
+            "v10.1",
+            "1\n",
+            "1\nx",
+            "temurin-21.0.1",
+            "temurin",
+            "temurin21",
+            "temurin.1",
+            "temurin+x",
+            "lts",
+            "lts-iron",
+            "truffleruby-34.0.1",
+            "truffleruby+graalvm-34.0.1",
+            "latest",
+            "x1.2",
+            "v",
+            "-",
+            "1-rc",
+            "1-",
+            "v-1",
+            "é-1",
+            "3.14.0a1",
+            "a.b.c",
+            "v1\n",
+            "1.2+b.4",
+        ];
+        for query in queries {
+            let by_regex = fuzzy_version_matcher_by_regex(query);
+            for version in versions {
+                assert_eq!(
+                    fuzzy_version_matches(query, version),
+                    by_regex(version),
+                    "query {query:?} version {version:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -3368,7 +3509,7 @@ pub trait Backend: Debug + Send + Sync {
                 // and records the directory that supplied the tool.
                 let installs_path = install_state::get_tool(&self.ba().short)
                     .and_then(|tool| tool.installs_path)
-                    .unwrap_or_else(|| self.ba().installs_path.clone());
+                    .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
@@ -3383,7 +3524,7 @@ pub trait Backend: Debug + Send + Sync {
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
                     if (!filter || !self.is_backend_prerelease(&version))
-                        && !install_state::incomplete_file_path(&self.ba().short, &version).exists()
+                        && !install_state::incomplete_file_path(self.ba(), &version).exists()
                     {
                         return Ok(Some(version));
                     }
@@ -3393,7 +3534,7 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
+                    .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
@@ -3493,9 +3634,9 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
-        remove_all_with_progress(&self.ba().installs_path, pr)?;
-        remove_all_with_progress(&self.ba().cache_path, pr)?;
-        remove_all_with_progress(&self.ba().downloads_path, pr)?;
+        remove_all_with_progress(self.ba().installs_path(), pr)?;
+        remove_all_with_progress(self.ba().cache_path(), pr)?;
+        remove_all_with_progress(self.ba().downloads_path(), pr)?;
         Ok(())
     }
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
@@ -3625,6 +3766,20 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Read the entry through the BackendArg so a tool alias reaches it, and only warn
+        // when the resolved backend is one of its own, so a plugin that overrides the
+        // shorthand doesn't get a warning about a CLI it doesn't install.
+        if let Some((rt, reason)) = self
+            .ba()
+            .registry_tool()
+            .and_then(|rt| rt.deprecated.map(|reason| (rt, reason)))
+            && rt.backends.iter().any(|rb| {
+                split_bracketed_opts(rb.full).map_or(rb.full, |(name, _)| name)
+                    == self.ba().full_without_opts()
+            })
+        {
+            warn_once!("{} is deprecated: {reason}", rt.short);
+        }
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
@@ -3731,7 +3886,7 @@ pub trait Backend: Debug + Send + Sync {
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
         let _state_lock =
-            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|pid| {
+            install_state::lock_tool_version_with_notice(tv.ba(), &state_version, &|pid| {
                 ctx.pr.set_message(install_lock_wait_message(pid));
             })?;
 
@@ -3747,7 +3902,7 @@ pub trait Backend: Debug + Send + Sync {
             && tv.install_path.is_none()
             && env::install_path_category(&tv.install_path()) != env::InstallPathCategory::Local
         {
-            tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
+            tv.install_path = Some(tv.ba().installs_path().join(tv.tv_pathname()));
             install_satisfied = false;
         }
 
@@ -3755,10 +3910,21 @@ pub trait Backend: Debug + Send + Sync {
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
-            ctx.pr.finish_with_icon(
-                "already installed".into(),
-                crate::ui::progress_report::ProgressIcon::Skipped,
-            );
+            if let Some((script, true)) = tv.request.options().postinstall() {
+                tv.install_satisfied = Some(true);
+                ctx.pr
+                    .set_message("running custom postinstall hook".to_string());
+                self.run_postinstall_hook(&ctx, &tv, script).await?;
+                ctx.pr.finish_with_icon(
+                    "postinstall complete".to_string(),
+                    crate::ui::progress_report::ProgressIcon::Skipped,
+                );
+            } else {
+                ctx.pr.finish_with_icon(
+                    "already installed".into(),
+                    crate::ui::progress_report::ProgressIcon::Skipped,
+                );
+            }
             return Ok(tv);
         }
 
@@ -3832,7 +3998,7 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
-        install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
+        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
         self.finish_install_changes(&ctx, &tv).await?;
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
@@ -3849,7 +4015,7 @@ pub trait Backend: Debug + Send + Sync {
         if let Err(err) = file::touch_dir(&dirs::DATA) {
             trace!("error touching data directory: {:?}", err);
         }
-        if let Some(script) = tv.request.options().get("postinstall") {
+        if let Some((script, _)) = tv.request.options().postinstall() {
             ctx.pr
                 .set_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(ctx, tv, script).await?;
@@ -4074,10 +4240,7 @@ pub trait Backend: Debug + Send + Sync {
         let _state_lock = if dryrun {
             None
         } else {
-            Some(install_state::lock_tool_version(
-                &tv.ba().short,
-                &state_version,
-            )?)
+            Some(install_state::lock_tool_version(tv.ba(), &state_version)?)
         };
         self.uninstall_version_unlocked(config, tv, pr, dryrun)
             .await
@@ -4228,13 +4391,10 @@ pub trait Backend: Debug + Send + Sync {
                     Err(err) if err.kind() == std::io::ErrorKind::NotFound
                 );
             if install_removed {
-                install_state::clear_incomplete_marker_best_effort(
-                    &tv.ba().short,
-                    &tv.tv_pathname(),
-                );
+                install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
             }
             // Remove parent installs dir if it's now empty (no other versions present)
-            let installs_path = &self.ba().installs_path;
+            let installs_path = &self.ba().installs_path();
             if installs_path.exists()
                 && let Ok(entries) = file::dir_subdirs(installs_path)
                 && entries.is_empty()
@@ -4256,7 +4416,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn cleanup_empty_installs_dir(&self) {
-        let installs_path = &self.ba().installs_path;
+        let installs_path = &self.ba().installs_path();
         if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
             let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
             if installs_path
@@ -4268,7 +4428,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
-        install_state::incomplete_file_path(&tv.ba().short, &tv.tv_pathname())
+        install_state::incomplete_file_path(tv.ba(), &tv.tv_pathname())
     }
 
     async fn path_env_for_cmd(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<OsString> {
@@ -4666,7 +4826,7 @@ pub trait Backend: Debug + Send + Sync {
             .entry(map_key)
             .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(
-                    self.ba().cache_path.join("remote_versions.msgpack.z"),
+                    self.ba().cache_path().join("remote_versions.msgpack.z"),
                 )
                 .with_cache_key(self.ba().full())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
@@ -5817,8 +5977,8 @@ mod latest_version_tests {
         };
         let older = make_backend("aqua:example/tool", "1.0.0");
         let newer = make_backend("packslip:github.com/example/tool", "2.0.0");
-        assert_eq!(older.ba().cache_path, newer.ba().cache_path);
-        let _ = fs::remove_dir_all(&older.ba().cache_path);
+        assert_eq!(older.ba().cache_path(), newer.ba().cache_path());
+        let _ = fs::remove_dir_all(older.ba().cache_path());
         assert_eq!(
             older.list_remote_versions(&config).await.unwrap(),
             ["1.0.0"]
@@ -5852,8 +6012,8 @@ mod latest_version_tests {
         let alpha_again = LatestBackend::new("test-listing-opts-partition[version_prefix=a-]")
             .with_listing_keys(&["version_prefix"])
             .with_remote_versions(vec![version("3.0.0")]);
-        assert_eq!(alpha.ba().cache_path, beta.ba().cache_path);
-        let _ = fs::remove_dir_all(&alpha.ba().cache_path);
+        assert_eq!(alpha.ba().cache_path(), beta.ba().cache_path());
+        let _ = fs::remove_dir_all(alpha.ba().cache_path());
 
         assert_eq!(
             alpha.list_remote_versions(&config).await.unwrap(),
@@ -6003,9 +6163,9 @@ mod latest_version_tests {
             None,
             BackendResolution::new(false),
         );
-        ba.installs_path = temp_dir.path().join("installs").join("latest-real-dir");
-        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
-        fs::create_dir_all(ba.installs_path.join("latest")).unwrap();
+        ba.set_installs_path(temp_dir.path().join("installs").join("latest-real-dir"));
+        fs::create_dir_all(ba.installs_path().join("2.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path().join("latest")).unwrap();
 
         let backend = LatestBackend {
             ba: Arc::new(ba),
@@ -6240,51 +6400,6 @@ fn fuzzy_match_versions_by(
     query: &str,
     is_filtered_prerelease: impl Fn(&str) -> bool,
 ) -> Vec<String> {
-    let escaped_query = regex::escape(query);
-    let query_pattern = if query == "latest" {
-        "v?[0-9].*".to_string()
-    } else if query.starts_with(|c: char| c.is_ascii_digit()) {
-        format!("v?{escaped_query}")
-    } else {
-        escaped_query
-    };
-    // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
-    // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
-    // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
-    // the prefix (e.g. "temurin-25.0.1").
-    // `+` separates semver build metadata ("1.9.1" -> "1.9.1+hotfix.2"), but it
-    // also separates flavour names ("truffleruby" -> "truffleruby+graalvm"). Only
-    // treat it as a separator for numeric queries, so a bare flavour name cannot
-    // select a different flavour.
-    let numeric_query = query
-        .strip_prefix(['v', 'V'])
-        .unwrap_or(query)
-        .starts_with(|c: char| c.is_ascii_digit());
-    let sep = if query == "latest" || numeric_query {
-        "[+\\-.]"
-    } else {
-        "[\\-.]"
-    };
-    let query_regex = if query != "latest" && query.ends_with('-') {
-        Regex::new(&format!("^{query_pattern}.*$")).unwrap()
-    } else {
-        Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
-    };
-
-    // Also create a regex without the 'v' prefix if query starts with 'v'
-    // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
-    let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
-        let without_v = regex::escape(&query[1..]);
-        let re = if query.ends_with('-') {
-            Regex::new(&format!("^{without_v}.*$")).unwrap()
-        } else {
-            Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
-        };
-        Some(re)
-    } else {
-        None
-    };
-
     versions
         .into_iter()
         .filter(|v| {
@@ -6294,17 +6409,61 @@ fn fuzzy_match_versions_by(
             if is_filtered_prerelease(v) {
                 return false;
             }
-            if query_regex.is_match(v) {
-                return true;
-            }
-            if let Some(ref re) = query_without_v_regex
-                && re.is_match(v)
-            {
-                return true;
-            }
-            false
+            fuzzy_version_matches(query, v)
         })
         .collect()
+}
+
+/// Whether `version` belongs to the fuzzy `query`. Resolution runs this for
+/// every tool, so these rules are written as string comparisons; they match the
+/// regexes they replaced, which cost more to compile than resolving the tool:
+///
+/// - `latest` matches a version starting with a digit, after an optional `v`.
+/// - A query ending in `-` (a vendor prefix like `temurin-`) matches any version
+///   it prefixes.
+/// - Otherwise the version must equal the query or continue it with a
+///   separator and at least one more character. For numeric queries like `1.2`
+///   the separators are `+`, `-` and `.`, so `1.2` matches `1.2.3` and
+///   `1.2+build` but not `1.20`. For names they are `-` and `.`, so
+///   `truffleruby` does not select `truffleruby+graalvm`.
+///
+/// A query starting with a digit also matches a `v`-prefixed version, and a
+/// query starting with `v` or `V` also matches the version without it. None of
+/// the text matched after the query may contain a newline.
+fn fuzzy_version_matches(query: &str, version: &str) -> bool {
+    let starts_with_digit = |s: &str| s.starts_with(|c: char| c.is_ascii_digit());
+    if query == "latest" {
+        let version = version.strip_prefix('v').unwrap_or(version);
+        return starts_with_digit(version) && !version.contains('\n');
+    }
+    let without_v = query.strip_prefix(['v', 'V']);
+    let separators: &[char] = if starts_with_digit(without_v.unwrap_or(query)) {
+        &['+', '-', '.']
+    } else {
+        &['-', '.']
+    };
+    let continues = |literal: &str, version: &str| {
+        let Some(rest) = version.strip_prefix(literal) else {
+            return false;
+        };
+        if query.ends_with('-') {
+            return !rest.contains('\n');
+        }
+        rest.is_empty()
+            || rest
+                .strip_prefix(separators)
+                .is_some_and(|tail| !tail.is_empty() && !tail.contains('\n'))
+    };
+    if continues(query, version) {
+        return true;
+    }
+    if starts_with_digit(query)
+        && let Some(version) = version.strip_prefix('v')
+        && continues(query, version)
+    {
+        return true;
+    }
+    without_v.is_some_and(|without_v| continues(without_v, version))
 }
 
 /// Derive the directory namespace from the configured tool spelling.

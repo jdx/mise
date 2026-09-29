@@ -46,11 +46,11 @@ impl ErlangPlugin {
     }
 
     fn kerl_path(&self) -> PathBuf {
-        self.ba.cache_path.join(format!("kerl-{KERL_VERSION}"))
+        self.ba.cache_path().join(format!("kerl-{KERL_VERSION}"))
     }
 
     fn kerl_base_dir(&self) -> PathBuf {
-        self.ba.cache_path.join("kerl")
+        self.ba.cache_path().join("kerl")
     }
 
     fn lock_build_tool(&self) -> Result<fslock::LockFile> {
@@ -625,7 +625,7 @@ impl Backend for ErlangPlugin {
         } else {
             self.update_kerl().await?;
             let kerl_path = self.kerl_path().to_string_lossy().to_string();
-            let kerl_base_dir = self.ba.cache_path.join("kerl");
+            let kerl_base_dir = self.ba.cache_path().join("kerl");
             plugins::core::run_fetch_task_with_timeout_async(async move || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     &kerl_path,

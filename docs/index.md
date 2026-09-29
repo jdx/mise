@@ -12,6 +12,7 @@ hero:
 
 <script setup>
 import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
+import { data as showreel } from "./.vitepress/showreel.data";
 </script>
 
 <section class="landing-page" aria-label="mise overview">
@@ -231,7 +232,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
     <div class="landing-mini-install"><code>curl https://mise.run | sh</code></div>
     <div class="landing-links">
       <a href="/getting-started">Getting started</a>
-      <a href="/demo">Watch the demo</a>
+      <a :href="showreel ? '/#showreel' : '/demo'">Watch the demo</a>
       <a href="https://github.com/jdx/mise">GitHub</a>
     </div>
   </div>

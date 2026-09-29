@@ -17,6 +17,8 @@ pub struct Enrollment {
     pub path: String,
     pub autosave: bool,
     pub encrypt: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_plaintext: Option<bool>,
     pub variants: Vec<Variant>,
     /// The entry's own `exclude` globs, relative to its path. Written
     /// only when the declaration states one, so a setup without them
@@ -115,6 +117,7 @@ impl Manifest {
                 );
                 policy.autosave = enrollment.autosave;
                 policy.encrypt = enrollment.encrypt;
+                policy.allow_plaintext = enrollment.allow_plaintext.unwrap_or(false);
                 let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
                 entry.variant = variant;
                 Some(entry)
@@ -262,6 +265,12 @@ impl Manifest {
                         &theirs.encrypt,
                         &format!("{path}: encryption"),
                     )?,
+                    allow_plaintext: choose(
+                        &before.allow_plaintext,
+                        &ours.allow_plaintext,
+                        &theirs.allow_plaintext,
+                        &format!("{path}: plaintext selection"),
+                    )?,
                     variants: choose(
                         &before.variants,
                         &ours.variants,
@@ -350,6 +359,7 @@ impl Manifest {
                 crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
             policy.autosave = enrollment.autosave;
             policy.encrypt = enrollment.encrypt;
+            policy.allow_plaintext = enrollment.allow_plaintext.unwrap_or(false);
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
             entry.exclude = enrollment.exclude.clone();
@@ -613,6 +623,7 @@ mod tests {
             path: "home/.codex".into(),
             autosave: true,
             encrypt: false,
+            allow_plaintext: None,
             variants: vec![],
             exclude: None,
             include: None,
@@ -635,6 +646,10 @@ mod tests {
             },
             Enrollment {
                 exclude: Some(vec!["cache/**".into()]),
+                ..plain.clone()
+            },
+            Enrollment {
+                allow_plaintext: Some(true),
                 ..plain.clone()
             },
         ] {
@@ -741,7 +756,8 @@ mod tests {
             }],
         )?;
         let gix = gix::open_opts(repo.dir(), gix::open::Options::isolated())?;
-        let tree = gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes())?)?;
+        let tree =
+            gix.find_tree(gix::ObjectId::from_hex(tree.as_bytes()).map_err(gix::Exn::into_error)?)?;
         assert!(
             Manifest::read_gix(&tree)
                 .unwrap_err()
@@ -1037,6 +1053,7 @@ mod tests {
             path: path.into(),
             autosave: true,
             encrypt: false,
+            allow_plaintext: None,
             variants: vec![],
             exclude: None,
             include: None,
@@ -1111,6 +1128,7 @@ mod tests {
                 path: "home/.zshrc".into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,
@@ -1166,6 +1184,7 @@ mod tests {
                 path: "home/.zshrc".into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![active, inactive],
                 exclude: None,
                 include: None,
@@ -1238,6 +1257,7 @@ mod tests {
             path: "home/.zshrc".into(),
             autosave: true,
             encrypt: false,
+            allow_plaintext: None,
             variants: vec![],
             exclude: None,
             include: None,
@@ -1267,6 +1287,7 @@ mod tests {
                 path: "home/.codex".into(),
                 autosave: true,
                 encrypt: false,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: Some(vec!["sessions".into()]),
                 include: None,

@@ -1,4 +1,4 @@
-import { Command, commands } from "./cli_commands";
+import { type Command, commands } from "./cli_commands.ts";
 
 // Shared between the VitePress config and the llms.txt generator
 // (docs/.vitepress/llms.ts), so both describe the same set of pages.
@@ -272,7 +272,7 @@ export const sidebar: SidebarItem[] = [
     text: "About",
     items: [
       { text: "About mise", link: "/about" },
-      { text: "mise-en-place: The Song", link: "/mise-en-place" },
+      { text: "mise run: The Song", link: "/mise-en-place" },
       { text: "Glossary", link: "/glossary" },
       { text: "FAQs", link: "/faq" },
       { text: "Troubleshooting", link: "/troubleshooting" },

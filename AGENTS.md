@@ -116,7 +116,7 @@ The `mise` package has two targets. The library (`src/lib.rs`) is everything exc
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-brew-relocation`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-brew-relocation`, `mise-brew-metadata`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
@@ -237,6 +237,8 @@ If you think you need to pick "the newest installed version" at a new call site,
 
 ### Configuration Parsing
 The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`. The `Settings` types are generated from `settings.toml` in `crates/mise-settings`; loading them (config discovery, trust, CLI flags) stays in `src/config/settings.rs`, whose `SettingsExt` trait holds the methods that need the rest of mise.
+
+When changing configuration syntax or tool options, update `schema/mise.json` and run `mise run render:schema`. The render task also regenerates `schema/mise-task.json` from the main schema.
 
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)

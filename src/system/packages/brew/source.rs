@@ -311,7 +311,7 @@ fn stage_source(archive: &Path, build_root: &Path, basename: &str) -> Result<Pat
     crate::file::create_dir_all(&stage)?;
     // `basename` is the upstream file name — the cache entry's own name
     // carries a checksum prefix that must not leak into the build tree
-    let format = ExtractionFormat::from_file_name(basename);
+    let format = ExtractionFormat::detect(archive, basename)?;
     if format.is_archive() {
         crate::file::extract_archive(archive, &stage, format, &ExtractOptions::default())
             .wrap_err_with(|| format!("failed to extract {}", archive.display()))?;
@@ -547,5 +547,176 @@ mod tests {
         let mut no_url = formula(&[]);
         no_url.urls.clear();
         assert!(check_buildable(&no_url).is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_pathname_write_creates_parents() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        let cellar = tmp.path().join("Cellar");
+        crate::file::create_dir_all(&buildpath)?;
+        crate::file::write(&shim, SHIM_RB)?;
+        // both install-time helpers that write through Pathname#write
+        crate::file::write(
+            &formula_rb,
+            r#"class Example < Formula
+  def install
+    (share/"example/greeting").write("hello")
+    (share/"example/greeting").write(", world", mode: "a")
+    generate_completions_from_executable("echo", "completions", shells: [:fish])
+  end
+end
+"#,
+        )?;
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let keg = cellar.join("example/1.0.0");
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/example/greeting"))?,
+            "hello, world"
+        );
+        assert_eq!(
+            crate::file::read_to_string(keg.join("share/fish/vendor_completions.d/example.fish"))?,
+            "completions fish\n"
+        );
+        Ok(())
+    }
+
+    /// GitHub's codeload URLs (`.../tar.gz/refs/tags/v1.0.0`) name no
+    /// extension; the tarball must still be unpacked rather than staged as an
+    /// opaque file the build then cannot find its sources in.
+    #[test]
+    fn test_stage_source_unpacks_suffixless_tarball() {
+        use flate2::{Compression, write::GzEncoder};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("0123456789ab-v1.0.0");
+        let mut builder = jdx_tar::Builder::new(GzEncoder::new(
+            std::fs::File::create(&archive).unwrap(),
+            Compression::default(),
+        ));
+        let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+        header.set_size(11);
+        header.set_mode(0o644);
+        builder
+            .append_data(&mut header, "test-1.0.0/go.mod", &b"module test"[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let build_root = tmp.path().join("build");
+        let buildpath = stage_source(&archive, &build_root, "v1.0.0").unwrap();
+
+        assert_eq!(buildpath, build_root.join("src/test-1.0.0"));
+        assert_eq!(
+            std::fs::read(buildpath.join("go.mod")).unwrap(),
+            b"module test"
+        );
+    }
+
+    /// The shim stages `resource`s itself, so an extensionless resource URL
+    /// needs the same content fallback as the main source. The download cache
+    /// is pre-seeded so the shim never reaches the network.
+    #[tokio::test]
+    async fn test_shim_stages_suffixless_resources() {
+        use flate2::{Compression, write::GzEncoder};
+        use sha2::{Digest, Sha256};
+
+        let Some(ruby) = super::super::tap::test_ruby().await.unwrap() else {
+            return;
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = tmp.path().join("cache");
+        crate::file::create_dir_all(&cache).unwrap();
+
+        let mut builder = jdx_tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+        let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::File);
+        header.set_size(11);
+        header.set_mode(0o644);
+        builder
+            .append_data(&mut header, "lib-1.0.0/go.mod", &b"module test"[..])
+            .unwrap();
+        let tarball = builder.into_inner().unwrap().finish().unwrap();
+
+        let mut resources = String::new();
+        for (name, basename, contents) in [
+            ("tarball", "v1.0.0", &tarball[..]),
+            ("script", "tool", &b"#!/bin/sh\necho hi\n"[..]),
+            // bsdtar lists an empty file as an empty archive
+            ("empty", "empty", &b""[..]),
+        ] {
+            let sha256 = hex::encode(Sha256::digest(contents));
+            std::fs::write(cache.join(format!("{sha256}--{basename}")), contents).unwrap();
+            resources.push_str(&format!(
+                "  resource \"{name}\" do\n    url \"https://example.invalid/{name}/{basename}\"\n    sha256 \"{sha256}\"\n  end\n"
+            ));
+        }
+        let formula = tmp.path().join("example.rb");
+        std::fs::write(
+            &formula,
+            format!(
+                r#"class Example < Formula
+{resources}
+  def install
+    resource("tarball").stage {{ cp "go.mod", prefix }}
+    resource("script").stage {{ cp Dir.children(".").first, prefix/"tool" }}
+    resource("empty").stage {{ cp Dir.children(".").first, prefix/"empty" }}
+  end
+end
+"#
+            ),
+        )
+        .unwrap();
+        let shim = tmp.path().join("shim.rb");
+        std::fs::write(&shim, SHIM_RB).unwrap();
+        let buildpath = tmp.path().join("build");
+        crate::file::create_dir_all(&buildpath).unwrap();
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .env("MISE_BREW_PREFIX", tmp.path().join("prefix"))
+            .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+            .env("MISE_BREW_FORMULA_FILE", &formula)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", &cache)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let keg = tmp.path().join("Cellar/example/1.0.0");
+        assert_eq!(std::fs::read(keg.join("go.mod")).unwrap(), b"module test");
+        assert_eq!(
+            std::fs::read(keg.join("tool")).unwrap(),
+            b"#!/bin/sh\necho hi\n"
+        );
+        assert_eq!(std::fs::read(keg.join("empty")).unwrap(), b"");
     }
 }

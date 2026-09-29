@@ -15,7 +15,6 @@ use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
-use super::api::RubySourceChecksum;
 use super::prefix;
 use super::source;
 use crate::cmd::CmdLineRunner;
@@ -36,9 +35,9 @@ use crate::ui::progress_report::{ProgressIcon, SingleReport};
 
 mod app_version;
 mod artifacts;
+mod bulk;
 mod fetch;
 mod flight;
-mod model;
 mod paths;
 mod running;
 mod state;
@@ -47,7 +46,7 @@ use app_version::*;
 use artifacts::*;
 use fetch::*;
 use flight::*;
-pub(super) use model::{Cask, CaskManager};
+pub(super) use mise_brew_metadata::cask::*;
 use paths::*;
 use running::*;
 use state::*;
@@ -187,210 +186,16 @@ fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AppArtifact {
-    source: String,
-    target: Option<String>,
+trait CaskArtifactsExt {
+    fn print_install_plan(&self, cask: &Cask) -> Result<()>;
+    fn app_target_paths(&self) -> Result<Vec<PathBuf>>;
+    fn binary_targets(&self) -> Result<Vec<PathBuf>>;
+    fn font_target_paths(&self) -> Result<Vec<PathBuf>>;
+    fn completion_target_paths(&self, cask: &Cask) -> Result<Vec<PathBuf>>;
+    fn generic_artifact_targets(&self) -> Result<Vec<PathBuf>>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BinaryArtifact {
-    source: String,
-    target: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CommandWrapperArtifact {
-    name: String,
-    target: Option<String>,
-    content: Option<String>,
-    executable: Option<String>,
-    args: Vec<String>,
-    env: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PkgArtifact {
-    source: String,
-    /// Choice changes for `installer -applyChoiceChangesXML`, e.g. deselecting
-    /// a bundled updater. Empty installs the package's default choices.
-    choices: Vec<PkgChoice>,
-}
-
-/// One entry of `installer`'s choice changes: an attribute change for the
-/// choice `identifier`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PkgChoice {
-    identifier: String,
-    change: PkgChoiceChange,
-}
-
-/// The attributes `installer(8)` documents for `-applyChoiceChangesXML`, each
-/// paired with the setting it takes: 0/1 for the flags, a path for
-/// `customLocation`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PkgChoiceChange {
-    Selected(bool),
-    Enabled(bool),
-    Visible(bool),
-    CustomLocation(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct InstallerArtifact {
-    executable: String,
-    args: Vec<String>,
-    sudo: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct GenericArtifact {
-    source: String,
-    target: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FontArtifact {
-    source: String,
-    target: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CompletionShell {
-    Bash,
-    Fish,
-    Zsh,
-    Pwsh,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CompletionArtifact {
-    shell: CompletionShell,
-    source: String,
-    target: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct GeneratedCompletionArtifact {
-    executable: String,
-    args: Vec<String>,
-    base_name: Option<String>,
-    shell_parameter_format: Option<String>,
-    shells: Vec<CompletionShell>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FlightStep {
-    Move {
-        source: FlightPath,
-        target: FlightPath,
-        source_glob: bool,
-    },
-    Remove {
-        paths: Vec<FlightPath>,
-        recursive: bool,
-    },
-    SetPermissions {
-        paths: Vec<FlightPath>,
-        permissions: String,
-        recursive: bool,
-    },
-    SetOwnership {
-        paths: Vec<FlightPath>,
-        /// `None` is the user running mise (the invoking user under sudo), as
-        /// in Homebrew.
-        user: Option<String>,
-        group: String,
-        recursive: bool,
-    },
-    Copy {
-        source: FlightPath,
-        target: FlightPath,
-        recursive: bool,
-        overwrite: bool,
-        source_glob: bool,
-        guards: Vec<FlightGuard>,
-    },
-    Symlink {
-        source: FlightPath,
-        target: FlightPath,
-        force: bool,
-        uninstall: bool,
-        source_glob: bool,
-        sudo: FlightSudo,
-        guards: Vec<FlightGuard>,
-    },
-    Run {
-        must_succeed: bool,
-        command: FlightPath,
-        args: Vec<String>,
-        env: BTreeMap<String, String>,
-        sudo: bool,
-        guards: Vec<FlightGuard>,
-    },
-    TerminateProcess {
-        name: String,
-        match_mode: ProcessMatch,
-        sudo: bool,
-        attempts: usize,
-        must_succeed: bool,
-        notices: Vec<String>,
-        failure_message: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcessMatch {
-    Name,
-    Full,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FlightPathBase {
-    StagedPath,
-    AppDir,
-    HomebrewPrefix,
-    Literal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FlightSudo {
-    Never,
-    Always,
-    IfNeeded,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FlightPath {
-    base: FlightPathBase,
-    path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FlightGuard {
-    OnMacos,
-    OnLinux,
-    IfExists(FlightPath),
-    UnlessExists(FlightPath),
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct CaskArtifacts {
-    apps: Vec<AppArtifact>,
-    binaries: Vec<BinaryArtifact>,
-    command_wrappers: Vec<CommandWrapperArtifact>,
-    pkgs: Vec<PkgArtifact>,
-    installers: Vec<InstallerArtifact>,
-    generic: Vec<GenericArtifact>,
-    fonts: Vec<FontArtifact>,
-    completions: Vec<CompletionArtifact>,
-    generated_completions: Vec<GeneratedCompletionArtifact>,
-    preflight_steps: Vec<FlightStep>,
-    postflight_steps: Vec<FlightStep>,
-    pkg_ids: Vec<String>,
-}
-
-impl CaskArtifacts {
+impl CaskArtifactsExt for CaskArtifacts {
     fn print_install_plan(&self, cask: &Cask) -> Result<()> {
         miseprintln!("install cask {}/{}", cask.token, cask.version);
         for app in &self.apps {
@@ -1123,7 +928,11 @@ impl BrewCaskManager {
     }
 }
 
-impl AppArtifact {
+trait AppArtifactExt {
+    fn target_name(&self) -> Result<&str>;
+}
+
+impl AppArtifactExt for AppArtifact {
     fn target_name(&self) -> Result<&str> {
         if let Some(target) = &self.target {
             return Ok(target);
@@ -1140,7 +949,12 @@ impl AppArtifact {
     }
 }
 
-impl BinaryArtifact {
+trait BinaryArtifactExt {
+    fn target_name(&self) -> Result<String>;
+    fn target_path(&self, appdir: &Path) -> Result<PathBuf>;
+}
+
+impl BinaryArtifactExt for BinaryArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
@@ -1153,7 +967,13 @@ impl BinaryArtifact {
     }
 }
 
-impl CommandWrapperArtifact {
+trait CommandWrapperArtifactExt {
+    fn target_name(&self) -> Result<String>;
+    fn target_path(&self) -> Result<PathBuf>;
+    fn caskroom_path(&self, caskroom: &Path) -> PathBuf;
+}
+
+impl CommandWrapperArtifactExt for CommandWrapperArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
@@ -1170,35 +990,12 @@ impl CommandWrapperArtifact {
     }
 }
 
-impl CompletionShell {
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "bash" => Some(Self::Bash),
-            "fish" => Some(Self::Fish),
-            "zsh" => Some(Self::Zsh),
-            "pwsh" => Some(Self::Pwsh),
-            _ => None,
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Bash => "bash",
-            Self::Fish => "fish",
-            Self::Zsh => "zsh",
-            Self::Pwsh => "pwsh",
-        }
-    }
-
-    fn parameter_name(self) -> &'static str {
-        match self {
-            Self::Pwsh => "powershell",
-            _ => self.name(),
-        }
-    }
+trait CompletionArtifactExt {
+    fn target_name(&self) -> Result<String>;
+    fn target_path(&self) -> Result<PathBuf>;
 }
 
-impl CompletionArtifact {
+impl CompletionArtifactExt for CompletionArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
@@ -1211,7 +1008,12 @@ impl CompletionArtifact {
     }
 }
 
-impl GeneratedCompletionArtifact {
+trait GeneratedCompletionArtifactExt {
+    fn resolved_base_name(&self, cask: &Cask) -> String;
+    fn target_paths(&self, cask: &Cask) -> Result<Vec<PathBuf>>;
+}
+
+impl GeneratedCompletionArtifactExt for GeneratedCompletionArtifact {
     fn resolved_base_name(&self, cask: &Cask) -> String {
         let name = self.base_name.clone().unwrap_or_else(|| {
             Path::new(&self.executable)
@@ -4146,14 +3948,6 @@ fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
 fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
     let staged_path = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
-}
-
-fn is_shell_env_name(value: &str) -> bool {
-    let mut chars = value.chars();
-    chars
-        .next()
-        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
-        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 fn find_binary_source(

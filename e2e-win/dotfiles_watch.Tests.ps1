@@ -3,6 +3,8 @@ Describe 'history watch' {
         $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
         $env:MISE_EXPERIMENTAL = '0'
         $script:OriginalDir = Get-Location
+        # what AfterAll counts as started by this file
+        $script:Began = Get-Date
         Set-Location TestDrive:
 
         $script:OriginalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
@@ -57,10 +59,88 @@ if ([W.C]::IsWindowVisible($window)) { exit 3 } else { exit 6 }
             } while ((Get-Date) -lt $deadline)
             return $false
         }
+
+        # A process by pid and start time, so a pid Windows has since handed
+        # to something else is never taken for it.
+        function script:Get-ProcessRoot([int]$Id) {
+            $process = Get-CimInstance Win32_Process -Filter "ProcessId = $Id"
+            if ($null -eq $process) { return $null }
+            return [pscustomobject]@{ Id = $Id; StartTime = $process.CreationDate }
+        }
+
+        # Pester deletes TestDrive as soon as AfterAll returns, and Windows
+        # refuses while any process still has its working directory there —
+        # which everything started from this file does, down to the `git` a
+        # watcher runs. The watch lock going free, which is all Wait-Watcher
+        # sees, says neither that the process holding it has exited nor that
+        # what it started has. So this ends `$Roots` and every descendant
+        # still running, then waits for all of them to exit. An orphan still
+        # names its dead parent's pid, so it is found too; start times keep a
+        # reused pid, and whatever that new process started, out.
+        #
+        # The tree is walked again after every kill: a watcher can start a
+        # `git` between one walk and the kill, and only a walk that finds
+        # nothing running says the tree is gone. Everything found stays
+        # known, so a process whose parent has since died is still reached.
+        function script:Stop-Tree([object[]]$Roots, [int]$TimeoutSec = 30) {
+            $known = @{}
+            foreach ($root in $Roots) { if ($null -ne $root) { $known[$root.Id] = $root } }
+            $isTree = {
+                $member = $known[[int]$_.ProcessId]
+                $null -ne $member -and [int]$_.ProcessId -ne $PID -and
+                [math]::Abs(($_.CreationDate - $member.StartTime).TotalSeconds) -lt 1
+            }
+            $deadline = (Get-Date).AddSeconds($TimeoutSec)
+            while ($true) {
+                $all = @(Get-CimInstance Win32_Process)
+                $walked = @{}
+                $pending = [System.Collections.Generic.Queue[object]]::new()
+                foreach ($member in @($known.Values)) { $pending.Enqueue($member) }
+                while ($pending.Count -gt 0) {
+                    $node = $pending.Dequeue()
+                    if ($walked.ContainsKey($node.Id)) { continue }
+                    $walked[$node.Id] = $true
+                    if (-not $known.ContainsKey($node.Id)) { $known[$node.Id] = $node }
+                    # the pid's next owner, if it has one: what started after
+                    # it is that process's, not this one's
+                    $next = $all | Where-Object {
+                        $_.ProcessId -eq $node.Id -and $_.CreationDate -gt $node.StartTime.AddSeconds(1)
+                    } | Select-Object -First 1
+                    foreach ($child in $all) {
+                        if ($child.ParentProcessId -ne $node.Id) { continue }
+                        if ($child.CreationDate -lt $node.StartTime) { continue }
+                        if ($next -and $child.CreationDate -ge $next.CreationDate) { continue }
+                        $pending.Enqueue([pscustomobject]@{
+                                Id = [int]$child.ProcessId; StartTime = $child.CreationDate })
+                    }
+                }
+                $live = @($all | Where-Object $isTree |
+                        ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction Ignore })
+                if ($live.Count -eq 0) { return $true }
+                $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+                if ($remaining -le 0) { break }
+                $live | Stop-Process -Force -ErrorAction Ignore
+                $live | Wait-Process -Timeout $remaining -ErrorAction Ignore
+            }
+            foreach ($process in $all | Where-Object $isTree) {
+                Write-Warning "still running: $($process.ProcessId) $($process.CommandLine)"
+            }
+            return $false
+        }
     }
 
     AfterAll {
+        # out of TestDrive first, then whatever is still running there:
+        # everything this host started since the file began, and anything
+        # whose command line names a path inside TestDrive, such as the
+        # service launcher Task Scheduler started — a case that failed before
+        # its own cleanup may have left either
         Set-Location $script:OriginalDir
+        $leaf = Split-Path $TestDrive -Leaf
+        $roots = @([pscustomobject]@{ Id = $PID; StartTime = $script:Began }) +
+            @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$leaf*" } |
+                ForEach-Object { [pscustomobject]@{ Id = [int]$_.ProcessId; StartTime = $_.CreationDate } })
+        Stop-Tree $roots | Out-Null
         foreach ($pair in @(
                 @('MISE_EXPERIMENTAL', $script:OriginalExperimental),
                 @('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted),
@@ -123,12 +203,16 @@ builtin = "history-watch"
         # would mean `Start-Process` stopped giving it a real console window,
         # leaving nothing for this case to be about.
         $alone = Start-Process -FilePath 'mise' -PassThru -ArgumentList $watch
+        $aloneRoot = Get-ProcessRoot $alone.Id
         try {
             Wait-Watcher $true | Should -BeTrue
             Get-ConsoleProbe $alone.Id | Should -Be 6
         } finally {
-            Stop-Process -Id $alone.Id -Force -ErrorAction Ignore
+            # the watcher and any `git` it had running, which killing the
+            # watcher alone would leave behind
+            $aloneStopped = Stop-Tree @($aloneRoot)
         }
+        $aloneStopped | Should -BeTrue
         Wait-Watcher $false | Should -BeTrue
 
         # A console of its own again, but with `cmd.exe` in it too — which is
@@ -142,13 +226,15 @@ builtin = "history-watch"
         # 5 rather than 3.
         $shared = Start-Process -FilePath 'cmd.exe' -PassThru -ArgumentList @(
             '/c', "mise $($watch -join ' ')")
+        $sharedRoot = Get-ProcessRoot $shared.Id
         try {
             Wait-Watcher $true | Should -BeTrue
             Get-ConsoleProbe $shared.Id | Should -Be 3
         } finally {
             # `cmd` does not take the watcher with it, so the tree goes together
-            taskkill.exe /T /F /PID $shared.Id 2>&1 | Out-Null
+            $sharedStopped = Stop-Tree @($sharedRoot)
         }
+        $sharedStopped | Should -BeTrue
         # the store is left with no watcher holding it, so this file can grow
         # another case without inheriting one
         Wait-Watcher $false | Should -BeTrue
@@ -163,6 +249,8 @@ builtin = "history-watch"
         $env:MISE_EXPERIMENTAL = '1'
         $task = 'mise\mise-history'
         $watcherStopped = $false
+        $launcherRoot = $null
+        $treeStopped = $false
         try {
             # a watcher left over from an earlier case would hold the lock
             # this waits on, and the wait below would say nothing
@@ -202,11 +290,16 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
                 Should -Not -BeLike '*cmd.exe*'
 
             # the process Task Scheduler started and tracks, and the watcher
-            # it started in turn
+            # it started in turn. Its `--launch` is under this state
+            # directory, which tells it apart from the launcher of a real
+            # service on the same machine: this case ends the one it finds.
+            $leaf = Split-Path $TestDrive -Leaf
             $launcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
-                Where-Object { $_.CommandLine -like '*__service-exec*' } |
+                Where-Object { $_.CommandLine -like '*__service-exec*' -and $_.CommandLine -like "*$leaf*" } |
                 Select-Object -First 1
             $launcher | Should -Not -BeNullOrEmpty
+            $launcherRoot = [pscustomobject]@{
+                Id = [int]$launcher.ProcessId; StartTime = $launcher.CreationDate }
             $watcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
                 Where-Object { $_.ParentProcessId -eq $launcher.ProcessId } |
                 Select-Object -First 1
@@ -222,11 +315,15 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
             Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 6
         } finally {
             schtasks /end /tn $task 2>&1 | Out-Null
+            # `/end` asks for the launcher to be terminated and does not wait,
+            # and the watcher dies only as the launcher's job closes after it
+            $treeStopped = Stop-Tree @($launcherRoot)
             mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null
             $watcherStopped = Wait-Watcher $false
             $env:MISE_EXPERIMENTAL = '0'
         }
+        $treeStopped | Should -BeTrue
         $watcherStopped | Should -BeTrue
     }
 }

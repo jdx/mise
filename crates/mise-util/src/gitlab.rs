@@ -59,6 +59,69 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GitlabRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
+static PROJECT_CACHE: Lazy<RwLock<CacheGroup<ProjectIdentity>>> = Lazy::new(Default::default);
+
+/// What GitLab says a project path stands for now: the project's immutable
+/// IDs and its current path. A moved project's old path answers with the new
+/// path and the same `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectIdentity {
+    /// The project's numeric ID, which no rename or transfer changes.
+    pub id: String,
+    /// `group/subgroup/project` as the project is called now.
+    pub path_with_namespace: String,
+    /// The numeric ID of the project's namespace.
+    pub namespace_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitlabProjectIds {
+    id: u64,
+    path_with_namespace: String,
+    namespace: Option<GitlabNamespace>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitlabNamespace {
+    id: u64,
+}
+
+/// The identity gitlab.com gives a project path now, following a move's
+/// redirect. Cached like a release listing.
+pub async fn project_identity(path: &str) -> Result<ProjectIdentity> {
+    let key = format!(
+        "{}-project-{}",
+        path.to_kebab_case(),
+        crate::hash::hash_to_str(&path)
+    );
+    PROJECT_CACHE
+        .write()
+        .await
+        .entry(key.clone())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    let caches = PROJECT_CACHE.read().await;
+    let cache = caches.get(&key).unwrap();
+    Ok(cache
+        .get_or_try_init_async(async || {
+            let url = format!("{API_URL}/projects/{}", urlencoding::encode(path));
+            let headers = get_headers(&url, API_URL)?;
+            let project: GitlabProjectIds = crate::http::HTTP_FETCH
+                .json_with_headers(url, &headers)
+                .await?;
+            Ok(ProjectIdentity {
+                id: project.id.to_string(),
+                path_with_namespace: project.path_with_namespace,
+                namespace_id: project.namespace.map(|n| n.id.to_string()),
+            })
+        })
+        .await?
+        .clone())
+}
+
 pub static API_URL: &str = "https://gitlab.com/api/v4";
 
 pub static API_PATH: &str = "/api/v4";

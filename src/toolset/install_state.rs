@@ -956,23 +956,56 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     if let Some(o) = ba.opts.as_ref() {
         for (k, v) in &o.opts {
             if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                opts_map.insert(k.clone(), v.clone());
+                opts_map.insert(k.clone(), strip_url_credentials(v));
             }
         }
     }
     opts_map
 }
 
-pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
-    incomplete_marker(crate::backend::tool_directory_name(short), v)
+/// Remove userinfo from an option that is a URL carrying credentials.
+///
+/// These manifests are written under the data directory, which gets backed up,
+/// synced between machines and left group-readable, so a live credential must
+/// not reach them. It can: a registry URL authenticates as basic-auth userinfo
+/// (mise's gem `source` option, for one), and templating the token in from the
+/// environment does not help, because rendering happens before the value is
+/// stored.
+///
+/// The rest of the URL is kept, since it is genuine identity: which registry a
+/// tool came from is worth recording. A consumer that needs the credential
+/// reads it from config, which is where it was configured.
+fn strip_url_credentials(value: &toml::Value) -> toml::Value {
+    let Some(raw) = value.as_str() else {
+        return value.clone();
+    };
+    // `.ok()` rather than `let Ok(..)`: `Ok` is shadowed by eyre's in this module.
+    let Some(mut url) = raw.parse::<url::Url>().ok() else {
+        return value.clone();
+    };
+    if url.username().is_empty() && url.password().is_none() {
+        return value.clone();
+    }
+    // Both calls fail only for a URL that cannot have credentials at all, which
+    // is precisely the case already returned above.
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    toml::Value::String(url.to_string())
+}
+
+/// Marks `v` of `ba` as mid-install; also the identity of its install lock.
+/// Keyed by the tool's cache dir, which install, uninstall and link share
+/// across local, shared and system install paths.
+pub(crate) fn incomplete_file_path(ba: &BackendArg, v: &str) -> PathBuf {
+    ba.cache_path().join(v).join("incomplete")
 }
 
 fn incomplete_marker(tool_dir_name: impl AsRef<Path>, v: &str) -> PathBuf {
     dirs::CACHE.join(tool_dir_name).join(v).join("incomplete")
 }
 
-fn tool_version_lock(short: &str, v: &str) -> LockFile {
-    LockFile::new(&incomplete_file_path(short, v)).with_pid()
+fn tool_version_lock(ba: &BackendArg, v: &str) -> LockFile {
+    LockFile::new(&incomplete_file_path(ba, v)).with_pid()
 }
 
 /// Acquires the transaction lock for one logical tool version.
@@ -981,8 +1014,8 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// so install, uninstall, and link use this logical identity while mutating the
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
-pub fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
-    lock_tool_version_with_notice(short, v, &|_| {})
+pub fn lock_tool_version(ba: &BackendArg, v: &str) -> Result<fslock::LockFile> {
+    lock_tool_version_with_notice(ba, v, &|_| {})
 }
 
 /// [`lock_tool_version`] that also tells the caller when it is actually
@@ -991,19 +1024,19 @@ pub fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
 /// that process is usually a shim, whose command line looks like the tool
 /// it is installing rather than mise.
 pub(crate) fn lock_tool_version_with_notice(
-    short: &str,
+    ba: &BackendArg,
     v: &str,
     on_wait: &dyn Fn(Option<u32>),
 ) -> Result<fslock::LockFile> {
-    tool_version_lock(short, v)
+    tool_version_lock(ba, v)
         .with_callback(|lock| {
             debug!("waiting for tool-version lock on {}", display_path(lock));
         })
         .lock_with_notice(on_wait)
 }
 
-pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
-    let incomplete_path = incomplete_file_path(short, v);
+pub fn clear_incomplete_marker(ba: &BackendArg, v: &str) -> Result<()> {
+    let incomplete_path = incomplete_file_path(ba, v);
     match file::remove_file(&incomplete_path) {
         std::result::Result::Ok(()) => {
             if let Some(parent) = incomplete_path.parent()
@@ -1024,8 +1057,8 @@ pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
     }
 }
 
-pub(crate) fn clear_incomplete_marker_best_effort(short: &str, v: &str) {
-    if let Err(err) = clear_incomplete_marker(short, v) {
+pub(crate) fn clear_incomplete_marker_best_effort(ba: &BackendArg, v: &str) {
+    if let Err(err) = clear_incomplete_marker(ba, v) {
         debug!("error clearing incomplete marker: {:?}", err);
     }
 }
@@ -1100,6 +1133,7 @@ mod tests {
         InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
         normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
     };
+    use crate::args::BackendArg;
     use crate::plugins::PluginType;
     use itertools::Itertools;
     use std::collections::BTreeMap;
@@ -1168,7 +1202,7 @@ mod tests {
 
     #[test]
     fn lock_notice_fires_only_when_contended() {
-        let short = format!("lock_notice_test_{}", std::process::id());
+        let short = BackendArg::from(format!("lock_notice_test_{}", std::process::id()));
         let noticed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = || noticed.load(std::sync::atomic::Ordering::SeqCst);
         // Uncontended: no notice.
@@ -1221,12 +1255,14 @@ mod tests {
     #[test]
     fn tool_version_locks_serialize_logical_versions() {
         let short = format!("lock_test_{}", std::process::id());
-        let first = lock_tool_version(&short, "1.0.0").unwrap();
+        let ba = BackendArg::from(&short);
+        let first = lock_tool_version(&ba, "1.0.0").unwrap();
         let (waiting_tx, waiting_rx) = mpsc::channel();
         let (acquired_tx, acquired_rx) = mpsc::channel();
-        let thread_short = short.replace('_', "-");
+        // Spellings that kebab-case to the same tool dir share one lock.
+        let thread_ba = BackendArg::from(short.replace('_', "-"));
         let waiter = std::thread::spawn(move || {
-            let lock = tool_version_lock(&thread_short, "1.0.0")
+            let lock = tool_version_lock(&thread_ba, "1.0.0")
                 .with_callback(move |_| waiting_tx.send(()).unwrap())
                 .lock()
                 .unwrap();
@@ -1243,7 +1279,7 @@ mod tests {
         ));
 
         // A different logical version is independent even while the first is held.
-        let other = lock_tool_version(&short, "2.0.0").unwrap();
+        let other = lock_tool_version(&ba, "2.0.0").unwrap();
         drop(other);
         drop(first);
 
@@ -1493,6 +1529,44 @@ explicit_backend = true
             scan_versions(&temp.path().join("missing"), &tool_dir_name)
                 .unwrap()
                 .is_empty()
+        );
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::strip_url_credentials;
+
+    /// These manifests live under the data directory, which is backed up and
+    /// synced, so a registry URL must not carry its token onto disk. Templating
+    /// the token in from the environment does not help: rendering happens
+    /// before the value is stored.
+    #[test]
+    fn credentials_are_stripped_before_a_manifest_is_written() {
+        let stripped = |raw: &str| {
+            strip_url_credentials(&toml::Value::String(raw.to_string()))
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        assert_eq!(
+            stripped("https://ghp_tok3n@rubygems.pkg.github.com/acme"),
+            "https://rubygems.pkg.github.com/acme"
+        );
+        assert_eq!(
+            stripped("https://user:s3cret@gems.example.com/"),
+            "https://gems.example.com/"
+        );
+        // Identity worth keeping is kept, and non-URL options are untouched.
+        assert_eq!(
+            stripped("https://gems.example.com/acme"),
+            "https://gems.example.com/acme"
+        );
+        assert_eq!(stripped("not a url"), "not a url");
+        assert_eq!(
+            strip_url_credentials(&toml::Value::Integer(7)),
+            toml::Value::Integer(7)
         );
     }
 }

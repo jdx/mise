@@ -75,6 +75,7 @@ pub mod migrate;
 pub mod minisign;
 pub mod oci;
 pub mod packslip;
+mod packslip_forge;
 pub mod packslip_pins;
 mod packslip_requirements;
 mod packslip_stamps;

@@ -513,6 +513,11 @@ or `bootstrap plan` for the declarative-resource plan. `--only` and `--skip` acc
 repeated or comma-separated parts and cannot be combined.
 """#
     flag --from help="Clone a git repository and bootstrap from its configuration" {
+        long_help #"""
+Clone a git repository and bootstrap from its configuration
+
+Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the default branch, for example `git::https://github.com/example/dotfiles.git?ref=v1`.
+"""#
         arg <GIT_URL>
     }
     flag --adopt help="Adopt global configuration or shared dotfile history from a Git repository, then bootstrap" conflicts=--from {
@@ -1160,6 +1165,7 @@ Linux box can share the same live path with different contents.
             }
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
+            flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
             flag "-y --yes" help="Accept without prompting"
             flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -2927,6 +2933,7 @@ Linux box can share the same live path with different contents.
         }
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
         flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
+        flag --allow-plaintext help="Save an explicitly tracked credential-named file in plaintext"
         flag "-y --yes" help="Accept without prompting"
         flag "-n --dry-run" help="Show what each path expands to (files, size, what is left out) without tracking it"
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -4052,6 +4059,19 @@ preserved to avoid unexpected lockfile drift. This flag upgrades them
 to the latest format with request-specific version bindings.
 Format upgrades always process every configured tool and cannot be
 combined with tool arguments.
+"""#
+    }
+    flag --sidecars help="List native dependency sidecars instead of updating lockfiles" {
+        long_help #"""
+List native dependency sidecars instead of updating lockfiles
+
+Prints, for each existing lockfile in scope, the sidecar directory mise
+keeps its native dependency graphs in and every sidecar directory the
+lockfile references. Nothing is resolved, installed, or written.
+Paths are relative to the current directory when they are inside it,
+and absolute otherwise, such as the sidecars of a symlinked lockfile.
+Combine with `--json` for machine-readable output, or with `--local`
+and `--global` to choose the lockfiles.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -5183,7 +5203,8 @@ cmd self-update help="Update mise itself" effect=write {
     long_help #"""
 Update mise itself
 
-Uses the GitHub Releases API to find the latest release and binary.
+Selects the newest stable release satisfying the minimum release age (24h by default).
+Explicit versions bypass the delay. Downloads binaries from GitHub Releases.
 By default, this will also update any installed plugins.
 Uses mise's GitHub token resolution chain for authenticated requests.
 
@@ -5191,6 +5212,9 @@ Packagers can disable this command so that mise is updated through the
 package manager instead. See
 https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 """#
+    flag --minimum-release-age help="Override the minimum release age for unpinned updates (default: 24h)" {
+        arg <MINIMUM_RELEASE_AGE>
+    }
     flag "-f --force" help="Update even if already up to date"
     flag "-y --yes" help="Skip confirmation prompt"
     flag --no-plugins help="Disable auto-updating plugins"

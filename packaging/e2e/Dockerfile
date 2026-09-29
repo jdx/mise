@@ -1,4 +1,4 @@
-FROM ubuntu:resolute-20260901@sha256:5212ec9732bb047ef5aed8f477787a11b079527f9f4045e7dd509c282af74b84
+FROM ubuntu:resolute-20260912@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
 LABEL maintainer="jdx"
 LABEL org.opencontainers.image.source=https://github.com/jdx/mise

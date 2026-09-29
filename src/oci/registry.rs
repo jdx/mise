@@ -9,7 +9,8 @@
 //! credentials are found (e.g. a local `registry:2`).
 
 use crate::config::SettingsExt;
-use std::path::Path;
+use crate::file::ExtractionFormat;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Context, Result, bail};
@@ -447,6 +448,17 @@ async fn fetch_manifest_json(
     url: &str,
     accept: &[&str],
 ) -> Result<(serde_json::Value, String)> {
+    // Tags cannot contain `:`, so `alg:hex` is a digest. Only sha256 can be
+    // verified here; refuse the rest rather than trust the registry.
+    let pinned_digest = url
+        .rsplit('/')
+        .next()
+        .filter(|reference| reference.contains(':'));
+    if let Some(digest) = pinned_digest
+        && !digest.starts_with("sha256:")
+    {
+        bail!("unsupported digest algorithm in {url}: only sha256 digests are supported");
+    }
     let accept_hdr = accept.join(", ");
     let resp = session
         .send(|auth| {
@@ -477,9 +489,19 @@ async fn fetch_manifest_json(
         );
     }
     let content_type = header_str(&resp, "content-type");
-    let body: serde_json::Value = resp
-        .json()
+    let bytes = resp
+        .bytes()
         .await
+        .wrap_err_with(|| format!("reading response from {url}"))?;
+    // A manifest requested by digest must hash to that digest, otherwise a
+    // registry could serve different content than the pin promises.
+    if let Some(expected) = pinned_digest {
+        let actual = sha256_digest(&bytes);
+        if actual != expected {
+            bail!("digest mismatch for {url}: expected {expected}, registry served {actual}");
+        }
+    }
+    let body: serde_json::Value = serde_json::from_slice(&bytes)
         .wrap_err_with(|| format!("parsing JSON response from {url}"))?;
     Ok((body, content_type))
 }
@@ -751,6 +773,239 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     let manifest: ImageManifest = serde_json::from_value(body)
         .wrap_err("parsing OCI/Docker manifest; schema v1 manifests are not supported")?;
     Ok(manifest)
+}
+
+/// OCI annotation carrying a layer's file name in artifacts made with
+/// `oras push` and `podman artifact add`.
+const ANNOTATION_TITLE: &str = "org.opencontainers.image.title";
+/// `oras push` marks a title-annotated tar layer that is a whole directory.
+const ANNOTATION_ORAS_UNPACK: &str = "io.deis.oras.content.unpack";
+
+/// How a layer of a pulled artifact is materialized.
+#[derive(Debug, PartialEq)]
+enum ArtifactLayerKind {
+    /// Raw bytes written to a relative path.
+    File(PathBuf),
+    /// A tar archive extracted below a relative directory (empty for the root).
+    /// The flag says whether it is a filesystem layer whose whiteouts delete
+    /// what earlier layers put there; a titled directory is plain content.
+    Tar(PathBuf, ExtractionFormat, bool),
+}
+
+/// Reduce an annotation title to a relative path made of plain components, so
+/// a registry-supplied name can never point outside the destination.
+fn artifact_relative_path(title: &str) -> Result<PathBuf> {
+    let mut out = PathBuf::new();
+    for component in Path::new(title).components() {
+        match component {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            _ => bail!("artifact layer title {title:?} must be a plain relative path"),
+        }
+    }
+    Ok(out)
+}
+
+fn tar_format_for_media_type(media_type: &str) -> Option<ExtractionFormat> {
+    let base = media_type.split(';').next().unwrap_or(media_type).trim();
+    match base {
+        "application/vnd.oci.image.layer.v1.tar"
+        | "application/vnd.oci.image.layer.nondistributable.v1.tar"
+        | "application/vnd.docker.image.rootfs.diff.tar" => Some(ExtractionFormat::Tar),
+        "application/vnd.oci.image.layer.v1.tar+gzip"
+        | "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
+        | "application/vnd.docker.image.rootfs.diff.tar.gzip" => Some(ExtractionFormat::TarGz),
+        "application/vnd.oci.image.layer.v1.tar+zstd"
+        | "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd" => {
+            Some(ExtractionFormat::TarZst)
+        }
+        _ => None,
+    }
+}
+
+fn classify_artifact_layer(layer: &Descriptor) -> Result<ArtifactLayerKind> {
+    let title = layer.annotations.get(ANNOTATION_TITLE);
+    let unpack = layer
+        .annotations
+        .get(ANNOTATION_ORAS_UNPACK)
+        .is_some_and(|v| v == "true");
+    match (title, tar_format_for_media_type(&layer.media_type)) {
+        (Some(title), Some(format)) if unpack => Ok(ArtifactLayerKind::Tar(
+            artifact_relative_path(title)?,
+            format,
+            false,
+        )),
+        (Some(title), _) => {
+            let path = artifact_relative_path(title)?;
+            if path.as_os_str().is_empty() {
+                bail!("artifact layer title {title:?} does not name a file");
+            }
+            Ok(ArtifactLayerKind::File(path))
+        }
+        (None, Some(format)) => Ok(ArtifactLayerKind::Tar(PathBuf::new(), format, true)),
+        (None, None) => bail!(
+            "artifact layer {} has media type {} and no {ANNOTATION_TITLE} annotation, so mise cannot tell what file it is",
+            short_digest(&layer.digest),
+            layer.media_type
+        ),
+    }
+}
+
+/// Refuse anything but regular files and directories in an unpacked layer.
+/// Task includes follow symlinks, so a link in an artifact could otherwise
+/// read (or execute) files outside of it.
+fn reject_artifact_links(root: &Path) -> Result<()> {
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        let entry = entry?;
+        let file_type = entry.file_type();
+        if !file_type.is_file() && !file_type.is_dir() {
+            bail!(
+                "artifact contains {}, which is not a regular file or directory",
+                crate::file::display_path(entry.path())
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A whiteout may only name a single plain entry beside it. `.wh...` would
+/// otherwise name `..` and delete above the destination.
+fn whiteout_target<'a>(name: &str, hidden: &'a str) -> Result<&'a str> {
+    match Path::new(hidden)
+        .components()
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [Component::Normal(_)] => Ok(hidden),
+        _ => bail!("artifact contains an invalid whiteout entry: {name:?}"),
+    }
+}
+
+/// Copy a vetted layer tree into the destination, keeping file modes.
+/// With `whiteouts`, entries named `.wh.<name>` and `.wh..wh..opq` delete what
+/// earlier layers put there, as they do for container images; otherwise they
+/// are copied like any other file.
+fn merge_artifact_tree(from: &Path, to: &Path, whiteouts: bool) -> Result<()> {
+    let mut entries = Vec::new();
+    for entry in walkdir::WalkDir::new(from).follow_links(false) {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(from)?.to_path_buf();
+        entries.push((relative, entry.file_type().is_dir()));
+    }
+    let mut copies = Vec::new();
+    for (relative, is_dir) in &entries {
+        let name = relative.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let parent = to.join(relative.parent().unwrap_or(Path::new("")));
+        if !whiteouts {
+            copies.push((relative, is_dir));
+        } else if name == ".wh..wh..opq" {
+            if parent.is_dir() {
+                for child in std::fs::read_dir(&parent)? {
+                    crate::file::remove_all(child?.path())?;
+                }
+            }
+        } else if let Some(hidden) = name.strip_prefix(".wh.") {
+            whiteout_target(name, hidden)?;
+            crate::file::remove_all(parent.join(hidden))?;
+        } else {
+            copies.push((relative, is_dir));
+        }
+    }
+    for (relative, is_dir) in copies {
+        let target = to.join(relative);
+        if *is_dir {
+            crate::file::create_dir_all(&target)?;
+        } else {
+            if let Some(parent) = target.parent() {
+                crate::file::create_dir_all(parent)?;
+            }
+            std::fs::copy(from.join(relative), &target)
+                .wrap_err_with(|| format!("writing {}", crate::file::display_path(&target)))?;
+        }
+    }
+    Ok(())
+}
+
+/// Pull a generic OCI artifact (as produced by `oras push` or `podman artifact
+/// add`, or any image whose layers are tar archives) and unpack its files
+/// into `dest`.
+///
+/// - A layer annotated with `org.opencontainers.image.title` becomes that file.
+///   With `io.deis.oras.content.unpack=true` it is a tar archive extracted into
+///   the directory of that name instead.
+/// - A tar layer without a title is extracted into `dest` itself, applying
+///   whiteouts. This is meant for artifacts made of tar layers (e.g.
+///   `crane append`), not as a general container-image reader: links and
+///   device files are rejected.
+///
+/// Every blob is verified against the digest in the manifest, and the
+/// manifest itself against the reference when it is pinned by digest.
+pub(crate) async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
+    let r = Reference::parse(reference)?;
+    let base_url = r.registry_url();
+    let manifest_url = format!("{base_url}/v2/{}/manifests/{}", r.repository, r.tag);
+    let accept = [
+        MEDIA_TYPE_OCI_MANIFEST,
+        MEDIA_TYPE_DOCKER_MANIFEST,
+        MEDIA_TYPE_OCI_INDEX,
+        MEDIA_TYPE_DOCKER_MANIFEST_LIST,
+    ];
+    let mut session = AuthSession::new(r.clone(), "pull").await?;
+    let (body, content_type) = fetch_manifest_json(&mut session, &manifest_url, &accept)
+        .await
+        .wrap_err_with(|| format!("fetching manifest for {reference}"))?;
+    let manifest = resolve_manifest(body, &r, &base_url, &mut session, None, &content_type).await?;
+
+    // Classify everything before downloading so an unusable artifact fails
+    // without transferring any blobs.
+    let mut layers = Vec::with_capacity(manifest.layers.len());
+    for layer in &manifest.layers {
+        crate::oci::layout::validate_sha256_digest(&layer.digest)?;
+        layers.push((layer, classify_artifact_layer(layer)?));
+    }
+    if layers.is_empty() {
+        bail!("{reference} has no layers, so there are no files to pull");
+    }
+
+    crate::file::create_dir_all(dest)?;
+    let scratch = tempfile::tempdir()?;
+    for (layer, kind) in layers {
+        let url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
+        let bytes = download_blob(&mut session, &url, None).await?;
+        let actual = sha256_digest(&bytes);
+        if actual != layer.digest {
+            bail!(
+                "digest mismatch for {reference}: manifest says {}, registry served {actual}",
+                layer.digest
+            );
+        }
+        match kind {
+            ArtifactLayerKind::File(path) => {
+                let target = dest.join(path);
+                if let Some(parent) = target.parent() {
+                    crate::file::create_dir_all(parent)?;
+                }
+                crate::file::write(&target, &bytes)?;
+            }
+            ArtifactLayerKind::Tar(dir, format, whiteouts) => {
+                // Extract away from `dest` and vet the tree first: `dest` must
+                // never hold a link that a later layer's write could follow.
+                let name = layer.digest.replace(':', "-");
+                let archive = scratch.path().join(&name);
+                crate::file::write(&archive, &bytes)?;
+                let unpacked = scratch.path().join(format!("{name}-tree"));
+                crate::file::untar(
+                    &archive,
+                    &unpacked,
+                    format,
+                    &crate::file::ExtractOptions::default(),
+                )?;
+                reject_artifact_links(&unpacked)?;
+                merge_artifact_tree(&unpacked, &dest.join(dir), whiteouts)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A remote image's manifest and config, including `rootfs.diff_ids`
@@ -1923,6 +2178,357 @@ mod tests {
         ] {
             mock.assert_async().await;
         }
+    }
+
+    fn layer(media_type: &str, annotations: &[(&str, &str)]) -> Descriptor {
+        Descriptor {
+            media_type: media_type.to_string(),
+            size: 1,
+            digest: format!("sha256:{}", "0".repeat(64)),
+            annotations: annotations
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            platform: None,
+        }
+    }
+
+    #[test]
+    fn classifies_artifact_layers() {
+        let title = "org.opencontainers.image.title";
+        assert_eq!(
+            classify_artifact_layer(&layer("text/x-shellscript", &[(title, "sub/build")])).unwrap(),
+            ArtifactLayerKind::File(PathBuf::from("sub/build"))
+        );
+        // oras stores plain files with the tar media type; without `unpack` it is still a file.
+        assert_eq!(
+            classify_artifact_layer(&layer(
+                "application/vnd.oci.image.layer.v1.tar",
+                &[(title, "tasks.toml")]
+            ))
+            .unwrap(),
+            ArtifactLayerKind::File(PathBuf::from("tasks.toml"))
+        );
+        assert_eq!(
+            classify_artifact_layer(&layer(
+                "application/vnd.oci.image.layer.v1.tar+gzip",
+                &[(title, "dir"), ("io.deis.oras.content.unpack", "true")]
+            ))
+            .unwrap(),
+            ArtifactLayerKind::Tar(PathBuf::from("dir"), ExtractionFormat::TarGz, false)
+        );
+        assert_eq!(
+            classify_artifact_layer(&layer("application/vnd.oci.image.layer.v1.tar+gzip", &[]))
+                .unwrap(),
+            ArtifactLayerKind::Tar(PathBuf::new(), ExtractionFormat::TarGz, true)
+        );
+        assert!(classify_artifact_layer(&layer("text/plain", &[])).is_err());
+    }
+
+    #[test]
+    fn artifact_titles_cannot_escape_the_destination() {
+        assert_eq!(
+            artifact_relative_path("./a/b").unwrap(),
+            PathBuf::from("a/b")
+        );
+        assert!(artifact_relative_path("../evil").is_err());
+        assert!(artifact_relative_path("a/../../evil").is_err());
+        assert!(artifact_relative_path("/etc/passwd").is_err());
+        let title = "org.opencontainers.image.title";
+        assert!(classify_artifact_layer(&layer("text/plain", &[(title, ".")])).is_err());
+    }
+
+    #[tokio::test]
+    async fn pulls_titled_file_layers_from_an_artifact() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let script = b"#!/usr/bin/env bash\necho hi\n";
+        let toml = b"[hello]\nrun = 'echo hello'\n";
+        let script_digest = sha256_digest(script);
+        let toml_digest = sha256_digest(toml);
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "artifactType": "application/vnd.example.tasks",
+            "config": {
+                "mediaType": "application/vnd.oci.empty.v1+json",
+                "digest": format!("sha256:{}", "4".repeat(64)),
+                "size": 2
+            },
+            "layers": [
+                {"mediaType": "text/x-shellscript", "digest": script_digest, "size": script.len(),
+                 "annotations": {"org.opencontainers.image.title": "scripts/build"}},
+                {"mediaType": "application/toml", "digest": toml_digest, "size": toml.len(),
+                 "annotations": {"org.opencontainers.image.title": "tasks.toml"}}
+            ]
+        });
+        let probe = server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        let manifest_mock = server
+            .mock("GET", "/v2/tasks/catalog/manifests/v1")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        let script_mock = server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/blobs/{script_digest}").as_str(),
+            )
+            .with_body(script)
+            .create_async()
+            .await;
+        let toml_mock = server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/blobs/{toml_digest}").as_str(),
+            )
+            .with_body(toml)
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        pull_artifact(
+            &format!("{}/tasks/catalog:v1", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(dest.path().join("out/scripts/build")).unwrap(),
+            script
+        );
+        assert_eq!(
+            std::fs::read(dest.path().join("out/tasks.toml")).unwrap(),
+            toml
+        );
+        for mock in [probe, manifest_mock, script_mock, toml_mock] {
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_artifact_rejects_a_blob_that_does_not_match_its_digest() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let digest = sha256_digest(b"expected");
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.empty.v1+json",
+                       "digest": format!("sha256:{}", "4".repeat(64)), "size": 2},
+            "layers": [{"mediaType": "text/plain", "digest": digest, "size": 8,
+                        "annotations": {"org.opencontainers.image.title": "tasks.toml"}}]
+        });
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v2/tasks/catalog/manifests/v1")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/v2/tasks/catalog/blobs/{digest}").as_str())
+            .with_body("tampered")
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let err = pull_artifact(
+            &format!("{}/tasks/catalog:v1", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("digest mismatch"), "{err:#}");
+        assert!(!dest.path().join("out/tasks.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn pull_artifact_verifies_a_digest_pinned_manifest() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let pinned = sha256_digest(b"the manifest the pin promises");
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.empty.v1+json",
+                       "digest": format!("sha256:{}", "4".repeat(64)), "size": 2},
+            "layers": [{"mediaType": "text/plain", "digest": sha256_digest(b"x"), "size": 1,
+                        "annotations": {"org.opencontainers.image.title": "tasks.toml"}}]
+        });
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/manifests/{pinned}").as_str(),
+            )
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let err = pull_artifact(
+            &format!("{}/tasks/catalog@{pinned}", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("digest mismatch"), "{err:#}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pull_artifact_never_writes_through_a_symlink_from_an_earlier_layer() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let outside = tempfile::tempdir().unwrap();
+
+        let mut tar_bytes = Vec::new();
+        {
+            let mut builder = jdx_tar::Builder::new(&mut tar_bytes);
+            let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::Symlink);
+            header.set_size(0);
+            header.set_mode(0o777);
+            builder
+                .append_link(&mut header, "link", outside.path())
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        let payload = b"pwned";
+        let tar_digest = sha256_digest(&tar_bytes);
+        let payload_digest = sha256_digest(payload);
+        let manifest = serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {"mediaType": "application/vnd.oci.empty.v1+json",
+                       "digest": format!("sha256:{}", "4".repeat(64)), "size": 2},
+            "layers": [
+                {"mediaType": "application/vnd.oci.image.layer.v1.tar",
+                 "digest": tar_digest, "size": tar_bytes.len()},
+                {"mediaType": "text/plain", "digest": payload_digest, "size": payload.len(),
+                 "annotations": {"org.opencontainers.image.title": "link/pwned"}}
+            ]
+        });
+        server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/v2/tasks/catalog/manifests/v1")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/blobs/{tar_digest}").as_str(),
+            )
+            .with_body(tar_bytes)
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/v2/tasks/catalog/blobs/{payload_digest}").as_str(),
+            )
+            .with_body(payload)
+            .create_async()
+            .await;
+        let dest = tempfile::tempdir().unwrap();
+        let result = pull_artifact(
+            &format!("{}/tasks/catalog:v1", server.host_with_port()),
+            &dest.path().join("out"),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn merging_a_layer_applies_whiteouts() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(dest.join("sub")).unwrap();
+        std::fs::write(dest.join("old"), "old").unwrap();
+        std::fs::write(dest.join("keep"), "keep").unwrap();
+        std::fs::write(dest.join("sub/a"), "a").unwrap();
+        std::fs::create_dir_all(layer.join("sub")).unwrap();
+        std::fs::write(layer.join(".wh.old"), "").unwrap();
+        std::fs::write(layer.join("sub/.wh..wh..opq"), "").unwrap();
+        std::fs::write(layer.join("sub/b"), "b").unwrap();
+
+        merge_artifact_tree(&layer, &dest, true).unwrap();
+
+        assert!(!dest.join("old").exists());
+        assert!(!dest.join(".wh.old").exists());
+        assert!(dest.join("keep").exists());
+        assert!(!dest.join("sub/a").exists());
+        assert_eq!(std::fs::read_to_string(dest.join("sub/b")).unwrap(), "b");
+        assert!(!dest.join("sub/.wh..wh..opq").exists());
+    }
+
+    #[test]
+    fn titled_directory_layers_keep_whiteout_named_files() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::create_dir_all(&layer).unwrap();
+        std::fs::write(dest.join("build"), "earlier").unwrap();
+        std::fs::write(layer.join(".wh.build"), "literal").unwrap();
+
+        merge_artifact_tree(&layer, &dest, false).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("build")).unwrap(),
+            "earlier"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join(".wh.build")).unwrap(),
+            "literal"
+        );
+    }
+
+    #[test]
+    fn whiteouts_must_name_a_single_plain_entry() {
+        for name in [".wh...", ".wh..", ".wh.", ".wh.a/b", ".wh./etc"] {
+            let hidden = name.strip_prefix(".wh.").unwrap();
+            assert!(whiteout_target(name, hidden).is_err(), "{name}");
+        }
+        assert_eq!(whiteout_target(".wh.build", "build").unwrap(), "build");
+    }
+
+    // Windows drops trailing dots from file names, so these entries cannot be
+    // created there; the check above covers the names themselves.
+    #[cfg(unix)]
+    #[test]
+    fn whiteouts_cannot_delete_outside_the_destination() {
+        let td = tempfile::tempdir().unwrap();
+        let dest = td.path().join("parent/dest");
+        let layer = td.path().join("layer");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(td.path().join("parent/sibling"), "keep").unwrap();
+        std::fs::create_dir_all(&layer).unwrap();
+        for name in [".wh...", ".wh..", ".wh."] {
+            std::fs::write(layer.join(name), "").unwrap();
+            assert!(merge_artifact_tree(&layer, &dest, true).is_err(), "{name}");
+            std::fs::remove_file(layer.join(name)).unwrap();
+        }
+        assert!(td.path().join("parent/sibling").exists());
+        assert!(dest.exists());
     }
 
     #[test]

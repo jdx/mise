@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
+import { data as showreel } from "../showreel.data";
+
+// With a rendered showreel, "Watch the demo" goes to the player under the
+// hero; builds without one keep the recorded demo page.
+const demoLink = showreel ? "/#showreel" : "/demo";
 
 const examples = [
   {
@@ -101,6 +106,17 @@ onUnmounted(() => clearTimeout(copyTimeout));
 <template>
   <section class="home-hero" aria-labelledby="home-title">
     <div class="hero-copy">
+      <a class="hero-song" href="/mise-en-place">
+        <span class="hero-song-play" aria-hidden="true">▶</span>
+        <span
+          >New: <strong>mise run</strong>, the theme song<span
+            class="hero-song-extra"
+          >
+            and music video</span
+          ></span
+        >
+        <span class="hero-song-arrow" aria-hidden="true">→</span>
+      </a>
       <h1 id="home-title" class="hero-title">mise-en-place</h1>
       <p class="hero-meaning">Development tools, environments, and tasks</p>
       <p class="hero-pronunciation">
@@ -115,7 +131,7 @@ onUnmounted(() => clearTimeout(copyTimeout));
         <a class="action-btn action-btn-brand" href="/getting-started">
           Get started <span aria-hidden="true">→</span>
         </a>
-        <a class="action-btn action-btn-alt" href="/demo">Watch the demo</a>
+        <a class="action-btn action-btn-alt" :href="demoLink">Watch the demo</a>
       </div>
       <div class="hero-install">
         <span class="install-prompt" aria-hidden="true">$</span>

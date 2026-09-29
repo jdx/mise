@@ -126,6 +126,9 @@ pub struct RegistryTool {
     pub description: Option<&'static str>,
     /// Project homepage or repository, when the one inferred from the backends is wrong
     pub url: Option<&'static str>,
+    /// Set when the tool is no longer recommended. The value is the reason and the
+    /// suggested replacement, shown as a warning when the tool is installed.
+    pub deprecated: Option<&'static str>,
     pub(crate) version_order: VersionOrder,
     pub backends: &'static [RegistryBackend],
     pub bins: &'static [&'static str],
@@ -514,12 +517,22 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
                 })
         })
         .transpose()?;
+    let deprecated = table
+        .get("deprecated")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| leak_string(value.to_string()))
+                .ok_or_else(|| eyre::eyre!("deprecated must be a string"))
+        })
+        .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
 
     let tool = RegistryTool {
         short: leak_string(short.to_string()),
         description,
         url,
+        deprecated,
         version_order,
         backends: leak_vec(backends),
         bins: leak_vec(bins),
@@ -733,8 +746,28 @@ fn leak_vec<T>(value: Vec<T>) -> &'static [T] {
 static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Whether any tool's backends may come from a MISE_BACKENDS_* override. When
+/// none can, a caller walking the whole registry can skip the per-tool check.
+pub(crate) fn has_backend_overrides() -> bool {
+    !ENV_BACKENDS.lock().unwrap().is_empty()
+        || crate::env::vars_safe().any(|(key, _)| is_backend_override_key(&key))
+}
+
+/// Whether `key` names a MISE_BACKENDS_* override. Windows variable names are
+/// case-insensitive, so `mise_backends_node` counts there as it does for
+/// `env::var`.
+fn is_backend_override_key(key: &str) -> bool {
+    const PREFIX: &str = "MISE_BACKENDS_";
+    if cfg!(windows) {
+        key.get(..PREFIX.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(PREFIX))
+    } else {
+        key.starts_with(PREFIX)
+    }
+}
+
 impl RegistryTool {
-    pub(crate) fn provides_bin(&self, bin_name: &str) -> bool {
+    pub fn provides_bin(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
         let bin_name = if exe_suffix.is_empty() {
             bin_name
@@ -755,15 +788,22 @@ impl RegistryTool {
     }
 
     pub fn backends(&self) -> Vec<&'static str> {
-        // Check for environment variable override first
-        // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
+        match self.env_backend_override() {
+            Some(backend) => vec![backend],
+            None => self.registry_backends_where(|_| true),
+        }
+    }
+
+    /// The MISE_BACKENDS_<TOOL> override for this tool, if one is set, e.g.
+    /// MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'.
+    fn env_backend_override(&self) -> Option<&'static str> {
         let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
 
         // Check cache first
         {
             let cache = ENV_BACKENDS.lock().unwrap();
             if let Some(&backend) = cache.get(&env_key) {
-                return vec![backend];
+                return Some(backend);
             }
         }
 
@@ -772,10 +812,17 @@ impl RegistryTool {
             // Store in cache with 'static lifetime
             let leaked = Box::leak(env_value.into_boxed_str());
             let mut cache = ENV_BACKENDS.lock().unwrap();
-            cache.insert(env_key.clone(), leaked);
-            return vec![leaked];
+            cache.insert(env_key, leaked);
+            return Some(leaked);
         }
+        None
+    }
 
+    /// The registry's backends for this tool that `keep` accepts and that this
+    /// platform and configuration allow, ignoring any MISE_BACKENDS_* override.
+    /// `keep` runs first, so a caller after a few backends skips the other
+    /// checks for the rest.
+    pub(crate) fn registry_backends_where(&self, keep: impl Fn(&str) -> bool) -> Vec<&'static str> {
         static BACKEND_TYPES: Lazy<HashSet<String>> = Lazy::new(|| {
             let mut backend_types = BackendType::iter()
                 .map(|b| b.to_string())
@@ -794,6 +841,7 @@ impl RegistryTool {
         let experimental = settings.experimental;
         self.backends
             .iter()
+            .filter(|rb| keep(rb.full))
             .filter(|rb| backend_matches_platform(rb.platforms, &settings))
             .map(|rb| rb.full)
             .filter(|full| {
@@ -1038,8 +1086,17 @@ pub fn tool_enabled<T: Ord>(
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeMap, baked_registry, registry_from_sources};
+    use super::{BTreeMap, baked_registry, is_backend_override_key, registry_from_sources};
     use crate::config::Config;
+
+    #[test]
+    fn test_backend_override_key_prefix() {
+        assert!(is_backend_override_key("MISE_BACKENDS_NODE"));
+        assert!(!is_backend_override_key("MISE_BACKEND_NODE"));
+        assert!(!is_backend_override_key("MISE_BACKENDS"));
+        // Windows variable names are case-insensitive; Unix ones are not.
+        assert_eq!(is_backend_override_key("mise_backends_node"), cfg!(windows));
+    }
 
     #[test]
     fn registry_min_version_boundaries() {
@@ -1387,6 +1444,7 @@ version_order = "source"
 aliases = ["example-alias"]
 description = "Example tool"
 url = "https://example.com/tool"
+deprecated = "use example2 instead."
 version_order = "semver"
 bins = ["example", "example-helper"]
 backends = [
@@ -1409,6 +1467,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         assert_eq!(tool.short, "example");
         assert_eq!(tool.description, Some("Example tool"));
         assert_eq!(tool.url, Some("https://example.com/tool"));
+        assert_eq!(tool.deprecated, Some("use example2 instead."));
         assert_eq!(tool.bins, &["example", "example-helper"]);
         assert!(tool.provides_bin("example"));
         assert!(!tool.provides_bin("other"));
@@ -1906,6 +1965,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             short: "test",
             description: None,
             url: None,
+            deprecated: None,
             version_order: VersionOrder::Source,
             backends: BACKENDS,
             bins: &[],
@@ -1961,6 +2021,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             short: "test",
             description: None,
             url: None,
+            deprecated: None,
             version_order: VersionOrder::Semver,
             backends: BACKENDS,
             bins: &[],

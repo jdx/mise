@@ -1,0 +1,85 @@
+name: docs showreel
+
+# The landing-page showreel's checks, on a pull request that changes the reel
+# or the page that plays it: the typecheck, the tests with Chromium (the pixel
+# and handoff checks) against the committed reference captures, and a draft of
+# two seconds around the poster frame, which no test covers. The draft then
+# stands in for the render in a docs build, so the player, og:video and the
+# built-page checks run with a showreel as well as without one. The docs
+# deploy renders the whole reel on main, after the same tests.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/docs-showreel.yml"
+      - "aube-lock.yaml"
+      - "package.json"
+      - "tasks.toml"
+      - "docs/.vitepress/check-social-images.mjs"
+      - "docs/.vitepress/config.ts"
+      - "docs/.vitepress/fonts/**"
+      - "docs/.vitepress/showreel*"
+      - "docs/.vitepress/showreel-capture/**"
+      - "docs/.vitepress/social-images.test.mjs"
+      - "docs/.vitepress/theme/HomeHero.vue"
+      - "docs/.vitepress/theme/HomeShowreel.vue"
+      - "docs/.vitepress/theme/Layout.vue"
+      - "docs/.vitepress/theme/showreel/**"
+      - "docs/index.md"
+      - "docs/public/logo*.svg"
+      - "docs/public/showreel-chapters.vtt"
+      - "xtasks/docs/showreel*"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  showreel:
+    name: showreel
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: aube node
+      - run: aube install
+      - name: Install Chromium and ffmpeg
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+          aube exec playwright-core install --with-deps chromium-headless-shell
+      # SHOWREEL_REQUIRE_CHROMIUM turns a browser that fails to start into a
+      # failure instead of a skip, and SHOWREEL_REQUIRE_CAPTURES a missing
+      # capture set (theme/showreel/test/captures here) into one too.
+      - name: Type-check and test the showreel
+        env:
+          SHOWREEL_REQUIRE_CHROMIUM: "1"
+          SHOWREEL_REQUIRE_CAPTURES: "1"
+        run: mise run docs:showreel-test
+      # The poster frame is at 2:10. The renderer never writes a draft into
+      # docs/public, so the draft is copied there as the 60 and 120 fps files
+      # with a frame of it as the poster; the build's checks read only their
+      # container and versions.
+      - name: Render a draft and build the site with it
+        run: |
+          draft="$RUNNER_TEMP/showreel"
+          node docs/.vitepress/showreel-video.mjs --out "$draft/draft.mp4" --fps 30 --from 129 --until 131
+          ffmpeg -loglevel error -ss 0.8 -i "$draft/draft.mp4" -frames:v 1 -q:v 3 "$draft/poster.jpg"
+          cp "$draft/draft.mp4" docs/public/showreel.mp4
+          cp "$draft/draft.mp4" docs/public/showreel-120.mp4
+          cp "$draft/poster.jpg" docs/public/showreel-poster.jpg
+          mise run docs:build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: showreel-draft
+          path: ${{ runner.temp }}/showreel
+          retention-days: 7

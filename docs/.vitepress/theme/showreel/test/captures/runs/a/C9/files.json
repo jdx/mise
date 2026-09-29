@@ -1,0 +1,6 @@
+{
+  "files/.config/mise/config.toml": "[tools]\nnode = \"24\"\n",
+  "files/work/api/mise.toml": "[tools]\nhk = \"2.2.0\"\njq = \"latest\"\nnode = \"24\"\n\"npm:prettier\" = \"latest\"\n\n[env]\nAPP_ENV = \"api\"\n_.file = \".env\"\n\n[tasks.lint]\nrun = \"node --check src/server.js\"\n\n[tasks.test]\nrun = \"node --test --test-reporter=dot\"\n\n[tasks.build]\nrun = \"mkdir -p dist && cp src/server.js dist/server.js\"\n\n[tasks.ci]\ndepends = [\"lint\", \"test\", \"build\"]\nrun = \"echo \\\"api ready: node $(node --version), APP_ENV=$APP_ENV\\\"\"\n",
+  "files/work/dashboard/mise.toml": "[tools]\nnode = \"26\"\n",
+  "files/work/tools/mise.toml": "[tools]\n\"github:cli/cli\" = \"latest\"\n"
+}

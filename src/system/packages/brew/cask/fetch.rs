@@ -23,6 +23,26 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
             ),
         }
     }
+    // One request for every cask beats one request per cask. Only the official
+    // API is bulk-published, so a tap cask falls straight through, as does any
+    // token this snapshot does not carry.
+    // No `?`: `bulk::cask` is infallible precisely so that a cache problem
+    // cannot stop the per-cask request below from running.
+    if official_api && let Some(mut cask) = super::bulk::cask(requested_token).await {
+        cask.raw_base = Some(HOMEBREW_CASK_RAW.to_string());
+        // A cask that fails validation here is evidence the index is wrong about
+        // this token, not that the token is bad: a stale range can slice a
+        // neighbouring cask, which parses fine and then fails on identity. That
+        // is still a cache problem, so it falls back like every other one rather
+        // than failing the request the per-cask endpoint would have answered.
+        match validate_cask_identity(&cask, requested_token, official_api) {
+            Ok(()) => return Ok(cask),
+            Err(err) => debug!(
+                "brew-cask: bulk index gave a mismatched cask for '{requested_token}' ({err}); falling back to per-cask metadata"
+            ),
+        }
+    }
+
     let (url, raw_base) = match tap_name {
         Some(("homebrew", "cask", token)) => (
             format!("{API_BASE}/cask/{token}.json"),
@@ -324,7 +344,7 @@ pub(super) fn extract_archive(
     if is_dmg_archive(archive, filename)? {
         file::un_dmg(archive, &extract_dir)?;
     } else {
-        let format = cask_extraction_format(archive, filename)?;
+        let format = ExtractionFormat::detect(archive, filename)?;
         if format == ExtractionFormat::Raw {
             // A direct pkg download may have an opaque URL path while the response's
             // Content-Disposition and the cask artifact supply its real name. Stage
@@ -413,7 +433,7 @@ pub(super) fn single_nested_cask_archive(root: &Path) -> Result<Option<PathBuf>>
     if is_dmg_archive(&path, filename)? {
         return Ok(Some(path));
     }
-    let format = cask_extraction_format(&path, filename)?;
+    let format = ExtractionFormat::detect(&path, filename)?;
     Ok(matches!(
         format,
         ExtractionFormat::TarGz
@@ -439,7 +459,7 @@ pub(super) fn extract_nested_cask_archive(
         file::extract_archive(
             archive,
             extract_dir,
-            cask_extraction_format(archive, filename)?,
+            ExtractionFormat::detect(archive, filename)?,
             &ExtractOptions {
                 pr,
                 ..Default::default()
@@ -559,14 +579,6 @@ pub(super) async fn fetch_cask_rb(cask: &Cask, pr: Option<&dyn SingleReport>) ->
     Ok(dest)
 }
 
-pub(super) fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFormat> {
-    let format = ExtractionFormat::from_file_name(filename);
-    if format != ExtractionFormat::Raw {
-        return Ok(format);
-    }
-    Ok(detect_extraction_format(archive)?.unwrap_or(format))
-}
-
 pub(super) fn is_dmg_archive(archive: &Path, filename: &str) -> Result<bool> {
     if filename.ends_with(".dmg") {
         return Ok(true);
@@ -586,17 +598,6 @@ pub(super) fn is_dmg_archive(archive: &Path, filename: &str) -> Result<bool> {
     let mut prefix = [0; UDIF_TRAILER_PREFIX.len()];
     file.read_exact(&mut prefix)?;
     Ok(&prefix == UDIF_TRAILER_PREFIX)
-}
-
-pub(super) fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> {
-    let mut file = std::fs::File::open(archive)?;
-    let mut magic = [0; 8];
-    let len = file.read(&mut magic)?;
-    let magic = &magic[..len];
-    if magic.starts_with(b"PK\x03\x04") {
-        return Ok(Some(ExtractionFormat::Zip));
-    }
-    Ok(None)
 }
 
 pub(super) fn raw_cask_artifact_name(

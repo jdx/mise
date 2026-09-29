@@ -1,5 +1,5 @@
-use super::model::{CaskConflicts, CaskDependencies, CaskUrlSpecs};
 use super::*;
+use mise_brew_metadata::cask::{CaskConflicts, CaskDependencies, CaskUrlSpecs};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Mutex;
@@ -4153,7 +4153,7 @@ fn detects_suffixless_zip_archives() -> Result<()> {
     std::fs::write(&archive, b"PK\x03\x04suffixless zip")?;
 
     assert_eq!(
-        cask_extraction_format(&archive, "visual-studio-code-1.127.0-stable")?,
+        ExtractionFormat::detect(&archive, "visual-studio-code-1.127.0-stable")?,
         ExtractionFormat::Zip
     );
     Ok(())
@@ -4194,7 +4194,7 @@ fn does_not_sniff_named_archives_as_dmg() -> Result<()> {
 
     assert!(!is_dmg_archive(&archive, "archive.zip")?);
     assert_eq!(
-        cask_extraction_format(&archive, "archive.zip")?,
+        ExtractionFormat::detect(&archive, "archive.zip")?,
         ExtractionFormat::Zip
     );
     Ok(())
@@ -4210,7 +4210,7 @@ fn leaves_suffixless_raw_binaries_raw() -> Result<()> {
 
     assert!(!is_dmg_archive(&archive, "claude-1.0.0-claude")?);
     assert_eq!(
-        cask_extraction_format(&archive, "claude-1.0.0-claude")?,
+        ExtractionFormat::detect(&archive, "claude-1.0.0-claude")?,
         ExtractionFormat::Raw
     );
     Ok(())

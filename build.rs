@@ -30,6 +30,7 @@ fn main() -> Result<()> {
         vfox: { any(feature = "vfox", target_os = "windows") },
     }
     built::write_built_file()?;
+    link_without_pie();
     build_notification_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
@@ -37,6 +38,25 @@ fn main() -> Result<()> {
     codegen_registry(&aqua_registry.packages);
     codegen_aqua_standard_registry(&aqua_registry)?;
     Ok(())
+}
+
+/// Release builds for Linux GNU set `MISE_NO_PIE=1` (see scripts/build-tarball.sh)
+/// to link the `mise` executable at a fixed address. As a position-independent
+/// executable, mise makes the dynamic loader patch about 300k pointers on every
+/// launch, which copies roughly 2k pages and dominates the startup of short
+/// commands such as `hook-env`. Linked non-PIE, those pointers are final in the
+/// file. Dependencies are still compiled position-independent; the flag reaches
+/// only bin targets, so no shared library is linked with it. musl is left out on
+/// purpose: its static-PIE start code crashes when linked with `-no-pie`, and
+/// the alternative, `-C relocation-model=static`, is not something a build
+/// script can set.
+fn link_without_pie() {
+    println!("cargo:rerun-if-env-changed=MISE_NO_PIE");
+    let linux_gnu = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux")
+        && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu");
+    if linux_gnu && env::var("MISE_NO_PIE").as_deref() == Ok("1") {
+        println!("cargo:rustc-link-arg-bins=-no-pie");
+    }
 }
 
 fn build_notification_helper() -> Result<()> {
@@ -407,6 +427,12 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             );
             url.to_string()
         });
+        let deprecated = info.get("deprecated").map(|deprecated| {
+            deprecated
+                .as_str()
+                .unwrap_or_else(|| panic!("[{short}] 'deprecated' must be a string"))
+                .to_string()
+        });
         let bins = info
             .get("bins")
             .map(|bins| {
@@ -526,13 +552,16 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, url: {url}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, url: {url}, deprecated: {deprecated}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             version_order = version_order,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
             url = url
                 .map(|url| format!("Some({})", raw_string_literal(&url)))
+                .unwrap_or("None".to_string()),
+            deprecated = deprecated
+                .map(|deprecated| format!("Some({})", raw_string_literal(&deprecated)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             bins = bins

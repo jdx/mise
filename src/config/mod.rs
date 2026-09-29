@@ -29,7 +29,7 @@ use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::{
-    TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+    OCI_INCLUDE_PREFIX, TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
 };
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
@@ -60,7 +60,6 @@ use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
-use crate::redactions::Redactor;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
@@ -180,7 +179,7 @@ pub struct Alias {
 }
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
-static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
 const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
 const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
@@ -253,6 +252,9 @@ impl Config {
                 _CONFIG.write().unwrap().take();
                 *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
                 *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
+                // Global-config membership follows symlinks, which may have
+                // been retargeted since the last load.
+                file::clear_desymlink_cache();
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
                 crate::task::reset();
@@ -813,6 +815,77 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    fn monorepo_path_aliases(&self) -> Result<BTreeMap<String, String>> {
+        let Some(config) = find_monorepo_config(&self.config_files) else {
+            return Ok(BTreeMap::new());
+        };
+        if config.monorepo.path_aliases.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let roots = config.monorepo.config_roots.as_deref().ok_or_else(|| {
+            eyre!("[monorepo].config_roots is required for [monorepo.path_aliases]")
+        })?;
+        let root_dirs = expand_config_root_dirs(&config.root, roots, None)?;
+        let canonical_root = config.root.canonicalize()?;
+        let mut aliases = BTreeMap::new();
+        for (alias, target) in &config.monorepo.path_aliases {
+            if alias.is_empty()
+                || alias == "."
+                || alias == ".."
+                || alias.contains("...")
+                || !alias
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+            {
+                bail!("[monorepo.path_aliases]: {alias:?} must be a single path segment");
+            }
+            let target_path = Path::new(target);
+            if target.contains('\\')
+                || target_path.components().next().is_none()
+                || !target_path
+                    .components()
+                    .all(|component| matches!(component, Component::Normal(_)))
+            {
+                bail!("[monorepo.path_aliases]: {target:?} must be a relative config root");
+            }
+            let target_dir = config.root.join(target_path).canonicalize().map_err(|_| {
+                eyre!("[monorepo.path_aliases]: {alias:?} points to missing config root {target:?}")
+            })?;
+            if !target_dir.starts_with(&canonical_root) {
+                bail!("[monorepo.path_aliases]: {alias:?} points outside the monorepo root");
+            }
+            let relative = |root: &Path| {
+                root.strip_prefix(&config.root).map(|path| {
+                    path.components()
+                        .filter(|component| !matches!(component, Component::CurDir))
+                        .map(|component| component.as_os_str().to_string_lossy())
+                        .join("/")
+                })
+            };
+            let target = target_path
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .join("/");
+            let selected_root = root_dirs
+                .iter()
+                .find(|root| relative(root).is_ok_and(|path| path == target));
+            let Some(selected_root) = selected_root else {
+                bail!(
+                    "[monorepo.path_aliases]: {alias:?} must point to a root in [monorepo].config_roots"
+                );
+            };
+            if root_dirs.iter().any(|root| {
+                relative(root)
+                    .is_ok_and(|path| path == *alias || path.starts_with(&format!("{alias}/")))
+            }) {
+                bail!("[monorepo.path_aliases]: {alias:?} conflicts with a config root path");
+            }
+            aliases.insert(alias.clone(), relative(selected_root)?);
+        }
+        Ok(aliases)
+    }
+
     pub(crate) fn monorepo_lockfile_discovery_key(
         &self,
     ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
@@ -1026,9 +1099,17 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
+        let path_aliases = self.monorepo_path_aliases()?;
+        let expanded_ctx = ctx.map(|ctx| {
+            let mut ctx = ctx.clone();
+            for hint in &mut ctx.path_hints {
+                *hint = expand_monorepo_path_alias(hint, &path_aliases);
+            }
+            ctx
+        });
         // Use the entire context as cache key
         // Default context (None) becomes TaskLoadContext::default()
-        let cache_key = ctx.cloned().unwrap_or_default();
+        let cache_key = expanded_ctx.clone().unwrap_or_default();
 
         // Check if already cached
         if let Some(cached) = self.tasks_cache.get(&cache_key) {
@@ -1037,7 +1118,8 @@ impl Config {
 
         // Not cached, load tasks
         let tasks = measure!("config::load_all_tasks_with_context", {
-            self.load_all_tasks_with_context(ctx).await?
+            self.load_all_tasks_with_context(expanded_ctx.as_ref())
+                .await?
         });
         let tasks_arc = Arc::new(tasks);
 
@@ -1051,7 +1133,11 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        let cache_key = ctx.cloned().unwrap_or_default();
+        let path_aliases = self.monorepo_path_aliases()?;
+        let mut cache_key = ctx.cloned().unwrap_or_default();
+        for hint in &mut cache_key.path_hints {
+            *hint = expand_monorepo_path_alias(hint, &path_aliases);
+        }
         self.tasks_cache.remove(&cache_key);
         self.tasks_with_context(ctx).await
     }
@@ -1261,6 +1347,32 @@ impl Config {
                 _ => {}
             }
         }
+        let path_aliases = self.monorepo_path_aliases()?;
+        for task in tasks.values_mut() {
+            let paths = std::iter::once(task.name.as_str())
+                .chain(task.aliases.iter().map(String::as_str))
+                .filter_map(|name| name.strip_prefix("//")?.split_once(':'))
+                .collect_vec();
+            let mut aliases = Vec::new();
+            for (path, name) in paths {
+                for (alias, target) in &path_aliases {
+                    let suffix = if path == target {
+                        Some("")
+                    } else {
+                        path.strip_prefix(target)
+                            .filter(|suffix| suffix.starts_with('/'))
+                    };
+                    if let Some(suffix) = suffix {
+                        aliases.push(format!("//{alias}{suffix}:{name}"));
+                    }
+                }
+            }
+            for alias in aliases {
+                if !task.aliases.contains(&alias) {
+                    task.aliases.push(alias);
+                }
+            }
+        }
         let all_tasks = tasks.clone();
         for task in tasks.values_mut() {
             task.display_name = task.display_name(&all_tasks);
@@ -1404,7 +1516,11 @@ impl Config {
             return Ok(EnvResults::default());
         }
         time!("load_env start");
-        let cache_enabled = use_cache && CachedNonToolEnv::is_enabled();
+        // `mise oci` lets `[oci.env]` satisfy `required`, so what it resolves must not
+        // be cached for a command that enforces it.
+        let cache_enabled = use_cache
+            && CachedNonToolEnv::is_enabled()
+            && !env_directive::is_oci_env_satisfying_required();
         let cache_key = if cache_enabled {
             let config_files: Vec<(PathBuf, u64)> = self
                 .config_files
@@ -1666,6 +1782,20 @@ impl Config {
             .cloned()
             .collect()
     }
+    /// Register values that must never reach a log line.
+    ///
+    /// Every log record is redacted through this (see `src/logger.rs`), so a
+    /// secret registered here is scrubbed from the terminal, `MISE_LOG_FILE`,
+    /// and the command lines `CmdLineRunner` debug-logs, without each call site
+    /// having to remember.
+    ///
+    /// Append-only for the same reason as `add_redactions_excluding`: removing a
+    /// value could expose a different key that happens to share it.
+    pub(crate) fn add_redactions(&self, values: impl IntoIterator<Item = String>) {
+        let mut r = _REDACTOR.lock().unwrap();
+        *r = r.with_additional(values);
+    }
+
     pub(crate) fn add_redactions_excluding(
         &self,
         redactions: impl IntoIterator<Item = String>,
@@ -1896,6 +2026,15 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConf
         .find_map(|root| resolve_monorepo_config_at_root(&root, config_files))
 }
 
+fn expand_monorepo_path_alias(path: &str, aliases: &BTreeMap<String, String>) -> String {
+    let (first, rest) = path.split_once('/').unwrap_or((path, ""));
+    match aliases.get(first) {
+        Some(target) if rest.is_empty() => target.clone(),
+        Some(target) => format!("{target}/{rest}"),
+        None => path.to_string(),
+    }
+}
+
 fn resolve_monorepo_config_at_root(
     root: &Path,
     config_files: &ConfigMap,
@@ -1919,6 +2058,7 @@ fn resolve_monorepo_config_at_root(
         if layer.config_roots.is_some() {
             monorepo.config_roots.clone_from(&layer.config_roots);
         }
+        monorepo.path_aliases.extend(layer.path_aliases.clone());
         if layer.lockfile.is_some() {
             monorepo.lockfile = layer.lockfile;
         }
@@ -2290,11 +2430,41 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     if let Some(glob) = results.get(&key) {
         return Ok(glob.clone());
     }
-    let paths = glob::glob(dir.join(pattern).to_string_lossy().as_ref())?
-        .filter_map(|p| p.ok())
-        .collect_vec();
+    let full_pattern = dir.join(pattern);
+    let full_pattern = full_pattern.to_string_lossy();
+    let paths = if glob_parent_exists(dir, pattern) {
+        glob::glob(full_pattern.as_ref())?
+            .filter_map(|p| p.ok())
+            .collect_vec()
+    } else {
+        // Still reject a malformed pattern, as `glob::glob` would, so callers
+        // can report it.
+        glob::Pattern::new(full_pattern.as_ref())?;
+        vec![]
+    };
     results.insert(key, paths.clone());
     Ok(paths)
+}
+
+/// Whether the directory spelled out by `pattern` before its first wildcard
+/// exists under `dir`. Nothing can match below a missing directory, and config
+/// discovery globs about a dozen `conf.d` patterns in every ancestor directory,
+/// where those directories almost never exist: one lookup here replaces
+/// compiling and walking each pattern. A component with any glob metacharacter,
+/// escaped ones included, ends the literal part, so this never skips a pattern
+/// that could match.
+fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
+    let components = Path::new(pattern).components().collect_vec();
+    let literal = components
+        .iter()
+        .take(components.len().saturating_sub(1))
+        .take_while(|c| {
+            !c.as_os_str()
+                .to_string_lossy()
+                .contains(['*', '?', '[', ']'])
+        })
+        .collect::<PathBuf>();
+    literal.as_os_str().is_empty() || dir.join(literal).is_dir()
 }
 
 fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
@@ -2958,8 +3128,10 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
     if set.contains(path) {
         return true;
     }
-    let target = file::desymlink_path(path);
-    set.iter().any(|p| file::desymlink_path(p) == target)
+    // This runs for every config file each time a tool resolves, so resolving
+    // the same paths again would dominate short commands.
+    let target = file::desymlink_path_cached(path);
+    set.iter().any(|p| file::desymlink_path_cached(p) == target)
 }
 
 fn resolved_task_file(task: &Task) -> Option<PathBuf> {
@@ -5783,6 +5955,33 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// Includes that are fetched from a remote source instead of read from disk.
+fn is_remote_task_include(include: &str) -> bool {
+    include.starts_with("git::") || include.starts_with(OCI_INCLUDE_PREFIX)
+}
+
+async fn resolve_oci_url_to_path(oci_url: &str) -> Result<TaskFileArtifact> {
+    let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+    let providers = TaskFileProvidersBuilder::new()
+        .with_cache(!no_cache)
+        .build();
+    let provider = providers
+        .get_provider(oci_url)
+        .ok_or_else(|| eyre!("No provider found for OCI URL: {}", oci_url))?;
+    if !no_cache {
+        return provider.get_local_artifact(oci_url).await;
+    }
+    // Pull a given artifact once per run, even when several configs include it.
+    let pulled = REMOTE_TASK_INCLUDE_ARTIFACTS
+        .entry((oci_url.to_string(), None))
+        .or_insert_with(|| Arc::new(OnceCell::new()))
+        .clone();
+    Ok(pulled
+        .get_or_try_init(|| provider.get_local_artifact(oci_url))
+        .await?
+        .clone())
+}
+
 async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
     let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     if !no_cache {
@@ -5930,7 +6129,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
-            if p.starts_with("git::") {
+            if is_remote_task_include(&p) {
                 return vec![];
             }
             expand_task_include(&resolve_dir, &p)
@@ -5983,7 +6182,7 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
     };
     if let Some(path) = includes
         .iter()
-        .filter(|include| !include.starts_with("git::"))
+        .filter(|include| !is_remote_task_include(include))
         .flat_map(|include| expand_task_include(&resolve_dir, include))
         .find(|path| path.is_dir())
     {
@@ -6508,6 +6707,8 @@ async fn load_task_sources_from_configs(
     for include in &includes {
         let artifacts = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
+        } else if include.starts_with(OCI_INCLUDE_PREFIX) {
+            vec![resolve_oci_url_to_path(include).await?]
         } else {
             expand_task_include(&resolve_dir, include)
                 .into_iter()
@@ -8197,6 +8398,38 @@ mod tests {
                 .filter(|pattern| pattern.contains("conf.d"))
                 .all(|pattern| pattern.contains("conf.d/*/mise."))
         );
+    }
+
+    #[test]
+    fn test_glob_skips_patterns_under_missing_directories() -> Result<()> {
+        let missing = TempDir::new()?;
+        assert!(glob(missing.path(), ".config/mise/conf.d/*.toml")?.is_empty());
+        assert!(glob(missing.path(), ".mise/conf.d/*/mise.toml")?.is_empty());
+
+        // glob caches by directory and pattern, so the matching case needs a
+        // directory of its own.
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(confd.join("node"))?;
+        fs::write(confd.join("tools.toml"), "")?;
+        fs::write(confd.join("node/mise.toml"), "")?;
+        assert_eq!(
+            glob(tmp.path(), ".mise/conf.d/*.toml")?,
+            vec![confd.join("tools.toml")]
+        );
+        assert_eq!(
+            glob(tmp.path(), ".mise/conf.d/*/mise.toml")?,
+            vec![confd.join("node/mise.toml")]
+        );
+        // A malformed pattern is an error even when its directory is missing.
+        assert!(glob(missing.path(), "missing/[unclosed/*.toml").is_err());
+        // A pattern with no wildcard names a file, not a directory to check.
+        fs::write(tmp.path().join("mise.toml"), "")?;
+        assert_eq!(
+            glob(tmp.path(), "mise.toml")?,
+            vec![tmp.path().join("mise.toml")]
+        );
+        Ok(())
     }
 
     #[test]

@@ -276,3 +276,48 @@ assert "test $(pitchfork status remote/idle --json | jq -r .status) != running"
 mise daemons stop
 cd ../import-owner
 mise daemons stop
+
+# `--all` covers every daemon in the project, including ones a `default` group
+# leaves out, and never reaches another project. Pitchfork rejects its own `--all`
+# next to the IDs mise passes, so mise must not forward the flag.
+mkdir -p ../all-bystander ../all-project
+cd ../all-bystander
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "bystander"
+[daemons.other]
+run = "exec sleep 600"
+ready_delay = 0
+TOML
+mise daemons start
+cd ../all-project
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "allproj"
+[daemons.web]
+run = "exec sleep 600"
+ready_delay = 0
+[daemons.extra]
+run = "exec sleep 600"
+ready_delay = 0
+[daemon_groups]
+default = ["web"]
+TOML
+mise daemons start
+assert_contains "pitchfork status allproj/web --json" '"status": "running"'
+assert "test $(pitchfork status allproj/extra --json | jq -r .status) != running"
+mise daemons stop
+mise daemons start --all
+assert_contains "pitchfork status allproj/web --json" '"status": "running"'
+assert_contains "pitchfork status allproj/extra --json" '"status": "running"'
+assert_fail_contains "mise daemons stop --all web" "--all selects every daemon"
+mise daemons stop --all
+assert "test $(pitchfork status allproj/web --json | jq -r .status) != running"
+assert "test $(pitchfork status allproj/extra --json | jq -r .status) != running"
+assert_contains "pitchfork status bystander/other --json" '"status": "running"'
+cd ../all-bystander
+mise daemons stop

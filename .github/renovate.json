@@ -35,20 +35,11 @@
       "separateMajorMinor": false
     },
     {
-      "description": "aube crates and the standalone development tool must stay on the same release.",
+      "description": "aube crates and the standalone development tool must stay on the same release, so they update together. Renovate only bumps the direct aube and aube-registry entries in Cargo.lock; .github/workflows/aube-crates-lock.yml refreshes the other aube-* crates and mise.lock on the branch (postUpgradeTasks do not run on hosted Renovate).",
       "matchPackageNames": ["aube", "aube-registry"],
       "matchManagers": ["cargo"],
       "groupName": "aube",
-      "separateMajorMinor": false,
-      "postUpgradeTasks": {
-        "commands": ["mise lock --bump --minimum-release-age 0s aube"],
-        "executionMode": "branch",
-        "fileFilters": ["mise.lock"],
-        "installTools": {
-          "mise": {}
-        },
-        "workingDirTemplate": "{{{packageFileDir}}}"
-      }
+      "separateMajorMinor": false
     },
     {
       "description": "usage crates are released together and depend on each other's internals (usage-rs 6.11.0 broke against usage-argv 6.11.1); bump them together, without the release-age delay the shared preset only waives for usage-cli and usage-lib.",

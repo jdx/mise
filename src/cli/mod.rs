@@ -5,24 +5,36 @@ use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate};
+use confique::Layer as _;
 use eyre::{Report, bail};
 use futures_util::future::LocalBoxFuture;
 use std::path::PathBuf;
 use usage_rs::config::{Layers, PropMeta, Registry as SettingsRegistry, Ty, Value};
 
-static CLI_SETTING_PROPS: &[PropMeta] = &[PropMeta {
-    cli: &["--truncate", "--no-truncate"],
-    ..PropMeta::new("truncate", Ty::Bool)
-}];
+static CLI_SETTING_PROPS: &[PropMeta] = &[
+    PropMeta {
+        cli: &["--truncate", "--no-truncate"],
+        ..PropMeta::new("truncate", Ty::Bool)
+    },
+    PropMeta {
+        cli: &["--no-cache"],
+        ..PropMeta::new("task.remote_no_cache", Ty::Bool)
+    },
+];
 const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
 
-fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<bool>> {
+/// The settings layer given by command-local flags declared with `setting = "..."`.
+fn command_local_settings(layer: &usage_rs::config::CliLayer) -> Result<SettingsPartial> {
     let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
-    Ok(match resolved.get_key("truncate") {
+    let get_bool = |key: &str| match resolved.get_key(key) {
         Some(Value::Bool(value)) => Some(*value),
         None => None,
-        Some(value) => unreachable!("truncate resolved as {}", value.type_name()),
-    })
+        Some(value) => unreachable!("{key} resolved as {}", value.type_name()),
+    };
+    let mut s = SettingsPartial::empty();
+    s.truncate = get_bool("truncate");
+    s.task.remote_no_cache = get_bool("task.remote_no_cache");
+    Ok(s)
 }
 
 mod activate;
@@ -883,6 +895,15 @@ fn is_packages_where_query(args: &[String]) -> bool {
     false
 }
 
+/// The fast path reads no settings, so unless something loaded them there is
+/// nothing to report; setting up the logger would load them.
+fn finish_hook_env_fast_exit() {
+    if crate::config::settings::is_loaded() {
+        measure!("logger", { logger::init() });
+        Settings::flush_pending_warnings_before_exit();
+    }
+}
+
 /// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).
 pub(crate) fn register_frontend() {
     crate::frontend::register(crate::frontend::Frontend {
@@ -901,14 +922,12 @@ pub(crate) fn register_frontend() {
 }
 
 impl Cli {
-    /// The settings layer the global flags set, for `Settings::add_cli_matches`.
-    fn settings_layer(&self, truncate: Option<bool>) -> SettingsPartial {
-        let mut s = <SettingsPartial as confique::Layer>::empty();
+    /// The settings layer the global flags set on top of `command_local`,
+    /// for `Settings::add_cli_matches`.
+    fn settings_layer(&self, command_local: SettingsPartial) -> SettingsPartial {
+        let mut s = command_local;
         if self.raw {
             s.raw = Some(true);
-        }
-        if let Some(truncate) = truncate {
-            s.truncate = Some(truncate);
         }
         if self.locked {
             s.locked = Some(true);
@@ -952,6 +971,29 @@ impl Cli {
         s
     }
 
+    /// Answers an unchanged `hook-env` before `main` starts the async runtime.
+    ///
+    /// The shell hook runs before every prompt and nearly always finds nothing
+    /// changed. Building the runtime spawns up to 16 worker threads, which
+    /// costs more than the check, so this repeats the steps of `run_inner` that
+    /// come before its fast path and runs that fast path here. Anything it
+    /// cannot settle returns false, and `run` then goes through `run_inner` as
+    /// usual.
+    pub(crate) fn exit_early_for_unchanged_hook_env(args: &[String]) -> bool {
+        if args.get(1).map(String::as_str) != Some("hook-env") || *crate::env::MISE_TOOL_STUB {
+            return false;
+        }
+        *crate::env::ARGS.write().unwrap() = args.to_vec();
+        if crate::config::miserc::init().is_err() {
+            return false;
+        }
+        if !hook_env_module::should_exit_early_fast() {
+            return false;
+        }
+        finish_hook_env_fast_exit();
+        true
+    }
+
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
@@ -989,7 +1031,7 @@ impl Cli {
                 bail!("internal error: recognized package query parsed as another command");
             }
             validate_cd_path(&cli.cd)?;
-            Settings::init_package_query(cli.settings_layer(None))?;
+            Settings::init_package_query(cli.settings_layer(SettingsPartial::empty()))?;
             logger::init();
             let Some(Commands::Bootstrap(command)) = cli.command else {
                 unreachable!("package query variant was checked");
@@ -1007,8 +1049,7 @@ impl Cli {
         // Fast-path for hook-env: exit early if nothing has changed
         // This avoids expensive backend::load_tools() and config loading
         if hook_env_module::should_exit_early_fast() {
-            measure!("logger", { logger::init() });
-            Settings::flush_pending_warnings_before_exit();
+            finish_hook_env_fast_exit();
             return Ok(());
         }
         measure!("logger", { logger::init() });
@@ -1050,9 +1091,9 @@ impl Cli {
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
-        let cli_truncate = cli_truncate_setting(&cli_settings)?;
+        let command_local = command_local_settings(&cli_settings)?;
         measure!("add_cli_matches", {
-            Settings::add_cli_matches(cli.settings_layer(cli_truncate))
+            Settings::add_cli_matches(cli.settings_layer(command_local))
         });
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
             // These file-only edits must remain available when alias values conflict.
@@ -1112,6 +1153,12 @@ impl Cli {
             config_file::trust_active_config()?
         });
         measure!("logger", { logger::init() });
+        if matches!(cli.command, Some(Commands::Oci(_))) {
+            // The image gets `[oci.env]`, so a `required` var it defines needn't be set
+            // on the build host. Must precede the first config load, which validates
+            // `[env]`.
+            crate::config::env_directive::oci_env_satisfies_required();
+        }
         if !print_version {
             measure!("registry::refresh", { crate::registry::refresh().await });
             let _ = measure!("backend::load_tools", { backend::load_tools().await });
@@ -1710,10 +1757,14 @@ mod tests {
         }
     }
 
-    fn parse_truncate(args: &[&str]) -> Option<bool> {
+    fn parse_command_local_settings(args: &[&str]) -> SettingsPartial {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
-        cli_truncate_setting(&layer).unwrap()
+        command_local_settings(&layer).unwrap()
+    }
+
+    fn parse_truncate(args: &[&str]) -> Option<bool> {
+        parse_command_local_settings(args).truncate
     }
 
     #[test]
@@ -1753,6 +1804,28 @@ mod tests {
             let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
             assert!(Cli::parse_from_argv_with_settings(&argv).is_err());
         }
+    }
+
+    fn parse_task_remote_no_cache(args: &[&str]) -> Option<bool> {
+        parse_command_local_settings(args).task.remote_no_cache
+    }
+
+    #[test]
+    fn run_no_cache_flag_sets_task_remote_no_cache() {
+        assert_eq!(parse_task_remote_no_cache(&["mise", "run", "build"]), None);
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "run", "--no-cache", "build"]),
+            Some(true)
+        );
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "tasks", "run", "--no-cache", "build"]),
+            Some(true)
+        );
+        // `oci build --no-cache` is about image layers, not remote tasks.
+        assert_eq!(
+            parse_task_remote_no_cache(&["mise", "oci", "build", "--no-cache"]),
+            None
+        );
     }
 
     #[test]

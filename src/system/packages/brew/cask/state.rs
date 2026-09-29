@@ -1848,35 +1848,3 @@ fn is_unusable_file_name(name: &str) -> bool {
 pub(super) fn split_tap_name(name: &str) -> Option<(&str, &str, &str)> {
     super::super::api::split_tap_name(name)
 }
-
-pub(super) fn artifact_type(value: &Value) -> String {
-    value
-        .as_object()
-        .and_then(|o| o.keys().next())
-        .cloned()
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-pub(super) fn is_non_install_artifact(kind: &str) -> bool {
-    matches!(
-        kind,
-        "caveats"
-            | "conflicts_with"
-            | "depends_on"
-            | "manpage"
-            | "postflight"
-            | "preflight"
-            | "uninstall_postflight_steps"
-            | "uninstall_preflight_steps"
-            | "uninstall"
-            | "uninstall_postflight"
-            | "uninstall_preflight"
-            | "zap"
-    )
-}
-
-pub(super) fn has_lifecycle_hook(cask: &Cask, hook: &str) -> bool {
-    cask.artifacts
-        .iter()
-        .any(|artifact| artifact_type(artifact) == hook)
-}

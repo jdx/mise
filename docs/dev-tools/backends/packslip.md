@@ -215,6 +215,41 @@ Review and commit the resulting lockfile change. See
 [signer continuity](/dev-tools/packslip-verification.html#signer-continuity)
 for the changes that require this review.
 
+### Renamed repositories {#renamed-repositories}
+
+A GitHub or GitLab project is pinned by the forge's repository ID, which its
+signing certificate records, not only by its name. If `old/tool` is renamed to
+`new/tool`, this configuration keeps installing, including releases signed
+under the new name:
+
+```toml [mise.toml]
+[tools]
+"packslip:github.com/old/tool" = "latest"
+```
+
+mise warns once that the project is now `github.com/new/tool`; change the
+configuration to the new name when convenient. The signer pin and `mise.lock`
+commitment follow the repository, so no `mise packslip forget` is needed. The
+same holds when the configuration changes to the new name first: the pin the old
+name set still applies, and moves to the new name.
+
+Two changes are refused instead:
+
+- **A transfer to another owner.** Trust in the old owner does not extend to the
+  new one. After confirming the transfer, run `mise packslip forget` for the
+  old name and name the repository as it is called now, such as
+  `packslip:github.com/new-owner/tool`. The pin is found by the repository's ID
+  under either name, so the new name alone does not reset it.
+- **A different repository under the same name**, which is what a deleted
+  repository whose name someone else took looks like. The error says so; if the
+  vendor re-created the repository itself, run `mise packslip forget` for the
+  project and remove its `mise.lock` entries.
+
+A machine with no pin and no lockfile entry trusts whichever repository has the
+name at its first install. See
+[renamed, transferred, and re-created repositories](/dev-tools/packslip-verification.html#renamed-transferred-and-re-created-repositories)
+for the details and limits.
+
 ## Tool options
 
 These [tool options](/dev-tools/#tool-options) apply to one entry in `[tools]`.
@@ -356,18 +391,19 @@ Start with debug output for the failing command, for example:
 MISE_DEBUG=1 mise install packslip:github.com/jdx/hk
 ```
 
-| Symptom                                      | Next step                                                                                                                                                                                     |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No versions or bundle found                  | Check the project identifier and `mise ls-remote`. Confirm that the release has a Packslip manifest and is old enough for `minimum_release_age`. The publisher must supply missing manifests. |
-| Nothing pins the signer                      | Configure `pubkey`, or a certificate identity/prefix and issuer, using details confirmed with the publisher.                                                                                  |
-| Signer change or trust downgrade refused     | Inspect `mise packslip pins`, explicit tool options, and `mise.lock`. Follow [signer changes](#pinned-signers) after confirming the publisher's change.                                       |
-| No eligible artifact                         | Check your platform and requested variant. The publisher must provide a matching build.                                                                                                       |
-| Ambiguous artifacts                          | The publisher must distinguish the builds in the manifest; changing local options cannot fix identical metadata.                                                                              |
-| Host requirements failed                     | Install the reported dependency or use a compatible host. See [host requirements](#host-requirements) before overriding a failure.                                                            |
-| Signed list expired, rolled back, or missing | Ask the list's publisher for a current valid list. Removing an accepted list does not reset its policy.                                                                                       |
-| Version excluded by stamp policy             | Check your configured stampers. A trusted stamper must approve the version, and the vendor must not have withdrawn it.                                                                        |
-| Digest or size mismatch                      | Report the affected release and artifact to the publisher; the download must match the signed manifest.                                                                                       |
-| 404 on a private repository's release        | Confirm the token in `MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, or `GITHUB_TOKEN` can read the repository. See [private repositories](#private-repositories).                                   |
+| Symptom                                           | Next step                                                                                                                                                                                     |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No versions or bundle found                       | Check the project identifier and `mise ls-remote`. Confirm that the release has a Packslip manifest and is old enough for `minimum_release_age`. The publisher must supply missing manifests. |
+| Nothing pins the signer                           | Configure `pubkey`, or a certificate identity/prefix and issuer, using details confirmed with the publisher.                                                                                  |
+| Signer change or trust downgrade refused          | Inspect `mise packslip pins`, explicit tool options, and `mise.lock`. Follow [signer changes](#pinned-signers) after confirming the publisher's change.                                       |
+| Moved to another owner, or a different repository | See [renamed repositories](#renamed-repositories). Confirm the change with the project before trusting the new owner or repository.                                                           |
+| No eligible artifact                              | Check your platform and requested variant. The publisher must provide a matching build.                                                                                                       |
+| Ambiguous artifacts                               | The publisher must distinguish the builds in the manifest; changing local options cannot fix identical metadata.                                                                              |
+| Host requirements failed                          | Install the reported dependency or use a compatible host. See [host requirements](#host-requirements) before overriding a failure.                                                            |
+| Signed list expired, rolled back, or missing      | Ask the list's publisher for a current valid list. Removing an accepted list does not reset its policy.                                                                                       |
+| Version excluded by stamp policy                  | Check your configured stampers. A trusted stamper must approve the version, and the vendor must not have withdrawn it.                                                                        |
+| Digest or size mismatch                           | Report the affected release and artifact to the publisher; the download must match the signed manifest.                                                                                       |
+| 404 on a private repository's release             | Confirm the token in `MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, or `GITHUB_TOKEN` can read the repository. See [private repositories](#private-repositories).                                   |
 
 For completion and skill errors, see
 [resource troubleshooting](/dev-tools/packslip-resources.html#troubleshooting).

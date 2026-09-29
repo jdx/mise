@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# `[oci.env]` satisfies `required` env vars for `mise oci`, so secrets that only
+# the image needs (as placeholders) don't have to exist on the build host.
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<'EOF2'
+[oci.env]
+AWS_ACCESS_KEY_ID = "placeholder"
+
+[env]
+AWS_ACCESS_KEY_ID = { required = "AWS access key ID for S3", redact = true }
+EOF2
+
+unset AWS_ACCESS_KEY_ID
+# Only the image gets the placeholder; the build host has no such variable.
+assert_succeed "mise oci build --from scratch --no-mise -o out"
+assert_not_contains "mise oci build --from scratch --no-mise -o out 2>&1" "is not defined"
+manifest="$(jq -r '.manifests[0].digest | ltrimstr("sha256:")' out/index.json)"
+config="$(jq -r '.config.digest | ltrimstr("sha256:")' "out/blobs/sha256/$manifest")"
+assert_contains "jq -r '.config.Env[]' out/blobs/sha256/$config" "AWS_ACCESS_KEY_ID=placeholder"
+
+# The same requirement still applies outside `mise oci`.
+assert_fail_contains "mise env" "Required environment variable 'AWS_ACCESS_KEY_ID' is not defined"
+
+# A required var that [oci.env] doesn't define still fails the build.
+cat >mise.toml <<'EOF2'
+[oci.env]
+OTHER = "placeholder"
+
+[env]
+AWS_ACCESS_KEY_ID = { required = "AWS access key ID for S3" }
+EOF2
+assert_fail_contains "mise oci build --from scratch --no-mise -o out2" "Required environment variable 'AWS_ACCESS_KEY_ID' is not defined"

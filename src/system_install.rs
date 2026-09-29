@@ -81,7 +81,7 @@ pub(crate) async fn install<B: Backend + ?Sized>(
         tv.short()
     );
     ensure!(
-        tv.request.options().get("postinstall").is_none(),
+        tv.request.options().postinstall().is_none(),
         "automatic system installation cannot relocate a tool with a postinstall hook; install {} as your user instead",
         tv.short()
     );

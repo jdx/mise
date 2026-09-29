@@ -196,7 +196,8 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (requested_names, groups, flags) = split_args(action, &args)?;
+        let (requested_names, groups, mut flags) = split_args(action, &args)?;
+        let all = take_all_flag(action, &requested_names, &groups, &mut flags)?;
         // An import that could not be resolved is fatal only when this command
         // names it. Someone whose sibling checkout is missing can still list and
         // stop their own daemons; they are told what is unavailable and why.
@@ -348,7 +349,7 @@ impl Daemons {
                 .iter()
                 .zip(&root_sets)
                 .flat_map(|(ids, set)| {
-                    let root_selectors = effective_selectors(&selectors, set, action);
+                    let root_selectors = effective_selectors(&selectors, set, action, all);
                     ids.iter()
                         .filter(move |id| {
                             root_selectors.is_empty()
@@ -399,7 +400,7 @@ impl Daemons {
             // is the one place selectors are resolved, from the set the request was
             // validated against rather than the per-root reload used for tools and
             // the generated configuration.
-            let root_selectors = effective_selectors(&selectors, &root_set, action);
+            let root_selectors = effective_selectors(&selectors, &root_set, action, all);
             if !in_closure
                 && !root_selectors.is_empty()
                 && !ids
@@ -961,19 +962,103 @@ fn selects(set: &daemons::DaemonSet, id: &str, selector: &Selector) -> bool {
 /// The selectors to apply to one project. A bare `start` or `restart` uses that
 /// project's own `default` group; a project without one still covers all of its
 /// daemons. `restart` is included because it starts daemons, and would otherwise
-/// start the ones a `default` group deliberately leaves out.
+/// start the ones a `default` group deliberately leaves out. `--all` asks for
+/// every daemon, so it never narrows to the `default` group.
 fn effective_selectors(
     selectors: &[Selector],
     set: &daemons::DaemonSet,
     action: &str,
+    all: bool,
 ) -> Vec<Selector> {
     if selectors.is_empty()
+        && !all
         && matches!(action, "start" | "restart")
         && set.group("default").is_some()
     {
         return vec![Selector::Group("default".into())];
     }
     selectors.to_vec()
+}
+
+/// Consume pitchfork's `--all`/`-a` from `start`, `stop` and `restart`, where it
+/// means every daemon in this project. Pitchfork's own meaning reaches daemons of
+/// other projects, and it cannot be combined with the IDs mise passes for the
+/// project, so mise selects the project's daemons itself and drops the flag.
+fn take_all_flag(
+    action: &str,
+    names: &[String],
+    groups: &[String],
+    flags: &mut Vec<String>,
+) -> Result<bool> {
+    if !matches!(action, "start" | "stop" | "restart") {
+        return Ok(false);
+    }
+    // `flags` holds option values next to the options, so skip a value even when it
+    // is literally `-a` or `--all`, as in `--cmd -a`.
+    let mut kept = Vec::with_capacity(flags.len());
+    let mut all = false;
+    let mut pending = std::mem::take(flags).into_iter();
+    while let Some(flag) = pending.next() {
+        if flag == "--all" || flag == "-a" {
+            all = true;
+            continue;
+        }
+        let value = if takes_value(action, &flag) {
+            pending.next()
+        } else {
+            None
+        };
+        kept.push(flag);
+        kept.extend(value);
+    }
+    *flags = kept;
+    if all && (!names.is_empty() || !groups.is_empty()) {
+        bail!(
+            "--all selects every daemon in this project; drop it or drop the daemon names and --group"
+        );
+    }
+    Ok(all)
+}
+
+/// Whether `arg` is a pitchfork option for `action` that consumes the next
+/// argument as its value, so that value is never mistaken for a flag or a name.
+fn takes_value(action: &str, arg: &str) -> bool {
+    let takes_value = match action {
+        "start" | "restart" => matches!(
+            arg,
+            "--delay"
+                | "--output"
+                | "--http"
+                | "--port"
+                | "--cmd"
+                | "--health-cmd"
+                | "--health-http"
+                | "--health-port"
+                | "--expected-port"
+                | "--shell-pid"
+        ),
+        "logs" => matches!(
+            arg,
+            "-n" | "-s"
+                | "--since"
+                | "-u"
+                | "--until"
+                | "--grep"
+                | "--regex"
+                | "--level"
+                | "--field"
+                | "--jq"
+        ),
+        _ => false,
+    };
+    let short_value = action == "logs"
+        && !arg.starts_with("--")
+        && arg
+            .char_indices()
+            .skip(1)
+            .find(|(_, ch)| matches!(ch, 'n' | 's' | 'u'))
+            .is_some_and(|(index, ch)| index + ch.len_utf8() == arg.len());
+    takes_value || short_value
 }
 
 /// Separate positional IDs, `--group` values, and pitchfork options before matching
@@ -1008,42 +1093,7 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             continue;
         }
         flags.push(arg.clone());
-        let takes_value = match action {
-            "start" | "restart" => matches!(
-                arg.as_str(),
-                "--delay"
-                    | "--output"
-                    | "--http"
-                    | "--port"
-                    | "--cmd"
-                    | "--health-cmd"
-                    | "--health-http"
-                    | "--health-port"
-                    | "--expected-port"
-                    | "--shell-pid"
-            ),
-            "logs" => matches!(
-                arg.as_str(),
-                "-n" | "-s"
-                    | "--since"
-                    | "-u"
-                    | "--until"
-                    | "--grep"
-                    | "--regex"
-                    | "--level"
-                    | "--field"
-                    | "--jq"
-            ),
-            _ => false,
-        };
-        let short_value = action == "logs"
-            && !arg.starts_with("--")
-            && arg
-                .char_indices()
-                .skip(1)
-                .find(|(_, ch)| matches!(ch, 'n' | 's' | 'u'))
-                .is_some_and(|(index, ch)| index + ch.len_utf8() == arg.len());
-        if takes_value || short_value {
+        if takes_value(action, arg) {
             let value = args
                 .next()
                 .ok_or_else(|| eyre::eyre!("{arg} requires a value"))?;
@@ -1177,6 +1227,46 @@ mod tests {
     }
 
     #[test]
+    fn all_flag_is_consumed_for_project_wide_actions() {
+        for action in ["start", "stop", "restart"] {
+            for flag in ["--all", "-a"] {
+                let mut flags = vec![flag.to_string(), "--force".to_string()];
+                assert!(take_all_flag(action, &[], &[], &mut flags).unwrap());
+                assert_eq!(flags, ["--force"]);
+            }
+        }
+        let mut flags = vec!["--force".to_string()];
+        assert!(!take_all_flag("stop", &[], &[], &mut flags).unwrap());
+        assert_eq!(flags, ["--force"]);
+        // `-a` means something else for logs and status; leave it to pitchfork.
+        let mut flags = vec!["-a".to_string()];
+        assert!(!take_all_flag("logs", &[], &[], &mut flags).unwrap());
+        assert_eq!(flags, ["-a"]);
+    }
+
+    #[test]
+    fn all_flag_ignores_option_values() {
+        // `-a` is the value of `--cmd` here, not a request for every daemon.
+        let args = ["web", "--cmd", "-a", "--force"].map(String::from);
+        let (names, groups, mut flags) = split_args("start", &args).unwrap();
+        assert!(!take_all_flag("start", &names, &groups, &mut flags).unwrap());
+        assert_eq!(flags, ["--cmd", "-a", "--force"]);
+        // A real `--all` after that value is still recognized.
+        let args = ["--cmd", "--all", "-a"].map(String::from);
+        let (names, groups, mut flags) = split_args("start", &args).unwrap();
+        assert!(take_all_flag("start", &names, &groups, &mut flags).unwrap());
+        assert_eq!(flags, ["--cmd", "--all"]);
+    }
+
+    #[test]
+    fn all_flag_cannot_be_combined_with_names_or_groups() {
+        let mut flags = vec!["--all".to_string()];
+        assert!(take_all_flag("stop", &["web".into()], &[], &mut flags).is_err());
+        let mut flags = vec!["--all".to_string()];
+        assert!(take_all_flag("stop", &[], &["backend".into()], &mut flags).is_err());
+    }
+
+    #[test]
     fn names_are_independent_of_flag_order_and_values() {
         for args in [vec!["--force", "missing"], vec!["missing", "--force"]] {
             let args = args.into_iter().map(String::from).collect::<Vec<_>>();
@@ -1301,21 +1391,24 @@ mod tests {
         let child = loaded.for_root(&loaded.daemons["web"].root.clone());
         let parent = loaded.for_root(&loaded.daemons["inherited"].root.clone());
         assert_eq!(
-            effective_selectors(&[], &child, "start"),
+            effective_selectors(&[], &child, "start", false),
             [Selector::Group("default".into())]
         );
         // The parent declares no default, so a bare start keeps every daemon.
-        assert!(effective_selectors(&[], &parent, "start").is_empty());
+        assert!(effective_selectors(&[], &parent, "start", false).is_empty());
         // restart starts daemons, so it uses the group too; stop does not.
         assert_eq!(
-            effective_selectors(&[], &child, "restart"),
+            effective_selectors(&[], &child, "restart", false),
             [Selector::Group("default".into())]
         );
-        assert!(effective_selectors(&[], &child, "stop").is_empty());
-        assert!(effective_selectors(&[], &child, "logs").is_empty());
+        assert!(effective_selectors(&[], &child, "stop", false).is_empty());
+        assert!(effective_selectors(&[], &child, "logs", false).is_empty());
+        // `--all` asks for every daemon, so the default group does not narrow it.
+        assert!(effective_selectors(&[], &child, "start", true).is_empty());
+        assert!(effective_selectors(&[], &child, "restart", true).is_empty());
         // An explicit request is never replaced by the default group.
         assert_eq!(
-            effective_selectors(&[Selector::Name("extra".into())], &child, "start"),
+            effective_selectors(&[Selector::Name("extra".into())], &child, "start", false),
             [Selector::Name("extra".into())]
         );
     }

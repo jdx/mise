@@ -244,7 +244,12 @@ pub(crate) struct Run {
     pub fresh_env: bool,
 
     /// Do not use cache on remote tasks
-    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    #[usage(
+        long,
+        verbatim_doc_comment,
+        env = "MISE_TASK_REMOTE_NO_CACHE",
+        setting = "task.remote_no_cache"
+    )]
     pub no_cache: bool,
 
     /// Skip automatic dependency preparation
@@ -1475,6 +1480,7 @@ impl Run {
             shell: self.shell.clone(),
             tool: self.tool.clone(),
             timings: self.timings,
+            no_timings: self.no_timings,
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,

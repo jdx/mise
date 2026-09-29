@@ -580,21 +580,6 @@ impl Drop for FlightTargetTransaction {
     }
 }
 
-impl FlightStep {
-    pub(super) fn kind(&self) -> &'static str {
-        match self {
-            Self::Move { .. } => "move",
-            Self::Remove { .. } => "remove",
-            Self::SetPermissions { .. } => "set_permissions",
-            Self::SetOwnership { .. } => "set_ownership",
-            Self::Copy { .. } => "copy",
-            Self::Symlink { .. } => "symlink",
-            Self::Run { .. } => "run",
-            Self::TerminateProcess { .. } => "terminate_process",
-        }
-    }
-}
-
 pub(super) fn execute_flight_step(
     cask: &Cask,
     step: &FlightStep,
@@ -1199,11 +1184,6 @@ pub(super) fn expand_staged_glob(staged_path: &Path, pattern: &str) -> Result<Ve
     Ok(matches)
 }
 
-pub(super) fn is_flight_glob(path: &str) -> bool {
-    path.chars()
-        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '{' | '}'))
-}
-
 pub(super) fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf> {
     match path.base {
         FlightPathBase::StagedPath => {}
@@ -1277,21 +1257,6 @@ pub(super) fn expand_cask_template(
         value = crate::dirs::HOME.join(rest).to_string_lossy().to_string();
     }
     value
-}
-
-pub(super) fn validate_flight_relative_path(path: &str) -> Result<()> {
-    let path = Path::new(path);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
-        bail!(
-            "brew-cask: invalid structured flight path '{}'",
-            path.display()
-        );
-    }
-    Ok(())
 }
 
 pub(super) fn expand_braces(pattern: &str) -> Vec<String> {

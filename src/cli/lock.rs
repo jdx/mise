@@ -233,10 +233,51 @@ pub(crate) struct Lock {
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
 
+    /// List native dependency sidecars instead of updating lockfiles
+    ///
+    /// Prints, for each existing lockfile in scope, the sidecar directory mise
+    /// keeps its native dependency graphs in and every sidecar directory the
+    /// lockfile references. Nothing is resolved, installed, or written.
+    /// Paths are relative to the current directory when they are inside it,
+    /// and absolute otherwise, such as the sidecars of a symlinked lockfile.
+    /// Combine with `--json` for machine-readable output, or with `--local`
+    /// and `--global` to choose the lockfiles.
+    #[usage(long, verbatim_doc_comment)]
+    pub sidecars: bool,
+
     /// Restrict the run to these lockfiles, for callers that relock the
     /// entries they rewrote (`mise backends switch`).
     #[usage(skip)]
     pub lockfiles: Option<BTreeSet<PathBuf>>,
+}
+
+/// A lockfile's sidecar directories, reported by `--sidecars`
+#[derive(serde::Serialize)]
+struct SidecarListing {
+    lockfile: String,
+    root: String,
+    sidecars: Vec<SidecarItem>,
+}
+
+#[derive(serde::Serialize)]
+struct SidecarItem {
+    tool: String,
+    version: String,
+    graph: &'static str,
+    path: String,
+    digest: String,
+    exists: bool,
+}
+
+/// Show a path relative to the current directory when it lies inside it.
+fn sidecar_display_path(path: &Path) -> String {
+    // Canonicalizing a symlinked lockfile yields `\\?\C:\…` on Windows.
+    let path = dunce::simplified(path);
+    let cwd = crate::env::current_dir().unwrap_or_default();
+    path.strip_prefix(&cwd)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// A lockfile version change reported by `--json`
@@ -409,6 +450,7 @@ impl Lock {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            sidecars: false,
             lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
@@ -420,8 +462,12 @@ impl Lock {
         installed: Option<&[crate::toolset::ToolVersion]>,
         config: Arc<Config>,
     ) -> Result<()> {
+        lockfile::suppress_outdated_lockfile_warning(&config);
         if self.upgrade && !self.tool.is_empty() {
             bail!("`mise lock --upgrade` cannot be combined with tool arguments");
+        }
+        if self.sidecars {
+            return self.list_sidecars(&config).await;
         }
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
@@ -1174,6 +1220,75 @@ impl Lock {
         changes
     }
 
+    /// `--sidecars`: report the sidecar directories of each existing lockfile
+    /// without resolving tools or writing anything.
+    async fn list_sidecars(&self, config: &Arc<Config>) -> Result<()> {
+        if !self.tool.is_empty()
+            || self.dry_run
+            || self.bump
+            || self.upgrade
+            || !self.platform.is_empty()
+            || self.minimum_release_age.is_some()
+        {
+            bail!(
+                "`mise lock --sidecars` only lists sidecars; it cannot be combined with tool arguments, --dry-run, --bump, --upgrade, --platform, or --minimum-release-age"
+            );
+        }
+        let mut listings = vec![];
+        // Target the lockfiles a normal run would write. In a monorepo that
+        // includes lockfiles contributed only by sibling configs.
+        let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
+            Some(config.monorepo_lockfile_union().await?)
+        } else {
+            None
+        };
+        let config_files = monorepo_union
+            .as_ref()
+            .map_or(&config.config_files, |union| &union.config_files);
+        let scoped = self.config_paths_in_lock_scope(config, config_files);
+        let targets = self.get_lockfile_targets(config, config_files, &scoped);
+        for lockfile_path in targets.keys() {
+            if !lockfile_path.exists() {
+                continue;
+            }
+            let sidecars = Lockfile::read(lockfile_path)?
+                .sidecar_refs()
+                .into_iter()
+                .map(|sidecar| SidecarItem {
+                    tool: sidecar.short,
+                    version: sidecar.version,
+                    graph: sidecar.graph,
+                    path: sidecar_display_path(&sidecar.dir),
+                    digest: sidecar.digest,
+                    exists: sidecar.exists,
+                })
+                .collect();
+            listings.push(SidecarListing {
+                lockfile: sidecar_display_path(lockfile_path),
+                root: sidecar_display_path(&lockfile::sidecar_dir_for(lockfile_path)?),
+                sidecars,
+            });
+        }
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&listings)?);
+            return Ok(());
+        }
+        for listing in &listings {
+            miseprintln!("{} (sidecars in {})", listing.lockfile, listing.root);
+            for item in &listing.sidecars {
+                let missing = if item.exists { "" } else { " (missing)" };
+                miseprintln!(
+                    "  {}@{} {} {}{missing}",
+                    item.tool,
+                    item.version,
+                    item.graph,
+                    item.path
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Get the before_date from the CLI --minimum-release-age flag only.
     /// Per-tool and global setting fallbacks are handled during tool request resolution.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
@@ -1200,10 +1315,11 @@ impl Lock {
                 "Upgrading"
             };
             miseprintln!(
-                "{} {prefix} {} from lockfile version {} to 2",
+                "{} {prefix} {} from lockfile version {} to {}",
                 style("→").yellow(),
                 style(display_path(path)).cyan(),
                 lockfile.lockfile_version(),
+                lockfile::CURRENT_LOCKFILE_VERSION,
             );
         } else {
             warn!(
@@ -1229,9 +1345,10 @@ impl Lock {
             return Ok(());
         }
         miseprintln!(
-            "{} Upgraded {} to lockfile version 2",
+            "{} Upgraded {} to lockfile version {}",
             style("→").yellow(),
-            style(display_path(path)).cyan()
+            style(display_path(path)).cyan(),
+            lockfile::CURRENT_LOCKFILE_VERSION,
         );
         Ok(())
     }
@@ -2434,6 +2551,7 @@ mod tests {
             minimum_release_age: None,
             bump: false,
             upgrade: false,
+            sidecars: false,
             lockfiles: None,
             json: false,
         }

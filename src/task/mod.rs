@@ -3397,7 +3397,9 @@ where
             t.aliases.iter().flat_map(|a| {
                 // For monorepo tasks, create entries for both prefixed and unprefixed aliases
                 // This allows references like "fmt" to resolve to "//:format"
-                if let Some(path) = extract_monorepo_path(&t.name) {
+                if a.starts_with("//") || is_workspace_project_task(a) {
+                    vec![(a.to_string(), *t)]
+                } else if let Some(path) = extract_monorepo_path(&t.name) {
                     vec![(format!("//{}:{}", path, a), *t), (a.to_string(), *t)]
                 } else {
                     // Non-monorepo task, use alias as-is

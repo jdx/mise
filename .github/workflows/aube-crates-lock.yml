@@ -1,0 +1,106 @@
+name: aube-crates-lock
+
+# Renovate only bumps the direct `aube` and `aube-registry` entries in
+# Cargo.lock; the other aube-* workspace crates stay behind (aube requires
+# them only as "2") and break the build against the new API. The standalone
+# aube entry in mise.lock must also match the embedded version.
+# `postUpgradeTasks` would do this, but they only run on self-hosted Renovate,
+# not the Mend hosted app, so this workflow refreshes both lockfiles on the
+# Renovate branch instead. Like aube-lock.yml, it commits with an App token so
+# CI reruns on the pushed commit.
+
+on:
+  push:
+    branches: ["renovate/aube"]
+
+permissions:
+  contents: read
+
+env:
+  # mise.toml wraps cargo through mbx, which install: false never provides
+  MBX_DISABLE: "1"
+
+jobs:
+  aube-crates-lock:
+    # Only react to Renovate's own pushes (checked by the sender's immutable
+    # numeric id, not a spoofable login); our fix-up push has a different
+    # sender, so this also prevents self-retriggering.
+    if: github.event.sender.id == 29139614 # renovate[bot]
+    runs-on: ubuntu-latest
+    # Job-level, so a push whose job the `if` skips (e.g. aube-lock.yml's
+    # lockfile commit) never cancels a Renovate-triggered refresh in flight.
+    concurrency:
+      group: aube-crates-lock-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      # No GITHUB_TOKEN fallback: it is read-only here and would not retrigger
+      # CI, so a missing App secret should fail this step loudly.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.AUBE_LOCK_APP_ID }}
+          private-key: ${{ secrets.AUBE_LOCK_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false
+      - name: Refresh aube lockfiles
+        run: |
+          # the version Renovate selected is the one it wrote for the direct
+          # `aube` package in Cargo.lock
+          version="$(awk '/^name = "aube"$/ { getline; gsub(/[^0-9.]/, "", $0); print; exit }' Cargo.lock)"
+          if [ -z "$version" ]; then
+            echo "::error::could not find the aube version in Cargo.lock"
+            exit 1
+          fi
+          echo "refreshing aube crates to ${version}"
+          cargo update \
+            -p aube -p aube-registry -p aube-codes -p aube-lockfile -p aube-settings \
+            -p aube-linker -p aube-manifest -p aube-resolver -p aube-runtime \
+            -p aube-scripts -p aube-store -p aube-util -p aube-workspace \
+            --precise "$version"
+          mise lock --bump --minimum-release-age 0s "aube@${version}"
+      - name: Commit and push if changed
+        env:
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git add -- Cargo.lock mise.lock
+          if git diff --cached --quiet; then
+            echo "aube lockfiles already up to date"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          base="$(git rev-parse HEAD)"
+          git commit -m 'chore(deps): refresh aube crates and mise.lock'
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git"
+          # aube-lock.yml starts from the same Renovate push and commits
+          # aube-lock.yaml to this branch, so it can land first and make the
+          # lease fail. Its push is not Renovate's, so nothing reruns this job:
+          # rebase onto it and retry. A tip that no longer contains the commit
+          # we built on means Renovate force-pushed; that push starts a fresh
+          # run of this workflow, so drop this one.
+          for attempt in 1 2 3 4 5; do
+            # The lease pins the push to the tip we built on, so a Renovate
+            # force-push that landed meanwhile is never clobbered.
+            if git push --force-with-lease="refs/heads/${BRANCH}:${base}" \
+              "$remote" "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+            git fetch --quiet "$remote" "$BRANCH"
+            tip="$(git rev-parse FETCH_HEAD)"
+            if ! git merge-base --is-ancestor "$base" "$tip"; then
+              echo "::notice::${BRANCH} was force-pushed; the new push reruns this workflow"
+              exit 0
+            fi
+            git rebase "$tip"
+            base="$tip"
+          done
+          echo "::error::could not push the aube lockfile refresh to ${BRANCH}"
+          exit 1

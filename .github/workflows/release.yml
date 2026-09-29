@@ -4,7 +4,7 @@ on:
   push:
     tags: ["v[0-9]*"]
   pull_request:
-    branches: ["main"]
+    # Report required checks for stacked PRs targeting any base branch.
     # auto_merge_enabled arms the dry run on the release PR; see the gate job.
     types: [opened, synchronize, reopened, auto_merge_enabled]
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
   gate:
     # Decides what this run does. Tag pushes and manual dispatches always
     # build and publish. Pull requests only matter when they come from the
-    # `release` branch of this repository, and even then the tarballs are only
+    # `release` branch of this repository targeting `main`. Even then, tarballs are only
     # built once auto-merge has been enabled on the release PR: every merge to
     # main force-pushes `release`, and building eight PGO tarballs for each of
     # those was the bulk of the Namespace bill. The `release` job below still
@@ -54,7 +54,7 @@ jobs:
     steps:
       - id: gate
         env:
-          RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
+          RELEASE_RUN: ${{ github.event_name != 'pull_request' || (github.base_ref == 'main' && github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository) }}
           ARMED: ${{ github.event_name != 'pull_request' || github.event.pull_request.auto_merge != null }}
           FINISH_DRAFT_TAG: ${{ inputs.finish_draft_tag }}
         run: |
@@ -363,7 +363,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:6277132f97b5ee25b5dbcd3905ef614547c59511ac7769916c1a805bf3bbc8e0
+    container: ghcr.io/jdx/mise:rpm@sha256:a2524fb59e21c5b7bd0c8c4d5c81177241ead986216a237f1202caedb14878a9
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -387,7 +387,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:19d55778730e3c7b285900b8b7a7a5b32ec7530ccdc7c1933bee3f1500d26fa7
+    container: ghcr.io/jdx/mise:deb@sha256:2f96733b9880c8e9ffcd92ab2d442f37de1e37a8d3426857b35d0836f10a71b1
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -682,7 +682,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@74c75db7d611b36dd5a157999ec16cf823ccf80c # v1.2.0
+      - uses: jdx/packslip@87479dfc6443253dff69601cace5fc6ea07e6df5 # v1.4.0
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -852,7 +852,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@74c75db7d611b36dd5a157999ec16cf823ccf80c # v1.2.0
+      - uses: jdx/packslip@87479dfc6443253dff69601cace5fc6ea07e6df5 # v1.4.0
         with:
           artifacts: release-assets/mise-*
           bin: mise

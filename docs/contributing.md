@@ -350,7 +350,7 @@ Edit source inputs, then regenerate the outputs affected by your change:
 | Settings | `settings.toml` → `mise run render:schema` |
 | All generated docs and completions | `mise run render` |
 | Docs website | Edit Markdown/Vue sources; run `mise run docs:build` |
-| Documentation index for agents | `mise exec bun -- bun docs/.vitepress/llms.ts` after the final docs changes |
+| Documentation index for agents | `mise exec node -- node docs/.vitepress/llms.ts` after the final docs changes |
 
 CLI pages under `docs/cli` are generated. Do not patch those files without changing their
 source or generator. Docs examples use **TOML 1.1**; multiline inline tables, comments, and
@@ -627,6 +627,7 @@ test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
 url = "https://your-tool.dev" # Optional project homepage or repository
+deprecated = "superseded by new-tool. Run `mise use new-tool` instead." # Optional, see below
 ```
 
 Only list backends that support the tool: `packslip` requires signed release
@@ -657,6 +658,10 @@ Backends such as `http` have no inferable URL, so a tool with only those backend
 is left unlinked. Set `url` when there is no inferred link or it points to the
 wrong place, such as a tool published from a monorepo. `mise tool` and
 `mise registry --json` also show it.
+
+Set `deprecated` to the reason a tool should no longer be used and what to use
+instead, such as when upstream replaced its CLI. The entry keeps working, and
+mise shows the message as a warning whenever the tool is installed.
 
 #### Minimum backend versions
 

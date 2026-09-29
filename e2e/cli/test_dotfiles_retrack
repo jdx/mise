@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Re-tracking a path that is already tracked changes nothing: no rewrite,
+# no new checkpoint, and it says so.
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+echo original >~/.retrackrc
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+# kept as written
+[dotfiles]
+"~/.retrackrc"={mode="track"}
+TOML
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/declared.toml"
+
+assert_succeed 'mise dot track ~/.retrackrc'
+first=$(git --git-dir="$repository" rev-parse HEAD)
+# the declaration already says this, so the file is not reformatted
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+
+# A long-form table has the same meaning and must keep its formatting too.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles."~/.retrackrc"]
+mode = "track"
+TOML
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/declared.toml"
+assert_contains 'mise dot track ~/.retrackrc 2>&1' '~/.retrackrc is already tracked'
+assert_contains 'mise dot track ~/.retrackrc 2>&1' 'automatic capture is inactive'
+assert "git --git-dir=$repository rev-parse HEAD" "$first"
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+
+assert_contains 'mise dot track ~/.retrackrc 2>&1' '~/.retrackrc is already tracked'
+assert "git --git-dir=$repository rev-parse HEAD" "$first"
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+
+# a re-track still saves what changed since the newest checkpoint
+echo edited >~/.retrackrc
+assert_succeed 'mise dot track ~/.retrackrc'
+assert "git --git-dir=$repository show HEAD:home/.retrackrc" 'edited'
+
+# and one that changes the declaration still rewrites it
+assert_succeed 'mise dot track ~/.retrackrc --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'autosave = false'
+
+# Repeated spellings of a target count as one changed declaration.
+mise dot track ~/.retrackrc "$HOME/.retrackrc" --os linux >duplicate-output 2>&1
+assert_contains 'cat duplicate-output' 'dotfiles: tracking ~/.retrackrc'
+assert_not_contains 'cat duplicate-output' 'is already tracked'
+
+# tracking a new path beside an already-tracked one baselines the new one
+echo other >~/.otherrc
+require_cmd python3
+python3 - <<'PY' >prompt-output
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+
+master, slave = pty.openpty()
+env = os.environ.copy()
+env.pop("MISE_YES", None)
+process = subprocess.Popen(
+    ["mise", "dot", "track", os.path.expanduser("~/.retrackrc"), os.path.expanduser("~/.otherrc")],
+    stdin=slave, stdout=slave, stderr=slave, env=env,
+)
+os.close(slave)
+output = b""
+sent = False
+deadline = time.monotonic() + 10
+while time.monotonic() < deadline and process.poll() is None:
+    ready, _, _ = select.select([master], [], [], 0.1)
+    if ready:
+        try:
+            output += os.read(master, 4096)
+        except OSError:
+            break
+        if b"dotfiles: track " in output and not sent:
+            os.write(master, b"n\n")
+            sent = True
+# The pty read fails once mise closes its end, which can happen just before
+# the process can be reaped, so wait for exit instead of polling once.
+try:
+    process.wait(timeout=max(0, deadline - time.monotonic()))
+except subprocess.TimeoutExpired:
+    process.kill()
+    process.wait()
+    sys.exit("track prompt timed out")
+os.close(master)
+sys.stdout.buffer.write(output)
+if not sent or process.returncode:
+    sys.exit("track prompt did not complete")
+PY
+assert_contains 'cat prompt-output' 'dotfiles: track ~/.otherrc'
+assert_not_contains 'cat prompt-output' 'dotfiles: track ~/.retrackrc'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.otherrc"
+assert_contains 'mise dot track ~/.retrackrc ~/.otherrc 2>&1' 'dotfiles: tracking ~/.otherrc'
+assert "git --git-dir=$repository show HEAD:home/.otherrc" 'other'

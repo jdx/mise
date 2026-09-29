@@ -1,6 +1,19 @@
 use aho_corasick::AhoCorasick;
 use indexmap::IndexSet;
-use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::{Arc, Mutex};
+
+/// Process-wide redaction patterns, registered by config loading.
+pub static GLOBAL_REDACTOR: LazyLock<Mutex<Redactor>> = LazyLock::new(Default::default);
+
+/// Redact registered secrets without needing a loaded `Config`.
+///
+/// Some of the places a secret can surface have no `Config` to hand:
+/// `Display for CmdLineRunner` is rendered into `eyre` errors that are printed
+/// long after any config went out of scope.
+pub fn redact_global(input: &str) -> String {
+    GLOBAL_REDACTOR.lock().unwrap().redact(input)
+}
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
 pub struct Redactions(pub IndexSet<String>);

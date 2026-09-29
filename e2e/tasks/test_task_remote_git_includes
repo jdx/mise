@@ -115,6 +115,46 @@ assert_succeed "mise run remote-task" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
 
+# Advance main so a fresh clone and the cached one run different task content
+SERVED_REPO="$(head -n 1 "$INFO_FILE")/repo"
+printf '#!/usr/bin/env bash\necho "remote task updated"\n' >"$SERVED_REPO/xtasks/lint/remote-task"
+git -C "$SERVED_REPO" commit -qam "Update remote task"
+
+for run_cmd in "mise run" "mise tasks run"; do
+  upload_packs_before=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
+  assert_contains "$run_cmd --no-cache remote-task" "remote task updated" # Remote task should be redownloaded
+  upload_packs_after=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
+  [[ $((upload_packs_after - upload_packs_before)) -eq 1 ]] ||
+    fail "$run_cmd --no-cache reused the cached Git include"
+done
+assert_contains "mise run remote-task" "remote task executed" # Cache should still be used
+
+mise cache clear # Clear cache to force redownload
+
+#################################################################################
+# Test --no-cache for a remote Git file task run as a dependency
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_dep]
+file = "git::${LOCAL_GIT_URL}//xtasks/lint/remote-task"
+
+[tasks.parent]
+depends = ["remote_dep"]
+run = "echo parent"
+EOF
+
+assert_succeed "mise run parent" # Remote dependency should be downloaded
+upload_packs_before=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
+assert_succeed "mise run parent" # Cache should be used
+upload_packs_after=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
+[[ $((upload_packs_after - upload_packs_before)) -eq 0 ]] ||
+  fail "mise run did not use the cached remote dependency"
+assert_succeed "mise run --no-cache parent" # Remote dependency should be redownloaded
+upload_packs_after_no_cache=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
+[[ $((upload_packs_after_no_cache - upload_packs_after)) -eq 1 ]] ||
+  fail "mise run --no-cache reused the cached remote dependency"
+
 mise cache clear # Clear cache to force redownload
 
 #################################################################################

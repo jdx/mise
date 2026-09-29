@@ -407,6 +407,7 @@ mod tests {
                 path: "home/secret".into(),
                 autosave: true,
                 encrypt: true,
+                allow_plaintext: None,
                 variants: vec![],
                 exclude: None,
                 include: None,

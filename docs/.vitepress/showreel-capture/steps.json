@@ -1,0 +1,975 @@
+{
+  "schema": 2,
+  "machine": "machine-1",
+  "cols": 80,
+  "rows": 30,
+  "typing": {
+    "char": 0.045,
+    "before": 0.8,
+    "hold": 1.2
+  },
+  "snapshot_files": [
+    "~/.config/mise/config.toml",
+    "~/work/api/mise.toml",
+    "~/work/dashboard/mise.toml",
+    "~/work/tools/mise.toml",
+    "~/work/shop/mise.toml",
+    "~/work/api/mise.lock"
+  ],
+  "host_captures": {
+    "C4": {
+      "title": "registry names",
+      "source": "runs/<run>/C4/registry.txt: `mise registry --hide-aliased` from the pinned mise on machine 1",
+      "min_count": 1000
+    }
+  },
+  "setup": [
+    {
+      "note": "C4: the registry's short names, from the pinned mise itself (the rivers, and the \"1,000+\" floor)"
+    },
+    {
+      "sh": "mise registry --hide-aliased",
+      "cwd": "~",
+      "save": "C4/registry.txt",
+      "quiet": true,
+      "reject": ["^mise (WARN|ERROR)"]
+    },
+    {
+      "note": "~/.zshrc: prompt, completion, mise activate"
+    },
+    {
+      "write": "~/.zshrc",
+      "from": "home/.zshrc"
+    },
+    {
+      "mkdir": "~/work"
+    },
+    {
+      "note": "global node, so a shell outside a project still has one"
+    },
+    {
+      "sh": "mise use -g node@{{lts_major}}",
+      "cwd": "~"
+    },
+    {
+      "note": "api starts as the file mise use writes, then gets [env] and [tasks] by hand"
+    },
+    {
+      "mkdir": "~/work/api"
+    },
+    {
+      "sh": "mise use node@{{lts_major}}",
+      "cwd": "~/work/api"
+    },
+    {
+      "append": "~/work/api/mise.toml",
+      "from": "api/mise.toml.tail"
+    },
+    {
+      "write": "~/work/api/src/server.js",
+      "from": "api/src/server.js"
+    },
+    {
+      "write": "~/work/api/test/greet.test.js",
+      "from": "api/test/greet.test.js"
+    },
+    {
+      "write": "~/work/api/resp.json",
+      "from": "api/resp.json"
+    },
+    {
+      "write": "~/work/api/README.md",
+      "from": "api/README.md"
+    },
+    {
+      "write": "~/work/api/.github/workflows/ci.yml",
+      "from": "api/.github/workflows/ci.yml"
+    },
+    {
+      "write": "~/work/api/.gitignore",
+      "from": "api/.gitignore"
+    },
+    {
+      "sh": "git init -q && git remote add origin https://github.com/you/api && git ls-remote origin",
+      "cwd": "~/work/api"
+    },
+    {
+      "sh": "git ls-remote https://github.com/you/setup",
+      "cwd": "~"
+    }
+  ],
+  "captures": [
+    {
+      "id": "C1",
+      "title": "bare mise",
+      "cwd": "~",
+      "rows": 200,
+      "steps": [
+        {
+          "type": "mise\n",
+          "mark": "help",
+          "hold": 1.5
+        }
+      ],
+      "expect": ["Dev tools, env vars, and tasks in one CLI", "Usage: mise"],
+      "shape": {
+        "allow": [
+          {
+            "pattern": "experimental",
+            "rows_from": 7
+          },
+          {
+            "pattern": "trust",
+            "rows_from": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": "C2",
+      "title": "pitch: cd api, node, env, mise run ci",
+      "cwd": "~/work",
+      "steps": [
+        {
+          "type": "cd api\n",
+          "mark": "cd"
+        },
+        {
+          "type": "node --version\n",
+          "mark": "node"
+        },
+        {
+          "type": "echo APP_ENV=$APP_ENV\n",
+          "mark": "env"
+        },
+        {
+          "type": "mise run ci\n",
+          "mark": "ci",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^v{{lts_version}}$",
+        "^APP_ENV=api$",
+        "^\\[ci\\] api ready: node v{{lts_version}}, APP_ENV=api$"
+      ],
+      "shape": {
+        "order": true,
+        "allow": [
+          {
+            "pattern": "Finished in",
+            "after": "^\\[ci\\] api ready: "
+          }
+        ]
+      }
+    },
+    {
+      "id": "C3",
+      "title": "jq not found, mise use jq, Ctrl-L, jq again",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "jq .status resp.json\n",
+          "mark": "not-found"
+        },
+        {
+          "type": "mise use jq\n",
+          "mark": "use"
+        },
+        {
+          "key": "ctrl-l",
+          "mark": "clear",
+          "before": 1.0
+        },
+        {
+          "type": "jq .status resp.json\n",
+          "mark": "jq",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^zsh: command not found: jq$",
+        "tools: jq@{{jq_version}}$",
+        "^\"ok\"$"
+      ],
+      "shape": {
+        "order": true,
+        "allow": [
+          {
+            "pattern": "installed ... in",
+            "after": "^~/work/api \\$ mise use jq$"
+          }
+        ]
+      }
+    },
+    {
+      "id": "C5",
+      "title": "mise use npm:prettier, prettier --check",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "mise use npm:prettier\n",
+          "mark": "use"
+        },
+        {
+          "key": "ctrl-l",
+          "mark": "clear",
+          "before": 1.0
+        },
+        {
+          "type": "prettier --check README.md .github\n",
+          "mark": "check",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "tools: npm:prettier@{{prettier_version}}$",
+        "^Checking formatting\\.\\.\\.$",
+        "^All matched files use Prettier code style!$"
+      ],
+      "shape": {
+        "order": true,
+        "allow": [
+          {
+            "pattern": "installed ... in",
+            "after": "^~/work/api \\$ mise use npm:prettier$"
+          }
+        ]
+      }
+    },
+    {
+      "id": "C6",
+      "title": "mise use github:cli/cli, gh --version",
+      "cwd": "~/work/tools",
+      "setup": [
+        {
+          "mkdir": "~/work/tools"
+        },
+        {
+          "note": "gh is installed beforehand, so the take shows no download"
+        },
+        {
+          "sh": "mise install github:cli/cli@{{gh_version}}",
+          "cwd": "~"
+        }
+      ],
+      "steps": [
+        {
+          "type": "mise use github:cli/cli\n",
+          "mark": "use"
+        },
+        {
+          "type": "gh --version\n",
+          "mark": "gh",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^mise ~/work/tools/mise.toml tools: github:cli/cli@{{gh_version}}$",
+        "^gh version {{gh_version}} "
+      ],
+      "shape": {
+        "order": true
+      }
+    },
+    {
+      "id": "C7",
+      "title": "cd between api and dashboard",
+      "cwd": "~/work/api",
+      "setup": [
+        {
+          "note": "dashboard holds only tools, written by mise use"
+        },
+        {
+          "mkdir": "~/work/dashboard"
+        },
+        {
+          "sh": "mise use node@{{other_major}}",
+          "cwd": "~/work/dashboard"
+        }
+      ],
+      "steps": [
+        {
+          "type": "cd ../dashboard\n",
+          "mark": "cd-dashboard"
+        },
+        {
+          "type": "node --version\n",
+          "mark": "node-dashboard"
+        },
+        {
+          "type": "cd ../api\n",
+          "mark": "cd-api"
+        },
+        {
+          "type": "node --version\n",
+          "mark": "node-api",
+          "hold": 1.5
+        }
+      ],
+      "expect": ["^v{{other_version}}$", "^v{{lts_version}}$"],
+      "shape": {
+        "order": true,
+        "tail": {
+          "cd-dashboard": [
+            "^~/work/api \\$ cd \\.\\./dashboard$",
+            "^~/work/dashboard \\$$"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C8",
+      "title": "packslip: hk 2.1.0 to 2.2.0, Tab completion, mise skills sync",
+      "cwd": "~/work/api",
+      "snapshot_start": true,
+      "setup": [
+        {
+          "sh": "mise install hk@{{hk_old}} hk@{{hk_new}}",
+          "cwd": "~/work/api"
+        },
+        {
+          "note": "the one-time skills hint prints here, in a real terminal, off camera"
+        },
+        {
+          "pty": "mise use hk@{{hk_old}}",
+          "cwd": "~/work/api",
+          "log": "hint",
+          "expect": "mise hint the active tools ship agent skills"
+        },
+        {
+          "note": "the packslip statement mise saved with each hk install, for the slip"
+        },
+        {
+          "copy": "~/.local/share/mise/installs/hk/{{hk_old}}/.mise-packslip.json",
+          "to": "C8/offcam/packslip-hk-{{hk_old}}.json",
+          "expect": [
+            "\"_type\": ?\"https://in-toto\\.io/Statement/v1\"",
+            "\"version\": ?\"{{hk_old}}\""
+          ]
+        },
+        {
+          "copy": "~/.local/share/mise/installs/hk/{{hk_new}}/.mise-packslip.json",
+          "to": "C8/offcam/packslip-hk-{{hk_new}}.json",
+          "expect": [
+            "\"_type\": ?\"https://in-toto\\.io/Statement/v1\"",
+            "\"version\": ?\"{{hk_new}}\""
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "hk check --j",
+          "before": 1.5
+        },
+        {
+          "key": "tab",
+          "wait": "idle",
+          "idle": 1.0,
+          "mark": "tab-old",
+          "hold": 2.0
+        },
+        {
+          "key": "ctrl-c",
+          "before": 0.2
+        },
+        {
+          "type": "mise use hk@{{hk_new}}\n",
+          "mark": "use"
+        },
+        {
+          "type": "hk check --j"
+        },
+        {
+          "key": "tab",
+          "wait": "idle",
+          "idle": 1.0,
+          "mark": "tab-new",
+          "hold": 2.0
+        },
+        {
+          "key": "ctrl-c",
+          "before": 0.2
+        },
+        {
+          "type": "mise skills sync\n",
+          "mark": "sync",
+          "hold": 2.0
+        },
+        {
+          "type": "readlink .claude/skills/hk-configure\n",
+          "mark": "readlink",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^--json +-- ",
+        "^mise ~/work/api/mise.toml tools: hk@{{hk_new}}$",
+        "^--junit-xml +-- Write step results as a JUnit XML report$",
+        "^linked /home/you/work/api/\\.claude/skills/hk-configure -> ",
+        "^/home/you/\\.local/share/mise/installs/hk/{{hk_new}}/skills/hk-configure$"
+      ],
+      "shape": {
+        "order": true
+      }
+    },
+    {
+      "id": "C9",
+      "title": "leave api and env unloads; .env loads with _.file",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "cd ..\n",
+          "mark": "cd-out"
+        },
+        {
+          "type": "echo APP_ENV=$APP_ENV\n",
+          "mark": "env-empty",
+          "offcam": [
+            {
+              "note": "the user adds _.file and a .env in their editor"
+            },
+            {
+              "edit": "~/work/api/mise.toml",
+              "after": "APP_ENV = \"api\"",
+              "insert": "_.file = \".env\""
+            },
+            {
+              "write": "~/work/api/.env",
+              "from": "api/.env"
+            }
+          ]
+        },
+        {
+          "type": "cd api\n",
+          "mark": "cd-in",
+          "before": 1.2
+        },
+        {
+          "type": "echo PORT=$PORT\n",
+          "mark": "port",
+          "hold": 1.5
+        }
+      ],
+      "expect": ["^APP_ENV=$", "^PORT=3000$"],
+      "shape": {
+        "order": true
+      }
+    },
+    {
+      "id": "C10",
+      "title": "redact: mise run deploy staging",
+      "cwd": "~/work/api",
+      "setup": [
+        {
+          "edit": "~/work/api/mise.toml",
+          "replace": "_.file = \".env\"",
+          "with": "_.file = [\".env\", { path = \".env.deploy\", redact = true }]"
+        },
+        {
+          "write": "~/work/api/.env.deploy",
+          "from": "api/.env.deploy"
+        },
+        {
+          "write": "~/work/api/mise-tasks/deploy",
+          "from": "api/mise-tasks/deploy",
+          "mode": "755"
+        }
+      ],
+      "steps": [
+        {
+          "type": "mise run deploy staging\n",
+          "mark": "deploy",
+          "hold": 1.5
+        }
+      ],
+      "expect": ["^deploying to staging with token \\[redacted\\]$"],
+      "shape": {}
+    },
+    {
+      "id": "C11",
+      "title": "mise run ci lanes",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "mise run ci\n",
+          "mark": "ci",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^\\[lint\\] \\$ node --check src/server.js$",
+        "^\\[test\\] \\$ node --test --test-reporter=dot$",
+        "^\\[build\\] \\$ mkdir -p dist && cp src/server.js dist/server.js$",
+        "^\\[ci\\] api ready: node v{{lts_version}}, APP_ENV=api$"
+      ],
+      "shape": {
+        "allow": [
+          {
+            "pattern": "Finished in",
+            "after": "^\\[ci\\] api ready: "
+          }
+        ]
+      }
+    },
+    {
+      "id": "C12",
+      "title": "skip with sources and outputs",
+      "cwd": "~/work/api",
+      "setup": [
+        {
+          "edit": "~/work/api/mise.toml",
+          "after": "run = \"mkdir -p dist && cp src/server.js dist/server.js\"",
+          "insert": "sources = [\"src/**/*.js\"]\noutputs = [\"dist/server.js\"]"
+        }
+      ],
+      "steps": [
+        {
+          "note": "the first run after the edit builds and records the sources; the second skips"
+        },
+        {
+          "type": "mise run ci\n",
+          "mark": "ci-first",
+          "hold": 1.5
+        },
+        {
+          "type": "mise run ci\n",
+          "mark": "ci-skip",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^\\[build\\] sources up-to-date, skipping$",
+        "^\\[ci\\] api ready: node v{{lts_version}}, APP_ENV=api$"
+      ],
+      "shape": {
+        "allow": [
+          {
+            "pattern": "Finished in",
+            "after": "^\\[ci\\] api ready: "
+          }
+        ]
+      }
+    },
+    {
+      "id": "C13",
+      "title": "mise run deploy --help and bad input",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "mise run deploy --help\n",
+          "mark": "help",
+          "hold": 1.5
+        },
+        {
+          "type": "mise run deploy prod\n",
+          "mark": "bad",
+          "hold": 1.5
+        }
+      ],
+      "expect": [
+        "^Usage: deploy <env>$",
+        "Invalid choice for arg env: prod, expected one of staging, production$",
+        "^mise ERROR Version: {{mise_version}} "
+      ],
+      "shape": {
+        "order": true
+      }
+    },
+    {
+      "id": "C14",
+      "title": "daemons: cd ../shop, mise run db",
+      "cwd": "~/work/api",
+      "setup": [
+        {
+          "note": "shop starts as the file mise use writes, then gets [daemons] and a task by hand"
+        },
+        {
+          "mkdir": "~/work/shop"
+        },
+        {
+          "sh": "mise use pitchfork@{{pitchfork_version}}",
+          "cwd": "~/work/shop"
+        },
+        {
+          "append": "~/work/shop/mise.toml",
+          "from": "shop/mise.toml.tail"
+        },
+        {
+          "note": "Postgres pre-roll: install, initdb and one start, then stop, so the take shows no initdb"
+        },
+        {
+          "sh": "mise run db && mise daemons stop postgres",
+          "cwd": "~/work/shop",
+          "expect": ["^{{postgres_version}}$"],
+          "save": "C14/offcam/pre-roll.txt"
+        }
+      ],
+      "steps": [
+        {
+          "type": "cd ../shop\n",
+          "mark": "cd"
+        },
+        {
+          "type": "mise run db\n",
+          "mark": "db",
+          "hold": 1.5,
+          "timeout": 180
+        }
+      ],
+      "after": [
+        {
+          "sh": "mise daemons stop postgres",
+          "cwd": "~/work/shop",
+          "save": "C14/offcam/stop.txt"
+        }
+      ],
+      "expect": [
+        "^✔ \\[shop/postgres\\] started on port 5432$",
+        "^\\[db\\] \\$ psql -Atc \"show server_version\"$",
+        "^{{postgres_version}}$"
+      ],
+      "shape": {
+        "order": true,
+        "tail": {
+          "cd": ["^~/work/api \\$ cd \\.\\./shop$", "^~/work/shop \\$$"]
+        },
+        "reject": [
+          "initdb",
+          "The files belonging to this database",
+          "already running",
+          "database system was not properly shut down"
+        ]
+      }
+    },
+    {
+      "id": "C15",
+      "title": "dotfiles: track ~/.zshrc, autosave, history, rollback",
+      "cwd": "~",
+      "setup": [
+        {
+          "note": "the history watcher runs in the foreground in an off-camera terminal"
+        },
+        {
+          "tmux": "mise dot watch",
+          "session": "watch",
+          "cwd": "~",
+          "ready": "watching \\d+ anchor"
+        }
+      ],
+      "steps": [
+        {
+          "type": "mise dot track ~/.zshrc\n",
+          "wait": "screen",
+          "match": "y/n/enter submit",
+          "idle": 0.8,
+          "mark": "confirm",
+          "hold": 1.0
+        },
+        {
+          "key": "enter",
+          "before": 0.3,
+          "mark": "track",
+          "hold": 1.5
+        },
+        {
+          "type": "echo \"alias ll='ls -lah'\" >> ~/.zshrc\n",
+          "mark": "edit",
+          "offcam": [
+            {
+              "note": "the watcher saves the edit on its own; wait until it has"
+            },
+            {
+              "tmux_wait": "saved checkpoint 2 \\(~/\\.zshrc changed\\)",
+              "session": "watch",
+              "timeout": 60
+            }
+          ]
+        },
+        {
+          "type": "mise dot history --path ~/.zshrc\n",
+          "mark": "history",
+          "hold": 1.5
+        },
+        {
+          "type": "mise dot rollback ~/.zshrc\n",
+          "wait": "screen",
+          "match": "y/n/enter submit",
+          "idle": 0.8,
+          "mark": "confirm-rollback",
+          "hold": 1.0
+        },
+        {
+          "key": "enter",
+          "before": 0.3,
+          "mark": "rollback",
+          "hold": 1.5
+        }
+      ],
+      "after": [
+        {
+          "note": "the rail's dots: the history again, after the rollback"
+        },
+        {
+          "sh": "mise dot history --path ~/.zshrc",
+          "save": "C15/offcam/history-after.txt",
+          "expect": ["rollback"]
+        },
+        {
+          "sh": "cat ~/.zshrc",
+          "save": "C15/offcam/zshrc-after.txt",
+          "reject": ["alias ll"]
+        }
+      ],
+      "expect": [
+        "^dotfiles: track ~/\\.zshrc \\(1 file, \\d+ B\\)\\? Yes$",
+        "^mise history: saved baseline checkpoint 1$",
+        "^mise dotfiles: tracking ~/\\.zshrc \\(1 file, \\d+ B; declared in ~/\\.config/mise/con",
+        "^mise history: watcher running; autosave-enabled files are saved automatically$",
+        "^2 +\\S+ \\S+ +edit +edited ~/\\.zshrc +1$",
+        "^1 +\\S+ \\S+ +baseline +tracked ~/\\.zshrc +1$",
+        "^~/\\.zshrc +write ",
+        "^history: apply this plan\\? Yes$",
+        "^mise history: rolled back ~/\\.zshrc to checkpoint 1$"
+      ],
+      "shape": {
+        "order": true
+      }
+    },
+    {
+      "id": "C16",
+      "title": "off camera: track the global config, connect you/setup",
+      "cwd": "~",
+      "offcam": true,
+      "setup": [
+        {
+          "note": "the watcher stops first: tracking a file it is watching while it runs can record a spurious deletion of that file (seen once in two runs), and the next publish would carry it"
+        },
+        {
+          "tmux_stop": "watch",
+          "quiet": 8,
+          "log": "watch",
+          "reject": ["\\(shutdown\\)", "removed "]
+        },
+        {
+          "note": "machine 2 starts the watcher as a user service from this declaration",
+          "variant": "systemd"
+        },
+        {
+          "append": "~/.config/mise/config.toml",
+          "from": "home/config.toml.services",
+          "variant": "systemd"
+        },
+        {
+          "sh": "mise dot track --yes ~/.config/mise/config.toml",
+          "save": "C16/offcam/track.txt",
+          "expect": [
+            "^mise history: saved baseline checkpoint \\d+$",
+            "^mise dotfiles: tracking ~/\\.config/mise/config\\.toml "
+          ]
+        },
+        {
+          "sh": "mise dot origin set https://github.com/you/setup.git --sync manual --yes",
+          "save": "C16/offcam/origin.txt",
+          "expect": ["^mise history: published [0-9a-f]+$"]
+        },
+        {
+          "sh": "mise dot history && git ls-remote https://github.com/you/setup",
+          "save": "C16/offcam/history.txt",
+          "expect": ["refs/heads/main"]
+        },
+        {
+          "note": "the setup repository must hold both files machine 2 adopts"
+        },
+        {
+          "sh": "rm -rf /tmp/setup-check && git clone -q https://github.com/you/setup /tmp/setup-check && git -C /tmp/setup-check ls-tree -r --name-only HEAD && rm -rf /tmp/setup-check",
+          "save": "C16/offcam/published-tree.txt",
+          "expect": ["^config/config\\.toml$", "^home/\\.zshrc$"]
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "mise lock in api",
+      "cwd": "~/work/api",
+      "steps": [
+        {
+          "type": "mise lock\n",
+          "mark": "lock",
+          "hold": 1.5,
+          "timeout": 300
+        }
+      ],
+      "after": [
+        {
+          "note": "push you/api with mise.lock and .mise/locks"
+        },
+        {
+          "sh": "git add -A && git commit -qm api && git push -q -u origin main && git ls-tree -r --name-only HEAD",
+          "cwd": "~/work/api",
+          "save": "C17/offcam/pushed.txt",
+          "expect": [
+            "^mise\\.lock$",
+            "^\\.mise/locks/npm-prettier/",
+            "^mise-tasks/deploy$",
+            "^\\.env$"
+          ],
+          "reject": ["^\\.env\\.deploy$", "^\\.claude/", "^dist/"]
+        }
+      ],
+      "expect": ["^✓ Lockfile written to ~/work/api/mise\\.lock$"],
+      "shape": {
+        "allow": [
+          {
+            "pattern": "mise WARN",
+            "after": "^✓ Lockfile written to ~/work/api/mise\\.lock$"
+          }
+        ]
+      }
+    }
+  ],
+  "teardown": [
+    {
+      "note": "check the history recorded nothing on the watcher's way out"
+    },
+    {
+      "sh": "mise dot history",
+      "save": "setup/history-final.txt",
+      "reject": ["shutdown", "removed "]
+    }
+  ],
+  "machine2": {
+    "machine": "machine-2",
+    "snapshot_files": [
+      "~/.config/mise/config.toml",
+      "~/.zshrc",
+      "~/api/mise.toml",
+      "~/api/mise.lock"
+    ],
+    "setup": [
+      {
+        "note": "a fresh machine: mise is installed and nothing else"
+      },
+      {
+        "sh": "ls -A ~ && command -v mise && mise --version",
+        "save": "setup-machine2/home-before.txt"
+      },
+      {
+        "sh": "systemctl --user is-system-running",
+        "variant": "systemd",
+        "save": "setup-machine2/user-manager.txt",
+        "expect": ["^(running|degraded)$"]
+      }
+    ],
+    "captures": [
+      {
+        "id": "C18",
+        "title": "mise bootstrap --adopt you/setup",
+        "cwd": "~",
+        "steps": [
+          {
+            "type": "mise bootstrap --adopt you/setup\n",
+            "answer": {
+              "match": "y/n/enter submit",
+              "max": 4,
+              "hold": 1.0,
+              "mark": "confirm"
+            },
+            "mark": "done",
+            "hold": 1.5,
+            "timeout": 900
+          }
+        ],
+        "after": [
+          {
+            "sh": "systemctl --user --no-pager status dev.mise.mise-history.service | head -5",
+            "variant": "systemd",
+            "save": "C18/offcam/service.txt",
+            "expect": ["active \\(running\\)"]
+          }
+        ],
+        "expect": [
+          "^https://github\\.com/you/setup\\.git is a mise setup repository \\(format 1\\); branch m",
+          "^Set this machine up from the repository\\? Yes$",
+          "^Wrote 2 file\\(s\\) from https://github\\.com/you/setup\\.git\\.$",
+          {
+            "re": "^mise bootstrap: user services$",
+            "variant": "systemd"
+          },
+          {
+            "re": "^user services: apply .*\\? Yes$",
+            "variant": "systemd"
+          },
+          "^mise bootstrap: dotfiles$",
+          "^mise bootstrap: tools$",
+          "installed 1 tool in .*node@{{lts_version}}"
+        ],
+        "shape": {
+          "order": true,
+          "allow": [
+            {
+              "pattern": "installed ... in",
+              "after": "^mise bootstrap: tools$"
+            }
+          ]
+        }
+      },
+      {
+        "id": "C19",
+        "title": "same shell, not activated: git clone, cd api, mise run ci",
+        "cwd": "~",
+        "same_shell": true,
+        "window_from": "clear",
+        "steps": [
+          {
+            "key": "ctrl-l",
+            "mark": "clear",
+            "before": 1.5
+          },
+          {
+            "type": "git clone https://github.com/you/api && cd api && mise run ci\n",
+            "mark": "ci",
+            "hold": 1.5,
+            "timeout": 900
+          }
+        ],
+        "after": [
+          {
+            "note": "every configured tool is installed at the version mise.lock pins"
+          },
+          {
+            "sh": "test -z \"$(mise ls --current --missing --no-header)\" && mise ls --current --no-header",
+            "cwd": "~/api",
+            "save": "C19/offcam/ls.txt",
+            "expect": [
+              "^hk +{{hk_new}} ",
+              "^jq +{{jq_version}} ",
+              "^node +{{lts_version}} ",
+              "^npm:prettier +{{prettier_version}} "
+            ]
+          }
+        ],
+        "expect": [
+          "^Cloning into 'api'\\.\\.\\.$",
+          "installed \\d+ tools? in .*jq@{{jq_version}}",
+          "installed \\d+ tools? in .*npm:prettier@{{prettier_version}}",
+          "installed \\d+ tools? in .*hk@{{hk_new}}",
+          "^\\[ci\\] api ready: node v{{lts_version}}, APP_ENV=api$"
+        ],
+        "shape": {
+          "order": true,
+          "allow": [
+            {
+              "pattern": "installed ... in",
+              "after": "^Cloning into 'api'\\.\\.\\.$"
+            },
+            {
+              "pattern": "Finished in",
+              "after": "^\\[ci\\] api ready: "
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

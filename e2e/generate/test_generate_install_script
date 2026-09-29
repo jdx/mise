@@ -132,3 +132,14 @@ assert "MISE_VERSION=v9999.1.2 ./bin/mise-absolute hello" "absolute-localized-st
 assert "mise generate bootstrap -w ./bin/mise-old-name"
 # shellcheck disable=SC2016
 assert_contains "cat ./bin/mise-old-name" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
+
+# The published installer carries no default version, so the wrapper pins it itself: an explicit
+# --version must not need the installer to name one, and the pin must reach the installer, or it
+# would write whatever release it selects under the pinned name.
+assert "mise generate install-script --version 2026.9.15 -w ./bin/mise-pinned"
+assert_contains "cat ./bin/mise-pinned" 'MISE_VERSION:-2026.9.15'
+# shellcheck disable=SC2016
+assert_contains "cat ./bin/mise-pinned" 'MISE_VERSION="v$mise_version" install'
+# Run it: with the pin handed to the installer, the binary is the pinned release rather than
+# whichever release the installer would select on its own (2026.9.15 is never the latest eligible).
+assert_contains "./bin/mise-pinned --version" "2026.9.15"

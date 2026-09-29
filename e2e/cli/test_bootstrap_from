@@ -165,3 +165,116 @@ assert_directory_not_exists "$dry_checkout"
 # an unexpected repository.
 git -C "$checkout" remote set-url origin unexpected
 assert_fail "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes"
+
+# A go-getter style ?ref= selects a branch, tag or commit instead of the
+# default branch; --update follows a branch and switches to a moved ref.
+ref_source="$PWD/bootstrap-ref-source"
+mkdir -p "$ref_source"
+git -C "$ref_source" init -q -b main
+git -C "$ref_source" config user.email test@example.com
+git -C "$ref_source" config user.name "mise test"
+cat <<'EOF' >"$ref_source/mise.toml"
+[tasks.bootstrap]
+run = 'cp "$PWD/marker" "$HOME/bootstrap-ref-marker"'
+EOF
+echo main >"$ref_source/marker"
+git -C "$ref_source" add .
+git -C "$ref_source" commit -qm main
+git -C "$ref_source" tag v1
+git -C "$ref_source" checkout -q -b feature/x
+echo feature >"$ref_source/marker"
+git -C "$ref_source" commit -qam feature
+git -C "$ref_source" checkout -q main
+echo main-2 >"$ref_source/marker"
+git -C "$ref_source" commit -qam main-2
+
+assert_succeed "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "feature"
+assert "git -C '$PWD/ref-branch' remote get-url origin" "$ref_source"
+
+assert_succeed "mise bootstrap --from 'git::$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main"
+
+# --update on a branch ref fast-forwards it
+git -C "$ref_source" checkout -q feature/x
+echo feature-2 >"$ref_source/marker"
+git -C "$ref_source" commit -qam feature-2
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "feature-2"
+
+# --update on a tag ref (detached HEAD) does not try to pull
+assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main"
+
+# --update follows a tag that moved on the remote
+git -C "$ref_source" tag -f v1 main >/dev/null
+assert_succeed "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "main-2"
+
+assert_contains "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-dry' --dry-run" "checkout v1 --"
+assert_contains "mise bootstrap --from '$ref_source?ref=feature/x' --from-dir '$PWD/ref-branch' --update --dry-run" "merge --ff-only origin/feature/x (if it is a branch)"
+
+# An unknown ref fails and leaves no checkout that a later run would reuse
+assert_fail "mise bootstrap --from '$ref_source?ref=nope' --from-dir '$PWD/ref-missing' --yes --only task"
+assert_directory_not_exists "$PWD/ref-missing"
+
+# --update rejects a tag that was deleted upstream instead of using the stale
+# local copy, and keeps the other tags in the checkout
+git -C "$PWD/ref-tag" tag local-only
+git -C "$ref_source" tag -d v1 >/dev/null
+assert_fail "mise bootstrap --from '$ref_source?ref=v1' --from-dir '$PWD/ref-tag' --update --yes --only task"
+assert_contains "git -C '$PWD/ref-tag' tag" "local-only"
+
+# A local tag that shares its name with a branch on origin does not block
+# updating that branch
+git -C "$PWD/ref-branch" tag main
+assert_succeed "mise bootstrap --from '$ref_source?ref=main' --from-dir '$PWD/ref-branch' --update --yes --only task"
+
+# A local tag that shadows a branch of the same name on origin does not stop
+# --update from switching to the branch and following it
+git -C "$ref_source" checkout -q -b rel main
+echo rel >"$ref_source/marker"
+git -C "$ref_source" commit -qam rel
+git -C "$ref_source" checkout -q main
+git -C "$PWD/ref-branch" tag rel
+assert_succeed "mise bootstrap --from '$ref_source?ref=rel' --from-dir '$PWD/ref-branch' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "rel"
+assert "git -C '$PWD/ref-branch' symbolic-ref HEAD" "refs/heads/rel"
+
+# A branch wins over a tag of the same name, on a fresh clone as on update
+git -C "$ref_source" checkout -q -b both main
+echo both-branch >"$ref_source/marker"
+git -C "$ref_source" commit -qam both
+git -C "$ref_source" tag both main
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=both' --from-dir '$PWD/ref-both' --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "both-branch"
+assert "git -C '$PWD/ref-both' symbolic-ref HEAD" "refs/heads/both"
+
+# --update rejects a branch deleted upstream instead of using the local copy
+git -C "$ref_source" branch -q gone main
+assert_succeed "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --yes --only task"
+git -C "$ref_source" branch -q -D gone
+assert_fail "mise bootstrap --from '$ref_source?ref=gone' --from-dir '$PWD/ref-gone' --update --yes --only task"
+
+# --update follows origin even when the local branch tracks another remote
+git clone -q "$ref_source" "$PWD/ref-other"
+git -C "$PWD/ref-other" config user.email test@example.com
+git -C "$PWD/ref-other" config user.name "mise test"
+git -C "$PWD/ref-other" checkout -q -B both origin/both
+echo other-remote >"$PWD/ref-other/marker"
+git -C "$PWD/ref-other" commit -qam other
+git -C "$PWD/ref-both" remote add other "$PWD/ref-other"
+git -C "$PWD/ref-both" fetch other
+git -C "$PWD/ref-both" branch -q --set-upstream-to=other/both both
+git -C "$ref_source" checkout -q -B both refs/heads/both
+echo origin-newer >"$ref_source/marker"
+git -C "$ref_source" commit -qam origin-newer
+git -C "$ref_source" checkout -q main
+assert_succeed "mise bootstrap --from '$ref_source?ref=both' --from-dir '$PWD/ref-both' --update --yes --only task"
+assert "cat ~/bootstrap-ref-marker" "origin-newer"
+
+# HEAD is not a branch or tag; omitting ref selects the default branch
+assert_fail "mise bootstrap --from '$ref_source?ref=HEAD' --from-dir '$PWD/ref-head' --yes --only task"
+assert_directory_not_exists "$PWD/ref-head"

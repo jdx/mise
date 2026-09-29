@@ -229,31 +229,48 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
     ) -> Vec<ToolVersion> {
+        self.list_missing_versions_checking(config, |_| true).await
+    }
+
+    /// Lists missing versions, running backend-specific satisfaction checks
+    /// only for the versions `full_check` selects. The others use the cheap
+    /// install-marker check, because backend checks can spawn processes
+    /// (e.g. rustup) and would otherwise run on every shim call for tools
+    /// that are not going to be installed.
+    pub(crate) async fn list_missing_versions_checking(
+        &self,
+        config: &Arc<Config>,
+        full_check: impl Fn(&ToolVersion) -> bool,
+    ) -> Vec<ToolVersion> {
         trace!("list_missing_versions_for_install");
         measure!("toolset::list_missing_versions_for_install", {
-            let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
+            let versions = self
+                .list_current_versions()
+                .into_iter()
+                .map(|(backend, tv)| {
+                    let full = full_check(&tv);
+                    (backend, tv, full)
+                })
+                .collect::<Vec<_>>();
             let parallel_versions = versions
                 .clone()
                 .into_iter()
-                .map(|(backend, tv)| (config.clone(), backend, tv))
+                .map(|(backend, tv, full)| (config.clone(), backend, tv, full))
                 .collect::<Vec<_>>();
-            match parallel::parallel(parallel_versions, |(config, backend, tv)| async move {
-                Ok((!backend
-                    .is_install_satisfied_or_false(&config, &tv, true)
-                    .await)
-                    .then_some(tv))
-            })
+            match parallel::parallel(
+                parallel_versions,
+                |(config, backend, tv, full)| async move {
+                    Ok((!is_version_satisfied(&config, &backend, &tv, full).await).then_some(tv))
+                },
+            )
             .await
             {
                 Ok(missing) => missing.into_iter().flatten().collect(),
                 Err(err) => {
                     warn!("Error checking missing tool versions: {err:#}");
                     let mut missing = vec![];
-                    for (backend, tv) in versions {
-                        if !backend
-                            .is_install_satisfied_or_false(config, &tv, true)
-                            .await
-                        {
+                    for (backend, tv, full) in versions {
+                        if !is_version_satisfied(config, &backend, &tv, full).await {
                             missing.push(tv);
                         }
                     }
@@ -275,7 +292,7 @@ impl Toolset {
             .into_iter()
             .map(|(p, tv)| {
                 (
-                    (p.ba().installs_path.clone(), tv.tv_pathname()),
+                    (p.ba().installs_path().to_path_buf(), tv.tv_pathname()),
                     (p.clone(), tv),
                 )
             })
@@ -285,7 +302,7 @@ impl Toolset {
         for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) =
-                    current_versions.get(&(b.ba().installs_path.clone(), v.clone()))
+                    current_versions.get(&(b.ba().installs_path().to_path_buf(), v.clone()))
                 {
                     versions.push((p.clone(), tv.clone()));
                 } else {
@@ -321,7 +338,7 @@ impl Toolset {
             .into_iter()
             .map(|(backend, _)| backend)
             .chain(backend::list())
-            .unique_by(|backend| backend.ba().installs_path.clone())
+            .unique_by(|backend| backend.ba().installs_path().to_path_buf())
             .collect()
     }
 
@@ -1015,6 +1032,21 @@ pub async fn prunable_tools_with_sources(
     }
 
     Ok((to_delete.into_values().collect(), needed))
+}
+
+async fn is_version_satisfied(
+    config: &Arc<Config>,
+    backend: &Arc<dyn Backend>,
+    tv: &ToolVersion,
+    full_check: bool,
+) -> bool {
+    if full_check {
+        backend
+            .is_install_satisfied_or_false(config, tv, true)
+            .await
+    } else {
+        backend.is_version_installed(config, tv, true)
+    }
 }
 
 fn collect_needed_versions(

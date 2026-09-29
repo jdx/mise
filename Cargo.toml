@@ -4,6 +4,8 @@ members = [
   "crates/mise-cache-core",
   "crates/mise-brew-relocation",
   "crates/mise-agent-env",
+  "crates/mise-brew-metadata",
+  "crates/mise-bootstrap",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -15,7 +17,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.9.14"
+version = "2026.9.17"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -139,6 +141,8 @@ futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
+mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
+mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -167,14 +171,14 @@ junction = "2"
 log = "0.4"
 minisign-verify = "0.2"
 miette = { version = "7", features = ["fancy"] }
-nodejs-semver = "5"
+nodejs-semver = "6"
 notify = { version = "8", default-features = false, features = [
   "macos_fsevent",
 ] }
 notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
-packslip = { version = "1.0", default-features = false }
+packslip = { version = "1.4", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 pathdiff = "0.2"
@@ -193,6 +197,7 @@ rattler_package_streaming = { version = "0.27", default-features = false }
 rattler_virtual_packages = { version = "7", default-features = false }
 regex = "1"
 plist = "1"
+reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "form",
@@ -280,17 +285,20 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = [
   "reqwest-client",
 ] }
 
+self-replace = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+zipsign-api = { version = "0.2", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
-nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
-self_update = { version = "1", optional = true, default-features = false, features = [
-  "archive-tar",
-  "compression-tar-gz",
-  "signatures",
-  "reqwest",
-  "github",
-  "progress-bar",
+nix = { version = "0.31", features = [
+  "dir",
+  "fs",
+  "hostname",
+  "signal",
+  "term",
+  "user",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -298,15 +306,6 @@ core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "1", optional = true, default-features = false, features = [
-  "archive-zip",
-  "compression-zip-deflate",
-  "signatures",
-  "reqwest",
-  "github",
-  "progress-bar",
-] }
-zipsign-api = "0.2"
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
 windows-sys = { version = "0.61", features = [
   "Win32_Globalization",
@@ -345,6 +344,7 @@ pretty_assertions = "1"
 test-log = "0.2"
 
 [features]
+self_update = ["dep:self-replace", "dep:tar", "dep:zipsign-api"]
 default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
   "gix/blocking-http-transport-reqwest-native-tls",
@@ -356,7 +356,6 @@ native-tls = [
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
-  "self_update?/native-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -368,7 +367,6 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
-  "self_update?/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -380,7 +378,6 @@ rustls-native-roots = [
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
-  "self_update?/rustls",
 ]
 
 [package.metadata.binstall]

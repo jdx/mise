@@ -6,6 +6,15 @@ on:
       trusted:
         required: true
         type: boolean
+      rerender-showreel:
+        description: Record and render the landing-page showreel even if the cache has it
+        required: false
+        type: boolean
+        default: false
+      deploy:
+        required: false
+        type: boolean
+        default: false
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID:
         required: false
@@ -14,22 +23,179 @@ on:
       MISE_GH_TOKEN:
         required: false
 
+# Only pull requests cancel an earlier run. A deploy may be halfway through
+# uploading, and a run on main may be rendering the showreel, which takes a
+# while and is kept only when its job finishes (a cancelled job's writes to
+# the Namespace cache volume are discarded), so a newer run waits for it, and
+# only the newest waiting run is kept.
 concurrency:
-  group: docs-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'deploy' || 'validation' }}-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'release' || github.head_ref || github.ref }}
-  cancel-in-progress: true
+  group: docs-${{ inputs.deploy && 'deploy-release' || format('validation-{0}', github.head_ref || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   MBX_DISABLE: "1"
-  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
+  # The landing-page showreel, for the trusted runs that are not pull
+  # requests (main, releases, dispatch). On a cache miss it records the
+  # captures in containers (machine 2 privileged, for systemd) that run
+  # freshly resolved third-party tools, so it runs on a machine of its own
+  # that is never handed a secret: no PAT, no R2 keys, and only the job's
+  # read-only token. The docs job below takes the files it leaves (an
+  # artifact) and deploys them; it never runs anything from it.
+  #
+  # The render is kept on a Namespace cache volume of its own. A volume
+  # holds the contents of whichever job last finished with it, so it must
+  # not share one with every other trusted job, which would drop the render
+  # whenever a job that started before it ended after it. It is rendered
+  # again only when its inputs change: the capture set's key (what the reel
+  # shows, from `showreel-capture --resolve-only`) and the files the render
+  # reads (xtasks/docs/showreel lists them). Captures use the newest mise
+  # release, so a release that moves mise's node `lts` alias changes the key
+  # and is the run that re-renders; other releases find main's render and
+  # don't wait on one. Nothing here fails the run: on any failure the site
+  # keeps the last good render, or builds without one, with a warning on the
+  # run.
+  showreel:
+    if: github.repository == 'jdx/mise' && inputs.trusted && github.event_name != 'pull_request'
+    runs-on: ${{ inputs.trusted && 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-docs-showreel' || 'ubuntu-latest' }}
+    env:
+      # The mise the captures are recorded with, for the lookup's key and the
+      # render alike: a release uses the mise it publishes (mise.jdx.dev/VERSION
+      # may not point at it yet); every other run the newest release.
+      SHOWREEL_MISE_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
+    # A lookup is seconds; a recording and render can take much longer (the
+    # render step's timeout is below).
+    timeout-minutes: 210
+    # Every trusted showreel job mounts the same Namespace volume, and the
+    # volume keeps whichever job finishes last, so these jobs run one at a
+    # time across main, releases and dispatches (the run's own group only
+    # orders deploys, or runs on one ref). A job never cancels a running one;
+    # GitHub keeps only the newest waiting job, and a docs job whose showreel
+    # job was dropped builds without the reel and warns.
+    concurrency:
+      group: docs-showreel-volume
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Nothing here pushes or fetches, and the captures run third-party
+          # tools in containers.
+          persist-credentials: false
+      # The job's own token, read-only, for mise's GitHub lookups: never the
+      # PAT, which this job must not hold.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: aube node
+          github_token: ${{ github.token }}
+      - run: aube install
+      - name: Mount the showreel cache on the Namespace cache volume
+        continue-on-error: true
+        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
+        with:
+          path: |
+            ~/.cache/mise-showreel
+            ~/.cache/ms-playwright
+      - name: Look up the showreel
+        id: showreel
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          FRESH: ${{ inputs.rerender-showreel }}
+          PROMOTE: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+        run: |
+          args=(--cache "$HOME/.cache/mise-showreel" --lookup)
+          if [ "$PROMOTE" = true ]; then args+=(--promote); fi
+          if [ "$FRESH" = true ]; then args+=(--fresh); fi
+          mise run docs:showreel -- "${args[@]}"
+      - name: Install the showreel's render tools
+        id: showreel-tools
+        if: steps.showreel.outputs.state == 'miss'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+          aube exec playwright-core install --with-deps chromium-headless-shell
+      # Records the captures when the cache has none for these versions (in
+      # Docker, as locally), runs the reel's tests, and renders at 120 and 60
+      # fps. A 30 fps draft takes about two minutes on 32 threads (the score
+      # about thirty seconds of it); the render draws four times the frames
+      # and encodes two files, on fewer cores. The script's own timeouts (45
+      # minutes for the captures, 120 for the render) fall back before this
+      # step's.
+      - name: Record and render the showreel
+        id: showreel-render
+        if: steps.showreel.outputs.state == 'miss' && steps.showreel-tools.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 180
+        env:
+          FRESH: ${{ inputs.rerender-showreel }}
+          PROMOTE: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+        run: |
+          args=(--cache "$HOME/.cache/mise-showreel")
+          if [ "$PROMOTE" = true ]; then args+=(--promote); fi
+          if [ "$FRESH" = true ]; then args+=(--fresh); fi
+          mise run docs:showreel -- "${args[@]}"
+      # The steps above fall back by themselves; this covers a step that was
+      # stopped (its timeout), cancelled or could not start, and a miss
+      # nothing rendered.
+      - name: Fall back to the last good showreel
+        if: >-
+          steps.showreel.outcome != 'success' ||
+          (steps.showreel.outputs.state == 'miss' && steps.showreel-render.outcome != 'success')
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SHOWREEL_FALLBACK_REASON: the showreel step failed or timed out
+        run: mise run docs:showreel -- --cache "$HOME/.cache/mise-showreel" --fallback
+      # Only the files the page serves and the facts it quotes, by name.
+      - name: Stage the showreel for the site
+        id: stage
+        continue-on-error: true
+        run: |
+          stage="$RUNNER_TEMP/showreel"
+          mkdir -p "$stage/captures"
+          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt; do
+            if [ -s "docs/public/$f" ]; then cp "docs/public/$f" "$stage/"; fi
+          done
+          if [ -n "${SHOWREEL_CAPTURES:-}" ] && [ -f "$SHOWREEL_CAPTURES/versions.json" ]; then
+            cp "$SHOWREEL_CAPTURES/versions.json" "$stage/captures/"
+            for r in "$SHOWREEL_CAPTURES"/runs/*/run-machine2.json; do
+              [ -f "$r" ] || continue
+              run=$(basename "$(dirname "$r")")
+              mkdir -p "$stage/captures/runs/$run"
+              cp "$r" "$stage/captures/runs/$run/"
+            done
+          fi
+          if [ -n "${SHOWREEL_CHAPTERS:-}" ] && [ -s "$SHOWREEL_CHAPTERS" ]; then
+            cp "$SHOWREEL_CHAPTERS" "$stage/chapters.json"
+          fi
+          ls -la "$stage"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.stage.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: showreel
+          path: ${{ runner.temp }}/showreel
+          if-no-files-found: ignore
+          retention-days: 1
+
   docs:
-    if: github.repository == 'jdx/mise'
+    needs: [showreel]
+    # Whether the showreel job ran, found a render, or failed, the site builds
+    # (without one if it has none).
+    if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' }}
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # for lastUpdated
+          persist-credentials: false
       # mise-action exports its github_token as MISE_GITHUB_TOKEN, which takes
       # precedence over the GITHUB_TOKEN set above. Left at its default that is
       # the ephemeral installation token, whose budget is shared by every
@@ -39,7 +205,7 @@ jobs:
       # own budget instead.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: bun
+          install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
       # Check the API directly instead of bootstrapping the rate-limit helper,
       # since installing the helper itself requires GitHub API access.
@@ -65,9 +231,62 @@ jobs:
               sleep "$wait_seconds"
             fi
           fi
-      - run: bun i
-      - run: mise run docs:release
+      - run: aube install
+
+      # The landing page plays the showreel (docs/public/showreel-120.mp4 and
+      # showreel.mp4, with its poster and chapters track), and the homepage
+      # offers the 60 fps file as og:video. The showreel job leaves them, and
+      # the facts the page quotes, as an artifact; only those files, by
+      # name, are taken from it. Every other run builds the site without it.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.showreel.result == 'success'
+        continue-on-error: true
+        with:
+          name: showreel
+          path: ${{ runner.temp }}/showreel
+      - name: Note a missing showreel
+        if: inputs.trusted && github.event_name != 'pull_request' && needs.showreel.result != 'success'
+        env:
+          RESULT: ${{ needs.showreel.result }}
+        run: echo "::warning title=Showreel::The showreel job did not succeed ($RESULT), so the site builds without the reel"
+      - name: Put the showreel in place
+        if: needs.showreel.result == 'success'
+        continue-on-error: true
+        run: |
+          stage="$RUNNER_TEMP/showreel"
+          if ! [ -s "$stage/showreel.mp4" ] || ! [ -s "$stage/showreel-poster.jpg" ]; then
+            echo "::warning title=Showreel::The showreel job left no render, so the site builds without one"
+            exit 0
+          fi
+          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt; do
+            if [ -s "$stage/$f" ]; then cp "$stage/$f" "docs/public/$f"; fi
+          done
+          if [ -f "$stage/captures/versions.json" ]; then
+            echo "SHOWREEL_CAPTURES=$stage/captures" >>"$GITHUB_ENV"
+          fi
+          if [ -s "$stage/chapters.json" ]; then
+            echo "SHOWREEL_CHAPTERS=$stage/chapters.json" >>"$GITHUB_ENV"
+          fi
+
+      # Built once, then uploaded. A build that fails only with the showreel
+      # in it is built again without it.
+      - name: Build the site
+        id: build
+        continue-on-error: ${{ inputs.trusted && github.event_name != 'pull_request' }}
+        run: mise run docs:build
+      - name: Build the site without the showreel
+        if: steps.build.outcome == 'failure'
+        run: |
+          if ! [ -f docs/public/showreel.mp4 ]; then
+            echo "::error::The site does not build (see the step above)"
+            exit 1
+          fi
+          echo "::warning title=Showreel::The site did not build with the showreel, so it is built and deployed without it"
+          rm -f docs/public/showreel-120.mp4 docs/public/showreel.mp4 docs/public/showreel-poster.jpg
+          git checkout -- docs/public/showreel-chapters.vtt
+          mise run docs:build
+      - run: mise run --skip-deps docs:release
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'v') || github.event.release.prerelease }}
+          DRY_RUN: ${{ !inputs.trusted || !inputs.deploy }}

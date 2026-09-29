@@ -16,6 +16,13 @@ if [ "${DRY_RUN:-true}" = "true" ]; then
 	}
 fi
 
+# The theme song videos are too large for the repo and are uploaded to the
+# bucket by hand (docs/mise-en-place.md plays them from mise.jdx.dev). Refuse to
+# publish a page whose player and downloads would 404.
+for key in mise-run.mp4 mise-run-4k.mp4; do
+	aws s3api head-object --bucket mise --key "$key" >/dev/null
+done
+
 if [ $((RANDOM % 30)) -eq 0 ]; then
 	# delete old assets only roughly 1/30 times
 	# deleting old assets can break the site for people currently on it

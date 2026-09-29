@@ -453,7 +453,7 @@ impl ToolRequest {
             return Ok(());
         }
         let options = self.options();
-        if options.get("postinstall").is_some() {
+        if options.postinstall().is_some() {
             Settings::ensure_not_safe(&format!(
                 "running tool-level postinstall hooks for {}",
                 self.ba().short
@@ -511,7 +511,7 @@ impl ToolRequest {
             Self::Version {
                 backend, version, ..
             } => {
-                let path = backend.installs_path.join(version);
+                let path = backend.installs_path().join(version);
                 Some(env::find_in_shared_installs(
                     path,
                     &backend.tool_dir_name(),
@@ -525,7 +525,7 @@ impl ToolRequest {
                 ..
             } => {
                 let pathname = format!("{ref_type}-{ref_}");
-                let path = backend.installs_path.join(&pathname);
+                let path = backend.installs_path().join(&pathname);
                 Some(env::find_in_shared_installs(
                     path,
                     &backend.tool_dir_name(),
@@ -547,7 +547,7 @@ impl ToolRequest {
                     let pathname = version_sub(&v, sub.as_str())
                         .inspect_err(|e| warn!("ToolRequest.version_sub: {e:#}"))
                         .ok()?;
-                    let path = backend.installs_path.join(&pathname);
+                    let path = backend.installs_path().join(&pathname);
                     Some(env::find_in_shared_installs(
                         path,
                         &backend.tool_dir_name(),
@@ -558,7 +558,7 @@ impl ToolRequest {
                 backend, prefix, ..
             } => {
                 // Check primary install path first
-                let found = match file::ls(&backend.installs_path) {
+                let found = match file::ls(backend.installs_path()) {
                     Ok(installs) => installs
                         .iter()
                         .find(|p| {
