@@ -15,6 +15,7 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cmp::PartialEq, sync::Arc};
 
 use super::{Config, Settings};
@@ -308,6 +309,38 @@ pub(crate) enum ToolsFilter {
     /// Used by `dependency_env` so a dependent tool's install sees `tools = true`
     /// value vars like `CLOUDSDK_PYTHON = "{{ tools.python.path }}/..."`. (#10282)
     ToolsOnlyVals,
+}
+
+static OCI_ENV_SATISFIES_REQUIRED: AtomicBool = AtomicBool::new(false);
+
+/// Let `[oci.env]` satisfy `required` env vars for the rest of this process.
+///
+/// `mise oci` bakes `[oci.env]` into the image, so a `required` var it defines
+/// has a value in the image and needn't exist on the build host. Set before the
+/// config loads: `[env]` is validated as part of loading it.
+pub fn oci_env_satisfies_required() {
+    OCI_ENV_SATISFIES_REQUIRED.store(true, Ordering::Relaxed);
+}
+
+/// Whether [`oci_env_satisfies_required`] was called. Env resolved this way
+/// isn't valid for a command that enforces `required`, so it must not be cached.
+pub(crate) fn is_oci_env_satisfying_required() -> bool {
+    OCI_ENV_SATISFIES_REQUIRED.load(Ordering::Relaxed)
+}
+
+/// Keys the project's `[oci.env]` sections define. Global and system configs
+/// are left out: `mise oci` doesn't bake their `[oci]` unless asked to.
+fn oci_env_keys(config: &Config) -> BTreeSet<String> {
+    if !is_oci_env_satisfying_required() {
+        return BTreeSet::new();
+    }
+    config
+        .config_files
+        .values()
+        .filter(|cf| cf.project_root().is_some())
+        .filter_map(|cf| cf.oci_config())
+        .flat_map(|oci| oci.env.into_keys())
+        .collect()
 }
 
 pub(crate) struct EnvResolveOptions {
@@ -836,6 +869,11 @@ impl EnvResults {
         }
 
         let context_vars_for_validation = Self::context_vars(&ctx);
+        let oci_env_keys = if resolve_opts.vars {
+            BTreeSet::new()
+        } else {
+            oci_env_keys(config)
+        };
 
         // Validate required variables
         Self::validate_required_vars(
@@ -843,6 +881,7 @@ impl EnvResults {
             required_env,
             &r,
             &context_vars_for_validation,
+            &oci_env_keys,
             resolve_opts.warn_on_missing_required,
             resolve_opts.vars,
         )?;
@@ -855,6 +894,7 @@ impl EnvResults {
         initial: &EnvMap,
         env_results: &EnvResults,
         context_vars: &EnvMap,
+        oci_env_keys: &BTreeSet<String>,
         warn_mode: bool,
         vars_mode: bool,
     ) -> eyre::Result<()> {
@@ -890,7 +930,8 @@ impl EnvResults {
 
             // Variable must be defined either:
             // 1. In the initial environment (before mise runs), OR
-            // 2. In a config file processed later than the one declaring it as required
+            // 2. In a config file processed later than the one declaring it as required, OR
+            // 3. In `[oci.env]`, when `mise oci` is building the image
             let is_predefined = initial.contains_key(&lookup);
 
             let resolved_values = if vars_mode {
@@ -907,7 +948,13 @@ impl EnvResults {
             let is_defined_in_context =
                 vars_mode && context_vars.get(&lookup).is_some_and(|v| !v.is_empty());
 
-            if !is_predefined && !is_defined_later && !is_defined_in_context {
+            let is_defined_by_oci_env = oci_env_keys.contains(&lookup);
+
+            if !is_predefined
+                && !is_defined_later
+                && !is_defined_in_context
+                && !is_defined_by_oci_env
+            {
                 let variable_kind = if vars_mode {
                     "variable"
                 } else {

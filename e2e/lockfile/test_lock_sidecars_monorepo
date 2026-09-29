@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+# Only a sibling package has a local config, yet a lock run from another
+# package targets the shared root mise.local.lock; --sidecars must list it too.
+mkdir -p monorepo/packages/a monorepo/packages/b
+cat >monorepo/mise.toml <<'EOT'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOT
+touch monorepo/packages/a/mise.toml
+cat >monorepo/packages/b/mise.local.toml <<'EOT'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOT
+
+mise -C monorepo/packages/b lock --local
+assert_succeed "test -f monorepo/mise.local.lock"
+
+assert_contains "mise -C monorepo/packages/a lock --local --sidecars" "mise.local.lock (sidecars in"
+assert_contains "mise -C monorepo/packages/a lock --local --sidecars" "npm:cowsay@1.6.0 aube"
+assert_contains "mise -C monorepo/packages/a lock --local --sidecars --json" '"exists": true'

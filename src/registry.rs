@@ -126,6 +126,9 @@ pub struct RegistryTool {
     pub description: Option<&'static str>,
     /// Project homepage or repository, when the one inferred from the backends is wrong
     pub url: Option<&'static str>,
+    /// Set when the tool is no longer recommended. The value is the reason and the
+    /// suggested replacement, shown as a warning when the tool is installed.
+    pub deprecated: Option<&'static str>,
     pub(crate) version_order: VersionOrder,
     pub backends: &'static [RegistryBackend],
     pub bins: &'static [&'static str],
@@ -514,12 +517,22 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
                 })
         })
         .transpose()?;
+    let deprecated = table
+        .get("deprecated")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| leak_string(value.to_string()))
+                .ok_or_else(|| eyre::eyre!("deprecated must be a string"))
+        })
+        .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
 
     let tool = RegistryTool {
         short: leak_string(short.to_string()),
         description,
         url,
+        deprecated,
         version_order,
         backends: leak_vec(backends),
         bins: leak_vec(bins),
@@ -1431,6 +1444,7 @@ version_order = "source"
 aliases = ["example-alias"]
 description = "Example tool"
 url = "https://example.com/tool"
+deprecated = "use example2 instead."
 version_order = "semver"
 bins = ["example", "example-helper"]
 backends = [
@@ -1453,6 +1467,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         assert_eq!(tool.short, "example");
         assert_eq!(tool.description, Some("Example tool"));
         assert_eq!(tool.url, Some("https://example.com/tool"));
+        assert_eq!(tool.deprecated, Some("use example2 instead."));
         assert_eq!(tool.bins, &["example", "example-helper"]);
         assert!(tool.provides_bin("example"));
         assert!(!tool.provides_bin("other"));
@@ -1950,6 +1965,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             short: "test",
             description: None,
             url: None,
+            deprecated: None,
             version_order: VersionOrder::Source,
             backends: BACKENDS,
             bins: &[],
@@ -2005,6 +2021,7 @@ url = "https://example.com/tool-{{ version }}.tar.gz"
             short: "test",
             description: None,
             url: None,
+            deprecated: None,
             version_order: VersionOrder::Semver,
             backends: BACKENDS,
             bins: &[],

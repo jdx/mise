@@ -12,7 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use jiff::Timestamp;
 
-use crate::args::{BackendArg, ToolVersionType};
+use crate::args::{BackendArg, ToolVersionType, split_bracketed_opts};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
 use crate::config::{Config, Settings, SettingsExt, global_config_path};
@@ -3766,6 +3766,20 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Read the entry through the BackendArg so a tool alias reaches it, and only warn
+        // when the resolved backend is one of its own, so a plugin that overrides the
+        // shorthand doesn't get a warning about a CLI it doesn't install.
+        if let Some((rt, reason)) = self
+            .ba()
+            .registry_tool()
+            .and_then(|rt| rt.deprecated.map(|reason| (rt, reason)))
+            && rt.backends.iter().any(|rb| {
+                split_bracketed_opts(rb.full).map_or(rb.full, |(name, _)| name)
+                    == self.ba().full_without_opts()
+            })
+        {
+            warn_once!("{} is deprecated: {reason}", rt.short);
+        }
         let graph_install_is_current = !ctx.locked
             && !ctx.force
             && (tv.uv_lock.is_some() || tv.aube_lock.is_some())

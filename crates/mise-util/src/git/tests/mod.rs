@@ -120,6 +120,8 @@ fn update_resolves_short_branches_and_tags() {
     git_in(&origin, &["-c", "init.defaultBranch=main", "init", "-q"]);
     git_in(&origin, &["config", "user.email", "test@example.com"]);
     git_in(&origin, &["config", "user.name", "Test"]);
+    // A global tag.gpgsign would turn the lightweight tag below into one that needs a message.
+    git_in(&origin, &["config", "tag.gpgsign", "false"]);
 
     std::fs::write(origin.join("version"), "release\n").unwrap();
     git_in(&origin, &["add", "version"]);

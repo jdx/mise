@@ -338,6 +338,25 @@ Non-default lockfile names have separate subdirectories. For example,
 If you ignore the local lockfile in Git, also ignore that matching sidecar directory.
 Cleanup never removes another lockfile's sidecars.
 
+### Listing sidecars
+
+`mise lock --sidecars` prints each existing lockfile's sidecar directory and the
+sidecar directories it references, without resolving tools or writing files:
+
+```console
+$ mise lock --sidecars
+mise.lock (sidecars in .mise/locks)
+  npm:prettier@3.9.9 aube .mise/locks/npm-prettier/3.9.9
+```
+
+Add `--json` for scripts and automation, such as tools that must commit sidecars
+alongside `mise.lock`. Each lockfile reports its `root` and its `sidecars`, each
+with `tool`, `version`, `graph` (`aube` or `uv`), `path`, `digest`, and `exists`
+(whether the native lockfile is on disk). Paths are relative to the current
+directory when they are inside it. Sidecars of a symlinked lockfile live beside
+its target, so they can be absolute paths outside the current directory.
+Use `--local` or `--global` to choose lockfiles, as for a normal `mise lock` run.
+
 ### Inspecting and editing sidecars
 
 Tools that recognize `pyproject.toml` and `uv.lock`, such as Renovate, can inspect

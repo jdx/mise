@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+cat >mise.toml <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+mise lock
+
+assert_contains "mise lock --sidecars" "mise.lock (sidecars in .mise/locks)"
+assert_contains "mise lock --sidecars" "npm:cowsay@1.6.0 aube .mise/locks/npm-cowsay/1.6.0"
+assert_contains "mise lock --sidecars --json" '"root": ".mise/locks"'
+assert_contains "mise lock --sidecars --json" '"path": ".mise/locks/npm-cowsay/1.6.0"'
+assert_contains "mise lock --sidecars --json" '"graph": "aube"'
+assert_contains "mise lock --sidecars --json" '"exists": true'
+
+# Listing does not touch the lockfile.
+cp mise.lock before.lock
+mise lock --sidecars >/dev/null
+assert_succeed 'cmp before.lock mise.lock'
+
+# A sidecar that was not committed is reported as missing.
+rm -r .mise/locks/npm-cowsay/1.6.0
+assert_contains "mise lock --sidecars" "npm-cowsay/1.6.0 (missing)"
+assert_contains "mise lock --sidecars --json" '"exists": false'
+
+# A lockfile that does not exist yet is not listed.
+rm mise.lock
+assert_not_contains "mise lock --sidecars" "mise.lock"
+
+assert_fail_contains "mise lock --sidecars --dry-run" "only lists sidecars"
+assert_fail_contains "mise lock --sidecars npm:cowsay" "only lists sidecars"
+
+# The sidecars of a symlinked lockfile live beside its target, outside the
+# current directory, and are reported by absolute path.
+mkdir -p dotfiles project
+cat >dotfiles/mise.toml <<'EOF2'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF2
+mise -C dotfiles lock
+cp dotfiles/mise.toml project/mise.toml
+ln -s "$PWD/dotfiles/mise.lock" project/mise.lock
+assert_contains "mise -C project lock --sidecars" "$PWD/dotfiles/.mise/locks/npm-cowsay/1.6.0"
+assert_contains "mise -C project lock --sidecars --json" "\"root\": \"$PWD/dotfiles/.mise/locks\""
+assert_contains "mise -C project lock --sidecars --json" "\"path\": \"$PWD/dotfiles/.mise/locks/npm-cowsay/1.6.0\""
+assert_not_contains "mise -C project lock --sidecars --json" '"exists": false'
