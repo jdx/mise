@@ -63,7 +63,15 @@ jobs:
             -p aube-linker -p aube-manifest -p aube-resolver -p aube-runtime \
             -p aube-scripts -p aube-store -p aube-util -p aube-workspace \
             --precise "$version"
-          mise lock --bump --minimum-release-age 0s "aube@${version}"
+          # Don't pass aube@<version>: that rewrites the lock entry's specifier
+          # from `latest` to the version, so the entry no longer matches
+          # mise.toml and `mise run render` re-resolves it from a stale cache.
+          mise lock --bump --minimum-release-age 0s aube
+          locked="$(awk '/^\[\[tools\.aube\]\]$/ { getline; gsub(/[^0-9.]/, "", $0); print; exit }' mise.lock)"
+          if [ "$locked" != "$version" ]; then
+            echo "::error::mise.lock resolved aube ${locked}, expected ${version}"
+            exit 1
+          fi
       - name: Commit and push if changed
         env:
           PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
