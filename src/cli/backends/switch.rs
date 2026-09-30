@@ -57,8 +57,8 @@ struct Switch {
     from: String,
     lockfile: PathBuf,
     versions: BTreeSet<String>,
-    /// The versions a request resolves to. The relock records artifacts for
-    /// these; the rest are stale entries that are moved without them.
+    /// The versions a request resolves to. The rest are stale entries, which
+    /// the relock keeps only when asked for by name.
     current: BTreeSet<String>,
 }
 
@@ -158,7 +158,12 @@ impl BackendsSwitch {
                 let mut by_backend: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
                 for (version, backend, had_platforms) in &moved {
                     by_backend.entry(backend).or_default().push(version);
-                    if *had_platforms && switch.current.contains(version) {
+                    if !switch.current.contains(version) {
+                        // A version the config does not resolve to would be
+                        // pruned by the relock; ask for it by name to keep it.
+                        tools.insert(format!("{}@{version}", switch.short));
+                    }
+                    if *had_platforms {
                         needs_platforms.push((path, switch.short.clone(), version.clone()));
                     }
                 }
