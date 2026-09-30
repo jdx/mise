@@ -74,6 +74,22 @@ pub struct BrewCaskManager {
     manager: CaskManager,
 }
 
+struct InstallAncestry<'a> {
+    tokens: &'a BTreeSet<String>,
+    inherited_appdir: Option<&'a Path>,
+}
+
+impl InstallAncestry<'_> {
+    fn root() -> Self {
+        static ROOT: std::sync::LazyLock<BTreeSet<String>> =
+            std::sync::LazyLock::new(BTreeSet::new);
+        Self {
+            tokens: &ROOT,
+            inherited_appdir: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InstallMode {
     Install,
@@ -542,9 +558,8 @@ impl BrewCaskManager {
             req,
             opts,
             pr,
-            &BTreeSet::new(),
+            InstallAncestry::root(),
             manager_options,
-            None,
             mode,
         )
         .await
@@ -558,9 +573,8 @@ impl BrewCaskManager {
         req: &PackageRequest,
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
-        ancestors: &BTreeSet<String>,
+        ancestry: InstallAncestry<'_>,
         manager_options: &ManagerPackageOptions,
-        inherited_appdir: Option<&Path>,
         mode: InstallMode,
     ) -> Result<String> {
         let cask = resolve_cask_for(
@@ -568,13 +582,13 @@ impl BrewCaskManager {
             req,
             manager_options,
             !opts.dry_run,
-            inherited_appdir,
+            ancestry.inherited_appdir,
         )
         .await?;
-        if ancestors.contains(&cask.token) {
+        if ancestry.tokens.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
-        let mut ancestors = ancestors.clone();
+        let mut ancestors = ancestry.tokens.clone();
         ancestors.insert(cask.token.clone());
         // Only the Homebrew-backed manager shares the Caskroom, so only it can
         // find a token that Homebrew itself owns.
@@ -644,9 +658,11 @@ impl BrewCaskManager {
                 &request,
                 opts,
                 None,
-                &ancestors,
+                InstallAncestry {
+                    tokens: &ancestors,
+                    inherited_appdir: cask.appdir.as_deref(),
+                },
                 manager_options,
-                cask.appdir.as_deref(),
                 InstallMode::Install,
             ))
             .await?;

@@ -124,10 +124,8 @@ fn value_contains_template_syntax(value: &toml::Value) -> bool {
 
 fn render_value(value: &mut toml::Value, tera: &mut TeraEngine, ctx: &Context) -> Result<()> {
     match value {
-        toml::Value::String(s) => {
-            if contains_template_syntax(s) {
-                *s = render_str(tera, s, ctx)?;
-            }
+        toml::Value::String(s) if contains_template_syntax(s) => {
+            *s = render_str(tera, s, ctx)?;
         }
         toml::Value::Array(values) => {
             for value in values {
