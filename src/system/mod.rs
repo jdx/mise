@@ -2137,6 +2137,23 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut cask_appdirs = BTreeMap::new();
     #[cfg(unix)]
+    for (spec, configured) in &package_configs {
+        let Some(name) = spec.strip_prefix("brew-cask:") else {
+            continue;
+        };
+        let Some(appdir) = configured.appdir() else {
+            continue;
+        };
+        match crate::system::packages::brew::package_app_dir(appdir) {
+            Ok(appdir) => {
+                cask_appdirs.insert(name.to_string(), appdir);
+            }
+            Err(err) => {
+                warn!("[bootstrap.packages]: {err}");
+            }
+        }
+    }
+    #[cfg(unix)]
     let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
@@ -3177,6 +3194,33 @@ mod tests {
         assert!(!casks.options.brew_cask_adopt("replace-me"));
         // a spec absent from the config still follows the [bootstrap.brew] default
         assert!(casks.options.brew_cask_adopt("unconfigured"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_cask_keeps_a_configured_dependency_appdir() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:parent" = { appdir = "/Applications/parent" }
+                "brew-cask:dependency" = { appdir = "/Applications/dependency" }
+            "#,
+        )])?;
+
+        let packages = packages_from_specs_with_config_files(
+            &["brew-cask:parent".to_string()],
+            &config_files,
+        )?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(
+            casks.options.brew_cask_appdir("dependency"),
+            Some(Path::new("/Applications/dependency"))
+        );
         Ok(())
     }
 
