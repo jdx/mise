@@ -22,6 +22,7 @@
     "esbuild": "0.28.2"
   },
   "devDependencies": {
+    "@jdxcode/docs-releases": "0.1",
     "@resvg/resvg-js": "^2.6.2",
     "@tsconfig/node24": "^24.0.0",
     "@types/markdown-it": "^14.1.2",
