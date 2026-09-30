@@ -24,7 +24,7 @@ function closedBy(prs) {
   const fields = prs
     .map(
       (n) =>
-        `p${n}: pullRequest(number: ${n}) { closingIssuesReferences(first: 50) { nodes { number } } }`,
+        `p${n}: pullRequest(number: ${n}) { closingIssuesReferences(first: 50) { nodes { id } } }`,
     )
     .join("\n");
   const query = `query { repository(owner: "jdx", name: "mise") { ${fields} } }`;
@@ -39,12 +39,12 @@ function closedBy(prs) {
       const issues = new Map();
       for (const n of prs) {
         // A null entry is a number that is not a pull request (a typo in a
-        // changelog line); it closed nothing.
+        // changelog line); it closed nothing. Issues are told apart by node id,
+        // not number: a pull request may close an issue in another repository,
+        // and two of those could share a number.
         issues.set(
           n,
-          (repo[`p${n}`]?.closingIssuesReferences.nodes ?? []).map(
-            (i) => i.number,
-          ),
+          (repo[`p${n}`]?.closingIssuesReferences.nodes ?? []).map((i) => i.id),
         );
       }
       return issues;

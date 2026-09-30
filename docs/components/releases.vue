@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, shallowRef } from "vue";
 import { ISSUES_SINCE } from "../.vitepress/releases.mjs";
 import { data } from "../releases.data";
 
@@ -118,9 +118,16 @@ const entryHtml = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 
-// The release under the pointer or keyboard focus; the newest when none is.
-const active = ref<Release | null>(null);
-const shown = computed(() => active.value ?? releases[releases.length - 1]);
+// The readout shows the release under the pointer or keyboard focus, then the
+// one last clicked, then the newest. Keeping the clicked one lets the pointer
+// leave a bar and reach the readout's link without it changing. These are
+// shallow refs so the releases stay the same objects the template loops over,
+// which the `shown === r` checks rely on.
+const hovered = shallowRef<Release | null>(null);
+const selected = shallowRef<Release | null>(null);
+const shown = computed(
+  () => hovered.value ?? selected.value ?? releases[releases.length - 1],
+);
 
 // Months are listed newest first. Older ones sit behind a button; the charts
 // above always cover everything.
@@ -175,6 +182,7 @@ function onToggle(version: string, event: Event) {
 async function openRelease(r: Release) {
   const month = r.date.slice(0, 7);
   if (!visibleMonths.value.some((g) => g.month === month)) showAll.value = true;
+  selected.value = r;
   opened.add(r.version);
   await nextTick();
   document
@@ -237,10 +245,10 @@ const barHeight = (value: number, max: number) =>
           :aria-label="`${r.version}, ${r.date}: ${describe(r)}`"
           :style="{ height: barHeight(r.changes, maxChanges) + 'px' }"
           :class="{ on: shown === r }"
-          @mouseenter="active = r"
-          @focus="active = r"
-          @blur="active = null"
-          @mouseleave="active = null"
+          @mouseenter="hovered = r"
+          @focus="hovered = r"
+          @blur="hovered = null"
+          @mouseleave="hovered = null"
           @click="openRelease(r)"
         ></button>
       </div>
@@ -271,8 +279,8 @@ const barHeight = (value: number, max: number) =>
             height: barHeight(r.issues ?? 0, maxIssues) * 0.6 + 'px',
           }"
           :class="{ on: shown === r }"
-          @mouseenter="active = r"
-          @mouseleave="active = null"
+          @mouseenter="hovered = r"
+          @mouseleave="hovered = null"
           @click="openRelease(r)"
         ></button>
       </div>
