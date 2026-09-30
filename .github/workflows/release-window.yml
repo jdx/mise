@@ -1,11 +1,11 @@
 name: release-window
 
-# Holds the release PR during quiet hours (18:00-03:00 America/Chicago) by
+# Holds the release PR after the 15:00-03:00 America/Chicago release cutoff by
 # posting a pending `release-window` commit status, which is a required check
 # on main. Merging the release PR is what publishes crates and pushes the tag
 # (see xtasks/release-plz), so this is the only safe place to gate a release.
 # A few scheduled runs flip the status at the two edges: it goes pending when
-# quiet hours start within the hour (~17:07 Central), and back to success after
+# quiet hours begin within the hour (~15:00 Central), and back to success after
 # 03:00, when an armed auto-merge completes on its own.
 # The status is keyed by commit, so only the release PR's own events and the
 # schedule write the `release` branch commit's status; other PRs never touch
@@ -18,10 +18,14 @@ on: # zizmor: ignore[dangerous-triggers] reads only PR metadata and executes no 
     # Report required checks for stacked PRs targeting any base branch.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
   schedule:
-    # UTC times covering both CDT and CST. Evening: 17:07/18:07/19:07 CDT,
-    # 16:07/17:07/18:07 CST. Morning: 03:07/04:07/05:07 CDT, 02:07/03:07/04:07
-    # CST. Each edge gets a follow-up run in case one is delayed or dropped.
-    - cron: "7 22,23,0 * * *"
+    # UTC times cover both CDT and CST. The :00 runs refresh the status at
+    # 15:00 local time in each offset; :07 runs provide later best-effort
+    # fallbacks. GitHub schedules may be delayed, so this gate intentionally
+    # favors the requested 15:00 behavior over an earlier conservative block.
+    # Morning: 03:07/04:07/05:07 CDT, 02:07/03:07/04:07 CST. Each edge gets a
+    # follow-up run in case one is delayed or dropped.
+    - cron: "0 20,21 * * *"
+    - cron: "7 20,21,22 * * *"
     - cron: "7 8,9,10 * * *"
   workflow_dispatch:
 
@@ -61,10 +65,11 @@ jobs:
             echo "$1: $2 ($3)"
           }
 
-          # Minutes since local midnight fall in 18:00-03:00 Central.
+          # The actual quiet period is 16:00-03:00 Central. release_state()
+          # checks an hour ahead, making the effective cutoff 15:00.
           is_quiet() {
             local m=$(($1 % 1440))
-            [ "$m" -ge $((18 * 60)) ] || [ "$m" -lt $((3 * 60)) ]
+            [ "$m" -ge $((16 * 60)) ] || [ "$m" -lt $((3 * 60)) ]
           }
 
           release_state() {
