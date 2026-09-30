@@ -803,8 +803,13 @@ impl Doctor {
             {
                 diagnosis.last_error = Some(error.to_string());
                 if running {
+                    let recovery = if health::is_stale_watcher_schema_error(error) {
+                        format!("\n     {}.", health::STALE_WATCHER_SCHEMA_ADVICE)
+                    } else {
+                        String::new()
+                    };
                     self.errors.push(format!(
-                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise dot status",
+                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.{recovery}\n     Inspect with: mise dot status",
                     w.consecutive_failures,
                     w.last_error_at.as_deref().unwrap_or("unknown")
                 ));
