@@ -462,13 +462,11 @@ impl Backend for AquaBackend {
                         .unwrap_or_default()
                         .iter()
                         .any(|expected| {
-                            asset_name_matches_expected(
+                            locked_asset_matches_expected(
                                 &cached_filename,
                                 expected,
-                                libc_asset_preference(
-                                    &PlatformTarget::from_current(),
-                                    self.tool_libc,
-                                ),
+                                &PlatformTarget::from_current(),
+                                self.tool_libc,
                             )
                         })
                 });
@@ -764,7 +762,7 @@ impl Backend for AquaBackend {
         let pkg = Self::apply_aqua_libc_replacement(
             pkg,
             target_os,
-            Self::target_libc(target, self.tool_libc),
+            Self::asset_libc(target, self.tool_libc),
         );
         let mut pkg = Self::apply_tool_options(pkg, &opts)?;
 
@@ -1084,17 +1082,22 @@ impl AquaBackend {
     ) -> Result<AquaPackage> {
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
+        Self::package_for_target(&PlatformTarget::from_current(), pkg, versions, &opts)
+    }
+
+    fn package_for_target(
+        target: &PlatformTarget,
+        pkg: AquaPackage,
+        versions: &[&str],
+        opts: &AquaOptions<'_>,
+    ) -> Result<AquaPackage> {
         let tool_libc = opts.libc()?;
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target, tool_libc);
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        let target_libc = Self::target_variant_libc(target, tool_libc);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(
-            pkg,
-            target_os,
-            Self::target_libc(&target, tool_libc),
-        );
-        Self::apply_tool_options(pkg, &opts)
+        let pkg =
+            Self::apply_aqua_libc_replacement(pkg, target_os, Self::asset_libc(target, tool_libc));
+        Self::apply_tool_options(pkg, opts)
     }
 
     async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
@@ -1116,10 +1119,11 @@ impl AquaBackend {
     /// The libc to select assets for. A libc the target platform names wins, then the tool's
     /// `libc` option, then the `libc` setting on the current platform.
     ///
-    /// The platform wins even over the tool option because a lockfile entry is keyed by it: a
-    /// gnu build recorded under `linux-x64-musl` would break every musl machine using the
-    /// lockfile. That includes the current platform when `libc = "musl"` is set, since
-    /// `Platform::current()` turns the setting into its qualifier.
+    /// The platform wins even over the tool option because a lockfile entry is keyed by it: the
+    /// tool's `libc = "glibc"` must not put a gnu build the registry doesn't name under
+    /// `linux-x64-musl`. That includes the current platform when `libc = "musl"` is set, since
+    /// `Platform::current()` turns the setting into its qualifier. See [`Self::asset_libc`] for
+    /// which assets a musl platform then takes.
     fn target_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
         target.libc().or(tool_libc).map(str::to_string).or_else(|| {
             if target.is_current() {
@@ -1128,6 +1132,25 @@ impl AquaBackend {
                 None
             }
         })
+    }
+
+    /// The libc to rewrite registry asset names to, or `None` to use the registry's names as
+    /// they are.
+    ///
+    /// A musl platform that nothing asked for explicitly keeps the registry's names: aqua
+    /// registries list the builds that exist, and a tool whose entry names only a gnu build
+    /// has no musl build for mise to invent. The tool's `libc` option and `libc = "musl"` in
+    /// settings are explicit, so they still select the musl build.
+    fn asset_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        let libc = Self::target_libc(target, tool_libc)?;
+        if libc == "musl" && !Self::musl_requested(tool_libc) {
+            return None;
+        }
+        Some(libc)
+    }
+
+    fn musl_requested(tool_libc: Option<&str>) -> bool {
+        tool_libc == Some("musl") || Settings::get().libc() == Some("musl")
     }
 
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
@@ -5777,7 +5800,9 @@ fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> Li
     }
     match AquaBackend::target_libc(target, tool_libc).as_deref() {
         Some("gnu") => LibcAssetPreference::GlibcStrict,
-        Some("musl") => LibcAssetPreference::MuslStrict,
+        Some("musl") if AquaBackend::musl_requested(tool_libc) => LibcAssetPreference::MuslStrict,
+        // A musl platform nobody asked for takes the registry's asset as named.
+        Some("musl") => LibcAssetPreference::Exact,
         _ => LibcAssetPreference::GlibcWithFallback,
     }
 }
@@ -5832,6 +5857,24 @@ fn exact_asset_matches_libc_preference(
             .iter()
             .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
     }
+}
+
+/// Whether a lockfile's asset is still the one to install for `expected`.
+///
+/// A musl platform that nothing asked for takes the registry's asset as named, but a lockfile
+/// written before that recorded the musl sibling of a gnu asset. Its checksum belongs to that
+/// archive, so it stays valid rather than being refreshed to the registry's asset.
+fn locked_asset_matches_expected(
+    actual: &str,
+    expected: &str,
+    target: &PlatformTarget,
+    tool_libc: Option<&str>,
+) -> bool {
+    let preference = libc_asset_preference(target, tool_libc);
+    asset_name_matches_expected(actual, expected, preference)
+        || (preference == LibcAssetPreference::Exact
+            && target.os_name() == "linux"
+            && asset_name_matches_expected(actual, expected, LibcAssetPreference::MuslStrict))
 }
 
 fn asset_name_matches_expected(
@@ -5908,6 +5951,18 @@ mod lock_candidate_tests {
     use crate::platform::Platform;
 
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use confique::Layer;
+
+    /// Pins the `libc` setting so a test does not depend on the runner's `MISE_LIBC` or
+    /// global config. Dropping the guard restores the default settings.
+    fn pin_libc_setting(libc: &str) -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.libc = Some(libc.to_string());
+        Settings::reset(Some(partial));
+        guard
+    }
 
     fn build_lock_candidates(
         version: &str,
@@ -6678,6 +6733,7 @@ no_asset: true
 
     #[test]
     fn test_libc_asset_preference_uses_tool_libc() {
+        let _settings = pin_libc_setting("gnu");
         let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
         assert_eq!(
             libc_asset_preference(&linux, Some("musl")),
@@ -6692,7 +6748,17 @@ no_asset: true
         let linux_musl = PlatformTarget::new(Platform::parse("linux-arm64-musl").unwrap());
         assert_eq!(
             libc_asset_preference(&linux_musl, Some("gnu")),
+            LibcAssetPreference::Exact
+        );
+        assert_eq!(
+            libc_asset_preference(&linux_musl, Some("musl")),
             LibcAssetPreference::MuslStrict
+        );
+        assert_eq!(AquaBackend::asset_libc(&linux_musl, Some("gnu")), None);
+        assert_eq!(AquaBackend::asset_libc(&linux_musl, None), None);
+        assert_eq!(
+            AquaBackend::asset_libc(&linux_musl, Some("musl")).as_deref(),
+            Some("musl")
         );
 
         let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
@@ -6725,6 +6791,62 @@ no_asset: true
             selected.name,
             "rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"
         );
+    }
+
+    #[test]
+    fn test_musl_setting_requests_musl_for_every_musl_target() {
+        let _settings = pin_libc_setting("musl");
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        // A target that is not the host's gets the setting too, so a lockfile written on one
+        // machine agrees with every other.
+        let other = PlatformTarget::new(Platform::parse("linux-riscv64-musl").unwrap());
+
+        assert_eq!(
+            AquaBackend::asset_libc(&other, None).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            libc_asset_preference(&other, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert!(!locked_asset_matches_expected(gnu, gnu, &other, None));
+        assert!(locked_asset_matches_expected(musl, gnu, &other, None));
+    }
+
+    #[test]
+    fn test_locked_musl_sibling_stays_valid_on_implicit_musl_target() {
+        let _settings = pin_libc_setting("gnu");
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        let alpine = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+        let glibc = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+
+        // The registry names gnu; a lockfile that recorded either build is still valid.
+        assert!(locked_asset_matches_expected(gnu, gnu, &alpine, None));
+        assert!(locked_asset_matches_expected(musl, gnu, &alpine, None));
+        assert!(locked_asset_matches_expected(
+            musl,
+            gnu,
+            &alpine,
+            Some("gnu")
+        ));
+
+        // Asking for musl explicitly, or a glibc platform, keeps its strict validation.
+        assert!(!locked_asset_matches_expected(
+            gnu,
+            gnu,
+            &alpine,
+            Some("musl")
+        ));
+        assert!(!locked_asset_matches_expected(
+            musl,
+            gnu,
+            &glibc,
+            Some("gnu")
+        ));
+        assert!(!locked_asset_matches_expected(musl, gnu, &macos, None));
     }
 
     #[test]
@@ -6793,6 +6915,59 @@ no_asset: true
         assert_eq!(
             pkg.replacements.get("linux").map(String::as_str),
             Some("Linux")
+        );
+    }
+
+    #[test]
+    fn test_package_for_implicit_musl_target_keeps_registry_gnu_asset() {
+        let _settings = pin_libc_setting("gnu");
+        // An Alpine host is a musl platform nothing asked for: a registry entry that names only
+        // a gnu build installs that build instead of a musl build that may not exist.
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "unknown-linux-gnu".to_string());
+        let musl = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+
+        let opts = ToolVersionOptions::default();
+        let implicit = AquaBackend::package_for_target(
+            &musl,
+            pkg.clone(),
+            &["1.0.0"],
+            &AquaOptions::new(&opts),
+        )
+        .unwrap();
+        assert_eq!(
+            implicit.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
+        );
+
+        // The tool's `libc = "gnu"` changes nothing: the musl platform already keeps the
+        // registry's asset.
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("gnu".to_string()));
+        let gnu = AquaBackend::package_for_target(
+            &musl,
+            pkg.clone(),
+            &["1.0.0"],
+            &AquaOptions::new(&opts),
+        )
+        .unwrap();
+        assert_eq!(
+            gnu.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
+        );
+
+        // Asking for musl explicitly still selects the musl build.
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("musl".to_string()));
+        let explicit =
+            AquaBackend::package_for_target(&musl, pkg, &["1.0.0"], &AquaOptions::new(&opts))
+                .unwrap();
+        assert_eq!(
+            explicit.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-musl")
         );
     }
 

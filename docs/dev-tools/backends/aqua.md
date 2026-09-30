@@ -176,6 +176,12 @@ under that setting a tool's `libc = "glibc"` has no effect. The value is recorde
 so changing it resolves the tool again. A version that is already installed keeps its
 build until you reinstall it with `mise install --force`, as with other install options.
 
+On a musl platform that neither the tool's `libc = "musl"` nor `libc = "musl"` in settings asked
+for, such as an Alpine host, mise does not go looking for a musl build. It installs the asset the
+aqua registry names, whether that is a glibc or a musl build, so a tool whose registry entry names
+only a glibc build installs that build. A glibc build needs glibc or a compatible runtime such as
+gcompat to run on Alpine.
+
 `libc` affects install, lock, and resolving `latest` from the release GitHub marks as latest. The
 full version list (`mise ls-remote`) is shared by every configuration of a tool, so it still uses the
 host's libc.
