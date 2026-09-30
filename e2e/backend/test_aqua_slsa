@@ -1,32 +1,188 @@
 #!/usr/bin/env bash
-# Test that unconfigured Aqua SLSA provenance is skipped
+# Test that checksum-backed Aqua SLSA locks can install when signer metadata is absent.
 
 set -euo pipefail
 
 export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=0
 export MISE_AQUA_SLSA=true
 export MISE_AQUA_COSIGN=false
+export MISE_AQUA_BAKED_REGISTRY=0
 
-echo "=== Testing Aqua SLSA Without Signer Metadata ==="
-
-# Sops has an SLSA provenance source, but no expected signer metadata.
-echo "Installing sops without an SLSA signer identity..."
-
-# Capture installation output to verify SLSA is skipped.
-output=$(mise install --verbose aqua:getsops/sops@3.9.0 2>&1)
-echo "$output"
-
-if echo "$output" | grep -q "verify slsa"; then
-  echo "SLSA verification ran without a configured signer identity"
-  exit 1
+detect_platform
+if [[ $MISE_PLATFORM_OS != "linux" ]]; then
+  echo "Skipping Linux-only local Aqua SLSA fixture on $MISE_PLATFORM_OS"
+  exit 0
 fi
 
-# Verify the tool works
-assert_contains "mise x aqua:getsops/sops@3.9.0 -- sops --version" "3.9.0"
-echo "✓ sops installed and working correctly"
+mkdir -p fixture/slsa-tool/bin server registry-missing-signer registry-disabled
+cat <<'EOF_TOOL' >fixture/slsa-tool/bin/slsa-tool
+#!/usr/bin/env sh
+echo "slsa-tool 1.0.0"
+EOF_TOOL
+chmod +x fixture/slsa-tool/bin/slsa-tool
+tar -czf server/slsa-tool.tar.gz -C fixture slsa-tool
+touch server/provenance.intoto.jsonl
+ARCHIVE_SHA256=$(sha256sum server/slsa-tool.tar.gz | awk '{print $1}')
 
-# Cleanup
-mise uninstall aqua:getsops/sops@3.9.0 || true
+start_http_server --dir server
+PROVENANCE_URL="http://127.0.0.1:$HTTP_PORT/provenance.intoto.jsonl"
 
-echo ""
-echo "=== Unconfigured Aqua SLSA Was Skipped ✓ ==="
+write_registry() {
+  local path="$1"
+  local disabled="$2"
+  local enabled_line=""
+  if [[ $disabled == true ]]; then
+    enabled_line="      enabled: false"
+  fi
+  cat <<EOF_REGISTRY >"$path/registry.yml"
+packages:
+  - type: http
+    name: example/slsa-tool
+    supported_envs:
+      - linux
+    url: http://127.0.0.1:$HTTP_PORT/slsa-tool.tar.gz
+    format: tar.gz
+    files:
+      - name: slsa-tool
+        src: slsa-tool/bin/slsa-tool
+    slsa_provenance:
+$enabled_line
+      type: http
+      url: $PROVENANCE_URL
+EOF_REGISTRY
+}
+
+write_registry registry-missing-signer false
+write_registry registry-disabled true
+export MISE_AQUA_REGISTRY_URL="file://$PWD/registry-missing-signer"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/slsa-tool" = "1.0.0"
+EOF_MISE
+
+echo "=== Fresh install skips unconfigured Aqua SLSA ==="
+output=$(mise install --verbose 2>&1)
+printf '%s\n' "$output"
+assert_not_contains_text "$output" "verify slsa"
+assert_contains "mise x aqua:example/slsa-tool -- slsa-tool" "slsa-tool 1.0.0"
+assert "test ! -e mise.lock"
+
+echo "=== Create a prior SLSA lock with this artifact's checksum ==="
+export MISE_LOCKFILE=1
+mise lock --platform "$MISE_PLATFORM"
+assert_not_contains "cat mise.lock" "provenance.slsa"
+cp mise.lock mise.lock.generated
+awk -v platform="$MISE_PLATFORM" -v checksum="sha256:$ARCHIVE_SHA256" '
+  BEGIN {
+    platform_table = "[tools.\"aqua:example/slsa-tool\".\"platforms." platform "\"]"
+    in_platform = 0
+    found = 0
+    wrote_checksum = 0
+  }
+  $0 == platform_table { in_platform = 1; found = 1; print; next }
+  in_platform && /^\[/ {
+    if (!wrote_checksum) { print "checksum = \"" checksum "\""; wrote_checksum = 1 }
+    in_platform = 0
+  }
+  in_platform && /^checksum = / {
+    if (!wrote_checksum) { print "checksum = \"" checksum "\""; wrote_checksum = 1 }
+    next
+  }
+  { print }
+  END {
+    if (in_platform && !wrote_checksum) print "checksum = \"" checksum "\""
+    if (!found) exit 1
+  }
+' mise.lock.generated >mise.lock.checksum
+mv mise.lock.checksum mise.lock
+cat <<EOF_LOCK >>mise.lock
+
+[tools."aqua:example/slsa-tool"."platforms.$MISE_PLATFORM".provenance.slsa]
+url = "$PROVENANCE_URL"
+EOF_LOCK
+assert_contains "cat mise.lock" "checksum = \"sha256:$ARCHIVE_SHA256\""
+assert_contains "cat mise.lock" "provenance.slsa"
+cp mise.lock mise.lock.slsa.expected
+
+remove_slsa_tool() {
+  rm -rf "$MISE_DATA_DIR/installs/aqua-example-slsa-tool"
+}
+
+without_locked_checksum() {
+  awk -v platform="$MISE_PLATFORM" '
+    BEGIN {
+      platform_table = "[tools.\"aqua:example/slsa-tool\".\"platforms." platform "\"]"
+      in_platform = 0
+    }
+    $0 == platform_table { in_platform = 1; print; next }
+    /^\[/ { in_platform = 0 }
+    in_platform && /^checksum = / { next }
+    { print }
+  ' mise.lock.slsa.expected >mise.lock.test
+  mv mise.lock.test mise.lock
+}
+
+with_checksum() {
+  local checksum="$1"
+  awk -v platform="$MISE_PLATFORM" -v checksum="$checksum" '
+    BEGIN {
+      platform_table = "[tools.\"aqua:example/slsa-tool\".\"platforms." platform "\"]"
+      in_platform = 0
+    }
+    $0 == platform_table { in_platform = 1; print; next }
+    /^\[/ { in_platform = 0 }
+    in_platform && /^checksum = / { print "checksum = \"" checksum "\""; next }
+    { print }
+  ' mise.lock.slsa.expected >mise.lock.test
+  mv mise.lock.test mise.lock
+}
+
+echo "=== Missing locked checksum still fails ==="
+without_locked_checksum
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "no signer_identity and signer_issuer"
+
+echo "=== Forced provenance verification still requires signer metadata ==="
+cp mise.lock.slsa.expected mise.lock
+export MISE_LOCKED_VERIFY_PROVENANCE=1
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "no signer_identity and signer_issuer"
+unset MISE_LOCKED_VERIFY_PROVENANCE
+
+echo "=== Disabling SLSA verification remains a downgrade error ==="
+export MISE_SLSA=false
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "downgrade attack"
+unset MISE_SLSA
+
+echo "=== Package metadata cannot explicitly disable locked SLSA ==="
+export MISE_AQUA_REGISTRY_URL="file://$PWD/registry-disabled"
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "no signer_identity and signer_issuer"
+export MISE_AQUA_REGISTRY_URL="file://$PWD/registry-missing-signer"
+
+echo "=== Malformed locked checksums still fail ==="
+with_checksum "invalid-checksum"
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "Invalid checksum"
+
+echo "=== Locked checksum mismatches still fail ==="
+with_checksum "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+remove_slsa_tool
+assert_fail_contains "mise install --locked 2>&1" "Checksum mismatch"
+
+echo "=== A valid locked checksum allows install while SLSA is skipped ==="
+cp mise.lock.slsa.expected mise.lock
+remove_slsa_tool
+output=$(mise install --locked --verbose 2>&1)
+printf '%s\n' "$output"
+assert_contains_text "$output" "SLSA provenance was skipped"
+assert_not_contains_text "$output" "SLSA provenance verified"
+assert_contains "mise x aqua:example/slsa-tool -- slsa-tool" "slsa-tool 1.0.0"
+if ! cmp -s mise.lock.slsa.expected mise.lock; then
+  fail "install modified the locked SLSA provenance or checksum"
+fi
+
+echo "=== Checksum-backed Aqua SLSA fallback passed ==="

@@ -2699,6 +2699,22 @@ impl AquaBackend {
         Ok(())
     }
 
+    fn should_skip_locked_slsa_verification(
+        locked_slsa_without_signer: bool,
+        package_slsa_enabled: bool,
+        has_lockfile_integrity: bool,
+        lockfile_has_checksum: bool,
+        force_verify: bool,
+    ) -> bool {
+        // `lockfile_has_checksum` is captured before install can add a digest, so a new BLAKE3
+        // value cannot make a missing locked checksum look like an independent verification.
+        locked_slsa_without_signer
+            && package_slsa_enabled
+            && has_lockfile_integrity
+            && lockfile_has_checksum
+            && !force_verify
+    }
+
     async fn verify(
         &self,
         ctx: &InstallContext,
@@ -2708,8 +2724,10 @@ impl AquaBackend {
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
-        // Reuse checksum-backed non-SLSA provenance. SLSA locks always re-verify
-        // the certificate against the current expected signer identity.
+        // Reuse checksum-backed non-SLSA provenance. SLSA locks normally re-verify
+        // the certificate against the current expected signer identity. If signer
+        // metadata is unavailable, an existing lock checksum can still protect the
+        // artifact while this install skips SLSA verification.
         // However, still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
@@ -2728,19 +2746,36 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        if locked_provenance
+        let locked_slsa_without_signer = locked_provenance
             .as_ref()
             .is_some_and(ProvenanceType::is_slsa)
             && !pkg
                 .slsa_provenance
                 .as_ref()
-                .is_some_and(|s| s.has_signer_identity())
-        {
+                .is_some_and(|s| s.has_signer_identity());
+        let package_slsa_enabled = pkg
+            .slsa_provenance
+            .as_ref()
+            .is_none_or(|s| s.enabled != Some(false));
+        let skip_locked_slsa_verification = Self::should_skip_locked_slsa_verification(
+            locked_slsa_without_signer,
+            package_slsa_enabled,
+            has_lockfile_integrity,
+            lockfile_has_checksum,
+            force_verify,
+        );
+        if locked_slsa_without_signer && !skip_locked_slsa_verification {
             return Err(eyre!(
                 "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Add the expected signer or refresh the lockfile."
             ));
         }
-        if has_lockfile_integrity
+        if skip_locked_slsa_verification {
+            self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+            warn!(
+                "SLSA provenance was skipped for {} because Aqua registry metadata has no complete signer_identity and signer_issuer; verifying the locked checksum instead",
+                tv.style()
+            );
+        } else if has_lockfile_integrity
             && !force_verify
             && !locked_provenance
                 .as_ref()
@@ -6176,6 +6211,67 @@ slsa_provenance:
             !AquaBackend::security_features(&pkg, &[])
                 .contains(&SecurityFeature::Slsa { level: None })
         );
+    }
+
+    #[test]
+    fn aqua_slsa_signer_requires_both_nonempty_fields() {
+        let incomplete_signers = [
+            "",
+            "  signer_identity: https://github.com/example/repo/.github/workflows/release.yml@refs/tags/v1.0.0\n",
+            "  signer_issuer: https://token.actions.githubusercontent.com\n",
+            "  signer_identity: \"\"\n  signer_issuer: https://token.actions.githubusercontent.com\n",
+            "  signer_identity: https://github.com/example/repo/.github/workflows/release.yml@refs/tags/v1.0.0\n  signer_issuer: \"\"\n",
+        ];
+        for signer_fields in incomplete_signers {
+            let pkg = pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: repo\nslsa_provenance:\n  type: github_release\n  asset: multiple.intoto.jsonl\n{signer_fields}"
+            ));
+            assert!(
+                !pkg.slsa_provenance
+                    .as_ref()
+                    .is_some_and(|s| s.has_signer_identity())
+            );
+        }
+
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+slsa_provenance:
+  type: github_release
+  asset: multiple.intoto.jsonl
+  signer_identity: https://github.com/example/repo/.github/workflows/release.yml@refs/tags/v1.0.0
+  signer_issuer: https://token.actions.githubusercontent.com
+"#,
+        );
+        assert!(
+            pkg.slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.has_signer_identity())
+        );
+    }
+
+    #[test]
+    fn locked_slsa_fallback_requires_a_recorded_checksum_and_no_forced_verification() {
+        assert!(AquaBackend::should_skip_locked_slsa_verification(
+            true, true, true, true, false
+        ));
+        assert!(!AquaBackend::should_skip_locked_slsa_verification(
+            false, true, true, true, false
+        ));
+        assert!(!AquaBackend::should_skip_locked_slsa_verification(
+            true, true, false, true, false
+        ));
+        assert!(!AquaBackend::should_skip_locked_slsa_verification(
+            true, true, true, false, false
+        ));
+        assert!(!AquaBackend::should_skip_locked_slsa_verification(
+            true, false, true, true, false
+        ));
+        assert!(!AquaBackend::should_skip_locked_slsa_verification(
+            true, true, true, true, true
+        ));
     }
 
     #[test]

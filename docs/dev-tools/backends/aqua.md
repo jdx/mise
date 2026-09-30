@@ -207,11 +207,18 @@ See [Settings](#settings) for the complete configuration.
 
 The signer fields are the exact Fulcio certificate URI subject and OIDC issuer.
 Registry packages without them skip SLSA and may use another verification method.
-An existing lockfile that requires SLSA fails until the signer metadata is added
-or the lockfile is refreshed with another verification method.
+If an existing lockfile requires SLSA but the registry has no complete signer
+configuration, mise can install that platform only when the lock already contains
+an artifact checksum. It warns that SLSA was skipped and verifies the locked
+checksum instead. A missing checksum or a request to force provenance verification
+still fails until signer metadata is available.
+The fallback also does not apply when SLSA verification is disabled in settings or
+the package metadata.
 
 A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous non-SLSA provenance
-result while checking the artifact digest. SLSA always checks the current expected signer.
+result while checking the artifact digest. When signer metadata is configured, SLSA
+always checks the current expected signer; incorrect signer metadata or invalid
+provenance still fails verification.
 Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 to require provenance verification again during locked installation.
