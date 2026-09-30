@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
-import { releaseNotesPlugin } from "@jdx/docs-releases/vitepress";
+import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
   groupIconVitePlugin,

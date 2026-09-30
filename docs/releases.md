@@ -6,7 +6,7 @@ editLink: false
 # Releases
 
 <script setup>
-import Releases from '@jdx/docs-releases/Releases.vue';
+import Releases from '@jdxcode/docs-releases/Releases.vue';
 import { data } from './releases.data';
 </script>
 
