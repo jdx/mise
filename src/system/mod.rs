@@ -899,7 +899,7 @@ fn merge_manager_packages(
                                 }
                             }
                         }
-                        "macos-app" if adopt => {
+                        "macos-app" if adopt || app_spec.is_some() => {
                             let options = manager_options
                                 .entry(manager_name.clone())
                                 .or_insert_with(|| ManagerPackageOptions::MacosApp {
@@ -914,7 +914,9 @@ fn merge_manager_packages(
                                 if let Some(spec) = app_spec {
                                     specs.entry(request.name.clone()).or_insert(spec);
                                 }
-                                app_adopt.insert(request.name.clone());
+                                if adopt {
+                                    app_adopt.insert(request.name.clone());
+                                }
                             }
                         }
                         _ => {}
@@ -2793,6 +2795,28 @@ mod tests {
             .unwrap();
         assert!(apps.options.macos_app_spec("nuvio").is_some());
         assert!(apps.options.brew_cask_adopt("nuvio"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tracked_macos_app_without_adoption_keeps_its_declaration() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        assert!(apps.options.macos_app_spec("nuvio").is_some());
+        assert!(!apps.options.brew_cask_adopt("nuvio"));
         Ok(())
     }
 

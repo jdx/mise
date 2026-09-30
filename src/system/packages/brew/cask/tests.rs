@@ -8354,9 +8354,11 @@ fn appdir_upgrade_keeps_an_app_now_claimed_by_another_cask() -> Result<()> {
     };
     let other = caskroom_version_dir(CaskManager::BrewCask, "other", "1.0.0");
     file::create_dir_all(&other)?;
+    let mut legacy_owner = receipt.clone();
+    legacy_owner.targets.clear();
     file::write(
         other.join(".mise-cask.toml"),
-        toml::to_string_pretty(&receipt)?,
+        toml::to_string_pretty(&legacy_owner)?,
     )?;
 
     remove_obsolete_app_targets(&cask, Some(&receipt), &[root.join("new/Example.app")]);

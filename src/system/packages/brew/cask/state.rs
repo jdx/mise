@@ -1495,7 +1495,12 @@ pub(super) fn cask_target_claimed_by_another(
                     continue;
                 }
                 if let Some(receipt) = read_receipt(&version.path())?
-                    && receipt.targets.iter().any(|record| record.path == target)
+                    && (receipt
+                        .apps
+                        .iter()
+                        .chain(&receipt.metadata_only_apps)
+                        .any(|path| path == target)
+                        || receipt.targets.iter().any(|record| record.path == target))
                 {
                     return Ok(true);
                 }
