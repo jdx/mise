@@ -170,7 +170,31 @@ fi
 status=0
 wait "$mise_pid" || status=$?
 output="$(cat "$output_file")"
-if [[ $status -ne 1 ]]; then
-  fail "mise run expected exit code 1 after repeated Ctrl-C, got $status: $output"
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected exit code 130 after repeated Ctrl-C, got $status: $output"
 fi
 assert_not_contains_text "$output" "exit with status"
+
+# A non-task command interrupted by Ctrl-C exits 130 so a calling shell can tell
+# an interrupt from an ordinary failure. `mise install` stays supervised by mise
+# while the postinstall hook runs, unlike `mise exec`, which replaces mise.
+ready_file="$TMPDIR/exit-status-install-ready"
+output_file="$TMPDIR/exit-status-install-output"
+mkdir -p "$TMPDIR/exit-status-pkg"
+printf '#!/bin/sh\necho hi\n' >"$TMPDIR/exit-status-pkg/hello"
+chmod +x "$TMPDIR/exit-status-pkg/hello"
+tar czf "$TMPDIR/hello.tar.gz" -C "$TMPDIR/exit-status-pkg" hello
+cat <<EOF >mise.toml
+[tools]
+"http:hello" = { version = "1", url = "file://$TMPDIR/hello.tar.gz", postinstall = "touch $ready_file; sleep 10" }
+EOF
+mise install >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "mise install postinstall hook" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+if [[ $status -ne 130 ]]; then
+  fail "mise install expected exit code 130 after Ctrl-C, got $status: $(cat "$output_file")"
+fi

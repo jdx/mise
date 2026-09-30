@@ -76,6 +76,9 @@ fn install_handler() {
     }
 }
 
+/// 128 + SIGINT, the conventional status for a process interrupted by Ctrl-C.
+const INTERRUPTED_EXIT_CODE: i32 = 130;
+
 pub async fn exit_signal() -> i32 {
     loop {
         INTERRUPTED.notified().await;
@@ -89,7 +92,7 @@ pub async fn exit_signal() -> i32 {
             // nothing is guaranteed to have ended the tree: a console event is
             // advisory and `cmd.exe` in particular stops to ask about it.
             CmdLineRunner::kill_all();
-            return 1;
+            return INTERRUPTED_EXIT_CODE;
         }
         // The console delivered the event to every child as well, so give them
         // the chance to stop on their own before anything is forced.
