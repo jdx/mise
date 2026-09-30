@@ -53,6 +53,35 @@ pub struct WatcherHealth {
 /// What to tell the user when `WatcherHealth::executable_gone` is set.
 pub const EXECUTABLE_GONE_ADVICE: &str = "the mise executable this watcher runs from is gone, so it keeps running the old version; run `mise bootstrap services apply` to restart it on the installed one";
 
+/// What to tell the user when a watcher predates the executable replacement
+/// check and cannot read a newer enrollment record.
+pub const STALE_WATCHER_SCHEMA_ADVICE: &str = "the history watcher is running an older mise that cannot read current dotfile tracking metadata; run `mise bootstrap services apply` to restart it on the installed version";
+
+/// Whether a capture error came from a watcher whose enrollment schema
+/// predates tracked-entry exclusions, includes, and plaintext selection.
+///
+/// This is deliberately narrower than every serde unknown-field error: a
+/// future manifest must remain a capture failure, not an invitation to restart
+/// a healthy current watcher. The old enrollment record had exactly these four
+/// fields, so its error is enough to identify the recovery path.
+pub fn is_stale_watcher_schema_error(error: &str) -> bool {
+    let legacy_enrollment = ["path", "autosave", "encrypt", "variants"];
+    let newer_field = ["exclude", "include", "allow_plaintext"];
+    let unknown_field = |field: &str| {
+        [
+            format!("unknown field `{field}`"),
+            format!("unknown field '{field}'"),
+            format!("unknown field \"{field}\""),
+        ]
+        .iter()
+        .any(|prefix| error.contains(prefix))
+    };
+    error.contains("unknown field")
+        && error.contains("expected one of")
+        && legacy_enrollment.iter().all(|field| error.contains(field))
+        && newer_field.iter().any(|field| unknown_field(field))
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ThrottledPath {
     pub path: String,
@@ -136,5 +165,28 @@ mod tests {
         // without a start time to compare to, the error is reported
         assert_eq!(health(None, Some(earlier)).failing_capture(), Some("boom"));
         assert_eq!(health(Some(started), None).failing_capture(), None);
+    }
+
+    #[test]
+    fn identifies_a_watcher_that_cannot_read_newer_enrollment_fields() {
+        for field in ["exclude", "include", "allow_plaintext"] {
+            let error = format!(
+                "unknown field `{field}`, expected one of `path`, `autosave`, `encrypt`, `variants` at line 79 column 15"
+            );
+            assert!(is_stale_watcher_schema_error(&error), "{error}");
+        }
+        assert!(is_stale_watcher_schema_error(
+            "unknown field \"exclude\", expected one of `path`, `autosave`, `encrypt`, `variants`"
+        ));
+
+        assert!(!is_stale_watcher_schema_error(
+            "unknown field `future_field`, expected one of `path`, `autosave`, `encrypt`, `variants` at line 79 column 15"
+        ));
+        assert!(!is_stale_watcher_schema_error(
+            "unknown field `future_field`, expected one of `path`, `autosave`, `encrypt`, `variants`; an include list was configured"
+        ));
+        assert!(!is_stale_watcher_schema_error(
+            "unknown field `exclude`, expected one of `format`, `enrollment`, `recipients` at line 1 column 1"
+        ));
     }
 }

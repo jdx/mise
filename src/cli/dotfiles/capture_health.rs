@@ -115,6 +115,14 @@ pub(crate) fn failing_capture() -> Option<String> {
 pub(crate) async fn report() {
     match watcher().await {
         Ok(Watcher::Running) => match failing_capture() {
+            Some(error)
+                if crate::system::history::health::is_stale_watcher_schema_error(&error) =>
+            {
+                warn!(
+                    "history: {}; edits are not being saved (`mise dot status` has the capture error)",
+                    crate::system::history::health::STALE_WATCHER_SCHEMA_ADVICE
+                )
+            }
             Some(error) => warn!(
                 "history: watcher running, but its captures are failing: {error}; edits are not being saved (`mise dot status` has the details)"
             ),

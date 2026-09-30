@@ -1337,6 +1337,10 @@ exits with a failure status, so the service manager restarts it on the new versi
 this, an old watcher could not read history state written by the newer mise, and
 every capture would fail. A watcher you started by hand with `mise dot watch`
 stops and has to be started again.
+Watchers that started before this safeguard cannot restart themselves. If
+`mise doctor` or `mise dot status` identifies one from an unknown dotfile
+tracking metadata field, run `mise bootstrap services apply` once to restart it
+on the installed version.
 If the executable is gone instead, with nothing in its place, the watcher keeps
 running and reports it as outdated in `mise dot status` and `mise doctor`;
 run `mise bootstrap services apply` to restart it. The report clears if the

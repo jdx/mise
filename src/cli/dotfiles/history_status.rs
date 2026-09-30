@@ -315,6 +315,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                     .map(local_time)
                     .unwrap_or_else(|| "unknown".into())
             );
+            if running && crate::system::history::health::is_stale_watcher_schema_error(error) {
+                miseprintln!(
+                    "  outdated: {}.",
+                    crate::system::history::health::STALE_WATCHER_SCHEMA_ADVICE
+                );
+            }
         }
         if running && w.executable_gone {
             miseprintln!(
