@@ -196,7 +196,7 @@ export default withMermaid(
         target: "es2022",
       },
       plugins: [
-        ...releaseNotesPlugin(),
+        ...releaseNotesPlugin({ root: resolve(configDir, "../..") }),
         {
           name: "mise-schema-assets",
           apply: "build",
