@@ -66725,6 +66725,24 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: mdsakalu
+    repo_name: zmx-session-manager
+    description: TUI session manager for zmx
+    files:
+      - name: zsm
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: zmx-session-manager_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: zmx-session-manager_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: megaease
     repo_name: easeprobe
     description: A simple, standalone, and lightWeight tool that can do health/status checking, written in Go
@@ -99144,6 +99162,20 @@ packages:
           darwin: macos
         github_artifact_attestations:
           signer_workflow: tree-sitter/tree-sitter/.github/workflows/release.yml
+  - name: trinodb/trino/trino-cli
+    type: github_release
+    repo_owner: trinodb
+    repo_name: trino
+    description: Trino, the distributed SQL query engine for big data - Command Line Interface
+    link: https://trino.io/docs/current/client/cli.html
+    asset: trino-cli-{{.Version}}
+    format: raw
+    # Upstream docs instruct renaming the downloaded JAR to `trino`
+    files:
+      - name: trino
+    supported_envs:
+      - darwin
+      - linux
   - name: truffleruby/truffleruby/community-native
     aliases:
       - name: oracle/truffleruby/community-native
