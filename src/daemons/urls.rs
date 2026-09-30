@@ -434,6 +434,31 @@ pub(crate) struct Applied {
     pub host: Option<String>,
 }
 
+/// Check the shape of `proxy_idle_timeout`, which reaches pitchfork unchanged.
+///
+/// Pitchfork parses the duration itself, so this only refuses what it would
+/// reject later with an error that names no `[daemons.<name>]`: a boolean
+/// other than `false`, a bare number, or a string that does not begin with one.
+/// The units are pitchfork's to define, so they are not repeated here.
+fn validate_idle_timeout(name: &str, table: &toml::Table) -> Result<()> {
+    match table.get("proxy_idle_timeout") {
+        None | Some(toml::Value::Boolean(false)) => Ok(()),
+        Some(toml::Value::Boolean(true)) => bail!(
+            "[daemons.{name}].proxy_idle_timeout = true is not a duration; give one such as \"30m\", or false to exempt the daemon from idle shutdown"
+        ),
+        Some(toml::Value::String(duration))
+            if duration
+                .trim_start()
+                .starts_with(|c: char| c.is_ascii_digit()) =>
+        {
+            Ok(())
+        }
+        Some(other) => bail!(
+            "[daemons.{name}].proxy_idle_timeout must be a duration string such as \"30m\", or false; got {other}"
+        ),
+    }
+}
+
 /// Read `proxy` and `proxy_tls` from a daemon table, validate them, write the
 /// normalized values back for pitchfork, and return the daemon's hostname.
 pub(crate) fn apply(
@@ -454,6 +479,7 @@ pub(crate) fn apply(
             "[daemons.{name}].proxy_tls must be \"terminate\" or \"passthrough\"; got {other}"
         ),
     };
+    validate_idle_timeout(name, table)?;
     let proxy = match table.get("proxy") {
         // `proxy = true` turns routing back on for a daemon a preset opted out
         // of, using the name-derived label. Pitchfork accepts it, so mise does.
@@ -778,6 +804,46 @@ mod tests {
             "port = 3000\nproxy = false\nproxy_tls = 'terminate'",
         ] {
             assert!(parse(invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    /// The value reaches pitchfork unchanged, so only its shape is checked here.
+    #[test]
+    fn proxy_idle_timeout_must_be_a_duration_or_false() {
+        let parse = |body: &str| {
+            let mut table: toml::Table = toml::from_str(body).unwrap();
+            let labels = RootLabels {
+                project: Some("shop".into()),
+                worktree: None,
+            };
+            apply("api", &mut table, &labels, "localhost").map(|_| table)
+        };
+        for valid in ["30m", "1h 30m", "500ms", "0", " 15m"] {
+            let table = parse(&format!("port = 3000\nproxy_idle_timeout = '{valid}'")).unwrap();
+            // Passed through as written, not normalized.
+            assert_eq!(table["proxy_idle_timeout"].as_str().unwrap(), valid);
+        }
+        let table = parse("port = 3000\nproxy_idle_timeout = false").unwrap();
+        assert_eq!(table["proxy_idle_timeout"].as_bool(), Some(false));
+        // A daemon without a port is never routed, but the key is still valid.
+        assert!(parse("proxy_idle_timeout = '30m'").is_ok());
+        assert!(
+            !parse("port = 3000")
+                .unwrap()
+                .contains_key("proxy_idle_timeout")
+        );
+        for invalid in [
+            "proxy_idle_timeout = true",
+            "proxy_idle_timeout = 30",
+            "proxy_idle_timeout = ''",
+            "proxy_idle_timeout = 'soon'",
+            "proxy_idle_timeout = ['30m']",
+        ] {
+            let err = parse(&format!("port = 3000\n{invalid}")).unwrap_err();
+            assert!(
+                err.to_string().contains("[daemons.api].proxy_idle_timeout"),
+                "{invalid:?}: {err}"
+            );
         }
     }
 

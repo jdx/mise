@@ -272,6 +272,7 @@ export const sidebar: SidebarItem[] = [
     text: "About",
     items: [
       { text: "About mise", link: "/about" },
+      { text: "Releases", link: "/releases" },
       { text: "mise run: The Song", link: "/mise-en-place" },
       { text: "Glossary", link: "/glossary" },
       { text: "FAQs", link: "/faq" },

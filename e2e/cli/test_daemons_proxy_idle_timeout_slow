@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Per-daemon `proxy_idle_timeout` against a real pitchfork. The global idle
+# timeout is a long one, so only a daemon's own `proxy_idle_timeout` can make it
+# stop within the test.
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # A failed install is a failure, not a skip: a run that quietly checks nothing
+  # would report per-daemon idle shutdown as covered.
+  if ! mise install pitchfork@2.27.0 --minimum-release-age 0s; then
+    echo "could not install pitchfork 2.27.0; set MISE_TEST_PITCHFORK to pitchfork 2.27.0 or newer to use a local build"
+    exit 1
+  fi
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+# Keep these short: unix socket paths fail over about 100 bytes.
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_IDLE_TIMEOUT=1h
+export PITCHFORK_INTERVAL=500ms
+export PITCHFORK_PROXY_ENABLE=true
+export PITCHFORK_PROXY_HTTPS=false
+export PITCHFORK_PROXY_DNS=false
+export PITCHFORK_PROXY_SYNC_HOSTS=false
+export PITCHFORK_PROXY_AUTO_TRUST=false
+export PITCHFORK_PROXY_TLD=localhost
+PITCHFORK_PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+export PITCHFORK_PROXY_PORT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+PITCHFORK_MISE_BIN="$(command -v mise)" pitchfork supervisor start
+
+mkdir project
+cd project
+git init -q
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "idle-test"
+[daemons.shortlived]
+run = "exec python3 -m http.server $SHORTLIVED_PORT --bind 127.0.0.1"
+port = { auto = true, base = 35000 }
+ready_cmd = "curl -fsS http://127.0.0.1:$SHORTLIVED_PORT/"
+proxy_idle_timeout = "6s"
+[daemons.optout]
+run = "exec python3 -m http.server $OPTOUT_PORT --bind 127.0.0.1"
+port = { auto = true, base = 36000 }
+ready_cmd = "curl -fsS http://127.0.0.1:$OPTOUT_PORT/"
+proxy_idle_timeout = false
+[daemons.inherits]
+run = "exec python3 -m http.server $INHERITS_PORT --bind 127.0.0.1"
+port = { auto = true, base = 37000 }
+ready_cmd = "curl -fsS http://127.0.0.1:$INHERITS_PORT/"
+TOML
+git add mise.toml
+git -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+mise daemons register
+
+# The proxy can answer 404 for a moment after a checkout is first registered, so
+# poll until the daemon answers. Each successful request starts a stopped daemon.
+request() {
+  local url attempt
+  url=$(mise env --json | jq -r ".$1_URL")
+  for ((attempt = 0; attempt < 30; attempt++)); do
+    if curl --noproxy '*' -fsS --max-time 30 --resolve "${url#http://}:127.0.0.1" "$url/" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "no response from $url"
+  return 1
+}
+status() {
+  mise daemons ls --json | jq -r --arg name "$1" '.[] | select(.name == $name or (.id // "" | endswith("/" + $name))) | .status'
+}
+wait_for_status() {
+  local attempt
+  for ((attempt = 0; attempt < 40; attempt++)); do
+    if [[ $(status "$1") == "$2" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  mise daemons ls --json
+  return 1
+}
+export -f request status wait_for_status
+
+# Start the two that never idle first, and the short-lived one last, so its timer
+# is running for as little of the setup as possible: every request waits for a
+# new daemon to become ready, which can be slow on a busy runner.
+for name in OPTOUT INHERITS; do
+  assert "request $name"
+done
+for name in optout inherits; do
+  assert_contains "status $name" running
+done
+assert "request SHORTLIVED"
+assert_contains "status shortlived" running
+
+# Idle shutdown is checked about every interval, after the 6s timeout. Only
+# the daemon with its own short timeout stops; `false` and the 1h global default
+# keep the other two running through the same idle period.
+assert "wait_for_status shortlived stopped"
+assert_contains "status optout" running
+assert_contains "status inherits" running
+
+# The next proxied request starts the stopped daemon again.
+assert "request SHORTLIVED"
+assert_contains "status shortlived" running

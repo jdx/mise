@@ -284,6 +284,27 @@ Examples:
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
+### `include` - Share config from a remote file {#include}
+
+`include` pulls a remote config file into this one, so an organization can publish a baseline and have every repo use it:
+
+```toml
+include = [
+  "git::https://github.com/myorg/platform.git//mise.toml?ref=main",
+  "oci::ghcr.io/myorg/platform-config@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+]
+
+[tools]
+node = "22" # this file's own entries override the included ones
+```
+
+A `git::` include points at a `.toml` file; an `oci::` include points at an artifact with a `mise.toml` at its root. The fragment ranks just below the file that includes it and above lower-precedence configs. It is merged into the including file, and may contain `[tools]`, `[tool_alias]`, `[env]`, `[vars]`, `[hooks]`, `[alias]`, `[shell_alias]`, `[plugins]`, `[wrappers]` and `min_version`. Relative paths (such as `_.file`) and `{{ config_root }}` resolve against the including file, its tools are locked in the including file's lockfile, and its `min_version` is enforced. A later entry in `include` overrides an earlier one, and the including file overrides them all.
+
+- **Trust is the including file's.** `include` is not trust-exempt, so an untrusted repo cannot make mise fetch a URL when you `cd` into it, and [safe mode](/configuration/settings#safe) never fetches for project config. Once trusted, the fragment runs with that trust, like a `mise.toml` that changes on `git pull`.
+- **Paranoid mode needs a pin.** [Paranoid mode](/configuration/settings#paranoid) binds trust to file content, so there an include must be a full commit sha (`?ref=<40 hex digits>`) or an OCI digest (`@sha256:…`). The including file's hash then covers it.
+- **Cached.** A fragment is read on every config load, so it is fetched once and kept under `MISE_CACHE_DIR`. A commit sha or OCI digest is never fetched again. A branch, tag or OCI tag is refreshed once the cache is older than [`fetch_remote_versions_cache`](/configuration/settings#fetch_remote_versions_cache) (one hour by default). Only commands that look at remote versions, such as `mise install`, `mise up` and `mise use`, refresh; hook-env, `mise ls`, `mise exec` and shims, and offline mode, use the cached copy without checking. If a refresh fails, or returns something that cannot load with this mise (an unsupported section, or a `min_version` it does not meet), mise keeps the cached copy and warns; on a cold cache that is an error. `mise cache clear` forces a refetch.
+- **Anything else is an error, not a silent no-op.** That includes `include` (no nesting); `[settings]` and the monorepo keys, which are read before an include can be resolved; `[tasks]`, `task_config` and `task_templates`, which are discovered from files (share tasks with [`task_config.includes`](/tasks/task-configuration#task_config.includes)); and the system sections such as `[dotfiles]` and `[daemons]`.
+
 ### `[tool_config]` - Config-root-scoped tool policy
 
 `[tool_config]` applies policy to tools declared by configs sharing the same
@@ -681,8 +702,9 @@ differently named daemon.
 
 A higher-precedence declaration replaces the complete same-name daemon. Explicit
 environment variables override preset exports. `proxy` sets the daemon's hostname
-label, opts it out with `false`, or re-enables it with `true`, and `proxy_tls`
-chooses `"terminate"` or `"passthrough"`. See [Daemons](/daemons) for presets,
+label, opts it out with `false`, or re-enables it with `true`, `proxy_tls` chooses
+`"terminate"` or `"passthrough"`, and `proxy_idle_timeout` (a duration such as `"30m"`,
+or `false`) stops a proxy-started daemon after it sits idle. See [Daemons](/daemons) for presets,
 [project references](/daemons#daemons-from-another-project),
 [stable URLs](/daemons#stable-urls-per-worktree), and lifecycle commands.
 

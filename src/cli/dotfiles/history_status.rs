@@ -200,11 +200,22 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             report.pending_operations
         );
     }
-    miseprintln!(
-        "  automatic capture: {} ({}).",
-        report.watcher.as_str(),
-        super::capture_health::advice(report.watcher)
-    );
+    let failing = report
+        .health
+        .as_ref()
+        .is_some_and(|health| health.failing_capture().is_some());
+    if failing && report.watcher == super::capture_health::Watcher::Running {
+        miseprintln!(
+            "  automatic capture: {} but failing (edits are not being saved until a capture succeeds).",
+            report.watcher.as_str()
+        );
+    } else {
+        miseprintln!(
+            "  automatic capture: {} ({}).",
+            report.watcher.as_str(),
+            super::capture_health::advice(report.watcher)
+        );
+    }
     match &report.sync {
         None => miseprintln!(
             "Setup repository: none (`mise dot origin set <url>` synchronizes committed history)."
@@ -287,7 +298,15 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                 "; the watcher is not running now, so this is what it last reported"
             }
         );
-        if let Some(error) = &w.last_error {
+        let running = report.watcher == super::capture_health::Watcher::Running;
+        // a running watcher starts from its predecessor's record: an error
+        // dated before this run is not its failure
+        let error = if running {
+            health.failing_capture()
+        } else {
+            w.last_error.as_deref()
+        };
+        if let Some(error) = error {
             miseprintln!(
                 "  last capture failure: {error} ({} consecutive; at {}). Edits since then are not protected.",
                 w.consecutive_failures,
@@ -295,6 +314,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
                     .as_deref()
                     .map(local_time)
                     .unwrap_or_else(|| "unknown".into())
+            );
+        }
+        if running && w.executable_gone {
+            miseprintln!(
+                "  outdated: {}.",
+                crate::system::history::health::EXECUTABLE_GONE_ADVICE
             );
         }
         for degraded in &w.degraded {

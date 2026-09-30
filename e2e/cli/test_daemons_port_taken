@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# Set MISE_TEST_PITCHFORK to test a local build instead of the released version.
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+# Unix socket paths are short, so keep the supervisor's directories directly under
+# $TMPDIR, which the harness removes, rather than nesting them deeper.
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pfc"
+export PITCHFORK_PROXY_ENABLE=false
+export PITCHFORK_INTERVAL=100ms
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+# Something outside mise holds the port the daemon's automatic allocation lands on.
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
+holder=$!
+trap 'kill $holder 2>/dev/null || true; pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+for _ in $(seq 50); do
+  curl -fsS "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break
+  sleep 0.1
+done
+
+mkdir project
+cd project
+cat >mise.toml <<TOML
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+port = { auto = true, base = $PORT }
+[tasks.dev]
+daemons = ["api"]
+run = "true"
+TOML
+
+# Pitchfork says the port is busy; mise adds how to move it (this project is
+# outside Git, so the port is the configured base), and does not add
+# its own exit-status trailer to an error pitchfork already explained.
+output=$(mise daemons start api 2>&1) && fail "start unexpectedly succeeded: $output"
+assert_contains_text "$output" "did not start and its automatically allocated port $PORT (the configured base)"
+assert_contains_text "$output" "gitignored mise.local.toml"
+assert_not_contains_text "$output" "exited with non-zero status"
+assert_not_contains_text "$output" "Run with --verbose"
+assert_fail "mise daemons start api"
+
+# A task that requires the daemon starts it through a different path, which has
+# to hand the same information to the failure diagnostic.
+output=$(mise run dev 2>&1) && fail "task unexpectedly succeeded: $output"
+assert_contains_text "$output" "did not start and its automatically allocated port $PORT (the configured base)"
+assert_contains_text "$output" "gitignored mise.local.toml"
+
+# With the port free again, the same daemon starts.
+kill "$holder"
+wait "$holder" 2>/dev/null || true
+for _ in $(seq 50); do
+  curl -fsS "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || break
+  sleep 0.1
+done
+mise daemons start api
+assert_contains "mise daemons ls --json" '"status": "running"'

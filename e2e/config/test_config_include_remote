@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# `include` merges the [tools] of a pinned remote fragment into a config file.
+#
+# Uses `crane registry serve` (an in-memory OCI registry) on a loopback port and
+# `crane append` to publish the fragment as a tar layer.
+
+mise install crane@latest >/dev/null 2>&1
+
+find_available_port() {
+  python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()"
+}
+
+REGISTRY_PID=""
+cleanup() {
+  if [[ -n ${REGISTRY_PID:-} ]]; then
+    kill "$REGISTRY_PID" 2>/dev/null || true
+    wait "$REGISTRY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+PORT="$(find_available_port)"
+REGISTRY="127.0.0.1:$PORT"
+mise x crane@latest -- crane registry serve --address "$REGISTRY" >/dev/null 2>&1 &
+REGISTRY_PID=$!
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+assert_succeed "curl -fsS http://$REGISTRY/v2/"
+
+# publish <dir> <name> prints the digest of the artifact it pushed
+publish() {
+  local dir="$1" ref="$REGISTRY/e2e/$2:v1"
+  tar -czf "$dir.tar.gz" -C "$dir" .
+  mise x crane@latest -- crane append --oci-empty-base -f "$dir.tar.gz" -t "$ref" >/dev/null
+  mise x crane@latest -- crane digest "$ref"
+}
+
+mkdir -p base env-fragment bad-fragment task-fragment min-fragment
+cat >base/mise.toml <<'TOML'
+[tools]
+tiny = "1"
+shellcheck = "0.9"
+TOML
+cat >env-fragment/mise.toml <<'TOML'
+[env]
+FROM_FRAGMENT = "1"
+OVERRIDDEN = "fragment"
+ROOT = "{{ config_root }}"
+_.file = ".fragment.env"
+_.path = ["frag-bin"]
+TOML
+echo "FROM_DOTENV=yes" >.fragment.env
+cat >bad-fragment/mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+cat >min-fragment/mise.toml <<'TOML'
+min_version = "2099.1.1"
+TOML
+cat >task-fragment/mise.toml <<'TOML'
+[tasks.a]
+run = "echo a"
+TOML
+BASE="$(publish base base)"
+ENV_FRAGMENT="$(publish env-fragment envfrag)"
+BAD_FRAGMENT="$(publish bad-fragment badfrag)"
+TASK_FRAGMENT="$(publish task-fragment taskfrag)"
+MIN_FRAGMENT="$(publish min-fragment minfrag)"
+
+version_of() {
+  mise ls --json | jq -r --arg t "$1" '.[$t][0].requested_version // empty'
+}
+source_of() {
+  mise ls --json | jq -r --arg t "$1" '.[$t][0].source.path // empty'
+}
+# assert runs its command in a new bash
+export -f version_of source_of
+
+# The fragment's tools apply, and the including file's own entries win.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+
+[tools]
+shellcheck = "0.10"
+TOML
+assert "version_of tiny" "1"
+assert "version_of shellcheck" "0.10"
+# fragment tools are sourced from the including file, not from the cache
+assert "source_of tiny" "$PWD/mise.toml"
+
+# A git include is cloned and read like an OCI one. Only https and ssh URLs are
+# accepted, so rewrite a fake https host onto a local repository.
+git init -q gitsrc
+mkdir gitsrc/base
+cat >gitsrc/base/mise.toml <<'TOML'
+[tools]
+tiny = "3"
+TOML
+git -C gitsrc add base/mise.toml
+git -C gitsrc -c user.email=e2e@example.com -c user.name=e2e commit -q -m base
+GIT_SHA="$(git -C gitsrc rev-parse HEAD)"
+git -C gitsrc branch -M main
+git config --global url."file://$PWD/gitsrc".insteadOf "https://example.test/org/platform.git"
+cat >mise.toml <<TOML
+include = ["git::https://example.test/org/platform.git//base/mise.toml?ref=$GIT_SHA"]
+TOML
+assert "version_of tiny" "3"
+cat >mise.toml <<TOML
+include = ["git::https://example.test/org/platform.git//base/mise.toml?ref=main"]
+TOML
+assert "version_of tiny" "3"
+
+# A git include must point at a .toml file (checked before any fetch).
+cat >mise.toml <<TOML
+include = ["git::https://github.com/jdx/mise.git//tasks?ref=main"]
+TOML
+assert_fail_contains "mise ls" "must point at a .toml file"
+
+# A fragment is a whole config file: its env applies and the including file's
+# own entries win.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/envfrag@$ENV_FRAGMENT"]
+
+[env]
+OVERRIDDEN = "local"
+_.path = ["own-bin"]
+TOML
+assert "mise env --json | jq -r .FROM_FRAGMENT" "1"
+assert "mise env --json | jq -r .OVERRIDDEN" "local"
+# relative paths and config_root resolve against the including file, not the cache
+assert "mise env --json | jq -r .ROOT" "$PWD"
+assert "mise env --json | jq -r .FROM_DOTENV" "yes"
+# the including file's PATH entries come before the shared ones
+assert "mise env --json | jq -r '.PATH | split(\":\") | map(select(test(\"-bin$\"))) | map(sub(\".*/\"; \"\")) | join(\",\")'" "own-bin,frag-bin"
+
+# [settings] is read before an include can be resolved, so it is refused rather
+# than silently ignored.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/badfrag@$BAD_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "is not supported in a config include"
+
+# A fragment's min_version is enforced like any config's.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/minfrag@$MIN_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "2099.1.1"
+
+# Tasks are discovered from files, not loaded configs; point at task_config.includes.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/taskfrag@$TASK_FRAGMENT"]
+TOML
+assert_fail_contains "mise ls" "task_config.includes"
+
+# Paranoid mode binds trust to content, so an include must be pinned there.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+TOML
+export MISE_PARANOID=1
+assert_succeed "mise trust"
+assert "version_of tiny" "1"
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base:v1"]
+TOML
+assert_succeed "mise trust"
+assert_fail_contains "mise ls" "must be pinned to a commit sha or an OCI digest"
+unset MISE_PARANOID
+
+# Once cached, a digest-pinned fragment loads without the registry, whatever
+# the ttl, and MISE_TASK_REMOTE_NO_CACHE does not force a refetch.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base@$BASE"]
+TOML
+assert "version_of tiny" "1"
+
+# A tag is mutable: it is served from the cache until the ttl passes, then
+# refetched.
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/base:v1"]
+TOML
+assert "version_of tiny" "1"
+cat >base/mise.toml <<'TOML'
+[tools]
+tiny = "2"
+TOML
+publish base base >/dev/null
+assert "version_of tiny" "1"
+# `mise ls` (like hook-env, exec and shims) never refreshes; a command that
+# looks at remote versions does, once the cache is older than the ttl.
+assert "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s version_of tiny" "1"
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
+
+# hook-env notices a refreshed fragment once, then settles on the fast path.
+export MISE_ENV_CACHE=0
+eval "$(mise activate bash 2>/dev/null)"
+sleep 1
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+  ok "a refreshed include bypasses the hook-env fast path once"
+else
+  fail "a refreshed include should bypass the fast path but got: '$output'"
+fi
+eval "$output"
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output ]]; then
+  ok "hook-env takes the fast path after the refresh"
+else
+  fail "expected the fast path after the refresh but got: '$output'"
+fi
+
+# A refresh that is not usable never replaces the copy that works, whether it
+# is an unsupported section or a min_version this mise does not meet.
+cp min-fragment/mise.toml base/mise.toml
+publish base base >/dev/null
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
+cp bad-fragment/mise.toml base/mise.toml
+publish base base >/dev/null
+assert_succeed "MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise config ls"
+assert "version_of tiny" "2"
+
+# When the refresh fails, the stale copy keeps working.
+kill "$REGISTRY_PID"
+wait "$REGISTRY_PID" 2>/dev/null || true
+REGISTRY_PID=""
+export MISE_FETCH_REMOTE_VERSIONS_CACHE=0s
+assert_succeed "mise config ls"
+assert "version_of tiny" "2"
+export MISE_TASK_REMOTE_NO_CACHE=1
+assert "version_of tiny" "2"
+# but a fragment that was never cached is an error
+cat >mise.toml <<TOML
+include = ["oci::$REGISTRY/e2e/other:v1"]
+TOML
+assert_fail_contains "mise ls" "failed to load config include"
+# safe mode never lets a project config fetch anything
+assert_succeed "MISE_SAFE=1 mise ls"
+# ...and never renders a templated include either
+cat >mise.toml <<'TOML'
+include = ["{{ exec(command='id') }}"]
+TOML
+assert_succeed "MISE_SAFE=1 mise ls"

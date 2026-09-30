@@ -61,6 +61,19 @@
       "type": "string",
       "enum": ["terminate", "passthrough"]
     },
+    "daemon_proxy_idle_timeout": {
+      "description": "Stop this daemon after this long without proxy traffic when the proxy started it, for example \"30m\". false exempts it from idle shutdown even when pitchfork's proxy.idle_timeout is set; \"0\" does the same. Idle shutdown is off unless this or pitchfork's proxy.idle_timeout is set, and a daemon started with `mise daemons start` is never stopped for inactivity. Requires pitchfork 2.27.0.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^\\s*[0-9]"
+        },
+        {
+          "type": "boolean",
+          "enum": [false]
+        }
+      ]
+    },
     "task_dependency_item": {
       "description": "task name and args",
       "oneOf": [
@@ -4113,6 +4126,22 @@
         }
       ]
     },
+    "include": {
+      "description": "remote config files merged into this one, ranking just below it: git::<url>//<path>.toml?ref=<ref> or oci::<registry>/<repo>[:tag|@sha256:<digest>] (the artifact holds a mise.toml). Paranoid mode requires a commit sha or digest; otherwise a branch or tag is refreshed after fetch_remote_versions_cache",
+      "oneOf": [
+        {
+          "description": "a remote config fragment",
+          "type": "string"
+        },
+        {
+          "description": "remote config fragments",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
     "env_file": {
       "description": "dotenv file(s) to load. Deprecated; use env._.file instead. This will be removed in mise 2027.4.0.",
       "deprecated": true,
@@ -6422,6 +6451,9 @@
               },
               "proxy_tls": {
                 "$ref": "#/$defs/daemon_proxy_tls"
+              },
+              "proxy_idle_timeout": {
+                "$ref": "#/$defs/daemon_proxy_idle_timeout"
               }
             },
             "additionalProperties": true
@@ -6468,6 +6500,9 @@
               },
               "proxy_tls": {
                 "$ref": "#/$defs/daemon_proxy_tls"
+              },
+              "proxy_idle_timeout": {
+                "$ref": "#/$defs/daemon_proxy_idle_timeout"
               }
             },
             "additionalProperties": true
@@ -6533,6 +6568,9 @@
               },
               "proxy_tls": {
                 "$ref": "#/$defs/daemon_proxy_tls"
+              },
+              "proxy_idle_timeout": {
+                "$ref": "#/$defs/daemon_proxy_idle_timeout"
               }
             },
             "additionalProperties": true

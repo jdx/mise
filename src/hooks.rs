@@ -106,6 +106,19 @@ pub(crate) enum HookDef {
     One(HookDefItem),
 }
 
+impl HookDef {
+    /// This definition followed by the hooks of `later`, so both run.
+    pub(crate) fn then(self, later: HookDef) -> HookDef {
+        let items = |def: HookDef| match def {
+            HookDef::Array(items) => items,
+            HookDef::One(item) => vec![item],
+        };
+        let mut all = items(self);
+        all.extend(items(later));
+        HookDef::Array(all)
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 pub(crate) enum HookDefItem {

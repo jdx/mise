@@ -50,6 +50,13 @@ assert_contains "mise env -s bash" "COCKROACH_URL='postgresql://root@127.0.0.1:2
 assert_contains "mise env -s bash" "SPICEDB_ENDPOINT='127.0.0.1:50051'"
 assert_contains "mise env -s bash" "SPICEDB_PRESHARED_KEY=mise-dev-key"
 
+# Each named port is exported under the daemon's name, as the command uses it:
+# the default, or the value set with ports.<name>.
+assert_contains "mise env -s bash" "CRDB_HTTP_PORT=8080"
+assert_contains "mise env -s bash" "EVENTS_MONITOR_PORT=8333"
+assert_contains "mise env -s bash" "AUTHZ_HTTP_PORT=8443"
+assert_contains "mise env -s bash" "AUTHZ_METRICS_PORT=9090"
+
 # Unknown ports and values failing a preset's declared pattern are rejected.
 cat >mise.toml <<'TOML'
 [daemons.crdb]
@@ -66,3 +73,31 @@ version = "26"
 options.databases = ["good", "bad; name"]
 TOML
 assert_fail_contains "mise daemons ls 2>&1" 'must match'
+
+# proxy_idle_timeout is a duration string or false; pitchfork parses it, mise
+# refuses the wrong shapes and names the daemon.
+for value in true 30 "'soon'"; do
+  cat >mise.toml <<TOML
+[daemons.api]
+run = "sleep 30"
+port = 3000
+proxy_idle_timeout = $value
+TOML
+  assert_fail_contains "mise daemons ls 2>&1" '[daemons.api].proxy_idle_timeout'
+done
+cat >mise.toml <<'TOML'
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+proxy_idle_timeout = true
+TOML
+assert_fail_contains "mise daemons ls 2>&1" '[daemons.crdb].proxy_idle_timeout'
+for value in "'30m'" false; do
+  cat >mise.toml <<TOML
+[daemons.api]
+run = "sleep 30"
+port = 3000
+proxy_idle_timeout = $value
+TOML
+  assert_contains "mise daemons ls --json" '"name": "api"'
+done

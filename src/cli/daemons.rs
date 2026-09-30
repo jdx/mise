@@ -177,7 +177,7 @@ impl Daemons {
                 bail!("mise daemons tui opens the dashboard; pass TUI flags, not daemon names");
             }
             let previous = runtime::read_state(root)?;
-            let (config, ts) = runtime::toolset(&config, false).await?;
+            let (config, ts) = runtime::toolset(&config, None).await?;
             let runtime = Runtime::from_toolset(&config, &ts, Some(&previous.bin)).await?;
             if !runtime.supervisor_up(root).await? {
                 bail!("pitchfork supervisor is not running; run mise daemons start");
@@ -451,7 +451,11 @@ impl Daemons {
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
             }
-            let (scoped, ts) = runtime::toolset(&scoped, install).await?;
+            // What this invocation will start here, plus whatever those daemons
+            // depend on, since pitchfork starts dependencies with them. Their
+            // tools are the ones installed and validated below.
+            let here = set.restricted_to(&starting);
+            let (scoped, ts) = runtime::toolset(&scoped, install.then_some(&here)).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if matches!(action, "ls" | "urls") {
                 // Every listed root, labels or not. A root kept only by its
@@ -523,9 +527,6 @@ impl Daemons {
                 continue;
             }
             let runtime = runtime?;
-            // What this invocation will start here, plus whatever those daemons
-            // depend on, since pitchfork starts dependencies with them.
-            let here = set.restricted_to(&starting);
             if install {
                 daemons::providers::install_set(&here).await?;
                 // An unrelated daemon is registered but not started, so a
@@ -603,10 +604,17 @@ impl Daemons {
                 }
             } else {
                 let mut forwarded = vec![action.into()];
-                forwarded.extend(selected);
+                forwarded.extend(selected.iter().cloned());
                 forwarded.extend(flags.clone());
                 if install {
-                    pending.push((runtime, root, forwarded, _project_lock));
+                    pending.push((
+                        runtime,
+                        root,
+                        forwarded,
+                        selected,
+                        state.ports.clone(),
+                        _project_lock,
+                    ));
                 } else {
                     runtime.exec(&root, forwarded).await?;
                 }
@@ -614,8 +622,8 @@ impl Daemons {
         }
         // Register and validate every dependency root before pitchfork starts
         // anything, regardless of the order projects appear in the config.
-        for (runtime, root, forwarded, _project_lock) in pending {
-            runtime.exec(&root, forwarded).await?;
+        for (runtime, root, forwarded, selected, ports, _project_lock) in pending {
+            runtime.start(&root, forwarded, &selected, &ports).await?;
         }
         if matches!(action, "ls" | "urls") {
             if json {
@@ -680,7 +688,7 @@ impl Prune {
         // Pitchfork is resolved once from the ambient configuration; each entry
         // falls back to the executable its own state recorded.
         let config = Config::get().await?;
-        let (config, ts) = runtime::toolset(&config, false).await?;
+        let (config, ts) = runtime::toolset(&config, None).await?;
         for (entry, size) in &selected {
             let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
                 .await

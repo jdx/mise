@@ -64,7 +64,7 @@ public static class MiseConsoleCtrl
     private static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("kernel32.dll")]
-    private static extern IntPtr GetConsoleWindow();
+    private static extern uint GetConsoleCP();
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AllocConsole();
@@ -83,7 +83,8 @@ public static class MiseConsoleCtrl
 
     public static bool EnsureConsole()
     {
-        return GetConsoleWindow() != IntPtr.Zero || AllocConsole();
+        // A console without a window (CREATE_NO_WINDOW) has no GetConsoleWindow, but has a code page.
+        return GetConsoleCP() != 0 || AllocConsole();
     }
 
     public static int Start(string commandLine, string workingDirectory, string outputPath)
@@ -177,7 +178,8 @@ public static class MiseConsoleCtrl
 
         @'
 [tasks.sleeper]
-run = "sleeper.cmd"
+# cmd.exe skips the current directory under NoDefaultCurrentDirectoryInExePath.
+run = '.\sleeper.cmd'
 '@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
 
         # A batch file, not a bare command: `cmd.exe` only stops to ask about terminating a

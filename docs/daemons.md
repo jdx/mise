@@ -723,7 +723,9 @@ inside a linked worktree and keep the base port inside a primary checkout.
 Independent clones, including `git clone --separate-git-dir`, and projects outside
 Git keep the base port. Worktrees of a bare repository all receive offsets because
 there is no primary checkout. To give one checkout a fixed port, set an integer
-`port` in a checkout-specific configuration such as a gitignored `mise.local.toml`.
+`port` in a checkout-specific configuration such as a gitignored `mise.local.toml`,
+repeating the rest of the daemon's declaration there, since a higher-precedence
+declaration replaces it entirely.
 
 Mise saves resolved ports in the project's generated `state.json` during daemon
 registration and reuses them on later loads. This preserves existing assignments
@@ -738,6 +740,23 @@ Use `mise daemons ls --json` to inspect assignments. Each listed daemon includes
 Presets export their usual connection variables with the resolved port, including
 `PGPORT` and `DATABASE_URL` for PostgreSQL and `REDIS_URL` for Redis.
 
+A preset's named ports are exported too, as `<NAME>_<PORT_NAME>` with the daemon's
+name folded the same way, so a daemon named `crdb` from the `cockroachdb` preset
+exports `CRDB_HTTP_PORT` and a `spicedb` daemon named `authz` exports
+`AUTHZ_HTTP_PORT` and `AUTHZ_METRICS_PORT`. The value is the port the daemon's
+command uses: the default, the worktree offset from `port = "auto"`, or a
+`ports.<name>` you set. Read it instead of adding the offset yourself.
+
+```toml
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+port = "auto"
+
+[env]
+COCKROACH_CONSOLE = "http://127.0.0.1:{{ env.CRDB_HTTP_PORT }}"
+```
+
 Custom daemons with an integer or automatic `port` export `<NAME>_PORT`. Mise
 uppercases the daemon name and replaces punctuation with underscores:
 `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]` exports `WEB_UI_PORT`.
@@ -745,7 +764,9 @@ These variables are available through `mise env`, `mise x`, and the daemon's mis
 environment. Explicit `[env]` values take precedence over daemon exports.
 
 If a name starts with a digit, or two names map to the same variable (such as
-`web-ui` and `web_ui`), mise warns and omits the affected exports. The daemons can
+`web-ui` and `web_ui`), mise warns and omits the affected exports. A preset's own
+variables take precedence over a derived one, so a custom daemon whose
+`<NAME>_PORT` matches a named-port variable gives way to the preset. The daemons can
 still run. Pitchfork also provides `$PORT` to the process it starts.
 
 ### Port conflicts
@@ -763,6 +784,21 @@ These checks do not reserve ports or detect every listener. An unmanaged process
 an unreachable supervisor, or two projects starting simultaneously can still
 cause an ordinary bind failure. Mise keeps the selected port rather than trying
 another one, so existing shells retain the same connection settings.
+
+When pitchfork reports that a port is already in use, the error is pitchfork's own.
+For a daemon with an automatic port, mise then adds a warning naming the daemon and
+the port, and saying whether it is the configured base (a primary checkout keeps the
+base) or the base offset by a linked worktree's path, since nothing in pitchfork's
+message says the number can be changed. To use a different port in this checkout, declare the daemon
+again in a gitignored `mise.local.toml`, with a fixed port or another `base`. That
+declaration replaces the whole daemon, so repeat its other keys:
+
+```toml
+# mise.local.toml
+[daemons.api]
+run = "exec npm run dev -- --port $API_PORT"
+port = 3100
+```
 
 ## Stable URLs per worktree
 
@@ -850,30 +886,57 @@ supervisor starts the daemons but does not serve their hostnames.
 
 ### Stop idle daemons
 
-Nothing stops on its own by default. To stop a daemon after a period without
-traffic, set `proxy_idle_timeout` on it. Pitchfork reads the key, so it needs
-Pitchfork 2.27.0 or newer and takes a duration such as `"15m"`, or `false` to
-exempt the daemon:
+Opening a daemon's URL starts it, and its `depends`, if it is not running. Nothing
+stops it again by default: pitchfork's idle shutdown is off, so a daemon the proxy
+started keeps running until you stop it. Set `proxy_idle_timeout` on a daemon to have
+pitchfork stop it after that long without proxy traffic:
 
 ```toml
-[daemons.api]
-run = "exec npm run dev -- --port $API_PORT"
-port = { auto = true, base = 3000 }
-proxy_idle_timeout = "15m"
+[daemons.web]
+run = "npm run dev"
+port = 5173
+depends = ["db"]
+proxy_idle_timeout = "30m"
+
+[daemons.db]
+preset = "postgres"
+version = "18"
 ```
 
-To apply one timeout to every daemon the proxy starts, set `idle_timeout` under
-`[settings.proxy]` in `~/.config/pitchfork/config.toml` instead. A daemon's own
-`proxy_idle_timeout` overrides it. A dependency without one inherits the timeout
-of the requested daemon only when Pitchfork starts it for that request; a
-dependency that is already running keeps its existing idle-shutdown eligibility
-and timeout.
+With this, visiting `https://web.shop.localhost` starts `db` and `web`. Thirty minutes
+after the last request, `web` stops, then `db` if nothing else still needs it, and the
+next visit starts them again.
 
-The timeout applies only to a daemon the proxy started because a request arrived
-at its hostname. A daemon you started with `mise daemons start` or that a task
-started keeps running until you stop it. Open streaming responses and WebSockets
-count as activity. The next request starts the daemon again, and preset data stays
-on disk. See pitchfork's
+The value is a duration string such as `"30m"`, `"1h"` or `"90s"`, or `false`. Mise
+checks its shape and pitchfork parses it, so it needs pitchfork 2.27.0 or later.
+
+- **Default off.** A daemon without `proxy_idle_timeout` is stopped for inactivity
+  only when pitchfork's own `proxy.idle_timeout` setting is on, for example
+  `PITCHFORK_PROXY_IDLE_TIMEOUT=15m` or `idle_timeout = "15m"` under `[settings.proxy]`
+  in pitchfork's user configuration. `proxy_idle_timeout` overrides that default for one
+  daemon.
+- **Only proxy-started daemons.** `mise daemons start`, the shell hook and
+  `boot_start` are explicit starts, and a daemon started that way is exempt along with
+  its dependencies, however long it sits idle.
+- **Dependencies inherit.** A dependency without its own `proxy_idle_timeout` takes the
+  timeout of the daemon the proxy was asked to start, so `db` above also uses `"30m"`,
+  not the global default. One that is already running keeps the timeout it started with.
+- **Open connections count.** A request counts until its response has been sent, and a
+  WebSocket, a streaming response or a TLS passthrough connection keeps the daemon
+  active for as long as it stays open, so a browser tab holding a hot-reload socket
+  keeps a dev server up. Traffic sent straight to the daemon's port does not count, so
+  a client that bypasses the proxy should use `false`.
+- **`false` opts out.** It exempts the daemon even when the proxy started it as a
+  dependency of one that has a timeout, and even when a global `proxy.idle_timeout` is
+  set. Leaving the key out is different in exactly those two cases: the daemon then
+  follows the global default, or the timeout it inherited. With no global setting and no
+  dependent that has a timeout, `false` and leaving it out behave the same. `"0"` is
+  the same as `false`.
+
+Shutdown is checked every pitchfork `general.interval` (10 seconds by default), and a
+daemon stops only when no running daemon depends on it and no tracked shell session
+needs it, so it can outlive the timeout by a little.
+See pitchfork's
 [idle shutdown](https://pitchfork.jdx.dev/guides/port-management#idle-shutdown)
 for the full activity rules.
 
@@ -884,6 +947,13 @@ per-worktree suffix, so `namespace_per_worktree` keeps separating daemon IDs whi
 the worktree component does the separating in hostnames. Without an explicit
 namespace, both mise and pitchfork name the project after the primary checkout's
 directory.
+
+Mise registers each project under a namespace that includes a hash of its path, so
+two unrelated checkouts never share daemon IDs. Pitchfork would otherwise take that
+namespace as the project's hostname and serve `api.shop-528f92b13a6784f0.localhost`, so
+mise also passes the project component to `pitchfork config add --label`. It does this
+only when the installed pitchfork has the flag; with an older one, the hostname mise
+prints routes only if you set an explicit `namespace`.
 
 A bare repository has no primary checkout, so each worktree beside it names itself
 and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not

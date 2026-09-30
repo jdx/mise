@@ -11,8 +11,10 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
-use eyre::{WrapErr, ensure};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use eyre::{WrapErr, bail, ensure};
 use indoc::formatdoc;
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
@@ -75,6 +77,12 @@ impl Backend for GemBackend {
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
+            // GitHub Packages has no JSON versions API.
+            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => bail!(
+                "GitHub Packages has no version-listing API mise can read, so `{}` \
+                 cannot resolve `latest` or a prefix there: pin an exact version",
+                self.ba()
+            ),
             Some(source) => source.join(&format!("api/v1/versions/{}.json", self.tool_name()))?,
             None => format!(
                 "{}api/v1/versions/{}.json",
@@ -83,7 +91,8 @@ impl Backend for GemBackend {
             )
             .parse()?,
         };
-        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json(url.clone()).await?;
+        let (url, headers) = credentials_as_header(url)?;
+        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json_with_headers(url, &headers).await?;
 
         // RubyGems API returns newest-first, mise expects oldest-first
         let mut versions: Vec<VersionInfo> = response
@@ -122,34 +131,40 @@ impl Backend for GemBackend {
         )
         .await;
 
-        let mut cmd =
-            CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await)
-                .arg("install")
-                .arg(self.tool_name())
-                .arg("--version")
-                .arg(&tv.version)
-                .arg("--install-dir")
-                .arg(tv.install_path().join("libexec"));
-        if let Some(source) = self.configured_source(&ctx.config).await? {
+        let source = self.configured_source(&ctx.config).await?;
+        let mut cmd = match &source {
+            // A credential in argv is visible to other users in `ps`. RubyGems
+            // only reads credentials from the source URL, so run `bin/gem`'s
+            // two lines under `ruby -e` and hand the URL over in the
+            // environment, which only the same user can read.
+            Some(source) if carries_credentials(source) => {
+                CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "ruby").await)
+                    .arg("-e")
+                    .arg(GEM_WITH_ENV_SOURCE)
+                    .arg("--")
+                    .env("MISE_GEM_SOURCE", source.as_str())
+                    // Raw mode would bypass the output redaction below.
+                    .never_raw()
+            }
+            _ => CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await),
+        }
+        .arg("install")
+        .arg(self.tool_name())
+        .arg("--version")
+        .arg(&tv.version)
+        .arg("--install-dir")
+        .arg(tv.install_path().join("libexec"));
+        if let Some(source) = &source {
             // `--source` rather than `--clear-sources --source`: the latter
             // would also cut off the registry holding this gem's dependencies,
             // which commonly still live on rubygems.org.
-            cmd = cmd.arg("--source").arg(source.as_str());
-            // gem's own fetch errors redact the source (`Gem::Uri#redacted`),
-            // but nothing makes that true of everything it might print: `-V`,
-            // a `~/.gemrc` verbosity setting or a wrapper can echo the command
-            // it ran. Its output is streamed straight through and the last
-            // stderr line is carried into the failure, so scrub it here.
-            cmd = cmd.redact(ctx.config.redactions().iter().cloned());
-            // Redacting the stream only helps if there is a stream to redact.
-            // Raw mode hands the child mise's own stdout and stderr, so it
-            // would bypass the line above entirely. Refused for this one
-            // command, and only when the source actually carries a credential:
-            // without one there is nothing to protect and no reason to take
-            // raw mode away from someone who asked for it.
-            if carries_credentials(&source) {
-                cmd = cmd.never_raw();
+            if !carries_credentials(source) {
+                cmd = cmd.arg("--source").arg(source.as_str());
             }
+            // gem's own fetch errors redact the source (`Gem::Uri#redacted`),
+            // but `-V`, a `~/.gemrc` verbosity setting or a wrapper can still
+            // echo it, so scrub the streamed output too.
+            cmd = cmd.redact(ctx.config.redactions().iter().cloned());
         }
         cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
@@ -211,6 +226,9 @@ impl GemBackend {
         let Some(url) = parse_source(raw)? else {
             return Ok(None);
         };
+        let url = with_github_packages_token(url, || {
+            crate::github::resolve_token("github.com").map(|(token, _)| token)
+        });
         config.add_redactions(source_secrets(&url));
         Ok(Some(url))
     }
@@ -284,6 +302,50 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
         url.set_path(&path);
     }
     Ok(Some(url))
+}
+
+/// `bin/gem`, plus `--source` from `MISE_GEM_SOURCE`. The variable is deleted
+/// first so native extension builds do not inherit it.
+const GEM_WITH_ENV_SOURCE: &str = r#"require "rubygems/gem_runner"
+Gem::GemRunner.new.run(ARGV + ["--source", ENV.delete("MISE_GEM_SOURCE")])"#;
+
+/// GitHub Packages' RubyGems registry.
+const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
+
+/// Add the resolved GitHub token to an https GitHub Packages source that has
+/// no credentials. Other hosts and explicit credentials are left alone.
+fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<String>) -> Url {
+    if url.scheme() != "https"
+        || url.host_str() != Some(GITHUB_PACKAGES_HOST)
+        || carries_credentials(&url)
+    {
+        return url;
+    }
+    if let Some(token) = token().filter(|t| !t.is_empty()) {
+        // GitHub Packages takes the token as the username.
+        let _ = url.set_username(&token);
+    }
+    url
+}
+
+/// Move a URL's userinfo into an `Authorization` header, since the HTTP
+/// client can print URLs unredacted (e.g. `MISE_LOG_HTTP`).
+fn credentials_as_header(mut url: Url) -> Result<(Url, HeaderMap)> {
+    let mut headers = HeaderMap::new();
+    if !carries_credentials(&url) {
+        return Ok((url, headers));
+    }
+    let user = urlencoding::decode(url.username())?.into_owned();
+    let password = urlencoding::decode(url.password().unwrap_or_default())?.into_owned();
+    let mut value = HeaderValue::from_str(&format!(
+        "Basic {}",
+        BASE64_STANDARD.encode(format!("{user}:{password}"))
+    ))?;
+    value.set_sensitive(true);
+    headers.insert(AUTHORIZATION, value);
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    Ok((url, headers))
 }
 
 /// Whether this URL carries basic-auth userinfo.
@@ -760,6 +822,94 @@ mod tests {
                 parse_source(input).unwrap().map(|u| u.to_string()),
                 Some("https://gems.example.com/".to_string()),
                 "{input:?}"
+            );
+        }
+    }
+
+    fn github_packages(raw: &str, token: Option<&str>) -> String {
+        let url = parse_source(raw).unwrap().unwrap();
+        with_github_packages_token(url, || token.map(str::to_string)).to_string()
+    }
+
+    /// A bare GitHub Packages source borrows the resolved GitHub token.
+    #[test]
+    fn a_github_packages_source_gets_the_github_token() {
+        assert_eq!(
+            github_packages("https://rubygems.pkg.github.com/acme", Some("ghp_secret")),
+            "https://ghp_secret@rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// Credentials already in the URL win over the resolved token.
+    #[test]
+    fn a_github_packages_source_keeps_its_own_credentials() {
+        assert_eq!(
+            github_packages(
+                "https://me:mine@rubygems.pkg.github.com/acme",
+                Some("ghp_secret")
+            ),
+            "https://me:mine@rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// The GitHub token never goes to any other registry.
+    #[test]
+    fn other_sources_never_get_the_github_token() {
+        assert_eq!(
+            github_packages("https://gems.example.com/acme", Some("ghp_secret")),
+            "https://gems.example.com/acme/"
+        );
+    }
+
+    /// An http source never gets the token.
+    #[test]
+    fn an_http_github_packages_source_never_gets_the_github_token() {
+        assert_eq!(
+            github_packages("http://rubygems.pkg.github.com/acme", Some("ghp_secret")),
+            "http://rubygems.pkg.github.com/acme/"
+        );
+    }
+
+    /// Credentials move from the URL to a Basic header.
+    #[test]
+    fn source_credentials_travel_as_a_header() {
+        let url: Url = "https://ghp_secret@rubygems.pkg.github.com/acme/api/v1/versions/x.json"
+            .parse()
+            .unwrap();
+        let (url, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://rubygems.pkg.github.com/acme/api/v1/versions/x.json"
+        );
+        let value = &headers[AUTHORIZATION];
+        assert!(value.is_sensitive());
+        assert_eq!(
+            value.to_str().unwrap(),
+            format!("Basic {}", BASE64_STANDARD.encode("ghp_secret:"))
+        );
+
+        // Percent-decoded; `+` stays literal.
+        let url: Url = "https://me:p%40s+s@gems.example.com/".parse().unwrap();
+        let (_, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(
+            headers[AUTHORIZATION].to_str().unwrap(),
+            format!("Basic {}", BASE64_STANDARD.encode("me:p@s+s"))
+        );
+
+        let url: Url = "https://rubygems.org/".parse().unwrap();
+        let (url, headers) = credentials_as_header(url).unwrap();
+        assert_eq!(url.as_str(), "https://rubygems.org/");
+        assert!(headers.is_empty());
+    }
+
+    /// No token resolved, or an empty one, leaves the source anonymous.
+    #[test]
+    fn a_github_packages_source_without_a_token_stays_anonymous() {
+        for token in [None, Some("")] {
+            assert_eq!(
+                github_packages("https://rubygems.pkg.github.com/acme", token),
+                "https://rubygems.pkg.github.com/acme/",
+                "{token:?}"
             );
         }
     }

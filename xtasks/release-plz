@@ -585,6 +585,14 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
+# For the docs releases page (@jdxcode/docs-releases): count the issues the new
+# release resolves, and snapshot the notes of every published release into
+# release-notes/ so the docs build does not have to fetch them. The release this
+# PR will publish has no notes yet; the docs build fetches that one itself, and
+# the next run commits it. Best effort: a release with no count shows a dash
+# there, and the next run fills it in.
+node node_modules/@jdxcode/docs-releases/bin/docs-releases.mjs sync || echo "Could not update release data for the releases page"
+
 # TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
 # mise up
 mise lock
@@ -642,6 +650,8 @@ git add \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
+	docs/.vitepress/releases-issues.json \
+	release-notes/ \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \

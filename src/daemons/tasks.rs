@@ -214,15 +214,6 @@ pub async fn start(
         let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
         super::presets::ensure_set_runnable_as_user(&will_start)?;
         let previous = runtime::read_state(&root)?;
-        let (scoped, ts) = if install_tools {
-            runtime::toolset(&scoped, true).await?
-        } else {
-            // Keeps the install path out of this future entirely, so callers
-            // inside a spawned task can await it.
-            let ts = runtime::toolset_resolved(&scoped, false).await?;
-            (scoped, ts)
-        };
-        let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         let owned = !foreign.contains(&root);
         // Another project's root is registered whole but only checked for what
         // this run starts, so an unrelated daemon of theirs cannot fail a
@@ -232,6 +223,16 @@ pub async fn start(
         } else {
             set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>())
         };
+        // The set that is validated below is also the set whose tools are installed.
+        let (scoped, ts) = if install_tools {
+            runtime::toolset(&scoped, Some(&starting)).await?
+        } else {
+            // Keeps the install path out of this future entirely, so callers
+            // inside a spawned task can await it.
+            let ts = runtime::toolset_resolved(&scoped, false).await?;
+            (scoped, ts)
+        };
+        let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
         // `will_start` comes from this root's own configuration, which is the
@@ -271,10 +272,29 @@ pub async fn start(
         }
         // The project lock rides along so every root stays held until the last
         // one has started.
-        pending.push((rt, root, ids, _project_lock));
+        // Pitchfork also starts the closure's other members, which this root's
+        // own configuration may add beyond `names`. Their ports are as likely to
+        // be taken, so they are checked after a failed start without being
+        // started by name.
+        let checked: Vec<String> = state
+            .ids
+            .iter()
+            .filter(|id| {
+                let name = id.rsplit('/').next().unwrap_or(id);
+                required.iter().any(|r| r == name)
+            })
+            .cloned()
+            .collect();
+        pending.push((rt, root, ids, checked, state.ports, _project_lock));
     }
-    for (rt, root, ids, _project_lock) in pending {
-        rt.exec(&root, [vec!["start".into()], ids].concat()).await?;
+    for (rt, root, ids, checked, ports, _project_lock) in pending {
+        rt.start(
+            &root,
+            [vec!["start".into()], ids].concat(),
+            &checked,
+            &ports,
+        )
+        .await?;
     }
     Ok(())
 }

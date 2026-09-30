@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# `mise daemons start` installs the tool a preset asks for before checking it
+# against [tools], so a first run on a machine without the tool succeeds.
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.27.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+mkdir -p "$PITCHFORK_STATE_DIR" "$PITCHFORK_CONFIG_DIR"
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+mkdir -p project conflict
+cat >project/mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.bus]
+preset = "nats"
+version = "2"
+port = "auto"
+TOML
+cd project
+assert_fail "mise which nats-server"
+assert_contains "mise daemons start bus 2>&1" "installed"
+assert_contains "mise daemons ls --json" '"status": "running"'
+assert_contains "mise which nats-server" "nats-server"
+mise daemons stop
+
+# An explicit [tools] version the preset cannot use is still an error. The
+# version installed above is pinned so nothing else needs installing.
+for dir in "$MISE_DATA_DIR"/installs/nats-server/[0-9]*.[0-9]*.[0-9]*; do
+  installed=${dir##*/}
+  break
+done
+cd ../conflict
+cat >mise.toml <<TOML
+[tools]
+pitchfork = "system"
+nats-server = "$installed"
+[daemons.bus]
+preset = "nats"
+version = "3"
+port = "auto"
+TOML
+assert_fail_contains "mise daemons start bus 2>&1" "requires nats-server@3"
+
+# The install covers what the daemon's tool depends on, however that is named,
+# and nothing else in the project. `register` installs without starting.
+mkdir ../scope
+cd ../scope
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+jq = "latest"
+yq = "latest"
+[tools.nats-server]
+version = "latest"
+depends = ["jq"]
+[daemons.bus]
+preset = "nats"
+version = "latest"
+port = "auto"
+TOML
+mise daemons register
+assert "test -d '$MISE_DATA_DIR/installs/nats-server'"
+assert "test -d '$MISE_DATA_DIR/installs/jq'"
+assert "test ! -e '$MISE_DATA_DIR/installs/yq'"
