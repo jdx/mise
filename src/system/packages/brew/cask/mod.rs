@@ -38,7 +38,7 @@ mod artifacts;
 mod bulk;
 mod fetch;
 mod flight;
-mod paths;
+pub(crate) mod paths;
 mod running;
 mod state;
 
@@ -134,7 +134,7 @@ fn installed_skip_reason(
     let [app] = artifacts.apps.as_slice() else {
         return Ok(Some("skipped: requires a single owned app"));
     };
-    let app_path = app_target_path(app.target_name()?)?;
+    let app_path = cask_app_target_path(cask, app.target_name()?)?;
     if receipt.apps.as_slice() != [app_path.clone()] {
         return Ok(Some("skipped: app target differs from ownership record"));
     }
@@ -188,8 +188,10 @@ fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'
 
 trait CaskArtifactsExt {
     fn print_install_plan(&self, cask: &Cask) -> Result<()>;
+    #[cfg(test)]
     fn app_target_paths(&self) -> Result<Vec<PathBuf>>;
-    fn binary_targets(&self) -> Result<Vec<PathBuf>>;
+    fn app_target_paths_for(&self, cask: &Cask) -> Result<Vec<PathBuf>>;
+    fn binary_targets_for(&self, cask: &Cask) -> Result<Vec<PathBuf>>;
     fn font_target_paths(&self) -> Result<Vec<PathBuf>>;
     fn completion_target_paths(&self, cask: &Cask) -> Result<Vec<PathBuf>>;
     fn generic_artifact_targets(&self) -> Result<Vec<PathBuf>>;
@@ -204,7 +206,7 @@ impl CaskArtifactsExt for CaskArtifacts {
             // declared name would name a path the install never touches.
             miseprintln!(
                 "link app {}",
-                app_target_path(app.target_name()?)?.display()
+                cask_app_target_path(cask, app.target_name()?)?.display()
             );
         }
         for binary in &self.binaries {
@@ -242,6 +244,7 @@ impl CaskArtifactsExt for CaskArtifacts {
         Ok(())
     }
 
+    #[cfg(test)]
     fn app_target_paths(&self) -> Result<Vec<PathBuf>> {
         let mut targets = Vec::with_capacity(self.apps.len());
         let mut bundle_names = BTreeSet::new();
@@ -270,15 +273,37 @@ impl CaskArtifactsExt for CaskArtifacts {
         Ok(targets)
     }
 
-    fn binary_targets(&self) -> Result<Vec<PathBuf>> {
-        let appdir = cask_appdir(&self.apps)?;
+    fn app_target_paths_for(&self, cask: &Cask) -> Result<Vec<PathBuf>> {
+        let mut targets = Vec::with_capacity(self.apps.len());
+        let mut bundle_names = BTreeSet::new();
+        for app in &self.apps {
+            let name = app.target_name()?;
+            let target = cask_app_target_path(cask, name)?;
+            let bundle = app_bundle_name(name)?;
+            let bundle_key = unicase::UniCase::new(bundle.nfd().collect::<String>())
+                .to_folded_case()
+                .nfd()
+                .collect::<String>();
+            if targets.contains(&target) || !bundle_names.insert(bundle_key) {
+                bail!(
+                    "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",
+                    target.display()
+                );
+            }
+            targets.push(target);
+        }
+        Ok(targets)
+    }
+
+    fn binary_targets_for(&self, cask: &Cask) -> Result<Vec<PathBuf>> {
+        let appdir = cask_appdir_for(cask, &self.apps)?;
         self.binaries
             .iter()
-            .map(|binary| binary.target_path(&appdir))
+            .map(|binary| binary.target_path_for(cask, &appdir))
             .chain(
                 self.command_wrappers
                     .iter()
-                    .map(CommandWrapperArtifact::target_path),
+                    .map(|wrapper| wrapper.target_path_for(cask)),
             )
             .collect()
     }
@@ -500,7 +525,7 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         provision_ruby: bool,
     ) -> Result<Cask> {
-        resolve_cask_for(self.manager, req, manager_options, provision_ruby).await
+        resolve_cask_for(self.manager, req, manager_options, provision_ruby, None).await
     }
 
     /// Starts a top-level cask operation with an empty dependency ancestry.
@@ -513,8 +538,16 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<String> {
-        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new(), manager_options, mode)
-            .await
+        self.install_one_with_ancestors(
+            req,
+            opts,
+            pr,
+            &BTreeSet::new(),
+            manager_options,
+            None,
+            mode,
+        )
+        .await
     }
 
     /// Installs a cask while detecting dependency cycles and preserving ownership.
@@ -527,11 +560,17 @@ impl BrewCaskManager {
         pr: Option<&dyn SingleReport>,
         ancestors: &BTreeSet<String>,
         manager_options: &ManagerPackageOptions,
+        inherited_appdir: Option<&Path>,
         mode: InstallMode,
     ) -> Result<String> {
-        let cask = self
-            .resolve_cask(req, manager_options, !opts.dry_run)
-            .await?;
+        let cask = resolve_cask_for(
+            self.manager,
+            req,
+            manager_options,
+            !opts.dry_run,
+            inherited_appdir,
+        )
+        .await?;
         if ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
@@ -552,7 +591,7 @@ impl BrewCaskManager {
         validate_platform_support(&cask, &artifacts)?;
         // Validate the whole app batch before dependencies, downloads, or hooks
         // can mutate anything, including when producing a dry-run plan.
-        artifacts.app_target_paths()?;
+        artifacts.app_target_paths_for(&cask)?;
         let installed_version = mise_installed_cask_version(&cask)?;
         // Read before the download for the fast-path skip and the dry-run
         // plan only. Anything that mutates must use the read taken under the
@@ -607,6 +646,7 @@ impl BrewCaskManager {
                 None,
                 &ancestors,
                 manager_options,
+                cask.appdir.as_deref(),
                 InstallMode::Install,
             ))
             .await?;
@@ -631,7 +671,7 @@ impl BrewCaskManager {
         let adopt_requested = manager_options.brew_cask_adopt(&req.name);
         let adopt = adopt_requested && installed_version.is_none();
         if adopt && !cask.auto_updates {
-            validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
+            validate_adoptable_apps(&cask, &stage, &artifacts.apps)?;
         }
         // Both managers install into the same application directory, so the
         // shared lock is taken first, then the manager's own records lock.
@@ -666,7 +706,7 @@ impl BrewCaskManager {
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
-        let appdir = cask_appdir(&artifacts.apps)?;
+        let appdir = cask_appdir_for(&cask, &artifacts.apps)?;
         let mut journal = CaskTransactionJournal {
             schema_version: 1,
             token: &cask.token,
@@ -723,7 +763,7 @@ impl BrewCaskManager {
         let defer_running = mode == InstallMode::Upgrade && cask.auto_updates;
         if defer_running {
             for app in &artifacts.apps {
-                if app_is_running(&app_target_path(app.target_name()?)?) {
+                if app_is_running(&cask_app_target_path(&cask, app.target_name()?)?) {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }
@@ -755,7 +795,7 @@ impl BrewCaskManager {
             let require_unowned = requires_unowned_target(
                 &cask,
                 locked_ownership.as_ref(),
-                &app_target_path(app.target_name()?)?,
+                &cask_app_target_path(&cask, app.target_name()?)?,
             );
             // Taking over an unowned target is opt-in. brew-cask keeps its own
             // rule, keyed on the token having no installed version.
@@ -767,9 +807,10 @@ impl BrewCaskManager {
             // Nothing durable has happened yet if the journal is still empty,
             // which is what makes the cleanup below safe.
             let journal_empty = journal.completed.is_empty();
-            let installed = install_app(
+            let installed = install_app_for(
                 &stage,
                 &tmp_caskroom,
+                &cask,
                 app,
                 AppInstallOptions {
                     manager: cask.manager,
@@ -798,7 +839,7 @@ impl BrewCaskManager {
             match installed {
                 AppInstall::Installed {
                     metadata_only: true,
-                } => metadata_only_apps.push(app_target_path(app.target_name()?)?),
+                } => metadata_only_apps.push(cask_app_target_path(&cask, app.target_name()?)?),
                 AppInstall::Installed {
                     metadata_only: false,
                 } => {}
@@ -864,7 +905,7 @@ impl BrewCaskManager {
                 &format!("generated_completion[{index}]"),
             )?;
         }
-        let current_binaries = artifacts.binary_targets()?;
+        let current_binaries = artifacts.binary_targets_for(&cask)?;
         let current_fonts = artifacts.font_target_paths()?;
         let mut current_targets = current_binaries.clone();
         current_targets.extend(current_completions.iter().cloned());
@@ -873,10 +914,10 @@ impl BrewCaskManager {
         let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
             retarget_transient_symlinks(&tmp_caskroom, &caskroom, &caskroom, &flight_targets)?;
             for binary in &artifacts.binaries {
-                link_binary(&caskroom, &appdir, binary)?;
+                link_binary_for(&caskroom, &cask, &appdir, binary)?;
             }
             for wrapper in &artifacts.command_wrappers {
-                link_command_wrapper(&caskroom, wrapper)?;
+                link_command_wrapper_for(&caskroom, &cask, wrapper)?;
             }
             for target in &current_completions {
                 link_completion(&cask, &artifacts, &caskroom, target)?;
@@ -951,7 +992,9 @@ impl AppArtifactExt for AppArtifact {
 
 trait BinaryArtifactExt {
     fn target_name(&self) -> Result<String>;
+    #[cfg(test)]
     fn target_path(&self, appdir: &Path) -> Result<PathBuf>;
+    fn target_path_for(&self, cask: &Cask, appdir: &Path) -> Result<PathBuf>;
 }
 
 impl BinaryArtifactExt for BinaryArtifact {
@@ -962,14 +1005,21 @@ impl BinaryArtifactExt for BinaryArtifact {
         }
     }
 
+    #[cfg(test)]
     fn target_path(&self, appdir: &Path) -> Result<PathBuf> {
         binary_target_path(&self.target_name()?, appdir)
+    }
+
+    fn target_path_for(&self, cask: &Cask, appdir: &Path) -> Result<PathBuf> {
+        cask_binary_target_path(cask, &self.target_name()?, appdir)
     }
 }
 
 trait CommandWrapperArtifactExt {
     fn target_name(&self) -> Result<String>;
+    #[cfg(test)]
     fn target_path(&self) -> Result<PathBuf>;
+    fn target_path_for(&self, cask: &Cask) -> Result<PathBuf>;
     fn caskroom_path(&self, caskroom: &Path) -> PathBuf;
 }
 
@@ -981,8 +1031,14 @@ impl CommandWrapperArtifactExt for CommandWrapperArtifact {
         }
     }
 
+    #[cfg(test)]
     fn target_path(&self) -> Result<PathBuf> {
         binary_target_path(&self.target_name()?, &target_app_dir()?)
+    }
+
+    fn target_path_for(&self, cask: &Cask) -> Result<PathBuf> {
+        let appdir = cask_target_app_dir(cask)?;
+        cask_binary_target_path(cask, &self.target_name()?, &appdir)
     }
 
     fn caskroom_path(&self, caskroom: &Path) -> PathBuf {
@@ -1157,6 +1213,7 @@ fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> 
         tap_git_head: None,
         raw_base: None,
         manager: CaskManager::MacosApp,
+        appdir: None,
     })
 }
 
@@ -1189,17 +1246,26 @@ async fn resolve_cask_for(
     req: &PackageRequest,
     manager_options: &ManagerPackageOptions,
     provision_ruby: bool,
+    inherited_appdir: Option<&Path>,
 ) -> Result<Cask> {
-    if let Some(spec) = manager_options.macos_app_spec(&req.name) {
-        return declared_app_cask(&req.name, spec);
-    }
-    if !manager.uses_homebrew_caskroom() {
+    let mut cask = if let Some(spec) = manager_options.macos_app_spec(&req.name) {
+        declared_app_cask(&req.name, spec)?
+    } else if !manager.uses_homebrew_caskroom() {
         bail!(
             "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
             req.name
         );
+    } else {
+        fetch_cask(req, provision_ruby).await?
+    };
+    if cask.manager.uses_homebrew_caskroom() {
+        cask.appdir = inherited_appdir.map(PathBuf::from).or_else(|| {
+            manager_options
+                .brew_cask_appdir(&req.name)
+                .map(PathBuf::from)
+        });
     }
-    fetch_cask(req, provision_ruby).await
+    Ok(cask)
 }
 
 async fn prewarm_downloads(
@@ -1220,7 +1286,7 @@ async fn prewarm_downloads(
     // the serial path, which provisions properly.
     let mut candidates = Vec::new();
     for pkg in pkgs {
-        let Ok(cask) = resolve_cask_for(manager, pkg, manager_options, false).await else {
+        let Ok(cask) = resolve_cask_for(manager, pkg, manager_options, false, None).await else {
             continue;
         };
         // git-backed casks clone instead of downloading an archive
@@ -1359,9 +1425,30 @@ struct AppInstallOptions {
     require_unowned: bool,
 }
 
+#[cfg(test)]
 fn install_app(
     stage: &Path,
     caskroom: &Path,
+    app: &AppArtifact,
+    opts: AppInstallOptions,
+) -> Result<AppInstall> {
+    install_app_in(stage, caskroom, &target_app_dir()?, app, opts)
+}
+
+fn install_app_for(
+    stage: &Path,
+    caskroom: &Path,
+    cask: &Cask,
+    app: &AppArtifact,
+    opts: AppInstallOptions,
+) -> Result<AppInstall> {
+    install_app_in(stage, caskroom, &cask_target_app_dir(cask)?, app, opts)
+}
+
+fn install_app_in(
+    stage: &Path,
+    caskroom: &Path,
+    appdir: &Path,
     app: &AppArtifact,
     opts: AppInstallOptions,
 ) -> Result<AppInstall> {
@@ -1382,7 +1469,7 @@ fn install_app(
     })?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name()?)?);
     file::remove_all(&caskroom_app)?;
-    let logical_target = app_target_path(app.target_name()?)?;
+    let logical_target = app_target_path_in(appdir, app.target_name()?)?;
     // Hold the verified appdir open for the whole mutation and address the app
     // only by name relative to that descriptor. Nothing below resolves a
     // pathname for the application directory, so a post-validation replacement
@@ -1558,7 +1645,11 @@ fn declared_apps_are_owned(
     previous: Option<&CaskReceipt>,
 ) -> Result<bool> {
     for app in &artifacts.apps {
-        if requires_unowned_target(cask, previous, &app_target_path(app.target_name()?)?) {
+        if requires_unowned_target(
+            cask,
+            previous,
+            &cask_app_target_path(cask, app.target_name()?)?,
+        ) {
             return Ok(false);
         }
     }
@@ -1577,7 +1668,7 @@ fn warn_existing_app_targets(
 ) -> Result<()> {
     let manager = cask.manager;
     for app in apps {
-        let target = app_target_path(app.target_name()?)?;
+        let target = cask_app_target_path(cask, app.target_name()?)?;
         if requires_unowned_target(cask, previous, &target) && target.symlink_metadata().is_ok() {
             warn!(
                 "{}: an app already exists at {} and is not owned by this entry; \
@@ -1604,9 +1695,10 @@ fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
     )
 }
 
-fn validate_adoptable_apps(manager: CaskManager, stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+fn validate_adoptable_apps(cask: &Cask, stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+    let manager = cask.manager;
     for app in apps {
-        let target = app_target_path(app.target_name()?)?;
+        let target = cask_app_target_path(cask, app.target_name()?)?;
         if target.symlink_metadata().is_err() {
             continue;
         }
@@ -3373,7 +3465,7 @@ fn ensure_completion_target_replaceable(
         if completion.target_path()? != target {
             continue;
         }
-        if let Some(source) = appdir_artifact_source(&completion.source, &artifacts.apps)?
+        if let Some(source) = appdir_artifact_source_for(cask, &completion.source, &artifacts.apps)?
             && file::same_file(&resolved, &source)
         {
             return Ok(());
@@ -3401,7 +3493,7 @@ fn find_completion_source(
             return Ok(Some(source));
         }
     }
-    if let Some(source) = appdir_artifact_source(source, apps)? {
+    if let Some(source) = appdir_artifact_source_for(cask, source, apps)? {
         return Ok(Some(source));
     }
     Ok(absolute_prefixed_source(source)
@@ -3428,7 +3520,7 @@ fn find_generated_completion_executable(
     {
         return Ok(source);
     }
-    if let Some(source) = appdir_artifact_source(executable, apps)? {
+    if let Some(source) = appdir_artifact_source_for(cask, executable, apps)? {
         return Ok(source);
     }
     if let Some(source) = absolute_prefixed_source(executable) {
@@ -3454,7 +3546,26 @@ fn find_generated_completion_executable(
     ))
 }
 
+#[cfg(test)]
 fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<PathBuf>> {
+    appdir_artifact_source_in(source, apps, |app| app_target_path(app.target_name()?))
+}
+
+fn appdir_artifact_source_for(
+    cask: &Cask,
+    source: &str,
+    apps: &[AppArtifact],
+) -> Result<Option<PathBuf>> {
+    appdir_artifact_source_in(source, apps, |app| {
+        cask_app_target_path(cask, app.target_name()?)
+    })
+}
+
+fn appdir_artifact_source_in(
+    source: &str,
+    apps: &[AppArtifact],
+    app_target: impl Fn(&AppArtifact) -> Result<PathBuf>,
+) -> Result<Option<PathBuf>> {
     let Some(relative) = source.strip_prefix("$APPDIR/") else {
         return Ok(None);
     };
@@ -3466,7 +3577,7 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
     let suffix = relative.components().skip(1).collect::<PathBuf>();
     let mut matches = Vec::new();
     for app in apps {
-        let target = app_target_path(app.target_name()?)?;
+        let target = app_target(app)?;
         let bundle = Path::new(bundle);
         if !path_ends_with_ignore_ascii_case(Path::new(&app.source), bundle)
             && !path_ends_with_ignore_ascii_case(&target, bundle)
@@ -3828,8 +3939,8 @@ fn stage_binary(
     apps: &[AppArtifact],
     binary: &BinaryArtifact,
 ) -> Result<()> {
-    let appdir = cask_appdir(apps)?;
-    let caskroom_binary = caskroom_binary_path(caskroom, &appdir, binary)?;
+    let appdir = cask_appdir_for(cask, apps)?;
+    let caskroom_binary = caskroom_binary_path_for(caskroom, cask, &appdir, binary)?;
     // The payload is durable in the caskroom by now, so link into the tree the
     // binary shipped in rather than lifting it out of the siblings it resolves.
     // A payload whose own layout already puts the binary at the target path
@@ -3858,12 +3969,13 @@ fn stage_binary(
     if binary.source.contains("$APPDIR") {
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
-        let app_binary = appdir_artifact_source(&binary.source, apps)?.ok_or_else(|| {
-            eyre!(
-                "brew-cask: binary artifact '{}' was not found",
-                binary.source
-            )
-        })?;
+        let app_binary =
+            appdir_artifact_source_for(cask, &binary.source, apps)?.ok_or_else(|| {
+                eyre!(
+                    "brew-cask: binary artifact '{}' was not found",
+                    binary.source
+                )
+            })?;
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_binary_source(stage, caskroom, cask, binary)?;
@@ -4129,6 +4241,7 @@ fn path_with_resolved_existing_ancestor(path: &Path) -> PathBuf {
     }
 }
 
+#[cfg(test)]
 fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
     let prefix_app_dir = prefix::prefix().join("Applications");
     for app in apps {
@@ -4139,6 +4252,17 @@ fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
     target_app_dir()
 }
 
+fn cask_appdir_for(cask: &Cask, apps: &[AppArtifact]) -> Result<PathBuf> {
+    let prefix_app_dir = prefix::prefix().join("Applications");
+    for app in apps {
+        if cask_app_target_path(cask, app.target_name()?)?.starts_with(&prefix_app_dir) {
+            return Ok(prefix_app_dir);
+        }
+    }
+    cask_target_app_dir(cask)
+}
+
+#[cfg(test)]
 fn link_binary(caskroom: &Path, appdir: &Path, binary: &BinaryArtifact) -> Result<()> {
     let caskroom_binary = caskroom_binary_path(caskroom, appdir, binary)?;
     if !caskroom_binary.is_file() {
@@ -4166,6 +4290,39 @@ fn link_binary(caskroom: &Path, appdir: &Path, binary: &BinaryArtifact) -> Resul
     Ok(())
 }
 
+fn link_binary_for(
+    caskroom: &Path,
+    cask: &Cask,
+    appdir: &Path,
+    binary: &BinaryArtifact,
+) -> Result<()> {
+    let caskroom_binary = caskroom_binary_path_for(caskroom, cask, appdir, binary)?;
+    if !caskroom_binary.is_file() {
+        if caskroom_binary
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            let target = std::fs::read_link(&caskroom_binary)?;
+            bail!(
+                "brew-cask: binary artifact '{}' was staged but symlink target '{}' does not exist",
+                binary.source,
+                target.display()
+            );
+        }
+        bail!(
+            "brew-cask: binary artifact '{}' was not staged",
+            binary.source
+        );
+    }
+    let target = binary.target_path_for(cask, appdir)?;
+    if let Some(parent) = target.parent() {
+        create_dir_all_elevating(parent)?;
+    }
+    make_symlink_elevating(&caskroom_binary, &target)?;
+    Ok(())
+}
+
+#[cfg(test)]
 fn link_command_wrapper(caskroom: &Path, wrapper: &CommandWrapperArtifact) -> Result<()> {
     let source = wrapper.caskroom_path(caskroom);
     if !source.is_file() {
@@ -4182,6 +4339,27 @@ fn link_command_wrapper(caskroom: &Path, wrapper: &CommandWrapperArtifact) -> Re
     Ok(())
 }
 
+fn link_command_wrapper_for(
+    caskroom: &Path,
+    cask: &Cask,
+    wrapper: &CommandWrapperArtifact,
+) -> Result<()> {
+    let source = wrapper.caskroom_path(caskroom);
+    if !source.is_file() {
+        bail!(
+            "brew-cask: command wrapper '{}' was not staged",
+            wrapper.name
+        );
+    }
+    let target = wrapper.target_path_for(cask)?;
+    if let Some(parent) = target.parent() {
+        create_dir_all_elevating(parent)?;
+    }
+    make_symlink_elevating(&source, &target)?;
+    Ok(())
+}
+
+#[cfg(test)]
 fn caskroom_binary_path(
     caskroom: &Path,
     appdir: &Path,
@@ -4190,6 +4368,39 @@ fn caskroom_binary_path(
     let target = binary.target_path(appdir)?;
     let roots = if is_appdir_binary_target(&binary.target_name()?) {
         let mut roots = allowed_appdir_roots()?;
+        roots.extend(allowed_binary_target_roots());
+        roots
+    } else {
+        allowed_binary_target_roots()
+    };
+    let relative = roots
+        .iter()
+        .find_map(|root| target.strip_prefix(root).ok())
+        .ok_or_else(|| {
+            eyre!(
+                "brew-cask: binary target '{}' must be under {}",
+                target.display(),
+                allowed_binary_target_roots_display(&roots)
+            )
+        })?;
+    if relative.components().next().is_none() {
+        bail!(
+            "brew-cask: invalid binary target '{}'",
+            binary.target_name()?
+        );
+    }
+    Ok(caskroom.join(relative))
+}
+
+fn caskroom_binary_path_for(
+    caskroom: &Path,
+    cask: &Cask,
+    appdir: &Path,
+    binary: &BinaryArtifact,
+) -> Result<PathBuf> {
+    let target = binary.target_path_for(cask, appdir)?;
+    let roots = if is_appdir_binary_target(&binary.target_name()?) {
+        let mut roots = allowed_appdir_roots_for(cask)?;
         roots.extend(allowed_binary_target_roots());
         roots
     } else {

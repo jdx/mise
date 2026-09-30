@@ -94,6 +94,7 @@ fn test_cask(token: &str, version: &str) -> Cask {
         tap_git_head: None,
         raw_base: None,
         manager: CaskManager::BrewCask,
+        appdir: None,
     }
 }
 
@@ -8182,6 +8183,57 @@ fn appdir_override_with_benign_symlink_is_resolved() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn package_appdir_expands_home_and_uses_the_same_path_validation() -> Result<()> {
+    assert_eq!(
+        package_app_dir("~/Applications")?,
+        crate::env::HOME.join("Applications")
+    );
+    for invalid in ["relative/Applications", "/Applications/../etc", "/"] {
+        assert!(
+            package_app_dir(invalid).is_err(),
+            "expected {invalid} to be rejected"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn package_appdir_takes_precedence_over_the_global_appdir() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir()?;
+    let global = tmp.path().join("global");
+    let package = tmp.path().join("package");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &global);
+
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(package.clone());
+    assert_eq!(
+        cask_app_target_path(&cask, "/Applications/Example.app")?,
+        package.join("Example.app")
+    );
+    Ok(())
+}
+
+#[test]
+fn package_appdir_applies_to_appdir_binary_artifacts() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let package = tmp.path().join("package");
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(package.clone());
+
+    assert_eq!(
+        cask_binary_target_path(
+            &cask,
+            "$APPDIR/Example.app/Contents/MacOS/example",
+            &package
+        )?,
+        package.join("Example.app/Contents/MacOS/example")
+    );
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
@@ -8624,6 +8676,7 @@ fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
         tap_git_head: None,
         raw_base: None,
         manager: CaskManager::BrewCask,
+        appdir: None,
     };
 
     let rt = tokio::runtime::Builder::new_current_thread()

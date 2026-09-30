@@ -165,6 +165,10 @@ pub struct PackageOptionsTomlConfig {
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
+    /// `brew-cask` only: application directory for this cask and its cask
+    /// dependencies. Takes precedence over MISE_BREW_CASK_OPT_APPDIR.
+    #[serde(default)]
+    pub appdir: Option<String>,
     /// `macos-app` only: direct download URL for the app archive.
     #[serde(default)]
     pub url: Option<String>,
@@ -197,6 +201,13 @@ impl PackageTomlConfig {
     fn adopt(&self) -> Option<bool> {
         match self {
             Self::Options(options) => options.adopt,
+            Self::Version(_) => None,
+        }
+    }
+
+    fn appdir(&self) -> Option<&str> {
+        match self {
+            Self::Options(options) => options.appdir.as_deref(),
             Self::Version(_) => None,
         }
     }
@@ -426,7 +437,10 @@ pub enum ManagerPackageOptions {
     #[default]
     None,
     #[cfg(unix)]
-    BrewCask { adopt: BTreeSet<String> },
+    BrewCask {
+        adopt: BTreeSet<String>,
+        appdirs: BTreeMap<String, PathBuf>,
+    },
     /// Inline app declarations, keyed by package name. `macos-app` resolves no
     /// metadata of its own, so the declaration reaches the installer here.
     #[cfg(unix)]
@@ -440,8 +454,16 @@ impl ManagerPackageOptions {
     #[cfg(unix)]
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
         match self {
-            Self::BrewCask { adopt } | Self::MacosApp { adopt, .. } => adopt.contains(name),
+            Self::BrewCask { adopt, .. } | Self::MacosApp { adopt, .. } => adopt.contains(name),
             Self::None => false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn brew_cask_appdir(&self, name: &str) -> Option<&Path> {
+        match self {
+            Self::BrewCask { appdirs, .. } => appdirs.get(name).map(PathBuf::as_path),
+            _ => None,
         }
     }
 
@@ -843,6 +865,10 @@ fn merge_manager_packages(
         let requests = by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
             let adopt = mp.options.brew_cask_adopt(&request.name);
+            let appdir = mp
+                .options
+                .brew_cask_appdir(&request.name)
+                .map(PathBuf::from);
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -851,15 +877,25 @@ fn merge_manager_packages(
                 }
                 Some(_) => {}
                 None => {
-                    if adopt {
+                    if adopt || appdir.is_some() {
                         let options =
                             manager_options
                                 .entry(manager_name.clone())
                                 .or_insert_with(|| ManagerPackageOptions::BrewCask {
                                     adopt: BTreeSet::new(),
+                                    appdirs: BTreeMap::new(),
                                 });
-                        if let ManagerPackageOptions::BrewCask { adopt } = options {
-                            adopt.insert(request.name.clone());
+                        if let ManagerPackageOptions::BrewCask {
+                            adopt: cask_adopt,
+                            appdirs,
+                        } = options
+                        {
+                            if adopt {
+                                cask_adopt.insert(request.name.clone());
+                            }
+                            if let Some(appdir) = appdir {
+                                appdirs.entry(request.name.clone()).or_insert(appdir);
+                            }
                         }
                     }
                     requests.push(request);
@@ -907,6 +943,8 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     #[cfg(unix)]
+    let mut cask_appdirs = BTreeMap::new();
+    #[cfg(unix)]
     let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
@@ -933,14 +971,34 @@ fn package_requests_from_config_files(
                     None
                 };
                 let adopt_requested = package.adopt();
+                let appdir_requested = package.appdir();
                 if adopt_requested.is_some() && mgr != "brew-cask" && mgr != "macos-app" {
                     warn!(
                         "[bootstrap.packages]: adopt is only supported for brew-cask and macos-app entries; ignoring it for '{spec}'"
                     );
                 }
+                if appdir_requested.is_some() && mgr != "brew-cask" {
+                    warn!(
+                        "[bootstrap.packages]: appdir is only supported for brew-cask entries; ignoring it for '{spec}'"
+                    );
+                }
                 #[cfg(unix)]
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
                     cask_adopt.insert(name.clone());
+                }
+                #[cfg(unix)]
+                if mgr == "brew-cask"
+                    && let Some(appdir) = appdir_requested
+                {
+                    match crate::system::packages::brew::package_app_dir(appdir) {
+                        Ok(appdir) => {
+                            cask_appdirs.insert(name.clone(), appdir);
+                        }
+                        Err(err) => {
+                            warn!("[bootstrap.packages]: {err}");
+                            continue;
+                        }
+                    }
                 }
                 // Shape is validated on every platform: a config shared across
                 // machines should report a misplaced or incomplete declaration
@@ -996,10 +1054,13 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let options = {
         let mut options = IndexMap::new();
-        if !cask_adopt.is_empty() {
+        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() {
             options.insert(
                 "brew-cask".to_string(),
-                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+                ManagerPackageOptions::BrewCask {
+                    adopt: cask_adopt,
+                    appdirs: cask_appdirs,
+                },
             );
         }
         if !app_specs.is_empty() {
@@ -2049,6 +2110,8 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     #[cfg(unix)]
+    let mut cask_appdirs = BTreeMap::new();
+    #[cfg(unix)]
     let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
     #[cfg(unix)]
     let mut app_adopt = BTreeSet::new();
@@ -2096,16 +2159,22 @@ fn packages_from_specs_with_config_files(
             // tap prefix still line up. A spec matching neither gets the
             // `[bootstrap.brew]` default.
             let alias = official_cask_alias(&name);
-            let configured = package_configs
-                .get(&format!("{mgr}:{name}"))
-                .or_else(|| {
-                    alias
-                        .as_deref()
-                        .and_then(|alias| package_configs.get(&format!("{mgr}:{alias}")))
-                })
-                .and_then(|package| package.adopt());
-            if configured.unwrap_or(brew_adopt) {
+            let configured = package_configs.get(&format!("{mgr}:{name}")).or_else(|| {
+                alias
+                    .as_deref()
+                    .and_then(|alias| package_configs.get(&format!("{mgr}:{alias}")))
+            });
+            if configured
+                .and_then(PackageTomlConfig::adopt)
+                .unwrap_or(brew_adopt)
+            {
                 cask_adopt.insert(name.clone());
+            }
+            if let Some(appdir) = configured.and_then(PackageTomlConfig::appdir) {
+                cask_appdirs.insert(
+                    name.clone(),
+                    crate::system::packages::brew::package_app_dir(appdir)?,
+                );
             }
         }
         #[cfg(unix)]
@@ -2126,10 +2195,13 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let options = {
         let mut options = IndexMap::new();
-        if !cask_adopt.is_empty() {
+        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() {
             options.insert(
                 "brew-cask".to_string(),
-                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+                ManagerPackageOptions::BrewCask {
+                    adopt: cask_adopt,
+                    appdirs: cask_appdirs,
+                },
             );
         }
         if !app_specs.is_empty() {
@@ -2563,6 +2635,35 @@ mod tests {
         assert_eq!(casks.requests.len(), 2);
         assert!(casks.options.brew_cask_adopt("textmate"));
         assert!(!casks.options.brew_cask_adopt("replace-me"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn brew_cask_appdir_option_reaches_package_request() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:1password" = { appdir = "/Applications" }
+                "brew-cask:firefox" = { appdir = "~/Applications" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(
+            casks.options.brew_cask_appdir("1password"),
+            Some(Path::new("/Applications"))
+        );
+        let expected = crate::env::HOME.join("Applications");
+        assert_eq!(
+            casks.options.brew_cask_appdir("firefox"),
+            Some(expected.as_path())
+        );
         Ok(())
     }
 
@@ -3242,6 +3343,7 @@ mod tests {
             os: vec![],
             env: vec!["desktop".to_string(), "work".to_string()],
             adopt: None,
+            appdir: None,
             state: PackageDesiredStateTomlConfig::Present,
             url: None,
             sha256: None,

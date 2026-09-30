@@ -130,6 +130,21 @@ table form with `adopt = true`:
 "brew-cask:textmate" = { version = "latest", adopt = true }
 ```
 
+To use a different directory for one cask, set `appdir` on that package. This
+takes precedence over `MISE_BREW_CASK_OPT_APPDIR`, so a user-writable global
+directory can coexist with a cask that macOS requires in `/Applications`:
+
+```toml
+[bootstrap.packages]
+"brew-cask:1password" = { appdir = "/Applications" }
+```
+
+`appdir` supports `~/` expansion, and otherwise follows the same validation as
+the environment variable: it must be absolute, cannot contain `..`, and cannot
+resolve to the filesystem root. It applies to any cask dependencies installed
+with that cask. It only affects install and upgrade; mise does not move an app
+that is already installed. Other package managers ignore `appdir` and warn.
+
 To enable adoption for all configured casks, set the Homebrew bootstrap
 default. An individual cask can opt out with `adopt = false`:
 

@@ -3949,6 +3949,7 @@ mod tests {
                         os: vec![],
                         env: vec![],
                         adopt: None,
+                        appdir: None,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
                         url: None,
                         sha256: None,

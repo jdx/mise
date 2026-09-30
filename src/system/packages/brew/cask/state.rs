@@ -496,8 +496,8 @@ pub(super) fn write_receipt_with_flight_targets(
     flight_directories: &[PathBuf],
     metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
-    let mut target_paths = artifacts.app_target_paths()?;
-    target_paths.extend(artifacts.binary_targets()?);
+    let mut target_paths = artifacts.app_target_paths_for(cask)?;
+    target_paths.extend(artifacts.binary_targets_for(cask)?);
     target_paths.extend(artifacts.font_target_paths()?);
     target_paths.extend(artifacts.completion_target_paths(cask)?);
     target_paths.extend(flight_targets.iter().cloned());
@@ -514,7 +514,7 @@ pub(super) fn write_receipt_with_flight_targets(
         })
         .collect::<Result<Vec<_>>>()?;
     let metadata_only_apps = if cask.auto_updates {
-        artifacts.app_target_paths()?
+        artifacts.app_target_paths_for(cask)?
     } else {
         metadata_only_apps.to_vec()
     };
@@ -528,8 +528,8 @@ pub(super) fn write_receipt_with_flight_targets(
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
         metadata_only_apps,
-        apps: artifacts.app_target_paths()?,
-        binaries: artifacts.binary_targets()?,
+        apps: artifacts.app_target_paths_for(cask)?,
+        binaries: artifacts.binary_targets_for(cask)?,
         fonts: artifacts.font_target_paths()?,
         completions: artifacts.completion_target_paths(cask)?,
         flight_directories: flight_directories.to_vec(),
