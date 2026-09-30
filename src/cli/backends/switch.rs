@@ -58,7 +58,8 @@ struct Switch {
     lockfile: PathBuf,
     versions: BTreeSet<String>,
     /// The versions a request resolves to. The rest are stale entries, which
-    /// the relock keeps only when asked for by name.
+    /// are moved only so the relock resolves the tool on the new backend; the
+    /// relock then prunes them.
     current: BTreeSet<String>,
 }
 
@@ -156,13 +157,13 @@ impl BackendsSwitch {
                     "switching"
                 };
                 let mut by_backend: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+                let mut stale: Vec<&str> = vec![];
                 for (version, backend, had_platforms) in &moved {
-                    by_backend.entry(backend).or_default().push(version);
                     if !switch.current.contains(version) {
-                        // A version the config does not resolve to would be
-                        // pruned by the relock; ask for it by name to keep it.
-                        tools.insert(format!("{}@{version}", switch.short));
+                        stale.push(version);
+                        continue;
                     }
+                    by_backend.entry(backend).or_default().push(version);
                     if *had_platforms {
                         needs_platforms.push((path, switch.short.clone(), version.clone()));
                     }
@@ -172,6 +173,23 @@ impl BackendsSwitch {
                         "{prefix} {}@{} from {} to {backend} in {}",
                         switch.short,
                         versions.join(", "),
+                        switch.from,
+                        display_path(path)
+                    );
+                }
+                if !stale.is_empty() {
+                    // The relock prunes versions the config does not resolve
+                    // to, so these end up replaced by the config's own version
+                    // on the new backend.
+                    info!(
+                        "{} stale {}@{} ({}) in {}; the config resolves to another version, so the relock drops it",
+                        if self.dry_run {
+                            "would replace"
+                        } else {
+                            "replacing"
+                        },
+                        switch.short,
+                        stale.join(", "),
                         switch.from,
                         display_path(path)
                     );
@@ -348,8 +366,7 @@ impl BackendsSwitch {
         let mut switches: Vec<Switch> = vec![];
         for (lockfile, tv) in self.scoped_versions(config).await? {
             let short = tv.short().to_string();
-            let (entries, current) = self.superseded_entries(&lockfile, &tv)?;
-            for (from, version) in entries {
+            for (from, version, current) in self.superseded_entries(&lockfile, &tv)? {
                 if !self.selected(&short, &version, &from) {
                     continue;
                 }
@@ -386,23 +403,22 @@ impl BackendsSwitch {
     /// A request that resolved from the lockfile names its entry. One that did
     /// not (the entry's specifier no longer matches the config, say) still has
     /// its backend bound by the lockfile, and install keeps using that backend,
-    /// so every entry recorded under it counts. The flag says whether the
-    /// entries are the versions the request resolves to.
+    /// so every entry recorded under it counts. The flag says whether an entry
+    /// is the version the request resolves to.
     fn superseded_entries(
         &self,
         lockfile: &Path,
         tv: &ToolVersion,
-    ) -> Result<(Vec<(String, String)>, bool)> {
+    ) -> Result<Vec<(String, String, bool)>> {
         if tv.resolved_from_lockfile() {
-            let entries = tv
+            return Ok(tv
                 .ba()
                 .superseded_backend(&tv.version)
-                .map(|(from, _)| (from, tv.version.clone()))
+                .map(|(from, _)| (from, tv.version.clone(), true))
                 .into_iter()
-                .collect();
-            return Ok((entries, true));
+                .collect());
         }
-        let entries = Lockfile::read(lockfile)?
+        Ok(Lockfile::read(lockfile)?
             .locked_backends(tv.short())
             .into_iter()
             .filter(|(version, backend)| {
@@ -410,9 +426,11 @@ impl BackendsSwitch {
                     .superseded_backend(version)
                     .is_some_and(|(current, _)| &current == backend)
             })
-            .map(|(version, backend)| (backend, version))
-            .collect();
-        Ok((entries, false))
+            .map(|(version, backend)| {
+                let current = version == tv.version;
+                (backend, version, current)
+            })
+            .collect())
     }
 
     /// Reinstall the switched versions that are installed, from the new
