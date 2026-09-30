@@ -103,9 +103,9 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
-        // Tools whose stale entry was replaced: the relock picks their version
-        // afresh, so reinstall whichever version that is.
-        let mut relocked_tools: BTreeSet<String> = BTreeSet::new();
+        // Tools whose stale entry was replaced, per lockfile: the relock picks
+        // their version afresh, so reinstall whichever version that is.
+        let mut relocked_tools: BTreeSet<(PathBuf, String)> = BTreeSet::new();
         let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
@@ -186,7 +186,7 @@ impl BackendsSwitch {
                     );
                 }
                 if !stale.is_empty() {
-                    relocked_tools.insert(switch.short.clone());
+                    relocked_tools.insert((path.to_path_buf(), switch.short.clone()));
                     // The relock prunes versions the config does not resolve
                     // to, so these end up replaced by the config's own version
                     // on the new backend.
@@ -267,7 +267,7 @@ impl BackendsSwitch {
             let tools = switched
                 .iter()
                 .map(|(short, version)| format!("{short}@{version}"))
-                .chain(relocked_tools.iter().cloned())
+                .chain(relocked_tools.iter().map(|(_, short)| short.clone()))
                 .collect::<Vec<_>>()
                 .join(" ");
             return Err(err.wrap_err(format!(
@@ -461,13 +461,13 @@ impl BackendsSwitch {
     async fn reinstall(
         &self,
         switched: &BTreeSet<(String, String)>,
-        relocked_tools: &BTreeSet<String>,
+        relocked_tools: &BTreeSet<(PathBuf, String)>,
     ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
-        for (_, tv) in self.scoped_versions(&config).await? {
+        for (lockfile, tv) in self.scoped_versions(&config).await? {
             if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
-                || relocked_tools.contains(tv.short()))
+                || relocked_tools.contains(&(lockfile, tv.short().to_string())))
                 && tv.backend()?.is_version_installed(&config, &tv, false)
             {
                 requests.push(tv.request);
