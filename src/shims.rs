@@ -1749,6 +1749,8 @@ pub(crate) fn inactive_installed_tool_message(
     let shorts = installed_shorts
         .iter()
         .filter(|short| BackendArg::from(short.as_str()).matches_bin_name(bin_name))
+        .map(|short| registry_shorthand_for(short, bin_name).unwrap_or_else(|| short.clone()))
+        .unique()
         .collect_vec();
     if shorts.is_empty() {
         return None;
@@ -1764,6 +1766,23 @@ pub(crate) fn inactive_installed_tool_message(
         msg.push_str(&format!("  mise exec {short} -- {bin_name}\n"));
     }
     Some(msg.trim().to_string())
+}
+
+/// The registry shorthand for an install recorded under a backend's full name
+/// (a shorthand installs there), so the suggestion is `mise use usage` rather
+/// than `mise use packslip:github.com/jdx/usage`. Only a shorthand stored in that
+/// same dir qualifies: it has to reuse the install. One resolving to the same
+/// backend through its own alias keeps a separate, short-named dir.
+fn registry_shorthand_for(installed: &str, bin_name: &str) -> Option<String> {
+    let shorts = crate::registry::shorts_for_full(installed)
+        .iter()
+        .filter(|short| BackendArg::from(**short).storage_short() == installed)
+        .collect_vec();
+    shorts
+        .iter()
+        .find(|short| BackendArg::from(***short).matches_bin_name(bin_name))
+        .or(shorts.first())
+        .map(|short| short.to_string())
 }
 
 /// Name the registry tool that provides `bin_name` on other platforms but not this one.

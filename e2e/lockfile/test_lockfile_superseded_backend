@@ -41,7 +41,7 @@ assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
 
 echo "=== installing warns and installs from the locked backend ==="
 assert_contains "mise install 2>&1" 'mise backends switch hk'
-assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "aqua:jdx/hk"'
+assert_contains "cat $MISE_DATA_DIR/installs/aqua-jdx-hk/.mise.backend.toml" 'full = "aqua:jdx/hk"'
 
 echo "=== --dry-run reports the switch without writing ==="
 assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@1.58.1 from aqua:jdx/hk to packslip:github.com/jdx/hk'
@@ -62,7 +62,10 @@ mise backends switch hk
 assert_contains "cat mise.lock" 'version = "1.58.1"'
 assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
 assert_contains "cat mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
-assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "packslip:github.com/jdx/hk"'
+# Each backend installs into its own directory, so switching reinstalls
+# alongside the old one instead of over it.
+assert_contains "cat $MISE_DATA_DIR/installs/packslip-github-com-jdx-hk/.mise.backend.toml" 'full = "packslip:github.com/jdx/hk"'
+assert_directory_exists "$MISE_DATA_DIR/installs/packslip-github-com-jdx-hk/1.58.1"
 assert_contains "mise exec -- hk --version" "hk 1.58.1"
 assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
 assert_contains "mise backends switch" "every tool in the project lockfile already uses the registry's backend"

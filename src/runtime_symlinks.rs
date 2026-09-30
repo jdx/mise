@@ -452,7 +452,7 @@ fn is_temporary_runtime_label(v: &str) -> bool {
 }
 
 pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
-    remove_missing_symlinks_in_dir(backend.ba().installs_path())
+    remove_missing_symlinks_in_dir(&backend.ba().installs_path())
 }
 
 pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {

@@ -5,12 +5,14 @@ use std::sync::Arc;
 
 use eyre::{Result, bail};
 
-use crate::args::ToolArg;
+use crate::args::{BackendArg, ToolArg};
 use crate::cli::lock::Lock;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::{self, Lockfile};
-use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset,
+};
 
 /// Switch tools to the backend the registry now installs them from
 ///
@@ -98,7 +100,9 @@ impl BackendsSwitch {
                 .or_default()
                 .push(switch);
         }
-        let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        // Each switched (tool, version), with every backend it moved from:
+        // lockfiles in scope can pin the same version to different ones.
+        let mut switched: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
         let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
@@ -171,7 +175,12 @@ impl BackendsSwitch {
                 if !moved.is_empty() {
                     tools.insert(switch.short.clone());
                 }
-                switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
+                for (v, _, _) in moved {
+                    switched
+                        .entry((switch.short.clone(), v))
+                        .or_default()
+                        .insert(switch.from.clone());
+                }
             }
             // A lockfile where nothing moved is left alone: not rewritten,
             // relocked, or snapshotted.
@@ -225,7 +234,7 @@ impl BackendsSwitch {
         // reinstall only leaves installs from the old backend in place.
         if let Err(err) = self.reinstall(&switched).await {
             let tools = switched
-                .iter()
+                .keys()
                 .map(|(short, version)| format!("{short}@{version}"))
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -367,17 +376,26 @@ impl BackendsSwitch {
         Ok(switches)
     }
 
-    /// Reinstall the switched versions that are installed, from the new
-    /// backend. Installs are keyed by tool and version, not backend, so an
-    /// install from the old backend would otherwise keep satisfying the new
-    /// lock entry.
-    async fn reinstall(&self, switched: &BTreeSet<(String, String)>) -> Result<()> {
+    /// Install the switched versions that were installed from the old backend
+    /// again, from the new one. A registry shorthand keeps each backend's
+    /// installs in their own dir; an install shared with the old backend
+    /// (plugins, legacy `installs/<short>`) is replaced, so it can't keep
+    /// satisfying the new lock entry.
+    async fn reinstall(
+        &self,
+        switched: &BTreeMap<(String, String), BTreeSet<String>>,
+    ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
         for (_, tv) in self.scoped_versions(&config).await? {
-            if switched.contains(&(tv.short().to_string(), tv.version.clone()))
-                && tv.backend()?.is_version_installed(&config, &tv, false)
-            {
+            let Some(from) = switched.get(&(tv.short().to_string(), tv.version.clone())) else {
+                continue;
+            };
+            let mut installed = tv.backend()?.is_version_installed(&config, &tv, false);
+            for from in from {
+                installed = installed || Self::installed_from(&config, &tv, from)?;
+            }
+            if installed {
                 requests.push(tv.request);
             }
         }
@@ -393,6 +411,19 @@ impl BackendsSwitch {
         ts.install_all_versions(&mut config, requests, &opts)
             .await?;
         Ok(())
+    }
+
+    /// Whether `tv`'s version is installed from the backend `from`.
+    fn installed_from(config: &Arc<Config>, tv: &ToolVersion, from: &str) -> Result<bool> {
+        let old = Arc::new(BackendArg::new(
+            tv.short().to_string(),
+            Some(from.to_string()),
+        ));
+        let request = ToolRequest::new(old, &tv.version, ToolSource::Argument)?;
+        let old_tv = ToolVersion::new(request, tv.version.clone());
+        Ok(old_tv
+            .backend()?
+            .is_version_installed(config, &old_tv, false))
     }
 }
 

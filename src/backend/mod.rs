@@ -36,8 +36,8 @@ use crate::semver::semver_triplet;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
-    install_state, is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolSource, ToolVersion, ToolVersionOptions,
+    Toolset, install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -2896,7 +2896,7 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        install_state::list_versions(&self.ba().short)
+        install_state::list_versions_for(self.ba())
     }
     fn is_version_installed(
         &self,
@@ -3507,12 +3507,19 @@ pub trait Backend: Debug + Send + Sync {
                 // path, even when the only installed versions live in a system or
                 // shared directory. Install state has already applied that fallback
                 // and records the directory that supplied the tool.
-                let installs_path = install_state::get_tool(&self.ba().short)
+                let installs_path = install_state::get_tool(&self.ba().storage_short())
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
+                // Versions can also live in a legacy `installs/<short>` dir or
+                // under another backend of a version-routed tool, so neither
+                // this dir's `latest` link nor its listing covers them all.
+                let ba = self.ba();
+                let stored_elsewhere =
+                    ba.storage_short() != ba.short || !ba.routed_storage_shorts().is_empty();
                 let installed_symlink = installs_path.join("latest");
-                if installed_symlink.exists()
+                if !stored_elsewhere
+                    && installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
                     let version = target
@@ -3529,15 +3536,31 @@ pub trait Backend: Debug + Send + Sync {
                         return Ok(Some(version));
                     }
                 }
-                let installed = file::dir_subdirs(&installs_path)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
-                    .filter(|v| v != "latest")
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .collect_vec();
+                let installed = if stored_elsewhere {
+                    // Install state lists a `mise link` whose target is gone so it
+                    // can be removed; it isn't an install `latest` can pick.
+                    self.list_installed_versions()
+                        .into_iter()
+                        .filter(|v| v != "latest")
+                        .filter(|v| {
+                            ToolRequest::new(self.ba().clone(), v, ToolSource::Unknown).is_ok_and(
+                                |request| {
+                                    ToolVersion::new(request, v.clone()).install_path().exists()
+                                },
+                            )
+                        })
+                        .collect_vec()
+                } else {
+                    file::dir_subdirs(&installs_path)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|v| !v.starts_with('.'))
+                        .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
+                        .filter(|v| !install_state::incomplete_file_path(self.ba(), v).exists())
+                        .filter(|v| v != "latest")
+                        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                        .collect_vec()
+                };
                 // Prefer a stable install, but a tool that only publishes
                 // pre-releases (an npm package whose `latest` dist-tag is an rc)
                 // must still resolve `latest` to what is installed.
@@ -4268,13 +4291,25 @@ pub trait Backend: Debug + Send + Sync {
             }
             remove_all_with_progress(dir, pr)
         };
-        rmdir(&tv.install_path())?;
+        let install_path = tv.install_path();
+        rmdir(&install_path)?;
         if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
         if !dryrun {
             self.cleanup_empty_installs_dir();
+            // The dir the version was removed from can differ from this backend's:
+            // a legacy `installs/<short>` it was read through from, or the dir of a
+            // core tool reached through an alias. Its runtime symlinks still point
+            // at the removed version.
+            if let Some(dir) = install_path.parent()
+                && dir != self.ba().installs_path().as_ref()
+                && dir.starts_with(*dirs::INSTALLS)
+            {
+                crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir)?;
+                cleanup_empty_tool_dir(dir);
+            }
         }
         Ok(())
     }
@@ -4358,7 +4393,24 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
-        let _ = remove_all_with_warning(tv.install_path());
+        let old_install_path = tv.install_path();
+        let _ = remove_all_with_warning(&old_install_path);
+        // Replacing an install read through from a legacy `installs/<short>`
+        // dir installs under the tool's own dir. Pin that destination, like a
+        // forced install redirected away from a shared dir: resolving it again
+        // could land on a shared or leftover short-named copy. The tool's dir
+        // comes from `tv`, not this backend, which a core tool reached through
+        // an alias shares with other names.
+        let primary = tv.ba().installs_path().join(tv.tv_pathname());
+        if tv.install_path.is_none()
+            && old_install_path != primary
+            && let Some(dir) = old_install_path.parent()
+            && dir.starts_with(*dirs::INSTALLS)
+        {
+            tv.pin_install_path(primary);
+            let _ = crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir);
+            cleanup_empty_tool_dir(dir);
+        }
         if !Settings::get().always_keep_download {
             let download_path = tv.download_path();
             if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
@@ -4416,16 +4468,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
     fn cleanup_empty_installs_dir(&self) {
-        let installs_path = &self.ba().installs_path();
-        if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
-            let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
-            if installs_path
-                .read_dir()
-                .is_ok_and(|mut entries| entries.next().is_none())
-            {
-                let _ = remove_all_with_warning(installs_path);
-            }
-        }
+        cleanup_empty_tool_dir(&self.ba().installs_path());
     }
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         install_state::incomplete_file_path(tv.ba(), &tv.tv_pathname())
@@ -6412,6 +6455,20 @@ fn fuzzy_match_versions_by(
             fuzzy_version_matches(query, v)
         })
         .collect()
+}
+
+/// Remove a tool's installs dir once no versions are left in it, along with
+/// the metadata that only described them.
+fn cleanup_empty_tool_dir(installs_path: &Path) {
+    if file::dir_subdirs(installs_path).is_ok_and(|entries| entries.is_empty()) {
+        let _ = file::remove_file(installs_path.join(".mise.backend.toml"));
+        if installs_path
+            .read_dir()
+            .is_ok_and(|mut entries| entries.next().is_none())
+        {
+            let _ = remove_all_with_warning(installs_path);
+        }
+    }
 }
 
 /// Whether `version` belongs to the fuzzy `query`. Resolution runs this for

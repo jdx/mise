@@ -20,8 +20,9 @@ jq = "1"
 EOF
 
 # Drop the remote-versions cache written during install so a remote fetch is
-# observable as the cache file reappearing.
-rm -rf "$MISE_CACHE_DIR/jq"
+# observable as the cache file reappearing. It lives in the dir of the
+# backend jq resolves to, so remove every remote-versions cache file.
+find "$MISE_CACHE_DIR" -name 'remote_versions*' -delete
 
 # The fuzzy request must resolve to the installed version from disk.
 # shellcheck disable=SC2016 # the expression expands inside the assert helper

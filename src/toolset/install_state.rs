@@ -281,11 +281,16 @@ fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
         }
         versions.push(name);
     }
+    sort_installed_versions(&mut versions);
+    Ok(versions)
+}
+
+/// The order install state has always listed a tool's installed versions in.
+fn sort_installed_versions(versions: &mut [String]) {
     versions.sort_by_cached_key(|v| {
         let normalized = normalize_version_for_sort(v);
         (Versioning::new(normalized), v.to_string())
     });
-    Ok(versions)
 }
 
 /// [`scan_versions`] for read-only shared install dirs, where a unreadable
@@ -824,10 +829,100 @@ pub(crate) fn list_versions(short: &str) -> Vec<String> {
     with_tool(short, |tool| tool.versions.clone()).unwrap_or_default()
 }
 
+/// Installed versions of the tool `ba` names, wherever they are stored: under
+/// its storage identity, under each backend a version-routed tool sends
+/// versions to, and in a legacy `installs/<short>` dir for versions the
+/// backend recorded there still serves.
+pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
+    let storage = ba.storage_short();
+    let routed = ba.routed_storage_shorts();
+    // For a version-routed tool, a version is only this tool's where the
+    // registry routes it today; a copy left under another backend after a
+    // boundary moved would resolve to a path that doesn't exist.
+    // An arg pinned to one backend (e.g. restored from a lockfile) doesn't
+    // route by version: its versions are the ones in its own dir.
+    let routed_here = |store: &str, v: &str| {
+        routed.is_empty()
+            || ba
+                .with_registry_version(v)
+                .map_or_else(|| storage.clone(), |ba| ba.storage_short())
+                == store
+    };
+    let mut versions = list_versions(&storage)
+        .into_iter()
+        .filter(|v| routed_here(&storage, v))
+        .collect::<Vec<_>>();
+    for other in routed.iter().filter(|other| **other != storage) {
+        for v in list_versions(other) {
+            if routed_here(other, &v) && !versions.contains(&v) {
+                versions.push(v);
+            }
+        }
+    }
+    let stored_elsewhere = storage != ba.short || routed.iter().any(|s| *s != ba.short);
+    if stored_elsewhere {
+        for v in legacy_versions(ba) {
+            if !versions.contains(&v) {
+                versions.push(v);
+            }
+        }
+    }
+    sort_installed_versions(&mut versions);
+    versions
+}
+
+/// Versions in the legacy `installs/<short>` dir that the backend recorded
+/// there still serves. A registry move to another backend leaves them to be
+/// installed afresh rather than read with a backend that didn't install them.
+fn legacy_versions(ba: &BackendArg) -> Vec<String> {
+    let Some(tool) = get_tool(&ba.short) else {
+        return vec![];
+    };
+    let Some(recorded) = tool.full.as_deref() else {
+        return vec![];
+    };
+    tool.versions
+        .iter()
+        .filter(|v| legacy_serves(ba, recorded, v))
+        .cloned()
+        .collect()
+}
+
+/// Whether a legacy `installs/<short>/<v>` recorded as installed by
+/// `recorded` is what `ba` resolves `v` to today.
+fn legacy_serves(ba: &BackendArg, recorded: &str, v: &str) -> bool {
+    let routed = ba.with_registry_version(v);
+    let ba = routed.as_ref().unwrap_or(ba);
+    // Only shorthands whose storage moved have a legacy dir to read.
+    ba.full_without_opts() == recorded && ba.storage_short() != ba.short
+}
+
+/// `installs/<short>/<pathname>` from before tools were stored under their
+/// backend's full identifier, when it holds a complete install that the
+/// backend `ba` resolves to today would have made.
+pub(crate) fn legacy_install_path(ba: &BackendArg, pathname: &str) -> Option<PathBuf> {
+    if ba.short.contains(':') {
+        return None;
+    }
+    let dir_name = crate::backend::tool_directory_name(&ba.short);
+    // A `--shared` or `--system` install made the same way lives under the
+    // short name in that dir.
+    let path = env::find_in_shared_installs(
+        dirs::INSTALLS.join(&dir_name).join(pathname),
+        &dir_name,
+        pathname,
+    );
+    if !path.exists() || incomplete_marker(&dir_name, pathname).exists() {
+        return None;
+    }
+    let recorded = get_tool_full(&ba.short)?;
+    legacy_serves(ba, &recorded, pathname).then_some(path)
+}
+
 pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
     let tool_dir = install_path.parent().map(Path::to_path_buf);
     let full = ba.full_without_opts();
-    let explicit_backend = ba.has_explicit_backend();
+    let (short, explicit_backend) = storage_identity(ba);
     let opts = persistent_opts(ba);
 
     let update = |tool: &mut InstallStateTool| {
@@ -850,7 +945,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     };
     let new_tool = || {
         let mut tool = InstallStateTool {
-            short: ba.short.clone(),
+            short: short.clone(),
             full: Some(full.clone()),
             versions: Vec::new(),
             explicit_backend,
@@ -869,7 +964,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
             .expect("INSTALL_STATE_TOOLS lock failed");
         if let Some(existing_tools) = tools.as_ref() {
             let mut next_tools = existing_tools.deref().clone();
-            update(next_tools.entry(ba.short.clone()).or_insert_with(new_tool));
+            update(next_tools.entry(short.clone()).or_insert_with(new_tool));
             *tools = Some(Arc::new(next_tools));
         }
     }
@@ -878,7 +973,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
         .expect("INSTALL_STATE_TOOL_MEMO lock failed");
     let entry = memo
         .get_or_insert_with(Default::default)
-        .entry(ba.short.clone())
+        .entry(short.clone())
         .or_insert(None);
     match entry {
         Some(tool) => update(tool),
@@ -925,29 +1020,38 @@ pub(crate) fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 /// Writes backend metadata to a manifest at a specific install path.
 pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
-    let explicit = ba.has_explicit_backend();
+    let (short, explicit) = storage_identity(ba);
     let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
     let manifest_tool = ManifestTool {
-        short: ba.short.clone(),
+        short: short.clone(),
         full: Some(full),
         explicit_backend: explicit,
         opts: opts_map,
     };
     manifest.insert(
-        crate::backend::tool_directory_name(&ba.short),
+        crate::backend::tool_directory_name(&short),
         manifest_tool.clone(),
     );
     write_manifest_to(path, &manifest)?;
     if let Some(installs_dir) = path.parent() {
-        let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
+        let tool_manifest = tool_manifest_path(installs_dir, &short);
         if tool_manifest.parent().is_some_and(|p| p.exists()) {
             write_tool_manifest_to(&tool_manifest, &manifest_tool)?;
         }
     }
     Ok(())
+}
+
+/// The identity install state records a tool's directory under. A dir named
+/// after a backend's full identifier belongs to that backend, whichever
+/// shorthand installed into it, so it is recorded as an explicit install.
+fn storage_identity(ba: &BackendArg) -> (String, bool) {
+    let short = ba.storage_short();
+    let explicit = short != ba.short || ba.has_explicit_backend();
+    (short, explicit)
 }
 
 fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {

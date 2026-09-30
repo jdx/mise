@@ -443,11 +443,17 @@ impl ToolVersion {
             }
         }
 
-        // Check shared install directories if the primary path doesn't exist
+        // Check shared install directories if the primary path doesn't exist,
+        // then an install made before the tool was stored under its backend.
         let path = if matches!(&self.request, ToolRequest::Path { .. }) {
             path
         } else {
-            env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
+            let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
+            if path.exists() {
+                path
+            } else {
+                install_state::legacy_install_path(self.ba(), &pathname).unwrap_or(path)
+            }
         };
 
         // Only cache the resolved path if it actually exists on disk. Otherwise
@@ -459,6 +465,12 @@ impl ToolVersion {
             INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
         }
         path
+    }
+
+    /// Make `path` this version's install path from now on, e.g. the
+    /// destination that replaces an install read through from elsewhere.
+    pub(crate) fn pin_install_path(&self, path: PathBuf) {
+        INSTALL_PATH_CACHE.insert(self.clone(), path);
     }
 
     pub(crate) fn install_env(&self) -> IndexMap<String, EnvValue> {
@@ -474,13 +486,17 @@ impl ToolVersion {
         };
         let path = self.ba().installs_path().join(&pathname);
         let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
-        if path.is_dir() && is_runtime_symlink(&path) {
+        // Only a link to the resolved version stands in for it: the newest
+        // version in this dir isn't the resolved one when that lives in a
+        // legacy `installs/<short>` dir.
+        if path.is_dir() && is_runtime_symlink(&path) && self.runtime_symlink_targets_self(&path) {
             return path;
         }
 
         #[cfg(windows)]
         if path.is_file()
             && is_runtime_symlink(&path)
+            && self.runtime_symlink_targets_self(&path)
             && let Ok(Some(target)) = file::resolve_symlink(&path)
             && let Some(parent) = path.parent()
         {
@@ -495,6 +511,14 @@ impl ToolVersion {
 
         self.install_path()
     }
+    fn runtime_symlink_targets_self(&self, link: &Path) -> bool {
+        crate::file::resolve_symlink(link)
+            .ok()
+            .flatten()
+            .and_then(|target| target.file_name().map(|name| name.to_os_string()))
+            .is_some_and(|name| name == self.tv_pathname().as_str())
+    }
+
     pub(crate) fn cache_path(&self) -> PathBuf {
         self.ba().cache_path().join(self.tv_pathname())
     }
@@ -1681,10 +1705,15 @@ mod tests {
         let tv = ToolVersion::new(request, "3.14.6".into());
         assert!(!tv.resolved_from_lockfile());
 
-        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
-        // it does NOT resolve to the version just installed -- the bug behavior. (This
-        // also self-checks the stale-symlink setup above.)
-        assert_ne!(tv.runtime_path(), install_path);
+        // The fuzzy runtime symlink is stale: it names 3.13.9, not the resolved 3.14.6.
+        assert_eq!(
+            crate::file::resolve_symlink(&runtime_link)?
+                .and_then(|t| t.file_name().map(|n| n.to_owned())),
+            Some("3.13.9".into())
+        );
+        // A runtime symlink only stands in for the version it points at, so even
+        // unlocked, runtime_path() resolves to the version just installed.
+        assert_eq!(tv.runtime_path(), install_path);
 
         // with_locked() pins runtime_path() to the exact install just made, not the
         // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).

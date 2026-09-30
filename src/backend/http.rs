@@ -755,11 +755,12 @@ impl HttpBackend {
         {
             return install_path.clone();
         }
+        let installs_path = tv.ba().installs_path();
         let tool_dir = tv
             .install_path
             .as_ref()
             .and_then(|path| path.parent())
-            .unwrap_or(tv.ba().installs_path());
+            .unwrap_or(&installs_path);
         tool_dir.join(Self::install_version_name(tv, cache_key))
     }
 

@@ -8,4 +8,7 @@ cat <<EOF >mise.toml
 EOF
 
 assert "mise install --force aqua@2.0.0"
-assert "mise where aqua@2.0.0" "$MISE_DATA_DIR/installs/aqua/2.0.0"
+# The shorthand installs under the backend it resolves to; it still used the
+# registry's asset, not the config entry's bogus pattern.
+assert "mise where aqua@2.0.0" "$MISE_DATA_DIR/installs/github-aquaproj-aqua/2.0.0"
+assert_contains "mise x aqua@2.0.0 -- aqua version" "2.0.0"

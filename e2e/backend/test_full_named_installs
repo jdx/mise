@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# Registry shorthands install under their backend's full name: the shorthand
+# and the explicit backend share one install, each backend a version routes to
+# keeps its own directory, and installs made under `installs/<short>` by older
+# versions of mise stay usable while their recorded backend still applies.
+export MISE_EXPERIMENTAL=0
+export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_REGISTRY_FLOATING=0
+INSTALLS="$MISE_DATA_DIR/installs"
+
+legacy_manifest() {
+  cat >"$INSTALLS/age/.mise.backend.toml" <<EOF
+short = "age"
+full = "$1"
+explicit_backend = false
+EOF
+  rm -f "$INSTALLS/.mise-installs.toml"
+}
+
+echo "=== the shorthand installs under its backend, shared with the explicit form ==="
+mise install age@1.2.1
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.1"
+assert_directory_not_exists "$INSTALLS/age"
+assert_contains "cat $INSTALLS/aqua-filo-sottile-age/.mise.backend.toml" 'short = "aqua:FiloSottile/age"'
+assert_contains "MISE_OFFLINE=1 mise x aqua:FiloSottile/age@1.2.1 -- age --version" "v1.2.1"
+
+echo "=== each backend a version routes to keeps its own directory ==="
+mise install hk@1.57.0 hk@1.58.1
+assert_directory_exists "$INSTALLS/aqua-jdx-hk/1.57.0"
+assert_directory_exists "$INSTALLS/packslip-github-com-jdx-hk/1.58.1"
+cat >mise.toml <<'TOML'
+[tools]
+hk = ["1.57.0", "1.58.1"]
+TOML
+assert_contains "mise ls hk" "1.57.0"
+assert_contains "mise ls hk" "1.58.1"
+assert_contains "mise exec hk@1.57.0 -- hk --version" "hk 1.57.0"
+assert_contains "mise exec hk@1.58.1 -- hk --version" "hk 1.58.1"
+rm mise.toml
+
+echo "=== a legacy install whose backend still applies is read in place ==="
+mv "$INSTALLS/aqua-filo-sottile-age" "$INSTALLS/age"
+legacy_manifest "aqua:FiloSottile/age"
+assert_contains "MISE_OFFLINE=1 mise x age@1.2.1 -- age --version" "v1.2.1"
+# `latest` from config resolves to the installed version, legacy or not.
+echo 'tools.age = "latest"' >mise.toml
+assert_contains "MISE_OFFLINE=1 mise x -- age --version" "v1.2.1"
+rm mise.toml
+assert_directory_not_exists "$INSTALLS/aqua-filo-sottile-age"
+
+echo "=== latest covers legacy installs newer than the backend's own ==="
+mise install age@1.2.0
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.0"
+echo 'tools.age = "latest"' >mise.toml
+assert_contains "MISE_OFFLINE=1 mise x -- age --version" "v1.2.1"
+rm mise.toml
+mise uninstall age@1.2.0
+
+echo "=== so is one in a shared install dir ==="
+SHARED="$HOME/shared-installs"
+mkdir -p "$SHARED"
+mv "$INSTALLS/age" "$SHARED/age"
+assert_contains "MISE_SHARED_INSTALL_DIRS=$SHARED MISE_OFFLINE=1 mise x age@1.2.1 -- age --version" "v1.2.1"
+mv "$SHARED/age" "$INSTALLS/age"
+
+echo "=== uninstalling it cleans up the legacy directory ==="
+mise uninstall age@1.2.1
+assert_directory_not_exists "$INSTALLS/age"
+
+echo "=== a legacy install from another backend is installed afresh ==="
+mise install age@1.2.1
+mv "$INSTALLS/aqua-filo-sottile-age" "$INSTALLS/age"
+legacy_manifest "ubi:FiloSottile/age"
+assert_not_contains "mise ls age" "1.2.1"
+mise install age@1.2.1
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.1"
+assert_contains "mise x age@1.2.1 -- age --version" "v1.2.1"
+
+echo "=== a forced reinstall of a legacy install lands under the backend ==="
+rm -rf "$INSTALLS/age"
+mv "$INSTALLS/aqua-filo-sottile-age" "$INSTALLS/age"
+legacy_manifest "aqua:FiloSottile/age"
+mise install --force age@1.2.1
+assert_directory_exists "$INSTALLS/aqua-filo-sottile-age/1.2.1"
+assert_directory_not_exists "$INSTALLS/age"
+assert_contains "mise x age@1.2.1 -- age --version" "v1.2.1"
