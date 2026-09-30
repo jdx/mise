@@ -585,6 +585,10 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
+# Count the issues the new release resolves for the docs releases page. Best
+# effort: a release with no count shows a dash there, and the next run fills it.
+node docs/.vitepress/releases-issues.mjs || echo "Could not count issues for the releases page"
+
 # TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
 # mise up
 mise lock
@@ -642,6 +646,7 @@ git add \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
+	docs/.vitepress/releases-issues.json \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \
