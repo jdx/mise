@@ -462,13 +462,11 @@ impl Backend for AquaBackend {
                         .unwrap_or_default()
                         .iter()
                         .any(|expected| {
-                            asset_name_matches_expected(
+                            locked_asset_matches_expected(
                                 &cached_filename,
                                 expected,
-                                libc_asset_preference(
-                                    &PlatformTarget::from_current(),
-                                    self.tool_libc,
-                                ),
+                                &PlatformTarget::from_current(),
+                                self.tool_libc,
                             )
                         })
                 });
@@ -5860,6 +5858,24 @@ fn exact_asset_matches_libc_preference(
     }
 }
 
+/// Whether a lockfile's asset is still the one to install for `expected`.
+///
+/// A musl platform that nothing asked for takes the registry's asset as named, but a lockfile
+/// written before that recorded the musl sibling of a gnu asset. Its checksum belongs to that
+/// archive, so it stays valid rather than being refreshed to the registry's asset.
+fn locked_asset_matches_expected(
+    actual: &str,
+    expected: &str,
+    target: &PlatformTarget,
+    tool_libc: Option<&str>,
+) -> bool {
+    let preference = libc_asset_preference(target, tool_libc);
+    asset_name_matches_expected(actual, expected, preference)
+        || (preference == LibcAssetPreference::Exact
+            && target.os_name() == "linux"
+            && asset_name_matches_expected(actual, expected, LibcAssetPreference::MuslStrict))
+}
+
 fn asset_name_matches_expected(
     actual: &str,
     expected: &str,
@@ -6761,6 +6777,40 @@ no_asset: true
             selected.name,
             "rustnet-v1.6.0-aarch64-unknown-linux-musl.tar.gz"
         );
+    }
+
+    #[test]
+    fn test_locked_musl_sibling_stays_valid_on_implicit_musl_target() {
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        let alpine = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+        let glibc = PlatformTarget::new(Platform::parse("linux-x64").unwrap());
+        let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
+
+        // The registry names gnu; a lockfile that recorded either build is still valid.
+        assert!(locked_asset_matches_expected(gnu, gnu, &alpine, None));
+        assert!(locked_asset_matches_expected(musl, gnu, &alpine, None));
+        assert!(locked_asset_matches_expected(
+            musl,
+            gnu,
+            &alpine,
+            Some("gnu")
+        ));
+
+        // Asking for musl explicitly, or a glibc platform, keeps its strict validation.
+        assert!(!locked_asset_matches_expected(
+            gnu,
+            gnu,
+            &alpine,
+            Some("musl")
+        ));
+        assert!(!locked_asset_matches_expected(
+            musl,
+            gnu,
+            &glibc,
+            Some("gnu")
+        ));
+        assert!(!locked_asset_matches_expected(musl, gnu, &macos, None));
     }
 
     #[test]
