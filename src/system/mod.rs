@@ -2141,12 +2141,20 @@ fn packages_from_specs_with_config_files(
         let Some(name) = spec.strip_prefix("brew-cask:") else {
             continue;
         };
+        if !configured.is_os_supported()
+            || !configured.is_env_supported(&crate::env::MISE_ENV_WITH_AUTO)
+        {
+            continue;
+        }
         let Some(appdir) = configured.appdir() else {
             continue;
         };
         match crate::system::packages::brew::package_app_dir(appdir) {
             Ok(appdir) => {
-                cask_appdirs.insert(name.to_string(), appdir);
+                cask_appdirs.insert(name.to_string(), appdir.clone());
+                if let Some(alias) = official_cask_alias(name) {
+                    cask_appdirs.insert(alias, appdir);
+                }
             }
             Err(err) => {
                 warn!("[bootstrap.packages]: {err}");
