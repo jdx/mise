@@ -98,6 +98,25 @@ impl<'a> AquaOptions<'a> {
         }
     }
 
+    /// The per-tool `slsa_signer_identity` and `slsa_signer_issuer` options. They supply the
+    /// expected SLSA signer when the registry entry names the provenance asset but not who
+    /// signed it, and take precedence over registry metadata.
+    fn slsa_signer(&self) -> Result<Option<(&'a str, &'a str)>> {
+        let identity = self
+            .values
+            .str("slsa_signer_identity")
+            .filter(|s| !s.is_empty());
+        let issuer = self
+            .values
+            .str("slsa_signer_issuer")
+            .filter(|s| !s.is_empty());
+        match (identity, issuer) {
+            (Some(identity), Some(issuer)) => Ok(Some((identity, issuer))),
+            (None, None) => Ok(None),
+            _ => bail!("aqua `slsa_signer_identity` and `slsa_signer_issuer` must be set together"),
+        }
+    }
+
     fn var(&self, name: &str) -> Result<Option<String>> {
         self.canonical_var_options()?
             .get(name)
@@ -122,8 +141,10 @@ impl<'a> AquaOptions<'a> {
     fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
         let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
-            if matches!(key.as_str(), "symlink_bins" | "libc")
-                || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            if matches!(
+                key.as_str(),
+                "symlink_bins" | "libc" | "slsa_signer_identity" | "slsa_signer_issuer"
+            ) || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
             {
                 continue;
             }
@@ -1067,7 +1088,8 @@ impl AquaBackend {
             target_os,
             Self::target_libc(&target, tool_libc),
         );
-        Self::apply_var_options(pkg, &opts)
+        let pkg = Self::apply_var_options(pkg, &opts)?;
+        Self::apply_slsa_signer_options(pkg, &opts)
     }
 
     async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
@@ -1167,6 +1189,27 @@ impl AquaBackend {
             None
         };
         Self::apply_aqua_libc_replacement(pkg, target_os, libc.map(str::to_string))
+    }
+
+    /// Sets the expected SLSA signer from the tool options on every provenance configuration
+    /// in the package, including version overrides. Packages without SLSA provenance are left
+    /// alone: the options name the signer, not where the provenance asset lives.
+    fn apply_slsa_signer_options(
+        mut pkg: AquaPackage,
+        opts: &AquaOptions<'_>,
+    ) -> Result<AquaPackage> {
+        let Some((identity, issuer)) = opts.slsa_signer()? else {
+            return Ok(pkg);
+        };
+        let set_signer = |pkg: &mut AquaPackage| {
+            if let Some(slsa) = pkg.slsa_provenance.as_mut() {
+                slsa.signer_identity = Some(identity.to_string());
+                slsa.signer_issuer = Some(issuer.to_string());
+            }
+        };
+        set_signer(&mut pkg);
+        pkg.version_overrides.iter_mut().for_each(set_signer);
+        Ok(pkg)
     }
 
     fn apply_var_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
@@ -2737,7 +2780,7 @@ impl AquaBackend {
                 .is_some_and(|s| s.has_signer_identity())
         {
             return Err(eyre!(
-                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Add the expected signer or refresh the lockfile."
+                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Set slsa_signer_identity and slsa_signer_issuer in the tool options, or refresh the lockfile after choosing another verification method."
             ));
         }
         if has_lockfile_integrity
@@ -3892,6 +3935,7 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aqua_registry::types::AquaSlsaProvenance;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
 
     /// The regex filter [`aqua_fuzzy_match`] replaced, kept to show the two agree.
@@ -4679,6 +4723,87 @@ packages:
             ),
             PathBuf::from("bin/tool_1.0.0.exe")
         );
+    }
+
+    fn slsa_package() -> AquaPackage {
+        let mut pkg = AquaPackage::default();
+        pkg.slsa_provenance = Some(AquaSlsaProvenance {
+            enabled: None,
+            r#type: Some("github_release".to_string()),
+            repo_owner: None,
+            repo_name: None,
+            url: None,
+            asset: Some("multiple.intoto.jsonl".to_string()),
+            source_uri: None,
+            source_tag: None,
+            signer_identity: None,
+            signer_issuer: None,
+        });
+        let mut over = AquaPackage::default();
+        over.slsa_provenance = pkg.slsa_provenance.clone();
+        pkg.version_overrides = vec![over];
+        pkg
+    }
+
+    fn slsa_signer_opts(identity: Option<&str>, issuer: Option<&str>) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        for (key, value) in [
+            ("slsa_signer_identity", identity),
+            ("slsa_signer_issuer", issuer),
+        ] {
+            if let Some(value) = value {
+                opts.opts
+                    .insert(key.to_string(), toml::Value::String(value.to_string()));
+            }
+        }
+        opts
+    }
+
+    #[test]
+    fn test_slsa_signer_options_fill_missing_registry_signer() {
+        let opts = slsa_signer_opts(
+            Some("https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0"),
+            Some("https://token.actions.githubusercontent.com"),
+        );
+        let opts = AquaOptions::new(&opts);
+        let pkg = slsa_package();
+        assert!(!pkg.slsa_provenance.as_ref().unwrap().has_signer_identity());
+
+        let pkg = AquaBackend::apply_slsa_signer_options(pkg, &opts).unwrap();
+
+        for slsa in std::iter::once(&pkg)
+            .chain(pkg.version_overrides.iter())
+            .map(|p| p.slsa_provenance.as_ref().unwrap())
+        {
+            assert!(slsa.has_signer_identity());
+            assert_eq!(
+                slsa.signer_issuer.as_deref(),
+                Some("https://token.actions.githubusercontent.com")
+            );
+        }
+    }
+
+    #[test]
+    fn test_slsa_signer_options_require_both_fields() {
+        for opts in [
+            slsa_signer_opts(Some("identity"), None),
+            slsa_signer_opts(None, Some("issuer")),
+        ] {
+            let opts = AquaOptions::new(&opts);
+            let err = AquaBackend::apply_slsa_signer_options(slsa_package(), &opts).unwrap_err();
+            assert!(
+                err.to_string().contains("must be set together"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_slsa_signer_options_are_not_package_vars() {
+        let opts = slsa_signer_opts(Some("identity"), Some("issuer"));
+        let opts = AquaOptions::new(&opts);
+        assert!(opts.canonical_var_options().unwrap().is_empty());
+        assert!(opts.lockfile_options().unwrap().is_empty());
     }
 
     #[test]

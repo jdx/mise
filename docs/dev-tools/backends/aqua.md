@@ -102,6 +102,23 @@ Use `mise ls-remote aqua:BurntSushi/ripgrep` to inspect available versions.
 
 ## Tool Options
 
+### `slsa_signer_identity` and `slsa_signer_issuer`
+
+Some registry entries configure `slsa_provenance` without the expected signer, so mise
+skips SLSA for them, and an existing lockfile that requires SLSA fails. Set the expected
+Fulcio certificate URI subject and OIDC issuer to supply the signer yourself:
+
+```toml
+[tools]
+"aqua:google/osv-scanner" = { version = "2.6.0", slsa_signer_identity = "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.1.0", slsa_signer_issuer = "https://token.actions.githubusercontent.com" }
+```
+
+Both options are required together and must match the certificate exactly; they replace
+any signer in the registry entry. The <span v-pre>`{{.Version}}`</span> aqua template is
+available in both values. Look the signer up in the project's release provenance rather
+than copying it from an unreviewed source. The options only supply the signer: they do not
+enable SLSA for a package whose registry entry has no `slsa_provenance`.
+
 ### `symlink_bins`
 
 Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles
@@ -208,7 +225,10 @@ See [Settings](#settings) for the complete configuration.
 The signer fields are the exact Fulcio certificate URI subject and OIDC issuer.
 Registry packages without them skip SLSA and may use another verification method.
 An existing lockfile that requires SLSA fails until the signer metadata is added
-or the lockfile is refreshed with another verification method.
+or the lockfile is refreshed with another verification method. To keep the SLSA
+requirement for a package whose registry entry names the provenance asset but not
+the signer, set the signer in the tool options; see
+[`slsa_signer_identity` and `slsa_signer_issuer`](#slsa-signer-identity-and-slsa-signer-issuer).
 
 A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous non-SLSA provenance
 result while checking the artifact digest. SLSA always checks the current expected signer.
