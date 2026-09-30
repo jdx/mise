@@ -1119,10 +1119,11 @@ impl AquaBackend {
     /// The libc to select assets for. A libc the target platform names wins, then the tool's
     /// `libc` option, then the `libc` setting on the current platform.
     ///
-    /// The platform wins even over the tool option because a lockfile entry is keyed by it: a
-    /// gnu build recorded under `linux-x64-musl` would break every musl machine using the
-    /// lockfile. That includes the current platform when `libc = "musl"` is set, since
-    /// `Platform::current()` turns the setting into its qualifier.
+    /// The platform wins even over the tool option because a lockfile entry is keyed by it: the
+    /// tool's `libc = "glibc"` must not put a gnu build the registry doesn't name under
+    /// `linux-x64-musl`. That includes the current platform when `libc = "musl"` is set, since
+    /// `Platform::current()` turns the setting into its qualifier. See [`Self::asset_libc`] for
+    /// which assets a musl platform then takes.
     fn target_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
         target.libc().or(tool_libc).map(str::to_string).or_else(|| {
             if target.is_current() {
