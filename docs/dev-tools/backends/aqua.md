@@ -228,7 +228,7 @@ An existing lockfile that requires SLSA fails until the signer metadata is added
 or the lockfile is refreshed with another verification method. To keep the SLSA
 requirement for a package whose registry entry names the provenance asset but not
 the signer, set the signer in the tool options; see
-[`slsa_signer_identity` and `slsa_signer_issuer`](#slsa-signer-identity-and-slsa-signer-issuer).
+[`slsa_signer_identity` and `slsa_signer_issuer`](#slsa_signer_identity-and-slsa_signer_issuer).
 
 A verified [lockfile](/dev-tools/mise-lock.html) can reuse a previous non-SLSA provenance
 result while checking the artifact digest. SLSA always checks the current expected signer.
