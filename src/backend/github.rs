@@ -1759,12 +1759,9 @@ impl UnifiedGitBackend {
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
-        if has_lockfile_integrity
-            && !force_verify
-            && !locked_provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_slsa)
-        {
+        // `has_lockfile_integrity` also counts a checksum taken from the release API above;
+        // only a checksum the lockfile already had may stand in for verification.
+        if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
@@ -1878,12 +1875,7 @@ impl UnifiedGitBackend {
         }
         let expected_provenance =
             expected_install_provenance(artifact_info.provenance.clone(), required);
-        if has_lockfile_integrity
-            && !Settings::get().force_provenance_verify()
-            && !expected_provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_slsa)
-        {
+        if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
             }
@@ -2613,15 +2605,6 @@ impl UnifiedGitBackend {
     ) -> Result<()> {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
-        if tv
-            .lock_platforms
-            .get(platform_key)
-            .and_then(|pi| pi.provenance.as_ref())
-            .is_some_and(ProvenanceType::is_slsa)
-            && opts.slsa_signer().is_none()
-        {
-            return Err(slsa_signer_missing_error(tv));
-        }
         if !opts.github_attestations()
             && let Some(provenance) = tv
                 .lock_platforms
@@ -2663,12 +2646,7 @@ impl UnifiedGitBackend {
                 }
                 !settings.github_attestations || !settings.github.github_attestations
             }
-            ProvenanceType::Slsa { .. } => {
-                if opts.slsa_signer().is_none() {
-                    return Err(slsa_signer_missing_error(tv));
-                }
-                !settings.slsa || !settings.github.slsa
-            }
+            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
             _ => {
                 return Err(eyre::eyre!(
                     "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
