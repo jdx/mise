@@ -658,13 +658,13 @@ fn converge_action(desired: bool, missing: bool) -> ResourceAction {
     }
 }
 
-/// Whether this service should be watching this store but is not: a
-/// `history-watch` service declared running while nothing holds the store's
-/// watch lock. Its process is from a mise whose history locks lived
-/// elsewhere (they moved into the state directory in 2026.9.5), or runs
-/// with a different `MISE_STATE_DIR`. An apply restarts it; `mise doctor`
-/// and `mise dot status` report it with the same predicate, so they never
-/// advise an apply that would not act.
+/// Whether this service needs a forced restart to watch this store correctly.
+///
+/// A `history-watch` service declared running can be stale when its process
+/// does not hold this store's watch lock (its locks predate 2026.9.5 or it
+/// uses a different `MISE_STATE_DIR`). It can also hold the lock while being
+/// too old to read the current enrollment schema. An apply restarts either
+/// case, so diagnostics only recommend it when it will act.
 pub fn stale_history_watcher(request: &UserServiceRequest) -> bool {
     request.builtin.as_deref() == Some("history-watch")
         // `enabled` only decides whether it also starts at login; a service
@@ -673,9 +673,20 @@ pub fn stale_history_watcher(request: &UserServiceRequest) -> bool {
         // a watcher stops on its own when history is switched off, and
         // restarting it would only stop it again
         && crate::config::Settings::get().history.enabled
-        && !crate::system::history::watch::runtime::is_running(
-            &crate::system::history::store::state_dir(),
+        && history_watcher_needs_restart(
+            crate::system::history::watch::runtime::is_running(
+                &crate::system::history::store::state_dir(),
+            ),
+            crate::system::history::health::read(&crate::system::history::store::state_dir())
+                .as_ref()
+                .and_then(crate::system::history::health::Health::failing_capture),
         )
+}
+
+fn history_watcher_needs_restart(watch_lock_held: bool, failing_capture: Option<&str>) -> bool {
+    !watch_lock_held
+        || failing_capture
+            .is_some_and(crate::system::history::health::is_stale_watcher_schema_error)
 }
 
 /// Converge the given user services. Returns a reason when the platform's
@@ -911,6 +922,21 @@ mod tests {
             ..Default::default()
         })));
         assert!(!stale_history_watcher(&request(user_config("agent"))));
+    }
+
+    #[test]
+    fn a_watcher_with_a_legacy_enrollment_error_is_restarted() {
+        let legacy_error =
+            "unknown field `exclude`, expected one of `path`, `autosave`, `encrypt`, `variants`";
+        assert!(history_watcher_needs_restart(true, Some(legacy_error)));
+        assert!(history_watcher_needs_restart(false, None));
+        assert!(!history_watcher_needs_restart(
+            true,
+            Some(
+                "unknown field `future`, expected one of `path`, `autosave`, `encrypt`, `variants`"
+            ),
+        ));
+        assert!(!history_watcher_needs_restart(true, None));
     }
 
     /// Task Scheduler keeps a running instance across an unchanged
