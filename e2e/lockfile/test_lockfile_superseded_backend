@@ -135,3 +135,55 @@ reset_lockfile
 mise lock --bump hk --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" 'version = "1.58.1"'
 assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
+
+echo "=== an entry the request no longer resolves from still switches ==="
+# The entry's specifier does not match the config, so the lockfile no longer
+# supplies the version, but it still binds the backend and install warns.
+cat <<'TOML' >mise.toml
+[tools]
+hk = "1"
+TOML
+cat <<'EOF2' >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+specifiers = ["1.58"]
+EOF2
+assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@1.58.1 from aqua:jdx/hk to packslip:github.com/jdx/hk'
+mise backends switch hk
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_not_contains "cat mise.lock" 'aqua:jdx/hk'
+
+echo "=== a stale entry at another version, with artifact data, still switches ==="
+# The request resolves to a newer hk, so the stale entry only rebinds the
+# backend: the relock drops it and locks the config's own version on the new
+# backend, without pinning the config to the stale version.
+cat <<TOML >mise.toml
+[tools]
+hk = "2"
+TOML
+cat <<EOF2 >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "2.3.0"
+backend = "aqua:jdx/hk"
+specifiers = ["2.3"]
+
+[tools.hk."platforms.$MISE_PLATFORM"]
+url = "https://github.com/jdx/hk/releases/download/v2.3.0/placeholder"
+EOF2
+assert_contains "mise backends switch --dry-run 2>&1" 'would replace stale hk@2.3.0 (aqua:jdx/hk)'
+# The version the config resolves to is installed from the locked backend,
+# and the switch reinstalls it from the new one.
+mise install
+assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "aqua:jdx/hk"'
+mise backends switch hk
+assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "packslip:github.com/jdx/hk"'
+assert_not_contains "cat mise.lock" 'aqua:jdx/hk'
+assert_not_contains "cat mise.lock" 'placeholder'
+assert_not_contains "cat mise.lock" 'version = "2.3.0"'
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_contains "cat mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"

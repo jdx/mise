@@ -57,6 +57,10 @@ struct Switch {
     from: String,
     lockfile: PathBuf,
     versions: BTreeSet<String>,
+    /// The versions a request resolves to. The rest are stale entries, which
+    /// are moved only so the relock resolves the tool on the new backend; the
+    /// relock then prunes them.
+    current: BTreeSet<String>,
 }
 
 impl BackendsSwitch {
@@ -99,12 +103,17 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        // Tools whose stale entry was replaced, per lockfile: the relock picks
+        // their version afresh, so reinstall whichever version that is.
+        let mut relocked_tools: BTreeSet<(PathBuf, String)> = BTreeSet::new();
         let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
         let mut relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)> = vec![];
-        // Entries that had artifact data must get the new backend's back.
-        let mut needs_platforms: Vec<(&PathBuf, String, String)> = vec![];
+        // Entries that had artifact data must get the new backend's back. A
+        // stale entry has no version of its own to check: the tool as a whole
+        // must have artifacts once the relock replaces it.
+        let mut needs_platforms: Vec<(&PathBuf, String, Option<String>)> = vec![];
         // Restored if writing or relocking fails, so a failed switch never
         // leaves entries on the new backend without artifact data.
         let mut originals: Vec<(&PathBuf, Option<String>)> = vec![];
@@ -153,10 +162,18 @@ impl BackendsSwitch {
                     "switching"
                 };
                 let mut by_backend: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+                let mut stale: Vec<&str> = vec![];
                 for (version, backend, had_platforms) in &moved {
+                    if !switch.current.contains(version) {
+                        stale.push(version);
+                        if *had_platforms {
+                            needs_platforms.push((path, switch.short.clone(), None));
+                        }
+                        continue;
+                    }
                     by_backend.entry(backend).or_default().push(version);
                     if *had_platforms {
-                        needs_platforms.push((path, switch.short.clone(), version.clone()));
+                        needs_platforms.push((path, switch.short.clone(), Some(version.clone())));
                     }
                 }
                 for (backend, versions) in by_backend {
@@ -168,10 +185,33 @@ impl BackendsSwitch {
                         display_path(path)
                     );
                 }
+                if !stale.is_empty() {
+                    relocked_tools.insert((path.to_path_buf(), switch.short.clone()));
+                    // The relock prunes versions the config does not resolve
+                    // to, so these end up replaced by the config's own version
+                    // on the new backend.
+                    info!(
+                        "{} stale {}@{} ({}) in {}; the config resolves to another version, so the relock drops it",
+                        if self.dry_run {
+                            "would replace"
+                        } else {
+                            "replacing"
+                        },
+                        switch.short,
+                        stale.join(", "),
+                        switch.from,
+                        display_path(path)
+                    );
+                }
                 if !moved.is_empty() {
                     tools.insert(switch.short.clone());
                 }
-                switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
+                switched.extend(
+                    moved
+                        .into_iter()
+                        .filter(|(v, _, _)| switch.current.contains(v))
+                        .map(|(v, _, _)| (switch.short.clone(), v)),
+                );
             }
             // A lockfile where nothing moved is left alone: not rewritten,
             // relocked, or snapshotted.
@@ -184,7 +224,7 @@ impl BackendsSwitch {
                 rewritten.push((path, lockfile));
             }
         }
-        if self.dry_run || switched.is_empty() {
+        if self.dry_run || (switched.is_empty() && relocked_tools.is_empty()) {
             return Ok(missing);
         }
 
@@ -223,10 +263,11 @@ impl BackendsSwitch {
 
         // The lockfiles are switched and complete at this point; a failed
         // reinstall only leaves installs from the old backend in place.
-        if let Err(err) = self.reinstall(&switched).await {
+        if let Err(err) = self.reinstall(&switched, &relocked_tools).await {
             let tools = switched
                 .iter()
                 .map(|(short, version)| format!("{short}@{version}"))
+                .chain(relocked_tools.iter().map(|(_, short)| short.clone()))
                 .collect::<Vec<_>>()
                 .join(" ");
             return Err(err.wrap_err(format!(
@@ -242,7 +283,7 @@ impl BackendsSwitch {
         &self,
         rewritten: Vec<(&PathBuf, Lockfile)>,
         relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)>,
-        needs_platforms: &[(&PathBuf, String, String)],
+        needs_platforms: &[(&PathBuf, String, Option<String>)],
     ) -> Result<()> {
         for (path, lf) in rewritten {
             lf.write(path)?;
@@ -268,9 +309,15 @@ impl BackendsSwitch {
         let missing = needs_platforms
             .iter()
             .filter(|(path, short, version)| {
-                !Lockfile::read(path).is_ok_and(|lf| lf.has_platforms(short, version))
+                !Lockfile::read(path).is_ok_and(|lf| match version {
+                    Some(version) => lf.has_platforms(short, version),
+                    None => lf.tool_has_platforms(short),
+                })
             })
-            .map(|(_, short, version)| format!("{short}@{version}"))
+            .map(|(_, short, version)| match version {
+                Some(version) => format!("{short}@{version}"),
+                None => short.clone(),
+            })
             .collect::<Vec<_>>();
         if !missing.is_empty() {
             bail!(
@@ -299,11 +346,11 @@ impl BackendsSwitch {
         }
     }
 
-    fn selected(&self, tv: &ToolVersion, locked: &str) -> bool {
+    fn selected(&self, short: &str, version: &str, locked: &str) -> bool {
         self.tool.is_empty()
             || self.tool.iter().any(|t| {
-                (t.ba.short == tv.short() || t.ba.short == locked)
-                    && t.version.as_ref().is_none_or(|v| v == &tv.version)
+                (t.ba.short == short || t.ba.short == locked)
+                    && t.version.as_ref().is_none_or(|v| v == version)
             })
     }
 
@@ -339,43 +386,88 @@ impl BackendsSwitch {
     async fn find_switches(&self, config: &Arc<Config>) -> Result<Vec<Switch>> {
         let mut switches: Vec<Switch> = vec![];
         for (lockfile, tv) in self.scoped_versions(config).await? {
-            if !tv.resolved_from_lockfile() {
-                continue;
-            }
-            let Some((from, _)) = tv.ba().superseded_backend(&tv.version) else {
-                continue;
-            };
-            if !self.selected(&tv, &from) {
-                continue;
-            }
             let short = tv.short().to_string();
-            match switches
-                .iter_mut()
-                .find(|s| s.short == short && s.lockfile == lockfile && s.from == from)
-            {
-                Some(switch) => {
-                    switch.versions.insert(tv.version.clone());
+            for (from, version, current) in self.superseded_entries(&lockfile, &tv)? {
+                if !self.selected(&short, &version, &from) {
+                    continue;
                 }
-                None => switches.push(Switch {
-                    short,
-                    from,
-                    lockfile,
-                    versions: BTreeSet::from([tv.version.clone()]),
-                }),
+                match switches
+                    .iter_mut()
+                    .find(|s| s.short == short && s.lockfile == lockfile && s.from == from)
+                {
+                    Some(switch) => {
+                        if current {
+                            switch.current.insert(version.clone());
+                        }
+                        switch.versions.insert(version);
+                    }
+                    None => switches.push(Switch {
+                        short: short.clone(),
+                        from,
+                        lockfile: lockfile.clone(),
+                        current: if current {
+                            BTreeSet::from([version.clone()])
+                        } else {
+                            BTreeSet::new()
+                        },
+                        versions: BTreeSet::from([version]),
+                    }),
+                }
             }
         }
         Ok(switches)
+    }
+
+    /// The backend and version of each lock entry in `lockfile` that keeps
+    /// `tv`'s tool on a backend the registry has replaced.
+    ///
+    /// A request that resolved from the lockfile names its entry. One that did
+    /// not (the entry's specifier no longer matches the config, say) still has
+    /// its backend bound by the lockfile, and install keeps using that backend,
+    /// so every entry recorded under it counts. The flag says whether an entry
+    /// is the version the request resolves to.
+    fn superseded_entries(
+        &self,
+        lockfile: &Path,
+        tv: &ToolVersion,
+    ) -> Result<Vec<(String, String, bool)>> {
+        if tv.resolved_from_lockfile() {
+            return Ok(tv
+                .ba()
+                .superseded_backend(&tv.version)
+                .map(|(from, _)| (from, tv.version.clone(), true))
+                .into_iter()
+                .collect());
+        }
+        Ok(Lockfile::read(lockfile)?
+            .locked_backends(tv.short())
+            .into_iter()
+            .filter(|(version, backend)| {
+                tv.ba()
+                    .superseded_backend(version)
+                    .is_some_and(|(current, _)| &current == backend)
+            })
+            .map(|(version, backend)| {
+                let current = version == tv.version;
+                (backend, version, current)
+            })
+            .collect())
     }
 
     /// Reinstall the switched versions that are installed, from the new
     /// backend. Installs are keyed by tool and version, not backend, so an
     /// install from the old backend would otherwise keep satisfying the new
     /// lock entry.
-    async fn reinstall(&self, switched: &BTreeSet<(String, String)>) -> Result<()> {
+    async fn reinstall(
+        &self,
+        switched: &BTreeSet<(String, String)>,
+        relocked_tools: &BTreeSet<(PathBuf, String)>,
+    ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
-        for (_, tv) in self.scoped_versions(&config).await? {
-            if switched.contains(&(tv.short().to_string(), tv.version.clone()))
+        for (lockfile, tv) in self.scoped_versions(&config).await? {
+            if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
+                || relocked_tools.contains(&(lockfile, tv.short().to_string())))
                 && tv.backend()?.is_version_installed(&config, &tv, false)
             {
                 requests.push(tv.request);

@@ -1308,6 +1308,25 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// The version and recorded backend of each of `short`'s entries that
+    /// names a backend.
+    pub fn locked_backends(&self, short: &str) -> Vec<(String, String)> {
+        self.tools_for(short)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| Some((entry.version.clone(), entry.backend.clone()?)))
+            .collect()
+    }
+
+    /// Whether any of `short`'s entries records artifact data for any platform.
+    pub fn tool_has_platforms(&self, short: &str) -> bool {
+        self.tools_for(short).is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| entry.platforms.values().any(|p| !p.is_empty()))
+        })
+    }
+
     /// Whether `short`'s entry at `version` records artifact data for any platform.
     pub fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
