@@ -155,3 +155,26 @@ assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@1.58.1 fr
 mise backends switch hk
 assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
 assert_not_contains "cat mise.lock" 'aqua:jdx/hk'
+
+echo "=== a stale entry at another version, with artifact data, still switches ==="
+# The request resolves to a newer hk, so the relock never covers the stale
+# version; its artifact data is dropped, not required back.
+cat <<TOML >mise.toml
+[tools]
+hk = "2"
+TOML
+cat <<EOF2 >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "2.3.0"
+backend = "aqua:jdx/hk"
+specifiers = ["2.3"]
+
+[tools.hk."platforms.$MISE_PLATFORM"]
+url = "https://github.com/jdx/hk/releases/download/v2.3.0/placeholder"
+EOF2
+assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@2.3.0 from aqua:jdx/hk to packslip:github.com/jdx/hk'
+mise backends switch hk
+assert_not_contains "cat mise.lock" 'aqua:jdx/hk'
+assert_not_contains "cat mise.lock" 'placeholder'

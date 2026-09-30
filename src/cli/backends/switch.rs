@@ -57,6 +57,9 @@ struct Switch {
     from: String,
     lockfile: PathBuf,
     versions: BTreeSet<String>,
+    /// The versions a request resolves to. The relock records artifacts for
+    /// these; the rest are stale entries that are moved without them.
+    current: BTreeSet<String>,
 }
 
 impl BackendsSwitch {
@@ -155,7 +158,7 @@ impl BackendsSwitch {
                 let mut by_backend: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
                 for (version, backend, had_platforms) in &moved {
                     by_backend.entry(backend).or_default().push(version);
-                    if *had_platforms {
+                    if *had_platforms && switch.current.contains(version) {
                         needs_platforms.push((path, switch.short.clone(), version.clone()));
                     }
                 }
@@ -340,7 +343,8 @@ impl BackendsSwitch {
         let mut switches: Vec<Switch> = vec![];
         for (lockfile, tv) in self.scoped_versions(config).await? {
             let short = tv.short().to_string();
-            for (from, version) in self.superseded_entries(&lockfile, &tv)? {
+            let (entries, current) = self.superseded_entries(&lockfile, &tv)?;
+            for (from, version) in entries {
                 if !self.selected(&short, &version, &from) {
                     continue;
                 }
@@ -349,12 +353,20 @@ impl BackendsSwitch {
                     .find(|s| s.short == short && s.lockfile == lockfile && s.from == from)
                 {
                     Some(switch) => {
+                        if current {
+                            switch.current.insert(version.clone());
+                        }
                         switch.versions.insert(version);
                     }
                     None => switches.push(Switch {
                         short: short.clone(),
                         from,
                         lockfile: lockfile.clone(),
+                        current: if current {
+                            BTreeSet::from([version.clone()])
+                        } else {
+                            BTreeSet::new()
+                        },
                         versions: BTreeSet::from([version]),
                     }),
                 }
@@ -369,21 +381,23 @@ impl BackendsSwitch {
     /// A request that resolved from the lockfile names its entry. One that did
     /// not (the entry's specifier no longer matches the config, say) still has
     /// its backend bound by the lockfile, and install keeps using that backend,
-    /// so every entry recorded under it counts.
+    /// so every entry recorded under it counts. The flag says whether the
+    /// entries are the versions the request resolves to.
     fn superseded_entries(
         &self,
         lockfile: &Path,
         tv: &ToolVersion,
-    ) -> Result<Vec<(String, String)>> {
+    ) -> Result<(Vec<(String, String)>, bool)> {
         if tv.resolved_from_lockfile() {
-            return Ok(tv
+            let entries = tv
                 .ba()
                 .superseded_backend(&tv.version)
                 .map(|(from, _)| (from, tv.version.clone()))
                 .into_iter()
-                .collect());
+                .collect();
+            return Ok((entries, true));
         }
-        Ok(Lockfile::read(lockfile)?
+        let entries = Lockfile::read(lockfile)?
             .locked_backends(tv.short())
             .into_iter()
             .filter(|(version, backend)| {
@@ -392,7 +406,8 @@ impl BackendsSwitch {
                     .is_some_and(|(current, _)| &current == backend)
             })
             .map(|(version, backend)| (backend, version))
-            .collect())
+            .collect();
+        Ok((entries, false))
     }
 
     /// Reinstall the switched versions that are installed, from the new
