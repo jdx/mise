@@ -136,7 +136,7 @@ pub(super) fn app_target_path_in(app_dir: &Path, target_name: &str) -> Result<Pa
         }
         if path.is_absolute() {
             let prefix_app_dir = prefix::prefix().join("Applications");
-            if path.starts_with(&app_dir) || path.starts_with(&prefix_app_dir) {
+            if path.starts_with(app_dir) || path.starts_with(prefix_app_dir) {
                 return Ok(path);
             }
             // Casks routinely hardcode an absolute `/Applications/Foo.app`
