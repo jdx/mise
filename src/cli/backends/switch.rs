@@ -299,11 +299,11 @@ impl BackendsSwitch {
         }
     }
 
-    fn selected(&self, tv: &ToolVersion, locked: &str) -> bool {
+    fn selected(&self, short: &str, version: &str, locked: &str) -> bool {
         self.tool.is_empty()
             || self.tool.iter().any(|t| {
-                (t.ba.short == tv.short() || t.ba.short == locked)
-                    && t.version.as_ref().is_none_or(|v| v == &tv.version)
+                (t.ba.short == short || t.ba.short == locked)
+                    && t.version.as_ref().is_none_or(|v| v == version)
             })
     }
 
@@ -339,32 +339,60 @@ impl BackendsSwitch {
     async fn find_switches(&self, config: &Arc<Config>) -> Result<Vec<Switch>> {
         let mut switches: Vec<Switch> = vec![];
         for (lockfile, tv) in self.scoped_versions(config).await? {
-            if !tv.resolved_from_lockfile() {
-                continue;
-            }
-            let Some((from, _)) = tv.ba().superseded_backend(&tv.version) else {
-                continue;
-            };
-            if !self.selected(&tv, &from) {
-                continue;
-            }
             let short = tv.short().to_string();
-            match switches
-                .iter_mut()
-                .find(|s| s.short == short && s.lockfile == lockfile && s.from == from)
-            {
-                Some(switch) => {
-                    switch.versions.insert(tv.version.clone());
+            for (from, version) in self.superseded_entries(&lockfile, &tv)? {
+                if !self.selected(&short, &version, &from) {
+                    continue;
                 }
-                None => switches.push(Switch {
-                    short,
-                    from,
-                    lockfile,
-                    versions: BTreeSet::from([tv.version.clone()]),
-                }),
+                match switches
+                    .iter_mut()
+                    .find(|s| s.short == short && s.lockfile == lockfile && s.from == from)
+                {
+                    Some(switch) => {
+                        switch.versions.insert(version);
+                    }
+                    None => switches.push(Switch {
+                        short: short.clone(),
+                        from,
+                        lockfile: lockfile.clone(),
+                        versions: BTreeSet::from([version]),
+                    }),
+                }
             }
         }
         Ok(switches)
+    }
+
+    /// The backend and version of each lock entry in `lockfile` that keeps
+    /// `tv`'s tool on a backend the registry has replaced.
+    ///
+    /// A request that resolved from the lockfile names its entry. One that did
+    /// not (the entry's specifier no longer matches the config, say) still has
+    /// its backend bound by the lockfile, and install keeps using that backend,
+    /// so every entry recorded under it counts.
+    fn superseded_entries(
+        &self,
+        lockfile: &Path,
+        tv: &ToolVersion,
+    ) -> Result<Vec<(String, String)>> {
+        if tv.resolved_from_lockfile() {
+            return Ok(tv
+                .ba()
+                .superseded_backend(&tv.version)
+                .map(|(from, _)| (from, tv.version.clone()))
+                .into_iter()
+                .collect());
+        }
+        Ok(Lockfile::read(lockfile)?
+            .locked_backends(tv.short())
+            .into_iter()
+            .filter(|(version, backend)| {
+                tv.ba()
+                    .superseded_backend(version)
+                    .is_some_and(|(current, _)| &current == backend)
+            })
+            .map(|(version, backend)| (backend, version))
+            .collect())
     }
 
     /// Reinstall the switched versions that are installed, from the new
