@@ -63,6 +63,9 @@ public static class MiseConsoleCtrl
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
     [DllImport("kernel32.dll")]
     private static extern IntPtr GetConsoleWindow();
 
@@ -80,6 +83,9 @@ public static class MiseConsoleCtrl
     // Kept alive for the life of the test host: closing the write end would put the child's
     // stdin at EOF, which is exactly what this test needs not to happen.
     private static IntPtr stdinWriteEnd = IntPtr.Zero;
+
+    // Kept open so the exit status can still be read after the process is gone.
+    private static IntPtr processHandle = IntPtr.Zero;
 
     public static bool EnsureConsole()
     {
@@ -118,10 +124,20 @@ public static class MiseConsoleCtrl
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         CloseHandle(info.hThread);
-        CloseHandle(info.hProcess);
+        processHandle = info.hProcess;
         CloseHandle(stdinReadEnd);
         CloseHandle(output);
         return info.dwProcessId;
+    }
+
+    public static uint ExitCode()
+    {
+        uint code;
+        if (!GetExitCodeProcess(processHandle, out code))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        return code;
     }
 
     public static void Interrupt(int processGroupId)
@@ -207,6 +223,7 @@ goto loop
             [MiseConsoleCtrl]::Interrupt($misePid)
 
             (Wait-Until { -not (Test-Running $misePid) } 60) | Should -BeTrue -Because 'a second interrupt should exit'
+            [MiseConsoleCtrl]::ExitCode() | Should -Be 130 -Because 'an interrupt is distinguishable from a failure'
             foreach ($descendant in $descendants) {
                 (Wait-Until { -not (Test-Running $descendant) } 30) |
                     Should -BeTrue -Because "the task process $descendant should not outlive mise"
