@@ -2803,7 +2803,7 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        if has_lockfile_integrity && !force_verify {
+        if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(
