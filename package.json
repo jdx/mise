@@ -22,6 +22,7 @@
     "esbuild": "0.28.2"
   },
   "devDependencies": {
+    "@jdxcode/docs-releases": "0.1",
     "@resvg/resvg-js": "^2.6.2",
     "@tsconfig/node24": "^24.0.0",
     "@types/markdown-it": "^14.1.2",
@@ -37,5 +38,13 @@
     "vitepress-plugin-mermaid": "2.0.17",
     "vitepress-plugin-tabs": "^0.9.0",
     "yaml": "^2.9.1"
+  },
+  "docs-releases": {
+    "repo": "jdx/mise",
+    "issuesSince": "2026-09-23",
+    "issuesFile": "docs/.vitepress/releases-issues.json",
+    "issuesNote": "An issue counts when a pull request in the release closed it. Counting starts on Sep 23, 2026, when GitHub Issues were turned back on. Before that, reports came in as Discussions, which a pull request cannot close, so earlier releases have no count.",
+    "trimFrom": "^## (?:💚 )?Sponsor mise[ \\t]*$",
+    "ignoredSections": "^(New Contributors|.*Aqua Registry.*)$"
   }
 }

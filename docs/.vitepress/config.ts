@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
   groupIconVitePlugin,
@@ -135,7 +136,8 @@ export default withMermaid(
         { text: "Tasks", link: "/tasks/" },
         {
           text: `v${latestVersion}`,
-          link: "https://github.com/jdx/mise/releases",
+          // The releases page opens the release named in the hash.
+          link: `/releases#${latestVersion}`,
         },
       ],
       sidebar,
@@ -194,6 +196,7 @@ export default withMermaid(
         target: "es2022",
       },
       plugins: [
+        ...releaseNotesPlugin({ root: resolve(configDir, "../..") }),
         {
           name: "mise-schema-assets",
           apply: "build",
