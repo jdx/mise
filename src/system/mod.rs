@@ -996,7 +996,9 @@ fn package_requests_from_config_files(
                         }
                         Err(err) => {
                             warn!("[bootstrap.packages]: {err}");
-                            continue;
+                            // Keep the cask request: invalid per-cask options
+                            // fall back to the normal appdir, like unsupported
+                            // options on the other package managers.
                         }
                     }
                 }
@@ -2171,10 +2173,17 @@ fn packages_from_specs_with_config_files(
                 cask_adopt.insert(name.clone());
             }
             if let Some(appdir) = configured.and_then(PackageTomlConfig::appdir) {
-                cask_appdirs.insert(
-                    name.clone(),
-                    crate::system::packages::brew::package_app_dir(appdir)?,
-                );
+                match crate::system::packages::brew::package_app_dir(appdir) {
+                    Ok(appdir) => {
+                        cask_appdirs.insert(name.clone(), appdir);
+                    }
+                    Err(err) => {
+                        // Explicit package selection preserves the same
+                        // fallback as a full bootstrap: the invalid override
+                        // is ignored while the cask itself is still applied.
+                        warn!("[bootstrap.packages]: {err}");
+                    }
+                }
             }
         }
         #[cfg(unix)]
@@ -2664,6 +2673,53 @@ mod tests {
             casks.options.brew_cask_appdir("firefox"),
             Some(expected.as_path())
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn invalid_brew_cask_appdir_keeps_the_configured_cask() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:firefox" = { appdir = "relative/Applications" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 1);
+        assert_eq!(casks.requests[0].name, "firefox");
+        assert_eq!(casks.options.brew_cask_appdir("firefox"), None);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn invalid_brew_cask_appdir_keeps_an_explicit_cask_request() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:firefox" = { appdir = "relative/Applications" }
+            "#,
+        )])?;
+
+        let packages = packages_from_specs_with_config_files(
+            &["brew-cask:firefox".to_string()],
+            &config_files,
+        )?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 1);
+        assert_eq!(casks.requests[0].name, "firefox");
+        assert_eq!(casks.options.brew_cask_appdir("firefox"), None);
         Ok(())
     }
 

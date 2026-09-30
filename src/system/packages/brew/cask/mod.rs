@@ -951,6 +951,10 @@ impl BrewCaskManager {
             warn!("brew-cask: failed to remove artifact link backups: {err:#}");
         }
         record_cask_action(cask.manager, &mut journal, "activated")?;
+        remove_obsolete_app_targets(
+            locked_ownership.as_ref(),
+            &artifacts.app_target_paths_for(&cask)?,
+        );
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
@@ -2995,6 +2999,75 @@ fn remove_obsolete_generic_artifacts(
         }
     }
     Ok(())
+}
+
+/// Remove app bundles that the previous receipt owned but the current cask no
+/// longer declares. This runs only after the replacement Caskroom and its
+/// receipt are durable, so a failed upgrade leaves the old bundle untouched.
+///
+/// App targets are removed through a verified directory descriptor rather than
+/// their path. The old receipt's fingerprint must still match, which leaves a
+/// bundle a user has changed since the previous install alone.
+#[cfg(unix)]
+fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBuf]) {
+    let Some(previous) = previous else {
+        return;
+    };
+    for path in &previous.apps {
+        if current.contains(path) || previous.metadata_only_apps.contains(path) {
+            continue;
+        }
+        let Some(record) = previous.targets.iter().find(|record| record.path == *path) else {
+            continue;
+        };
+        if record.fingerprint.kind != CaskTargetKind::Directory {
+            continue;
+        }
+        let Some(parent_path) = path.parent() else {
+            continue;
+        };
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let cleanup = (|| -> Result<()> {
+            let parent = ensure_trusted_appdir(parent_path)?;
+            if cask_target_fingerprint_at(&parent.fd, name)? != record.fingerprint {
+                return Ok(());
+            }
+            remove_app_at(&parent, name)
+        })();
+        if let Err(err) = cleanup {
+            warn!(
+                "brew-cask: leaving obsolete app {}: {err:#}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBuf]) {
+    let Some(previous) = previous else {
+        return;
+    };
+    for path in &previous.apps {
+        if current.contains(path) || previous.metadata_only_apps.contains(path) {
+            continue;
+        }
+        let Some(record) = previous.targets.iter().find(|record| record.path == *path) else {
+            continue;
+        };
+        if record.fingerprint.kind == CaskTargetKind::Directory
+            && cask_target_record_matches(record).unwrap_or(false)
+        {
+            if let Err(err) = file::remove_all(path) {
+                warn!(
+                    "brew-cask: leaving obsolete app {}: {err:#}",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 fn remove_trusted_generic_target(target: &Path) -> Result<()> {

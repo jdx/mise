@@ -286,7 +286,18 @@ pub(super) fn allowed_appdir_roots() -> Result<Vec<PathBuf>> {
 }
 
 pub(super) fn allowed_appdir_roots_for(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let mut roots = allowed_appdir_roots()?;
+    // A cask-specific directory replaces the global setting. Do not evaluate
+    // the latter here: an invalid global value must not make a valid package
+    // override unusable, including for `$APPDIR` binary artifacts.
+    let mut roots = if cask.appdir.is_some() {
+        vec![PathBuf::from(DEFAULT_APP_DIR)]
+    } else {
+        allowed_appdir_roots()?
+    };
+    let prefix_app_dir = prefix::prefix().join("Applications");
+    if !roots.contains(&prefix_app_dir) {
+        roots.push(prefix_app_dir);
+    }
     let appdir = cask_target_app_dir(cask)?;
     if !roots.contains(&appdir) {
         roots.push(appdir);

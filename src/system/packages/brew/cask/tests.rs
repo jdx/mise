@@ -8218,8 +8218,11 @@ fn package_appdir_takes_precedence_over_the_global_appdir() -> Result<()> {
 
 #[test]
 fn package_appdir_applies_to_appdir_binary_artifacts() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir()?;
     let package = tmp.path().join("package");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, "relative");
     let mut cask = test_cask("example", "1.0.0");
     cask.appdir = Some(package.clone());
 
@@ -8231,6 +8234,79 @@ fn package_appdir_applies_to_appdir_binary_artifacts() -> Result<()> {
         )?,
         package.join("Example.app/Contents/MacOS/example")
     );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn appdir_upgrade_removes_the_unchanged_previously_owned_app() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let old_target = root.join("old/Example.app");
+    file::create_dir_all(old_target.join("Contents"))?;
+    file::write(old_target.join("Contents/version"), "1.0.0")?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old_target.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: vec![CaskTargetRecord {
+            path: old_target.clone(),
+            fingerprint: cask_target_fingerprint(&old_target)?,
+            uninstall: None,
+        }],
+        prune_safe: true,
+        prune_blocker: None,
+    };
+
+    remove_obsolete_app_targets(Some(&receipt), &[root.join("new/Example.app")]);
+
+    assert!(!old_target.exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn appdir_upgrade_keeps_a_previously_owned_app_that_changed() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let old_target = root.join("old/Example.app");
+    file::create_dir_all(old_target.join("Contents"))?;
+    file::write(old_target.join("Contents/version"), "1.0.0")?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old_target.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: vec![CaskTargetRecord {
+            path: old_target.clone(),
+            fingerprint: cask_target_fingerprint(&old_target)?,
+            uninstall: None,
+        }],
+        prune_safe: true,
+        prune_blocker: None,
+    };
+    file::write(old_target.join("Contents/version"), "changed")?;
+
+    remove_obsolete_app_targets(Some(&receipt), &[root.join("new/Example.app")]);
+
+    assert!(old_target.exists());
     Ok(())
 }
 
