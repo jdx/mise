@@ -34,20 +34,25 @@ EOF
   mise install --locked
   assert "mise where github:getsops/sops@3.12.1"
 
-  # An existing SLSA lock must reverify against the current signer policy.
+  # A lock that records a checksum and SLSA provenance is trusted: installing from it
+  # verifies nothing, so neither a different signer nor a missing one matters.
   SOPS_INSTALL=$(mise where github:getsops/sops@3.12.1)
   rm -rf "$SOPS_INSTALL"
   cat <<EOF >mise.toml
 [tools]
-"github:getsops/sops" = { version = "3.12.1", asset_pattern = "$SOPS_ASSET", github_attestations = false, slsa_signer_identity = "https://github.com/example/other/.github/workflows/release.yml@refs/tags/v3.12.1", slsa_signer_issuer = "https://token.actions.githubusercontent.com" }
-EOF
-  assert_fail_contains "mise install --locked 2>&1" "signer identity"
-
-  cat <<EOF >mise.toml
-[tools]
 "github:getsops/sops" = { version = "3.12.1", asset_pattern = "$SOPS_ASSET", github_attestations = false }
 EOF
-  assert_fail_contains "mise install --locked 2>&1" "no expected signer"
+  mise install --locked
+  assert "mise where github:getsops/sops@3.12.1"
+
+  # locked_verify_provenance opts back in to verifying against the current signer.
+  rm -rf "$SOPS_INSTALL"
+  assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install --locked 2>&1" "no expected signer"
+  cat <<EOF >mise.toml
+[tools]
+"github:getsops/sops" = { version = "3.12.1", asset_pattern = "$SOPS_ASSET", github_attestations = false, slsa_signer_identity = "https://github.com/example/other/.github/workflows/release.yml@refs/tags/v3.12.1", slsa_signer_issuer = "https://token.actions.githubusercontent.com" }
+EOF
+  assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install --locked 2>&1" "signer identity"
 fi
 
 echo "=== Testing provenance downgrade attack detection ==="

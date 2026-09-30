@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# A lockfile that records a checksum and SLSA provenance is trusted: installing from it
+# needs no expected signer, since nothing is verified. locked_verify_provenance opts back in.
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+export MISE_AQUA_SLSA=true
+export MISE_AQUA_COSIGN=false
+export MISE_AQUA_BAKED_REGISTRY=0
+
+detect_platform
+if [[ $MISE_PLATFORM_OS != "linux" ]]; then
+  echo "Skipping Linux-only local Aqua SLSA fixture on $MISE_PLATFORM_OS"
+  exit 0
+fi
+
+mkdir -p fixture/slsa-tool/bin server registry
+cat <<'EOF_TOOL' >fixture/slsa-tool/bin/slsa-tool
+#!/usr/bin/env sh
+echo "slsa-tool 1.0.0"
+EOF_TOOL
+chmod +x fixture/slsa-tool/bin/slsa-tool
+tar -czf server/slsa-tool.tar.gz -C fixture slsa-tool
+touch server/provenance.intoto.jsonl
+ARCHIVE_SHA256=$(sha256sum server/slsa-tool.tar.gz | awk '{print $1}')
+
+start_http_server --dir server
+PROVENANCE_URL="http://127.0.0.1:$HTTP_PORT/provenance.intoto.jsonl"
+
+# The registry names the provenance asset but not who signed it.
+cat <<EOF_REGISTRY >registry/registry.yml
+packages:
+  - type: http
+    name: example/slsa-tool
+    supported_envs:
+      - linux
+    url: http://127.0.0.1:$HTTP_PORT/slsa-tool.tar.gz
+    format: tar.gz
+    files:
+      - name: slsa-tool
+        src: slsa-tool/bin/slsa-tool
+    slsa_provenance:
+      type: http
+      url: $PROVENANCE_URL
+EOF_REGISTRY
+export MISE_AQUA_REGISTRY_URL="file://$PWD/registry"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/slsa-tool" = "1.0.0"
+EOF_MISE
+
+# A lock written when the package still had SLSA metadata.
+cat <<EOF_LOCK >mise.lock
+[[tools."aqua:example/slsa-tool"]]
+version = "1.0.0"
+backend = "aqua:example/slsa-tool"
+
+[tools."aqua:example/slsa-tool"."platforms.$MISE_PLATFORM"]
+checksum = "sha256:$ARCHIVE_SHA256"
+url = "http://127.0.0.1:$HTTP_PORT/slsa-tool.tar.gz"
+
+[tools."aqua:example/slsa-tool"."platforms.$MISE_PLATFORM".provenance.slsa]
+url = "$PROVENANCE_URL"
+EOF_LOCK
+cp mise.lock mise.lock.expected
+
+echo "=== Install trusts the lock's SLSA provenance without a signer ==="
+mise install --locked
+assert_contains "mise x aqua:example/slsa-tool -- slsa-tool" "slsa-tool 1.0.0"
+assert "diff mise.lock mise.lock.expected"
+
+echo "=== locked_verify_provenance requires the signer ==="
+rm -rf "$MISE_DATA_DIR/installs/aqua-example-slsa-tool"
+assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install --locked 2>&1" "slsa_signer_identity"

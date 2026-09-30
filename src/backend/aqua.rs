@@ -2783,9 +2783,9 @@ impl AquaBackend {
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
-        // Reuse checksum-backed non-SLSA provenance. SLSA locks always re-verify
-        // the certificate against the current expected signer identity.
-        // However, still check that the recorded provenance type's setting is enabled —
+        // Reuse checksum-backed provenance, SLSA included: the lockfile asserts it was
+        // verified when it was written, so the signer is not needed to install from it.
+        // Still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         //
         // When locked_verify_provenance is enabled (or paranoid mode is on), always
@@ -2803,13 +2803,7 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
-        if has_lockfile_integrity
-            && !force_verify
-            && !locked_provenance
-                .as_ref()
-                .is_some_and(ProvenanceType::is_slsa)
-        {
+        if has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(
@@ -2818,6 +2812,9 @@ impl AquaBackend {
                 tv.style()
             );
         } else {
+            // Verifying for real needs the expected signer; without one the locked SLSA
+            // requirement would be dropped silently.
+            Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
             self.verify_provenance(ctx, tv, pkg, v, filename).await?;
         }
 
