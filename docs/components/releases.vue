@@ -24,10 +24,6 @@ const maxChanges = Math.max(...releases.map((r) => r.changes));
 // that is missing some reads as a lower bound.
 const issueTotal = (issues: number, uncounted: number) =>
   uncounted ? `${issues.toLocaleString("en")}+` : issues.toLocaleString("en");
-const uncountedNote = (uncounted: number) =>
-  uncounted
-    ? `${uncounted} release${uncounted === 1 ? " has" : "s have"} no issue count yet`
-    : undefined;
 
 const maxIssues = Math.max(...releases.map((r) => r.issues ?? 0));
 
@@ -131,7 +127,7 @@ const barHeight = (value: number, max: number) =>
         <dt>changes</dt>
       </div>
       <div>
-        <dd :title="uncountedNote(totals.uncounted)">
+        <dd>
           {{ issueTotal(totals.issues, totals.uncounted) }}
         </dd>
         <dt>issues resolved</dt>
@@ -220,6 +216,12 @@ const barHeight = (value: number, max: number) =>
       close, so the counts there are far too low to compare.
     </p>
 
+    <p v-if="totals.uncounted" class="note">
+      A total marked + is a lower bound: {{ totals.uncounted }}
+      {{ totals.uncounted === 1 ? "release has" : "releases have" }} no issue
+      count yet, and the next release fills it in.
+    </p>
+
     <div class="columns" aria-hidden="true">
       <span>Release</span>
       <span class="size-label">Changes</span>
@@ -232,9 +234,7 @@ const barHeight = (value: number, max: number) =>
         {{ monthTitle(group.month) }}
         <span class="month-totals">
           {{ group.releases.length }} releases · {{ group.changes }} changes ·
-          <span :title="uncountedNote(group.uncounted)"
-            >{{ issueTotal(group.issues, group.uncounted) }} issues</span
-          >
+          {{ issueTotal(group.issues, group.uncounted) }} issues
         </span>
       </h3>
       <ul>
