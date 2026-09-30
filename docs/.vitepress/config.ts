@@ -136,7 +136,8 @@ export default withMermaid(
         { text: "Tasks", link: "/tasks/" },
         {
           text: `v${latestVersion}`,
-          link: "https://github.com/jdx/mise/releases",
+          // The releases page opens the release named in the hash.
+          link: `/releases#${latestVersion}`,
         },
       ],
       sidebar,
