@@ -110,8 +110,10 @@ impl BackendsSwitch {
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
         let mut relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)> = vec![];
-        // Entries that had artifact data must get the new backend's back.
-        let mut needs_platforms: Vec<(&PathBuf, String, String)> = vec![];
+        // Entries that had artifact data must get the new backend's back. A
+        // stale entry has no version of its own to check: the tool as a whole
+        // must have artifacts once the relock replaces it.
+        let mut needs_platforms: Vec<(&PathBuf, String, Option<String>)> = vec![];
         // Restored if writing or relocking fails, so a failed switch never
         // leaves entries on the new backend without artifact data.
         let mut originals: Vec<(&PathBuf, Option<String>)> = vec![];
@@ -164,11 +166,14 @@ impl BackendsSwitch {
                 for (version, backend, had_platforms) in &moved {
                     if !switch.current.contains(version) {
                         stale.push(version);
+                        if *had_platforms {
+                            needs_platforms.push((path, switch.short.clone(), None));
+                        }
                         continue;
                     }
                     by_backend.entry(backend).or_default().push(version);
                     if *had_platforms {
-                        needs_platforms.push((path, switch.short.clone(), version.clone()));
+                        needs_platforms.push((path, switch.short.clone(), Some(version.clone())));
                     }
                 }
                 for (backend, versions) in by_backend {
@@ -278,7 +283,7 @@ impl BackendsSwitch {
         &self,
         rewritten: Vec<(&PathBuf, Lockfile)>,
         relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)>,
-        needs_platforms: &[(&PathBuf, String, String)],
+        needs_platforms: &[(&PathBuf, String, Option<String>)],
     ) -> Result<()> {
         for (path, lf) in rewritten {
             lf.write(path)?;
@@ -304,9 +309,15 @@ impl BackendsSwitch {
         let missing = needs_platforms
             .iter()
             .filter(|(path, short, version)| {
-                !Lockfile::read(path).is_ok_and(|lf| lf.has_platforms(short, version))
+                !Lockfile::read(path).is_ok_and(|lf| match version {
+                    Some(version) => lf.has_platforms(short, version),
+                    None => lf.tool_has_platforms(short),
+                })
             })
-            .map(|(_, short, version)| format!("{short}@{version}"))
+            .map(|(_, short, version)| match version {
+                Some(version) => format!("{short}@{version}"),
+                None => short.clone(),
+            })
             .collect::<Vec<_>>();
         if !missing.is_empty() {
             bail!(

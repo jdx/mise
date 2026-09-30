@@ -1318,6 +1318,15 @@ impl Lockfile {
             .collect()
     }
 
+    /// Whether any of `short`'s entries records artifact data for any platform.
+    pub fn tool_has_platforms(&self, short: &str) -> bool {
+        self.tools_for(short).is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| entry.platforms.values().any(|p| !p.is_empty()))
+        })
+    }
+
     /// Whether `short`'s entry at `version` records artifact data for any platform.
     pub fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
