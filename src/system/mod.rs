@@ -2822,6 +2822,36 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn current_brew_cask_appdir_overrides_a_tracked_duplicate() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:firefox" = { version = "latest", appdir = "/Applications/current" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:firefox" = { version = "latest", appdir = "/Applications/tracked" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(
+            casks.options.brew_cask_appdir("firefox"),
+            Some(Path::new("/Applications/current"))
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn macos_app_explicit_cli_spec_carries_its_declaration() -> Result<()> {
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",
