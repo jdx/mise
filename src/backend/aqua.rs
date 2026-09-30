@@ -1084,14 +1084,22 @@ impl AquaBackend {
     ) -> Result<AquaPackage> {
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
+        Self::package_for_target(&PlatformTarget::from_current(), pkg, versions, &opts)
+    }
+
+    fn package_for_target(
+        target: &PlatformTarget,
+        pkg: AquaPackage,
+        versions: &[&str],
+        opts: &AquaOptions<'_>,
+    ) -> Result<AquaPackage> {
         let tool_libc = opts.libc()?;
-        let target = PlatformTarget::from_current();
-        let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let target_libc = Self::target_variant_libc(&target, tool_libc);
+        let (target_os, target_arch) = Self::to_aqua_platform(target);
+        let target_libc = Self::target_variant_libc(target, tool_libc);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg =
-            Self::apply_aqua_libc_replacement(pkg, target_os, Self::asset_libc(&target, tool_libc));
-        Self::apply_tool_options(pkg, &opts)
+            Self::apply_aqua_libc_replacement(pkg, target_os, Self::asset_libc(target, tool_libc));
+        Self::apply_tool_options(pkg, opts)
     }
 
     async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
@@ -6821,6 +6829,58 @@ no_asset: true
         assert_eq!(
             pkg.replacements.get("linux").map(String::as_str),
             Some("Linux")
+        );
+    }
+
+    #[test]
+    fn test_package_for_implicit_musl_target_keeps_registry_gnu_asset() {
+        // An Alpine host is a musl platform nothing asked for: a registry entry that names only
+        // a gnu build installs that build instead of a musl build that may not exist.
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "unknown-linux-gnu".to_string());
+        let musl = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
+
+        let opts = ToolVersionOptions::default();
+        let implicit = AquaBackend::package_for_target(
+            &musl,
+            pkg.clone(),
+            &["1.0.0"],
+            &AquaOptions::new(&opts),
+        )
+        .unwrap();
+        assert_eq!(
+            implicit.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
+        );
+
+        // The tool's `libc = "gnu"` changes nothing: the musl platform already keeps the
+        // registry's asset.
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("gnu".to_string()));
+        let gnu = AquaBackend::package_for_target(
+            &musl,
+            pkg.clone(),
+            &["1.0.0"],
+            &AquaOptions::new(&opts),
+        )
+        .unwrap();
+        assert_eq!(
+            gnu.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
+        );
+
+        // Asking for musl explicitly still selects the musl build.
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("libc".to_string(), toml::Value::String("musl".to_string()));
+        let explicit =
+            AquaBackend::package_for_target(&musl, pkg, &["1.0.0"], &AquaOptions::new(&opts))
+                .unwrap();
+        assert_eq!(
+            explicit.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-musl")
         );
     }
 
