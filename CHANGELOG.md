@@ -1,5 +1,68 @@
 # Changelog
 
+## [2026.9.18](https://github.com/jdx/mise/compare/v2026.9.17..v2026.9.18) - 2026-09-30
+
+### 🚀 Features
+
+- **(bootstrap)** support ?ref= in bootstrap --from by @jdx in [#13822](https://github.com/jdx/mise/pull/13822)
+- **(config)** include a shared config file from a remote git or OCI source by @jdx in [#13843](https://github.com/jdx/mise/pull/13843)
+- **(daemons)** export a preset's named ports as environment variables by @jdx in [#13835](https://github.com/jdx/mise/pull/13835)
+- **(gem)** add a source option for installing from one registry by @waynehoover in [#13391](https://github.com/jdx/mise/pull/13391)
+- **(gem)** use the GitHub token for GitHub Packages sources by @waynehoover in [#13832](https://github.com/jdx/mise/pull/13832)
+- **(lock)** add --sidecars to list native dependency sidecars by @jdx in [#13819](https://github.com/jdx/mise/pull/13819)
+- **(task)** include task catalogs from OCI artifacts with oci:: prefix by @jdx in [#13820](https://github.com/jdx/mise/pull/13820)
+
+### 🐛 Bug Fixes
+
+- **(daemons)** make `mise daemons stop --all` cover the project's daemons by @jdx in [#13827](https://github.com/jdx/mise/pull/13827)
+- **(daemons)** register the hostname label with pitchfork so printed URLs route by @jdx in [#13833](https://github.com/jdx/mise/pull/13833)
+- **(daemons)** install preset tools on the first daemons start by @jdx in [#13837](https://github.com/jdx/mise/pull/13837)
+- **(daemons)** tell the user how to pin a different port when a daemon's port is taken by @jdx in [#13839](https://github.com/jdx/mise/pull/13839)
+- **(dotfiles)** keep internal Git commands working with Git for Windows 2.56 by @genskyff in [#13812](https://github.com/jdx/mise/pull/13812)
+- **(dotfiles)** restart the history watcher after mise is upgraded by @jdx in [#13845](https://github.com/jdx/mise/pull/13845)
+- **(install-script)** pin the version instead of scraping the installer by @jdx in [#13816](https://github.com/jdx/mise/pull/13816)
+- **(lock)** warn with the cause when a tool is skipped by @jdx in [#13831](https://github.com/jdx/mise/pull/13831)
+- **(oci)** let [oci.env] satisfy required env vars during mise oci by @jdx in [#13821](https://github.com/jdx/mise/pull/13821)
+
+### 📚 Documentation
+
+- **(daemons)** document stopping idle daemons with proxy_idle_timeout by @jdx in [#13830](https://github.com/jdx/mise/pull/13830)
+- **(daemons)** document proxy_idle_timeout and type it in the schema by @jdx in [#13836](https://github.com/jdx/mise/pull/13836)
+
+### 🧪 Testing
+
+- **(git)** keep the update test independent of the tag signing setting by @JamBalaya56562 in [#13762](https://github.com/jdx/mise/pull/13762)
+
+### 📦️ Dependency Updates
+
+- update rust crate nodejs-semver to v6 by @renovate[bot] in [#13807](https://github.com/jdx/mise/pull/13807)
+- update github actions by @renovate[bot] in [#13814](https://github.com/jdx/mise/pull/13814)
+- update rust crate clx to v3.0.3 by @renovate[bot] in [#13825](https://github.com/jdx/mise/pull/13825)
+- update mise tools by @renovate[bot] in [#13805](https://github.com/jdx/mise/pull/13805)
+- update rust crate aws-sdk-s3 to v1.149.0 by @renovate[bot] in [#13840](https://github.com/jdx/mise/pull/13840)
+- update aube to v2.6.1 by @renovate[bot] in [#13846](https://github.com/jdx/mise/pull/13846)
+
+### 📦 Registry
+
+- add lstk and warn when installing deprecated localstack by @jdx in [#13817](https://github.com/jdx/mise/pull/13817)
+
+### Ci
+
+- **(deps)** refresh aube crates via a workflow instead of postUpgradeTasks by @jdx in [#13824](https://github.com/jdx/mise/pull/13824)
+- **(deps)** remove the aube crates lock workflow by @jdx in [#13842](https://github.com/jdx/mise/pull/13842)
+- limit each contributor to one open draft PR by @jdx in [#13847](https://github.com/jdx/mise/pull/13847)
+
+### Security
+
+- **(config)** require trust for tool keys with inline options by @jdx in [#13849](https://github.com/jdx/mise/pull/13849)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`mdsakalu/zmx-session-manager`](https://github.com/mdsakalu/zmx-session-manager)
+- [`trinodb/trino/trino-cli`](https://github.com/trinodb/trino)
+
 ## [2026.9.17](https://github.com/jdx/mise/compare/v2026.9.16..v2026.9.17) - 2026-09-29
 
 ### 🚀 Features
