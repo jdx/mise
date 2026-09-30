@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { ISSUES_SINCE } from "../.vitepress/releases.mjs";
 import { data } from "../releases.data";
 
 type Release = (typeof data)[number];
+type Entry = Release["sections"][number]["entries"][number];
 
 const releases = data;
 const newestFirst = [...releases].reverse();
 
+// Issue counts start when GitHub Issues came back; see ISSUES_SINCE.
+const hasIssueCount = (r: Release) => r.date >= ISSUES_SINCE;
+const issueReleases = releases.filter(hasIssueCount);
+
 const totals = computed(() => {
   let changes = 0;
+  for (const r of releases) changes += r.changes;
   let issues = 0;
   let uncounted = 0;
-  for (const r of releases) {
-    changes += r.changes;
+  for (const r of issueReleases) {
     issues += r.issues ?? 0;
     if (r.issues === null) uncounted++;
   }
@@ -25,27 +31,7 @@ const maxChanges = Math.max(...releases.map((r) => r.changes));
 const issueTotal = (issues: number, uncounted: number) =>
   uncounted ? `${issues.toLocaleString("en")}+` : issues.toLocaleString("en");
 
-const maxIssues = Math.max(...releases.map((r) => r.issues ?? 0));
-
-// The releases on a chart's x axis are equally spaced, so a label sits at the
-// first release of each month that starts a quarter.
-const ticks = computed(() => {
-  const out: { index: number; label: string }[] = [];
-  let last = "";
-  releases.forEach((r, index) => {
-    const month = r.date.slice(0, 7);
-    if (month === last) return;
-    last = month;
-    const m = Number(month.slice(5));
-    if ((m - 1) % 3 === 0) {
-      out.push({
-        index,
-        label: m === 1 ? month.slice(0, 4) : MONTHS[m - 1],
-      });
-    }
-  });
-  return out;
-});
+const maxIssues = Math.max(1, ...issueReleases.map((r) => r.issues ?? 0));
 
 const MONTHS = [
   "Jan",
@@ -62,6 +48,48 @@ const MONTHS = [
   "Dec",
 ];
 
+const dayNumber = (date: string) => Date.parse(date) / 86_400_000;
+
+// The releases on a chart's x axis are equally spaced. A long chart labels the
+// first release of each quarter; a short one (the issues chart starts small)
+// labels about every week.
+function ticksFor(list: Release[]) {
+  const out: { index: number; label: string; year?: boolean }[] = [];
+  if (!list.length) return out;
+  const span = dayNumber(list[list.length - 1].date) - dayNumber(list[0].date);
+  if (span > 120) {
+    let last = "";
+    list.forEach((r, index) => {
+      const month = r.date.slice(0, 7);
+      if (month === last) return;
+      last = month;
+      const m = Number(month.slice(5));
+      if ((m - 1) % 3 === 0) {
+        out.push({
+          index,
+          label: m === 1 ? month.slice(0, 4) : MONTHS[m - 1],
+          year: m === 1,
+        });
+      }
+    });
+    return out;
+  }
+  let lastDay = -Infinity;
+  list.forEach((r, index) => {
+    const day = dayNumber(r.date);
+    if (day - lastDay < 7) return;
+    lastDay = day;
+    out.push({
+      index,
+      label: `${MONTHS[Number(r.date.slice(5, 7)) - 1]} ${Number(r.date.slice(8))}`,
+      year: true,
+    });
+  });
+  return out;
+}
+const changeTicks = ticksFor(releases);
+const issueTicks = ticksFor(issueReleases);
+
 function monthTitle(month: string) {
   return `${MONTHS[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
 }
@@ -76,6 +104,19 @@ function describe(r: Release) {
 
 const releaseUrl = (r: Release) =>
   `https://github.com/jdx/mise/releases/tag/v${r.version}`;
+const entryUrl = (e: Entry) =>
+  e.commit
+    ? `https://github.com/jdx/mise/commit/${e.commit}`
+    : `https://github.com/jdx/mise/pull/${e.ref?.slice(1)}`;
+
+// Entry text is a pull request title, so it is escaped before its `code` spans
+// become elements.
+const entryHtml = (text: string) =>
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
 
 // The release under the pointer or keyboard focus; the newest when none is.
 const active = ref<Release | null>(null);
@@ -90,18 +131,29 @@ const months = computed(() => {
     changes: number;
     issues: number;
     uncounted: number;
+    counted: boolean;
   }[] = [];
   for (const r of newestFirst) {
     const month = r.date.slice(0, 7);
     let group = groups[groups.length - 1];
     if (group?.month !== month) {
-      group = { month, releases: [], changes: 0, issues: 0, uncounted: 0 };
+      group = {
+        month,
+        releases: [],
+        changes: 0,
+        issues: 0,
+        uncounted: 0,
+        counted: false,
+      };
       groups.push(group);
     }
     group.releases.push(r);
     group.changes += r.changes;
-    group.issues += r.issues ?? 0;
-    if (r.issues === null) group.uncounted++;
+    if (hasIssueCount(r)) {
+      group.counted = true;
+      group.issues += r.issues ?? 0;
+      if (r.issues === null) group.uncounted++;
+    }
   }
   return groups;
 });
@@ -109,6 +161,32 @@ const showAll = ref(false);
 const visibleMonths = computed(() =>
   showAll.value ? months.value : months.value.slice(0, 3),
 );
+
+// Releases whose notes are open. Their entries are only rendered while open, so
+// showing every month does not put thousands of list items on the page.
+const opened = reactive(new Set<string>());
+function onToggle(version: string, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) opened.add(version);
+  else opened.delete(version);
+}
+
+// Open a release's notes and bring its row into view, expanding the list first
+// when its month is one of the older ones.
+async function openRelease(r: Release) {
+  const month = r.date.slice(0, 7);
+  if (!visibleMonths.value.some((g) => g.month === month)) showAll.value = true;
+  opened.add(r.version);
+  await nextTick();
+  document
+    .getElementById(`release-${r.version}`)
+    ?.scrollIntoView({ block: "center" });
+  history.replaceState(null, "", `#${r.version}`);
+}
+onMounted(() => {
+  const version = decodeURIComponent(location.hash.slice(1));
+  const r = releases.find((r) => r.version === version);
+  if (r) openRelease(r);
+});
 
 const chartHeight = 140;
 const barHeight = (value: number, max: number) =>
@@ -130,7 +208,7 @@ const barHeight = (value: number, max: number) =>
         <dd>
           {{ issueTotal(totals.issues, totals.uncounted) }}
         </dd>
-        <dt>issues resolved</dt>
+        <dt>issues resolved since Sep 23, 2026</dt>
       </div>
     </dl>
 
@@ -163,27 +241,27 @@ const barHeight = (value: number, max: number) =>
           @focus="active = r"
           @blur="active = null"
           @mouseleave="active = null"
-          @click="active = r"
+          @click="openRelease(r)"
         ></button>
       </div>
       <div class="ticks" aria-hidden="true">
         <span
-          v-for="t in ticks"
+          v-for="t in changeTicks"
           :key="t.index"
-          :class="{ year: /^\d/.test(t.label) }"
+          :class="{ year: t.year }"
           :style="{ left: (t.index / releases.length) * 100 + '%' }"
           >{{ t.label }}</span
         >
       </div>
     </figure>
 
-    <figure class="chart issues">
-      <figcaption>Issues resolved per release</figcaption>
+    <figure v-if="issueReleases.length" class="chart issues">
+      <figcaption>Issues resolved per release, since Sep 23, 2026</figcaption>
       <div class="plot" :style="{ height: chartHeight * 0.6 + 'px' }">
         <span class="axis max">{{ maxIssues }}</span>
         <span class="axis zero">0</span>
         <button
-          v-for="r in releases"
+          v-for="r in issueReleases"
           :key="r.version"
           class="bar"
           type="button"
@@ -195,25 +273,25 @@ const barHeight = (value: number, max: number) =>
           :class="{ on: shown === r }"
           @mouseenter="active = r"
           @mouseleave="active = null"
-          @click="active = r"
+          @click="openRelease(r)"
         ></button>
       </div>
       <div class="ticks" aria-hidden="true">
         <span
-          v-for="t in ticks"
+          v-for="t in issueTicks"
           :key="t.index"
-          :class="{ year: /^\d/.test(t.label) }"
-          :style="{ left: (t.index / releases.length) * 100 + '%' }"
+          :class="{ year: t.year }"
+          :style="{ left: (t.index / issueReleases.length) * 100 + '%' }"
           >{{ t.label }}</span
         >
       </div>
     </figure>
 
     <p class="note">
-      An issue counts when a pull request in the release closed it. The issue
-      tracker was turned off for a long stretch before September 2026, and
-      reports from that time came in as Discussions, which a pull request cannot
-      close, so the counts there are far too low to compare.
+      An issue counts when a pull request in the release closed it. Counting
+      starts on Sep 23, 2026, when GitHub Issues were turned back on. Before
+      that, reports came in as Discussions, which a pull request cannot close,
+      so earlier releases have no count.
     </p>
 
     <p v-if="totals.uncounted" class="note">
@@ -233,21 +311,49 @@ const barHeight = (value: number, max: number) =>
       <h3>
         {{ monthTitle(group.month) }}
         <span class="month-totals">
-          {{ group.releases.length }} releases · {{ group.changes }} changes ·
-          {{ issueTotal(group.issues, group.uncounted) }} issues
+          {{ group.releases.length }} releases · {{ group.changes }} changes
+          <template v-if="group.counted">
+            · {{ issueTotal(group.issues, group.uncounted) }} issues
+          </template>
         </span>
       </h3>
       <ul>
         <li v-for="r in group.releases" :key="r.version">
-          <a :href="releaseUrl(r)" class="version">{{ r.version }}</a>
-          <span class="date">{{ r.date }}</span>
-          <span class="size" aria-hidden="true">
-            <span
-              :style="{ width: (r.changes / maxChanges) * 100 + '%' }"
-            ></span>
-          </span>
-          <span class="count">{{ r.changes }}</span>
-          <span class="count issue-count">{{ r.issues ?? "–" }}</span>
+          <details
+            :id="`release-${r.version}`"
+            :open="opened.has(r.version)"
+            @toggle="onToggle(r.version, $event)"
+          >
+            <summary class="row">
+              <span class="version">{{ r.version }}</span>
+              <span class="date">{{ r.date }}</span>
+              <span class="size" aria-hidden="true">
+                <span
+                  :style="{ width: (r.changes / maxChanges) * 100 + '%' }"
+                ></span>
+              </span>
+              <span class="count">{{ r.changes }}</span>
+              <span class="count issue-count">{{
+                hasIssueCount(r) ? (r.issues ?? "–") : "–"
+              }}</span>
+            </summary>
+            <div v-if="opened.has(r.version)" class="notes">
+              <p class="notes-head">
+                <a :href="releaseUrl(r)">{{ r.version }} on GitHub ↗</a>
+              </p>
+              <template v-for="sec in r.sections" :key="sec.title">
+                <h4>{{ sec.title }}</h4>
+                <ul>
+                  <li v-for="(e, i) in sec.entries" :key="i">
+                    <strong v-if="e.scope">{{ e.scope }}</strong>
+                    <span v-html="entryHtml(e.text)"></span>
+                    <span v-if="e.author" class="by">@{{ e.author }}</span>
+                    <a v-if="e.ref" :href="entryUrl(e)">{{ e.ref }}</a>
+                  </li>
+                </ul>
+              </template>
+            </div>
+          </details>
         </li>
       </ul>
     </section>
@@ -407,18 +513,86 @@ const barHeight = (value: number, max: number) =>
   padding: 0;
   list-style: none;
 }
-.month li {
+.month ul li + li {
+  margin-top: 0;
+}
+.month > ul > li {
+  border-top: 1px solid var(--grid);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.row {
   display: grid;
   grid-template-columns: 6.5em 6.5em 1fr 3em 3em;
   align-items: center;
   gap: 8px;
   padding: 3px 0;
-  border-top: 1px solid var(--grid);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  list-style: none;
 }
-.month li .date {
+.row::-webkit-details-marker {
+  display: none;
+}
+.row:hover .version,
+.row:focus-visible .version {
+  text-decoration: underline;
+}
+.row:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+.version {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+}
+.row .date {
   color: var(--vp-c-text-2);
+}
+details[open] > .row .version::before {
+  content: "▾ ";
+}
+details:not([open]) > .row .version::before {
+  content: "▸ ";
+  color: var(--vp-c-text-3);
+}
+.notes {
+  margin: 4px 0 14px;
+  padding: 4px 0 4px 16px;
+  border-left: 2px solid var(--grid);
+  font-size: 14px;
+  font-variant-numeric: normal;
+}
+.notes-head {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.notes h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+.notes ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes li {
+  margin: 0;
+  padding: 1px 0;
+  line-height: 1.5;
+}
+.notes li strong {
+  margin-right: 4px;
+  color: var(--vp-c-text-2);
+  font-weight: 600;
+}
+.notes .by {
+  margin-left: 6px;
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+}
+.notes li a {
+  margin-left: 6px;
+  font-size: 12px;
 }
 .size {
   height: 8px;
@@ -464,10 +638,10 @@ const barHeight = (value: number, max: number) =>
 }
 
 @media (max-width: 560px) {
-  .month li {
+  .row {
     grid-template-columns: 5.5em 1fr 2.5em 2.5em;
   }
-  .month li .date {
+  .row .date {
     display: none;
   }
   .columns {

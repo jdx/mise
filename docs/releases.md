@@ -12,8 +12,8 @@ import Releases from '/components/releases.vue';
 mise ships a release almost every day. Each bar below is one release, oldest on
 the left, and its height is the number of changes in that release's
 [changelog](https://github.com/jdx/mise/blob/main/CHANGELOG.md). Hover or focus
-a bar to read it. Release notes are on the
-[GitHub releases page](https://github.com/jdx/mise/releases).
+a bar to read it, and click it, or any release in the list, to open that
+release's notes.
 
 A change is one changelog entry: a feature, a fix, a registry addition, a
 dependency update, and so on. New-contributor thanks and the upstream Aqua

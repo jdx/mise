@@ -19,7 +19,23 @@ export type Release = {
     registry: number;
     other: number;
   };
-  /** Issues closed by the release's pull requests; null when not counted yet. */
+  /** Changelog entries by section, as in the release notes. */
+  sections: {
+    title: string;
+    entries: {
+      text: string;
+      scope?: string;
+      author?: string;
+      /** "#123" for a pull request, a short hash for a commit. */
+      ref?: string;
+      /** Full hash, when ref is a commit. */
+      commit?: string;
+    }[];
+  }[];
+  /**
+   * Issues closed by the release's pull requests. Null before issues came
+   * back (ISSUES_SINCE), and for a newer release not counted yet.
+   */
   issues: number | null;
 };
 

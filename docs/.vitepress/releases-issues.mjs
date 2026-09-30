@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseChangelog } from "./releases.mjs";
+import { ISSUES_SINCE, parseChangelog } from "./releases.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const changelogPath = resolve(here, "../../CHANGELOG.md");
@@ -63,7 +63,10 @@ function readIssues() {
 }
 
 const refresh = process.argv.includes("--refresh");
-const releases = parseChangelog(readFileSync(changelogPath, "utf8"));
+// Earlier releases have no count: issues were off, so there is nothing to show.
+const releases = parseChangelog(readFileSync(changelogPath, "utf8")).filter(
+  (r) => r.date >= ISSUES_SINCE,
+);
 const counts = refresh ? {} : readIssues();
 const todo = releases.filter((r) => !(r.version in counts));
 
