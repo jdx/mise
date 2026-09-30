@@ -103,6 +103,9 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        // Tools whose stale entry was replaced: the relock picks their version
+        // afresh, so reinstall whichever version that is.
+        let mut relocked_tools: BTreeSet<String> = BTreeSet::new();
         let mut missing = vec![];
         // Each lockfile's switched tools and the platforms it covered before the
         // rewrite cleared the switched entries' artifacts.
@@ -178,6 +181,7 @@ impl BackendsSwitch {
                     );
                 }
                 if !stale.is_empty() {
+                    relocked_tools.insert(switch.short.clone());
                     // The relock prunes versions the config does not resolve
                     // to, so these end up replaced by the config's own version
                     // on the new backend.
@@ -197,7 +201,12 @@ impl BackendsSwitch {
                 if !moved.is_empty() {
                     tools.insert(switch.short.clone());
                 }
-                switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
+                switched.extend(
+                    moved
+                        .into_iter()
+                        .filter(|(v, _, _)| switch.current.contains(v))
+                        .map(|(v, _, _)| (switch.short.clone(), v)),
+                );
             }
             // A lockfile where nothing moved is left alone: not rewritten,
             // relocked, or snapshotted.
@@ -210,7 +219,7 @@ impl BackendsSwitch {
                 rewritten.push((path, lockfile));
             }
         }
-        if self.dry_run || switched.is_empty() {
+        if self.dry_run || (switched.is_empty() && relocked_tools.is_empty()) {
             return Ok(missing);
         }
 
@@ -249,10 +258,11 @@ impl BackendsSwitch {
 
         // The lockfiles are switched and complete at this point; a failed
         // reinstall only leaves installs from the old backend in place.
-        if let Err(err) = self.reinstall(&switched).await {
+        if let Err(err) = self.reinstall(&switched, &relocked_tools).await {
             let tools = switched
                 .iter()
                 .map(|(short, version)| format!("{short}@{version}"))
+                .chain(relocked_tools.iter().cloned())
                 .collect::<Vec<_>>()
                 .join(" ");
             return Err(err.wrap_err(format!(
@@ -437,11 +447,16 @@ impl BackendsSwitch {
     /// backend. Installs are keyed by tool and version, not backend, so an
     /// install from the old backend would otherwise keep satisfying the new
     /// lock entry.
-    async fn reinstall(&self, switched: &BTreeSet<(String, String)>) -> Result<()> {
+    async fn reinstall(
+        &self,
+        switched: &BTreeSet<(String, String)>,
+        relocked_tools: &BTreeSet<String>,
+    ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
         for (_, tv) in self.scoped_versions(&config).await? {
-            if switched.contains(&(tv.short().to_string(), tv.version.clone()))
+            if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
+                || relocked_tools.contains(tv.short()))
                 && tv.backend()?.is_version_installed(&config, &tv, false)
             {
                 requests.push(tv.request);
