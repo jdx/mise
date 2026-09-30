@@ -1052,7 +1052,10 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && (!options.os.is_empty() || !options.env.is_empty() || options.adopt.is_some())
+            && (!options.os.is_empty()
+                || !options.env.is_empty()
+                || options.adopt.is_some()
+                || options.appdir.is_some())
         {
             let mut options = options.clone();
             options.version = version.to_string();
@@ -1093,6 +1096,9 @@ impl MiseToml {
             }
             if let Some(adopt) = options.adopt {
                 value.insert("adopt", Value::from(adopt));
+            }
+            if let Some(appdir) = &options.appdir {
+                value.insert("appdir", Value::from(appdir));
             }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
@@ -3961,6 +3967,24 @@ mod tests {
                     Some(&inherited_without_selector),
                 )
                 .unwrap();
+                let inherited_with_appdir =
+                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                        version: "1.0.0".to_string(),
+                        os: vec![],
+                        env: vec![],
+                        adopt: None,
+                        appdir: Some("/Applications".to_string()),
+                        state: crate::system::PackageDesiredStateTomlConfig::Present,
+                        url: None,
+                        sha256: None,
+                        artifact: None,
+                    });
+                cf.update_bootstrap_package_with_fallback(
+                    "brew-cask:1password",
+                    "latest",
+                    Some(&inherited_with_appdir),
+                )
+                .unwrap();
             }
         }
 
@@ -3994,6 +4018,13 @@ mod tests {
         assert!(
             dump.contains(r#""brew:tree" = "latest""#),
             "an inherited options table without selectors should use scalar form: {dump}"
+        );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(
+                r#""brew-cask:1password" = { version = "latest", appdir = "/Applications" }"#
+            ),
+            "an inherited appdir should be written locally: {dump}"
         );
         #[cfg(unix)]
         MiseToml::from_str(&dump, &p).expect("updated package config should parse");

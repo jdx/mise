@@ -1259,13 +1259,20 @@ async fn resolve_cask_for(
         fetch_cask(req, provision_ruby).await?
     };
     if cask.manager.uses_homebrew_caskroom() {
-        cask.appdir = inherited_appdir.map(PathBuf::from).or_else(|| {
-            manager_options
-                .brew_cask_appdir(&req.name)
-                .map(PathBuf::from)
-        });
+        cask.appdir = cask_appdir_for_request(req, manager_options, inherited_appdir);
     }
     Ok(cask)
+}
+
+fn cask_appdir_for_request(
+    req: &PackageRequest,
+    manager_options: &ManagerPackageOptions,
+    inherited_appdir: Option<&Path>,
+) -> Option<PathBuf> {
+    manager_options
+        .brew_cask_appdir(&req.name)
+        .map(PathBuf::from)
+        .or_else(|| inherited_appdir.map(PathBuf::from))
 }
 
 async fn prewarm_downloads(

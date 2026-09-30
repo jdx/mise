@@ -8234,6 +8234,27 @@ fn package_appdir_applies_to_appdir_binary_artifacts() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn dependency_appdir_uses_its_own_package_setting() {
+    let parent = PathBuf::from("/Applications");
+    let dependency = PathBuf::from("/Users/example/Applications");
+    let options = ManagerPackageOptions::BrewCask {
+        adopt: BTreeSet::new(),
+        appdirs: BTreeMap::from([("dependency".to_string(), dependency.clone())]),
+    };
+    let request = PackageRequest {
+        name: "dependency".to_string(),
+        version: None,
+        tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
+    };
+
+    assert_eq!(
+        cask_appdir_for_request(&request, &options, Some(&parent)),
+        Some(dependency)
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
