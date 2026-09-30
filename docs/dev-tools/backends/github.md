@@ -520,8 +520,10 @@ and OIDC issuer for the publishing workflow:
 The identity must match the workflow ref in the certificate exactly. The
 <span v-pre>`{{version}}`</span> template uses the resolved tool version. Without both
 options, mise skips SLSA provenance and can use other available verification.
-If the lockfile requires SLSA, missing signer options cause an error.
-SLSA lockfile entries recheck the signer on every installation.
+A lockfile that records a checksum and SLSA provenance is trusted and installs without
+verifying again. With
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance),
+missing signer options cause an error and the signer is checked on every installation.
 
 ### `prerelease`
 
