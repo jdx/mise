@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseChangelog } from "./.vitepress/releases.mjs";
 
-const changelogPath = resolve(__dirname, "../CHANGELOG.md");
-const issuesPath = resolve(__dirname, ".vitepress/releases-issues.json");
+const docsDir = dirname(fileURLToPath(import.meta.url));
+const changelogPath = resolve(docsDir, "../CHANGELOG.md");
+const issuesPath = resolve(docsDir, ".vitepress/releases-issues.json");
 
 export type Release = {
   version: string;

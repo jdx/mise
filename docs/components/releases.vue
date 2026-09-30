@@ -10,14 +10,25 @@ const newestFirst = [...releases].reverse();
 const totals = computed(() => {
   let changes = 0;
   let issues = 0;
+  let uncounted = 0;
   for (const r of releases) {
     changes += r.changes;
     issues += r.issues ?? 0;
+    if (r.issues === null) uncounted++;
   }
-  return { releases: releases.length, changes, issues };
+  return { releases: releases.length, changes, issues, uncounted };
 });
 
 const maxChanges = Math.max(...releases.map((r) => r.changes));
+// A release whose issues were not counted adds nothing to a total, so a total
+// that is missing some reads as a lower bound.
+const issueTotal = (issues: number, uncounted: number) =>
+  uncounted ? `${issues.toLocaleString("en")}+` : issues.toLocaleString("en");
+const uncountedNote = (uncounted: number) =>
+  uncounted
+    ? `${uncounted} release${uncounted === 1 ? " has" : "s have"} no issue count yet`
+    : undefined;
+
 const maxIssues = Math.max(...releases.map((r) => r.issues ?? 0));
 
 // The releases on a chart's x axis are equally spaced, so a label sits at the
@@ -82,17 +93,19 @@ const months = computed(() => {
     releases: Release[];
     changes: number;
     issues: number;
+    uncounted: number;
   }[] = [];
   for (const r of newestFirst) {
     const month = r.date.slice(0, 7);
     let group = groups[groups.length - 1];
     if (group?.month !== month) {
-      group = { month, releases: [], changes: 0, issues: 0 };
+      group = { month, releases: [], changes: 0, issues: 0, uncounted: 0 };
       groups.push(group);
     }
     group.releases.push(r);
     group.changes += r.changes;
     group.issues += r.issues ?? 0;
+    if (r.issues === null) group.uncounted++;
   }
   return groups;
 });
@@ -118,7 +131,9 @@ const barHeight = (value: number, max: number) =>
         <dt>changes</dt>
       </div>
       <div>
-        <dd>{{ totals.issues.toLocaleString("en") }}</dd>
+        <dd :title="uncountedNote(totals.uncounted)">
+          {{ issueTotal(totals.issues, totals.uncounted) }}
+        </dd>
         <dt>issues resolved</dt>
       </div>
     </dl>
@@ -217,7 +232,9 @@ const barHeight = (value: number, max: number) =>
         {{ monthTitle(group.month) }}
         <span class="month-totals">
           {{ group.releases.length }} releases · {{ group.changes }} changes ·
-          {{ group.issues }} issues
+          <span :title="uncountedNote(group.uncounted)"
+            >{{ issueTotal(group.issues, group.uncounted) }} issues</span
+          >
         </span>
       </h3>
       <ul>
