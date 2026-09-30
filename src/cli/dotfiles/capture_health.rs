@@ -103,12 +103,25 @@ pub(crate) fn advice(state: Watcher) -> &'static str {
     }
 }
 
+/// The error of the running watcher's last capture, when the capture after
+/// it has not succeeded yet.
+pub(crate) fn failing_capture() -> Option<String> {
+    crate::system::history::health::read(&crate::system::history::store::state_dir())?
+        .failing_capture()
+        .map(str::to_string)
+}
+
 /// Warns when enrollment succeeded but nothing saves edits automatically.
 pub(crate) async fn report() {
     match watcher().await {
-        Ok(Watcher::Running) => {
-            info!("history: watcher running; autosave-enabled files are saved automatically")
-        }
+        Ok(Watcher::Running) => match failing_capture() {
+            Some(error) => warn!(
+                "history: watcher running, but its captures are failing: {error}; edits are not being saved (`mise dot status` has the details)"
+            ),
+            None => {
+                info!("history: watcher running; autosave-enabled files are saved automatically")
+            }
+        },
         Ok(state) => warn!("history: {}", advice(state)),
         Err(err) => {
             warn!("history: could not determine whether edits are saved automatically: {err:#}")

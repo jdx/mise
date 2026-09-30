@@ -52,6 +52,13 @@ enum Restart {
 const WATCH_LOCK_TRIES: u32 = 5;
 const WATCH_LOCK_RETRY: Duration = Duration::from_millis(200);
 
+/// How often the watcher checks that the executable it started from has
+/// not been replaced by an upgrade.
+const BINARY_CHECK_EVERY: Duration = Duration::from_secs(60);
+/// How long a synchronization in flight may delay the restart an upgrade
+/// asks for; a stalled origin must not keep the old watcher running.
+const UPGRADE_SYNC_GRACE: Duration = Duration::from_secs(30);
+
 /// How many checkpoints may wait for `history.describe_command` before the
 /// oldest keeps its computed description.
 const DESCRIBE_QUEUE: usize = 8;
@@ -88,6 +95,9 @@ pub struct WatchOptions {
 
 /// Runs the watcher; returns the process exit code.
 pub async fn run(opts: WatchOptions) -> Result<i32> {
+    // the baseline is taken before anything slow, so an upgrade landing
+    // during startup is still seen as one
+    let mut binary = BinaryWatch::new();
     let out = Output { json: opts.json };
     if !Settings::get().history.enabled {
         out.emit(
@@ -129,6 +139,8 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut capture = Capture::new(store, out, intervals.limits.clone());
     prune_schedule(&mut capture, &state);
     capture.health.watcher.started_at = Some(store::now_rfc3339());
+    // a previous watcher's finding says nothing about this process
+    capture.health.watcher.executable_gone = false;
     if opts.once {
         // A one-shot capture has no installed filesystem watches. Failures
         // from a previous watch installation do not describe this run.
@@ -237,6 +249,10 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
     let mut next_reconcile = intervals
         .reconcile
         .map(|every| tokio::time::Instant::now() + every);
+    let mut binary_check = tokio::time::interval_at(
+        tokio::time::Instant::now() + BINARY_CHECK_EVERY,
+        BINARY_CHECK_EVERY,
+    );
     // the network runs on a blocking task of its own: a slow origin never
     // delays a capture
     let mut sync_task: Option<tokio::task::JoinHandle<Result<SyncOutcome>>> = None;
@@ -602,6 +618,44 @@ pub async fn run(opts: WatchOptions) -> Result<i32> {
                 }
                 capture.reconcile(&state.tracked, "reconcile");
                 capture.write_health();
+            }
+            _ = binary_check.tick() => {
+                let executable = binary.check();
+                let gone = match executable {
+                    Executable::Gone => true,
+                    Executable::Current => false,
+                    _ => capture.health.watcher.executable_gone,
+                };
+                if gone != capture.health.watcher.executable_gone {
+                    capture.health.watcher.executable_gone = gone;
+                    if gone {
+                        capture.out.emit(
+                            "outdated",
+                            health::EXECUTABLE_GONE_ADVICE,
+                            json!({ "reason": "executable-removed" }),
+                        );
+                    }
+                    capture.write_health();
+                }
+                if executable == Executable::Replaced {
+                    capture.out.emit(
+                        "restarting",
+                        "the mise executable was replaced; stopping so the service restarts the watcher on the new version",
+                        json!({ "reason": "upgraded" }),
+                    );
+                    if let Some(task) = sync_task.take()
+                        && let Ok(joined) = tokio::time::timeout(UPGRADE_SYNC_GRACE, task).await
+                    {
+                        let outcome = joined.unwrap_or_else(|err| Err(eyre::eyre!("the sync task stopped unexpectedly: {err}")));
+                        finish_sync(&mut capture, &state.tracked, outcome).await;
+                    }
+                    // an upgrade happens once, and a watcher started by hand
+                    // has no service to bring it back: everything pending is
+                    // saved now
+                    finish(&mut capture, &state.tracked, Restart::Final).await;
+                    debouncer.stop();
+                    return Ok(1);
+                }
             }
             _ = sync_tick => {
                 sync_task = start_sync(&mut capture, &state.tracked);
@@ -1808,6 +1862,91 @@ impl Output {
     }
 }
 
+/// Notices that the executable this watcher runs from was replaced, which
+/// is what an upgrade does. The process keeps running the old code, and a
+/// newer mise may write history state it cannot read, so every capture would
+/// fail until someone restarted the service by hand.
+struct BinaryWatch {
+    path: Option<PathBuf>,
+    started: Option<BinaryIdentity>,
+    /// A changed identity seen on the previous check: an upgrade still
+    /// writing the file is not acted on until it holds still.
+    seen: Option<Option<BinaryIdentity>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Executable {
+    /// The file is the one this process started from.
+    Current,
+    /// It differs or is missing, but has not held for two checks yet.
+    Pending,
+    /// A different file is there now; the service starts the new version.
+    Replaced,
+    /// Nothing is there. The service would start the same missing path, so
+    /// the watcher keeps running and says so instead of stopping.
+    Gone,
+}
+
+type BinaryIdentity = (u64, Option<std::time::SystemTime>, u64);
+
+impl BinaryWatch {
+    fn new() -> Self {
+        // the path the service was started by can be a link an upgrade
+        // retargets, which the resolved `current_exe` on Linux would miss
+        let path = std::env::args_os()
+            .next()
+            .and_then(|arg0| {
+                let arg0 = PathBuf::from(arg0);
+                if arg0.is_absolute() {
+                    arg0.is_file().then_some(arg0)
+                } else {
+                    which::which(&arg0).ok()
+                }
+            })
+            .or_else(|| std::env::current_exe().ok());
+        Self::at(path)
+    }
+
+    fn at(path: Option<PathBuf>) -> Self {
+        let started = path.as_deref().and_then(Self::identity);
+        Self {
+            path,
+            started,
+            seen: None,
+        }
+    }
+
+    fn identity(path: &Path) -> Option<BinaryIdentity> {
+        let meta = std::fs::metadata(path).ok()?;
+        #[cfg(unix)]
+        let inode = std::os::unix::fs::MetadataExt::ino(&meta);
+        #[cfg(not(unix))]
+        let inode = 0;
+        Some((meta.len(), meta.modified().ok(), inode))
+    }
+
+    /// What became of the executable since this process started, once it
+    /// has held for two checks in a row: an upgrade in flight leaves no file
+    /// for a moment, or a half-written one.
+    fn check(&mut self) -> Executable {
+        let (Some(path), Some(started)) = (self.path.as_deref(), self.started) else {
+            return Executable::Pending;
+        };
+        let now = Self::identity(path);
+        if now == Some(started) {
+            self.seen = None;
+            return Executable::Current;
+        }
+        let settled = self.seen == Some(now);
+        self.seen = Some(now);
+        match (settled, now) {
+            (false, _) => Executable::Pending,
+            (true, Some(_)) => Executable::Replaced,
+            (true, None) => Executable::Gone,
+        }
+    }
+}
+
 /// The lock a running watcher holds; `mise dot status` reads it.
 pub(crate) fn watch_lock_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("watch.lock")
@@ -1871,6 +2010,41 @@ mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn a_replaced_executable_is_noticed_once_it_holds_still() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("mise");
+        std::fs::write(&exe, "old").unwrap();
+        let mut watch = BinaryWatch::at(Some(exe.clone()));
+        assert_eq!(watch.check(), Executable::Current);
+        // an upgrade replaces the file by renaming a new one over it
+        let staged = dir.path().join("mise.new");
+        std::fs::write(&staged, "a newer version").unwrap();
+        std::fs::rename(&staged, &exe).unwrap();
+        assert_eq!(
+            watch.check(),
+            Executable::Pending,
+            "the first sighting is not acted on"
+        );
+        assert_eq!(watch.check(), Executable::Replaced);
+    }
+
+    #[test]
+    fn a_missing_executable_is_reported_gone_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("mise");
+        std::fs::write(&exe, "old").unwrap();
+        let mut watch = BinaryWatch::at(Some(exe.clone()));
+        std::fs::remove_file(&exe).unwrap();
+        assert_eq!(
+            watch.check(),
+            Executable::Pending,
+            "an upgrade in flight leaves none for a moment"
+        );
+        assert_eq!(watch.check(), Executable::Gone);
+        assert_eq!(BinaryWatch::at(None).check(), Executable::Pending);
+    }
 
     #[test]
     fn a_new_nested_repository_stops_watcher_capture_and_holds() {
