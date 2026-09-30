@@ -760,7 +760,7 @@ impl Backend for AquaBackend {
             target_os,
             Self::target_libc(target, self.tool_libc),
         );
-        let mut pkg = Self::apply_var_options(pkg, &opts)?;
+        let mut pkg = Self::apply_tool_options(pkg, &opts)?;
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -1088,8 +1088,7 @@ impl AquaBackend {
             target_os,
             Self::target_libc(&target, tool_libc),
         );
-        let pkg = Self::apply_var_options(pkg, &opts)?;
-        Self::apply_slsa_signer_options(pkg, &opts)
+        Self::apply_tool_options(pkg, &opts)
     }
 
     async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
@@ -1189,6 +1188,13 @@ impl AquaBackend {
             None
         };
         Self::apply_aqua_libc_replacement(pkg, target_os, libc.map(str::to_string))
+    }
+
+    /// Applies the tool options that change the package itself. Install and lock both resolve
+    /// the package, so they share this to stay in agreement.
+    fn apply_tool_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
+        let pkg = Self::apply_var_options(pkg, opts)?;
+        Self::apply_slsa_signer_options(pkg, opts)
     }
 
     /// Sets the expected SLSA signer from the tool options on every provenance configuration
@@ -4781,6 +4787,26 @@ packages:
                 Some("https://token.actions.githubusercontent.com")
             );
         }
+    }
+
+    #[test]
+    fn test_package_options_supply_slsa_signer() {
+        let backend = Arc::new(BackendArg::new(
+            "osv-scanner".to_string(),
+            Some("aqua:google/osv-scanner".to_string()),
+        ));
+        let mut request =
+            ToolRequest::new(backend, "2.6.0", crate::toolset::ToolSource::Unknown).unwrap();
+        request.set_options(slsa_signer_opts(
+            Some("identity"),
+            Some("https://token.actions.githubusercontent.com"),
+        ));
+        let tv = ToolVersion::new(request, "2.6.0".to_string());
+
+        let pkg =
+            AquaBackend::package_with_options_for_pkg(&tv, slsa_package(), &["v2.6.0"]).unwrap();
+
+        assert!(pkg.slsa_provenance.as_ref().unwrap().has_signer_identity());
     }
 
     #[test]
