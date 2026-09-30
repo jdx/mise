@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, shallowRef } from "vue";
+import { withBase } from "vitepress";
 import { ISSUES_SINCE } from "../.vitepress/releases.mjs";
 import { data } from "../releases.data";
 
 type Release = (typeof data)[number];
-type Entry = Release["sections"][number]["entries"][number];
 
 const releases = data;
 const newestFirst = [...releases].reverse();
@@ -104,20 +104,6 @@ function describe(r: Release) {
 
 const releaseUrl = (r: Release) =>
   `https://github.com/jdx/mise/releases/tag/v${r.version}`;
-const entryUrl = (e: Entry) =>
-  e.commit
-    ? `https://github.com/jdx/mise/commit/${e.commit}`
-    : `https://github.com/jdx/mise/pull/${e.ref?.slice(1)}`;
-
-// Entry text is a pull request title, so it is escaped before its `code` spans
-// become elements.
-const entryHtml = (text: string) =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
-
 // The readout shows the release under the pointer or keyboard focus, then the
 // one last clicked, then the newest. Keeping the clicked one lets the pointer
 // leave a bar and reach the readout's link without it changing. These are
@@ -169,12 +155,36 @@ const visibleMonths = computed(() =>
   showAll.value ? months.value : months.value.slice(0, 3),
 );
 
-// Releases whose notes are open. Their entries are only rendered while open, so
-// showing every month does not put thousands of list items on the page.
+// Releases whose notes are open, and the notes themselves. A release's notes are
+// fetched when it is first opened (the notes of all of them are too big to put
+// in the page), as HTML the docs build rendered from its GitHub release.
+type Notes =
+  | { state: "loading" }
+  | { state: "failed" }
+  | { state: "ready"; title: string; html: string };
 const opened = reactive(new Set<string>());
-function onToggle(version: string, event: Event) {
-  if ((event.target as HTMLDetailsElement).open) opened.add(version);
-  else opened.delete(version);
+const notes = reactive(new Map<string, Notes>());
+
+async function loadNotes(r: Release) {
+  if (!r.notes || notes.has(r.version)) return;
+  notes.set(r.version, { state: "loading" });
+  try {
+    const res = await fetch(withBase(`/release-notes/${r.version}.json`));
+    if (!res.ok) throw new Error(res.statusText);
+    const { title, html } = await res.json();
+    notes.set(r.version, { state: "ready", title, html });
+  } catch {
+    notes.set(r.version, { state: "failed" });
+  }
+}
+
+function onToggle(r: Release, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) {
+    opened.add(r.version);
+    loadNotes(r);
+  } else {
+    opened.delete(r.version);
+  }
 }
 
 // Open a release's notes and bring its row into view, expanding the list first
@@ -184,6 +194,7 @@ async function openRelease(r: Release) {
   if (!visibleMonths.value.some((g) => g.month === month)) showAll.value = true;
   selected.value = r;
   opened.add(r.version);
+  loadNotes(r);
   await nextTick();
   document
     .getElementById(`release-${r.version}`)
@@ -330,7 +341,7 @@ const barHeight = (value: number, max: number) =>
           <details
             :id="`release-${r.version}`"
             :open="opened.has(r.version)"
-            @toggle="onToggle(r.version, $event)"
+            @toggle="onToggle(r, $event)"
           >
             <summary class="row">
               <span class="version">{{ r.version }}</span>
@@ -347,19 +358,31 @@ const barHeight = (value: number, max: number) =>
             </summary>
             <div v-if="opened.has(r.version)" class="notes">
               <p class="notes-head">
+                <strong v-if="notes.get(r.version)?.state === 'ready'">{{
+                  (notes.get(r.version) as any).title
+                }}</strong>
                 <a :href="releaseUrl(r)">{{ r.version }} on GitHub ↗</a>
               </p>
-              <template v-for="sec in r.sections" :key="sec.title">
-                <h4>{{ sec.title }}</h4>
-                <ul>
-                  <li v-for="(e, i) in sec.entries" :key="i">
-                    <strong v-if="e.scope">{{ e.scope }}</strong>
-                    <span v-html="entryHtml(e.text)"></span>
-                    <span v-if="e.author" class="by">@{{ e.author }}</span>
-                    <a v-if="e.ref" :href="entryUrl(e)">{{ e.ref }}</a>
-                  </li>
-                </ul>
-              </template>
+              <p v-if="!r.notes" class="notes-status">
+                This release has no notes on GitHub.
+              </p>
+              <p
+                v-else-if="notes.get(r.version)?.state === 'failed'"
+                class="notes-status"
+              >
+                The notes could not be loaded. They are on GitHub.
+              </p>
+              <p
+                v-else-if="notes.get(r.version)?.state !== 'ready'"
+                class="notes-status"
+              >
+                Loading…
+              </p>
+              <div
+                v-else
+                class="rendered"
+                v-html="(notes.get(r.version) as any).html"
+              ></div>
             </div>
           </details>
         </li>
@@ -574,33 +597,34 @@ details:not([open]) > .row .version::before {
   margin: 0 0 4px;
   font-size: 13px;
 }
-.notes h4 {
-  margin: 12px 0 4px;
-  font-size: 14px;
+.notes-head strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 15px;
 }
-.notes ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.notes li {
-  margin: 0;
-  padding: 1px 0;
-  line-height: 1.5;
-}
-.notes li strong {
-  margin-right: 4px;
+.notes-status {
+  margin: 4px 0;
   color: var(--vp-c-text-2);
-  font-weight: 600;
 }
-.notes .by {
-  margin-left: 6px;
-  color: var(--vp-c-text-3);
-  font-size: 12px;
+/* The notes are HTML from the docs build, so the page's own markdown styles
+   apply; these only keep a release's headings in proportion to the list. */
+.rendered :deep(h1),
+.rendered :deep(h2),
+.rendered :deep(h3) {
+  margin: 16px 0 6px;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 15px;
+  letter-spacing: 0;
 }
-.notes li a {
-  margin-left: 6px;
-  font-size: 12px;
+.rendered :deep(p),
+.rendered :deep(ul),
+.rendered :deep(ol) {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+.rendered :deep(div[class*="language-"]) {
+  margin: 8px 0;
 }
 .size {
   height: 8px;

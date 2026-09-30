@@ -589,6 +589,11 @@ fi
 # effort: a release with no count shows a dash there, and the next run fills it.
 node docs/.vitepress/releases-issues.mjs || echo "Could not count issues for the releases page"
 
+# Snapshot the notes of every published release into release-notes/ so the docs
+# build does not have to fetch them. The release this PR will publish has no
+# notes yet; the docs build fetches that one itself, and the next run commits it.
+node docs/.vitepress/release-notes-sync.mjs || echo "Could not snapshot release notes for the releases page"
+
 # TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
 # mise up
 mise lock
@@ -647,6 +652,7 @@ git add \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
 	docs/.vitepress/releases-issues.json \
+	release-notes/ \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \

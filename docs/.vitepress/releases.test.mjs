@@ -53,26 +53,3 @@ test("lists each pull request once, from every line that links it", () => {
   const [newer] = parseChangelog(CHANGELOG);
   assert.deepEqual(newer.prs, [101, 102, 103]);
 });
-
-test("reads each entry's scope, author and reference", () => {
-  const [newer] = parseChangelog(CHANGELOG);
-  const [features, fixes, chore, thanks] = newer.sections;
-  assert.deepEqual(features.entries, [
-    { text: "add a thing", scope: "config", author: "jdx", ref: "#101" },
-  ]);
-  assert.equal(fixes.entries[1].text, "fix it again");
-  assert.deepEqual(chore.entries, [
-    { text: "tidy", author: "jdx", ref: "abc1234", commit: "abc1234" },
-  ]);
-  assert.deepEqual(thanks.entries, [
-    { text: "@someone made their first contribution", ref: "#101" },
-  ]);
-});
-
-test("notes leave out the vendored Aqua registry updates", () => {
-  const [newer] = parseChangelog(CHANGELOG);
-  assert.deepEqual(
-    newer.sections.map((s) => s.title),
-    ["🚀 Features", "🐛 Bug Fixes", "Chore", "New Contributors"],
-  );
-});
