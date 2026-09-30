@@ -869,6 +869,7 @@ fn merge_manager_packages(
                 .options
                 .brew_cask_appdir(&request.name)
                 .map(PathBuf::from);
+            let app_spec = mp.options.macos_app_spec(&request.name).cloned();
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -877,26 +878,46 @@ fn merge_manager_packages(
                 }
                 Some(_) => {}
                 None => {
-                    if adopt || appdir.is_some() {
-                        let options =
-                            manager_options
+                    match manager_name.as_str() {
+                        "brew-cask" if adopt || appdir.is_some() => {
+                            let options = manager_options
                                 .entry(manager_name.clone())
                                 .or_insert_with(|| ManagerPackageOptions::BrewCask {
                                     adopt: BTreeSet::new(),
                                     appdirs: BTreeMap::new(),
                                 });
-                        if let ManagerPackageOptions::BrewCask {
-                            adopt: cask_adopt,
-                            appdirs,
-                        } = options
-                        {
-                            if adopt {
-                                cask_adopt.insert(request.name.clone());
-                            }
-                            if let Some(appdir) = appdir {
-                                appdirs.entry(request.name.clone()).or_insert(appdir);
+                            if let ManagerPackageOptions::BrewCask {
+                                adopt: cask_adopt,
+                                appdirs,
+                            } = options
+                            {
+                                if adopt {
+                                    cask_adopt.insert(request.name.clone());
+                                }
+                                if let Some(appdir) = appdir {
+                                    appdirs.entry(request.name.clone()).or_insert(appdir);
+                                }
                             }
                         }
+                        "macos-app" if adopt => {
+                            let options = manager_options
+                                .entry(manager_name.clone())
+                                .or_insert_with(|| ManagerPackageOptions::MacosApp {
+                                    specs: BTreeMap::new(),
+                                    adopt: BTreeSet::new(),
+                                });
+                            if let ManagerPackageOptions::MacosApp {
+                                specs,
+                                adopt: app_adopt,
+                            } = options
+                            {
+                                if let Some(spec) = app_spec {
+                                    specs.entry(request.name.clone()).or_insert(spec);
+                                }
+                                app_adopt.insert(request.name.clone());
+                            }
+                        }
+                        _ => {}
                     }
                     requests.push(request);
                 }
@@ -2749,6 +2770,28 @@ mod tests {
         );
         assert_eq!(spec.artifact, "Nuvio.app");
         assert_eq!(spec.version, "1.1.20");
+        assert!(apps.options.brew_cask_adopt("nuvio"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tracked_macos_app_adoption_keeps_its_declaration() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app", adopt = true }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        assert!(apps.options.macos_app_spec("nuvio").is_some());
         assert!(apps.options.brew_cask_adopt("nuvio"));
         Ok(())
     }

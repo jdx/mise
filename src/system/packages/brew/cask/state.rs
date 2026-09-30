@@ -453,6 +453,9 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
 }
 
 pub(super) fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
+    if cask.appdir.is_some() {
+        return Some("per-cask app directories are not supported for pruning".to_string());
+    }
     if !artifacts.pkgs.is_empty() {
         return Some("pkg artifacts require uninstall support".to_string());
     }

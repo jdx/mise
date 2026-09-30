@@ -6844,6 +6844,13 @@ fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
     };
     assert_eq!(cask_prune_blocker(&cask, &direct), None);
 
+    cask.appdir = Some(PathBuf::from("/Users/example/Applications"));
+    assert_eq!(
+        cask_prune_blocker(&cask, &direct).as_deref(),
+        Some("per-cask app directories are not supported for pruning")
+    );
+    cask.appdir = None;
+
     cask.artifacts = vec![serde_json::json!({"uninstall": [{"quit": "com.example"}]})];
     assert!(cask_prune_blocker(&cask, &direct).is_some());
 
