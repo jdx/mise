@@ -214,9 +214,16 @@ async function openRelease(r: Release, addToHistory = true) {
     ?.scrollIntoView({ block: "center" });
 }
 function openFromHash() {
-  const version = decodeURIComponent(location.hash.slice(1));
-  const r = releases.find((r) => r.version === version);
-  if (r) openRelease(r, false);
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const r = releases.find((r) => r.version === hash);
+  if (r) {
+    openRelease(r, false);
+  } else if (!hash && selected.value) {
+    // Back from a chosen release to the bare page undoes the choice. Other
+    // hashes (a link inside a release's notes) are left to the browser.
+    opened.delete(selected.value.version);
+    selected.value = null;
+  }
 }
 onMounted(() => {
   openFromHash();
