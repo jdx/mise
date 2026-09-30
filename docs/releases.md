@@ -6,7 +6,8 @@ editLink: false
 # Releases
 
 <script setup>
-import Releases from '/components/releases.vue';
+import Releases from '@jdx/docs-releases/Releases.vue';
+import { data } from './releases.data';
 </script>
 
 mise ships a release almost every day. Each bar below is one release, oldest on
@@ -20,4 +21,4 @@ A change is one changelog entry: a feature, a fix, a registry addition, a
 dependency update, and so on. New-contributor thanks and the upstream Aqua
 registry updates mise vendors are not counted.
 
-<Releases />
+<Releases :data="data" />

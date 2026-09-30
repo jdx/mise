@@ -585,14 +585,13 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
-# Count the issues the new release resolves for the docs releases page. Best
-# effort: a release with no count shows a dash there, and the next run fills it.
-node docs/.vitepress/releases-issues.mjs || echo "Could not count issues for the releases page"
-
-# Snapshot the notes of every published release into release-notes/ so the docs
-# build does not have to fetch them. The release this PR will publish has no
-# notes yet; the docs build fetches that one itself, and the next run commits it.
-node docs/.vitepress/release-notes-sync.mjs || echo "Could not snapshot release notes for the releases page"
+# For the docs releases page (@jdx/docs-releases): count the issues the new
+# release resolves, and snapshot the notes of every published release into
+# release-notes/ so the docs build does not have to fetch them. The release this
+# PR will publish has no notes yet; the docs build fetches that one itself, and
+# the next run commits it. Best effort: a release with no count shows a dash
+# there, and the next run fills it in.
+node node_modules/@jdx/docs-releases/bin/docs-releases.mjs sync || echo "Could not update release data for the releases page"
 
 # TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
 # mise up

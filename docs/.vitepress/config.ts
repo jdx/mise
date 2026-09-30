@@ -1,15 +1,12 @@
 import { socialCard, writeSocialCard } from "./social-images.mjs";
 import { pageDescription } from "./social-descriptions.mjs";
 import { showreelFiles } from "./showreel.data";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
-import {
-  renderAllReleaseNotes,
-  renderReleaseNotes,
-} from "./release-notes-render";
+import { releaseNotesPlugin } from "@jdx/docs-releases/vitepress";
 import {
   groupIconMdPlugin,
   groupIconVitePlugin,
@@ -198,27 +195,7 @@ export default withMermaid(
         target: "es2022",
       },
       plugins: [
-        {
-          // The Releases page loads a release's notes from
-          // /release-notes/<version>.json. A build writes those files (see
-          // buildEnd); this answers for them in dev.
-          name: "mise-release-notes-dev",
-          apply: "serve",
-          configureServer(server) {
-            const siteConfig = (server.config as any).vitepress;
-            server.middlewares.use(
-              "/release-notes/",
-              async (req, res, next) => {
-                const version = /^\/([\w.-]+)\.json$/.exec(req.url ?? "")?.[1];
-                const notes =
-                  version && (await renderReleaseNotes(siteConfig, version));
-                if (!notes) return next();
-                res.setHeader("content-type", "application/json");
-                res.end(JSON.stringify(notes));
-              },
-            );
-          },
-        },
+        ...releaseNotesPlugin(),
         {
           name: "mise-schema-assets",
           apply: "build",
@@ -457,13 +434,8 @@ export default withMermaid(
         '<script id="check-dark-mode" data-cfasync="false">',
       );
     },
-    async buildEnd(siteConfig) {
+    buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
-      const notesOut = join(siteConfig.outDir, "release-notes");
-      mkdirSync(notesOut, { recursive: true });
-      for (const [version, notes] of await renderAllReleaseNotes(siteConfig)) {
-        writeFileSync(join(notesOut, `${version}.json`), JSON.stringify(notes));
-      }
     },
   }),
 );
