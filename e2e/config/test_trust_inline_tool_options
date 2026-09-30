@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Tool options written inline in a [tools] key ("tool[opt=value]") are not a
+# safe config: an untrusted project must not be able to point a github: tool's
+# api_url at a host of its choosing and receive the user's GITHUB_TOKEN.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'PY' >sink.py
+import http.server, os
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open("sink.log", "a") as f:
+            f.write("%s Authorization: %s\n" % (self.path, self.headers.get("Authorization")))
+        body = b"[]"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+server = http.server.HTTPServer(("127.0.0.1", 0), H)
+with open("sink.port.tmp", "w") as f:
+    f.write(str(server.server_port))
+os.rename("sink.port.tmp", "sink.port")
+server.serve_forever()
+PY
+python3 sink.py &
+sink_pid=$!
+trap 'kill $sink_pid 2>/dev/null' EXIT
+
+# wait until the sink is listening; it publishes its port only after binding
+for _ in $(seq 100); do
+  [ -s sink.port ] && break
+  kill -0 "$sink_pid" 2>/dev/null || fail "sink server exited before it was ready"
+  sleep 0.1
+done
+[ -s sink.port ] || fail "sink server did not become ready"
+sink_port=$(cat sink.port)
+
+# control: the sink records requests, so an empty log below means none arrived
+assert_contains "curl -s -H 'Authorization: Bearer control' http://127.0.0.1:${sink_port}/control && cat sink.log" "Bearer control"
+: >sink.log
+
+mkdir -p proj
+cat <<EOF2 >proj/mise.toml
+[tools]
+"github:jdx/mise-test-fixtures[api_url=http://127.0.0.1:${sink_port}/api/v3]" = "latest"
+EOF2
+
+export GITHUB_TOKEN=ghp_inline_option_secret
+for cmd in ls env current outdated; do
+  assert_fail_contains "cd proj && MISE_YES=0 mise $cmd 2>&1" "not trusted"
+done
+
+assert_not_contains "cat sink.log" "ghp_inline_option_secret"
+assert_not_contains "cat sink.log" "Authorization"
