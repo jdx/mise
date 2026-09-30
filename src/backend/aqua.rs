@@ -5950,6 +5950,18 @@ mod lock_candidate_tests {
     use crate::platform::Platform;
 
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use confique::Layer;
+
+    /// Pins the `libc` setting so a test does not depend on the runner's `MISE_LIBC` or
+    /// global config. Dropping the guard restores the default settings.
+    fn pin_libc_setting(libc: &str) -> crate::test::SettingsGuard {
+        let guard = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.libc = Some(libc.to_string());
+        Settings::reset(Some(partial));
+        guard
+    }
 
     fn build_lock_candidates(
         version: &str,
@@ -6720,6 +6732,7 @@ no_asset: true
 
     #[test]
     fn test_libc_asset_preference_uses_tool_libc() {
+        let _settings = pin_libc_setting("gnu");
         let linux = PlatformTarget::new(Platform::parse("linux-arm64").unwrap());
         assert_eq!(
             libc_asset_preference(&linux, Some("musl")),
@@ -6780,7 +6793,29 @@ no_asset: true
     }
 
     #[test]
+    fn test_musl_setting_requests_musl_for_every_musl_target() {
+        let _settings = pin_libc_setting("musl");
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        // A target that is not the host's gets the setting too, so a lockfile written on one
+        // machine agrees with every other.
+        let other = PlatformTarget::new(Platform::parse("linux-riscv64-musl").unwrap());
+
+        assert_eq!(
+            AquaBackend::asset_libc(&other, None).as_deref(),
+            Some("musl")
+        );
+        assert_eq!(
+            libc_asset_preference(&other, Some("gnu")),
+            LibcAssetPreference::MuslStrict
+        );
+        assert!(!locked_asset_matches_expected(gnu, gnu, &other, None));
+        assert!(locked_asset_matches_expected(musl, gnu, &other, None));
+    }
+
+    #[test]
     fn test_locked_musl_sibling_stays_valid_on_implicit_musl_target() {
+        let _settings = pin_libc_setting("gnu");
         let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
         let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
         let alpine = PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap());
@@ -6884,6 +6919,7 @@ no_asset: true
 
     #[test]
     fn test_package_for_implicit_musl_target_keeps_registry_gnu_asset() {
+        let _settings = pin_libc_setting("gnu");
         // An Alpine host is a musl platform nothing asked for: a registry entry that names only
         // a gnu build installs that build instead of a musl build that may not exist.
         let mut pkg = AquaPackage::default();
