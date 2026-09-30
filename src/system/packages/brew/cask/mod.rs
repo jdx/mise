@@ -952,6 +952,7 @@ impl BrewCaskManager {
         }
         record_cask_action(cask.manager, &mut journal, "activated")?;
         remove_obsolete_app_targets(
+            &cask,
             locked_ownership.as_ref(),
             &artifacts.app_target_paths_for(&cask)?,
         );
@@ -3009,7 +3010,7 @@ fn remove_obsolete_generic_artifacts(
 /// their path. The old receipt's fingerprint must still match, which leaves a
 /// bundle a user has changed since the previous install alone.
 #[cfg(unix)]
-fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBuf]) {
+fn remove_obsolete_app_targets(cask: &Cask, previous: Option<&CaskReceipt>, current: &[PathBuf]) {
     let Some(previous) = previous else {
         return;
     };
@@ -3030,6 +3031,9 @@ fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBu
             continue;
         };
         let cleanup = (|| -> Result<()> {
+            if cask_target_claimed_by_another(cask.manager, &cask.token, path)? {
+                return Ok(());
+            }
             let parent = ensure_trusted_appdir(parent_path)?;
             if cask_target_fingerprint_at(&parent.fd, name)? != record.fingerprint {
                 return Ok(());
@@ -3046,7 +3050,7 @@ fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBu
 }
 
 #[cfg(not(unix))]
-fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBuf]) {
+fn remove_obsolete_app_targets(cask: &Cask, previous: Option<&CaskReceipt>, current: &[PathBuf]) {
     let Some(previous) = previous else {
         return;
     };
@@ -3057,7 +3061,8 @@ fn remove_obsolete_app_targets(previous: Option<&CaskReceipt>, current: &[PathBu
         let Some(record) = previous.targets.iter().find(|record| record.path == *path) else {
             continue;
         };
-        if record.fingerprint.kind == CaskTargetKind::Directory
+        if !cask_target_claimed_by_another(cask.manager, &cask.token, path).unwrap_or(true)
+            && record.fingerprint.kind == CaskTargetKind::Directory
             && cask_target_record_matches(record).unwrap_or(false)
         {
             if let Err(err) = file::remove_all(path) {

@@ -1460,6 +1460,48 @@ pub(super) fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Resu
     Ok(())
 }
 
+/// Whether a different cask's durable receipt currently claims `target`.
+///
+/// Callers hold [`lock_app_mutations`] while querying this, so a concurrent
+/// installation cannot claim the target between this check and removal.
+pub(super) fn cask_target_claimed_by_another(
+    manager: CaskManager,
+    token: &str,
+    target: &Path,
+) -> Result<bool> {
+    for other_manager in [CaskManager::BrewCask, CaskManager::MacosApp] {
+        let root = cask_state_root(other_manager);
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to read cask state {}", root.display()));
+            }
+        };
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir()
+                || (other_manager == manager && entry.file_name() == token)
+            {
+                continue;
+            }
+            for version in std::fs::read_dir(entry.path())? {
+                let version = version?;
+                if !version.file_type()?.is_dir() {
+                    continue;
+                }
+                if let Some(receipt) = read_receipt(&version.path())?
+                    && receipt.targets.iter().any(|record| record.path == target)
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 pub(super) fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if homebrew_metadata_present(&candidate.token)? {
         bail!("Homebrew now owns this cask");
