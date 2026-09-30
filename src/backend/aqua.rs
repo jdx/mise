@@ -1196,6 +1196,26 @@ impl AquaBackend {
         Self::apply_aqua_libc_replacement(pkg, target_os, libc.map(str::to_string))
     }
 
+    /// A lockfile that records SLSA provenance must not install without an expected signer,
+    /// or the SLSA requirement would be dropped without a word.
+    fn ensure_locked_slsa_signer(
+        tv: &ToolVersion,
+        locked_provenance: Option<&ProvenanceType>,
+        pkg: &AquaPackage,
+    ) -> Result<()> {
+        if locked_provenance.is_some_and(ProvenanceType::is_slsa)
+            && !pkg
+                .slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.has_signer_identity())
+        {
+            bail!(
+                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Set slsa_signer_identity and slsa_signer_issuer in the tool options, or refresh the lockfile after choosing another verification method."
+            );
+        }
+        Ok(())
+    }
+
     /// Applies the tool options that change the package itself. Install and lock both resolve
     /// the package, so they share this to stay in agreement.
     fn apply_tool_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
@@ -2783,18 +2803,7 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
-        if locked_provenance
-            .as_ref()
-            .is_some_and(ProvenanceType::is_slsa)
-            && !pkg
-                .slsa_provenance
-                .as_ref()
-                .is_some_and(|s| s.has_signer_identity())
-        {
-            return Err(eyre!(
-                "Lockfile requires SLSA provenance for {tv}, but Aqua registry metadata has no signer_identity and signer_issuer. Set slsa_signer_identity and slsa_signer_issuer in the tool options, or refresh the lockfile after choosing another verification method."
-            ));
-        }
+        Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
         if has_lockfile_integrity
             && !force_verify
             && !locked_provenance
@@ -4818,6 +4827,36 @@ packages:
             AquaBackend::package_with_options_for_pkg(&tv, slsa_package(), &["v2.6.0"]).unwrap();
 
         assert!(pkg.slsa_provenance.as_ref().unwrap().has_signer_identity());
+    }
+
+    #[test]
+    fn test_locked_slsa_requires_signer_from_registry_or_options() {
+        let backend = Arc::new(BackendArg::new(
+            "osv-scanner".to_string(),
+            Some("aqua:google/osv-scanner".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend, "2.6.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "2.6.0".to_string());
+        let locked = ProvenanceType::Slsa { url: None };
+
+        // The registry names the provenance asset but not the signer: the reported failure.
+        let err = AquaBackend::ensure_locked_slsa_signer(&tv, Some(&locked), &slsa_package())
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Set slsa_signer_identity and slsa_signer_issuer"),
+            "unexpected error: {err}"
+        );
+
+        // The same lock installs once the tool options supply the signer.
+        let opts = slsa_signer_opts(Some("identity"), Some("issuer"));
+        let pkg =
+            AquaBackend::apply_tool_options(slsa_package(), &AquaOptions::new(&opts)).unwrap();
+        AquaBackend::ensure_locked_slsa_signer(&tv, Some(&locked), &pkg).unwrap();
+
+        // A lock that does not require SLSA is unaffected.
+        AquaBackend::ensure_locked_slsa_signer(&tv, None, &slsa_package()).unwrap();
     }
 
     #[test]
