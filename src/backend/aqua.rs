@@ -102,15 +102,21 @@ impl<'a> AquaOptions<'a> {
     /// expected SLSA signer when the registry entry names the provenance asset but not who
     /// signed it, and take precedence over registry metadata.
     fn slsa_signer(&self) -> Result<Option<(&'a str, &'a str)>> {
-        let identity = self
-            .values
-            .str("slsa_signer_identity")
-            .filter(|s| !s.is_empty());
-        let issuer = self
-            .values
-            .str("slsa_signer_issuer")
-            .filter(|s| !s.is_empty());
-        match (identity, issuer) {
+        // A present but empty or non-string value is an error: skipping it would silently
+        // turn off the SLSA check the user asked for.
+        let signer_option = |key: &str| -> Result<Option<&'a str>> {
+            let Some(value) = self.values.raw().opts.get(key) else {
+                return Ok(None);
+            };
+            match value.as_str() {
+                Some(s) if !s.is_empty() => Ok(Some(s)),
+                _ => bail!("invalid aqua `{key}` option {value}: expected a non-empty string"),
+            }
+        };
+        match (
+            signer_option("slsa_signer_identity")?,
+            signer_option("slsa_signer_issuer")?,
+        ) {
             (Some(identity), Some(issuer)) => Ok(Some((identity, issuer))),
             (None, None) => Ok(None),
             _ => bail!("aqua `slsa_signer_identity` and `slsa_signer_issuer` must be set together"),
@@ -4781,7 +4787,12 @@ packages:
             .chain(pkg.version_overrides.iter())
             .map(|p| p.slsa_provenance.as_ref().unwrap())
         {
-            assert!(slsa.has_signer_identity());
+            assert_eq!(
+                slsa.signer_identity.as_deref(),
+                Some(
+                    "https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0"
+                )
+            );
             assert_eq!(
                 slsa.signer_issuer.as_deref(),
                 Some("https://token.actions.githubusercontent.com")
@@ -4819,6 +4830,24 @@ packages:
             let err = AquaBackend::apply_slsa_signer_options(slsa_package(), &opts).unwrap_err();
             assert!(
                 err.to_string().contains("must be set together"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_slsa_signer_options_reject_empty_and_non_string_values() {
+        for (identity, issuer) in [
+            (toml::Value::String(String::new()), "issuer"),
+            (toml::Value::Integer(5), "issuer"),
+        ] {
+            let mut opts = slsa_signer_opts(None, Some(issuer));
+            opts.opts
+                .insert("slsa_signer_identity".to_string(), identity);
+            let opts = AquaOptions::new(&opts);
+            let err = AquaBackend::apply_slsa_signer_options(slsa_package(), &opts).unwrap_err();
+            assert!(
+                err.to_string().contains("expected a non-empty string"),
                 "unexpected error: {err}"
             );
         }
