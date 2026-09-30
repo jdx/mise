@@ -7,6 +7,10 @@ static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
+/// 128 + SIGINT, the conventional status for a process interrupted by Ctrl-C.
+/// Shells use it to tell an interrupt from an ordinary failure.
+const INTERRUPTED_EXIT_CODE: i32 = 130;
+
 pub async fn exit_signal() -> i32 {
     loop {
         tokio::signal::ctrl_c().await.unwrap();
@@ -20,7 +24,7 @@ pub async fn exit_signal() -> i32 {
         CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
         if should_exit {
             debug!("Ctrl-C pressed, exiting...");
-            return 1;
+            return INTERRUPTED_EXIT_CODE;
         }
     }
 }

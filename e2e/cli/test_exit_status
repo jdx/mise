@@ -170,7 +170,22 @@ fi
 status=0
 wait "$mise_pid" || status=$?
 output="$(cat "$output_file")"
-if [[ $status -ne 1 ]]; then
-  fail "mise run expected exit code 1 after repeated Ctrl-C, got $status: $output"
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected exit code 130 after repeated Ctrl-C, got $status: $output"
 fi
 assert_not_contains_text "$output" "exit with status"
+
+# A non-task command interrupted by Ctrl-C exits 130 so a calling shell can tell
+# an interrupt from an ordinary failure.
+ready_file="$TMPDIR/exit-status-exec-ready"
+output_file="$TMPDIR/exit-status-exec-output"
+mise exec -- bash -c 'touch "$1"; sleep 30' _ "$ready_file" >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "mise exec child" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+if [[ $status -ne 130 ]]; then
+  fail "mise exec expected exit code 130 after Ctrl-C, got $status: $(cat "$output_file")"
+fi
