@@ -1109,14 +1109,14 @@ impl AquaBackend {
     /// settings are explicit, so they still select the musl build.
     fn asset_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
         let libc = Self::target_libc(target, tool_libc)?;
-        if libc == "musl" && !Self::musl_requested(target, tool_libc) {
+        if libc == "musl" && !Self::musl_requested(tool_libc) {
             return None;
         }
         Some(libc)
     }
 
-    fn musl_requested(target: &PlatformTarget, tool_libc: Option<&str>) -> bool {
-        tool_libc == Some("musl") || (target.is_current() && Settings::get().libc() == Some("musl"))
+    fn musl_requested(tool_libc: Option<&str>) -> bool {
+        tool_libc == Some("musl") || Settings::get().libc() == Some("musl")
     }
 
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
@@ -5577,9 +5577,7 @@ fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> Li
     }
     match AquaBackend::target_libc(target, tool_libc).as_deref() {
         Some("gnu") => LibcAssetPreference::GlibcStrict,
-        Some("musl") if AquaBackend::musl_requested(target, tool_libc) => {
-            LibcAssetPreference::MuslStrict
-        }
+        Some("musl") if AquaBackend::musl_requested(tool_libc) => LibcAssetPreference::MuslStrict,
         // A musl platform nobody asked for takes the registry's asset as named.
         Some("musl") => LibcAssetPreference::Exact,
         _ => LibcAssetPreference::GlibcWithFallback,
