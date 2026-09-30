@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, shallowRef } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  shallowRef,
+} from "vue";
 import { withBase } from "vitepress";
 import { ISSUES_SINCE } from "../.vitepress/releases.mjs";
 import { data } from "../releases.data";
@@ -188,23 +196,36 @@ function onToggle(r: Release, event: Event) {
 }
 
 // Open a release's notes and bring its row into view, expanding the list first
-// when its month is one of the older ones.
-async function openRelease(r: Release) {
+// when its month is one of the older ones. Choosing a release adds a history
+// entry for its hash, so Back returns to the one before; following the URL
+// itself (Back, or editing the hash) opens the release without adding one.
+async function openRelease(r: Release, addToHistory = true) {
   const month = r.date.slice(0, 7);
   if (!visibleMonths.value.some((g) => g.month === month)) showAll.value = true;
   selected.value = r;
   opened.add(r.version);
   loadNotes(r);
+  if (addToHistory && location.hash !== `#${r.version}`) {
+    history.pushState(null, "", `#${r.version}`);
+  }
   await nextTick();
   document
     .getElementById(`release-${r.version}`)
     ?.scrollIntoView({ block: "center" });
-  history.replaceState(null, "", `#${r.version}`);
 }
-onMounted(() => {
+function openFromHash() {
   const version = decodeURIComponent(location.hash.slice(1));
   const r = releases.find((r) => r.version === version);
-  if (r) openRelease(r);
+  if (r) openRelease(r, false);
+}
+onMounted(() => {
+  openFromHash();
+  window.addEventListener("hashchange", openFromHash);
+  window.addEventListener("popstate", openFromHash);
+});
+onUnmounted(() => {
+  window.removeEventListener("hashchange", openFromHash);
+  window.removeEventListener("popstate", openFromHash);
 });
 
 const chartHeight = 140;
