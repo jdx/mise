@@ -737,7 +737,7 @@ impl Backend for AquaBackend {
         let pkg = Self::apply_aqua_libc_replacement(
             pkg,
             target_os,
-            Self::target_libc(target, self.tool_libc),
+            Self::asset_libc(target, self.tool_libc),
         );
         let mut pkg = Self::apply_var_options(pkg, &opts)?;
 
@@ -1062,11 +1062,8 @@ impl AquaBackend {
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let target_libc = Self::target_variant_libc(&target, tool_libc);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
-        let pkg = Self::apply_aqua_libc_replacement(
-            pkg,
-            target_os,
-            Self::target_libc(&target, tool_libc),
-        );
+        let pkg =
+            Self::apply_aqua_libc_replacement(pkg, target_os, Self::asset_libc(&target, tool_libc));
         Self::apply_var_options(pkg, &opts)
     }
 
@@ -1101,6 +1098,25 @@ impl AquaBackend {
                 None
             }
         })
+    }
+
+    /// The libc to rewrite registry asset names to, or `None` to use the registry's names as
+    /// they are.
+    ///
+    /// A musl platform that nothing asked for explicitly keeps the registry's names: aqua
+    /// registries list the builds that exist, and a tool whose entry names only a gnu build
+    /// has no musl build for mise to invent. The tool's `libc` option and `libc = "musl"` in
+    /// settings are explicit, so they still select the musl build.
+    fn asset_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
+        let libc = Self::target_libc(target, tool_libc)?;
+        if libc == "musl" && !Self::musl_requested(target, tool_libc) {
+            return None;
+        }
+        Some(libc)
+    }
+
+    fn musl_requested(target: &PlatformTarget, tool_libc: Option<&str>) -> bool {
+        tool_libc == Some("musl") || (target.is_current() && Settings::get().libc() == Some("musl"))
     }
 
     fn target_variant_libc(target: &PlatformTarget, tool_libc: Option<&str>) -> Option<String> {
@@ -5561,7 +5577,11 @@ fn libc_asset_preference(target: &PlatformTarget, tool_libc: Option<&str>) -> Li
     }
     match AquaBackend::target_libc(target, tool_libc).as_deref() {
         Some("gnu") => LibcAssetPreference::GlibcStrict,
-        Some("musl") => LibcAssetPreference::MuslStrict,
+        Some("musl") if AquaBackend::musl_requested(target, tool_libc) => {
+            LibcAssetPreference::MuslStrict
+        }
+        // A musl platform nobody asked for takes the registry's asset as named.
+        Some("musl") => LibcAssetPreference::Exact,
         _ => LibcAssetPreference::GlibcWithFallback,
     }
 }
@@ -6476,7 +6496,17 @@ no_asset: true
         let linux_musl = PlatformTarget::new(Platform::parse("linux-arm64-musl").unwrap());
         assert_eq!(
             libc_asset_preference(&linux_musl, Some("gnu")),
+            LibcAssetPreference::Exact
+        );
+        assert_eq!(
+            libc_asset_preference(&linux_musl, Some("musl")),
             LibcAssetPreference::MuslStrict
+        );
+        assert_eq!(AquaBackend::asset_libc(&linux_musl, Some("gnu")), None);
+        assert_eq!(AquaBackend::asset_libc(&linux_musl, None), None);
+        assert_eq!(
+            AquaBackend::asset_libc(&linux_musl, Some("musl")).as_deref(),
+            Some("musl")
         );
 
         let macos = PlatformTarget::new(Platform::parse("macos-arm64").unwrap());
