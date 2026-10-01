@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 
-cat <<TOML >mise.toml
-[tools]
-node = "latest"
-TOML
-
 mkdir -p "$MISE_DATA_DIR/installs/node/20.0.0/bin"
 
-# Any mise command triggers startup migrations.
+# The temporary runtime-symlink migration expired in 2026.10.0 and must
+# no longer run during startup.
 assert "mise --version >/dev/null"
 
-assert "test -f $MISE_DATA_DIR/migrations/runtime-symlink-dirs-v2"
-
-rm -f mise.toml
+assert_not "test -e $MISE_DATA_DIR/migrations/runtime-symlink-dirs-v2 && echo marker" "marker"

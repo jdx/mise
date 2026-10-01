@@ -17,6 +17,9 @@ cat <<EOF >mise.toml
 EOF
 # re-uses tool options
 mise use ubi:cilium/cilium-cli
+# `latest` rebuilds runtime symlinks; this must remain valid after the
+# 2026.10.0 runtime-symlink migration retirement.
+assert "mise install ubi:cilium/cilium-cli"
 assert "cat mise.toml" '[tools]
 "ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }'
 

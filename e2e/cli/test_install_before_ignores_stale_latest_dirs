@@ -10,6 +10,10 @@ full = "github:jdx/mise-test-fixtures"
 explicit_backend = true
 EOF
 
+# The retired startup migration no longer repairs stale directories during a
+# read-only listing. An install still rebuilds the selector link from the
+# concrete install and repairs the stale `latest` directory.
+mise install github:jdx/mise-test-fixtures@1.0.0
 output=$(mise ls github:jdx/mise-test-fixtures)
 latest_link="$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/latest"
 link_target=$(readlink "$latest_link")

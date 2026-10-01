@@ -10,7 +10,7 @@ use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
 use crate::toolset::{ToolRequest, Toolset, install_state};
-use crate::{backend, env, file};
+use crate::{env, file};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -57,15 +57,6 @@ fn run_all_rebuilds<T>(
         errors.len(),
         errors.iter().map(|err| format!("{err:#}")).join("\n")
     ))
-}
-
-pub(crate) async fn migrate_real_dirs(config: &Config) -> Result<()> {
-    for backend in backend::list() {
-        for installs_dir in install_dirs_for(&backend) {
-            migrate_real_dirs_in_dir(config, &backend, &installs_dir)?;
-        }
-    }
-    Ok(())
 }
 
 /// All install directories to consider for a backend: the backend's primary
@@ -174,26 +165,6 @@ fn rebuild_symlinks_in_dir(
     Ok(())
 }
 
-fn migrate_real_dirs_in_dir(
-    config: &Config,
-    backend: &Arc<dyn Backend>,
-    installs_dir: &Path,
-) -> Result<()> {
-    let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
-    let symlinks = list_symlinks_for_dir(config, None, backend, installs_dir);
-    for (from, to) in symlinks {
-        let from_name = from.clone();
-        let from = installs_dir.join(from);
-        if !from.exists() || is_runtime_symlink(&from) || concrete_installs.contains(&from_name) {
-            continue;
-        }
-        trace!("Replacing stale runtime dir: {}", from.display());
-        file::remove_all(&from)?;
-        make_symlink_or_file(&to, &from)?;
-    }
-    Ok(())
-}
-
 /// Build symlinks for versions found in a specific install directory.
 fn list_symlinks_for_dir(
     config: &Config,
@@ -204,7 +175,7 @@ fn list_symlinks_for_dir(
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
     for v in installed_versions_in_dir(backend, installs_dir) {
-        if is_temporary_runtime_label(&v) {
+        if is_runtime_selector_label(&v) {
             continue;
         }
         let (prefix, _) = split_version_prefix(&v);
@@ -331,7 +302,7 @@ fn generated_names_for(v: &str) -> Vec<String> {
 fn generated_symlink_namespace(installs_dir: &Path) -> HashSet<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
-        .filter(|v| !is_temporary_runtime_label(v))
+        .filter(|v| !is_runtime_selector_label(v))
         .flat_map(|v| generated_names_for(&v))
         .collect()
 }
@@ -437,17 +408,10 @@ fn is_concrete_install(v: &str) -> bool {
     version.chars().any(|c| c.is_ascii_digit()) && Versioning::new(version).is_some()
 }
 
-fn is_temporary_runtime_label(v: &str) -> bool {
-    debug_assert!(
-        {
-            let remove_version = Versioning::new("2026.10.0").unwrap();
-            *crate::version::V < remove_version
-        },
-        "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
-    );
-    // The 2026.4 runtime symlink regression created real "latest" dirs. Treat
-    // only that literal label as generated state: numeric prefixes like "25"
-    // may be concrete installs requested by users and must not be migrated.
+fn is_runtime_selector_label(v: &str) -> bool {
+    // A real `latest` directory is stale selector state. It must not suppress
+    // rebuilding `latest` as a link to the concrete installed version. Numeric
+    // prefixes remain eligible because they can be explicit user installs.
     v == "latest"
 }
 
