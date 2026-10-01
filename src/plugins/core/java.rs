@@ -356,12 +356,8 @@ impl JavaPlugin {
     async fn tv_to_metadata(&self, tv: &ToolVersion) -> Result<&JavaMetadata> {
         let v: String = self.tv_to_java_version(tv);
         let release_type = self.tv_release_type(tv);
-        let m = self
-            .fetch_java_metadata(&release_type)
-            .await?
-            .get(&v)
-            .ok_or_else(|| eyre!("no metadata found for version {}", tv.version))?;
-        Ok(m)
+        let metadata = self.fetch_java_metadata(&release_type).await?;
+        find_java_metadata(metadata, &v, &tv.version, &current_java_platform())
     }
 
     async fn download_java_metadata(
@@ -531,13 +527,7 @@ impl Backend for JavaPlugin {
         let metadata = self
             .fetch_java_metadata_for_target(&release_type, target)
             .await?;
-        let m = metadata.get(&version).ok_or_else(|| {
-            eyre!(
-                "no metadata found for version {} on {}",
-                tv.version,
-                target.to_key()
-            )
-        })?;
+        let m = find_java_metadata(&metadata, &version, &tv.version, &target.platform)?;
 
         Ok(PlatformInfo {
             checksum: m.checksum.clone(),
@@ -703,6 +693,21 @@ impl Backend for JavaPlugin {
     }
 }
 
+fn find_java_metadata<'a>(
+    metadata: &'a HashMap<String, JavaMetadata>,
+    version: &str,
+    requested_version: &str,
+    platform: &Platform,
+) -> Result<&'a JavaMetadata> {
+    metadata.get(version).ok_or_else(|| {
+        eyre!(
+            "no metadata found for version {} on {}",
+            requested_version,
+            platform.to_key()
+        )
+    })
+}
+
 fn java_os(platform: &Platform) -> &str {
     if platform.is_macos() {
         "macosx"
@@ -833,6 +838,42 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn java_missing_metadata_includes_version_and_platform() {
+        let metadata = HashMap::new();
+        for key in [
+            "windows-arm64",
+            "windows-x64",
+            "macos-arm64",
+            "linux-x64-musl",
+        ] {
+            let platform = Platform::parse(key).unwrap();
+            let error = find_java_metadata(&metadata, "zulu-8", "zulu-8", &platform).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("no metadata found for version zulu-8 on {key}")
+            );
+        }
+    }
+
+    #[test]
+    fn java_missing_metadata_preserves_requested_version() {
+        let platform = Platform::parse("windows-arm64").unwrap();
+        let error = find_java_metadata(&HashMap::new(), "openjdk-8", "8", &platform).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "no metadata found for version 8 on windows-arm64"
+        );
+    }
+
+    #[test]
+    fn java_metadata_lookup_preserves_matching_entry() {
+        let platform = Platform::parse("windows-x64").unwrap();
+        let metadata = HashMap::from([("openjdk-8".to_string(), JavaMetadata::default())]);
+        let found = find_java_metadata(&metadata, "openjdk-8", "8", &platform).unwrap();
+        assert!(std::ptr::eq(found, &metadata["openjdk-8"]));
+    }
 
     fn opts_with_release_type(release_type: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
