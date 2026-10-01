@@ -524,10 +524,6 @@ Append `?ref=<branch|tag|commit>` to the URL to check out a ref instead of the d
         arg "<GIT_URL|OWNER/REPO>"
     }
     flag --replace-history help="Replace local dotfile history while adopting a setup repository" requires=--adopt
-    flag --from-git help="Deprecated alias for --adopt" hide=#true {
-        conflicts "--from" "--adopt"
-        arg <GIT_URL>
-    }
     flag --from-dir help="Directory used for the repository cloned by --from" requires=--from {
         arg <DIR>
     }
@@ -1692,10 +1688,6 @@ installs persistent global configuration; preview that choice with `--dry-run`.
 """#
         flag --adopt help="Adopt global configuration or shared dotfile history on each target" {
             conflicts "--source" "--copy-link" "--copy-links" "--exclude"
-            arg "<GIT_URL|OWNER/REPO>"
-        }
-        flag --from-git help="Deprecated alias for --adopt" hide=#true {
-            conflicts "--adopt" "--source" "--copy-link" "--copy-links" "--exclude"
             arg "<GIT_URL|OWNER/REPO>"
         }
         flag --github-relay-read-only help="Borrow read-only GitHub access for this invocation"

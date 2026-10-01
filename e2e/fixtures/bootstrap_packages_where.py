@@ -228,7 +228,7 @@ class PackagesWhere(unittest.TestCase):
 
     def test_source_flags_conflict_with_query(self):
         """Reject repository source options before a local lookup can ignore their requested behavior."""
-        for flag in ["--from", "--adopt", "--from-git"]:
+        for flag in ["--from", "--adopt"]:
             with self.subTest(flag=flag):
                 self.failure(
                     ["bootstrap", flag, "packages", "packages", "where", "brew:widget"],

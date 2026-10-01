@@ -19,7 +19,7 @@ b() {
 }
 export second
 export -f b
-assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert_succeed "b bootstrap --adopt file://$origin --yes"
 assert_fail "test -e $second/.config/mise/config.toml"
 echo independently-enrolled >"$second/.machine-added"
 assert_succeed "b bootstrap dotfiles track $second/.machine-added"

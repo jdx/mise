@@ -1742,7 +1742,7 @@ mod tests {
 
         // `run` rejects a setup source alongside a subcommand, so these never
         // reach the watcher and must keep a console to say so
-        for source in ["--from", "--adopt", "--from-git"] {
+        for source in ["--from", "--adopt"] {
             assert!(
                 !unattended(&[
                     "mise",
