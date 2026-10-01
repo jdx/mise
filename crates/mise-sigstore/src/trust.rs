@@ -109,7 +109,13 @@ fn identity_ends_with_workflow(identity: &str, expected: &str) -> bool {
     if expected.is_empty() {
         return false;
     }
-    let path = identity.split_once('@').map_or(identity, |(path, _)| path);
+    // A GitHub Actions ref always starts with `refs/`, and a workflow file name
+    // cannot contain `/`, so the first `@refs/` is the real boundary even when the
+    // file name contains `@`. Anything else falls back to the first `@`.
+    let path = identity
+        .split_once("@refs/")
+        .or_else(|| identity.split_once('@'))
+        .map_or(identity, |(path, _)| path);
     let Some(prefix) = path.strip_suffix(expected) else {
         return false;
     };
