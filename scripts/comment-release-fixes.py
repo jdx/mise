@@ -113,11 +113,12 @@ def strip_noise(body):
 
 
 PR_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       body
-      closingIssuesReferences(first: 20) {
+      closingIssuesReferences(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
         nodes { number state repository { nameWithOwner } }
       }
     }
@@ -145,11 +146,21 @@ BOT_LOGINS = {"github-actions[bot]", "github-actions"}
 
 def issue_targets(pr):
     """Issues a PR closed, plus discussions it closed by keyword."""
-    data = graphql(PR_QUERY, owner=OWNER, name=NAME, number=pr)["repository"]
-    pull = data["pullRequest"]
+    nodes = []
+    cursor = None
+    while True:
+        variables = {"owner": OWNER, "name": NAME, "number": pr}
+        if cursor:
+            variables["cursor"] = cursor
+        pull = graphql(PR_QUERY, **variables)["repository"]["pullRequest"]
+        refs = pull["closingIssuesReferences"]
+        nodes += refs["nodes"]
+        if not refs["pageInfo"]["hasNextPage"]:
+            break
+        cursor = refs["pageInfo"]["endCursor"]
     issues = {
         node["number"]
-        for node in pull["closingIssuesReferences"]["nodes"]
+        for node in nodes
         if node["state"] == "CLOSED" and node["repository"]["nameWithOwner"] == REPO
     }
     # A number that is not an issue may be a discussion; `discussion(number:)`
