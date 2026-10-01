@@ -31,7 +31,7 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, SlsaArtifact, SlsaSignerIdentity};
+pub use mise_sigstore::{AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -512,21 +512,26 @@ pub fn is_api_failure(error: &AttestationError) -> bool {
     matches!(error, AttestationError::Api(_) | AttestationError::Http(_))
 }
 
-/// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
+/// Verify a keyless Cosign signature or bundle against the expected signer
+/// identity. Passthrough — no token needed.
 pub async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
+    identity: &CosignIdentity,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
     if !mise_settings::Settings::get().generate_lockfiles() {
-        return mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path).await;
+        return mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path, identity)
+            .await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let signature_digest = mise_sigstore::calculate_file_digest(sig_or_bundle_path).await?;
-    let key = format!("cosign:{artifact_digest}:{signature_digest}");
+    // The identity is part of the key: a result shared across callers must
+    // not let a verification with weaker constraints satisfy a stricter one.
+    let key = format!("cosign:{artifact_digest}:{signature_digest}:{identity:?}");
     shared_verification(
         key,
-        mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path),
+        mise_sigstore::verify_cosign_signature(artifact_path, sig_or_bundle_path, identity),
     )
     .await
 }
