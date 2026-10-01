@@ -37,7 +37,7 @@ b() {
 }
 export second
 export -f b
-assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert_succeed "b bootstrap --adopt file://$origin --yes"
 assert_succeed "b dot pull --yes"
 assert "cat $second/.codex/config.toml" 'model = "x"'
 

@@ -20,7 +20,7 @@ b() {
 }
 export second
 export -f b
-assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert_succeed "b bootstrap --adopt file://$origin --yes"
 echo incoming >~/.native
 assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed 'b bootstrap dotfiles sync --fetch-only'

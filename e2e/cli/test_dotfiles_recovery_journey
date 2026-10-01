@@ -32,7 +32,7 @@ wrapper journey-b "$B"
 wrapper journey-c "$C"
 b="$PWD/journey-b"
 c="$PWD/journey-c"
-assert_succeed "$b bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_succeed "$b bootstrap --adopt file://$origin --yes --only dotfiles"
 assert "cat $B/.config/journey/bindings" 'initial'
 assert_fail "test -e $B/.config/journey/monitor"
 
@@ -95,7 +95,7 @@ assert_succeed "$b bootstrap dotfiles undo --yes"
 assert "cat $B/.config/journey/bindings" 'laptop edit'
 
 # Fresh-machine bootstrap restores shared state, but not private machine files.
-assert_succeed "$c bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
 assert "cat $C/.config/journey/bindings" 'incoming edit'
 assert_fail "test -e $C/.config/journey/monitor"
 assert_succeed "$c bootstrap dotfiles rollback $C/.config/journey/bindings --to $initial --yes"

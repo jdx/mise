@@ -86,7 +86,6 @@ assert_contains "cat '$SSH_LOG'" '--repository-dry-run'
 assert_contains "cat '$SSH_LOG'" 'bootstrap --dry-run'
 test ! -e remotes/two/.config/mise/.git
 assert_contains "mise bootstrap remote --host one --adopt '$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'Would adopt'
-assert_contains "mise bootstrap remote --host one --from-git='$source_repo' --remote-mise '$binary' --only dotfiles --dry-run 2>&1" 'This will be removed in mise 2026.10.0.'
 test ! -e remotes/one/.config/mise/.git
 assert "cat remotes/one/.config/mise/config.local.toml" '# machine local'
 mise bootstrap remote --host one --host two --adopt "$source_repo" --remote-mise "$binary" --only dotfiles --yes
