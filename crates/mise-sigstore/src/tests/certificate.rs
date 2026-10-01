@@ -201,3 +201,62 @@ fn signer_workflow_rejects_expected_containing_identity() {
 
     assert!(err.contains("Workflow verification failed"));
 }
+
+#[test]
+fn signer_workflow_accepts_repository_qualified_workflow() {
+    verify_signer_workflow_identity(
+        Some("https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v1.0.0"),
+        Some("jdx/mise/.github/workflows/release.yml"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn signer_workflow_rejects_longer_workflow_file_name() {
+    let err = verify_signer_workflow_identity(
+        Some("https://github.com/evil/mise/.github/workflows/release.yml.evil.yml@refs/heads/main"),
+        Some(".github/workflows/release.yml"),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("Workflow verification failed"));
+}
+
+#[test]
+fn signer_workflow_rejects_match_inside_ref() {
+    let err = verify_signer_workflow_identity(
+        Some(
+            "https://github.com/evil/mise/.github/workflows/ci.yml@refs/heads/x/.github/workflows/release.yml",
+        ),
+        Some(".github/workflows/release.yml"),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("Workflow verification failed"));
+}
+
+#[test]
+fn signer_workflow_rejects_partial_leading_segment() {
+    let err = verify_signer_workflow_identity(
+        Some("https://github.com/jdx/mise/.github/workflows/prerelease.yml@refs/tags/v1.0.0"),
+        Some("release.yml"),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("Workflow verification failed"));
+}
+
+#[test]
+fn signer_workflow_rejects_empty_expected() {
+    let err = verify_signer_workflow_identity(
+        Some("https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v1.0.0"),
+        Some(""),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("Workflow verification failed"));
+}
