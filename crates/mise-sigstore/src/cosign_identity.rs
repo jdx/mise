@@ -215,11 +215,49 @@ fn check_constraint(
 }
 
 fn compile_constraint(pattern: &str) -> Result<regex::Regex> {
-    regex::Regex::new(pattern).map_err(|e| {
+    regex::Regex::new(&expand_quoted_literals(pattern)).map_err(|e| {
         AttestationError::Verification(format!(
             "invalid cosign regular expression {pattern:?}: {e}"
         ))
     })
+}
+
+/// Cosign compiles these patterns with Go's RE2, where `\Q...\E` matches the
+/// text between them literally. The aqua registry relies on it to pin a tag
+/// (`@refs/tags/\Q{{.Version}}\E$`), but Rust's `regex` rejects the escape, so
+/// rewrite each quoted span into an escaped literal. Like RE2, an unterminated
+/// `\Q` quotes through the end of the pattern.
+fn expand_quoted_literals(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut rest = pattern;
+    while let Some(start) = find_unescaped(rest, "\\Q") {
+        out.push_str(&rest[..start]);
+        let quoted = &rest[start + 2..];
+        let (literal, tail) = quoted.split_once("\\E").unwrap_or((quoted, ""));
+        out.push_str(&regex::escape(literal));
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The byte offset of the first `needle` that is not itself escaped by an
+/// odd run of backslashes, so `\\Q` (a literal backslash then `Q`) is left alone.
+fn find_unescaped(haystack: &str, needle: &str) -> Option<usize> {
+    let bytes = haystack.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            if haystack[i..].starts_with(needle) {
+                return Some(i);
+            }
+            // skip the escaped character
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 fn mismatch(what: &str, found: &[String]) -> AttestationError {
