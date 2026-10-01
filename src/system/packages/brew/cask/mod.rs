@@ -152,7 +152,10 @@ fn installed_skip_reason(
     };
     let app_path = cask_app_target_path(cask, app.target_name()?)?;
     if receipt.apps.as_slice() != [app_path.clone()] {
-        return Ok(Some("skipped: app target differs from ownership record"));
+        // A changed per-cask appdir deliberately relocates the bundle. The
+        // old receipt remains ownership evidence for cleanup, but it must not
+        // make the new destination look like a self-updating installed app.
+        return Ok(None);
     }
     let Ok(live) = read_app_version(&app_path) else {
         return Ok(Some("skipped: installed app version is unreadable"));
