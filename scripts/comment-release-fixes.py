@@ -44,16 +44,50 @@ def graphql(query, **variables):
     return json.loads(gh(*args))["data"]
 
 
+def stable_releases_after(tag, limit=10):
+    """Up to `limit` stable releases listed after `tag`, newest first.
+
+    Pages through the whole list, since a manual backfill can name any tag.
+    """
+    found = False
+    after = []
+    page = 1
+    while len(after) < limit:
+        releases = json.loads(
+            gh("api", f"repos/{REPO}/releases?per_page=100&page={page}")
+        )
+        if not releases:
+            break
+        for release in releases:
+            if release["draft"] or release["prerelease"]:
+                continue
+            if release["tag_name"] == tag:
+                found = True
+            elif found:
+                after.append(release["tag_name"])
+        page += 1
+    if not found:
+        raise SystemExit(f"{tag} is not a stable release")
+    return after[:limit]
+
+
 def previous_release(tag):
-    """The stable release published just before `tag`, in publication order."""
-    releases = json.loads(gh("api", f"repos/{REPO}/releases?per_page=50"))
-    stable = [r["tag_name"] for r in releases if not r["draft"] and not r["prerelease"]]
-    if tag not in stable:
-        raise SystemExit(f"{tag} is not among the {len(stable)} latest stable releases")
-    index = stable.index(tag) + 1
-    if index >= len(stable):
-        raise SystemExit(f"no release before {tag}")
-    return stable[index]
+    """The nearest earlier release that `tag` actually contains.
+
+    The release list is ordered by creation, not by history, so a release that
+    was drafted early and published late can sit out of order. Take the first
+    candidate that is an ancestor of `tag` rather than trusting the list order.
+    """
+    for candidate in stable_releases_after(tag):
+        status = gh(
+            "api",
+            f"repos/{REPO}/compare/{candidate}...{tag}?per_page=1",
+            "--jq",
+            ".status",
+        ).strip()
+        if status == "ahead":
+            return candidate
+    raise SystemExit(f"no earlier release found that {tag} contains")
 
 
 def release_prs(base, tag):
@@ -91,15 +125,22 @@ query($owner: String!, $name: String!, $number: Int!) {
 }"""
 
 DISCUSSION_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     discussion(number: $number) {
       id
       closed
-      comments(last: 100) { nodes { body } }
+      comments(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { body author { login } }
+      }
     }
   }
 }"""
+
+# The comments are posted with GITHUB_TOKEN. REST reports that author as
+# "github-actions[bot]" and GraphQL as "github-actions".
+BOT_LOGINS = {"github-actions[bot]", "github-actions"}
 
 
 def issue_targets(pr):
@@ -141,7 +182,14 @@ def post(label, send, tag, pr):
 
 
 def comment_on_issue(number, tag, pr):
-    comments = gh("api", "--paginate", f"repos/{REPO}/issues/{number}/comments", "--jq", ".[].body")
+    # Only our own comments count: anyone can paste the marker into theirs.
+    comments = gh(
+        "api",
+        "--paginate",
+        f"repos/{REPO}/issues/{number}/comments",
+        "--jq",
+        '.[] | select(.user.login == "github-actions[bot]") | .body',
+    )
     if marker(tag) in comments:
         print(f"skip issue #{number}: already commented for {tag}")
         return
@@ -153,11 +201,38 @@ def comment_on_issue(number, tag, pr):
     )
 
 
+def discussion_comments(number):
+    """(id, closed, comments) for a discussion, or None if it is not one."""
+    cursor = None
+    comments = []
+    while True:
+        variables = {"owner": OWNER, "name": NAME, "number": number}
+        if cursor:
+            variables["cursor"] = cursor
+        discussion = graphql(DISCUSSION_QUERY, **variables)["repository"]["discussion"]
+        if not discussion:
+            return None
+        page = discussion["comments"]
+        comments += page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
+            return discussion["id"], discussion["closed"], comments
+        cursor = page["pageInfo"]["endCursor"]
+
+
 def comment_on_discussion(number, tag, pr):
-    discussion = graphql(DISCUSSION_QUERY, owner=OWNER, name=NAME, number=number)["repository"]["discussion"]
-    if not discussion:
+    found = discussion_comments(number)
+    if not found:
         return  # a PR or issue number, not a discussion
-    if any(marker(tag) in c["body"] for c in discussion["comments"]["nodes"]):
+    discussion_id, closed, comments = found
+    if not closed:
+        # Naming a discussion with a closing keyword does not close it if the
+        # discussion was reopened or the keyword was a loose match.
+        print(f"skip discussion #{number}: still open")
+        return
+    if any(
+        marker(tag) in c["body"] and (c["author"] or {}).get("login") in BOT_LOGINS
+        for c in comments
+    ):
         print(f"skip discussion #{number}: already commented for {tag}")
         return
     mutation = (
@@ -166,7 +241,7 @@ def comment_on_discussion(number, tag, pr):
     )
     post(
         f"discussion #{number}",
-        lambda body: graphql(mutation, id=discussion["id"], body=body),
+        lambda body: graphql(mutation, id=discussion_id, body=body),
         tag,
         pr,
     )
