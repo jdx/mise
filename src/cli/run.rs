@@ -929,13 +929,19 @@ impl Run {
         // already succeeded.
         let telemetry = self.telemetry.clone();
         let result = if let Some(timeout) = timeout {
-            tokio::time::timeout(
-                timeout,
-                self.parallelize_tasks(config, execution_tasks, previewed_tools),
-            )
-            .await
-            .map_err(|_| eyre!("mise run timed out after {:?}", timeout))
-            .flatten()
+            let run = self.parallelize_tasks(config, execution_tasks, previewed_tools);
+            tokio::pin!(run);
+            match tokio::time::timeout(timeout, run.as_mut()).await {
+                Ok(result) => result,
+                Err(_) => {
+                    // Dropping the run does not stop the task jobs it spawned,
+                    // and their children would outlive mise. It is dropped only
+                    // afterwards: that aborts the jobs, whose commands would
+                    // leave the running list before they could be stopped.
+                    crate::cmd::CmdLineRunner::terminate_all().await;
+                    Err(eyre!("mise run timed out after {:?}", timeout))
+                }
+            }
         } else {
             self.parallelize_tasks(config, execution_tasks, previewed_tools)
                 .await
