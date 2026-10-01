@@ -1,0 +1,50 @@
+name: comment-release-fixes
+
+# Issues close when their PR merges, days before the release ships. Comment
+# "Fixed in vX.Y.Z" on each issue and discussion the release resolved so the
+# reporter knows which version to upgrade to.
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to comment for (e.g., v2026.9.18)"
+        required: true
+        type: string
+      dry_run:
+        description: "Print the comments instead of posting them"
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: comment-release-fixes-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    if: github.repository == 'jdx/mise' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      discussions: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Always run the trusted default-branch script, so a manual run can
+          # also cover a tag cut before this workflow existed.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Comment on resolved issues and discussions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python3 scripts/comment-release-fixes.py "$TAG"
