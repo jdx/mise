@@ -1,5 +1,101 @@
 # Changelog
 
+## [2026.10.0](https://github.com/jdx/mise/compare/v2026.9.18..v2026.10.0) - 2026-10-01
+
+### 🚀 Features
+
+- add per-cask app directory overrides by @jdx in [#13865](https://github.com/jdx/mise/pull/13865)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** install the registry's gnu build on musl hosts instead of requiring a musl asset by @jdx in [#13857](https://github.com/jdx/mise/pull/13857)
+- **(aqua)** accept RE2 quoted literals in cosign identity patterns by @jdx in [#13879](https://github.com/jdx/mise/pull/13879)
+- **(backend)** trust SLSA provenance recorded in a lockfile by @jdx in [#13856](https://github.com/jdx/mise/pull/13856)
+- **(backend)** retire expired runtime symlink migration by @jdx in [#13868](https://github.com/jdx/mise/pull/13868)
+- **(bootstrap)** remove the deprecated --from-git alias by @jdx in [#13872](https://github.com/jdx/mise/pull/13872)
+- **(dotfiles)** diagnose stale history watchers by @jdx in [#13864](https://github.com/jdx/mise/pull/13864)
+- **(java)** include target platform in missing metadata error by @jsiu93 in [#13873](https://github.com/jdx/mise/pull/13873)
+- **(lock)** switch backends for lock entries the config no longer resolves from by @jdx in [#13859](https://github.com/jdx/mise/pull/13859)
+- exit with status 130 on Ctrl-C by @jdx in [#13862](https://github.com/jdx/mise/pull/13862)
+
+### 📚 Documentation
+
+- add a releases page with a timeline of release sizes and resolved issues by @jdx in [#13855](https://github.com/jdx/mise/pull/13855)
+
+### 🧪 Testing
+
+- **(task)** run the Windows console interrupt test in a windowless console by @JamBalaya56562 in [#13763](https://github.com/jdx/mise/pull/13763)
+
+### 📦️ Dependency Updates
+
+- update dependency aube to latest by @renovate[bot] in [#13848](https://github.com/jdx/mise/pull/13848)
+
+### 📦 Registry
+
+- add cloudflare-cf by @jdx in [#13871](https://github.com/jdx/mise/pull/13871)
+
+### Chore
+
+- **(ci)** run clippy on Windows and fix the lints only it finds by @JamBalaya56562 in [#13757](https://github.com/jdx/mise/pull/13757)
+
+### Ci
+
+- **(release)** enforce 15:00 Central cutoff by @jdx in [#13863](https://github.com/jdx/mise/pull/13863)
+- **(release)** comment on resolved issues and discussions with the fixing release by @jdx in [#13870](https://github.com/jdx/mise/pull/13870)
+
+### Security
+
+- **(backend)** enforce signer identity for keyless cosign bundles by @jdx in [#13875](https://github.com/jdx/mise/pull/13875)
+- **(backend)** anchor signer workflow match for GitHub attestations by @jdx in [#13877](https://github.com/jdx/mise/pull/13877)
+- **(config)** require trust for .tool-versions entries with inline options by @jdx in [#13869](https://github.com/jdx/mise/pull/13869)
+
+### New Contributors
+
+- @jsiu93 made their first contribution in [#13873](https://github.com/jdx/mise/pull/13873)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`kunchenguid/no-mistakes`](https://github.com/kunchenguid/no-mistakes)
+
+#### Updated Packages (34)
+
+- [`aquaproj/aqua-registry-updater`](https://github.com/aquaproj/aqua-registry-updater)
+- [`aquaproj/ar2`](https://github.com/aquaproj/ar2)
+- [`aquaproj/registry-tool`](https://github.com/aquaproj/registry-tool)
+- [`lintnet/lintnet`](https://github.com/lintnet/lintnet)
+- [`suzuki-shunsuke/asciinema-trim`](https://github.com/suzuki-shunsuke/asciinema-trim)
+- [`suzuki-shunsuke/ci-info`](https://github.com/suzuki-shunsuke/ci-info)
+- [`suzuki-shunsuke/circleci-config-merge`](https://github.com/suzuki-shunsuke/circleci-config-merge)
+- [`suzuki-shunsuke/cmdx`](https://github.com/suzuki-shunsuke/cmdx)
+- [`suzuki-shunsuke/deny-self-approve`](https://github.com/suzuki-shunsuke/deny-self-approve)
+- [`suzuki-shunsuke/disable-checkout-persist-credentials`](https://github.com/suzuki-shunsuke/disable-checkout-persist-credentials)
+- [`suzuki-shunsuke/docfresh`](https://github.com/suzuki-shunsuke/docfresh)
+- [`suzuki-shunsuke/ghalint`](https://github.com/suzuki-shunsuke/ghalint)
+- [`suzuki-shunsuke/ghaperf`](https://github.com/suzuki-shunsuke/ghaperf)
+- [`suzuki-shunsuke/ghatm`](https://github.com/suzuki-shunsuke/ghatm)
+- [`suzuki-shunsuke/ghcp`](https://github.com/suzuki-shunsuke/ghcp)
+- [`suzuki-shunsuke/ghir`](https://github.com/suzuki-shunsuke/ghir)
+- [`suzuki-shunsuke/ghomfc`](https://github.com/suzuki-shunsuke/ghomfc)
+- [`suzuki-shunsuke/ghproj`](https://github.com/suzuki-shunsuke/ghproj)
+- [`suzuki-shunsuke/ghtkn`](https://github.com/suzuki-shunsuke/ghtkn)
+- [`suzuki-shunsuke/github-comment`](https://github.com/suzuki-shunsuke/github-comment)
+- [`suzuki-shunsuke/langcheck`](https://github.com/suzuki-shunsuke/langcheck)
+- [`suzuki-shunsuke/migrate-urfave-cli-v3`](https://github.com/suzuki-shunsuke/migrate-urfave-cli-v3)
+- [`suzuki-shunsuke/mkghtag`](https://github.com/suzuki-shunsuke/mkghtag)
+- [`suzuki-shunsuke/nllint`](https://github.com/suzuki-shunsuke/nllint)
+- [`suzuki-shunsuke/pinact`](https://github.com/suzuki-shunsuke/pinact)
+- [`suzuki-shunsuke/renovate-issue-action`](https://github.com/suzuki-shunsuke/renovate-issue-action)
+- [`suzuki-shunsuke/rgo`](https://github.com/suzuki-shunsuke/rgo)
+- [`suzuki-shunsuke/sort-issue-template`](https://github.com/suzuki-shunsuke/sort-issue-template)
+- [`suzuki-shunsuke/tfaction-go`](https://github.com/suzuki-shunsuke/tfaction-go)
+- [`suzuki-shunsuke/tfcmt`](https://github.com/suzuki-shunsuke/tfcmt)
+- [`suzuki-shunsuke/tfmv`](https://github.com/suzuki-shunsuke/tfmv)
+- [`suzuki-shunsuke/tfprovidercheck`](https://github.com/suzuki-shunsuke/tfprovidercheck)
+- [`suzuki-shunsuke/tfrstate`](https://github.com/suzuki-shunsuke/tfrstate)
+- [`suzuki-shunsuke/yodoc`](https://github.com/suzuki-shunsuke/yodoc)
+
 ## [2026.9.18](https://github.com/jdx/mise/compare/v2026.9.17..v2026.9.18) - 2026-09-30
 
 ### 🚀 Features
