@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use eyre::{Result, eyre};
 use tempfile::tempdir_in;
 
+use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, SecurityFeature, VersionInfo};
-use crate::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
