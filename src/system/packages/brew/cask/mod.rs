@@ -839,6 +839,7 @@ impl BrewCaskManager {
             // stale receipt claiming the old target is still owned, and this
             // replacement would skip adoption entirely.
             let require_unowned = requires_unowned_target(
+                cask.manager,
                 locked_ownership.as_ref(),
                 &cask_app_target_path(&cask, app.target_name()?)?,
             );
@@ -1682,11 +1683,21 @@ fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
 }
 
 /// Whether this entry must refuse to replace whatever is at `target`.
-fn requires_unowned_target(previous: Option<&CaskReceipt>, target: &Path) -> bool {
+fn requires_unowned_target(
+    manager: CaskManager,
+    previous: Option<&CaskReceipt>,
+    target: &Path,
+) -> bool {
     // Homebrew's Caskroom arbitrates token ownership, not ownership of an
     // arbitrary appdir destination.  In particular, an appdir relocation
     // must not let a prior receipt for A overwrite an unrelated bundle at B.
-    !app_target_is_owned(previous, target)
+    //
+    // With no prior receipt, however, brew-cask retains Homebrew's existing
+    // first-install behavior: an existing app at the normal target is
+    // replaced unless the user chose `adopt`. This check protects a changed
+    // destination only after the receipt proves the token was installed.
+    (!manager.uses_homebrew_caskroom() || previous.is_some())
+        && !app_target_is_owned(previous, target)
 }
 
 /// Whether every app this declaration installs is already recorded as owned.
@@ -1712,7 +1723,11 @@ fn declared_apps_are_owned(
         return Ok(true);
     }
     for app in &artifacts.apps {
-        if requires_unowned_target(previous, &cask_app_target_path(cask, app.target_name()?)?) {
+        if requires_unowned_target(
+            cask.manager,
+            previous,
+            &cask_app_target_path(cask, app.target_name()?)?,
+        ) {
             return Ok(false);
         }
     }
@@ -1785,7 +1800,9 @@ fn warn_existing_app_targets(
     let manager = cask.manager;
     for app in apps {
         let target = cask_app_target_path(cask, app.target_name()?)?;
-        if requires_unowned_target(previous, &target) && target.symlink_metadata().is_ok() {
+        if requires_unowned_target(cask.manager, previous, &target)
+            && target.symlink_metadata().is_ok()
+        {
             warn!(
                 "{}: an app already exists at {} and is not owned by this entry; \
                  apply will refuse unless adopt = true, which takes it over only \

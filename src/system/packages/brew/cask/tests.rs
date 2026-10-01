@@ -9279,6 +9279,7 @@ fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<(
         "an outdated owned bundle permits a safe relocation"
     );
     assert!(requires_unowned_target(
+        CaskManager::BrewCask,
         Some(&receipt),
         &cask_app_target_path(&cask, "Example.app")?
     ));
@@ -9351,6 +9352,7 @@ fn brew_cask_install_preserves_same_version_when_appdir_changes() -> Result<()> 
         Some("already installed")
     );
     assert!(requires_unowned_target(
+        CaskManager::BrewCask,
         Some(&receipt),
         &cask_app_target_path(&cask, "Example.app")?
     ));
@@ -10108,18 +10110,32 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     };
 
     // The recorded target may be replaced: that is an ordinary upgrade.
-    assert!(!requires_unowned_target(Some(&receipt), owned));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&receipt),
+        owned
+    ));
 
     // A renamed artifact names a target the receipt never covered. Without
     // this, changing `artifact` to an app someone else owns would replace it
     // while the stale receipt made the token look installed.
-    assert!(requires_unowned_target(Some(&receipt), renamed));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&receipt),
+        renamed
+    ));
 
     // Same for the app directory moving out from under a valid receipt.
-    assert!(requires_unowned_target(Some(&receipt), relocated));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&receipt),
+        relocated
+    ));
 
-    // No receipt at all means nothing is owned.
-    assert!(requires_unowned_target(None, owned));
+    // A first brew-cask install retains Homebrew's established overwrite
+    // behavior, while macos-app still refuses an unowned target.
+    assert!(!requires_unowned_target(CaskManager::BrewCask, None, owned));
+    assert!(requires_unowned_target(CaskManager::MacosApp, None, owned));
 
     // An adopted app is recorded in metadata_only_apps and is owned too.
     let adopted = CaskReceipt {
@@ -10127,13 +10143,25 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
         metadata_only_apps: vec![owned.to_path_buf()],
         ..receipt
     };
-    assert!(!requires_unowned_target(Some(&adopted), owned));
-    assert!(requires_unowned_target(Some(&adopted), renamed));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&adopted),
+        owned
+    ));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&adopted),
+        renamed
+    ));
 
     // brew-cask's Caskroom arbitrates tokens, but a new appdir destination is
     // still unowned and must not be overwritten merely because the token has
     // a receipt elsewhere.
-    assert!(requires_unowned_target(None, renamed));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        None,
+        renamed
+    ));
     Ok(())
 }
 
@@ -10166,7 +10194,11 @@ fn app_target_ownership_does_not_follow_a_replaced_bundle_symlink() -> Result<()
     std::os::unix::fs::symlink(&new, &old)?;
 
     assert!(paths_resolve_to_same_target(&old, &new));
-    assert!(requires_unowned_target(Some(&receipt), &new));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        Some(&receipt),
+        &new
+    ));
     Ok(())
 }
 
