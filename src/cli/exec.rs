@@ -814,6 +814,10 @@ where
         None => return Err(err_cannot_find_binary_path(&program_name).await),
     };
     env::remove_var(env::MISE_SHIM_PATH_ENV);
+    if is_shim_dispatch {
+        // A native shim that finds its own path here was picked instead of the tool.
+        env::set_var(env::MISE_SHIM_TARGET_ENV, &program);
+    }
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
     // Windows does not support exec in the same way as Unix,
