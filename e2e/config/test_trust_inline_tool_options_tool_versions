@@ -58,3 +58,15 @@ done
 
 assert_not_contains "cat sink.log" "ghp_inline_option_secret"
 assert_not_contains "cat sink.log" "Authorization"
+
+# Tracked-config reloads use a separate trust pre-check. Track the file while it
+# is trusted, drop the trust, and confirm a reload from elsewhere skips it
+# instead of resolving it against the sink.
+(cd proj && mise trust && MISE_YES=0 mise ls)
+: >sink.log
+(cd proj && mise trust --untrust)
+mkdir -p other
+cd other || exit 1
+MISE_YES=0 mise ls --all-sources >/dev/null 2>&1
+assert_not_contains "cat ../sink.log" "ghp_inline_option_secret"
+assert_not_contains "cat ../sink.log" "Authorization"
