@@ -67,6 +67,10 @@ assert_not_contains "cat sink.log" "Authorization"
 (cd proj && mise trust --untrust)
 mkdir -p other
 cd other || exit 1
-MISE_YES=0 mise ls --all-sources >/dev/null 2>&1
+# The trusted run above cached the sink's release list, so an empty sink log
+# alone would not prove the file was skipped: assert the skip itself, and that
+# the tool is not listed.
+assert_contains "MISE_YES=0 MISE_DEBUG=1 mise ls --all-sources 2>&1" "skipping untrusted tracked config"
+assert_not_contains "MISE_YES=0 mise ls --all-sources 2>&1" "mise-test-fixtures"
 assert_not_contains "cat ../sink.log" "ghp_inline_option_secret"
 assert_not_contains "cat ../sink.log" "Authorization"
