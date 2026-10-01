@@ -3533,6 +3533,15 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
     }
 }
 
+/// Whether `err` is the untrusted-config error for a config the user has just
+/// declined to trust, so the declined config is now ignored.
+fn declined_trust_prompt(path: &Path, err: &eyre::Report) -> bool {
+    matches!(
+        err.downcast_ref::<crate::errors::Error>(),
+        Some(crate::errors::Error::UntrustedConfig(_))
+    ) && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
@@ -3564,6 +3573,16 @@ async fn load_all_config_files(
         for f in paths {
             let cf = match parse_config_file(f, idiomatic_filenames).await {
                 Ok(cfg) => cfg,
+                // Declining the trust prompt records an ignore marker, which
+                // makes the config skipped on every later load. Skip it for
+                // the run that was asked too, rather than failing it.
+                Err(err) if declined_trust_prompt(f, &err) => {
+                    debug!(
+                        "skipping config file ignored at the trust prompt: {}",
+                        display_path(f)
+                    );
+                    continue;
+                }
                 Err(err) => {
                     return Err(err.wrap_err(format!(
                         "error parsing config file: {}",
