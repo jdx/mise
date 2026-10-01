@@ -90,6 +90,18 @@ fn cosign_identity_parses_registry_opts() {
 fn cosign_identity_rejects_unknown_or_valueless_certificate_flags() {
     assert!(CosignIdentity::from_opts(&opts(&["--certificate-unknown", "x"])).is_err());
     assert!(CosignIdentity::from_opts(&opts(&["--certificate-identity"])).is_err());
+    // The next option is not a value.
+    assert!(
+        CosignIdentity::from_opts(&opts(&[
+            "--certificate-identity-regexp",
+            "--certificate-oidc-issuer",
+            "https://token.actions.githubusercontent.com",
+        ]))
+        .is_err()
+    );
+    // Inline values are taken verbatim.
+    let identity = CosignIdentity::from_opts(&opts(&["--certificate-identity=--odd"])).unwrap();
+    assert_eq!(identity.identity.as_deref(), Some("--odd"));
 }
 
 #[test]

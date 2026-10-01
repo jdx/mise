@@ -23,7 +23,7 @@ impl CosignIdentity {
     /// silently dropping a constraint would weaken verification.
     pub fn from_opts(opts: &[String]) -> Result<Self> {
         let mut identity = Self::default();
-        let mut iter = opts.iter();
+        let mut iter = opts.iter().peekable();
         while let Some(opt) = iter.next() {
             if !opt.starts_with("--certificate") {
                 continue;
@@ -34,9 +34,15 @@ impl CosignIdentity {
             };
             let value = match inline {
                 Some(value) => value,
-                None => iter.next().cloned().ok_or_else(|| {
-                    AttestationError::Verification(format!("cosign option {flag} requires a value"))
-                })?,
+                // A following option is not this flag's value.
+                None => iter
+                    .next_if(|next| !next.starts_with("--"))
+                    .cloned()
+                    .ok_or_else(|| {
+                        AttestationError::Verification(format!(
+                            "cosign option {flag} requires a value"
+                        ))
+                    })?,
             };
             let slot = match flag {
                 "--certificate-identity" => &mut identity.identity,
