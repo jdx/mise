@@ -14,8 +14,8 @@ for command in "bootstrap" "bootstrap remote"; do
   assert_contains "mise __complete_word__ --shell fish --line 'mise $command --'" "--adopt"
   assert_not_contains "mise __complete_word__ --shell fish --line 'mise $command --'" "--from-git"
 done
-assert_fail "mise bootstrap --from-git old.git --dry-run"
-assert_fail "mise bootstrap remote --host devbox --from-git old.git --dry-run"
+assert_fail "mise bootstrap --from-git old.git --dry-run" "unexpected argument '--from-git' found"
+assert_fail "mise bootstrap remote --host devbox --from-git old.git --dry-run" "unexpected argument '--from-git' found"
 
 mkdir -p "$source_repo"
 git -C "$source_repo" init -q -b main
