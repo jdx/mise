@@ -5267,6 +5267,11 @@
                     "type": "boolean",
                     "description": "adopt an existing identical app artifact instead of replacing it (brew-cask and macos-app)"
                   },
+                  "appdir": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "brew-cask only: application directory for this cask and its cask dependencies; takes precedence over MISE_BREW_CASK_OPT_APPDIR"
+                  },
                   "url": {
                     "type": "string",
                     "minLength": 1,

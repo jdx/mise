@@ -453,6 +453,9 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
 }
 
 pub(super) fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
+    if cask.appdir.is_some() {
+        return Some("per-cask app directories are not supported for pruning".to_string());
+    }
     if !artifacts.pkgs.is_empty() {
         return Some("pkg artifacts require uninstall support".to_string());
     }
@@ -496,8 +499,8 @@ pub(super) fn write_receipt_with_flight_targets(
     flight_directories: &[PathBuf],
     metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
-    let mut target_paths = artifacts.app_target_paths()?;
-    target_paths.extend(artifacts.binary_targets()?);
+    let mut target_paths = artifacts.app_target_paths_for(cask)?;
+    target_paths.extend(artifacts.binary_targets_for(cask)?);
     target_paths.extend(artifacts.font_target_paths()?);
     target_paths.extend(artifacts.completion_target_paths(cask)?);
     target_paths.extend(flight_targets.iter().cloned());
@@ -514,7 +517,7 @@ pub(super) fn write_receipt_with_flight_targets(
         })
         .collect::<Result<Vec<_>>>()?;
     let metadata_only_apps = if cask.auto_updates {
-        artifacts.app_target_paths()?
+        artifacts.app_target_paths_for(cask)?
     } else {
         metadata_only_apps.to_vec()
     };
@@ -528,8 +531,8 @@ pub(super) fn write_receipt_with_flight_targets(
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
         metadata_only_apps,
-        apps: artifacts.app_target_paths()?,
-        binaries: artifacts.binary_targets()?,
+        apps: artifacts.app_target_paths_for(cask)?,
+        binaries: artifacts.binary_targets_for(cask)?,
         fonts: artifacts.font_target_paths()?,
         completions: artifacts.completion_target_paths(cask)?,
         flight_directories: flight_directories.to_vec(),
@@ -1458,6 +1461,56 @@ pub(super) fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Resu
         }
     }
     Ok(())
+}
+
+/// Whether a different cask's durable receipt currently claims `target`.
+///
+/// Callers hold [`lock_app_mutations`] while querying this, so a concurrent
+/// installation cannot claim the target between this check and removal.
+pub(super) fn cask_target_claimed_by_another(
+    manager: CaskManager,
+    token: &str,
+    target: &Path,
+) -> Result<bool> {
+    for other_manager in [CaskManager::BrewCask, CaskManager::MacosApp] {
+        let root = cask_state_root(other_manager);
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to read cask state {}", root.display()));
+            }
+        };
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir()
+                || (other_manager == manager && entry.file_name() == token)
+            {
+                continue;
+            }
+            for version in std::fs::read_dir(entry.path())? {
+                let version = version?;
+                if !version.file_type()?.is_dir() {
+                    continue;
+                }
+                if let Some(receipt) = read_receipt(&version.path())?
+                    && (receipt
+                        .apps
+                        .iter()
+                        .chain(&receipt.metadata_only_apps)
+                        .any(|path| paths_resolve_to_same_target(path, target))
+                        || receipt
+                            .targets
+                            .iter()
+                            .any(|record| paths_resolve_to_same_target(&record.path, target)))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub(super) fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
