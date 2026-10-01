@@ -2729,6 +2729,73 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn brew_cask_appdir_keeps_direct_official_and_bare_declarations() -> Result<()> {
+        for declarations in [
+            r#"
+                "brew-cask:firefox" = { appdir = "/Applications/bare" }
+                "brew-cask:homebrew/cask/firefox" = { appdir = "/Applications/official" }
+            "#,
+            r#"
+                "brew-cask:homebrew/cask/firefox" = { appdir = "/Applications/official" }
+                "brew-cask:firefox" = { appdir = "/Applications/bare" }
+            "#,
+        ] {
+            let (_dir, config_files) = config_map_from_toml(&[(
+                "mise.toml",
+                &format!("[bootstrap.packages]\n{declarations}"),
+            )])?;
+            for packages in [
+                packages_from_config_files(&config_files)?,
+                packages_from_specs_with_config_files(
+                    &["brew-cask:firefox".to_string()],
+                    &config_files,
+                )?,
+            ] {
+                let casks = packages
+                    .into_iter()
+                    .find(|packages| packages.manager.name() == "brew-cask")
+                    .unwrap();
+                assert_eq!(
+                    casks.options.brew_cask_appdir("firefox"),
+                    Some(Path::new("/Applications/bare"))
+                );
+                assert_eq!(
+                    casks.options.brew_cask_appdir("homebrew/cask/firefox"),
+                    Some(Path::new("/Applications/official"))
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn brew_cask_appdir_does_not_alias_custom_taps() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:acme/tools/firefox" = { appdir = "/Applications/acme" }
+            "#,
+        )])?;
+        let packages = packages_from_specs_with_config_files(
+            &["brew-cask:acme/tools/firefox".to_string()],
+            &config_files,
+        )?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(
+            casks.options.brew_cask_appdir("acme/tools/firefox"),
+            Some(Path::new("/Applications/acme"))
+        );
+        assert_eq!(casks.options.brew_cask_appdir("firefox"), None);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn invalid_brew_cask_appdir_keeps_the_configured_cask() -> Result<()> {
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",

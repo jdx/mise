@@ -1499,8 +1499,11 @@ pub(super) fn cask_target_claimed_by_another(
                         .apps
                         .iter()
                         .chain(&receipt.metadata_only_apps)
-                        .any(|path| path == target)
-                        || receipt.targets.iter().any(|record| record.path == target))
+                        .any(|path| paths_resolve_to_same_target(path, target))
+                        || receipt
+                            .targets
+                            .iter()
+                            .any(|record| paths_resolve_to_same_target(&record.path, target)))
                 {
                     return Ok(true);
                 }

@@ -9225,6 +9225,99 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
     Ok(())
 }
 
+/// A self-updating cask may move its one owned bundle to a new appdir, but the
+/// old bundle remains the live version and running-app authority until the
+/// replacement is durable. The new destination is intentionally unowned, so
+/// installation will refuse a manual or another cask's bundle there.
+#[test]
+fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let old = tmp.path().join("old/Example.app");
+    let new = tmp.path().join("new");
+    file::create_dir_all(old.join("Contents"))?;
+    let mut plist = plist::Dictionary::new();
+    plist.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("1.0.0".into()),
+    );
+    plist::Value::Dictionary(plist).to_file_xml(old.join("Contents/Info.plist"))?;
+
+    let mut cask = test_cask("example", "2.0.0");
+    cask.auto_updates = true;
+    cask.appdir = Some(new.clone());
+    cask.artifacts = vec![serde_json::json!({"app": ["Example.app"]})];
+    let artifacts = cask_artifacts(&cask)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: true,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        None,
+        "an outdated owned bundle permits a safe relocation"
+    );
+    assert!(requires_unowned_target(
+        Some(&receipt),
+        &cask_app_target_path(&cask, "Example.app")?
+    ));
+
+    let mut current = plist::Dictionary::new();
+    current.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("2.0.0".into()),
+    );
+    plist::Value::Dictionary(current).to_file_xml(old.join("Contents/Info.plist"))?;
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        Some("skipped: installed app is current, newer, or incomparable"),
+        "a newer or equal old owned bundle must still block relocation"
+    );
+    Ok(())
+}
+
+#[test]
+fn app_target_path_equivalence_follows_the_fixture_filesystem() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let spelled = tmp.path().join("Example.app");
+    file::create_dir_all(&spelled)?;
+    let case_variant = tmp.path().join("example.app");
+
+    // On common Linux CI filesystems the second spelling is distinct and does
+    // not resolve. On a case-insensitive macOS volume it resolves to the same
+    // fixture, exercising the conservative receipt/cleanup path without ever
+    // touching a real application directory.
+    assert_eq!(
+        paths_resolve_to_same_target(&spelled, &case_variant),
+        case_variant.exists()
+    );
+    Ok(())
+}
+
 /// Nested helpers match the bundle; sibling bundles sharing a prefix do not.
 #[test]
 fn running_app_matches_bundle_processes_by_path_component() {
@@ -9930,15 +10023,7 @@ fn staging_directories_are_scoped_per_manager() -> Result<()> {
 /// authorize replacing a different app the declaration later points at — by
 /// renaming `artifact`, or by moving the app directory.
 #[test]
-fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
-    let spec = crate::system::AppSpec {
-        url: "https://example.com/Nuvio.dmg".to_string(),
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
-        artifact: "Nuvio.app".to_string(),
-        version: "1.1.20".to_string(),
-    };
-    let cask = declared_app_cask("nuvio", &spec)?;
-
+fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     let owned = Path::new("/Applications/Nuvio.app");
     let renamed = Path::new("/Applications/Other.app");
     let relocated = Path::new("/Users/someone/Applications/Nuvio.app");
@@ -9961,18 +10046,18 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
     };
 
     // The recorded target may be replaced: that is an ordinary upgrade.
-    assert!(!requires_unowned_target(&cask, Some(&receipt), owned));
+    assert!(!requires_unowned_target(Some(&receipt), owned));
 
     // A renamed artifact names a target the receipt never covered. Without
     // this, changing `artifact` to an app someone else owns would replace it
     // while the stale receipt made the token look installed.
-    assert!(requires_unowned_target(&cask, Some(&receipt), renamed));
+    assert!(requires_unowned_target(Some(&receipt), renamed));
 
     // Same for the app directory moving out from under a valid receipt.
-    assert!(requires_unowned_target(&cask, Some(&receipt), relocated));
+    assert!(requires_unowned_target(Some(&receipt), relocated));
 
     // No receipt at all means nothing is owned.
-    assert!(requires_unowned_target(&cask, None, owned));
+    assert!(requires_unowned_target(None, owned));
 
     // An adopted app is recorded in metadata_only_apps and is owned too.
     let adopted = CaskReceipt {
@@ -9980,13 +10065,13 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
         metadata_only_apps: vec![owned.to_path_buf()],
         ..receipt
     };
-    assert!(!requires_unowned_target(&cask, Some(&adopted), owned));
-    assert!(requires_unowned_target(&cask, Some(&adopted), renamed));
+    assert!(!requires_unowned_target(Some(&adopted), owned));
+    assert!(requires_unowned_target(Some(&adopted), renamed));
 
-    // brew-cask keeps arbitrating by token against Homebrew's Caskroom.
-    let mut brew = cask.clone();
-    brew.manager = CaskManager::BrewCask;
-    assert!(!requires_unowned_target(&brew, None, renamed));
+    // brew-cask's Caskroom arbitrates tokens, but a new appdir destination is
+    // still unowned and must not be overwritten merely because the token has
+    // a receipt elsewhere.
+    assert!(requires_unowned_target(None, renamed));
     Ok(())
 }
 

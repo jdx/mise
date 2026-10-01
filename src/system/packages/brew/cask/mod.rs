@@ -151,13 +151,26 @@ fn installed_skip_reason(
         return Ok(Some("skipped: requires a single owned app"));
     };
     let app_path = cask_app_target_path(cask, app.target_name()?)?;
-    if receipt.apps.as_slice() != [app_path.clone()] {
-        // A changed per-cask appdir deliberately relocates the bundle. The
-        // old receipt remains ownership evidence for cleanup, but it must not
-        // make the new destination look like a self-updating installed app.
-        return Ok(None);
-    }
-    let Ok(live) = read_app_version(&app_path) else {
+    let live_path = match receipt.apps.as_slice() {
+        [owned] if paths_resolve_to_same_target(owned, &app_path) => app_path,
+        // An appdir change can relocate the one bundle this receipt owns.  Do
+        // not generalize this to changed artifacts, multiple apps, or an
+        // incomplete receipt: those do not prove that the old bundle is the
+        // same thing the new declaration will install.  The new destination
+        // remains unowned and is therefore checked by install_app_for before
+        // it can be replaced.
+        [owned]
+            if cask.appdir.is_some()
+                && owned.parent() != app_path.parent()
+                && owned.file_name() == app_path.file_name() =>
+        {
+            owned.clone()
+        }
+        _ => {
+            return Ok(Some("skipped: app target differs from ownership record"));
+        }
+    };
+    let Ok(live) = read_app_version(&live_path) else {
         return Ok(Some("skipped: installed app version is unreadable"));
     };
     if !app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()) {
@@ -165,7 +178,7 @@ fn installed_skip_reason(
             "skipped: installed app is current, newer, or incomparable",
         ));
     }
-    if app_is_running(&app_path) {
+    if app_is_running(&live_path) {
         return Ok(Some("skipped: installed app is running and updates itself"));
     }
     Ok(None)
@@ -786,6 +799,22 @@ impl BrewCaskManager {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }
+            // A relocation has no bundle at the new appdir yet. Recheck the
+            // old receipt targets as well: one may have launched after the
+            // first skip decision, and cleanup must never remove a running
+            // self-updater.
+            if let Some(receipt) = &locked_ownership {
+                for app in &receipt.apps {
+                    if app_is_running(app) {
+                        return leave_running_app(
+                            &cask,
+                            &mut flight_targets,
+                            &tmp_caskroom,
+                            &stage,
+                        );
+                    }
+                }
+            }
             // A pkg-only cask names no app, so check the bundles its package
             // receipts installed. Nothing has been installed yet at this point.
             // The locked receipt's IDs find what the installed version put
@@ -812,7 +841,6 @@ impl BrewCaskManager {
             // stale receipt claiming the old target is still owned, and this
             // replacement would skip adoption entirely.
             let require_unowned = requires_unowned_target(
-                &cask,
                 locked_ownership.as_ref(),
                 &cask_app_target_path(&cask, app.target_name()?)?,
             );
@@ -1651,13 +1679,16 @@ fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
             .apps
             .iter()
             .chain(&receipt.metadata_only_apps)
-            .any(|owned| owned == target)
+            .any(|owned| paths_resolve_to_same_target(owned, target))
     })
 }
 
 /// Whether this entry must refuse to replace whatever is at `target`.
-fn requires_unowned_target(cask: &Cask, previous: Option<&CaskReceipt>, target: &Path) -> bool {
-    !cask.manager.uses_homebrew_caskroom() && !app_target_is_owned(previous, target)
+fn requires_unowned_target(previous: Option<&CaskReceipt>, target: &Path) -> bool {
+    // Homebrew's Caskroom arbitrates token ownership, not ownership of an
+    // arbitrary appdir destination.  In particular, an appdir relocation
+    // must not let a prior receipt for A overwrite an unrelated bundle at B.
+    !app_target_is_owned(previous, target)
 }
 
 /// Whether every app this declaration installs is already recorded as owned.
@@ -1668,23 +1699,33 @@ fn requires_unowned_target(cask: &Cask, previous: Option<&CaskReceipt>, target: 
 /// installed and the unowned-target policy never runs. Treating that as not
 /// installed is what makes a retarget take effect.
 ///
-/// Always true for `brew-cask`, which arbitrates by token against Homebrew's
-/// Caskroom; this changes nothing there.
 fn declared_apps_are_owned(
     cask: &Cask,
     artifacts: &CaskArtifacts,
     previous: Option<&CaskReceipt>,
 ) -> Result<bool> {
     for app in &artifacts.apps {
-        if requires_unowned_target(
-            cask,
-            previous,
-            &cask_app_target_path(cask, app.target_name()?)?,
-        ) {
+        if requires_unowned_target(previous, &cask_app_target_path(cask, app.target_name()?)?) {
             return Ok(false);
         }
     }
     Ok(true)
+}
+
+/// Compare paths as the filesystem does when both targets exist.
+///
+/// Receipt paths preserve their original spelling. On a case-insensitive
+/// volume, lexical comparison alone can miss a receipt for `Example.app`
+/// while acting on `example.app`; canonicalization recognizes that alias. On
+/// case-sensitive filesystems the alternate spelling cannot resolve and stays
+/// distinct. If either path is unavailable, fail closed to lexical equality.
+fn paths_resolve_to_same_target(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .canonicalize()
+            .ok()
+            .zip(right.canonicalize().ok())
+            .is_some_and(|(left, right)| left == right)
 }
 
 /// Flag app targets a plan cannot predict the outcome for.
@@ -1700,7 +1741,7 @@ fn warn_existing_app_targets(
     let manager = cask.manager;
     for app in apps {
         let target = cask_app_target_path(cask, app.target_name()?)?;
-        if requires_unowned_target(cask, previous, &target) && target.symlink_metadata().is_ok() {
+        if requires_unowned_target(previous, &target) && target.symlink_metadata().is_ok() {
             warn!(
                 "{}: an app already exists at {} and is not owned by this entry; \
                  apply will refuse unless adopt = true, which takes it over only \
@@ -3034,10 +3075,21 @@ fn remove_obsolete_app_targets(cask: &Cask, previous: Option<&CaskReceipt>, curr
         return;
     };
     for path in &previous.apps {
-        if current.contains(path) || previous.metadata_only_apps.contains(path) {
+        if current
+            .iter()
+            .any(|current| paths_resolve_to_same_target(current, path))
+            || previous
+                .metadata_only_apps
+                .iter()
+                .any(|metadata_only| paths_resolve_to_same_target(metadata_only, path))
+        {
             continue;
         }
-        let Some(record) = previous.targets.iter().find(|record| record.path == *path) else {
+        let Some(record) = previous
+            .targets
+            .iter()
+            .find(|record| paths_resolve_to_same_target(&record.path, path))
+        else {
             continue;
         };
         if record.fingerprint.kind != CaskTargetKind::Directory {
