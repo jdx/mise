@@ -264,18 +264,10 @@ impl TasksLs {
                     .collect();
                 task_spec.cmd.aliases.extend(prefixed_aliases);
             }
+            // Aliases get no `:` form: they exist to save typing, and listing every spelling
+            // of every alias crowds the candidates. `mise tasks ls` shows them.
             if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
-                // An absolute alias (`//apps/web:x`, `node:@scope/app#x`) is offered as is;
-                // `:` before it would be expanded under the current root and name nothing.
-                let relative_aliases = task
-                    .aliases
-                    .iter()
-                    .filter(|a| !a.starts_with("//") && !crate::task::is_workspace_project_task(a))
-                    .map(|alias| format!(":{alias}"));
-                task_spec
-                    .cmd
-                    .aliases
-                    .extend(std::iter::once(name).chain(relative_aliases));
+                task_spec.cmd.aliases.push(name);
             }
             usage
                 .cmd
