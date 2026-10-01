@@ -13,14 +13,13 @@ pub async fn verify_cosign_signature(
     let artifact = tokio::fs::read(artifact_path).await?;
     let mut trust_roots = TrustRoots::default();
     if let Ok(bundle) = Bundle::from_json(&content) {
-        verify_bundle_with_trust_roots(Artifact::from(&artifact), &bundle, None, &mut trust_roots)
-            .await?;
-        let cert = bundle.signing_certificate().ok_or_else(|| {
-            AttestationError::Verification(
-                "cosign bundle is missing a signer certificate".to_string(),
-            )
-        })?;
-        verify_certificate_identity(cert.as_bytes(), identity)?;
+        verify_keyless_bundle(
+            Artifact::from(&artifact),
+            &bundle,
+            identity,
+            &mut trust_roots,
+        )
+        .await?;
         return Ok(true);
     }
     // Legacy cosign v1 bundle (`{base64Signature, cert, rekorBundle}`).
@@ -30,6 +29,21 @@ pub async fn verify_cosign_signature(
     let trusted_root = trust_roots.sigstore_root().await?;
     verify_legacy_cosign_bundle(&artifact, &content, trusted_root, identity)?;
     Ok(true)
+}
+
+/// Chain-validate a modern keyless bundle, then require its signing
+/// certificate to satisfy `identity`.
+pub(crate) async fn verify_keyless_bundle<'a>(
+    artifact: Artifact<'a>,
+    bundle: &Bundle,
+    identity: &CosignIdentity,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    verify_bundle_with_trust_roots(artifact, bundle, None, trust_roots).await?;
+    let cert = bundle.signing_certificate().ok_or_else(|| {
+        AttestationError::Verification("cosign bundle is missing a signer certificate".to_string())
+    })?;
+    verify_certificate_identity(cert.as_bytes(), identity)
 }
 
 pub async fn verify_cosign_signature_with_key(

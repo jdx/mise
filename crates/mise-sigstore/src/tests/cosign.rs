@@ -1,5 +1,7 @@
 use super::*;
-use crate::cosign::{verify_dsse_artifact_subject, verify_public_key_bundle};
+use crate::cosign::{
+    verify_dsse_artifact_subject, verify_keyless_bundle, verify_public_key_bundle,
+};
 
 #[test]
 fn public_key_dsse_subject_must_match_artifact() {
@@ -234,4 +236,39 @@ fn trivial_identity_patterns_do_not_pin_the_signer() {
     let from_empty_opt =
         CosignIdentity::from_opts(&opts(&["--certificate-identity-regexp="])).unwrap();
     assert!(!from_empty_opt.pins_signer());
+}
+
+#[tokio::test]
+async fn keyless_bundle_verification_enforces_signer_identity() {
+    // mise-v2026.9.12-linux-x64.tar.gz, attested by the fixture bundle.
+    let digest =
+        Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")
+            .unwrap();
+    let bundle = Bundle::from_json(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ))
+    .unwrap();
+    let mut roots = TrustRoots::default();
+
+    let real_signer = CosignIdentity {
+        identity: Some(FIXTURE_IDENTITY.to_string()),
+        oidc_issuer: Some(FIXTURE_ISSUER.to_string()),
+        ..Default::default()
+    };
+    verify_keyless_bundle(Artifact::from(&digest), &bundle, &real_signer, &mut roots)
+        .await
+        .unwrap();
+
+    // The bundle is validly signed, but not by the pinned signer.
+    let other_signer = CosignIdentity {
+        identity_regexp: Some(r"^https://github\.com/attacker/".to_string()),
+        ..Default::default()
+    };
+    let err = verify_keyless_bundle(Artifact::from(&digest), &bundle, &other_signer, &mut roots)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AttestationError::WorkflowMismatch(_)),
+        "{err}"
+    );
 }
