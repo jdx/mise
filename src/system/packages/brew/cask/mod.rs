@@ -160,9 +160,7 @@ fn installed_skip_reason(
         // remains unowned and is therefore checked by install_app_for before
         // it can be replaced.
         [owned]
-            if cask.appdir.is_some()
-                && owned.parent() != app_path.parent()
-                && owned.file_name() == app_path.file_name() =>
+            if owned.parent() != app_path.parent() && owned.file_name() == app_path.file_name() =>
         {
             owned.clone()
         }
@@ -1679,7 +1677,7 @@ fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
             .apps
             .iter()
             .chain(&receipt.metadata_only_apps)
-            .any(|owned| paths_resolve_to_same_target(owned, target))
+            .any(|owned| paths_refer_to_same_entry(owned, target))
     })
 }
 
@@ -1697,13 +1695,22 @@ fn requires_unowned_target(previous: Option<&CaskReceipt>, target: &Path) -> boo
 /// recorded version matching while pointing at a target no receipt covers. The
 /// package is then reported installed and skipped, so the new target is never
 /// installed and the unowned-target policy never runs. Treating that as not
-/// installed is what makes a retarget take effect.
+/// installed is what makes a `macos-app` retarget take effect.
+///
+/// `brew-cask` is different: Homebrew's Caskroom owns its installed token, and
+/// ordinary apply deliberately preserves that install even if its configured
+/// appdir later changes. The unowned-target check still applies when an
+/// explicit upgrade reaches mutation, so the new destination cannot be
+/// overwritten merely because the old token has a receipt elsewhere.
 ///
 fn declared_apps_are_owned(
     cask: &Cask,
     artifacts: &CaskArtifacts,
     previous: Option<&CaskReceipt>,
 ) -> Result<bool> {
+    if cask.manager.uses_homebrew_caskroom() {
+        return Ok(true);
+    }
     for app in &artifacts.apps {
         if requires_unowned_target(previous, &cask_app_target_path(cask, app.target_name()?)?) {
             return Ok(false);
@@ -1726,6 +1733,43 @@ fn paths_resolve_to_same_target(left: &Path, right: &Path) -> bool {
             .ok()
             .zip(right.canonicalize().ok())
             .is_some_and(|(left, right)| left == right)
+}
+
+/// Whether two spellings name the same existing, non-symlink directory entry.
+///
+/// This is deliberately stricter than [`paths_resolve_to_same_target`]: an
+/// ownership grant must not follow a final-component symlink that replaced a
+/// receipt's app bundle. Case-insensitive filesystems still resolve alternate
+/// spellings to the same directory entry, while case-sensitive filesystems do
+/// not. Missing entries are not ownership evidence, but are harmless for a
+/// fresh install because there is nothing to replace.
+#[cfg(unix)]
+fn paths_refer_to_same_entry(left: &Path, right: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    if left == right {
+        return left
+            .symlink_metadata()
+            .map_or(true, |metadata| !metadata.file_type().is_symlink());
+    }
+    let Ok(left) = left.symlink_metadata() else {
+        return false;
+    };
+    let Ok(right) = right.symlink_metadata() else {
+        return false;
+    };
+    !left.file_type().is_symlink()
+        && !right.file_type().is_symlink()
+        && left.dev() == right.dev()
+        && left.ino() == right.ino()
+}
+
+#[cfg(not(unix))]
+fn paths_refer_to_same_entry(left: &Path, right: &Path) -> bool {
+    left == right
+        && left
+            .symlink_metadata()
+            .map_or(true, |metadata| !metadata.file_type().is_symlink())
 }
 
 /// Flag app targets a plan cannot predict the outcome for.

@@ -9280,6 +9280,20 @@ fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<(
         &cask_app_target_path(&cask, "Example.app")?
     ));
 
+    // Removing an override is the same relocation in reverse: Upgrade still
+    // assesses the old owned bundle before it considers the default appdir.
+    cask.appdir = None;
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        None
+    );
+
     let mut current = plist::Dictionary::new();
     current.insert(
         "CFBundleShortVersionString".into(),
@@ -9297,6 +9311,46 @@ fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<(
         Some("skipped: installed app is current, newer, or incomparable"),
         "a newer or equal old owned bundle must still block relocation"
     );
+    Ok(())
+}
+
+#[test]
+fn brew_cask_install_preserves_same_version_when_appdir_changes() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(tmp.path().join("new"));
+    cask.artifacts = vec![serde_json::json!({"app": ["Example.app"]})];
+    let artifacts = cask_artifacts(&cask)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![tmp.path().join("old/Example.app")],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Install
+        )?,
+        Some("already installed")
+    );
+    assert!(requires_unowned_target(
+        Some(&receipt),
+        &cask_app_target_path(&cask, "Example.app")?
+    ));
     Ok(())
 }
 
@@ -10024,9 +10078,14 @@ fn staging_directories_are_scoped_per_manager() -> Result<()> {
 /// renaming `artifact`, or by moving the app directory.
 #[test]
 fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
-    let owned = Path::new("/Applications/Nuvio.app");
-    let renamed = Path::new("/Applications/Other.app");
-    let relocated = Path::new("/Users/someone/Applications/Nuvio.app");
+    let tmp = tempfile::tempdir()?;
+    let owned_path = tmp.path().join("old/Nuvio.app");
+    file::create_dir_all(&owned_path)?;
+    let owned = owned_path.as_path();
+    let renamed_path = tmp.path().join("old/Other.app");
+    let renamed = renamed_path.as_path();
+    let relocated_path = tmp.path().join("new/Nuvio.app");
+    let relocated = relocated_path.as_path();
 
     let receipt = CaskReceipt {
         schema_version: 3,
@@ -10072,6 +10131,39 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     // still unowned and must not be overwritten merely because the token has
     // a receipt elsewhere.
     assert!(requires_unowned_target(None, renamed));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn app_target_ownership_does_not_follow_a_replaced_bundle_symlink() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let old = tmp.path().join("old/Example.app");
+    let new = tmp.path().join("new/Example.app");
+    file::create_dir_all(&old)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+    file::create_dir_all(new.parent().unwrap())?;
+    file::remove_all(&old)?;
+    file::create_dir_all(&new)?;
+    std::os::unix::fs::symlink(&new, &old)?;
+
+    assert!(paths_resolve_to_same_target(&old, &new));
+    assert!(requires_unowned_target(Some(&receipt), &new));
     Ok(())
 }
 
