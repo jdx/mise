@@ -119,7 +119,10 @@ local attestation = {
 ```
 
 Assign this table to the `attestation` field in `PreInstall`'s response. Other supported
-fields include `cosign_sig_or_bundle_path` with optional `cosign_public_key_path`, and
+fields include `cosign_sig_or_bundle_path` with either `cosign_public_key_path` or, for keyless
+signatures, `cosign_certificate_identity` / `cosign_certificate_identity_regexp` (required) and
+`cosign_certificate_oidc_issuer`. Keyless cosign without a pinned identity is rejected, because
+any GitHub Actions workflow can obtain a valid Fulcio certificate. Also supported:
 `slsa_provenance_path` with optional `slsa_min_level`, plus `slsa_signer_identity` (the exact
 Fulcio certificate URI subject, including workflow ref) and `slsa_signer_issuer` (the exact OIDC
 issuer). SLSA is skipped when signer fields are absent. Supply real verification inputs for

@@ -51,3 +51,148 @@ fn signed_public_key_dsse_bundle_binds_artifact() {
             .contains("DSSE subject digest does not match artifact")
     );
 }
+
+fn opts(opts: &[&str]) -> Vec<String> {
+    opts.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn cosign_identity_parses_registry_opts() {
+    let identity = CosignIdentity::from_opts(&opts(&[
+        "--certificate-identity-regexp",
+        "^https://github.com/o/r/",
+        "--certificate-oidc-issuer=https://token.actions.githubusercontent.com",
+        "--certificate-github-workflow-repository",
+        "o/r",
+        "--certificate-github-workflow-ref",
+        "refs/tags/v1",
+        "--key",
+        "https://example.com/key.pub",
+    ]))
+    .unwrap();
+    assert_eq!(
+        identity.identity_regexp.as_deref(),
+        Some("^https://github.com/o/r/")
+    );
+    assert_eq!(
+        identity.oidc_issuer.as_deref(),
+        Some("https://token.actions.githubusercontent.com")
+    );
+    assert_eq!(identity.github_workflow_repository.as_deref(), Some("o/r"));
+    assert_eq!(
+        identity.github_workflow_ref.as_deref(),
+        Some("refs/tags/v1")
+    );
+    assert!(identity.pins_signer());
+}
+
+#[test]
+fn cosign_identity_rejects_unknown_or_valueless_certificate_flags() {
+    assert!(CosignIdentity::from_opts(&opts(&["--certificate-unknown", "x"])).is_err());
+    assert!(CosignIdentity::from_opts(&opts(&["--certificate-identity"])).is_err());
+}
+
+#[test]
+fn cosign_identity_without_signer_is_not_pinned() {
+    let identity = CosignIdentity::from_opts(&opts(&[
+        "--certificate-oidc-issuer",
+        "https://token.actions.githubusercontent.com",
+    ]))
+    .unwrap();
+    assert!(!identity.pins_signer());
+    let err = identity.require_pinned_signer().unwrap_err().to_string();
+    assert!(err.contains("requires a certificate identity"), "{err}");
+}
+
+fn fixture_cert_der() -> Vec<u8> {
+    let bundle = Bundle::from_json(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ))
+    .unwrap();
+    bundle.signing_certificate().unwrap().as_bytes().to_vec()
+}
+
+const FIXTURE_IDENTITY: &str =
+    "https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v2026.9.12";
+const FIXTURE_ISSUER: &str = "https://token.actions.githubusercontent.com";
+
+#[test]
+fn certificate_identity_accepts_the_real_signer() {
+    let der = fixture_cert_der();
+    for identity in [
+        CosignIdentity {
+            identity: Some(FIXTURE_IDENTITY.to_string()),
+            oidc_issuer: Some(FIXTURE_ISSUER.to_string()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            identity_regexp: Some(r"^https://github\.com/jdx/mise/\.github/workflows/.+$".into()),
+            github_workflow_repository: Some("jdx/mise".to_string()),
+            github_workflow_ref: Some("refs/tags/v2026.9.12".to_string()),
+            ..Default::default()
+        },
+    ] {
+        verify_certificate_identity(&der, &identity).unwrap();
+    }
+}
+
+#[test]
+fn certificate_identity_rejects_other_signers() {
+    let der = fixture_cert_der();
+    let base = CosignIdentity {
+        identity: Some(FIXTURE_IDENTITY.to_string()),
+        ..Default::default()
+    };
+    for rejected in [
+        CosignIdentity {
+            identity: Some(FIXTURE_IDENTITY.replace("jdx/mise", "attacker/mise")),
+            ..Default::default()
+        },
+        // A substring of the real identity is not the identity.
+        CosignIdentity {
+            identity: Some("jdx/mise/.github/workflows/release.yml".to_string()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            identity_regexp: Some(r"^https://github\.com/other/".to_string()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            oidc_issuer: Some("https://accounts.google.com".to_string()),
+            ..base.clone()
+        },
+        CosignIdentity {
+            github_workflow_repository: Some("attacker/mise".to_string()),
+            ..base.clone()
+        },
+        CosignIdentity {
+            github_workflow_ref: Some("refs/heads/main".to_string()),
+            ..base.clone()
+        },
+        CosignIdentity {
+            identity_regexp: Some("(".to_string()),
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            verify_certificate_identity(&der, &rejected).is_err(),
+            "{rejected:?} should be rejected"
+        );
+    }
+}
+
+#[tokio::test]
+async fn keyless_cosign_requires_a_pinned_signer() {
+    let dir = std::env::temp_dir().join(format!("mise-cosign-identity-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let artifact = dir.join("artifact");
+    let bundle = dir.join("artifact.bundle");
+    std::fs::write(&artifact, b"artifact").unwrap();
+    std::fs::write(&bundle, b"{}").unwrap();
+    let err = verify_cosign_signature(&artifact, &bundle, &CosignIdentity::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("requires a certificate identity"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

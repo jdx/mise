@@ -2202,7 +2202,13 @@ impl AquaBackend {
                 )
                 .await
             } else {
-                crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await
+                let identity = crate::github::sigstore::CosignIdentity::from_opts(&opts)?;
+                crate::github::sigstore::verify_cosign_signature(
+                    target_path,
+                    &bundle_path,
+                    &identity,
+                )
+                .await
             };
 
             match result {
