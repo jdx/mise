@@ -183,7 +183,7 @@ impl TasksLs {
         }
 
         if self.complete {
-            return self.complete(tasks);
+            return self.complete(&config, tasks);
         } else if self.usage {
             self.display_usage(&config, tasks).await?;
         } else if self.json {
@@ -203,11 +203,15 @@ impl TasksLs {
         Ok(())
     }
 
-    fn complete(&self, tasks: Vec<Task>) -> Result<()> {
+    fn complete(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
+        let current_root = current_root_prefix(config);
         for t in tasks {
-            let name = t.display_name.replace(":", "\\:");
             let description = t.description.replace(":", "\\:");
-            calm_io::stdoutln!("{name}:{description}")?;
+            let shorthand = shorthand_name(current_root.as_deref(), &t);
+            for name in std::iter::once(t.display_name.clone()).chain(shorthand) {
+                let name = name.replace(":", "\\:");
+                calm_io::stdoutln!("{name}:{description}")?;
+            }
         }
         Ok(())
     }
@@ -229,6 +233,7 @@ impl TasksLs {
 
     async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
+        let current_root = current_root_prefix(config);
         for task in tasks {
             let mut task_spec = task.parse_usage_spec_for_display(config).await?;
             for (name, complete) in task_spec.complete {
@@ -258,6 +263,11 @@ impl TasksLs {
                     .map(|a| format!("//{}:{}", path, a))
                     .collect();
                 task_spec.cmd.aliases.extend(prefixed_aliases);
+            }
+            // Aliases get no `:` form: they exist to save typing, and listing every spelling
+            // of every alias crowds the candidates. `mise tasks ls` shows them.
+            if let Some(name) = shorthand_name(current_root.as_deref(), &task) {
+                task_spec.cmd.aliases.push(name);
             }
             usage
                 .cmd
@@ -345,6 +355,22 @@ impl TasksLs {
         row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
         row.into()
     }
+}
+
+/// The name prefix of the current config root's tasks, e.g. `//:` or `//apps/web:`, which
+/// `:task` stands for. `None` outside a monorepo, where `:task` names nothing.
+fn current_root_prefix(config: &Config) -> Option<String> {
+    crate::task::expand_colon_task_syntax(":", config).ok()
+}
+
+/// `:task` for a task of the current config root.
+///
+/// It runs the same task as its `//` name, but completion needs it as a candidate of its own:
+/// a shell only offers candidates that extend the word being completed, so without one
+/// `mise :bu<TAB>` matched nothing and fell back to completing file paths.
+fn shorthand_name(current_root: Option<&str>, task: &Task) -> Option<String> {
+    let name = task.display_name.strip_prefix(current_root?)?;
+    Some(format!(":{name}"))
 }
 
 // TODO: fill this out

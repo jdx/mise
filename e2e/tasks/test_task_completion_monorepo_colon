@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# `:task` runs a task of the current config root, so it must complete as one too.
+# Without its own candidates the shell got the path fallback, which fish expands
+# by treating `:` as a PATH-list separator.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+
+[tasks."env:update"]
+description = "Bump the lockfile"
+alias = "eu"
+run = 'echo updated'
+
+[tasks."env:clear"]
+run = 'echo cleared'
+
+[tasks.precedence]
+alias = ["//apps/web:collision", "pc"]
+run = 'echo precedence'
+EOF
+
+mkdir -p apps/web
+cat <<'EOF' >apps/web/mise.toml
+[tasks.build]
+description = "Build web"
+usage = '''
+flag "--mode <mode>" {
+  choices "dev" "prod"
+}
+'''
+run = 'echo built'
+EOF
+
+assert "mise -q :env:update" "updated"
+
+naked="$(mise __complete_word__ --shell fish --line 'mise :env:upd')"
+assert_contains_text "$naked" $':env:update\tBump the lockfile'
+assert_not_contains_text "$naked" $'\001files'
+
+run="$(mise __complete_word__ --shell fish --line 'mise run :env:')"
+assert_contains_text "$run" ':env:update'
+assert_contains_text "$run" ':env:clear'
+assert_not_contains_text "$run" $'\001files'
+
+# Only task names get the shorthand: no `:alias` forms, absolute or not
+root_shorthands="$(mise __complete_word__ --shell fish --line 'mise run :')"
+assert_contains_text "$root_shorthands" ':precedence'
+assert_not_contains_text "$root_shorthands" ':eu'
+assert_not_contains_text "$root_shorthands" ':pc'
+assert_not_contains_text "$root_shorthands" '://'
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise tasks run :env:u')" ':env:update'
+assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run :env:u')" $':env:update\tBump the lockfile\t:env:update'
+
+# The absolute spelling still completes
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise //:env:upd')" '//:env:update'
+run_all="$(mise __complete_word__ --shell fish --line 'mise run ')"
+assert_contains_text "$run_all" $'//:env:update\tBump the lockfile'
+assert_contains_text "$run_all" $':env:update\tBump the lockfile'
+
+# Tasks of other config roots have no shorthand here
+assert_not_contains_text "$root_shorthands" ':build'
+
+# Inside a config root, `:` means that root, and the task's own arguments complete after it
+cd apps/web || exit 1
+assert "mise -q :build" "built"
+web="$(mise __complete_word__ --shell fish --line 'mise :bu')"
+assert_contains_text "$web" $':build\tBuild web'
+assert_not_contains_text "$web" ':env:update'
+mode="$(mise __complete_word__ --shell fish --line 'mise run :build --mode ')"
+assert_contains_text "$mode" 'dev'
+assert_contains_text "$mode" 'prod'
