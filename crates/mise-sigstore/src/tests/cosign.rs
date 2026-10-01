@@ -165,7 +165,13 @@ fn certificate_identity_regexp_supports_re2_quoted_literals() {
         ),
     )
     .unwrap();
+    // An escaped backslash followed by `Q` is a literal backslash and a plain
+    // `Q`, not the start of a quote: this class excludes both characters, and
+    // the identity contains neither.
+    verify_certificate_identity(&der, &regexp(r"^[^\\Q]+$")).unwrap();
     for rejected in [
+        // Likewise it must not turn the rest of the pattern into a literal.
+        r"^https://github\.com/jdx/mise/.+\\Q.*$",
         // The quoted dots are literal, not wildcards.
         r"^https://github\.com/jdx/mise/\.github/workflows/.+@refs/tags/\Qv2026X9X12\E$",
         // Another tag is not this tag.
