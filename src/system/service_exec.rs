@@ -84,7 +84,7 @@ pub fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     // Nothing is left to unwind here. The service has exited and been reaped,
     // the job object closed with it, and a launcher writes no output anyone
     // is waiting to see.
-    std::process::exit(code)
+    crate::exit::exit_with_windows_status(code as u32)
 }
 
 /// Only Task Scheduler registers this action: systemd and launchd both set
