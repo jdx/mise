@@ -505,6 +505,19 @@ impl Runtime {
         })
     }
 
+    /// Task daemons are started with an argv `run`, which older pitchfork rejects.
+    /// Asked of the config schema, a read-only command every pitchfork with
+    /// external configuration has, rather than of a version number.
+    pub(crate) async fn supports_argv_run(&self, root: &Path, daemon: &str) -> Result<()> {
+        let schema = self.output(root, &["schema".into()]).await?;
+        if !serde_json::from_str(&schema).is_ok_and(|schema| schema_accepts_argv_run(&schema)) {
+            bail!(
+                "daemon {daemon} runs a task, which needs pitchfork 2.28.0 or later; upgrade pitchfork, for example with `mise use pitchfork@latest`"
+            );
+        }
+        Ok(())
+    }
+
     pub async fn status(&self, root: &Path, id: &str) -> Result<serde_json::Value> {
         let out = self
             .output(root, &["status".into(), id.into(), "--json".into()])
@@ -739,7 +752,10 @@ impl Runtime {
         }
         let content = render(set, &state)?;
         let file = state_dir(root).join("pitchfork.toml");
-        state.config_hash = crate::hash::hash_to_str(&content);
+        // The pitchfork is part of it: a different or replaced one, such as one a
+        // project was downgraded to, may not read this configuration, so it has to
+        // pass the capability checks below again.
+        state.config_hash = crate::hash::hash_to_str(&(&content, pitchfork_identity(&self.bin)));
         // Before the fast path, because an unchanged configuration is exactly
         // when another project can take this one's port: `auto` lifecycle then
         // hands pitchfork a session command and the daemon fails to bind in the
@@ -792,6 +808,13 @@ impl Runtime {
         }
         let external = self.supports_external_config(root).await?;
         let label = (external.label && !state.label.is_empty()).then(|| state.label.clone());
+        if let Some(daemon) = set
+            .daemons
+            .values()
+            .find(|d| d.table.get("run").is_some_and(toml::Value::is_array))
+        {
+            self.supports_argv_run(root, &daemon.name).await?;
+        }
         // Pitchfork binds a registered file to its namespace. Detach the old
         // mapping before registering the same file under a different name.
         // The active check above ensures this cannot orphan running daemons.
@@ -1220,6 +1243,38 @@ pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset)
     Ok(())
 }
 
+/// Which pitchfork executable this is, from its path, size and modification time,
+/// so that replacing it in place, as a package manager does, is noticed too.
+fn pitchfork_identity(bin: &Path) -> String {
+    let meta = std::fs::metadata(bin).ok();
+    let stamp = meta
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let len = meta.map(|m| m.len()).unwrap_or_default();
+    format!("{}:{len}:{stamp}", bin.display())
+}
+
+/// Whether a `pitchfork schema` lets a daemon's `run` be an array. pitchfork
+/// 2.28.0 made it a reference to a string-or-array type; before, it was a string.
+fn schema_accepts_argv_run(schema: &serde_json::Value) -> bool {
+    let defs = &schema["$defs"];
+    let mut run = &defs["PitchforkTomlDaemon"]["properties"]["run"];
+    if let Some(name) = run["$ref"]
+        .as_str()
+        .and_then(|r| r.strip_prefix("#/$defs/"))
+    {
+        run = &defs[name];
+    }
+    let is_array = |variant: &serde_json::Value| variant["type"] == "array";
+    is_array(run)
+        || ["anyOf", "oneOf"]
+            .iter()
+            .any(|key| run[key].as_array().is_some_and(|v| v.iter().any(is_array)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1506,6 +1561,39 @@ cmd config help="Attach externally generated configuration to a project." {
         // The worktree component never becomes part of the registered label.
         assert_eq!(project_label(&set, &root), "shop");
         assert_eq!(project_label(&set, Path::new("/other")), "");
+    }
+
+    /// The shape of `run` in the schemas pitchfork 2.27.0 and 2.28.0 print.
+    #[test]
+    fn argv_run_support_is_read_from_the_schema() {
+        let before = serde_json::json!({
+            "$defs": { "PitchforkTomlDaemon": { "properties": {
+                "run": { "type": "string", "examples": ["exec node server.js"] }
+            } } }
+        });
+        let after = serde_json::json!({
+            "$defs": {
+                "PitchforkTomlDaemon": { "properties": { "run": { "$ref": "#/$defs/RunCommand" } } },
+                "RunCommand": { "anyOf": [
+                    { "type": "string" },
+                    { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                ] }
+            }
+        });
+        assert!(!schema_accepts_argv_run(&before));
+        assert!(schema_accepts_argv_run(&after));
+        assert!(!schema_accepts_argv_run(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn replacing_pitchfork_in_place_changes_its_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("pitchfork");
+        std::fs::write(&bin, "2.28.0").unwrap();
+        let before = pitchfork_identity(&bin);
+        assert_eq!(pitchfork_identity(&bin), before);
+        std::fs::write(&bin, "2.27").unwrap();
+        assert_ne!(pitchfork_identity(&bin), before);
     }
 
     #[test]

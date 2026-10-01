@@ -810,20 +810,13 @@ fn build(
         if task.is_empty() {
             bail!("[daemons.{name}] task must not be empty");
         }
-        let mut run = format!(
-            "exec {} run {}",
-            presets::quote(crate::env::MISE_BIN.to_string_lossy()),
-            presets::quote(task)
+        let run = task_run(
+            &crate::env::MISE_BIN.to_string_lossy(),
+            task,
+            &args.unwrap_or_default(),
+            !init.is_empty(),
         );
-        let args = args.unwrap_or_default();
-        if !args.is_empty() {
-            run.push_str(" --");
-            for arg in args {
-                run.push(' ');
-                run.push_str(&presets::quote(arg));
-            }
-        }
-        table.insert("run".into(), toml::Value::String(run));
+        table.insert("run".into(), run);
         // The task runs through `mise run`, which would start this very
         // daemon again. This marker breaks that cycle in `tasks::start`
         // instead of `--skip-deps`, which would also have discarded the
@@ -855,7 +848,8 @@ fn build(
                 .or_insert(toml::Value::Boolean(false));
         }
     }
-    if table.get("run").and_then(toml::Value::as_str).is_none() {
+    // A task daemon's generated `run` may be an argv; one declared with `run` is a command line.
+    if task.is_none() && table.get("run").and_then(toml::Value::as_str).is_none() {
         bail!("[daemons.{name}] requires run, task, preset, or project");
     }
     let claim = match request {
@@ -1462,6 +1456,29 @@ fn take_args(table: &mut toml::Table, name: &str) -> Result<Option<Vec<String>>>
         .transpose()
 }
 
+/// The `run` of a `task` daemon: `mise run <task> [-- args]`. Pitchfork starts an
+/// argv without a shell, so it works whatever shell is configured, on Windows too.
+/// `init` steps are shell commands to chain it onto, so with them it is a command line.
+fn task_run(mise: &str, task: &str, args: &[String], after_init: bool) -> toml::Value {
+    if after_init {
+        let mut run = format!("exec {} run {}", presets::quote(mise), presets::quote(task));
+        if !args.is_empty() {
+            run.push_str(" --");
+            for arg in args {
+                run.push(' ');
+                run.push_str(&presets::quote(arg));
+            }
+        }
+        return toml::Value::String(run);
+    }
+    let mut argv = vec![mise.to_string(), "run".to_string(), task.to_string()];
+    if !args.is_empty() {
+        argv.push("--".to_string());
+        argv.extend(args.iter().cloned());
+    }
+    toml::Value::Array(argv.into_iter().map(toml::Value::String).collect())
+}
+
 fn take_string(table: &mut toml::Table, key: &str) -> Result<Option<String>> {
     table
         .remove(key)
@@ -1958,10 +1975,20 @@ mod tests {
         )]);
         let set = load(&config).unwrap();
         let daemon = &set.daemons["core"];
-        let mise = presets::quote(crate::env::MISE_BIN.to_string_lossy());
+        let mise = crate::env::MISE_BIN.to_string_lossy().into_owned();
+        let argv = |args: &[&str]| {
+            toml::Value::Array(
+                std::iter::once(mise.as_str())
+                    .chain(args.iter().copied())
+                    .map(|arg| toml::Value::String(arg.into()))
+                    .collect(),
+            )
+        };
+        // An argv, which pitchfork starts without a shell: arguments reach the
+        // task unquoted, on Windows as well as Unix.
         assert_eq!(
-            daemon.table["run"].as_str(),
-            Some(format!("exec {mise} run 'dev:core' -- '--port' 'it'\\''s 3000'").as_str())
+            daemon.table["run"],
+            argv(&["run", "dev:core", "--", "--port", "it's 3000"])
         );
         // The task keeps its own `depends`; a marker in the daemon environment
         // is what stops the nested run from starting this daemon again.
@@ -1976,8 +2003,8 @@ mod tests {
         // A task daemon with no args does not emit a dangling separator.
         let config = files(&[("/project/mise.toml", "[daemons.core]\ntask = 'dev'\n")]);
         assert_eq!(
-            load(&config).unwrap().daemons["core"].table["run"].as_str(),
-            Some(format!("exec {mise} run 'dev'").as_str())
+            load(&config).unwrap().daemons["core"].table["run"],
+            argv(&["run", "dev"])
         );
     }
 

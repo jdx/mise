@@ -152,6 +152,11 @@ The daemon's readiness check is configured on `[daemons.core]`, not on the task.
 A daemon's `task` cannot be combined with `run` or `preset`, and `args` requires
 `task`. The referenced task must exist when daemons are registered.
 
+mise starts the task without a shell, so the arguments reach it exactly as written, on
+Windows as well as Unix. This needs pitchfork 2.28.0 or later. A task daemon with
+[`init`](#setup-before-the-process-starts) is the exception: its setup steps and the task
+share one shell, which does not work yet under the default `cmd /C` shell on Windows.
+
 ::: warning Subtasks do not start daemons
 A task requirement is honored for the tasks a run resolves up front, including
 their `depends`. A subtask reached through a `run = [{ task = "..." }]` entry is
