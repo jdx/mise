@@ -18,6 +18,10 @@ run = 'echo updated'
 
 [tasks."env:clear"]
 run = 'echo cleared'
+
+[tasks.precedence]
+alias = ["//apps/web:collision", "pc"]
+run = 'echo precedence'
 EOF
 
 mkdir -p apps/web
@@ -44,6 +48,12 @@ assert_contains_text "$run" ':env:clear'
 assert_not_contains_text "$run" $'\001files'
 
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run :e')" ':eu'
+
+# An absolute alias is offered as is, never behind a `:` that would re-root it
+root_shorthands="$(mise __complete_word__ --shell fish --line 'mise run :')"
+assert_contains_text "$root_shorthands" ':pc'
+assert_not_contains_text "$root_shorthands" '://'
+assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise run //apps/web:co')" '//apps/web:collision'
 assert_contains_text "$(mise __complete_word__ --shell fish --line 'mise tasks run :env:u')" ':env:update'
 assert_contains_text "$(mise __complete_word__ --shell zsh --line 'mise run :env:u')" $':env:update\tBump the lockfile\t:env:update'
 
