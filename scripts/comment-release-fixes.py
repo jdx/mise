@@ -83,12 +83,18 @@ def previous_release(tag):
     """
     best = None
     for candidate in stable_releases_after(tag):
-        status, ahead_by = gh(
-            "api",
-            f"repos/{REPO}/compare/{candidate}...{tag}?per_page=1",
-            "--jq",
-            '[.status, (.ahead_by | tostring)] | join(" ")',
-        ).split()
+        try:
+            status, ahead_by = gh(
+                "api",
+                f"repos/{REPO}/compare/{candidate}...{tag}?per_page=1",
+                "--jq",
+                '[.status, (.ahead_by | tostring)] | join(" ")',
+            ).split()
+        except subprocess.CalledProcessError:
+            # A release whose tag was deleted cannot be compared; it is not a
+            # usable predecessor, but it should not hide the others.
+            print(f"::warning::could not compare {candidate}...{tag}")
+            continue
         if status == "ahead" and (best is None or int(ahead_by) < best[0]):
             best = (int(ahead_by), candidate)
     if not best:
