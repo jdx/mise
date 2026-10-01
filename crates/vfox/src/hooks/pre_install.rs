@@ -211,8 +211,12 @@ fn validate_github_artifact_attestation_params(table: &Table) -> std::result::Re
 fn validate_cosign_attestation_params(table: &Table) -> std::result::Result<(), LuaError> {
     if table.contains_key("cosign_sig_or_bundle_path")?
         && !table.contains_key("cosign_public_key_path")?
-        && !table.contains_key("cosign_certificate_identity")?
-        && !table.contains_key("cosign_certificate_identity_regexp")?
+        && table
+            .get::<Option<String>>("cosign_certificate_identity")?
+            .is_none_or(|v| v.is_empty())
+        && table
+            .get::<Option<String>>("cosign_certificate_identity_regexp")?
+            .is_none_or(|v| v.is_empty())
     {
         return Err(LuaError::FromLuaConversionError {
             from: "table",
@@ -468,6 +472,20 @@ mod tests {
             err.contains("keyless cosign attestation requires cosign_certificate_identity"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    async fn test_cosign_keyless_rejects_empty_identity() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("cosign_sig_or_bundle_path", "/tmp/artifact.sigstore")
+            .unwrap();
+        table.set("cosign_certificate_identity_regexp", "").unwrap();
+        let err = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("keyless cosign attestation requires"), "{err}");
     }
 
     #[test]
