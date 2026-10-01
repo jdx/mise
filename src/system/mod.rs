@@ -2226,7 +2226,10 @@ fn packages_from_specs_with_config_files(
             if let Some(appdir) = configured.and_then(PackageTomlConfig::appdir) {
                 match crate::system::packages::brew::package_app_dir(appdir) {
                     Ok(appdir) => {
-                        cask_appdirs.insert(name.clone(), appdir);
+                        cask_appdirs.insert(name.clone(), appdir.clone());
+                        if let Some(alias) = official_cask_alias(&name) {
+                            cask_appdirs.entry(alias).or_insert(appdir);
+                        }
                     }
                     Err(err) => {
                         // Explicit package selection preserves the same
@@ -2744,13 +2747,14 @@ mod tests {
                 "mise.toml",
                 &format!("[bootstrap.packages]\n{declarations}"),
             )])?;
-            for packages in [
-                packages_from_config_files(&config_files)?,
-                packages_from_specs_with_config_files(
-                    &["brew-cask:firefox".to_string()],
+            let mut package_sets = vec![packages_from_config_files(&config_files)?];
+            for name in ["firefox", "homebrew/cask/firefox"] {
+                package_sets.push(packages_from_specs_with_config_files(
+                    &[format!("brew-cask:{name}")],
                     &config_files,
-                )?,
-            ] {
+                )?);
+            }
+            for packages in package_sets {
                 let casks = packages
                     .into_iter()
                     .find(|packages| packages.manager.name() == "brew-cask")
