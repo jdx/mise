@@ -63,17 +63,24 @@ impl CosignIdentity {
 
     /// Whether the signer's identity is pinned. Without it, any Fulcio
     /// certificate — which any GitHub Actions workflow can obtain — would pass.
+    /// An empty value, or a regexp that matches the empty string (`""`, `.*`),
+    /// constrains nothing and does not count.
     pub fn pins_signer(&self) -> bool {
-        self.identity.is_some() || self.identity_regexp.is_some()
+        self.require_pinned_signer().is_ok()
     }
 
     pub(crate) fn require_pinned_signer(&self) -> Result<()> {
-        if self.pins_signer() {
+        if self.identity.as_deref().is_some_and(|id| !id.is_empty()) {
+            return Ok(());
+        }
+        if let Some(pattern) = self.identity_regexp.as_deref().filter(|p| !p.is_empty())
+            && !compile_constraint(pattern)?.is_match("")
+        {
             return Ok(());
         }
         Err(AttestationError::Verification(
             "keyless cosign verification requires a certificate identity \
-             (--certificate-identity or --certificate-identity-regexp)"
+             (--certificate-identity or a non-trivial --certificate-identity-regexp)"
                 .to_string(),
         ))
     }
@@ -83,6 +90,7 @@ const OID_ISSUER_V1: &str = "1.3.6.1.4.1.57264.1.1";
 const OID_GITHUB_WORKFLOW_TRIGGER: &str = "1.3.6.1.4.1.57264.1.2";
 const OID_GITHUB_WORKFLOW_SHA: &str = "1.3.6.1.4.1.57264.1.3";
 const OID_GITHUB_WORKFLOW_NAME: &str = "1.3.6.1.4.1.57264.1.4";
+const OID_GITHUB_WORKFLOW_REPOSITORY: &str = "1.3.6.1.4.1.57264.1.5";
 const OID_GITHUB_WORKFLOW_REF: &str = "1.3.6.1.4.1.57264.1.6";
 const OID_ISSUER_V2: &str = "1.3.6.1.4.1.57264.1.8";
 const OID_SOURCE_REPOSITORY_DIGEST: &str = "1.3.6.1.4.1.57264.1.13";
@@ -150,7 +158,13 @@ pub(crate) fn verify_certificate_identity(
     )?;
     check_constraint(
         "GitHub workflow repository",
-        certificate_source_repository(&cert).as_deref(),
+        // Like cosign, check the GitHub Workflow Repository claim (the repository
+        // running the workflow), falling back to the source repository claim on
+        // certificates that lack it. The signing workflow file itself, which may
+        // live in another repository for reusable workflows, is the SAN identity.
+        fulcio_string(&cert, OID_GITHUB_WORKFLOW_REPOSITORY, None)
+            .or_else(|| certificate_source_repository(&cert))
+            .as_deref(),
         expected.github_workflow_repository.as_deref(),
         None,
     )?;

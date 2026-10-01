@@ -196,3 +196,30 @@ async fn keyless_cosign_requires_a_pinned_signer() {
     assert!(err.contains("requires a certificate identity"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn trivial_identity_patterns_do_not_pin_the_signer() {
+    for identity in [
+        CosignIdentity {
+            identity: Some(String::new()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            identity_regexp: Some(String::new()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            identity_regexp: Some(".*".to_string()),
+            ..Default::default()
+        },
+        CosignIdentity {
+            identity_regexp: Some("^".to_string()),
+            ..Default::default()
+        },
+    ] {
+        assert!(!identity.pins_signer(), "{identity:?} should not pin");
+    }
+    let from_empty_opt =
+        CosignIdentity::from_opts(&opts(&["--certificate-identity-regexp="])).unwrap();
+    assert!(!from_empty_opt.pins_signer());
+}
