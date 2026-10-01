@@ -19,8 +19,8 @@ does not post to threads you are not allowed to reply to, and never let it sweep
 threads at once.
 :::
 
-If you are allowed to use AI to reply, review and verify anything before posting it, and disclose
-that AI contributed.
+Using AI to help write and file your own Discussion or Issue is fine. If you are allowed to use AI to
+reply, review and verify anything before posting it, and disclose that AI contributed.
 
 ## Contribution Expectations
 
