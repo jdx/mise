@@ -9231,7 +9231,10 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
 /// installation will refuse a manual or another cask's bundle there.
 #[test]
 fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, tmp.path().join("default"));
     let old = tmp.path().join("old/Example.app");
     let new = tmp.path().join("new");
     file::create_dir_all(old.join("Contents"))?;
