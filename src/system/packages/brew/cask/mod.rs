@@ -840,6 +840,7 @@ impl BrewCaskManager {
             // replacement would skip adoption entirely.
             let require_unowned = requires_unowned_target(
                 cask.manager,
+                cask.appdir.is_some(),
                 locked_ownership.as_ref(),
                 &cask_app_target_path(&cask, app.target_name()?)?,
             );
@@ -1685,6 +1686,7 @@ fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
 /// Whether this entry must refuse to replace whatever is at `target`.
 fn requires_unowned_target(
     manager: CaskManager,
+    explicit_appdir: bool,
     previous: Option<&CaskReceipt>,
     target: &Path,
 ) -> bool {
@@ -1692,11 +1694,13 @@ fn requires_unowned_target(
     // arbitrary appdir destination.  In particular, an appdir relocation
     // must not let a prior receipt for A overwrite an unrelated bundle at B.
     //
-    // With no prior receipt, however, brew-cask retains Homebrew's existing
+    // With no prior receipt, brew-cask retains Homebrew's existing
     // first-install behavior: an existing app at the normal target is
-    // replaced unless the user chose `adopt`. This check protects a changed
-    // destination only after the receipt proves the token was installed.
-    (!manager.uses_homebrew_caskroom() || previous.is_some())
+    // replaced unless the user chose `adopt`. A per-cask `appdir` is a new
+    // destination with no such behavior to preserve, and the user never
+    // pointed mise at whatever already lives there, so it is refused unless
+    // adopted.
+    (!manager.uses_homebrew_caskroom() || explicit_appdir || previous.is_some())
         && !app_target_is_owned(previous, target)
 }
 
@@ -1725,6 +1729,7 @@ fn declared_apps_are_owned(
     for app in &artifacts.apps {
         if requires_unowned_target(
             cask.manager,
+            cask.appdir.is_some(),
             previous,
             &cask_app_target_path(cask, app.target_name()?)?,
         ) {
@@ -1800,7 +1805,7 @@ fn warn_existing_app_targets(
     let manager = cask.manager;
     for app in apps {
         let target = cask_app_target_path(cask, app.target_name()?)?;
-        if requires_unowned_target(cask.manager, previous, &target)
+        if requires_unowned_target(cask.manager, cask.appdir.is_some(), previous, &target)
             && target.symlink_metadata().is_ok()
         {
             warn!(

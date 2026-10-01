@@ -145,6 +145,10 @@ resolve to the filesystem root. It applies to any cask dependencies installed
 with that cask. It only affects install and upgrade; mise does not move an app
 that is already installed. Other package managers ignore `appdir` and warn.
 
+A first install into a per-cask `appdir` refuses to replace an app that is
+already there unless you set `adopt = true`, so pointing a cask at a directory
+never overwrites an unrelated app.
+
 To enable adoption for all configured casks, set the Homebrew bootstrap
 default. An individual cask can opt out with `adopt = false`:
 

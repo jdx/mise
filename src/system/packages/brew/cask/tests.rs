@@ -9280,6 +9280,7 @@ fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<(
     );
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         &cask_app_target_path(&cask, "Example.app")?
     ));
@@ -9353,6 +9354,7 @@ fn brew_cask_install_preserves_same_version_when_appdir_changes() -> Result<()> 
     );
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         &cask_app_target_path(&cask, "Example.app")?
     ));
@@ -10112,6 +10114,7 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     // The recorded target may be replaced: that is an ordinary upgrade.
     assert!(!requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         owned
     ));
@@ -10121,6 +10124,7 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     // while the stale receipt made the token look installed.
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         renamed
     ));
@@ -10128,14 +10132,34 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     // Same for the app directory moving out from under a valid receipt.
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         relocated
     ));
 
     // A first brew-cask install retains Homebrew's established overwrite
     // behavior, while macos-app still refuses an unowned target.
-    assert!(!requires_unowned_target(CaskManager::BrewCask, None, owned));
-    assert!(requires_unowned_target(CaskManager::MacosApp, None, owned));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        None,
+        owned
+    ));
+    assert!(requires_unowned_target(
+        CaskManager::MacosApp,
+        false,
+        None,
+        owned
+    ));
+
+    // A per-cask appdir is a destination the user never had Homebrew's
+    // behavior for, so an unrelated app already there is not replaced.
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        true,
+        None,
+        owned
+    ));
 
     // An adopted app is recorded in metadata_only_apps and is owned too.
     let adopted = CaskReceipt {
@@ -10145,11 +10169,13 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     };
     assert!(!requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&adopted),
         owned
     ));
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&adopted),
         renamed
     ));
@@ -10159,6 +10185,7 @@ fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
     // a receipt elsewhere.
     assert!(!requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         None,
         renamed
     ));
@@ -10196,6 +10223,7 @@ fn app_target_ownership_does_not_follow_a_replaced_bundle_symlink() -> Result<()
     assert!(paths_resolve_to_same_target(&old, &new));
     assert!(requires_unowned_target(
         CaskManager::BrewCask,
+        false,
         Some(&receipt),
         &new
     ));
