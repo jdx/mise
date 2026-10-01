@@ -131,7 +131,6 @@ impl RegistryCache {
     pub fn prune_stale_compiled(&self, registry_url: &str, source_hash: &str) {
         let current_dir = self.compiled_dir(registry_url, source_hash);
         prune_stale_compiled_registries(&current_dir);
-        prune_stale_compiled_versions(&current_dir);
     }
 }
 
@@ -199,31 +198,6 @@ fn prune_stale_compiled_registries(current_dir: &Path) {
         {
             log::debug!(
                 "failed to prune stale compiled aqua registry cache {}: {err}",
-                path.display()
-            );
-        }
-    }
-}
-
-fn prune_stale_compiled_versions(current_dir: &Path) {
-    let Some(current_version_dir) = current_dir.parent() else {
-        return;
-    };
-    let Some(registry_dir) = current_version_dir.parent() else {
-        return;
-    };
-    let Ok(entries) = fs::read_dir(registry_dir) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path != current_version_dir
-            && path.is_dir()
-            && let Err(err) = fs::remove_dir_all(&path)
-        {
-            log::debug!(
-                "failed to prune stale compiled aqua registry cache version {}: {err}",
                 path.display()
             );
         }
@@ -379,30 +353,6 @@ mod tests {
         assert!(second_dir.is_dir());
         assert!(!first_dir.exists());
         assert!(loaded.package("example/second").is_ok());
-    }
-
-    #[test]
-    fn compiled_cache_prunes_previous_layout_versions() {
-        let temp = tempfile::tempdir().unwrap();
-        let cache = RegistryCache::new(temp.path());
-        let registry_url = "https://example.com/aqua-registry";
-        let source = registry_source("example/tool");
-        let source_hash = RegistryCache::source_hash(&source);
-        let registry = ParsedRegistry::parse_yaml(&source).unwrap();
-        let legacy_dir = temp
-            .path()
-            .join("compiled")
-            .join(registry_url_hash(registry_url))
-            .join("v9")
-            .join(&source_hash);
-
-        registry.write_compiled_cache(&legacy_dir).unwrap();
-        let current = cache
-            .write_compiled(registry_url, &source_hash, &registry)
-            .unwrap();
-
-        assert!(!legacy_dir.exists());
-        assert!(current.package("example/tool").is_ok());
     }
 
     #[test]
