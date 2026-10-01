@@ -1401,6 +1401,39 @@ impl PendingPin {
 }
 
 impl PackslipBackend {
+    fn verify_skills(
+        &self,
+        tv: &ToolVersion,
+        statement: &Statement,
+        artifact: Option<&Artifact>,
+    ) -> Result<()> {
+        match crate::packslip::verify_required_skills(statement, tv, artifact) {
+            Ok(()) => crate::packslip::clear_skills_incomplete(&tv.install_path()),
+            Err(err) => {
+                crate::packslip::mark_skills_incomplete(&tv.install_path())?;
+                if let Some(skill) = crate::packslip::required_missing_skills(
+                    statement,
+                    &tv.install_path(),
+                    &tv.ba().to_string(),
+                    &tv.version,
+                    artifact,
+                )
+                .iter()
+                .find(|skill| {
+                    !crate::packslip::can_repair_missing_skill(statement, &skill.name, artifact)
+                }) {
+                    bail!(
+                        "{}: declared archive skill {} is missing; run `mise install --force {}` to reinstall the artifact",
+                        tv.style(),
+                        skill.name,
+                        tv.request
+                    );
+                }
+                Err(err)
+            }
+        }
+    }
+
     pub(crate) async fn install_payload(
         &self,
         ctx: &InstallContext,
@@ -1880,6 +1913,107 @@ impl Backend for PackslipBackend {
 
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         4
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        let install_path = tv.install_path();
+        // A postinstall hook can call mise itself. Its tool has already been
+        // extracted, but declared skills are verified only after the hook;
+        // treating that exact active install as unsatisfied would make the
+        // nested invocation wait on this installation's lock.
+        if std::env::var_os("MISE_TOOL_INSTALL_PATH")
+            .as_deref()
+            .is_some_and(|path| Path::new(path) == install_path)
+            && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
+            && std::env::var(crate::env::MISE_TOOL_VERSION_ENV_VAR)
+                .ok()
+                .as_deref()
+                == Some(tv.version.as_str())
+        {
+            return Ok(true);
+        }
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+        if matches!(&tv.request, ToolRequest::System { .. }) {
+            return Ok(true);
+        }
+        let Some(statement) = crate::packslip::statement(&install_path)? else {
+            return Ok(true);
+        };
+        let artifact = selected_artifact(
+            &statement,
+            &install_path,
+            PackslipOptions::new(&tv.request.options())
+                .variant()
+                .as_deref(),
+        );
+        Ok(crate::packslip::required_missing_skills(
+            &statement,
+            &install_path,
+            &tv.ba().to_string(),
+            &tv.version,
+            artifact.as_ref(),
+        )
+        .is_empty())
+    }
+
+    async fn repair_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<bool> {
+        let install_path = tv.install_path();
+        let Some(statement) = crate::packslip::statement(&install_path)? else {
+            return Ok(false);
+        };
+        let artifact = selected_artifact(
+            &statement,
+            &install_path,
+            PackslipOptions::new(&tv.request.options())
+                .variant()
+                .as_deref(),
+        );
+        let skills_incomplete = crate::packslip::skills_incomplete_path(&install_path).is_file();
+        let missing = crate::packslip::required_missing_skills(
+            &statement,
+            &install_path,
+            &tv.ba().to_string(),
+            &tv.version,
+            artifact.as_ref(),
+        );
+        // The marker records failures from this implementation. Checking the
+        // declaration as well repairs older successful installs whose declared
+        // skills were never fetched, without replacing their binary.
+        if !skills_incomplete && missing.is_empty() {
+            return Ok(false);
+        }
+        crate::packslip::fetch_files(tv, &statement, artifact.as_ref(), ctx.pr.as_ref()).await?;
+        // The shared install flow runs the configured postinstall hook before
+        // `verify_repaired_install`. A hook can provide the last declared
+        // skill, so defer this check until after that hook just like a fresh
+        // install does.
+        Ok(true)
+    }
+
+    async fn verify_install(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let install_path = tv.install_path();
+        let Some(statement) = crate::packslip::statement(&install_path)? else {
+            return Ok(());
+        };
+        let artifact = selected_artifact(
+            &statement,
+            &install_path,
+            PackslipOptions::new(&tv.request.options())
+                .variant()
+                .as_deref(),
+        );
+        self.verify_skills(tv, &statement, artifact.as_ref())
+    }
+
+    async fn verify_repaired_install(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.verify_install(_ctx, tv).await
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
