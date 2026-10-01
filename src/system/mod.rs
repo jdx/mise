@@ -1017,7 +1017,7 @@ fn package_requests_from_config_files(
                         Ok(appdir) => {
                             cask_appdirs.insert(name.clone(), appdir.clone());
                             if let Some(alias) = official_cask_alias(&name) {
-                                cask_appdirs.insert(alias, appdir);
+                                cask_appdirs.entry(alias).or_insert(appdir);
                             }
                         }
                         Err(err) => {
@@ -2156,7 +2156,7 @@ fn packages_from_specs_with_config_files(
             Ok(appdir) => {
                 cask_appdirs.insert(name.to_string(), appdir.clone());
                 if let Some(alias) = official_cask_alias(name) {
-                    cask_appdirs.insert(alias, appdir);
+                    cask_appdirs.entry(alias).or_insert(appdir);
                 }
             }
             Err(err) => {
