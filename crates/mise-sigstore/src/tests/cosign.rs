@@ -151,6 +151,36 @@ fn certificate_identity_accepts_the_real_signer() {
 }
 
 #[test]
+fn certificate_identity_regexp_supports_re2_quoted_literals() {
+    // The aqua registry pins a tag with `\Q{{.Version}}\E`, which is RE2 syntax.
+    let der = fixture_cert_der();
+    let regexp = |pattern: &str| CosignIdentity {
+        identity_regexp: Some(pattern.to_string()),
+        ..Default::default()
+    };
+    verify_certificate_identity(
+        &der,
+        &regexp(
+            r"^https://github\.com/jdx/mise/\.github/workflows/.+\.ya?ml@refs/tags/\Qv2026.9.12\E$",
+        ),
+    )
+    .unwrap();
+    for rejected in [
+        // The quoted dots are literal, not wildcards.
+        r"^https://github\.com/jdx/mise/\.github/workflows/.+@refs/tags/\Qv2026X9X12\E$",
+        // Another tag is not this tag.
+        r"^https://github\.com/jdx/mise/\.github/workflows/.+@refs/tags/\Qv2026.9.1\E$",
+        // An unterminated \Q quotes through the end, metacharacters included.
+        r"^https://github\.com/jdx/mise/\.github/workflows/.+@refs/tags/\Qv2026.9.12$",
+    ] {
+        assert!(
+            verify_certificate_identity(&der, &regexp(rejected)).is_err(),
+            "{rejected} should be rejected"
+        );
+    }
+}
+
+#[test]
 fn certificate_identity_rejects_other_signers() {
     let der = fixture_cert_der();
     let base = CosignIdentity {
