@@ -90,10 +90,34 @@ pub(crate) fn verify_signer_workflow_identity(
             "expected '{expected}', found no certificate identity"
         )));
     };
-    if !identity.contains(expected) {
+    if !identity_ends_with_workflow(identity, expected) {
         return Err(AttestationError::WorkflowMismatch(format!(
             "expected '{expected}', found certificate identity: {identity:?}"
         )));
     }
     Ok(())
+}
+
+/// Whether the workflow path in a certificate identity ends with `expected`.
+///
+/// The identity is `https://github.com/<owner>/<repo>/<workflow path>@<ref>`.
+/// `expected` may be the workflow file alone or include the repository, so it
+/// must match a whole trailing run of path segments. Matching anywhere in the
+/// identity would accept a longer file name (`release.yml.evil.yml`) or text in
+/// the ref, which the signer controls.
+fn identity_ends_with_workflow(identity: &str, expected: &str) -> bool {
+    if expected.is_empty() {
+        return false;
+    }
+    // A GitHub Actions ref always starts with `refs/`, and a workflow file name
+    // cannot contain `/`, so the first `@refs/` is the real boundary even when the
+    // file name contains `@`. Anything else falls back to the first `@`.
+    let path = identity
+        .split_once("@refs/")
+        .or_else(|| identity.split_once('@'))
+        .map_or(identity, |(path, _)| path);
+    let Some(prefix) = path.strip_suffix(expected) else {
+        return false;
+    };
+    prefix.is_empty() || prefix.ends_with('/') || expected.starts_with('/')
 }
