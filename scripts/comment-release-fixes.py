@@ -90,10 +90,14 @@ def previous_release(tag):
                 "--jq",
                 '[.status, (.ahead_by | tostring)] | join(" ")',
             ).split()
-        except subprocess.CalledProcessError:
-            # A release whose tag was deleted cannot be compared; it is not a
-            # usable predecessor, but it should not hide the others.
-            print(f"::warning::could not compare {candidate}...{tag}")
+        except subprocess.CalledProcessError as err:
+            # Only a missing tag is permanent. Any other failure may be
+            # transient, and skipping the nearest release would pick an older
+            # base and announce fixes that shipped earlier. Fail instead; the
+            # markers make a re-run safe.
+            if "404" not in err.stderr:
+                raise
+            print(f"::warning::could not compare {candidate}...{tag}: tag not found")
             continue
         if status == "ahead" and (best is None or int(ahead_by) < best[0]):
             best = (int(ahead_by), candidate)
