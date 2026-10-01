@@ -75,19 +75,25 @@ def previous_release(tag):
     """The nearest earlier release that `tag` actually contains.
 
     The release list is ordered by creation, not by history, so a release that
-    was drafted early and published late can sit out of order. Take the first
-    candidate that is an ancestor of `tag` rather than trusting the list order.
+    was drafted early and published late can sit out of order. Among the
+    nearest listed releases, take the ancestor of `tag` with the fewest commits
+    between it and `tag`, rather than trusting the list order. Scanning the
+    whole list would cost one request per release on every run, and an
+    out-of-order release lands within a few entries of its neighbors.
     """
+    best = None
     for candidate in stable_releases_after(tag):
-        status = gh(
+        status, ahead_by = gh(
             "api",
             f"repos/{REPO}/compare/{candidate}...{tag}?per_page=1",
             "--jq",
-            ".status",
-        ).strip()
-        if status == "ahead":
-            return candidate
-    raise SystemExit(f"no earlier release found that {tag} contains")
+            '[.status, (.ahead_by | tostring)] | join(" ")',
+        ).split()
+        if status == "ahead" and (best is None or int(ahead_by) < best[0]):
+            best = (int(ahead_by), candidate)
+    if not best:
+        raise SystemExit(f"no earlier release found that {tag} contains")
+    return best[1]
 
 
 def release_prs(base, tag):
