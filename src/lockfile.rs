@@ -1794,7 +1794,7 @@ impl Lockfile {
 
     /// Drop unbound (no specifiers) entries that a bound entry of the same
     /// version and backend supersedes. An unbound entry with platform data the
-    /// bound entry lacks is kept, as is any unbound entry with no bound sibling.
+    /// bound entry lacks or records differently (checksum, URL) is kept, as is any unbound entry with no bound sibling.
     /// `in_scope` limits the pruning to tools the caller resolved.
     pub fn retain_unsuperseded_unbound_entries(
         &mut self,
@@ -1811,8 +1811,8 @@ impl Lockfile {
                             && bound.backend == entry.backend
                             && entry
                                 .platforms
-                                .keys()
-                                .all(|key| bound.platforms.contains_key(key))
+                                .iter()
+                                .all(|(key, info)| bound.platforms.get(key) == Some(info))
                     })
             };
             let drop = entries
@@ -5405,11 +5405,39 @@ mod tests {
             "b".to_string(),
             vec![tool("1", "b", &[]), tool("1", "other", &["1"])],
         );
+        // Same platform key but conflicting checksum: kept; identical: pruned.
+        let with_platform = |version: &str, checksum: &str, specifiers: &[&str]| {
+            let mut t = tool(version, "c", specifiers);
+            t.platforms.insert(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    ..Default::default()
+                },
+            );
+            t
+        };
+        lockfile.tools.insert(
+            "c".to_string(),
+            vec![
+                with_platform("1", "x", &[]),
+                with_platform("1", "y", &["1"]),
+            ],
+        );
+        lockfile.tools.insert(
+            "d".to_string(),
+            vec![
+                with_platform("1", "x", &[]),
+                with_platform("1", "x", &["1"]),
+            ],
+        );
         lockfile.retain_unsuperseded_unbound_entries(|_, _| true);
         assert_eq!(lockfile.tools["pipx:cowsay"].len(), 1);
         assert!(!lockfile.tools["pipx:cowsay"][0].specifiers.is_empty());
         assert_eq!(lockfile.tools["a"].len(), 2);
         assert_eq!(lockfile.tools["b"].len(), 2);
+        assert_eq!(lockfile.tools["c"].len(), 2);
+        assert_eq!(lockfile.tools["d"].len(), 1);
     }
 
     #[test]
