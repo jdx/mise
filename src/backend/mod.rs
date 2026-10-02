@@ -3992,8 +3992,12 @@ pub trait Backend: Debug + Send + Sync {
                 .parent()
                 .map_or(Ok(()), file::create_dir_all)
                 .and_then(|()| file::make_symlink(target, &install_path));
-            if let Err(err) = restored {
-                warn!("failed to restore the install of {tv}: {err:#}");
+            match restored {
+                // `always_keep_install` leaves the marker create_install_dirs wrote.
+                Ok(_) => {
+                    install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname())
+                }
+                Err(err) => warn!("failed to restore the install of {tv}: {err:#}"),
             }
         };
         if let Err(e) = self.create_install_dirs(&tv) {

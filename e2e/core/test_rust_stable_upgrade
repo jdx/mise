@@ -95,8 +95,9 @@ assert_contains "mise upgrade rust --dry-run" "Would install rust@stable"
 
 # A failed update must leave the installed toolchain linked and usable.
 touch "$STATE/fail_install"
-assert_fail "mise upgrade rust"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
 assert "test -L '$MISE_DATA_DIR/installs/rust/stable'"
+assert_contains "mise ls rust --json" '"installed": true'
 assert_contains "mise exec -- rustc -V" "rustc stable (fake)"
 rm "$STATE/fail_install"
 
