@@ -62,6 +62,18 @@ fn latest_installed_nightly(versions: impl DoubleEndedIterator<Item = String>) -
     versions.rev().find(|version| is_dated_nightly(version))
 }
 
+/// Returns the installed and available versions that `rustup check` reports for
+/// `toolchain`, or `None` when that toolchain has no update. rustup 1.29 changed
+/// `Update available : ` to `update available: `, so both spellings match.
+fn rustup_check_update<'a>(output: &'a str, toolchain: &str) -> Option<(&'a str, &'a str)> {
+    let status_re = regex!(r"^(?i:update available)\s*:\s*(.+?)\s+->\s+(.+?)\s*$");
+    output.lines().find_map(|line| {
+        let status = line.strip_prefix(toolchain)?.strip_prefix(" - ")?;
+        let caps = status_re.captures(status)?;
+        Some((caps.get(1)?.as_str(), caps.get(2)?.as_str()))
+    })
+}
+
 #[derive(Debug, Clone, Copy)]
 struct RustOptions<'a> {
     values: BackendOptions<'a>,
@@ -674,7 +686,6 @@ impl Backend for RustPlugin {
             }
             return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
         }
-        let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
             let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
@@ -699,17 +710,15 @@ impl Backend for RustPlugin {
                 );
             }
             let out = String::from_utf8_lossy(&result.stdout);
-            for line in out.lines() {
-                if line.starts_with(&self.target_triple(tv))
-                    && let Some(_cap) = v_re.captures(line)
-                {
-                    // let requested = cap.get(1).unwrap().as_str().to_string();
-                    // let latest = cap.get(2).unwrap().as_str().to_string();
-                    let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
-                    return Ok(Some(oi));
-                }
-            }
-            Ok(None)
+            let toolchain = self.target_triple(tv);
+            let Some((current, available)) = rustup_check_update(&out, &toolchain) else {
+                return Ok(None);
+            };
+            debug!("rustup check: {toolchain} {current} -> {available}");
+            // `mise upgrade` keeps a channel installed and updates it in place only
+            // when latest equals current, so latest stays the channel name.
+            let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+            Ok(Some(oi))
         }
     }
 
@@ -1264,6 +1273,68 @@ mod tests {
         );
         assert_eq!(
             latest_installed_nightly(["nightly".to_string()].into_iter()),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_rustup_check_update_before_1_29() {
+        let out = "\
+stable-aarch64-apple-darwin - Update available : 1.98.1 (48a229cea 2026-09-01) -> 1.99.0 (b940084d7 2026-09-28)
+rustup - Up to date : 1.28.2
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            Some((
+                "1.98.1 (48a229cea 2026-09-01)",
+                "1.99.0 (b940084d7 2026-09-28)"
+            ))
+        );
+    }
+
+    #[test]
+    fn parses_rustup_check_update_since_1_29() {
+        let out = "\
+stable-aarch64-apple-darwin - update available: 1.97.1 (8bab26f4f 2026-07-14) -> 1.99.0 (b940084d7 2026-09-28)
+rustup - update available : 1.29.0 -> 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            Some((
+                "1.97.1 (8bab26f4f 2026-07-14)",
+                "1.99.0 (b940084d7 2026-09-28)"
+            ))
+        );
+    }
+
+    #[test]
+    fn rustup_check_update_reads_only_the_selected_toolchain() {
+        let out = "\
+stable-aarch64-apple-darwin - up to date: 1.99.0 (b940084d7 2026-09-28)
+nightly-aarch64-apple-darwin - update available: 1.100.0-nightly (fb6531d55 2026-08-23) -> 1.101.0-nightly (c36f14571 2026-10-01)
+rustup - update available : 1.29.0 -> 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            None
+        );
+        assert_eq!(
+            rustup_check_update(out, "nightly-aarch64-apple-darwin"),
+            Some((
+                "1.100.0-nightly (fb6531d55 2026-08-23)",
+                "1.101.0-nightly (c36f14571 2026-10-01)"
+            ))
+        );
+    }
+
+    #[test]
+    fn rustup_check_update_is_none_when_up_to_date() {
+        let out = "\
+stable-aarch64-apple-darwin - up to date: 1.99.0 (b940084d7 2026-09-28)
+rustup - up to date : 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
             None
         );
     }
