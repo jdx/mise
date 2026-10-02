@@ -354,7 +354,7 @@ export interface EndCardState {
  * The end card at local second `lt` (from E0): every moment starts on its
  * cue, so the frame on the end's bar line (lt 0) is the chef at rest and
  * nothing else, and every move is over by 9 s, after which only the motes
- * and the grain move.
+ * move.
  */
 export function endCardState(lt: number, c: EndCues = END_CUES): EndCardState {
   const word = beats(DUR.flick);

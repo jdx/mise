@@ -216,7 +216,7 @@ The end card moves on eighths of a beat (0.125 s) from its bar line, E0 = 7:02.0
 | 7:08.250 | +6.250 s | `platform` | the platform line starts to fade in (1/2 beat)                                                 |                                              | the voice below -50.7 dBFS, +6.250 |
 | 7:09.500 | +7.500 s | `url`      | "mise.jdx.dev" has landed (over the 1/8 beat before)                                           | the click (`props.ts` `seat`)                | button hit 1, +7.515               |
 | 7:10.250 | +8.250 s | `glint`    | the glint starts across the hat (1/2 beat); the sparkle peaks as it ends                       | tiny bells up from F (`sounds.ts` `shimmer`) | button hit 2, +8.264               |
-| 7:11.000 | +9.000 s |            | the last move is over; only the motes and the grain move, and the card holds to 7:16.0         | the bed's ending                             | the ring-out at -62 dBFS, +11.200  |
+| 7:11.000 | +9.000 s |            | the last move is over; only the motes move, and the card holds to 7:16.0                       | the bed's ending                             | the ring-out at -62 dBFS, +11.200  |
 
 ## Captures
 
