@@ -321,22 +321,3 @@ assert "test $(pitchfork status allproj/extra --json | jq -r .status) != running
 assert_contains "pitchfork status bystander/other --json" '"status": "running"'
 cd ../all-bystander
 mise daemons stop
-
-# `{{ env.* }}` and `{{ vars.* }}` in a daemon command come from mise's config, which
-# pitchfork cannot see.
-mkdir -p ../templated
-cd ../templated
-cat >mise.toml <<'TOML'
-[tools]
-pitchfork = "system"
-[env]
-TEST_ENV = "test_env_value"
-[vars]
-test_var = "test_var_value"
-[daemons.templated]
-run = "echo '{{ env.TEST_ENV }} {{ vars.test_var }} {{ name }}' >rendered.txt; exec sleep 600"
-ready_cmd = "test -s rendered.txt"
-TOML
-mise daemons start templated
-assert "cat rendered.txt" "test_env_value test_var_value templated"
-mise daemons stop

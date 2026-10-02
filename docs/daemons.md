@@ -94,11 +94,14 @@ also accept pitchfork's structured `port` table; presets accept only an integer 
 mise's automatic port syntax.
 
 ::: v-pre
-User-provided strings retain pitchfork template syntax, except that mise fills in
-`{{ env.NAME }}` and `{{ vars.NAME }}` from the project's [`[env]`](/environments/) and
-[`[vars]`](/configuration/vars) first. A daemon's own `env` table takes precedence over
-`[env]`, and pitchfork's variables such as `{{ port }}` or `{{ url }}` are left for
-pitchfork to render. Beyond that, mise renders only the embedded preset templates.
+User-provided strings retain pitchfork template syntax, and mise renders the embedded
+preset templates. A `run` command can also use `{{ env.NAME }}` and
+`{{ vars.NAME }}` from the project's [`[env]`](/environments/) and
+[`[vars]`](/configuration/vars), along with mise's other template filters such as
+`quote`. Pitchfork renders the variables it defines (`{{ port }}`, `{{ url }}`, ...)
+and passes the command through to `mise x`, which renders the rest when the daemon
+starts. Values from `[env]` are never written to the generated pitchfork file.
+This needs a pitchfork release newer than 2.29.0 and applies to `run` only.
 :::
 
 ```toml
