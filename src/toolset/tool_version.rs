@@ -1245,12 +1245,28 @@ fn has_linked_version(ba: &BackendArg) -> bool {
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
             // Runtime symlinks start with "./" (e.g., latest -> ./1.35.0)
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
-            if target.is_absolute() && !is_mise_managed_symlink_target(&target) {
+            if target.is_absolute()
+                && !is_mise_managed_symlink_target(&target)
+                && !is_rustup_bin_dir(ba, &target)
+            {
                 return true;
             }
         }
     }
     false
+}
+
+/// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
+/// outside mise's directories but is not a user-linked version.
+fn is_rustup_bin_dir(ba: &BackendArg, target: &Path) -> bool {
+    ba.full_without_opts() == "core:rust"
+        && target
+            .join(if cfg!(windows) {
+                "rustup.exe"
+            } else {
+                "rustup"
+            })
+            .exists()
 }
 
 fn is_mise_managed_symlink_target(target: &Path) -> bool {
@@ -1523,6 +1539,38 @@ mod tests {
         fs::create_dir_all(&external_target)?;
         crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("brew"))?;
 
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_rustup_bin_dir_for_core_rust() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let mut backend = BackendArg::new_raw(
+            "rust".to_string(),
+            Some("core:rust".to_string()),
+            "rust".to_string(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.set_installs_path(temp_dir.path().join("installs").join("rust"));
+        fs::create_dir_all(backend.installs_path())?;
+
+        let cargo_bin = temp_dir.path().join("cargo").join("bin");
+        fs::create_dir_all(&cargo_bin)?;
+        let rustup = if cfg!(windows) {
+            "rustup.exe"
+        } else {
+            "rustup"
+        };
+        fs::write(cargo_bin.join(rustup), "")?;
+        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("1.99.0"))?;
+        assert!(!has_linked_version(&backend));
+
+        let other = temp_dir.path().join("other");
+        fs::create_dir_all(&other)?;
+        crate::file::make_symlink_or_file(&other, &backend.installs_path().join("custom"))?;
         assert!(has_linked_version(&backend));
 
         Ok(())
