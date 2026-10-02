@@ -6,8 +6,8 @@
 // rises word by word; the install strip rises in and `curl
 // https://mise.run | sh` types into it; the platform line fades in;
 // mise.jdx.dev lands, and a glint crosses the hat into a sparkle on its
-// right lobe. The chef's eyes never move. From 9 s only the motes and the
-// grain move, and the card holds under the bed's ending. The stack sits
+// right lobe. The chef's eyes never move. From 9 s only the motes move,
+// and the card holds under the bed's ending. The stack sits
 // high (the URL's baseline at 790) so mise.jdx.dev stays clear of a
 // player's controls.
 //

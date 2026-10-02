@@ -58,13 +58,24 @@ export function glow(
 
 let grainTiles: HTMLCanvasElement[] | null = null;
 
-/** Film grain, re-seeded 24 times a second so it reads as film, not noise. */
+/**
+ * Film grain over the frame, re-seeded `fps` times a second, or still at 0.
+ * Its other job is dither: the lamp, the vignette and the glows climb only
+ * 5 to 12 levels of 8-bit colour across hundreds of pixels, and the grain
+ * breaks those steps up. Re-seeded grain is new noise on every frame, which
+ * x264 cannot predict and rounds away at the reel's bitrate, so the steps
+ * came back as rings that swept out as a glow swelled (the end card's
+ * bloom: identical-luma runs of 22 px after the encode, 1.6 px before).
+ * Still grain costs the encoder almost nothing to carry from frame to
+ * frame, so it survives (2.7 px).
+ */
 export function grain(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
   t: number,
   amount = 0.06,
+  fps = 0,
 ): void {
   if (amount <= 0) return;
   if (!grainTiles) {
@@ -84,7 +95,7 @@ export function grain(
       grainTiles.push(c);
     }
   }
-  const f = Math.floor(t * 24);
+  const f = fps > 0 ? Math.floor(t * fps) : 0;
   const tile = grainTiles[f % 4];
   const pattern = ctx.createPattern(tile, "repeat");
   if (!pattern) return;
