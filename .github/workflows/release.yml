@@ -300,10 +300,6 @@ jobs:
     # scripts/build-tarball.ps1 builds with thin LTO on hosted runners and with
     # the profile's fat LTO on the self-hosted runner, which has the RAM for it.
     timeout-minutes: 150
-    env:
-      # The release PR's dry run may use the shared build cache on the self-hosted
-      # runner; a real release (tag push or manual dispatch) never reads or writes it.
-      MBX_DISABLE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:

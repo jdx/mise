@@ -38,17 +38,11 @@ if (-not $Env:CARGO_PROFILE_SERIOUS_LTO -and $MemoryGB -lt 48) {
 }
 Write-Host ("LTO: {0} ({1:N0} GB RAM)" -f $(if ($Env:CARGO_PROFILE_SERIOUS_LTO) { $Env:CARGO_PROFILE_SERIOUS_LTO } else { "fat (profile default)" }), $MemoryGB)
 
-# Only the release PR's dry run may use the shared mbx build cache (release.yml
-# leaves MBX_DISABLE=0 there). A real release sets MBX_DISABLE=1 and always
-# compiles from scratch with plain cargo. Hosted runners have no mbx.
-$Cargo = "cargo"
-if ($Env:MBX_DISABLE -eq "0" -and (Get-Command mbx -ErrorAction SilentlyContinue)) { $Cargo = "mbx" }
-
 # PowerShell keeps going after a failed native command, and packaging below would
 # then zip whatever an earlier build left in target/.
-& $Cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
+cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Cargo build --profile=serious -p mise-shim --target "$Target"
+cargo build --profile=serious -p mise-shim --target "$Target"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 mkdir -p dist/mise/bin
 cp "target/$Target/serious/mise.exe" dist/mise/bin/mise.exe
