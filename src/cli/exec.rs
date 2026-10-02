@@ -904,6 +904,25 @@ where
         }
     }
 
+    // libuv adds a CRT table for every Node child. Only an IPC child has both the Node channel
+    // marker and a matching pipe descriptor, so keep the normal duct path for all other commands
+    // (including .cmd and .bat tools) and retain startup data only for the selected node.exe.
+    if program
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("node"))
+        && program
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+        && mise_util::windows_process::has_inherited_node_ipc()
+    {
+        let status =
+            mise_util::windows_process::status_with_inherited_node_ipc(program.as_os_str(), args)?;
+        return match status.code() {
+            Some(code) => Err(crate::request_exit(code)),
+            None => Err(eyre!("command failed: terminated by signal")),
+        };
+    }
+
     let cmd = cmd::cmd(program, args);
     let res = cmd.unchecked().run()?;
     match res.status.code() {
