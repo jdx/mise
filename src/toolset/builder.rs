@@ -92,11 +92,12 @@ impl ToolsetBuilder {
         let mut toolset = Toolset {
             ..Default::default()
         };
+        let runtime_env: EnvMap = env::vars_safe().collect();
         measure!("toolset_builder::build::load_config_files", {
             self.load_config_files(config, &mut toolset)?;
         });
         measure!("toolset_builder::build::load_runtime_env", {
-            self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
+            self.load_runtime_env(&mut toolset, runtime_env.clone())?;
         });
         measure!("toolset_builder::build::load_runtime_args", {
             self.load_runtime_args(&mut toolset)?;
@@ -114,6 +115,7 @@ impl ToolsetBuilder {
                 self.warn_overridden_lockfiles(config, &toolset);
             }
         });
+        self.apply_postinstall_install_path(&mut toolset, &runtime_env)?;
 
         time!("toolset::builder::build");
         Ok(toolset)
@@ -192,6 +194,31 @@ impl ToolsetBuilder {
             let mut postinstall_ts = Toolset::new(source);
             postinstall_ts.add_version(request);
             ts.merge(postinstall_ts);
+        }
+        Ok(())
+    }
+
+    /// A postinstall hook may invoke mise again before its outer installation
+    /// has finished. Preserve the outer tool's exact destination so that
+    /// nested invocation uses it rather than resolving a second install path.
+    fn apply_postinstall_install_path(&self, ts: &mut Toolset, env: &EnvMap) -> Result<()> {
+        if self.scope == ConfigScope::LocalOnly {
+            return Ok(());
+        }
+        let Some((request, _)) = postinstall_tool_request(env)? else {
+            return Ok(());
+        };
+        let Some(path) = env.get("MISE_TOOL_INSTALL_PATH") else {
+            return Ok(());
+        };
+        let Some(tvl) = ts.versions.get_mut(request.ba()) else {
+            return Ok(());
+        };
+        for tv in &mut tvl.versions {
+            if tv.version == request.version() {
+                tv.install_path = Some(path.into());
+                tv.install_path_is_exact = true;
+            }
         }
         Ok(())
     }
@@ -342,8 +369,36 @@ impl ToolsetBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
-    use crate::toolset::parse_tool_options;
+    use crate::toolset::{ToolVersion, parse_tool_options};
+
+    #[test]
+    fn postinstall_runtime_uses_the_outer_install_path() {
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let request = ToolRequest::new(ba.clone(), "2.0.0", ToolSource::Unknown).unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        ts.add_version(request.clone());
+        ts.versions
+            .get_mut(&ba)
+            .unwrap()
+            .versions
+            .push(ToolVersion::new(request, "2.0.0".into()));
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
+        ]);
+
+        ToolsetBuilder::new()
+            .apply_postinstall_install_path(&mut ts, &env)
+            .unwrap();
+
+        let tv = &ts.versions.get(&ba).unwrap().versions[0];
+        assert_eq!(tv.install_path(), Path::new("/tmp/dummy"));
+        assert!(tv.install_path_is_exact);
+    }
 
     #[tokio::test]
     async fn test_postinstall_request_preserves_configured_options() {

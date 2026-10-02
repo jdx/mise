@@ -3001,6 +3001,12 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
 
+    /// Confirm a newly installed version still satisfies its request after
+    /// tool-level postinstall hooks have run.
+    async fn verify_install(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<()> {
+        Ok(())
+    }
+
     async fn is_install_satisfied_or_false(
         &self,
         config: &Arc<Config>,
@@ -3935,12 +3941,15 @@ pub trait Backend: Debug + Send + Sync {
         ctx.dependency_context(&tv.request).await?;
 
         // Repair in place before anything below removes the working install.
-        if !will_uninstall
+        if !ctx.force
+            && !rolling_reinstall
+            && !will_uninstall
             && self.is_version_installed(&ctx.config, &tv, true)
             && self.repair_install(&ctx, &tv).await?
         {
             self.finish_install_changes(&ctx, &tv).await?;
             self.verify_repaired_install(&ctx, &tv).await?;
+            install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
             ctx.pr.finish_with_message("updated".to_string());
             return Ok(tv);
         }
@@ -4000,6 +4009,7 @@ pub trait Backend: Debug + Send + Sync {
         self.cleanup_install_dirs(&tv);
         install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
         self.finish_install_changes(&ctx, &tv).await?;
+        self.verify_install(&ctx, &tv).await?;
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
     }
