@@ -495,7 +495,11 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             .iter()
             .map(|k| {
                 let daemon = &set.daemons[k];
-                format!("{} in {}", daemon.name, daemon.root.display())
+                format!(
+                    "{} in {}",
+                    daemon.name,
+                    crate::file::display_path(&daemon.root)
+                )
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -973,7 +977,7 @@ pub fn ensure_not_blocked(
         return Ok(());
     };
     let project = root
-        .map(|root| format!(" in {}", root.display()))
+        .map(|root| format!(" in {}", crate::file::display_path(root)))
         .unwrap_or_default();
     let (import, error) = import;
     bail!("daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {error}");

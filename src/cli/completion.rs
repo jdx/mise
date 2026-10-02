@@ -258,7 +258,10 @@ impl Completion {
     /// stderr, so stdout stays empty under `--install`.
     fn report_install(done: &usage_rs::install::Installed) {
         use usage_rs::install::{self, Wrote};
-        eprintln!("installing to {}", done.plan.path.display());
+        eprintln!(
+            "installing to {}",
+            crate::file::display_path(&done.plan.path)
+        );
         if done.wrote == Wrote::Unchanged {
             eprintln!("already up to date");
         }

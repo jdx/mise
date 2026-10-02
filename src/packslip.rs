@@ -1117,16 +1117,22 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     match result {
         Ok(report) => {
             for name in &report.linked {
-                info!("linked skill {name} into {}", dir.display());
+                info!("linked skill {name} into {}", file::display_path(&dir));
             }
             for name in &report.pruned {
-                info!("removed skill link {name} from {}", dir.display());
+                info!(
+                    "removed skill link {name} from {}",
+                    file::display_path(&dir)
+                );
             }
             for (name, why) in &report.skipped {
                 warn!("skipped skill {name}: {why}");
             }
         }
-        Err(err) => warn!("could not sync skills into {}: {err}", dir.display()),
+        Err(err) => warn!(
+            "could not sync skills into {}: {err}",
+            file::display_path(&dir)
+        ),
     }
 }
 

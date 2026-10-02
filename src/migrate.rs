@@ -29,7 +29,11 @@ fn migrate_trusted_configs() -> Result<()> {
 
 fn move_dirs(from: &Path, to: &Path) -> Result<bool> {
     if from.exists() && !to.exists() {
-        eprintln!("migrating {} to {}", from.display(), to.display());
+        eprintln!(
+            "migrating {} to {}",
+            file::display_path(from),
+            file::display_path(to)
+        );
         file::create_dir_all(to.parent().unwrap())?;
         file::rename(from, to)?;
         Ok(true)
