@@ -1295,8 +1295,11 @@ impl Run {
                 // failure instead of waiting for them to finish naturally.
                 // run_loop only sees `is_stopping` when it next iterates,
                 // which doesn't happen while it's awaiting an idle select —
-                // so the kill has to be triggered from here.
-                if !interrupted && !this.continue_on_error {
+                // so the kill has to be triggered from here. After a Ctrl-C the
+                // siblings are already shutting down on their SIGINT, and many
+                // programs exit non-zero instead of dying by it; SIGTERM would
+                // cut their cleanup short.
+                if !interrupted && !ctrlc::is_cancelled() && !this.continue_on_error {
                     debug!("task {} failed, killing siblings", task.name);
                     #[cfg(unix)]
                     crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);

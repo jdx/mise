@@ -21,7 +21,7 @@ use duct::{Expression, IntoExecutablePath};
 use eyre::Result;
 use eyre::{Context, bail};
 #[cfg(not(target_os = "windows"))]
-use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(target_os = "windows"))]
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
@@ -150,6 +150,14 @@ const GUARD_TIMED_OUT: u8 = 2;
 /// How long a timed-out command gets between SIGTERM and SIGKILL.
 #[cfg(unix)]
 const TIMEOUT_GRACE: Duration = Duration::from_secs(5);
+
+#[cfg(unix)]
+fn in_terminal_foreground_pgrp() -> bool {
+    let pgrp = nix::unistd::getpgrp();
+    nix::unistd::tcgetpgrp(std::io::stdin()) == Ok(pgrp)
+        || nix::unistd::tcgetpgrp(std::io::stdout()) == Ok(pgrp)
+        || nix::unistd::tcgetpgrp(std::io::stderr()) == Ok(pgrp)
+}
 
 #[cfg(unix)]
 fn signal_process_tree(pid: u32, signal: nix::sys::signal::Signal) {
@@ -684,10 +692,20 @@ impl<'a> CmdLineRunner<'a> {
     #[cfg(unix)]
     pub fn kill_all(signal: nix::sys::signal::Signal) {
         let use_pgroup = should_use_pgroup();
+        let terminal_delivered =
+            signal == nix::sys::signal::SIGINT && in_terminal_foreground_pgrp();
+        let own_pgid = nix::unistd::getpgrp();
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
             let nix_pid = nix::unistd::Pid::from_raw(pid);
+            // A terminal Ctrl-C already reached children in our foreground
+            // pgid. A second SIGINT makes some of them, such as a nested mise
+            // or `docker compose`, force-quit instead of shutting down.
+            if terminal_delivered && nix::unistd::getpgid(Some(nix_pid)) == Ok(own_pgid) {
+                trace!("{signal}: {pid} already signalled by the terminal");
+                continue;
+            }
             if use_pgroup {
                 trace!("{signal}: pgid {pid}");
                 // Each tracked PID is also the leader of its own pgid (set
@@ -1088,8 +1106,11 @@ impl<'a> CmdLineRunner<'a> {
         let mut sighandle = None;
         #[cfg(not(target_os = "windows"))]
         if self.pass_signals && !crate::testing::active() {
-            let mut signals =
-                Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
+            // SIGINT is left to mise's Ctrl-C handler, whose `kill_all`
+            // already signals every running command. Forwarding it here too
+            // delivered each Ctrl-C twice, which a nested mise (and tools like
+            // `docker compose`) take as a second Ctrl-C and force-quit.
+            let mut signals = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
             sighandle = Some(signals.handle());
             let tx = tx.clone();
             thread::spawn(move || {
@@ -1175,18 +1196,11 @@ impl<'a> CmdLineRunner<'a> {
                     let pid = nix::unistd::Pid::from_raw(id as i32);
                     let nix_sig = nix::sys::signal::Signal::try_from(sig).unwrap();
                     if should_use_pgroup() {
-                        // With pgroups the child is isolated from the
-                        // terminal's foreground pgid, so terminal SIGINT
-                        // doesn't reach it — forward every signal we
-                        // catch, including SIGINT.
                         debug!("Received signal {sig}, forwarding to pgid {id}");
                         if nix::sys::signal::killpg(pid, nix_sig).is_err() {
                             let _ = nix::sys::signal::kill(pid, nix_sig);
                         }
-                    } else if sig != SIGINT {
-                        // No pgroup: the child is in our pgid, so the
-                        // terminal already delivered SIGINT. Forwarding
-                        // it again would just be a redundant kill.
+                    } else {
                         debug!("Received signal {sig}, forwarding to {id}");
                         let _ = nix::sys::signal::kill(pid, nix_sig);
                     }
@@ -1301,8 +1315,8 @@ impl<'a> CmdLineRunner<'a> {
         let mut sighandle = None;
         #[cfg(not(target_os = "windows"))]
         if self.pass_signals && !crate::testing::active() {
-            let mut signals =
-                Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
+            // SIGINT is left to mise's Ctrl-C handler; see `execute`.
+            let mut signals = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
             sighandle = Some(signals.handle());
             let tx = tx.clone();
             thread::spawn(move || {
@@ -1377,7 +1391,7 @@ impl<'a> CmdLineRunner<'a> {
                                 if nix::sys::signal::killpg(pid, nix_sig).is_err() {
                                     let _ = nix::sys::signal::kill(pid, nix_sig);
                                 }
-                            } else if sig != SIGINT {
+                            } else {
                                 debug!("Received signal {sig}, forwarding to {id}");
                                 let _ = nix::sys::signal::kill(pid, nix_sig);
                             }
