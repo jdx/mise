@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Without a terminal, the outer mise signals a task's whole process group, so
+# a nested `mise run` and its task both get the SIGINT directly. The inner mise
+# must not pass it on to the task a second time: tools like `docker compose`
+# take a second SIGINT as a request to force-quit.
+#
+# The task lingers after its first SIGINT so that a duplicate has time to land.
+
+cat <<'TOML' >mise.toml
+[tasks.outer]
+run = "mise run inner"
+
+[tasks.inner]
+run = """
+interrupted=0
+trap 'echo int >>"$HOME/sigints"; interrupted=1' INT
+touch "$HOME/inner-ready"
+while [ "$interrupted" = 0 ]; do
+  sleep 0.1 &
+  wait $! || true
+done
+for _ in $(seq 20); do
+  sleep 0.1 &
+  wait $! || true
+done
+touch "$HOME/inner-done"
+"""
+TOML
+
+python3 - "$HOME" <<'PY'
+import os
+import signal
+import sys
+import time
+
+home = sys.argv[1]
+ready = os.path.join(home, "inner-ready")
+done = os.path.join(home, "inner-done")
+sigints = os.path.join(home, "sigints")
+pidfile = os.path.join(home, "outer.pid")
+
+
+def wait_for(predicate, what, timeout=15.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise SystemExit(f"timed out waiting for {what}")
+
+
+# Detach from any terminal, but don't leave mise as the session leader: mise
+# only manages process groups for its tasks when it isn't one.
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    mise = os.fork()
+    if mise == 0:
+        null = os.open(os.devnull, os.O_RDWR)
+        for fd in (0, 1, 2):
+            os.dup2(null, fd)
+        os.execvp("mise", ["mise", "run", "outer"])
+        os._exit(127)
+    with open(pidfile, "w") as f:
+        f.write(str(mise))
+    os.waitpid(mise, 0)
+    os._exit(0)
+
+try:
+    wait_for(lambda: os.path.exists(ready), "the task to start")
+    wait_for(lambda: os.path.exists(pidfile), "the pid file")
+    with open(pidfile) as f:
+        mise_pid = int(f.read())
+    os.kill(mise_pid, signal.SIGINT)
+
+    def mise_gone():
+        try:
+            os.kill(mise_pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+
+    wait_for(mise_gone, "mise to exit")
+    if not os.path.exists(done):
+        raise SystemExit("mise exited before the task finished shutting down")
+    with open(sigints) as f:
+        count = len(f.read().split())
+    if count != 1:
+        raise SystemExit(f"the task got {count} SIGINTs, expected 1")
+finally:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+print("task got exactly one SIGINT")
+PY

@@ -6839,6 +6839,7 @@ dependencies = [
  "shell-escape",
  "shell-words",
  "signal-hook",
+ "signal-hook-registry",
  "siphasher",
  "strum 0.28.0",
  "tempfile",

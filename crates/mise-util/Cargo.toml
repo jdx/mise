@@ -131,6 +131,7 @@ nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4"
 seccompiler = "0.5"
+signal-hook-registry = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
