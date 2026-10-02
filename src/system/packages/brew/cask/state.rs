@@ -165,16 +165,18 @@ pub(super) fn installed_pkg_receipt_ids(declared: &[String]) -> Vec<String> {
     if !cfg!(target_os = "macos") {
         return declared.to_vec();
     }
-    resolve_installed_pkg_ids(declared, pkgutil_matching_ids)
+    resolve_installed_pkg_ids(declared, pkgutil_matching_ids_checked)
 }
 
+/// `matching_ids` returns `None` when the lookup itself failed. Such a pattern
+/// is kept, because a failed query says nothing about whether it matches.
 pub(super) fn resolve_installed_pkg_ids(
     declared: &[String],
-    mut matching_ids: impl FnMut(&str) -> Vec<String>,
+    mut matching_ids: impl FnMut(&str) -> Option<Vec<String>>,
 ) -> Vec<String> {
     let matched = declared
         .iter()
-        .filter(|pattern| !matching_ids(pattern).is_empty())
+        .filter(|pattern| matching_ids(pattern).is_none_or(|ids| !ids.is_empty()))
         .cloned()
         .collect::<Vec<_>>();
     if matched.is_empty() {
@@ -208,18 +210,24 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
 /// `pkg_id_installed`, the printed IDs are authoritative and the exit status
 /// is ignored, because a query can exit unsuccessfully either way.
 fn pkgutil_matching_ids(pattern: &str) -> Vec<String> {
+    pkgutil_matching_ids_checked(pattern).unwrap_or_default()
+}
+
+/// Like `pkgutil_matching_ids`, but `None` means `pkgutil` could not be run,
+/// as opposed to running and matching nothing.
+fn pkgutil_matching_ids_checked(pattern: &str) -> Option<Vec<String>> {
     std::process::Command::new("pkgutil")
         .arg(format!("--pkgs={pattern}"))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
+        .ok()
         .map(|output| {
             String::from_utf8_lossy(&output.stdout)
                 .split_whitespace()
                 .map(str::to_string)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// Runs a per-receipt `pkgutil` query and returns its stdout, or `None` if it

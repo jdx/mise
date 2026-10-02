@@ -5987,11 +5987,13 @@ fn receipt_pkg_ids_keep_only_registered_receipts() {
     let registered = ["com.google.drivefs.arm64", "com.google.drivefs.shortcuts"];
 
     let ids = resolve_installed_pkg_ids(&declared, |pattern| {
-        registered
-            .iter()
-            .filter(|id| **id == pattern)
-            .map(|id| id.to_string())
-            .collect()
+        Some(
+            registered
+                .iter()
+                .filter(|id| **id == pattern)
+                .map(|id| id.to_string())
+                .collect(),
+        )
     });
 
     assert_eq!(
@@ -6010,17 +6012,38 @@ fn receipt_pkg_ids_keep_matching_patterns_and_fall_back_when_unmatched() {
         "com.example.other".to_string(),
     ];
     let ids = resolve_installed_pkg_ids(&declared, |pattern| {
-        if pattern == "com.example.pkg.*" {
+        Some(if pattern == "com.example.pkg.*" {
             vec!["com.example.pkg.a".to_string()]
         } else {
             Vec::new()
-        }
+        })
     });
     assert_eq!(ids, vec!["com.example.pkg.*".to_string()]);
 
     assert_eq!(
-        resolve_installed_pkg_ids(&declared, |_| Vec::new()),
+        resolve_installed_pkg_ids(&declared, |_| Some(Vec::new())),
         declared
+    );
+}
+
+#[test]
+fn receipt_pkg_ids_keep_patterns_whose_lookup_failed() {
+    let declared = vec![
+        "com.example.matched".to_string(),
+        "com.example.unknown".to_string(),
+        "com.example.absent".to_string(),
+    ];
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| match pattern {
+        "com.example.matched" => Some(vec![pattern.to_string()]),
+        "com.example.unknown" => None,
+        _ => Some(Vec::new()),
+    });
+    assert_eq!(
+        ids,
+        vec![
+            "com.example.matched".to_string(),
+            "com.example.unknown".to_string()
+        ]
     );
 }
 
@@ -6033,11 +6056,11 @@ fn receipt_persists_resolved_pkg_ids() -> Result<()> {
     ];
     let artifacts = CaskArtifacts {
         pkg_ids: resolve_installed_pkg_ids(&declared, |pattern| {
-            if pattern.ends_with("arm64") {
+            Some(if pattern.ends_with("arm64") {
                 vec![pattern.to_string()]
             } else {
                 Vec::new()
-            }
+            })
         }),
         ..Default::default()
     };
