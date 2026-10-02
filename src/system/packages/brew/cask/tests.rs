@@ -5975,6 +5975,58 @@ fn detects_pkgutil_query_matches() {
 }
 
 #[test]
+fn receipt_pkg_ids_keep_only_registered_receipts() {
+    let declared = [
+        "com.google.drivefs.arm64",
+        "com.google.drivefs.filesystems.dfsfuse.arm64",
+        "com.google.drivefs.filesystems.dfsfuse.x86_64",
+        "com.google.drivefs.shortcuts",
+        "com.google.drivefs.x86_64",
+    ]
+    .map(String::from);
+    let registered = ["com.google.drivefs.arm64", "com.google.drivefs.shortcuts"];
+
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| {
+        registered
+            .iter()
+            .filter(|id| **id == pattern)
+            .map(|id| id.to_string())
+            .collect()
+    });
+
+    assert_eq!(
+        ids,
+        vec![
+            "com.google.drivefs.arm64".to_string(),
+            "com.google.drivefs.shortcuts".to_string()
+        ]
+    );
+}
+
+#[test]
+fn receipt_pkg_ids_expand_patterns_and_fall_back_when_unmatched() {
+    let declared = vec!["com.example.pkg.*".to_string()];
+    let ids = resolve_installed_pkg_ids(&declared, |_| {
+        vec![
+            "com.example.pkg.b".to_string(),
+            "com.example.pkg.a".to_string(),
+        ]
+    });
+    assert_eq!(
+        ids,
+        vec![
+            "com.example.pkg.a".to_string(),
+            "com.example.pkg.b".to_string()
+        ]
+    );
+
+    assert_eq!(
+        resolve_installed_pkg_ids(&declared, |_| Vec::new()),
+        declared
+    );
+}
+
+#[test]
 fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
     let mut cask = test_cask("google-japanese-ime", "3.33.6130");
     cask.artifacts = vec![
