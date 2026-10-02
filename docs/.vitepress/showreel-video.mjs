@@ -283,8 +283,12 @@ const BED_PIECE = 5 * 3 * 2 ** 20;
  * an Ogg Opus file is a 48 kHz one.
  */
 function checkOpus(bytes, file) {
-  const at = 27 + bytes[26];
+  // The page's 27-byte header ends with its segment count, then the
+  // segment table, then the packet: "OpusHead", the version, the channels.
+  // A file too short for any of it is not one.
+  const at = bytes.length > 26 ? 27 + bytes[26] : Infinity;
   if (
+    bytes.length < at + 10 ||
     bytes.toString("latin1", 0, 4) !== "OggS" ||
     bytes.toString("latin1", at, at + 8) !== "OpusHead"
   )
