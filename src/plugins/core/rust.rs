@@ -97,15 +97,19 @@ fn rustup_toolchain_is_host_qualified(version: &str) -> bool {
         .is_some_and(|(_, host)| rustup_component_suffix_is_host_triple(host))
 }
 
-/// `stable` and `beta` move under a fixed name, so a toolchain installed under
-/// one only ever updates when `rustup check` says so. Dated nightlies and
-/// exact releases are pinned, and bare `nightly` is resolved to a dated one.
+/// `stable` and `beta` (and a host-qualified `nightly-<host>`) move under a
+/// fixed name, so a toolchain installed under one only ever updates when
+/// `rustup check` says so. Dated nightlies and exact releases are pinned, and
+/// bare `nightly` is resolved to a dated one.
 fn is_moving_channel(version: &str) -> bool {
     let channel = version
         .split_once('-')
         .map_or(version, |(channel, _)| channel);
-    matches!(channel, "stable" | "beta")
-        && (channel == version || rustup_toolchain_is_host_qualified(version))
+    match channel {
+        "stable" | "beta" => channel == version || rustup_toolchain_is_host_qualified(version),
+        "nightly" => rustup_toolchain_is_host_qualified(version),
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -762,6 +766,9 @@ impl Backend for RustPlugin {
             let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
         } else {
+            if Settings::get().offline() || opts.offline {
+                return Ok(None);
+            }
             let out = self.rustup_check(config, tv).await?;
             let Some((toolchain, current, available)) = self.rustup_check_update_for(&out, tv)
             else {
@@ -1442,6 +1449,7 @@ rustup - up to date : 1.29.1
         assert!(is_moving_channel("stable"));
         assert!(is_moving_channel("beta"));
         assert!(is_moving_channel("stable-aarch64-apple-darwin"));
+        assert!(is_moving_channel("nightly-aarch64-apple-darwin"));
         assert!(!is_moving_channel("nightly"));
         assert!(!is_moving_channel("nightly-2026-10-01"));
         assert!(!is_moving_channel("1.99.0"));
