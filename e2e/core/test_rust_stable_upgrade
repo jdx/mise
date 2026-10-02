@@ -60,6 +60,10 @@ rustc | cargo)
 		echo "error: toolchain '$RUSTUP_TOOLCHAIN' is not installed" >&2
 		exit 1
 	fi
+	if [[ -e $STATE/bad_rustc ]]; then
+		echo "error: could not run $(basename "$0")" >&2
+		exit 1
+	fi
 	echo "$(basename "$0") $RUSTUP_TOOLCHAIN (fake)"
 	;;
 esac
@@ -110,10 +114,20 @@ assert_contains "mise exec -- rustc -V" "rustc stable (fake)"
 touch "$STATE/broken"
 MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
 assert "mise ls --installed rust --json" "[]"
-rm "$STATE/broken" "$STATE/fail_install"
+rm "$STATE/broken"
+
+# Nor does a compiler that no longer runs count as usable. Repair the install the
+# previous step left incomplete first, so this step starts from a working one.
+rm "$STATE/fail_install"
+mise install rust
+assert_contains "mise ls --installed rust --json" '"version": "stable"'
+touch "$STATE/update_available" "$STATE/fail_install" "$STATE/bad_rustc"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
+assert "mise ls --installed rust --json" "[]"
+rm "$STATE/bad_rustc" "$STATE/fail_install"
 
 mise upgrade rust
-assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "4"
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "6"
 # The channel is updated in place: a failed install must not strand the old toolchain.
 assert "! grep -q '^toolchain uninstall' '$STATE/rustup.log'"
 assert "mise outdated rust --json" "{}"

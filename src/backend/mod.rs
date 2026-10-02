@@ -3999,7 +3999,7 @@ pub trait Backend: Debug + Send + Sync {
         };
         if let Err(e) = self.create_install_dirs(&tv) {
             if restore_kept_symlink(&tv) {
-                self.settle_restored_install(&ctx.config, &tv).await;
+                self.settle_restored_install(&ctx, &tv).await;
             }
             return Err(e);
         }
@@ -4011,7 +4011,7 @@ pub trait Backend: Debug + Send + Sync {
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
                 if restore_kept_symlink(&old_tv) {
-                    self.settle_restored_install(&ctx.config, &old_tv).await;
+                    self.settle_restored_install(&ctx, &old_tv).await;
                 }
                 // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
@@ -4468,10 +4468,15 @@ pub trait Backend: Debug + Send + Sync {
     /// After a failed in-place update put the previous install's link back,
     /// drop the incomplete marker `create_install_dirs` wrote (`always_keep_install`
     /// leaves it behind), but only when the backend still considers the install
-    /// usable. Otherwise keep it so the next install repairs the version.
-    async fn settle_restored_install(&self, config: &Arc<Config>, tv: &ToolVersion) {
+    /// satisfied and its verification passes. Otherwise keep it so the next
+    /// install repairs the version.
+    async fn settle_restored_install(&self, ctx: &InstallContext, tv: &ToolVersion) {
         install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
-        if !self.is_install_satisfied_or_false(config, tv, true).await {
+        let usable = self
+            .is_install_satisfied_or_false(&ctx.config, tv, true)
+            .await
+            && self.verify_repaired_install(ctx, tv).await.is_ok();
+        if !usable {
             let _ = file::create(&self.incomplete_file_path(tv));
         }
     }

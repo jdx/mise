@@ -798,6 +798,13 @@ impl Backend for RustPlugin {
         }
     }
 
+    /// Confirm the compiler of a restored install still runs, which
+    /// `is_install_satisfied` (rustup's component state) does not.
+    async fn verify_repaired_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let runtime = RustRuntime::resolve_for_tool_version(&ctx.config, tv).await?;
+        self.test_rust(ctx, tv, &runtime).await
+    }
+
     /// `rustup toolchain install stable` updates the installed toolchain in place.
     fn updates_rolling_version_in_place(&self) -> bool {
         true
