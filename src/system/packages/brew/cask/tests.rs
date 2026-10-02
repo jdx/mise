@@ -6041,7 +6041,8 @@ fn receipt_persists_resolved_pkg_ids() -> Result<()> {
         }),
         ..Default::default()
     };
-    let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    let temp = tempfile::tempdir()?;
+    let version_dir = temp.path().join("google-drive").join(&cask.version);
     file::create_dir_all(&version_dir)?;
     write_receipt_with_flight_targets(
         &version_dir,
