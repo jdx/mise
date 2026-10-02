@@ -116,7 +116,11 @@ impl PackageState {
     }
 
     pub fn is_unavailable(&self) -> bool {
-        matches!(self, Self::Unavailable { .. })
+        match self {
+            #[cfg(unix)]
+            Self::Unavailable { .. } => true,
+            _ => false,
+        }
     }
 
     pub(crate) fn unavailable_reason(&self) -> Option<&str> {
