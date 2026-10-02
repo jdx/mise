@@ -26,6 +26,9 @@ mod nightly_channel;
 #[derive(Debug)]
 pub(super) struct RustPlugin {
     ba: Arc<BackendArg>,
+    /// Channels `rustup check` reported an update for in this run, so the install
+    /// that follows an upgrade does not ask rustup (and the network) again.
+    updatable_channels: std::sync::Mutex<BTreeSet<String>>,
 }
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
@@ -60,6 +63,68 @@ fn is_dated_nightly(version: &str) -> bool {
 
 fn latest_installed_nightly(versions: impl DoubleEndedIterator<Item = String>) -> Option<String> {
     versions.rev().find(|version| is_dated_nightly(version))
+}
+
+/// Returns the installed and available versions that `rustup check` reports for
+/// `toolchain`, or `None` when that toolchain has no update. rustup 1.29 changed
+/// `Update available : ` to `update available: `, so both spellings match.
+fn rustup_check_update<'a>(output: &'a str, toolchain: &str) -> Option<(&'a str, &'a str)> {
+    let status_re = regex!(r"^(?i:update available)\s*:\s*(.+?)\s+->\s+(.+?)\s*$");
+    output.lines().find_map(|line| {
+        let status = line.strip_prefix(toolchain)?.strip_prefix(" - ")?;
+        let caps = status_re.captures(status)?;
+        Some((caps.get(1)?.as_str(), caps.get(2)?.as_str()))
+    })
+}
+
+/// The names under which `rustup check` may list the toolchain installed for
+/// `version`, most specific first.
+fn rustup_check_toolchain_names(version: &str, default_host: Option<&str>) -> Vec<String> {
+    if rustup_toolchain_is_host_qualified(version) {
+        return vec![version.to_string()];
+    }
+    let mut names = Vec::new();
+    if let Some(host) = default_host {
+        names.push(format!("{version}-{host}"));
+    }
+    let built_for = format!("{version}-{TARGET}");
+    if !names.contains(&built_for) {
+        names.push(built_for);
+    }
+    names
+}
+
+/// The only `<version>-<host>` toolchain `rustup check` lists, if there is
+/// exactly one.
+fn rustup_check_sole_host_toolchain(output: &str, version: &str) -> Option<String> {
+    let mut names = output.lines().filter_map(|line| {
+        let name = line.split_once(" - ")?.0;
+        let host = name.strip_prefix(version)?.strip_prefix('-')?;
+        rustup_component_suffix_is_host_triple(host).then(|| name.to_string())
+    });
+    let sole = names.next()?;
+    names.next().is_none().then_some(sole)
+}
+
+fn rustup_toolchain_is_host_qualified(version: &str) -> bool {
+    version
+        .split_once('-')
+        .is_some_and(|(_, host)| rustup_component_suffix_is_host_triple(host))
+}
+
+/// `stable` and `beta` (and a host-qualified `nightly-<host>`) move under a
+/// fixed name, so a toolchain installed under one only ever updates when
+/// `rustup check` says so. Dated nightlies and exact releases are pinned, and
+/// bare `nightly` is resolved to a dated one.
+fn is_moving_channel(version: &str) -> bool {
+    let channel = version
+        .split_once('-')
+        .map_or(version, |(channel, _)| channel);
+    match channel {
+        "stable" | "beta" => channel == version || rustup_toolchain_is_host_qualified(version),
+        "nightly" => rustup_toolchain_is_host_qualified(version),
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -139,6 +204,7 @@ impl RustPlugin {
     pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
+            updatable_channels: Default::default(),
         }
     }
 
@@ -244,8 +310,56 @@ impl RustPlugin {
         Ok(())
     }
 
-    fn target_triple(&self, tv: &ToolVersion) -> String {
-        format!("{}-{}", tv.version, TARGET)
+    /// Runs `rustup check` for the toolchain's rustup and returns its stdout.
+    async fn rustup_check(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<String> {
+        let ts = config.get_toolset().await?;
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), ["check"])
+            .env("PATH", self.path_env_for_cmd(config, tv).await?);
+        for (k, v) in self.exec_env(config, ts, tv).await? {
+            cmd = cmd.env(k, v);
+        }
+        // rustup check returns exit code 100 when updates are available
+        // This is not an error, so we use unchecked() and check status manually
+        let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
+        let exit_code = result.status.code().unwrap_or(-1);
+        if exit_code != 0 && exit_code != 100 {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            eyre::bail!(
+                "command [\"rustup\", \"check\"] exited with code {}. stderr: {}",
+                exit_code,
+                stderr.trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&result.stdout).into_owned())
+    }
+
+    /// Finds the update `rustup check` reports for `tv`'s toolchain, trying the
+    /// names rustup may list it under: the version itself when it is already
+    /// host-qualified, otherwise the configured default host and then the host
+    /// mise was built for.
+    fn rustup_check_update_for<'a>(
+        &self,
+        output: &'a str,
+        tv: &ToolVersion,
+    ) -> Option<(String, &'a str, &'a str)> {
+        let settings = Settings::get();
+        let named =
+            rustup_check_toolchain_names(&tv.version, settings.rust.default_host.as_deref())
+                .into_iter()
+                .find_map(|name| {
+                    let (current, available) = rustup_check_update(output, &name)?;
+                    Some((name, current, available))
+                });
+        if named.is_some() {
+            return named;
+        }
+        // rustup may have been initialized for a host other than the configured
+        // one or the one mise was built for. A single host-qualified listing of
+        // this toolchain is unambiguous; with several, give up.
+        let name = rustup_check_sole_host_toolchain(output, &tv.version)?;
+        let (current, available) = rustup_check_update(output, &name)?;
+        Some((name, current, available))
     }
 
     fn rustup_installed_items(
@@ -597,6 +711,7 @@ impl Backend for RustPlugin {
         if let Err(err) = self.link_nightly_channel(&tv, &runtime) {
             warn!("failed to make rustup's nightly toolchain match {tv}: {err:#}");
         }
+        self.updatable_channels.lock().unwrap().remove(&tv.version);
 
         Ok(tv)
     }
@@ -674,43 +789,58 @@ impl Backend for RustPlugin {
             }
             return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
         }
-        let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
             let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
         } else {
-            let ts = config.get_toolset().await?;
-            let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
-            let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), ["check"])
-                .env("PATH", self.path_env_for_cmd(config, tv).await?);
-            for (k, v) in self.exec_env(config, ts, tv).await? {
-                cmd = cmd.env(k, v);
+            if Settings::get().offline() || opts.offline {
+                return Ok(None);
             }
-            // rustup check returns exit code 100 when updates are available
-            // This is not an error, so we use unchecked() and check status manually
-            let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
-            let exit_code = result.status.code().unwrap_or(-1);
-            if exit_code != 0 && exit_code != 100 {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                eyre::bail!(
-                    "command [\"rustup\", \"check\"] exited with code {}. stderr: {}",
-                    exit_code,
-                    stderr.trim()
-                );
-            }
-            let out = String::from_utf8_lossy(&result.stdout);
-            for line in out.lines() {
-                if line.starts_with(&self.target_triple(tv))
-                    && let Some(_cap) = v_re.captures(line)
-                {
-                    // let requested = cap.get(1).unwrap().as_str().to_string();
-                    // let latest = cap.get(2).unwrap().as_str().to_string();
-                    let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
-                    return Ok(Some(oi));
+            let out = self.rustup_check(config, tv).await?;
+            let update = self.rustup_check_update_for(&out, tv);
+            if is_moving_channel(&tv.version) {
+                let mut updatable = self.updatable_channels.lock().unwrap();
+                if update.is_some() {
+                    updatable.insert(tv.version.clone());
+                } else {
+                    updatable.remove(&tv.version);
                 }
             }
-            Ok(None)
+            let Some((toolchain, current, available)) = update else {
+                return Ok(None);
+            };
+            debug!("rustup check: {toolchain} {current} -> {available}");
+            // `mise upgrade` keeps a channel installed and updates it in place only
+            // when latest equals current, so latest stays the channel name.
+            let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+            Ok(Some(oi))
         }
+    }
+
+    /// A `stable` or `beta` toolchain keeps its name when rustup updates it, so
+    /// mise's install marker never goes stale. Reuse the answer `outdated_info`
+    /// got from `rustup check`, so that `mise upgrade` reinstalls the channel
+    /// instead of skipping it as installed while a plain `mise install` of an
+    /// installed channel never goes to the network.
+    async fn is_rolling_version_outdated(&self, _config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        is_moving_channel(&tv.version)
+            && self
+                .updatable_channels
+                .lock()
+                .unwrap()
+                .contains(&tv.version)
+    }
+
+    /// Confirm the compiler of a restored install still runs, which
+    /// `is_install_satisfied` (rustup's component state) does not.
+    async fn verify_repaired_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let runtime = RustRuntime::resolve_for_tool_version(&ctx.config, tv).await?;
+        self.test_rust(ctx, tv, &runtime).await
+    }
+
+    /// `rustup toolchain install stable` updates the installed toolchain in place.
+    fn updates_rolling_version_in_place(&self) -> bool {
+        true
     }
 
     fn uses_custom_outdated_info(&self) -> bool {
@@ -1184,6 +1314,7 @@ const RUST_TARGET_ARCHES: &[&str] = &[
     "powerpc64le",
     "riscv32",
     "riscv64",
+    "riscv64gc",
     "s390x",
     "sparc",
     "sparc64",
@@ -1266,6 +1397,124 @@ mod tests {
             latest_installed_nightly(["nightly".to_string()].into_iter()),
             None
         );
+    }
+
+    #[test]
+    fn parses_rustup_check_update_before_1_29() {
+        let out = "\
+stable-aarch64-apple-darwin - Update available : 1.98.1 (48a229cea 2026-09-01) -> 1.99.0 (b940084d7 2026-09-28)
+rustup - Up to date : 1.28.2
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            Some((
+                "1.98.1 (48a229cea 2026-09-01)",
+                "1.99.0 (b940084d7 2026-09-28)"
+            ))
+        );
+    }
+
+    #[test]
+    fn parses_rustup_check_update_since_1_29() {
+        let out = "\
+stable-aarch64-apple-darwin - update available: 1.97.1 (8bab26f4f 2026-07-14) -> 1.99.0 (b940084d7 2026-09-28)
+rustup - update available : 1.29.0 -> 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            Some((
+                "1.97.1 (8bab26f4f 2026-07-14)",
+                "1.99.0 (b940084d7 2026-09-28)"
+            ))
+        );
+    }
+
+    #[test]
+    fn rustup_check_update_reads_only_the_selected_toolchain() {
+        let out = "\
+stable-aarch64-apple-darwin - up to date: 1.99.0 (b940084d7 2026-09-28)
+nightly-aarch64-apple-darwin - update available: 1.100.0-nightly (fb6531d55 2026-08-23) -> 1.101.0-nightly (c36f14571 2026-10-01)
+rustup - update available : 1.29.0 -> 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            None
+        );
+        assert_eq!(
+            rustup_check_update(out, "nightly-aarch64-apple-darwin"),
+            Some((
+                "1.100.0-nightly (fb6531d55 2026-08-23)",
+                "1.101.0-nightly (c36f14571 2026-10-01)"
+            ))
+        );
+    }
+
+    #[test]
+    fn rustup_check_update_is_none_when_up_to_date() {
+        let out = "\
+stable-aarch64-apple-darwin - up to date: 1.99.0 (b940084d7 2026-09-28)
+rustup - up to date : 1.29.1
+";
+        assert_eq!(
+            rustup_check_update(out, "stable-aarch64-apple-darwin"),
+            None
+        );
+    }
+
+    #[test]
+    fn rustup_check_names_follow_the_configured_host() {
+        assert_eq!(
+            rustup_check_toolchain_names("stable", Some("x86_64-unknown-linux-musl")),
+            vec![
+                "stable-x86_64-unknown-linux-musl".to_string(),
+                format!("stable-{TARGET}")
+            ]
+        );
+        assert_eq!(
+            rustup_check_toolchain_names("stable", None),
+            vec![format!("stable-{TARGET}")]
+        );
+        assert_eq!(
+            rustup_check_toolchain_names("stable", Some(TARGET)),
+            vec![format!("stable-{TARGET}")]
+        );
+        // A host-qualified request already is the name rustup lists.
+        assert_eq!(
+            rustup_check_toolchain_names("stable-x86_64-pc-windows-gnu", Some(TARGET)),
+            vec!["stable-x86_64-pc-windows-gnu".to_string()]
+        );
+    }
+
+    #[test]
+    fn rustup_check_finds_a_sole_toolchain_under_any_host() {
+        let out = "\
+stable-riscv64gc-unknown-linux-gnu - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)
+nightly-riscv64gc-unknown-linux-gnu - up to date : 1.100.0-nightly (cccc 2026-08-23)
+rustup - up to date : 1.29.1
+";
+        assert_eq!(
+            rustup_check_sole_host_toolchain(out, "stable").as_deref(),
+            Some("stable-riscv64gc-unknown-linux-gnu")
+        );
+        // Two hosts for one channel are ambiguous, and non-hosts never match.
+        let two = format!(
+            "{out}stable-x86_64-unknown-linux-gnu - up to date : 1.99.0 (bbbb 2026-09-28)\n"
+        );
+        assert_eq!(rustup_check_sole_host_toolchain(&two, "stable"), None);
+        assert_eq!(rustup_check_sole_host_toolchain(out, "beta"), None);
+        assert_eq!(rustup_check_sole_host_toolchain(out, "rustup"), None);
+    }
+
+    #[test]
+    fn moving_channels_are_stable_and_beta_only() {
+        assert!(is_moving_channel("stable"));
+        assert!(is_moving_channel("beta"));
+        assert!(is_moving_channel("stable-aarch64-apple-darwin"));
+        assert!(is_moving_channel("nightly-aarch64-apple-darwin"));
+        assert!(!is_moving_channel("nightly"));
+        assert!(!is_moving_channel("nightly-2026-10-01"));
+        assert!(!is_moving_channel("1.99.0"));
+        assert!(!is_moving_channel("stable-2026"));
     }
 
     #[test]
