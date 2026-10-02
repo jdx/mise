@@ -12,7 +12,7 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 const INTERRUPTED_EXIT_CODE: i32 = 130;
 
 pub async fn exit_signal() -> i32 {
-    crate::cmd::track_sigint_origin();
+    crate::cmd::track_sigint();
     loop {
         tokio::signal::ctrl_c().await.unwrap();
         if SHOW_CURSOR.load(Ordering::Relaxed) {

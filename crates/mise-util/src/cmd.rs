@@ -175,30 +175,38 @@ fn in_terminal_foreground_pgrp() -> bool {
 static SIGINT_FROM_PROCESS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Record where each SIGINT comes from, so `kill_all` still passes on a
-/// SIGINT that was sent to mise alone. Call this before handling Ctrl-C.
+/// Watch SIGINT from the signal handler itself: note it for
+/// [`crate::cancel::is_cancelled`], and on Linux record where it came from, so
+/// `kill_all` still passes on a SIGINT that was sent to mise alone. Call this
+/// before handling Ctrl-C.
 #[cfg(unix)]
-pub fn track_sigint_origin() {
-    #[cfg(target_os = "linux")]
-    {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            // SAFETY: the action only stores to an atomic, which is
-            // async-signal-safe.
-            let registered = unsafe {
-                signal_hook_registry::register_sigaction(nix::libc::SIGINT, |info| {
-                    // The terminal sends SI_KERNEL. `kill` sends SI_USER (0),
-                    // and `sigqueue`, `tgkill` and the like send negative codes.
-                    if info.si_code <= 0 {
-                        SIGINT_FROM_PROCESS.store(true, std::sync::atomic::Ordering::Relaxed);
-                    }
-                })
-            };
-            if let Err(e) = registered {
-                debug!("failed to track SIGINT origin: {e}");
-            }
-        });
-    }
+pub fn track_sigint() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: the actions only store to atomics, which is
+        // async-signal-safe.
+        #[cfg(target_os = "linux")]
+        let registered = unsafe {
+            signal_hook_registry::register_sigaction(nix::libc::SIGINT, |info| {
+                // The terminal sends SI_KERNEL. `kill` sends SI_USER (0),
+                // and `sigqueue`, `tgkill` and the like send negative codes.
+                if info.si_code <= 0 {
+                    SIGINT_FROM_PROCESS.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                crate::cancel::note_signal();
+            })
+        };
+        #[cfg(not(target_os = "linux"))]
+        let registered = unsafe {
+            signal_hook::low_level::register(
+                signal_hook::consts::SIGINT,
+                crate::cancel::note_signal,
+            )
+        };
+        if let Err(e) = registered {
+            debug!("failed to track SIGINT: {e}");
+        }
+    });
 }
 
 /// Whether the SIGINT `kill_all` is about to pass on has already reached the
@@ -213,7 +221,10 @@ fn sigint_reached_own_pgrp() -> bool {
     // An outer mise that owns our process group signals all of it with
     // `killpg`, so the children we share it with got that SIGINT directly,
     // however it looks to us. Without this, a nested mise would pass it on a
-    // second time.
+    // second time. The cost is a `kill -INT` sent to this nested mise alone,
+    // which its children never see; the outer mise, whose Ctrl-C reaches us
+    // here, is the realistic sender, and nothing in a SIGINT tells the two
+    // apart.
     if std::env::var_os(TASK_PGID_MANAGED_ENV).is_some() {
         return true;
     }
