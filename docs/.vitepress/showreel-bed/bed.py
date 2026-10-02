@@ -710,10 +710,13 @@ def arrange(z: np.ndarray, segs: list[Segment], spec: dict, reel: Reel) -> tuple
         cut_in = any(carries_on(o, seg) for o in segs)
         cut_out = any(carries_on(seg, o) for o in segs)
         # The span this segment writes: [S - pre, E + post) of reel time,
-        # from [s - pre, s + L + post) of the stretched source.
+        # from [s - pre, s + L + post) of the stretched source. The pre-roll
+        # needs source before the segment's first bar and reel before its
+        # first bar line: a segment at reel bar 0 has none, and declicks
+        # inside instead.
         pre = 0
         if seg.fade_in_ms is None and not cut_in:
-            pre = min(xf if prev else dc, s)
+            pre = min(xf if prev else dc, s, S)
         if seg.ring:
             post = max(0, min(reel.frames - E, len(z) - (s + L)))
         elif seg.fade_out_ms is None and not nxt:
