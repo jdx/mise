@@ -923,6 +923,23 @@ impl Backend for UnifiedGitBackend {
                 platform_key,
                 existing_platform.url.clone().unwrap_or_default()
             );
+            // A lock entry can be edited to point at any other attested file in
+            // the release (an SBOM, say), which would pass provenance and then be
+            // installed as the tool. Unless the user chose the asset explicitly,
+            // refuse metadata files, which the auto-selection never picks either.
+            let locked_name = get_filename_from_url(existing_platform.url.as_deref().unwrap_or(""));
+            if opts.direct_url_for_target(&current_target).is_none()
+                && opts.asset_pattern_for_target(&current_target).is_none()
+                && asset_matcher::is_metadata_asset(&locked_name)
+            {
+                eyre::bail!(
+                    "{} is locked to {} for platform {}, which is a metadata file (checksum, signature, SBOM, or similar), not a tool binary or archive.\n\
+                     Run `mise lock` to regenerate the entry.",
+                    tv.style(),
+                    locked_name,
+                    platform_key
+                );
+            }
             ReleaseAsset {
                 name: get_filename_from_url(existing_platform.url.as_deref().unwrap_or("")),
                 url: existing_platform.url.clone().unwrap_or_default(),

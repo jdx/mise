@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A lock entry edited to point at another file from the same release (an SBOM)
+# must not be installed as the tool. The check runs before any download.
+
+cat >mise.toml <<'TOML'
+[settings]
+lockfile = true
+[tools]
+"github:editorconfig-checker/editorconfig-checker" = "4.0.2"
+TOML
+
+{
+  echo '[[tools."github:editorconfig-checker/editorconfig-checker"]]'
+  echo 'version = "4.0.2"'
+  echo 'backend = "github:editorconfig-checker/editorconfig-checker"'
+  for platform in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64 windows-arm64; do
+    echo
+    echo "[tools.\"github:editorconfig-checker/editorconfig-checker\".\"platforms.$platform\"]"
+    echo 'checksum = "sha256:a6bbee2c340800899dd149894bdb6f9e80e1362ed1182f33d1dfc3d4b683837b"'
+    echo 'url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v4.0.2/editorconfig-checker-darwin-all.tar.gz.sbom.json"'
+  done
+} >mise.lock
+
+assert_fail "mise install --locked" "is a metadata file"
+assert_fail "mise install" "is a metadata file"

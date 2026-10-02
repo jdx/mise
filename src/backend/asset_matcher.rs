@@ -654,28 +654,7 @@ impl AssetPicker {
         }
 
         // Penalize metadata/checksum/signature files
-        if asset.ends_with(".asc")
-            || asset.ends_with(".sig")
-            || asset.ends_with(".sign")
-            || asset.ends_with(".sha256")
-            || asset.ends_with(".sha512")
-            || asset.ends_with(".sha1")
-            || asset.ends_with(".md5")
-            || asset.ends_with(".json")
-            || asset.ends_with(".txt")
-            || asset.ends_with(".xml")
-            || asset.ends_with(".sbom")
-            || asset.ends_with(".spdx")
-            || asset.ends_with(".intoto")
-            || asset.ends_with(".attestation")
-            || asset.ends_with(".pem")
-            || asset.ends_with(".cert")
-            || asset.ends_with(".cer")
-            || asset.ends_with(".crt")
-            || asset.ends_with(".key")
-            || asset.ends_with(".pub")
-            || asset.ends_with(".manifest")
-        {
+        if is_metadata_asset(&asset) {
             penalty -= 100;
         }
 
@@ -697,6 +676,37 @@ impl AssetPicker {
             _ => 0,
         }
     }
+}
+
+/// Release assets that are metadata (checksums, signatures, SBOMs, attestations,
+/// manifests) rather than something installable as a tool.
+pub(crate) fn is_metadata_asset(asset: &str) -> bool {
+    let asset = asset.to_lowercase();
+    [
+        ".asc",
+        ".sig",
+        ".sign",
+        ".sha256",
+        ".sha512",
+        ".sha1",
+        ".md5",
+        ".json",
+        ".txt",
+        ".xml",
+        ".sbom",
+        ".spdx",
+        ".intoto",
+        ".attestation",
+        ".pem",
+        ".cert",
+        ".cer",
+        ".crt",
+        ".key",
+        ".pub",
+        ".manifest",
+    ]
+    .iter()
+    .any(|suffix| asset.ends_with(suffix))
 }
 
 /// Assets that cannot become a runnable tool through mise's normal extraction
