@@ -1,34 +1,25 @@
-// lock: mise.lock records the versions mise.toml asks for; commit both. The
-// skank carries on over F minor | B♭ minor | E♭ | D♭ | C, the dominant
-// held through the push-in, into the whip. The reel's one riser
-// climbs the dominant's fifth over its last three and a half beats; from
-// the whip's wind-up (whip.ts WHIP_START) the band stops under it, and it
-// cuts dead on the bar line as the whip lands on the new machine; the
-// whip's air rushes right to left across it.
+// lock: mise.lock records the versions mise.toml asks for; commit both.
+// The reel's one riser climbs the dominant's fifth over the section's last
+// three and a half beats and cuts dead on the bar line as the whip lands on
+// the new machine (whip.ts); the whip's air rushes right to left across it.
 //
 // The picture's cues: the ledger slides in on air; the thread from the
 // request to the version ticks; the ledger's chip docks by
 // `install_args: --locked` with the click and a soft landing; and
-// `run: mise run ci` lights with a lighter click. A chop that would land on
-// or just before a click rests: `run` fell on one and was buried.
+// `run: mise run ci` lights with a lighter click.
 
 import type { Part } from ".";
 import { BEAT } from "../timeline";
 import { WHIP_AT, WHIP_END, WHIP_LEAVE, WHIP_START } from "../whip";
-import { LV, offbeatsNear, skank } from "./band";
-import { CH, perBar } from "./harmony";
-import { beatIn, listen } from "./listen";
+import { listen } from "./listen";
 import { ad, line, sweep } from "./mix";
 import { air, PAN, seat } from "./props";
 import { puff, riser, tick, whoosh } from "./sounds";
-
-const CHANGES = perBar(CH.Fm, CH.Bbm, CH.Eb, CH.Db, CH.C);
 
 /** The riser's length, beats: it ends on the whip's bar line. */
 const RISE = 3.5;
 
 export const part: Part = {
-  level: 1.45,
   cues(m, s, facts) {
     const c = listen("lock", s, facts);
     for (const t of c.all("ledger"))
@@ -68,15 +59,5 @@ export const part: Part = {
       { pan: line(WHIP_LEAVE, 0.3, WHIP_END, -0.7), send: 0.22 },
       "white",
     );
-  },
-  pads(m, s, facts) {
-    const c = listen("lock", s, facts);
-    const clicks = [...c.all("thread"), ...c.all("dock"), ...c.all("run")];
-    skank(m, s, CHANGES, {
-      chop: LV.chop,
-      bass: 0.045,
-      rests: [[beatIn(s, WHIP_START), s.beats]],
-      chopRests: offbeatsNear(s, clicks, 0.3, 0.05),
-    });
   },
 };

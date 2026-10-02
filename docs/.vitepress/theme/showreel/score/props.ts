@@ -3,11 +3,12 @@
 // click; keys are soft clicks and Tab a soft pop; a stamp thunks; a bad
 // input gets a dissonant brass stab; Postgres lights like a pilot flame; a
 // checkpoint is a tape deck's click and a rollback its rewind; big type
-// slams; and an arrival rings the kitchen's service bell. Stage positions
+// slams; an arrival rings the kitchen's service bell; and the name writes
+// on, on the celesta. Stage positions
 // map to the stereo field with panX, so a sound sits where its picture is.
 
 import { hash } from "../math";
-import { brass } from "./instruments";
+import { brass, celesta } from "./instruments";
 import { ad, hz, line, type Mix, perc, sweep } from "./mix";
 import { crackle, thump, tick, whoosh } from "./sounds";
 
@@ -26,6 +27,24 @@ export const PAN = {
   /** The keycaps, by the terminal's right edge. */
   key: 0.06,
 } as const;
+
+/**
+ * How far the music dips under an Act III click, the quiet act's: deeper
+ * than a seat's own duck, so its soft clicks speak (vars.ts, redact.ts).
+ */
+export const ACT3_DUCK = 0.35;
+
+/**
+ * The name, "mise-en-place", as the open and the end card write it on, a
+ * syllable each: C D♭ C (the chorus's "It's mise-en-place", motif.ts
+ * CHORUS e 96 to 100), two octaves up.
+ */
+const NAME = [84, 85, 84];
+
+/** Syllable `i` of the name writing on at `t`, on the celesta. */
+export function writeName(m: Mix, t: number, i: number, pan: number): void {
+  celesta(m, t, hz(NAME[i % 3]), 0.05, pan, 1.2, 0.4);
+}
 
 /**
  * One step of a thermal printer's feed: the stepper's short buzz and the
@@ -97,7 +116,7 @@ export function seat(m: Mix, t: number, vel = 1, pan: number = PAN.card): void {
 
 /**
  * A key pressed on its keycap (⌃L): a soft, low click, with the key's
- * plastic on top so it speaks through the band on a laptop.
+ * plastic on top so it speaks through the music on a laptop.
  */
 export function keyClick(
   m: Mix,
@@ -133,12 +152,11 @@ export function thunk(m: Mix, t: number, vel = 1, pan = 0, bite = 1): void {
 
 /**
  * Bad input: a brass cluster jammed against the key, E F B E over a low
- * hit, on the effects bus, while the music ducks hard under it.
+ * hit, while the music ducks hard under it.
  */
 export function errorStab(m: Mix, t: number, vel = 1, pan = 0): void {
   m.duck(t, 0.65, 0.3);
   brass(m, t, t + 0.2, [52, 53, 59, 64], 0.11 * vel, {
-    bus: "sfx",
     attack: 0.006,
     sustain: 0.5,
     release: 0.14,
@@ -248,7 +266,7 @@ export function serviceBell(
 
 /**
  * Big type slamming in: a short rush of air as it winds in, and on the
- * landing a low hit under a brass stab of `chord`, on the effects bus.
+ * landing a low hit under a brass stab of `chord`.
  */
 export function slam(
   m: Mix,
@@ -268,7 +286,6 @@ export function slam(
   m.duck(t, 0.45, 0.2);
   thump(m, t, 0.55 * vel, 120, 44, 0.28, { pan });
   brass(m, t, t + 0.14, chord, 0.075 * vel, {
-    bus: "sfx",
     attack: 0.008,
     sustain: 0.5,
     release: 0.1,

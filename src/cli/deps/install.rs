@@ -194,7 +194,7 @@ impl DepsInstall {
         for source in &sources {
             let exists = source.exists();
             let marker = if exists { "+" } else { "-" };
-            miseprintln!("  {} {}", marker, source.display());
+            miseprintln!("  {} {}", marker, crate::file::display_path(source));
         }
 
         // Outputs
@@ -203,7 +203,7 @@ impl DepsInstall {
         for output in &outputs {
             let exists = output.exists();
             let marker = if exists { "+" } else { "-" };
-            miseprintln!("  {} {}", marker, output.display());
+            miseprintln!("  {} {}", marker, crate::file::display_path(output));
         }
 
         // Optional outputs (tracked but not required on first run)
@@ -213,7 +213,7 @@ impl DepsInstall {
             for output in &optional_outputs {
                 let exists = output.exists();
                 let marker = if exists { "+" } else { "-" };
-                miseprintln!("  {} {}", marker, output.display());
+                miseprintln!("  {} {}", marker, crate::file::display_path(output));
             }
         }
 
@@ -256,14 +256,14 @@ impl DepsInstall {
             let sources = provider
                 .sources()
                 .iter()
-                .map(|p| p.display().to_string())
+                .map(crate::file::display_path)
                 .collect::<Vec<_>>()
                 .join(", ");
             let outputs = provider
                 .outputs()
                 .iter()
                 .chain(provider.optional_outputs().iter())
-                .map(|p| p.display().to_string())
+                .map(crate::file::display_path)
                 .collect::<Vec<_>>()
                 .join(", ");
 

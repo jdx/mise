@@ -289,6 +289,10 @@ pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
     Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
 
+/// What `mise x` resolved a shim's tool to. A native shim that finds its own path here was picked
+/// instead of the tool, so it stops rather than dispatching back to `mise x`.
+pub const MISE_SHIM_TARGET_ENV: &str = "__MISE_SHIM_TARGET";
+
 pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
     // When running tests, always treat as direct mise invocation
     // to avoid interfering with test expectations

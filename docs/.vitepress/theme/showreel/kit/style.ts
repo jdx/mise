@@ -137,8 +137,12 @@ export const STAGE_FX = {
   },
   /** compose.ts: darker toward the corners, lit screens spared (fx.vignette). */
   vignette: { strength: 0.42, inner: 0.55 },
-  /** compose.ts: overlay grain, re-seeded 24 times a second (fx.grain). */
-  grain: { amount: 0.07, fps: 24 },
+  /**
+   * compose.ts: overlay grain (fx.grain), still: grain re-seeded every
+   * frame is rounded away by the encoder, and the dark gradients band
+   * without it.
+   */
+  grain: { amount: 0.07, fps: 0 },
   /** The lights going down (breath): night over the frame. */
   dim: { color: PALETTE.night, alpha: 0.7 },
   /**

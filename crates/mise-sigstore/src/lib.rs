@@ -25,6 +25,7 @@ mod bundle;
 mod certificate;
 mod client;
 mod cosign;
+mod cosign_identity;
 mod digest;
 mod github;
 mod model;
@@ -36,6 +37,7 @@ pub use client::{
     Attestation, AttestationClient, AttestationClientBuilder, FetchParams, GitHubSource, sources,
 };
 pub use cosign::{verify_cosign_signature, verify_cosign_signature_with_key};
+pub use cosign_identity::CosignIdentity;
 pub use digest::calculate_file_digest;
 pub use github::{
     GithubAttestationRequest, verify_github_attestation, verify_github_attestation_sources,
@@ -53,6 +55,7 @@ pub use trust::set_tuf_url;
 
 use bundle::*;
 use certificate::*;
+use cosign_identity::*;
 use retry::*;
 use slsa::*;
 use trust::*;

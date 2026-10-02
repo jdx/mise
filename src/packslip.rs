@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Result, WrapErr, bail, eyre};
+use itertools::Itertools;
 use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
 use reqwest::header::{HeaderMap, HeaderValue};
 
@@ -30,6 +31,10 @@ use crate::ui::progress_report::SingleReport;
 /// Resources fetched from outside the artifact live here in the install.
 pub(crate) const RESOURCES_DIR: &str = ".mise-packslip";
 pub(crate) const MANPAGES_DIR: &str = "man";
+/// A Packslip install whose executable completed but declared skills did not.
+/// This is distinct from mise's generic incomplete marker, which can represent
+/// any interrupted install and must never be repaired as if it were skills-only.
+pub(crate) const SKILLS_INCOMPLETE_FILE: &str = "skills-incomplete";
 
 /// The statement kept beside an install, if the tool came from a packslip.
 pub(crate) fn statement(install_path: &Path) -> Result<Option<Statement>> {
@@ -834,6 +839,129 @@ fn why_missing(group: &[&Resource]) -> String {
     }
 }
 
+/// Declared skills that mise is expected to fetch for this install, but which
+/// are still absent after every applicable source has been tried. A disabled
+/// skill fetch or an exec-only skill with packslip execution disabled is an
+/// intentional opt-out, not an incomplete install.
+pub(crate) fn required_missing_skills(
+    statement: &Statement,
+    install_path: &Path,
+    tool: &str,
+    version: &str,
+    artifact: Option<&Artifact>,
+) -> Vec<MissingSkill> {
+    let settings = Settings::get();
+    required_missing_skills_with_settings(
+        statement,
+        install_path,
+        tool,
+        version,
+        artifact,
+        settings.skills.fetch,
+        settings.packslip.exec,
+    )
+}
+
+/// Whether a missing declared skill has an applicable source that can be
+/// fetched after the artifact has already been extracted. Archive skills can
+/// only be restored by reinstalling the artifact itself.
+pub(crate) fn can_repair_missing_skill(
+    statement: &Statement,
+    name: &str,
+    artifact: Option<&Artifact>,
+) -> bool {
+    applicable(
+        statement
+            .predicate
+            .resources
+            .iter()
+            .filter(|resource| resource.kind == "skill" && skill_name(resource) == Some(name)),
+        artifact,
+    )
+    .iter()
+    .any(|resource| match resource.source() {
+        Some(ResourceSource::Archive) | None => false,
+        Some(ResourceSource::Exec) => Settings::get().packslip.exec,
+        _ => true,
+    })
+}
+
+fn required_missing_skills_with_settings(
+    statement: &Statement,
+    install_path: &Path,
+    tool: &str,
+    version: &str,
+    artifact: Option<&Artifact>,
+    fetch_skills: bool,
+    run_exec: bool,
+) -> Vec<MissingSkill> {
+    if !fetch_skills {
+        return vec![];
+    }
+    let declared = skills_of(statement, install_path, tool, version, artifact);
+    declared
+        .missing
+        .into_iter()
+        .filter(|missing| {
+            run_exec
+                || !applicable(
+                    statement.predicate.resources.iter().filter(|resource| {
+                        resource.kind == "skill"
+                            && skill_name(resource) == Some(missing.name.as_str())
+                    }),
+                    artifact,
+                )
+                .iter()
+                .all(|resource| matches!(resource.source(), Some(ResourceSource::Exec)))
+        })
+        .collect()
+}
+
+/// Fail an install only when a declared skill that mise was allowed to fetch
+/// remains absent. Call this after all alternative sources have had a chance
+/// to provide each skill.
+pub(crate) fn verify_required_skills(
+    statement: &Statement,
+    tv: &ToolVersion,
+    artifact: Option<&Artifact>,
+) -> Result<()> {
+    let missing = required_missing_skills(
+        statement,
+        &tv.install_path(),
+        &tv.ba().to_string(),
+        &tv.version,
+        artifact,
+    );
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let names = missing.iter().map(|skill| skill.name.as_str()).join(", ");
+    bail!(
+        "{}: declared skill(s) {names} are not installed; run `mise install {}` to retry",
+        tv.style(),
+        tv.request
+    );
+}
+
+pub(crate) fn skills_incomplete_path(install_path: &Path) -> PathBuf {
+    install_path
+        .join(RESOURCES_DIR)
+        .join(SKILLS_INCOMPLETE_FILE)
+}
+
+pub(crate) fn mark_skills_incomplete(install_path: &Path) -> Result<()> {
+    file::create_dir_all(install_path.join(RESOURCES_DIR))?;
+    file::write(skills_incomplete_path(install_path), "")
+}
+
+pub(crate) fn clear_skills_incomplete(install_path: &Path) -> Result<()> {
+    match std::fs::remove_file(skills_incomplete_path(install_path)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.into()),
+    }
+}
+
 /// The skills a statement declares that are present in the install, and
 /// the ones it declares that are not there.
 pub(crate) fn skills_of(
@@ -989,16 +1117,22 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     match result {
         Ok(report) => {
             for name in &report.linked {
-                info!("linked skill {name} into {}", dir.display());
+                info!("linked skill {name} into {}", file::display_path(&dir));
             }
             for name in &report.pruned {
-                info!("removed skill link {name} from {}", dir.display());
+                info!(
+                    "removed skill link {name} from {}",
+                    file::display_path(&dir)
+                );
             }
             for (name, why) in &report.skipped {
                 warn!("skipped skill {name}: {why}");
             }
         }
-        Err(err) => warn!("could not sync skills into {}: {err}", dir.display()),
+        Err(err) => warn!(
+            "could not sync skills into {}: {err}",
+            file::display_path(&dir)
+        ),
     }
 }
 
@@ -1856,10 +1990,17 @@ mod tests {
     }
 
     fn statement_with(resources: &str) -> Statement {
+        let skill_subject = if resources.contains(r#""asset":"t-skill.tar.gz""#) {
+            format!(
+                r#",{{"name":"t-skill.tar.gz","digest":{{"sha256":"{}"}}}}"#,
+                "b".repeat(64)
+            )
+        } else {
+            String::new()
+        };
         let json = format!(
-            r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}},{{"name":"t-skill.tar.gz","digest":{{"sha256":"{b}"}}}}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1.0.0","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t","u"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
+            r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}}{skill_subject}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1.0.0","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t","u"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
             a = "a".repeat(64),
-            b = "b".repeat(64),
             c = "c".repeat(40),
         );
         let statement: Statement = serde_json::from_str(&json).unwrap();
@@ -2544,6 +2685,135 @@ mod tests {
                     .next()
                     .is_none()
         );
+    }
+
+    #[test]
+    fn a_failed_skill_traversal_never_publishes_a_partial_skill() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = staging_dir(&dir.path().join("skills/probe")).unwrap();
+        file::write(staging.join("SKILL.md"), "# partial").unwrap();
+        let target = dir.path().join("skills/probe");
+
+        assert!(into_place(&staging, &target, Err(eyre!("listing traversal failed"))).is_err());
+        assert!(
+            !target.exists(),
+            "a failed traversal must not publish SKILL.md"
+        );
+        assert!(
+            !staging.exists(),
+            "the failed staging directory is cleaned up"
+        );
+    }
+
+    #[test]
+    fn required_skills_keep_successful_fallbacks_and_report_only_the_missing_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("shipped/good")).unwrap();
+        std::fs::write(root.join("shipped/good/SKILL.md"), "# good").unwrap();
+        // This represents the fallback after a repository traversal failed:
+        // the successful exec source is the installed skill and must satisfy
+        // the declaration without preserving a partial repository directory.
+        let fallback = root.join(RESOURCES_DIR).join("skills/fallback");
+        std::fs::create_dir_all(&fallback).unwrap();
+        std::fs::write(fallback.join("SKILL.md"), "# fallback").unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"good","archive":"shipped/good"},
+            {"kind":"skill","name":"fallback","repo":"skills/fallback"},
+            {"kind":"skill","name":"fallback","exec":["t","skill","fallback"]},
+            {"kind":"skill","name":"missing","repo":"skills/missing"}
+        ]"#,
+        );
+        let missing = required_missing_skills_with_settings(
+            &s,
+            root,
+            "tool",
+            "1",
+            Some(&s.predicate.artifacts[0]),
+            true,
+            true,
+        );
+        assert_eq!(
+            missing
+                .iter()
+                .map(|skill| skill.name.as_str())
+                .collect::<Vec<_>>(),
+            ["missing"],
+            "a later allowed source repairs one declared skill without hiding another that is still missing"
+        );
+        assert!(root.join("shipped/good/SKILL.md").is_file());
+        assert!(fallback.join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn intentionally_disabled_skill_sources_do_not_make_an_install_incomplete() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"downloaded","repo":"skills/downloaded"},
+            {"kind":"skill","name":"generated","exec":["t","skill"]}
+        ]"#,
+        );
+        let artifact = Some(&s.predicate.artifacts[0]);
+        assert!(
+            required_missing_skills_with_settings(
+                &s,
+                dir.path(),
+                "tool",
+                "1",
+                artifact,
+                false,
+                true
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            required_missing_skills_with_settings(
+                &s,
+                dir.path(),
+                "tool",
+                "1",
+                artifact,
+                true,
+                false
+            )
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>(),
+            ["downloaded"],
+            "an exec-only skill remains intentionally absent while other allowed sources stay required"
+        );
+    }
+
+    #[test]
+    fn archive_only_skills_require_an_artifact_reinstall() {
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"archive","archive":"skills/archive"},
+            {"kind":"skill","name":"fallback","archive":"skills/fallback"},
+            {"kind":"skill","name":"fallback","repo":"skills/fallback"}
+        ]"#,
+        );
+        let artifact = Some(&s.predicate.artifacts[0]);
+        assert!(!can_repair_missing_skill(&s, "archive", artifact));
+        assert!(can_repair_missing_skill(&s, "fallback", artifact));
+    }
+
+    #[test]
+    fn skills_incomplete_marker_is_separate_from_finished_skill_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = dir.path().join(RESOURCES_DIR).join("skills/good");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "# good").unwrap();
+
+        mark_skills_incomplete(dir.path()).unwrap();
+        assert!(skills_incomplete_path(dir.path()).is_file());
+        assert!(skill.join("SKILL.md").is_file());
+
+        clear_skills_incomplete(dir.path()).unwrap();
+        assert!(!skills_incomplete_path(dir.path()).exists());
+        assert!(skill.join("SKILL.md").is_file());
     }
 
     #[test]

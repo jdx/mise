@@ -154,7 +154,7 @@ fn print_provenance(
         provenance.provider.as_deref().unwrap_or("configuration")
     );
     if let Some(source) = &provenance.source {
-        miseprintln!("{indent}Source: {}", source.display());
+        miseprintln!("{indent}Source: {}", crate::file::display_path(source));
     }
     Ok(())
 }
@@ -166,7 +166,7 @@ fn print_inline_provenance(
         .and_then(|provenance| provenance.provider.as_deref())
         .unwrap_or("configuration");
     if let Some(source) = provenance.and_then(|provenance| provenance.source.as_ref()) {
-        miseprintln!(" — {provider} ({})", source.display());
+        miseprintln!(" — {provider} ({})", crate::file::display_path(source));
     } else {
         miseprintln!(" — {provider}");
     }

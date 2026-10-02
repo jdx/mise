@@ -93,8 +93,27 @@ Use [`ports`](#ports) to configure a preset's additional listeners. Custom daemo
 also accept pitchfork's structured `port` table; presets accept only an integer or
 mise's automatic port syntax.
 
-User-provided strings retain pitchfork template syntax; mise renders only the
-embedded preset templates.
+::: v-pre
+User-provided strings retain pitchfork template syntax, and mise renders the embedded
+preset templates. A `run` command can also use `{{ env.NAME }}` and
+`{{ vars.NAME }}` from the project's [`[env]`](/environments/) and
+[`[vars]`](/configuration/vars), along with mise's other template filters such as
+`quote`. Pitchfork renders the variables it defines (`{{ port }}`, `{{ url }}`, ...)
+and passes the command through to `mise x`, which renders the rest when the daemon
+starts. Values from `[env]` are never written to the generated pitchfork file.
+This needs a pitchfork release newer than 2.29.0 and applies to `run` only.
+:::
+
+```toml
+[env]
+AUDIENCE = "world"
+
+[vars]
+greeting = "hello"
+
+[daemons.hello]
+run = "exec echo {{ vars.greeting | quote }} {{ env.AUDIENCE | quote }}"
+```
 
 ## Tasks that require daemons
 
@@ -151,6 +170,11 @@ The daemon's readiness check is configured on `[daemons.core]`, not on the task.
 
 A daemon's `task` cannot be combined with `run` or `preset`, and `args` requires
 `task`. The referenced task must exist when daemons are registered.
+
+mise starts the task without a shell, so the arguments reach it exactly as written, on
+Windows as well as Unix. This needs pitchfork 2.28.0 or later. A task daemon with
+[`init`](#setup-before-the-process-starts) is the exception: its setup steps and the task
+share one shell, which does not work yet under the default `cmd /C` shell on Windows.
 
 ::: warning Subtasks do not start daemons
 A task requirement is honored for the tasks a run resolves up front, including

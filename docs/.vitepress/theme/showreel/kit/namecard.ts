@@ -3,8 +3,8 @@
 // on the right. The open writes the name on and lifts the help screen's
 // tagline into it; the end card stacks the name, the tagline, the install
 // command typed in a strip of terminal, the platform line and mise.jdx.dev,
-// each keyed to the sung recording's measured onsets (score/song.ts CUE),
-// not the grid, then holds with the chef.
+// each on its eighth of a beat after the end card's bar line (END_CUES),
+// then holds with the chef.
 //
 // The copy is mise's own: the tagline is Cargo.toml's description (the
 // help screen's first row, README.md's bold line), the install command and
@@ -13,11 +13,10 @@
 // to; drawEndCard and drawOpenCard draw the whole thing from them. Every
 // function is a pure function of time.
 
-import { BEAT, PALETTE, TERM, sec } from "../bible";
+import { BEAT, PALETTE, TERM } from "../bible";
 import { mix } from "../color";
 import { castShadows, roundedRect } from "../fx";
 import { clamp, lerp, progress } from "../math";
-import { CUE } from "../score/song";
 import {
   CODE,
   drawText,
@@ -55,7 +54,7 @@ import {
 
 // The copy.
 
-/** The name, and the three syllables it writes on in, one per sung word. */
+/** The name, and the three syllables it writes on in, one per cue. */
 export const NAME = "mise-en-place";
 export const NAME_PARTS = ["mise", "-en", "-place"] as const;
 /** mise's one-line description: Cargo.toml's, and the help screen's first row. */
@@ -291,55 +290,59 @@ export function drawUrl(ctx: CanvasRenderingContext2D, p: number): void {
   ctx.restore();
 }
 
-// The end card, keyed to the recording.
+// The end card, on the grid.
 
-const E0 = sec("end").start;
-
-/**
- * A cue's seconds from E0, to the microsecond: "mise" is E0 by the
- * recording's construction (score/song.ts), and exactly 0 here rather than
- * a rounding error before the bar line.
- */
-const fromE0 = (t: number): number => Math.round((t - E0) * 1e6) / 1e6;
+/** `k` eighths of a beat, seconds. */
+const eighths = (k: number): number => (k * BEAT) / 8;
 
 /**
- * The end card's cues: the recording's measured onsets (score/song.ts CUE,
- * plan v3 §5, board5.py), as seconds from the end card's downbeat, E0, the
- * sung "mise".
+ * The end card's cues, seconds from its bar line (E0, `sec("end").start`),
+ * each on an eighth of a beat. They keep the motion jdx's sung line gave
+ * the card when it was keyed to the recording's measured onsets (plan v3
+ * §5, board5.py), each moved to its nearest eighth: the name a syllable at
+ * 0, 0.375 and 0.625 s, the tagline from 1.5, the install strip landing at
+ * 2.75 and its command typed by 5.25, the platform line from 6.25,
+ * mise.jdx.dev landing at 7.5 and the glint from 8.25. The score's end
+ * card (score/end.ts) sounds on the same cues.
  */
 export const END_CUES = {
-  mise: fromE0(CUE.mise),
-  en: fromE0(CUE.en),
-  place: fromE0(CUE.place),
-  dev: fromE0(CUE.dev),
-  precise: fromE0(CUE.precise),
-  operational: fromE0(CUE.operational),
-  /** The end of "-al". */
-  operationalEnd: fromE0(CUE.operationalEnd),
-  voiceGone: fromE0(CUE.voiceGone),
-  hit1: fromE0(CUE.hit1),
-  hit2: fromE0(CUE.hit2),
+  /** "mise" writes on, on the bar line, with the chef's bloom. */
+  mise: 0,
+  en: eighths(3),
+  place: eighths(5),
+  /** The tagline's first word starts to rise. */
+  tagline: eighths(12),
+  /** The install strip has risen in, and the command's first character types. */
+  install: eighths(22),
+  /** The command's last character types, and the cursor goes. */
+  typed: eighths(42),
+  /** The platform line starts to fade in. */
+  platform: eighths(50),
+  /** mise.jdx.dev has landed. */
+  url: eighths(60),
+  /** The glint starts across the hat. */
+  glint: eighths(66),
 } as const;
 
 export type EndCues = { readonly [K in keyof typeof END_CUES]: number };
 
 /** Everything on the end card at a moment, as numbers: the hooks a scene keys to. */
 export interface EndCardState {
-  /** Each syllable's landing, 0 to 1 over 1/8 beat from its sung onset. */
+  /** Each syllable's landing, 0 to 1 over 1/8 beat from its cue. */
   name: [number, number, number];
-  /** The tagline's first word starts to rise here (seconds): on "dev". */
+  /** The tagline's first word starts to rise here (seconds). */
   taglineFrom: number;
-  /** The install strip rising in, 0 to 1 over 1/4 beat, landing on "precise". */
+  /** The install strip rising in, 0 to 1 over 1/4 beat, landing on its cue. */
   box: number;
-  /** Characters of the command typed: one on "precise", the last as "-al" ends. */
+  /** Characters of the command typed: one as the strip lands, the last on `typed`. */
   typed: number;
   /** The cursor shows while the command types. */
   cursor: boolean;
-  /** The platform line, fading in over 1/2 beat once the voice has gone. */
+  /** The platform line, fading in over 1/2 beat. */
   platform: number;
-  /** mise.jdx.dev landing on the first hit, 0 to 1 over the 1/8 beat before it. */
+  /** mise.jdx.dev landing on its cue, 0 to 1 over the 1/8 beat before it. */
   url: number;
-  /** The glint's sweep on the second hit, 0 to 1 over 1/2 beat (arrive). */
+  /** The glint's sweep, 0 to 1 over 1/2 beat (arrive). */
   glint: number;
   /** The sparkle on the right lobe, peaking as the glint ends. */
   sparkle: number;
@@ -349,33 +352,33 @@ export interface EndCardState {
 
 /**
  * The end card at local second `lt` (from E0): every moment starts on its
- * onset, so the frame on the end's bar line (lt 0) is the chef at rest and
+ * cue, so the frame on the end's bar line (lt 0) is the chef at rest and
  * nothing else, and every move is over by 9 s, after which only the motes
- * and the grain move.
+ * move.
  */
 export function endCardState(lt: number, c: EndCues = END_CUES): EndCardState {
   const word = beats(DUR.flick);
   const n = INSTALL.command.length;
-  const typing = progress(c.precise, c.operationalEnd, lt);
-  const glintEnd = c.hit2 + GLINT.dur;
+  const typing = progress(c.install, c.typed, lt);
+  const glintEnd = c.glint + GLINT.dur;
   return {
     name: [c.mise, c.en, c.place].map((at) => progress(at, at + word, lt)) as [
       number,
       number,
       number,
     ],
-    taglineFrom: c.dev,
-    box: progress(c.precise - beats(DUR.tick), c.precise, lt),
+    taglineFrom: c.tagline,
+    box: progress(c.install - beats(DUR.tick), c.install, lt),
     typed:
-      lt < c.precise ? 0 : Math.min(n, 1 + Math.floor((n - 1) * typing + 1e-9)),
-    cursor: lt >= c.precise - beats(DUR.tick) && typing < 1,
+      lt < c.install ? 0 : Math.min(n, 1 + Math.floor((n - 1) * typing + 1e-9)),
+    cursor: lt >= c.install - beats(DUR.tick) && typing < 1,
     platform: EASE.glide(
-      progress(c.voiceGone, c.voiceGone + beats(DUR.half), lt),
+      progress(c.platform, c.platform + beats(DUR.half), lt),
     ),
-    // It lands on the hit (ART.md §11 End: arriving on it), as the install
-    // strip lands on "precise": in over the 1/8 beat before it.
-    url: progress(c.hit1 - word, c.hit1, lt),
-    glint: EASE.arrive(progress(c.hit2, glintEnd, lt)),
+    // It lands on its cue (ART.md §11 End: arriving on it), as the install
+    // strip lands on its own: in over the 1/8 beat before it.
+    url: progress(c.url - word, c.url, lt),
+    glint: EASE.arrive(progress(c.glint, glintEnd, lt)),
     sparkle: progress(glintEnd - GLINT.sparkle, glintEnd + GLINT.sparkle, lt),
     glow: bloomAt((lt - c.mise) / BEAT, HALO),
   };

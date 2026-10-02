@@ -58,7 +58,7 @@ cd "\$HOME" && exec mise "\$@"
 WRAPPER
 chmod +x "$PWD/b"
 b="$PWD/b"
-assert_succeed "$b bootstrap --from-git file://$origin --yes --only dotfiles"
+assert_succeed "$b bootstrap --adopt file://$origin --yes --only dotfiles"
 assert "cat $B/.config/app/value" 'private-value-123'
 assert "cat $B/.config/app/rendered" 'template-private-123'
 assert "cat $B/.config/app/copied" 'copy-private-123'

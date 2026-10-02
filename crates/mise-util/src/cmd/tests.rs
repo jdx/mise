@@ -717,3 +717,22 @@ fn test_cmd_body_args_unix_fallthrough() {
     let r = super::CmdLineRunner::new("bash").cmd_body_args(&["-c".to_string()], "echo hi");
     assert_eq!(r.get_args(), vec!["-c".to_string(), "echo hi".to_string()]);
 }
+
+// The whole-run timeout sends its final SIGKILL only to trees it still sees
+// alive, so an ID freed during the grace period is not signalled again.
+#[cfg(unix)]
+#[test]
+fn alive_process_trees_drops_a_tree_once_it_is_gone() {
+    use std::collections::HashSet;
+
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("sleep should start");
+    let pids = HashSet::from([child.id()]);
+    assert_eq!(super::alive_process_trees(&pids), pids);
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(super::alive_process_trees(&pids).is_empty());
+}

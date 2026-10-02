@@ -1,0 +1,7 @@
+description = "The agentic CLI for the entire Cloudflare API"
+test = { cmd = "cf --version", expected = "{{version}}", tools = ["aube"] }
+version_order = "semver"
+
+bins = ["cf", "cloudflare"]
+[[backends]]
+full = "npm:cf"

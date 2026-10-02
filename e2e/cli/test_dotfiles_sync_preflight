@@ -24,7 +24,7 @@ assert_succeed 'mise bootstrap dotfiles track ~/.config/mise/conf.d'
 assert_fail "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1" "must not contain credentials"
 assert_not_contains "mise bootstrap dotfiles origin set https://user:secret@example.invalid/setup.git --yes 2>&1 || true" "user:secret"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
-assert_succeed "$b bootstrap --from-git file://$origin --yes"
+assert_succeed "$b bootstrap --adopt file://$origin --yes"
 assert "cat $B/.zshrc" "initial"
 
 case "$(uname -s)" in

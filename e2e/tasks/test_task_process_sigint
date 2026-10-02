@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# `kill -INT <mise pid>` reaches mise alone, even when mise is in the
+# terminal's foreground process group. mise must pass it on to its tasks
+# instead of assuming the terminal already did. Only Linux reports whether a
+# SIGINT came from the terminal or from a process; macOS can't tell them apart.
+if [[ "$(uname)" != "Linux" ]]; then
+  echo "skipping: only Linux reports where a SIGINT came from"
+  exit 0
+fi
+
+cat <<'TOML' >mise.toml
+[tasks.wait]
+run = """
+trap 'touch "$HOME/task-interrupted"; exit 0' INT
+touch "$HOME/task-ready"
+sleep 30 &
+wait
+"""
+TOML
+
+python3 - "$HOME" <<'PY'
+import fcntl
+import os
+import pty
+import select
+import signal
+import sys
+import termios
+import time
+
+home = sys.argv[1]
+ready = os.path.join(home, "task-ready")
+interrupted = os.path.join(home, "task-interrupted")
+
+master, slave = pty.openpty()
+
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+    for fd in (0, 1, 2):
+        os.dup2(slave, fd)
+    os.close(master)
+    os.close(slave)
+    os.execvp("mise", ["mise", "run", "wait"])
+    os._exit(127)
+
+os.close(slave)
+output = b""
+
+
+def drain():
+    global output
+    while select.select([master], [], [], 0)[0]:
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            return
+        if not chunk:
+            return
+        output += chunk
+
+
+def wait_for(predicate, what, timeout=15.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        drain()
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise SystemExit(f"timed out waiting for {what}: {output.decode(errors='replace')}")
+
+
+exited = []
+
+
+def mise_exited():
+    if not exited and os.waitpid(pid, os.WNOHANG)[0] == pid:
+        exited.append(True)
+    return bool(exited)
+
+
+try:
+    wait_for(lambda: os.path.exists(ready), "the task to start")
+    os.kill(pid, signal.SIGINT)
+    wait_for(mise_exited, "mise to exit after kill -INT")
+    if not os.path.exists(interrupted):
+        raise SystemExit(
+            "mise did not pass kill -INT on to its task: "
+            + output.decode(errors="replace")
+        )
+finally:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+print("task got the SIGINT sent to mise")
+PY

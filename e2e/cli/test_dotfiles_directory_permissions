@@ -51,7 +51,7 @@ if [[ "$(uname)" == Darwin ]]; then
 else
   mode_of='stat -c %a'
 fi
-assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert_succeed "b bootstrap --adopt file://$origin --yes"
 assert "$mode_of $second/private" 700
 assert "$mode_of $second/private/nested" 750
 # The fresh machine recreates the file's parent private; its home is its own.

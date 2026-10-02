@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#MISE description="Fit a downloaded track to the showreel's 2 s bar grid as its bed (score/bed.opus)"
+# The showreel plays one instrumental bed under its sound effects, from
+# reel time 0 to 7:16, every bar line on the reel's grid (120 BPM 4/4: a bar
+# is 2 s, two of the reel's 60 BPM beats). This turns a track downloaded
+# from Suno (a WAV at or near 120 BPM) into that file: it finds the beats
+# and the downbeat, stretches the track onto the grid with Rubber Band
+# unless it is on it already (a track on an exact 120 BPM clock, built with
+# --bpm 120 --first-downbeat S, is only trimmed), arranges its bars on the
+# reel from a spec (bed.toml: "mise screenreel"'s), normalises, encodes Ogg
+# Opus and checks the result. See docs/.vitepress/showreel-bed/README.md.
+#
+#   mise run docs:showreel-bed -- sections                  # the reel's sections, in bars
+#   mise run docs:showreel-bed -- analyse ~/Downloads/bed.wav
+#   mise run docs:showreel-bed -- build ~/Downloads/bed.wav [--spec FILE] [--out FILE]
+#   mise run docs:showreel-bed -- verify docs/.vitepress/theme/showreel/score/bed.opus
+#   mise run docs:showreel-bed -- build --help              # every option
+#
+# Needs ffmpeg (with libopus) and the Rubber Band CLI on PATH (`brew install
+# rubberband`; on Debian or Ubuntu `apt install rubberband-cli`), and uv,
+# which runs the Python helper with its dependencies (librosa, numpy, scipy,
+# soundfile, soxr) in a cached environment; without a uv on PATH it borrows
+# one through `mise exec`. Not part of the render: the render reads only
+# the bed.opus this writes.
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+tool="$root/docs/.vitepress/showreel-bed/bed.py"
+
+case "${1:-}" in
+"" | -h | --help) sed -n '3,/^set /s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" && exit 0 ;;
+esac
+
+if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then
+	exec uv run --quiet --script "$tool" "$@"
+fi
+exec mise exec uv@latest -- uv run --quiet --script "$tool" "$@"

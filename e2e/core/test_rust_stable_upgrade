@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+unset CARGO_HOME RUSTUP_HOME MISE_CARGO_HOME MISE_RUSTUP_HOME
+
+# A fake rustup whose `check` reports a stable update (rustup 1.29 wording)
+# for as long as $STATE/update_available exists. Installing stable clears it.
+HOST=aarch64-unknown-linux-musl
+PREFIX=$PWD/prefix
+BIN=$PREFIX/bin
+STATE=$PREFIX/state
+mkdir -p "$BIN" "$PREFIX/libexec/bin" "$PREFIX/etc/rustup" "$STATE" "$PWD/home" "$PWD/project"
+echo 'default_toolchain = "stable"' >"$PREFIX/etc/rustup/settings.toml"
+
+for command in rustup cargo rustc; do
+  cat >"$PREFIX/libexec/bin/$command" <<'PROXY'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE=$TEST_RUST_PROVIDER_PREFIX/state
+case "$(basename "$0")" in
+rustup)
+	echo "$*" >>"$STATE/rustup.log"
+	case "${1:-} ${2:-}" in
+	"--version ") echo "rustup 1.29.1 (fake)" ;;
+	"show profile") echo minimal ;;
+	"toolchain install")
+		if [[ -e $STATE/fail_install ]]; then
+			echo "error: could not download" >&2
+			exit 1
+		fi
+		mkdir -p "$STATE/toolchains/$3"
+		rm -f "$STATE/update_available"
+		;;
+	"toolchain uninstall") rm -rf "$STATE/toolchains/$3" ;;
+	"component list" | "target list")
+		if [[ -e $STATE/broken ]]; then
+			echo "error: the toolchain is damaged" >&2
+			exit 1
+		fi
+		;;
+	"check ")
+		if [[ -e $STATE/update_available ]]; then
+			echo "stable-aarch64-unknown-linux-musl - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)"
+		else
+			echo "stable-aarch64-unknown-linux-musl - up to date : 1.99.0 (bbbb 2026-09-28)"
+		fi
+		echo "nightly-aarch64-unknown-linux-musl - update available: 1.100.0-nightly (cccc 2026-08-23) -> 1.101.0-nightly (dddd 2026-10-01)"
+		echo "rustup - up to date : 1.29.1"
+		exit 100
+		;;
+	*)
+		echo "unexpected rustup args: $*" >&2
+		exit 1
+		;;
+	esac
+	;;
+rustc | cargo)
+	if [[ ! -d "$STATE/toolchains/$RUSTUP_TOOLCHAIN" ]]; then
+		echo "error: toolchain '$RUSTUP_TOOLCHAIN' is not installed" >&2
+		exit 1
+	fi
+	if [[ -e $STATE/bad_rustc ]]; then
+		echo "error: could not run $(basename "$0")" >&2
+		exit 1
+	fi
+	echo "$(basename "$0") $RUSTUP_TOOLCHAIN (fake)"
+	;;
+esac
+PROXY
+  chmod +x "$PREFIX/libexec/bin/$command"
+  cat >"$BIN/$command" <<WRAPPER
+#!/usr/bin/env bash
+export RUSTUP_OVERRIDE_UNIX_FALLBACK_SETTINGS="$PREFIX/etc/rustup/settings.toml"
+export TEST_RUST_PROVIDER_PREFIX="$PREFIX"
+exec "$PREFIX/libexec/bin/$command" "\$@"
+WRAPPER
+  chmod +x "$BIN/$command"
+done
+
+cat >project/mise.toml <<'TOML'
+[tools]
+rust = "stable"
+TOML
+
+cd project
+export HOME="$PWD/../home"
+export MISE_DATA_DIR="$PWD/../data"
+export PATH="$BIN:$PATH"
+# rustup lists the toolchain under the configured host, not mise's build target
+export MISE_RUST_DEFAULT_HOST="$HOST"
+
+mise install
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "1"
+
+# Neither reinstalling something installed nor listing it asks rustup for updates.
+mise install rust
+mise ls rust >/dev/null
+assert "! grep -q '^check' '$STATE/rustup.log'"
+
+# Up to date: only nightly is outdated, which must not count against stable.
+assert "mise outdated rust --json" "{}"
+mise upgrade rust
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "1"
+
+# rustup 1.29 reports a stable update: mise sees it and reinstalls the channel.
+touch "$STATE/update_available"
+assert_contains "mise upgrade rust --dry-run" "Would install rust@stable"
+
+# A failed update must leave the installed toolchain linked and usable.
+touch "$STATE/fail_install"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
+assert "test -L '$MISE_DATA_DIR/installs/rust/stable'"
+assert_contains "mise ls --installed rust --json" '"version": "stable"'
+assert_contains "mise exec -- rustc -V" "rustc stable (fake)"
+
+# If rustup can no longer vouch for the toolchain, the install stays incomplete
+# so the next install repairs it.
+touch "$STATE/broken"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
+assert "mise ls --installed rust --json" "[]"
+rm "$STATE/broken"
+
+# Nor does a compiler that no longer runs count as usable. Repair the install the
+# previous step left incomplete first, so this step starts from a working one.
+rm "$STATE/fail_install"
+mise install rust
+assert_contains "mise ls --installed rust --json" '"version": "stable"'
+touch "$STATE/update_available" "$STATE/fail_install" "$STATE/bad_rustc"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
+assert "mise ls --installed rust --json" "[]"
+rm "$STATE/bad_rustc" "$STATE/fail_install"
+
+mise upgrade rust
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "6"
+# The channel is updated in place: a failed install must not strand the old toolchain.
+assert "! grep -q '^toolchain uninstall' '$STATE/rustup.log'"
+assert "mise outdated rust --json" "{}"

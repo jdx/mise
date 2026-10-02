@@ -1,15 +1,25 @@
 use super::*;
 
+/// Verify a keyless cosign bundle. The signer must satisfy `identity`, which
+/// has to pin the certificate identity: a valid Fulcio chain alone only proves
+/// that *some* GitHub Actions workflow signed the artifact.
 pub async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
+    identity: &CosignIdentity,
 ) -> Result<bool> {
+    identity.require_pinned_signer()?;
     let content = tokio::fs::read_to_string(sig_or_bundle_path).await?;
     let artifact = tokio::fs::read(artifact_path).await?;
     let mut trust_roots = TrustRoots::default();
     if let Ok(bundle) = Bundle::from_json(&content) {
-        verify_bundle_with_trust_roots(Artifact::from(&artifact), &bundle, None, &mut trust_roots)
-            .await?;
+        verify_keyless_bundle(
+            Artifact::from(&artifact),
+            &bundle,
+            identity,
+            &mut trust_roots,
+        )
+        .await?;
         return Ok(true);
     }
     // Legacy cosign v1 bundle (`{base64Signature, cert, rekorBundle}`).
@@ -17,8 +27,23 @@ pub async fn verify_cosign_signature(
     // these manually: chain-validate the embedded cert against Sigstore
     // Fulcio, then ECDSA-verify the signature over the artifact bytes.
     let trusted_root = trust_roots.sigstore_root().await?;
-    verify_legacy_cosign_bundle(&artifact, &content, trusted_root)?;
+    verify_legacy_cosign_bundle(&artifact, &content, trusted_root, identity)?;
     Ok(true)
+}
+
+/// Chain-validate a modern keyless bundle, then require its signing
+/// certificate to satisfy `identity`.
+pub(crate) async fn verify_keyless_bundle<'a>(
+    artifact: Artifact<'a>,
+    bundle: &Bundle,
+    identity: &CosignIdentity,
+    trust_roots: &mut TrustRoots,
+) -> Result<()> {
+    verify_bundle_with_trust_roots(artifact, bundle, None, trust_roots).await?;
+    let cert = bundle.signing_certificate().ok_or_else(|| {
+        AttestationError::Verification("cosign bundle is missing a signer certificate".to_string())
+    })?;
+    verify_certificate_identity(cert.as_bytes(), identity)
 }
 
 pub async fn verify_cosign_signature_with_key(
@@ -181,6 +206,7 @@ pub(crate) fn verify_legacy_cosign_bundle(
     artifact: &[u8],
     bundle_json: &str,
     trusted_root: &TrustedRoot,
+    identity: &CosignIdentity,
 ) -> Result<()> {
     let value: serde_json::Value = serde_json::from_str(bundle_json).map_err(|e| {
         AttestationError::UnsupportedFormat(format!("not a sigstore or cosign bundle: {e}"))
@@ -207,6 +233,7 @@ pub(crate) fn verify_legacy_cosign_bundle(
     })?;
     let cert = DerCertificate::from_pem(cert_pem)?;
     verify_cert_chain(cert.as_bytes(), trusted_root)?;
+    verify_certificate_identity(cert.as_bytes(), identity)?;
 
     let sig_bytes = base64::engine::general_purpose::STANDARD
         .decode(sig_b64.as_bytes())

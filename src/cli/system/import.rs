@@ -202,7 +202,10 @@ fn imported_package_value(
         Some(PackageTomlConfig::Version(_)) => None,
         None => match configured {
             Some(PackageTomlConfig::Options(options))
-                if !options.os.is_empty() || !options.env.is_empty() || options.adopt.is_some() =>
+                if !options.os.is_empty()
+                    || !options.env.is_empty()
+                    || options.adopt.is_some()
+                    || options.appdir.is_some() =>
             {
                 Some(options)
             }
@@ -226,6 +229,9 @@ fn imported_package_value(
     }
     if let Some(adopt) = options.adopt {
         table.insert("adopt", Value::from(adopt));
+    }
+    if let Some(appdir) = &options.appdir {
+        table.insert("appdir", Value::from(appdir));
     }
     Value::InlineTable(table)
 }
@@ -277,12 +283,13 @@ mod tests {
     use crate::system::PackageOptionsTomlConfig;
 
     #[test]
-    fn dry_run_preserves_inherited_selectors() {
+    fn dry_run_preserves_inherited_package_options() {
         let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
             env: vec!["work".to_string()],
             adopt: None,
+            appdir: None,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
             url: None,
             sha256: None,
@@ -298,6 +305,7 @@ mod tests {
             os: vec![],
             env: vec![],
             adopt: Some(true),
+            appdir: None,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
             url: None,
             sha256: None,
@@ -306,6 +314,22 @@ mod tests {
         assert_eq!(
             imported_package_value(None, Some(&adopted)).to_string(),
             r#"{ version = "latest", adopt = true }"#
+        );
+
+        let appdir = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "1.0.0".to_string(),
+            os: vec![],
+            env: vec![],
+            adopt: None,
+            appdir: Some("/Applications".to_string()),
+            state: crate::system::PackageDesiredStateTomlConfig::Present,
+            url: None,
+            sha256: None,
+            artifact: None,
+        });
+        assert_eq!(
+            imported_package_value(None, Some(&appdir)).to_string(),
+            r#"{ version = "latest", appdir = "/Applications" }"#
         );
     }
 }

@@ -215,6 +215,13 @@ assert_contains "mise skills ls --json" "1.0.0"
 mise skills sync --dir ../skills
 assert_contains "cat ../skills/probe/SKILL.md" "# probe 1.0.0"
 
+# Paths under $HOME print as ~, in the link row and in the table.
+assert_contains "mise skills sync --dir $HOME/agent-skills" "linked ~/agent-skills/probe -> "
+assert_contains "mise skills sync --dir $HOME/agent-skills" "skill(s) already linked in ~/agent-skills"
+assert_contains "mise skills ls" "~/"
+assert_not_contains "mise skills ls" "$HOME"
+assert_contains "mise skills ls --json" "$HOME"
+
 if command -v fish >/dev/null; then
   mise completion fish --tool probe --install
   stub="$HOME/.config/fish/completions/probe.fish"

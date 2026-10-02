@@ -260,7 +260,19 @@ impl Exec {
             ts.resolve_with_opts(&config, &opts.resolve_options).await?;
         }
 
-        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+        let (mut program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+        // Pitchfork leaves a daemon command it cannot render for us to finish.
+        let pitchfork_context = std::env::var(PITCHFORK_TEMPLATE_CONTEXT_ENV).ok();
+        if let Some(context) = &pitchfork_context {
+            let ctx = pitchfork_tera_ctx(&config, &ts, context).await?;
+            let mut tera = crate::tera::get_tera(crate::dirs::CWD.as_deref());
+            for arg in std::iter::once(&mut program).chain(args.iter_mut()) {
+                if arg.contains("{{") || arg.contains("{%") || arg.contains("{#") {
+                    *arg = crate::tera::render_str(&mut tera, arg, &ctx)
+                        .map_err(|err| eyre::eyre!("failed to render daemon command: {err:#}"))?;
+                }
+            }
+        }
 
         // Running a lazy tool's command is what installs it, and `mise x -- <cmd>`
         // names that command directly. Install its provider here: program resolution
@@ -307,6 +319,13 @@ impl Exec {
             ts.env_with_path_and_removals(&config).await?
         });
         env.extend(wrapper_env);
+        // Only this command is for the supervisor's context. A `mise x` the daemon
+        // runs itself must not render its arguments with it.
+        let mut env_remove = env_remove;
+        if pitchfork_context.is_some() {
+            env.remove(PITCHFORK_TEMPLATE_CONTEXT_ENV);
+            env_remove.insert(PITCHFORK_TEMPLATE_CONTEXT_ENV.to_string());
+        }
         if !self.tool.is_empty() {
             // A dispatched shim reloads config in a new process. Preserve both
             // enclosing task overrides and these explicit exec overrides.
@@ -435,6 +454,46 @@ impl Exec {
         // command must not be reinterpreted as a shell body.
         exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
+}
+
+/// Set by pitchfork when it passes a daemon command through unrendered because it
+/// uses variables only mise knows. Its value is pitchfork's template context as
+/// JSON.
+const PITCHFORK_TEMPLATE_CONTEXT_ENV: &str = "PITCHFORK_TEMPLATE_CONTEXT";
+
+/// The template context for a daemon command: mise's own, with pitchfork's
+/// variables added. `env` is both: a value the daemon declares wins, as it does
+/// in the process pitchfork starts.
+async fn pitchfork_tera_ctx(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    pitchfork: &str,
+) -> Result<tera::Context> {
+    let mut ctx = ts.tera_ctx(config).await?.clone();
+    let serde_json::Value::Object(variables) = serde_json::from_str(pitchfork)
+        .map_err(|err| eyre::eyre!("invalid {PITCHFORK_TEMPLATE_CONTEXT_ENV}: {err}"))?
+    else {
+        return Err(eyre::eyre!(
+            "invalid {PITCHFORK_TEMPLATE_CONTEXT_ENV}: expected an object"
+        ));
+    };
+    for (key, value) in variables {
+        if key == "env"
+            && let serde_json::Value::Object(daemon_env) = &value
+        {
+            let mut merged = match ctx.get("env").and_then(|env| env.as_map()) {
+                Some(map) => serde_json::to_value(map)?,
+                None => serde_json::json!({}),
+            };
+            if let Some(merged) = merged.as_object_mut() {
+                merged.extend(daemon_env.clone());
+            }
+            ctx.insert("env", &merged);
+        } else {
+            ctx.insert(key, &value);
+        }
+    }
+    Ok(ctx)
 }
 
 /// With auto-install off, warn when the command belongs to a missing tool. The PATH lookup in
@@ -814,6 +873,10 @@ where
         None => return Err(err_cannot_find_binary_path(&program_name).await),
     };
     env::remove_var(env::MISE_SHIM_PATH_ENV);
+    if is_shim_dispatch {
+        // A native shim that finds its own path here was picked instead of the tool.
+        env::set_var(env::MISE_SHIM_TARGET_ENV, &program);
+    }
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
     // Windows does not support exec in the same way as Unix,
@@ -839,6 +902,25 @@ where
                 None => return Err(eyre!("command failed: terminated by signal")),
             }
         }
+    }
+
+    // libuv adds a CRT table for every Node child. Only an IPC child has both the Node channel
+    // marker and a matching pipe descriptor, so keep the normal duct path for all other commands
+    // (including .cmd and .bat tools) and retain startup data only for the selected node.exe.
+    if program
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("node"))
+        && program
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+        && mise_util::windows_process::has_inherited_node_ipc()
+    {
+        let status =
+            mise_util::windows_process::status_with_inherited_node_ipc(program.as_os_str(), args)?;
+        return match status.code() {
+            Some(code) => Err(crate::request_exit(code)),
+            None => Err(eyre!("command failed: terminated by signal")),
+        };
     }
 
     let cmd = cmd::cmd(program, args);

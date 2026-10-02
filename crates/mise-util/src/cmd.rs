@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 #[cfg(panic = "abort")]
 use std::sync::TryLockError;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -21,7 +21,7 @@ use duct::{Expression, IntoExecutablePath};
 use eyre::Result;
 use eyre::{Context, bail};
 #[cfg(not(target_os = "windows"))]
-use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
+use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(target_os = "windows"))]
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
@@ -147,12 +147,153 @@ const GUARD_RUNNING: u8 = 0;
 const GUARD_CANCELLED: u8 = 1;
 const GUARD_TIMED_OUT: u8 = 2;
 
+/// How long a timed-out command gets between SIGTERM and SIGKILL.
+#[cfg(unix)]
+const TIMEOUT_GRACE: Duration = Duration::from_secs(5);
+
+#[cfg(unix)]
+fn in_terminal_foreground_pgrp() -> bool {
+    let pgrp = nix::unistd::getpgrp();
+    nix::unistd::tcgetpgrp(std::io::stdin()) == Ok(pgrp)
+        || nix::unistd::tcgetpgrp(std::io::stdout()) == Ok(pgrp)
+        || nix::unistd::tcgetpgrp(std::io::stderr()) == Ok(pgrp)
+}
+
+/// Whether a SIGINT came from a process (`kill`, `sigqueue`) rather than from
+/// the terminal since `kill_all` last looked. Only Linux can tell: macOS gives
+/// a terminal Ctrl-C the same `si_code` and a sender pid, just like `kill`.
+///
+/// A SIGINT that arrives before `kill_all` has handled the previous one must
+/// not hide that earlier origin, so the handler only ever sets this and
+/// `kill_all` takes it.
+///
+/// `si_code` doesn't say whom the sender targeted: `kill -INT -<pgid>` also
+/// reports SI_USER, so children in that group get the SIGINT twice. Nothing
+/// tells the two apart, and a second SIGINT beats none: a child that never
+/// gets one keeps mise waiting on it.
+#[cfg(target_os = "linux")]
+static SIGINT_FROM_PROCESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Watch SIGINT from the signal handler itself: note it for
+/// [`crate::cancel::is_cancelled`], and on Linux record where it came from, so
+/// `kill_all` still passes on a SIGINT that was sent to mise alone. Call this
+/// before handling Ctrl-C.
+#[cfg(unix)]
+pub fn track_sigint() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: the actions only store to atomics, which is
+        // async-signal-safe.
+        #[cfg(target_os = "linux")]
+        let registered = unsafe {
+            signal_hook_registry::register_sigaction(nix::libc::SIGINT, |info| {
+                // The terminal sends SI_KERNEL. `kill` sends SI_USER (0),
+                // and `sigqueue`, `tgkill` and the like send negative codes.
+                if info.si_code <= 0 {
+                    SIGINT_FROM_PROCESS.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                crate::cancel::note_signal();
+            })
+        };
+        #[cfg(not(target_os = "linux"))]
+        let registered = unsafe {
+            signal_hook::low_level::register(
+                signal_hook::consts::SIGINT,
+                crate::cancel::note_signal,
+            )
+        };
+        if let Err(e) = registered {
+            debug!("failed to track SIGINT: {e}");
+        }
+    });
+}
+
+/// Whether the SIGINT `kill_all` is about to pass on has already reached the
+/// children that share mise's process group.
+#[cfg(unix)]
+fn sigint_reached_own_pgrp() -> bool {
+    // Take the flag even when it isn't needed, so it never outlives its SIGINT.
+    #[cfg(target_os = "linux")]
+    let from_process = SIGINT_FROM_PROCESS.swap(false, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(target_os = "linux"))]
+    let from_process = false;
+    // An outer mise that owns our process group signals all of it with
+    // `killpg`, so the children we share it with got that SIGINT directly,
+    // however it looks to us. Without this, a nested mise would pass it on a
+    // second time. The cost is a `kill -INT` sent to this nested mise alone,
+    // which its children never see; the outer mise, whose Ctrl-C reaches us
+    // here, is the realistic sender, and nothing in a SIGINT tells the two
+    // apart.
+    if std::env::var_os(TASK_PGID_MANAGED_ENV).is_some() {
+        return true;
+    }
+    !from_process && in_terminal_foreground_pgrp()
+}
+
 #[cfg(unix)]
 fn signal_process_tree(pid: u32, signal: nix::sys::signal::Signal) {
     let pid = nix::unistd::Pid::from_raw(pid as i32);
     if !should_use_pgroup() || nix::sys::signal::killpg(pid, signal).is_err() {
         let _ = nix::sys::signal::kill(pid, signal);
     }
+}
+
+/// Those of `pids` for which anything that [`signal_process_tree`] would reach
+/// is still running.
+#[cfg(unix)]
+fn alive_process_trees(pids: &HashSet<u32>) -> HashSet<u32> {
+    #[cfg(target_os = "linux")]
+    if let Some(alive) = alive_process_trees_procfs(pids) {
+        return alive;
+    }
+    pids.iter()
+        .copied()
+        .filter(|&pid| {
+            let pid = nix::unistd::Pid::from_raw(pid as i32);
+            (should_use_pgroup() && nix::sys::signal::killpg(pid, None).is_ok())
+                || nix::sys::signal::kill(pid, None).is_ok()
+        })
+        .collect()
+}
+
+/// Signal 0 also reaches zombies, which an init that never reaps keeps around,
+/// so read process states instead. `None` when /proc cannot be read.
+#[cfg(target_os = "linux")]
+fn alive_process_trees_procfs(pids: &HashSet<u32>) -> Option<HashSet<u32>> {
+    let use_pgroup = should_use_pgroup();
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let mut alive = HashSet::new();
+    for entry in entries.flatten() {
+        let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        // "pid (comm) state ppid pgrp ..."; comm may itself contain ") ".
+        let Some(fields) = stat.rfind(')').map(|i| &stat[i + 1..]) else {
+            continue;
+        };
+        let mut fields = fields.split_whitespace();
+        let (Some(state), Some(_ppid), Some(pgrp)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if state == "Z" {
+            continue;
+        }
+        if pids.contains(&pid) {
+            alive.insert(pid);
+        }
+        if use_pgroup
+            && let Ok(pgrp) = pgrp.parse::<u32>()
+            && pids.contains(&pgrp)
+        {
+            alive.insert(pgrp);
+        }
+    }
+    Some(alive)
 }
 
 #[cfg(windows)]
@@ -221,7 +362,7 @@ impl TimeoutGuard {
                 signal_process_tree(pid, nix::sys::signal::Signal::SIGTERM);
                 drop(guard);
                 let guard = lock.lock().unwrap();
-                let grace_deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let grace_deadline = std::time::Instant::now() + TIMEOUT_GRACE;
                 let (_guard, cancelled) = wait_for_cancel_or_deadline(cvar, guard, grace_deadline);
                 if !cancelled {
                     signal_process_tree(pid, nix::sys::signal::Signal::SIGKILL);
@@ -272,6 +413,20 @@ static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 static RAW_LOCK: Lazy<tokio::sync::RwLock<()>> = Lazy::new(|| tokio::sync::RwLock::new(()));
 
 static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
+/// Set by [`CmdLineRunner::terminate_all`]; nothing started afterwards may keep running.
+static TERMINATING: AtomicBool = AtomicBool::new(false);
+
+/// Track a started command for `kill_all`. One that started after
+/// `terminate_all` began missed its signals, so it is killed here instead.
+fn register_running_pid(pid: u32) {
+    RUNNING_PIDS.lock().unwrap().insert(pid);
+    if TERMINATING.load(Ordering::SeqCst) {
+        #[cfg(unix)]
+        signal_process_tree(pid, nix::sys::signal::SIGKILL);
+        #[cfg(windows)]
+        kill_process_tree(pid);
+    }
+}
 
 #[cfg(all(panic = "abort", unix))]
 fn kill_pids_immediately(pids: &HashSet<u32>) {
@@ -320,7 +475,7 @@ pub struct RunningPidGuard(Option<u32>);
 impl RunningPidGuard {
     pub fn new(pid: Option<u32>) -> Self {
         if let Some(pid) = pid {
-            RUNNING_PIDS.lock().unwrap().insert(pid);
+            register_running_pid(pid);
         }
         Self(pid)
     }
@@ -609,10 +764,20 @@ impl<'a> CmdLineRunner<'a> {
     #[cfg(unix)]
     pub fn kill_all(signal: nix::sys::signal::Signal) {
         let use_pgroup = should_use_pgroup();
+        let already_delivered = signal == nix::sys::signal::SIGINT && sigint_reached_own_pgrp();
+        let own_pgid = nix::unistd::getpgrp();
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
             let nix_pid = nix::unistd::Pid::from_raw(pid);
+            // A terminal Ctrl-C, or an outer mise's `killpg`, already reached
+            // children in our pgid. A second SIGINT makes some of them, such
+            // as a nested mise or `docker compose`, force-quit instead of
+            // shutting down.
+            if already_delivered && nix::unistd::getpgid(Some(nix_pid)) == Ok(own_pgid) {
+                trace!("{signal}: {pid} already signalled");
+                continue;
+            }
             if use_pgroup {
                 trace!("{signal}: pgid {pid}");
                 // Each tracked PID is also the leader of its own pgid (set
@@ -660,6 +825,38 @@ impl<'a> CmdLineRunner<'a> {
         for mut killer in killers {
             let _ = killer.wait();
         }
+    }
+
+    /// Stop every running command the way a per-command timeout does: SIGTERM,
+    /// then SIGKILL for whatever has not exited after the grace period. Windows
+    /// has no graceful stop yet, so it force-kills the trees at once. Commands
+    /// started from here on are killed as they start, for the rest of the process.
+    pub async fn terminate_all() {
+        TERMINATING.store(true, Ordering::SeqCst);
+        #[cfg(unix)]
+        {
+            // Kept past the leaders' exit: a shell that dies on SIGTERM leaves
+            // RUNNING_PIDS while a child ignoring it keeps the group alive.
+            let mut pids = RUNNING_PIDS.lock().unwrap().clone();
+            for &pid in &pids {
+                signal_process_tree(pid, nix::sys::signal::SIGTERM);
+            }
+            let deadline = Instant::now() + TIMEOUT_GRACE;
+            loop {
+                // A tree once seen gone is never signalled again: its ID could
+                // by now belong to an unrelated process.
+                pids = alive_process_trees(&pids);
+                if pids.is_empty() || Instant::now() >= deadline {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            for &pid in &pids {
+                signal_process_tree(pid, nix::sys::signal::SIGKILL);
+            }
+        }
+        #[cfg(windows)]
+        Self::kill_all();
     }
 
     pub fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
@@ -936,7 +1133,7 @@ impl<'a> CmdLineRunner<'a> {
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        register_running_pid(id);
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
@@ -981,8 +1178,11 @@ impl<'a> CmdLineRunner<'a> {
         let mut sighandle = None;
         #[cfg(not(target_os = "windows"))]
         if self.pass_signals && !crate::testing::active() {
-            let mut signals =
-                Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
+            // SIGINT is left to mise's Ctrl-C handler, whose `kill_all`
+            // already signals every running command. Forwarding it here too
+            // delivered each Ctrl-C twice, which a nested mise (and tools like
+            // `docker compose`) take as a second Ctrl-C and force-quit.
+            let mut signals = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
             sighandle = Some(signals.handle());
             let tx = tx.clone();
             thread::spawn(move || {
@@ -1068,18 +1268,11 @@ impl<'a> CmdLineRunner<'a> {
                     let pid = nix::unistd::Pid::from_raw(id as i32);
                     let nix_sig = nix::sys::signal::Signal::try_from(sig).unwrap();
                     if should_use_pgroup() {
-                        // With pgroups the child is isolated from the
-                        // terminal's foreground pgid, so terminal SIGINT
-                        // doesn't reach it — forward every signal we
-                        // catch, including SIGINT.
                         debug!("Received signal {sig}, forwarding to pgid {id}");
                         if nix::sys::signal::killpg(pid, nix_sig).is_err() {
                             let _ = nix::sys::signal::kill(pid, nix_sig);
                         }
-                    } else if sig != SIGINT {
-                        // No pgroup: the child is in our pgid, so the
-                        // terminal already delivered SIGINT. Forwarding
-                        // it again would just be a redundant kill.
+                    } else {
                         debug!("Received signal {sig}, forwarding to {id}");
                         let _ = nix::sys::signal::kill(pid, nix_sig);
                     }
@@ -1136,7 +1329,7 @@ impl<'a> CmdLineRunner<'a> {
             .await
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        register_running_pid(id);
         if is_cancelled() {
             #[cfg(unix)]
             signal_process_tree(id, nix::sys::signal::SIGINT);
@@ -1194,8 +1387,8 @@ impl<'a> CmdLineRunner<'a> {
         let mut sighandle = None;
         #[cfg(not(target_os = "windows"))]
         if self.pass_signals && !crate::testing::active() {
-            let mut signals =
-                Signals::new([SIGINT, SIGTERM, SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
+            // SIGINT is left to mise's Ctrl-C handler; see `execute`.
+            let mut signals = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2])?;
             sighandle = Some(signals.handle());
             let tx = tx.clone();
             thread::spawn(move || {
@@ -1270,7 +1463,7 @@ impl<'a> CmdLineRunner<'a> {
                                 if nix::sys::signal::killpg(pid, nix_sig).is_err() {
                                     let _ = nix::sys::signal::kill(pid, nix_sig);
                                 }
-                            } else if sig != SIGINT {
+                            } else {
                                 debug!("Received signal {sig}, forwarding to {id}");
                                 let _ = nix::sys::signal::kill(pid, nix_sig);
                             }

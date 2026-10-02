@@ -588,7 +588,7 @@ impl Toolset {
             .collect()
     }
 
-    pub(crate) async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
+    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
         self.tera_ctx
             .get_or_try_init(async || {
                 let env = self.full_env(config).await?;

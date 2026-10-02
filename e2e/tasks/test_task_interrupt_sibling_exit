@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# After Ctrl-C, a task that exits non-zero on SIGINT instead of dying by it was
+# treated as a failure, and mise SIGTERMed its siblings while they were still
+# shutting down.
+
+cat <<'TOML' >mise.toml
+[tasks.quits]
+run = """
+trap 'exit 1' INT
+touch "$QUITS_READY"
+while :; do sleep 0.1; done
+"""
+
+[tasks.cleans-up]
+run = """
+trap '' INT
+touch "$CLEANS_UP_READY"
+sleep 2
+touch "$CLEANS_UP_DONE"
+"""
+TOML
+
+quits_ready="$TMPDIR/task-interrupt-sibling-quits-ready"
+cleans_up_ready="$TMPDIR/task-interrupt-sibling-cleans-up-ready"
+cleans_up_done="$TMPDIR/task-interrupt-sibling-cleans-up-done"
+output_file="$TMPDIR/task-interrupt-sibling-output"
+
+QUITS_READY="$quits_ready" CLEANS_UP_READY="$cleans_up_ready" CLEANS_UP_DONE="$cleans_up_done" \
+  mise run quits ::: cleans-up >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$quits_ready" "quits task" 30 "$mise_pid"
+wait_for_file "$cleans_up_ready" "cleans-up task" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+if [[ ! -e $cleans_up_done ]]; then
+  fail "sibling was killed during its Ctrl-C cleanup: $output"
+fi
+if [[ $status -eq 0 ]]; then
+  fail "mise run exited 0 after Ctrl-C: $output"
+fi

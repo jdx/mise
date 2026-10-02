@@ -7,7 +7,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-const COMPILED_REGISTRY_CACHE_VERSION: &str = "v9";
+// Bump when the archived index or package layout changes.
+const COMPILED_REGISTRY_CACHE_VERSION: &str = "v10";
 
 #[derive(Debug, Clone)]
 pub struct RegistryCache {
@@ -289,6 +290,40 @@ mod tests {
             first.file_name().and_then(|name| name.to_str()),
             Some(source_hash.as_str())
         );
+    }
+
+    #[test]
+    fn compiled_cache_ignores_incompatible_previous_layout() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = RegistryCache::new(temp.path());
+        let registry_url = "https://example.com/aqua-registry";
+        let source = registry_source("example/tool");
+        let source_hash = RegistryCache::source_hash(&source);
+        let registry = ParsedRegistry::parse_yaml(&source).unwrap();
+        let legacy_dir = temp
+            .path()
+            .join("compiled")
+            .join(registry_url_hash(registry_url))
+            .join("v9")
+            .join(&source_hash);
+
+        registry.write_compiled_cache(&legacy_dir).unwrap();
+        let package_path = fs::read_dir(legacy_dir.join("packages"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        fs::write(package_path, []).unwrap();
+
+        let legacy = CompiledRegistry::load(&legacy_dir).unwrap();
+        assert!(legacy.package("example/tool").is_err());
+        assert!(cache.load_compiled(registry_url, &source_hash).is_err());
+
+        let current = cache
+            .write_compiled(registry_url, &source_hash, &registry)
+            .unwrap();
+        assert!(current.package("example/tool").is_ok());
     }
 
     #[test]

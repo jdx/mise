@@ -903,29 +903,51 @@ fn materialize_link(source: &Path, staged_source: &Path, link: &Path) -> Result<
 
 fn make_directory_writable(path: &Path) -> Result<Option<fs::Permissions>> {
     let original = fs::metadata(path)?.permissions();
-    let mut writable = original.clone();
     #[cfg(unix)]
-    {
+    let made_writable = {
         use std::os::unix::fs::PermissionsExt;
         if original.mode() & 0o200 != 0 {
             return Ok(None);
         }
+        let mut writable = original.clone();
         writable.set_mode(original.mode() | 0o200);
-    }
+        fs::set_permissions(path, writable)
+    };
     #[cfg(windows)]
-    {
+    let made_writable = {
         if !original.readonly() {
             return Ok(None);
         }
-        writable.set_readonly(false);
-    }
-    fs::set_permissions(path, writable).wrap_err_with(|| {
+        clear_readonly_attribute(path)
+    };
+    made_writable.wrap_err_with(|| {
         format!(
             "failed to make staged directory writable: {}",
             path.display()
         )
     })?;
     Ok(Some(original))
+}
+
+/// Clear only the read-only attribute, which is what `Permissions::set_readonly(false)`
+/// does on Windows, without the call that would make a file world-writable on Unix.
+#[cfg(windows)]
+fn clear_readonly_attribute(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_READONLY, GetFileAttributesW, INVALID_FILE_ATTRIBUTES, SetFileAttributesW,
+    };
+    // The canonical form is `\\?\`-prefixed, which lifts MAX_PATH for these calls
+    // the way std's own file calls lift it; a staged tree can nest that deep.
+    let path = fs::canonicalize(path)?;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let attributes = unsafe { GetFileAttributesW(wide.as_ptr()) };
+    if attributes == INVALID_FILE_ATTRIBUTES
+        || unsafe { SetFileAttributesW(wide.as_ptr(), attributes & !FILE_ATTRIBUTE_READONLY) } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 async fn provision_mise(
@@ -2418,6 +2440,47 @@ mod tests {
             fs::metadata(staged.join("read-only"))?.permissions().mode() & 0o777,
             0o555
         );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn makes_a_read_only_directory_writable_and_restores_it() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = temp.path().join("read-only");
+        fs::create_dir(&dir)?;
+        let mut read_only = fs::metadata(&dir)?.permissions();
+        read_only.set_readonly(true);
+        fs::set_permissions(&dir, read_only)?;
+
+        let original = make_directory_writable(&dir)?.expect("a read-only directory changes");
+        assert!(original.readonly());
+        assert!(!fs::metadata(&dir)?.permissions().readonly());
+        assert!(make_directory_writable(&dir)?.is_none());
+
+        fs::set_permissions(&dir, original)?;
+        assert!(fs::metadata(&dir)?.permissions().readonly());
+        // Leave it removable for the temporary directory's cleanup.
+        make_directory_writable(&dir)?;
+        Ok(())
+    }
+
+    /// A staged tree can nest past MAX_PATH; std's own calls handle that, so this must too.
+    #[test]
+    #[cfg(windows)]
+    fn makes_a_read_only_directory_writable_past_max_path() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = (0..6).fold(temp.path().to_path_buf(), |p, i| {
+            p.join(format!("{i}-{}", "d".repeat(50)))
+        });
+        assert!(dir.as_os_str().len() > 260, "{}", dir.display());
+        fs::create_dir_all(&dir)?;
+        let mut read_only = fs::metadata(&dir)?.permissions();
+        read_only.set_readonly(true);
+        fs::set_permissions(&dir, read_only)?;
+
+        assert!(make_directory_writable(&dir)?.is_some());
+        assert!(!fs::metadata(&dir)?.permissions().readonly());
         Ok(())
     }
 

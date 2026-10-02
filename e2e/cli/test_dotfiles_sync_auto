@@ -66,7 +66,7 @@ mkdir -p ~/.config/hypr
 echo 'bind = SUPER, Q, exec, kitty' >~/.config/hypr/bindings.lua
 assert_succeed "mise bootstrap dotfiles track ~/.config/hypr"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
-assert_succeed "$b bootstrap --from-git file://$origin --yes"
+assert_succeed "$b bootstrap --adopt file://$origin --yes"
 mise bootstrap dotfiles watch --json >a.log 2>&1 &
 a_watcher=$!
 $b bootstrap dotfiles watch --json >b.log 2>&1 &

@@ -109,8 +109,19 @@ pub(super) fn path_ends_with_ignore_ascii_case(path: &Path, suffix: &Path) -> bo
     true
 }
 
+#[cfg(test)]
 pub(super) fn app_target_path(target_name: &str) -> Result<PathBuf> {
-    let app_dir = target_app_dir()?;
+    app_target_path_in(&target_app_dir()?, target_name)
+}
+
+/// Resolve an app target for one cask. A package-level appdir is kept on the
+/// resolved cask so concurrent package work never depends on process-global
+/// environment mutation.
+pub(super) fn cask_app_target_path(cask: &Cask, target_name: &str) -> Result<PathBuf> {
+    app_target_path_in(&cask_target_app_dir(cask)?, target_name)
+}
+
+pub(super) fn app_target_path_in(app_dir: &Path, target_name: &str) -> Result<PathBuf> {
     if target_name.contains('\0') {
         bail!("brew-cask: app target contains NUL");
     }
@@ -125,7 +136,7 @@ pub(super) fn app_target_path(target_name: &str) -> Result<PathBuf> {
         }
         if path.is_absolute() {
             let prefix_app_dir = prefix::prefix().join("Applications");
-            if path.starts_with(&app_dir) || path.starts_with(&prefix_app_dir) {
+            if path.starts_with(app_dir) || path.starts_with(prefix_app_dir) {
                 return Ok(path);
             }
             // Casks routinely hardcode an absolute `/Applications/Foo.app`
@@ -148,6 +159,10 @@ pub(super) fn app_target_path(target_name: &str) -> Result<PathBuf> {
     Ok(app_dir.join(target_name))
 }
 
+pub(super) fn cask_target_app_dir(cask: &Cask) -> Result<PathBuf> {
+    cask.appdir.clone().map(Ok).unwrap_or_else(target_app_dir)
+}
+
 /// The directory `app` artifacts are linked into: `/Applications` unless
 /// [`APP_DIR_ENV`] overrides it.
 ///
@@ -163,10 +178,27 @@ pub(super) fn target_app_dir() -> Result<PathBuf> {
     if dir.is_empty() {
         return Ok(PathBuf::from(DEFAULT_APP_DIR));
     }
-    let dir = PathBuf::from(dir);
+    validate_app_dir(PathBuf::from(dir), APP_DIR_ENV)
+}
+
+/// Parse an appdir in a package table. Unlike the shell environment variable,
+/// the configuration form supports a leading `~/` for a portable per-user
+/// declaration.
+pub(crate) fn package_app_dir(value: &str) -> Result<PathBuf> {
+    let dir = if value == "~" {
+        crate::env::HOME.clone()
+    } else if let Some(relative) = value.strip_prefix("~/") {
+        crate::env::HOME.join(relative)
+    } else {
+        PathBuf::from(value)
+    };
+    validate_app_dir(dir, "appdir")
+}
+
+fn validate_app_dir(dir: PathBuf, setting: &str) -> Result<PathBuf> {
     if !dir.is_absolute() {
         bail!(
-            "brew-cask: {APP_DIR_ENV} '{}' must be an absolute path",
+            "brew-cask: {setting} '{}' must be an absolute path",
             dir.display()
         );
     }
@@ -175,7 +207,7 @@ pub(super) fn target_app_dir() -> Result<PathBuf> {
         .any(|component| matches!(component, Component::ParentDir))
     {
         bail!(
-            "brew-cask: {APP_DIR_ENV} '{}' must not contain '..'",
+            "brew-cask: {setting} '{}' must not contain '..'",
             dir.display()
         );
     }
@@ -192,7 +224,7 @@ pub(super) fn target_app_dir() -> Result<PathBuf> {
         .any(|component| matches!(component, Component::Normal(_)))
     {
         bail!(
-            "brew-cask: {APP_DIR_ENV} '{}' must not resolve to the filesystem root",
+            "brew-cask: {setting} '{}' must not resolve to the filesystem root",
             dir.display()
         );
     }
@@ -253,6 +285,26 @@ pub(super) fn allowed_appdir_roots() -> Result<Vec<PathBuf>> {
     Ok(roots)
 }
 
+pub(super) fn allowed_appdir_roots_for(cask: &Cask) -> Result<Vec<PathBuf>> {
+    // A cask-specific directory replaces the global setting. Do not evaluate
+    // the latter here: an invalid global value must not make a valid package
+    // override unusable, including for `$APPDIR` binary artifacts.
+    let mut roots = if cask.appdir.is_some() {
+        vec![PathBuf::from(DEFAULT_APP_DIR)]
+    } else {
+        allowed_appdir_roots()?
+    };
+    let prefix_app_dir = prefix::prefix().join("Applications");
+    if !roots.contains(&prefix_app_dir) {
+        roots.push(prefix_app_dir);
+    }
+    let appdir = cask_target_app_dir(cask)?;
+    if !roots.contains(&appdir) {
+        roots.push(appdir);
+    }
+    Ok(roots)
+}
+
 pub(super) fn is_appdir_binary_target(target_name: &str) -> bool {
     target_name.starts_with("$APPDIR/")
 }
@@ -265,14 +317,31 @@ pub(super) fn allowed_binary_target_roots_display(roots: &[PathBuf]) -> String {
         .join(" or ")
 }
 
+#[cfg(test)]
 pub(super) fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
+    binary_target_path_in(target_name, appdir, &allowed_appdir_roots()?)
+}
+
+pub(super) fn cask_binary_target_path(
+    cask: &Cask,
+    target_name: &str,
+    appdir: &Path,
+) -> Result<PathBuf> {
+    binary_target_path_in(target_name, appdir, &allowed_appdir_roots_for(cask)?)
+}
+
+fn binary_target_path_in(
+    target_name: &str,
+    appdir: &Path,
+    appdir_roots: &[PathBuf],
+) -> Result<PathBuf> {
     if target_name.contains('\0') {
         bail!("brew-cask: binary target contains NUL");
     }
     if let Some(relative) = target_name.strip_prefix("$APPDIR/") {
         let relative = Path::new(relative);
         reject_appdir_escape(relative, "binary $APPDIR target", target_name)?;
-        if !allowed_appdir_roots()?.iter().any(|root| root == appdir) {
+        if !appdir_roots.iter().any(|root| root == appdir) {
             bail!("brew-cask: invalid appdir '{}'", appdir.display());
         }
         return Ok(appdir.join(relative));

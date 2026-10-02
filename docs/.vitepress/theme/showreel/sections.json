@@ -8,7 +8,7 @@
     "end": 14,
     "captions": [],
     "captures": ["C1"],
-    "visual": "`~ $ mise` is typed; rows 1-7 of the real 80-column help screen print beside the green block chef. Then the block chef's cells lift and resolve into the white chef. The white chef resolves on M1's F; then the tagline lifts out of the help screen into the name card as the pane falls away, and the name writes on above it. Name card: \"mise-en-place\" / \"Dev tools, env vars, and tasks in one CLI\". The name card gives way to the pitch's terminal at `~/work $`, which holds through the bar line.",
+    "visual": "`~ $ mise` is typed; rows 1-7 of the real 80-column help screen print beside the green block chef. Then the block chef's cells lift and resolve into the white chef. The white chef resolves with the service bell; then the tagline lifts out of the help screen into the name card as the pane falls away, and the name writes on above it. Name card: \"mise-en-place\" / \"Dev tools, env vars, and tasks in one CLI\". The name card gives way to the pitch's terminal at `~/work $`, which holds through the bar line.",
     "plan": [
       {
         "at": 0.5,
@@ -20,7 +20,7 @@
         "at": 3.738,
         "end": 5.237,
         "name": "lift",
-        "what": "the block chef's cells lift off the help screen and resolve into the white chef (one motion; the score's intro swell, then M1's F on its end)"
+        "what": "the block chef's cells lift off the help screen and resolve into the white chef (one motion; tiny bells glint up F minor as the cells fly, and the service bell rings as it resolves)"
       },
       {
         "at": 5.738,
@@ -487,13 +487,13 @@
       }
     ],
     "captures": ["C7"],
-    "visual": "Folder diagram: `api/` card `node = \"{node.lts_major}\"`, `dashboard/` card `node = \"{node.other_major}\"`; the cards and the terminal hold from the ticket. `~/work/api $ cd ../dashboard` moves the key to D♭; `node --version` -> `v{node.other_version}`; `cd ../api` returns home; `node --version` -> `v{node.lts_version}`. Both versions hold on their folder cards, set in the terminal's face. Poster frame: just after both have landed (reel.ts POSTER_TIME); then each version's thread draws from the row that printed it to its chip. The diagram folds away; the terminal's last screen holds through the bar line into packslip.",
+    "visual": "Folder diagram: `api/` card `node = \"{node.lts_major}\"`, `dashboard/` card `node = \"{node.other_major}\"`; the cards and the terminal hold from the ticket. `~/work/api $ cd ../dashboard` (a marimba run up the bed's F minor; no key change); `node --version` -> `v{node.other_version}`, landing on C minor's root; `cd ../api` (a run up C minor); `node --version` -> `v{node.lts_version}`, landing on B♭'s. Both versions hold on their folder cards, set in the terminal's face. Poster frame: just after both have landed (reel.ts POSTER_TIME); then each version's thread draws from the row that printed it to its chip. The diagram folds away; the terminal's last screen holds through the bar line into packslip.",
     "plan": [
       {
         "at": 0.5,
         "end": 2.728,
         "name": "cdDashboard",
-        "what": "`~/work/api $ cd ../dashboard`: the key moves to D♭ on Enter; the cwd hops"
+        "what": "`~/work/api $ cd ../dashboard`: a marimba run up F minor on Enter; the cwd hops"
       },
       {
         "at": 3.229,
@@ -523,7 +523,7 @@
         "at": 10.5,
         "end": 12.187,
         "name": "cdApi",
-        "what": "`cd ../api`: home again (a tick); the cwd hops"
+        "what": "`cd ../api`: a marimba run up C minor; the cwd hops"
       },
       {
         "at": 12.688,
@@ -589,7 +589,7 @@
       }
     ],
     "captures": ["C8"],
-    "visual": "Switch's last screen dissolves into C8's prompt over the first quarter beat. `hk = \"2.1.0\"` lights in [tools]; the terminal shortens and a slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): 28 px rows read from the packslip statement mise saved when it installed each version (C8, off camera): `version`, `resources` (the completion shells and the skill names) and `identity`. `hk check --j` + Tab keycap lists 2 rows. `mise use hk@2.2.0` (its progress header cut) -> `mise ~/work/api/mise.toml tools: hk@2.2.0`; the card flips to \"2.2.0\"; the slip re-stamps from 2.2.0's statement. Tab lists 3 rows, `--junit-xml` lights; footnote \"In a shell with `mise activate`.\" `mise skills sync` prints `linked .claude/skills/...` rows, dimmed; the drawn link takes the slip's place and lights only `2.2.0`. Caption 3 is read, then the drawn link folds away; the card and the dimmed, shortened terminal hold into the Environments ticket.",
+    "visual": "Switch's last screen dissolves into C8's prompt over the first quarter beat. `hk = \"2.1.0\"` lights in [tools]; the terminal shortens and a slip tucks under it (\"Excerpt of hk's packslip · real keys, values abridged\"): 28 px rows read from the packslip statement mise saved when it installed each version (C8, off camera): `version`, `resources` (the completion shells and the skill names) and `identity`. `hk check --j` + Tab keycap lists 2 rows. `mise use hk@2.2.0` (its progress header cut) -> `mise ~/work/api/mise.toml tools: hk@2.2.0`; the card flips to \"2.2.0\"; the slip re-stamps from 2.2.0's statement. Tab lists 3 rows, `--junit-xml` lights; footnote \"In a shell with `mise activate`.\" `mise skills sync` prints `linked ~/work/api/.claude/skills/...` rows, dimmed; the drawn link takes the slip's place and lights only `2.2.0`. Caption 3 is read, then the drawn link folds away; the card and the dimmed, shortened terminal hold into the Environments ticket.",
     "plan": [
       {
         "at": 0,
@@ -1784,25 +1784,25 @@
     "end": 422,
     "captions": [],
     "captures": [],
-    "visual": "b1: the card held from the climax; its three lit headers lift off and become the toque's three lobes as the score's F lands on the downbeat; the card body folds away. b2: the toque settles on the chef, which takes its end-card place; nothing else moves. From beat 6 (6:50.0) the score holds B♭ minor on the organ, no drums. The recording enters at 6:51.48 on the pickup \"It's\": the held chord crossfades out at equal power under its 20 ms fade-in, and the score is silent from 6:51.50 (see the end section's keyed times). The chef holds into the end card.",
+    "visual": "b1: the card held from the climax; its three lit headers lift off on the downbeat and become the toque's three lobes, each settling over its lobe on the celesta (F, A♭, C); the card body folds away. b2: the toque drops on a soft kick and settles on the chef with a puff and the service bell, and the chef takes its end-card place; nothing else moves. Then nothing moves but the motes, and the bed carries on under the chef into the end card. The chef holds into the end card.",
     "plan": [
       {
         "at": 0,
         "end": 2,
         "name": "lift",
-        "what": "the card's three lit headers lift off and become the toque's lobes as the score's F lands on the downbeat; the card body folds away (kit/chef.ts MORPH_CUE, in beats: 1.25x slower at 60 BPM)"
+        "what": "the card's three lit headers lift off on the downbeat and become the toque's lobes, each settling over its lobe on the celesta (F, A♭, C); the card body folds away (kit/chef.ts MORPH_CUE, in beats: 1.25x slower at 60 BPM)"
       },
       {
         "at": 4,
         "end": 5,
         "name": "settle",
-        "what": "b2: the toque settles on the chef, which takes its end-card place; nothing else moves"
+        "what": "b2: the toque drops on a soft kick and settles on the chef with a puff and the service bell, and the chef takes its end-card place; nothing else moves"
       },
       {
         "at": 6,
         "end": 8,
         "name": "chord",
-        "what": "the score's held B♭ minor on the organ, no drums; the recording enters at b7.48 (E0 - 0.52 s) under it, which crossfades out at equal power (score/song.ts SCORE_END)"
+        "what": "the chef at rest in its end-card place, nothing moving but the motes, and the bed carrying on into the end card (named for the held B♭ minor the synthesized band played here)"
       }
     ]
   },
@@ -1815,49 +1815,49 @@
     "end": 436,
     "captions": [],
     "captures": [],
-    "visual": "No captions. Keyed to the recording's measured onsets, not the grid: \"mise-en-place\" writes on with the sung \"mise\", \"en\", \"place\"; the tagline \"Dev tools, env vars, and tasks in one CLI\" fades in on \"dev\"; `$ curl https://mise.run | sh` types out across \"precise and operational\"; the 40 px platform line \"macOS & Linux · Windows: `winget install jdx.mise`\" fades in after the voice; \"mise.jdx.dev\" lands on the first button hit; the glint crosses the hat on the second (no eye motion). The chef holds from the morph, and the stack sits high enough that mise.jdx.dev stays clear of a player's controls. The card holds, silent, after the ring-out.",
+    "visual": "No captions. On eighths of a beat from its bar line (`END_CUES`, \"End card timing\" below): \"mise-en-place\" writes on a syllable each on 0, 3/8 and 5/8 of the first beat, to the celesta's C D♭ C, as the open wrote it; the tagline \"Dev tools, env vars, and tasks in one CLI\" rises in from beat 1.5; `$ curl https://mise.run | sh` types out from 2.75 to 5.25; the 40 px platform line \"macOS & Linux · Windows: `winget install jdx.mise`\" fades in from 6.25; \"mise.jdx.dev\" lands on 7.5 with a click; the glint crosses the hat from 8.25 to tiny bells (no eye motion). The chef holds from the morph, and the stack sits high enough that mise.jdx.dev stays clear of a player's controls. The card holds under the bed's ending.",
     "plan": [
       {
         "at": 0,
         "end": 0.68,
         "name": "mise",
-        "what": "\"mise-en-place\" writes on with the sung \"mise\" (+0.00 s), \"en\" (+0.36), \"place\" (+0.68)"
+        "what": "\"mise-en-place\" writes on a syllable each on its cue (kit/namecard.ts END_CUES: +0.00 s, +0.375, +0.625), to the celesta's C D♭ C"
       },
       {
         "at": 1.48,
         "end": 1.98,
         "name": "dev",
-        "what": "the tagline fades in on \"dev\" (+1.48 s)"
+        "what": "the tagline rises in, word by word, from +1.5 s (END_CUES tagline)"
       },
       {
         "at": 2.78,
         "end": 4.5,
         "name": "curl",
-        "what": "`$ curl https://mise.run | sh` types out across \"precise\" (+2.78) and \"operational\" (+3.80)"
+        "what": "`$ curl https://mise.run | sh` types out from +2.75 (install) to +5.25 (typed)"
       },
       {
         "at": 6.25,
         "end": 6.75,
         "name": "platform",
-        "what": "the platform line fades in after the voice (+6.25)"
+        "what": "the platform line fades in from +6.25 (platform)"
       },
       {
         "at": 7.52,
         "end": 7.9,
         "name": "site",
-        "what": "\"mise.jdx.dev\" lands on button hit 1 (+7.52)"
+        "what": "\"mise.jdx.dev\" lands on +7.5 (url), with a click"
       },
       {
         "at": 8.27,
         "end": 8.77,
         "name": "glint",
-        "what": "the glint crosses the hat on hit 2 (+8.27; no eye motion)"
+        "what": "the glint crosses the hat from +8.25 (glint), to tiny bells up F minor (no eye motion)"
       },
       {
         "at": 11.2,
         "end": 14,
         "name": "silence",
-        "what": "ring-out at -62 dBFS (+11.2); the card holds, silent, 2.8 s"
+        "what": "the last move is over by +9 s; the card holds under the bed's ending to the reel's end"
       }
     ]
   }

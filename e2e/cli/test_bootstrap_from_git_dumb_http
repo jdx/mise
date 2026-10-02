@@ -13,8 +13,8 @@ start_http_server --dir served
 url="http://127.0.0.1:$HTTP_PORT/origin.git"
 git init -q --bare probe.git
 assert_fail "git --git-dir=probe.git fetch --depth=1 '$url' main" 'dumb http transport does not support shallow capabilities'
-assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --from-git '$url' --only dotfiles --dry-run"
+assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --adopt '$url' --only dotfiles --dry-run"
 assert_fail 'test -e target/config.toml'
-assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --from-git '$url' --only dotfiles --yes"
+assert_succeed "MISE_CONFIG_DIR='$PWD/target' mise bootstrap --adopt '$url' --only dotfiles --yes"
 assert_directory_exists 'target/.git'
 assert 'cat target/config.toml' '[dotfiles]'

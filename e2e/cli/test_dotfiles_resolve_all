@@ -23,7 +23,7 @@ b() {
 }
 export second
 export -f b
-assert_succeed "b bootstrap --from-git file://$origin --yes"
+assert_succeed "b bootstrap --adopt file://$origin --yes"
 
 # ---- both files conflict at once: one command decides them
 echo a-one >~/.one

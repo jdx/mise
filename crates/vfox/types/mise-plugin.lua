@@ -51,6 +51,9 @@ ARCH_TYPE = ""
 ---@field github_signer_workflow? string GitHub Actions signer workflow
 ---@field cosign_sig_or_bundle_path? string Path to cosign signature or bundle
 ---@field cosign_public_key_path? string Path to cosign public key
+---@field cosign_certificate_identity? string Exact signer identity (certificate SAN) for keyless cosign
+---@field cosign_certificate_identity_regexp? string Signer identity pattern for keyless cosign
+---@field cosign_certificate_oidc_issuer? string Exact OIDC issuer for keyless cosign
 ---@field slsa_provenance_path? string Path to SLSA provenance
 ---@field slsa_min_level? integer Minimum SLSA level
 

@@ -117,6 +117,11 @@ pub struct PreInstallAttestation {
     // Cosign
     pub cosign_sig_or_bundle_path: Option<PathBuf>,
     pub cosign_public_key_path: Option<PathBuf>,
+    /// Keyless signer constraints; one of the two identity fields is required
+    /// when `cosign_sig_or_bundle_path` is set without `cosign_public_key_path`.
+    pub cosign_certificate_identity: Option<String>,
+    pub cosign_certificate_identity_regexp: Option<String>,
+    pub cosign_certificate_oidc_issuer: Option<String>,
     // SLSA
     pub slsa_provenance_path: Option<PathBuf>,
     pub slsa_min_level: Option<u8>,
@@ -141,6 +146,12 @@ impl FromLua for PreInstallAttestation {
                         .get::<Option<PathBuf>>("cosign_sig_or_bundle_path")?,
                     cosign_public_key_path: table
                         .get::<Option<PathBuf>>("cosign_public_key_path")?,
+                    cosign_certificate_identity: table
+                        .get::<Option<String>>("cosign_certificate_identity")?,
+                    cosign_certificate_identity_regexp: table
+                        .get::<Option<String>>("cosign_certificate_identity_regexp")?,
+                    cosign_certificate_oidc_issuer: table
+                        .get::<Option<String>>("cosign_certificate_oidc_issuer")?,
                     slsa_provenance_path: table.get::<Option<PathBuf>>("slsa_provenance_path")?,
                     slsa_min_level: table.get::<Option<u8>>("slsa_min_level")?,
                     slsa_signer_identity: table.get::<Option<String>>("slsa_signer_identity")?,
@@ -195,7 +206,28 @@ fn validate_github_artifact_attestation_params(table: &Table) -> std::result::Re
 }
 
 /// Validates that if the public key path is set, then the sig/bundle path must also be set.
+/// Keyless verification (no public key) must pin the signer's certificate identity: a valid
+/// Fulcio signature alone only shows that some workflow, in any repository, signed the artifact.
 fn validate_cosign_attestation_params(table: &Table) -> std::result::Result<(), LuaError> {
+    if table.contains_key("cosign_sig_or_bundle_path")?
+        && !table.contains_key("cosign_public_key_path")?
+        && table
+            .get::<Option<String>>("cosign_certificate_identity")?
+            .is_none_or(|v| v.is_empty())
+        && table
+            .get::<Option<String>>("cosign_certificate_identity_regexp")?
+            .is_none_or(|v| v.is_empty())
+    {
+        return Err(LuaError::FromLuaConversionError {
+            from: "table",
+            to: "PreInstallAttestation".into(),
+            message: Some(
+                "keyless cosign attestation requires cosign_certificate_identity or \
+                 cosign_certificate_identity_regexp (or cosign_public_key_path)"
+                    .to_string(),
+            ),
+        });
+    }
     if table.contains_key("cosign_public_key_path")?
         && !table.contains_key("cosign_sig_or_bundle_path")?
     {
@@ -423,6 +455,56 @@ mod tests {
         assert!(
             err.contains("github_signer_workflow requires github_owner and github_repo"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    async fn test_cosign_keyless_requires_identity() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("cosign_sig_or_bundle_path", "/tmp/artifact.sigstore")
+            .unwrap();
+        let err = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("keyless cosign attestation requires cosign_certificate_identity"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    async fn test_cosign_keyless_rejects_empty_identity() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("cosign_sig_or_bundle_path", "/tmp/artifact.sigstore")
+            .unwrap();
+        table.set("cosign_certificate_identity_regexp", "").unwrap();
+        let err = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("keyless cosign attestation requires"), "{err}");
+    }
+
+    #[test]
+    async fn test_cosign_keyless_with_identity() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table
+            .set("cosign_sig_or_bundle_path", "/tmp/artifact.sigstore")
+            .unwrap();
+        table
+            .set(
+                "cosign_certificate_identity_regexp",
+                "^https://github.com/o/r/",
+            )
+            .unwrap();
+        let attestation = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua).unwrap();
+        assert_eq!(
+            attestation.cosign_certificate_identity_regexp.as_deref(),
+            Some("^https://github.com/o/r/")
         );
     }
 

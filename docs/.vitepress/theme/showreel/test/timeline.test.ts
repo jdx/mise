@@ -171,8 +171,8 @@ test("the timeline is the retime's act table: plan v3's acts at 60 BPM, each sec
   // Plan v3 was 258 beats at 75 BPM (206.4 s). The retime (STORYBOARD.md
   // "Pacing") plays at 60 BPM and gives each section the beats its event
   // plan needs: 436 beats, 7:16, 52,320 frames at 120 fps. The morph keeps
-  // its 8 beats and the end card takes 14, the sung line, the rest and the
-  // button with the ring-out clear of the last beat (decision 5).
+  // its 8 beats and the end card takes 14: the card's moments, then the
+  // bed's ending, its ring-out clear of the last beat (decision 5).
   assert.equal(BEATS, 436);
   assert.equal(DURATION, 436);
   assert.equal(DURATION * 120, 52320);

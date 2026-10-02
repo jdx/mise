@@ -71,6 +71,12 @@ Install documentation dependencies
 
 Render the landing-page showreel to docs/public/showreel-120.mp4 and showreel.mp4 with its poster
 
+## `docs:showreel-bed`
+
+- **Usage:** `docs:showreel-bed`
+
+Fit a downloaded track to the showreel's 2 s bar grid as its bed (score/bed.opus)
+
 ## `docs:showreel-capture`
 
 - **Usage:** `docs:showreel-capture`

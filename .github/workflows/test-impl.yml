@@ -93,24 +93,31 @@ jobs:
           path: target/ci-artifacts/mise
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
     timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      # Runs on the self-hosted runner (repository variable WINDOWS_SELF_HOSTED=true, trusted runs
+      # only) use its shared mbx cache.
+      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      MBX_TARGET_VIEWS: "0"
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The self-hosted runner keeps its Cargo state and mbx store between jobs, so there is
+      # nothing to restore, and saving would upload gigabytes from a home connection.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
         with:
           shared-key: build-windows
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - shell: pwsh
         run: |
-          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
-          cargo build -p mise-shim
+          ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+          ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
@@ -385,17 +392,22 @@ jobs:
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
   windows-unit:
-    runs-on: windows-latest
-    timeout-minutes: 40
+    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
+    timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      # Runs on the self-hosted runner (repository variable WINDOWS_SELF_HOSTED=true, trusted runs
+      # only) use its shared mbx cache.
+      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      MBX_TARGET_VIEWS: "0"
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
         with:
           shared-key: windows-unit
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
@@ -405,14 +417,42 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: cargo test
+          command: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} test
       # Windows is where the members rot fastest: their tests assume POSIX paths and shells
       # unless something runs them here.
       - name: cargo test (workspace members)
-        run: cargo test --workspace --exclude mise
+        run: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} test --workspace --exclude mise
+  # Not a duplicate of the Linux lint: `#[cfg]` decides whether code exists, so
+  # Windows-only code is never seen by Clippy on Linux. A job of its own keeps it
+  # off windows-unit's time limit. Default features only: `aws-lc-sys` needs NASM
+  # to build on Windows, and feature combinations are covered on Linux.
+  windows-lint:
+    runs-on: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || 'windows-latest' }}
+    timeout-minutes: 40
+    env:
+      MBX_DISABLE: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && '0' || '1' }}
+      MBX_TARGET_VIEWS: "0"
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      # Clippy builds the checked-out code and its build scripts, and nothing here needs git auth.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
+        if: ${{ !(inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true') }}
+        with:
+          shared-key: windows-lint
+          save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
+      - run: rustup component add clippy
+      - name: Run Clippy on Windows
+        run: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
   windows-e2e:
     permissions:
       contents: read
+    # Stays on a hosted runner. The Pester suite exercises console windows, scheduled
+    # tasks and other interactive-desktop behavior that a runner running as a service
+    # cannot provide, and it is not compile-bound, so the self-hosted runner gains little.
     runs-on: windows-latest
     timeout-minutes: 100
     needs: [build-windows, classify-changes]
@@ -450,6 +490,7 @@ jobs:
       - e2e
       - bootstrap-linux-host
       - windows-unit
+      - windows-lint
       - windows-e2e
     # Evaluate skipped and failed dependencies, but do not waste a runner when
     # the workflow is cancelled.
@@ -496,6 +537,10 @@ jobs:
               echo "windows-unit failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.windows-lint.result }}" != "success" ]; then
+              echo "windows-lint failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
               echo "windows-e2e failed or was skipped"
               exit 1
@@ -507,6 +552,7 @@ jobs:
               "${{ needs.e2e.result }}" \
               "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
+              "${{ needs.windows-lint.result }}" \
               "${{ needs.windows-e2e.result }}"; do
               if [ "$result" != "skipped" ]; then
                 echo "docs-only jobs should be skipped"

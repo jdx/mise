@@ -13,8 +13,8 @@ require_cmd git
 mkdir -p checkout
 git -C checkout init -q
 git -C checkout remote add origin file://old-origin.git
-assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --from-git file://different-origin.git --yes" 'has origin'
-assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --from-git file://different-origin.git --dry-run" 'has origin'
+assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --adopt file://different-origin.git --yes" 'has origin'
+assert_fail "MISE_CONFIG_DIR='$PWD/checkout' mise bootstrap --adopt file://different-origin.git --dry-run" 'has origin'
 
 # Unsetting machine-local sync also removes a value in the shared global
 # layer, rather than silently exposing that value again.

@@ -140,18 +140,18 @@
     [["~/work/api $ mise skills sync", 0]],
     [
       [
-        "linked /home/you/work/api/.claude/skills/hk-configure -> /home/you/.local/share/",
+        "linked ~/work/api/.claude/skills/hk-configure -> ~/.local/share/mise/installs/hk",
         0
       ]
     ],
-    [["mise/installs/hk/2.2.0/skills/hk-configure", 0]],
+    [["/2.2.0/skills/hk-configure", 0]],
     [
       [
-        "linked /home/you/work/api/.claude/skills/hk-debug -> /home/you/.local/share/mise",
+        "linked ~/work/api/.claude/skills/hk-debug -> ~/.local/share/mise/installs/hk/2.2",
         0
       ]
     ],
-    [["/installs/hk/2.2.0/skills/hk-debug", 0]],
+    [[".0/skills/hk-debug", 0]],
     [["~/work/api $ r", 0]],
     [["~/work/api $ re", 0]],
     [["~/work/api $ rea", 0]],

@@ -244,7 +244,14 @@ impl Vfox {
                     )
                     .await?;
                 } else {
-                    mise_sigstore::verify_cosign_signature(file, sig_or_bundle_path).await?;
+                    let identity = mise_sigstore::CosignIdentity {
+                        identity: attestation.cosign_certificate_identity.clone(),
+                        identity_regexp: attestation.cosign_certificate_identity_regexp.clone(),
+                        oidc_issuer: attestation.cosign_certificate_oidc_issuer.clone(),
+                        ..Default::default()
+                    };
+                    mise_sigstore::verify_cosign_signature(file, sig_or_bundle_path, &identity)
+                        .await?;
                 }
                 // Cosign has the lowest recording priority: only record it if no
                 // higher-priority verification was already recorded.

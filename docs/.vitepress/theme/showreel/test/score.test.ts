@@ -4,28 +4,29 @@
 //
 // Adapted for mise: hk's generic checks; the cue API (score/cues.ts),
 // which a scene's `cues` export drives and every sync point answers on its
-// time; the one key change; the valley and the breath; the handoff, where
-// the morph's held B♭ minor sounds whole until the recording enters and is
-// gone by SCORE_END; and no click track anywhere.
+// time; the end card's few sounds on its own cues (kit/namecard.ts
+// END_CUES); the valley and the breath, and the sections' fader the bed
+// rides; and no click track anywhere. The score is sound design only: the
+// synthesized band is gone (jdx's call), and the music is the bed
+// (score/bed.ts, test/bed.test.ts), the one thing on the music bus.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handoff, playScore } from "../audio";
+import { playScore } from "../audio";
 import type { ReelFacts } from "../bible";
+import { GLINT } from "../kit/chef";
+import { END_CUES } from "../kit/namecard";
 import { arc, PARTS } from "../score";
-import { CHORUS_AT } from "../score/clone";
-import { CH } from "../score/harmony";
 import {
   type CuedId,
+  type CueName,
   LISTEN,
   resolveCues,
   type SceneCues,
 } from "../score/cues";
-import { withSceneModules } from "../score/listen";
+import { listen, withSceneModules } from "../score/listen";
 import { hz, LATENCY, Mix, shared } from "../score/mix";
-import { DRUMS_OUT, HELD, HELD_CHORD } from "../score/morph";
 import { SCENE_MODULES } from "../score/scenes";
-import { SCORE_END, SONG } from "../score/song";
 import { BEAT, DURATION, SECTIONS, type SectionId, sec } from "../timeline";
 import { MockContext } from "./mock-audio";
 
@@ -44,7 +45,7 @@ function render(from = 0, facts: ReelFacts | null = null): MockContext {
   return ac;
 }
 
-type Layer = "cues" | "drums" | "bass" | "lead" | "pads";
+type Layer = "cues";
 
 /** One layer of one section's part, alone, on a mix of its own. */
 function renderLayer(
@@ -55,14 +56,7 @@ function renderLayer(
   const ac = new MockContext();
   const ctx = ac.context;
   const bus = () => ctx.createGain();
-  const m = new Mix(
-    ctx,
-    shared(ctx),
-    0,
-    WHEN,
-    { sfx: bus(), drums: bus(), music: bus() },
-    bus(),
-  );
+  const m = new Mix(ctx, shared(ctx), 0, WHEN, bus(), bus());
   PARTS[id][layer]?.(m, sec(id), facts);
   return ac;
 }
@@ -86,37 +80,23 @@ function spans(
 const starts = (ac: MockContext): number[] =>
   spans(ac).map((s) => s.start + LATENCY);
 
-/** Oscillators started, with the pitch each was first given. */
-function oscillators(ac: MockContext): { t: number; f: number }[] {
-  const pitch = new Map<string, number>();
-  for (const c of ac.calls) {
-    if (!c.target.endsWith(".frequency")) continue;
-    const id = c.target.slice(0, -".frequency".length);
-    if (pitch.has(id)) continue;
-    if (c.method === "value=" || c.method === "setValueAtTime")
-      pitch.set(id, c.args[0] as number);
-  }
-  return ac
-    .starts()
-    .filter(({ target }) => target.startsWith("osc#"))
-    .map(({ target, t }) => ({
-      t: t - WHEN + LATENCY,
-      f: pitch.get(target) ?? NaN,
-    }));
-}
-
-test("the score starts every source before the recording takes over, and sounds in every other section", () => {
+test("the score starts every source inside the reel, stops it by the reel's end, and sounds in every section", () => {
   for (const [what, facts] of VARIANTS) {
     const all = spans(render(0, facts));
-    for (const { target, start } of all) {
+    for (const { target, start, stop } of all) {
       // Sources start a few milliseconds early, ahead of the master's compressor lookahead.
       assert.ok(
-        start >= -LATENCY - 0.001 && start < SONG.segments[0].at,
+        start >= -LATENCY - 0.001 && start < DURATION,
         `${what}: ${target} starts at ${start}`,
+      );
+      // An offline render ends with the reel, so a source left running
+      // would only be cut off there; every one stops on its own.
+      assert.ok(
+        stop + LATENCY <= DURATION + 1e-6,
+        `${what}: ${target} stops at ${stop}`,
       );
     }
     for (const { id } of SECTIONS) {
-      if (id === "end") continue;
       const s = sec(id);
       assert.ok(
         all.some(
@@ -128,11 +108,12 @@ test("the score starts every source before the recording takes over, and sounds 
   }
 });
 
-test("there is no click track: the band does not strike a tick on every beat", () => {
+test("there is no click track: nothing strikes the breath's quiet beats", () => {
   // A tick on every beat of every section would be a metronome, not a
-  // score: the grooves leave the valley and the held bar alone.
+  // score: the effects answer the picture's events, and the breath's
+  // offbeats have none.
   const at = starts(render(0));
-  const quiet = [sec("breath").beat(1), sec("breath").beat(3), HELD + BEAT];
+  const quiet = [sec("breath").beat(1), sec("breath").beat(3)];
   for (const t of quiet)
     assert.ok(
       !at.some((s) => Math.abs(s - t) < 0.002),
@@ -169,7 +150,19 @@ const ON_CUE: { [S in CuedId]?: readonly string[] } = {
   new: ["print", "tear", "lift"],
   bootstrap: ["card", "wrote", "watcher"],
   breath: ["clear"],
-  clone: ["slam", "test", "lint", "build", "ci", "ready", "fold", "home"],
+  clone: [
+    "slam",
+    "tools",
+    "test",
+    "lint",
+    "build",
+    "ci",
+    "tasks",
+    "ready",
+    "env",
+    "fold",
+    "home",
+  ],
   morph: ["lift", "lands", "drop", "land"],
 };
 
@@ -187,6 +180,46 @@ test("every sync point sounds on its cue", () => {
     }
   }
   assert.deepEqual(missing, []);
+});
+
+test("the end card's sounds land on its cues, and only there: the bed carries the rest", () => {
+  // "mise", "en" and "place" write on, mise.jdx.dev lands with a click and
+  // the glint crosses the hat as bells (score/end.ts); the tagline, the
+  // install strip and the platform line arrive under the bed alone.
+  const end = sec("end");
+  const c = END_CUES;
+  const at = starts(renderLayer("end", "cues"));
+  const near = (t: number) => at.some((s) => s >= t - 0.061 && s <= t + 0.002);
+  for (const name of ["mise", "en", "place", "url", "glint"] as const)
+    assert.ok(
+      near(end.start + c[name]),
+      `nothing sounds on the end card's ${name}`,
+    );
+  const windows: [number, number][] = [
+    ...[c.mise, c.en, c.place, c.url].map((t): [number, number] => [t, t]),
+    [c.glint, c.glint + GLINT.dur],
+  ];
+  for (const s of at) {
+    const t = s - end.start;
+    assert.ok(
+      windows.some(([a, b]) => t >= a - 0.061 && t <= b + 0.01),
+      `a sound at ${t.toFixed(3)} on the end card is on none of its cues`,
+    );
+  }
+});
+
+test("the score is sound design only: each part is a fader level and a cues layer", () => {
+  // The band's drums, bass, lead and pads layers are gone; the bed is the
+  // music (score/bed.ts).
+  for (const { id } of SECTIONS) {
+    const extra = Object.keys(PARTS[id]).filter(
+      (k) => k !== "level" && k !== "cues",
+    );
+    assert.deepEqual(extra, [], `${id}'s part has ${extra.join(", ")}`);
+  }
+  // Nothing the score composes plays on the music bus: Mix has only the
+  // effects bus to mix into, and bed.test checks that, with no bed, the
+  // music bus is empty.
 });
 
 test("a scene's cues export moves its sound, and the fallback fills in the rest", () => {
@@ -233,7 +266,7 @@ test("the cue API's types let a scene export only the cues its section listens f
     facts ? { cdDashboard: 1.5 } : {};
   // @ts-expect-error: use listens for "clear", not "clr".
   const misspelt: SceneCues<"use"> = { clr: 8 };
-  // @ts-expect-error: the end card listens for nothing; the recording keys it.
+  // @ts-expect-error: the end card listens for nothing; its cues are its picture's (END_CUES).
   const unheard: SceneCues<"end"> = {};
   assert.deepEqual([typed, misspelt, unheard].length, 3);
   assert.equal(typeof fromFacts, "function");
@@ -267,119 +300,24 @@ test("every cue a scene exports is one the score listens for, inside its section
   assert.deepEqual(bad, []);
 });
 
-test("dashboard's cd moves the band to D♭, and api's brings it home", () => {
-  const sw = sec("switch");
-  const c = resolveCues(sw as never, null, SCENE_MODULES) as {
-    at(n: string): number;
-  };
-  const dash = c.at("cdDashboard");
-  const api = c.at("cdApi");
-  const near = (f: number, g: number) => Math.abs(f / g - 1) < 0.004;
-  // The bass run is one voice: its pitch moves by setValueAtTime.
-  const pitches = renderLayer("switch", "bass")
-    .calls.filter(
-      (x) => x.target.endsWith(".frequency") && x.method === "setValueAtTime",
-    )
-    .map((x) => ({
-      f: x.args[0] as number,
-      t: (x.args[1] as number) - WHEN + LATENCY,
-    }));
-  const between = pitches.filter((p) => p.t > dash + 0.01 && p.t < api - 0.01);
+test("the valley and the breath: the bed's fader is lowest at the breath, near silent", () => {
+  // The bed carries its own dynamics (bed.toml plays its breakdown across
+  // bootstrap and the breath), so the fader is flat through the valley but
+  // for the breath, which takes the whole dip: at least 18 dB under
+  // bootstrap's, the bed playing on through it.
+  assert.ok((PARTS.breath.level ?? 1) <= 0.7, "the breath is not a valley");
   assert.ok(
-    between.some((p) => near(p.f, hz(CH.Db.root))),
-    "no D♭ in the bass",
+    (PARTS.breath.level ?? 1) <=
+      (PARTS.bootstrap.level ?? 1) * 10 ** (-18 / 20),
+    "the breath is not near silent",
   );
-  assert.ok(
-    !between.some((p) => near(p.f, hz(CH.Fm.root))),
-    "F in the bass in D♭",
-  );
-  const after = pitches.filter((p) => p.t > api + 0.01 && p.t < sw.end);
-  assert.ok(
-    after.some((p) => near(p.f, hz(CH.Fm.root))),
-    "the bass is not home",
-  );
-});
-
-test("the valley and the breath: no drums, and the breath near silent", () => {
-  for (const id of ["bootstrap", "breath"] as const) {
-    assert.equal(spans(renderLayer(id, "drums")).length, 0, `${id} has drums`);
-    assert.ok((PARTS[id].level ?? 1) <= 0.7, `${id} is not a valley`);
-  }
-  assert.equal(spans(renderLayer("breath", "bass")).length, 0);
-  assert.ok((PARTS.breath.level ?? 1) < (PARTS.bootstrap.level ?? 1));
-  // The valley (the new machine's ticket, bootstrap and the breath) is the
-  // reel's lowest: every other section's fader is above it.
-  const valley = ["new", "bootstrap", "breath", "end"];
+  // The breath is the reel's floor: every other section's fader is above it.
   for (const { id } of SECTIONS)
-    if (!valley.includes(id))
+    if (id !== "breath")
       assert.ok(
-        (PARTS[id].level ?? 1) > (PARTS.bootstrap.level ?? 1),
-        `${id} sits in the valley`,
+        (PARTS[id].level ?? 1) > (PARTS.breath.level ?? 1),
+        `${id} sits under the breath`,
       );
-});
-
-test("the morph's drums stop on its second bar, and from its beat 6 only the held B♭ minor and its air sound", () => {
-  const morph = sec("morph");
-  assert.equal(morph.beat(DRUMS_OUT), morph.bar(1));
-  assert.equal(HELD, morph.beat(6));
-  for (const t of starts(renderLayer("morph", "drums")))
-    assert.ok(t < morph.beat(DRUMS_OUT), `a drum at ${t}`);
-  // Every section's every layer: nothing starts in the held bar but its
-  // chord and the air over it (the morph's pads).
-  const late: string[] = [];
-  const pitches = new Set<number>();
-  for (const { id } of SECTIONS)
-    for (const layer of ["cues", "drums", "bass", "lead", "pads"] as const) {
-      const ac = renderLayer(id, layer);
-      for (const o of oscillators(ac))
-        if (o.t >= HELD - 0.001) {
-          if (id !== "morph" || layer !== "pads")
-            late.push(`${id}.${layer} at ${o.t}`);
-          else pitches.add(Math.round(12 * Math.log2(o.f / 440) + 69));
-        }
-      if (!(id === "morph" && layer === "pads"))
-        for (const t of starts(ac))
-          if (t >= HELD - 0.001) late.push(`${id}.${layer} at ${t}`);
-    }
-  assert.deepEqual(late, []);
-  // The chord's notes, each on the drawbar wave and an octave down.
-  for (const n of HELD_CHORD)
-    assert.ok(pitches.has(n), `no ${n} in the held chord`);
-});
-
-test("the handoff holds the chord whole until the recording enters, then falls to silence by SCORE_END", () => {
-  const [line] = SONG.segments;
-  const pts = handoff();
-  assert.deepEqual(pts[0], [line.at, 1]);
-  assert.equal(pts[pts.length - 1][0], SCORE_END);
-  assert.equal(pts[pts.length - 1][1], 0);
-  assert.ok(Math.abs(SCORE_END - line.at - 0.05) < 1e-9);
-  // Equal power with the recording's linear fade-in: the two together keep
-  // the chord's power within 1 dB (the old tail's 8 dB dip at 3:13.05).
-  for (let t = line.at; t <= line.at + line.fadeIn; t += 0.001) {
-    let g = 1;
-    for (let i = 1; i < pts.length; i++)
-      if (t <= pts[i][0]) {
-        const [t0, v0] = pts[i - 1];
-        const [t1, v1] = pts[i];
-        g = v0 + ((v1 - v0) * (t - t0)) / (t1 - t0);
-        break;
-      }
-    const r = Math.min(1, (t - line.at) / line.fadeIn);
-    const p = g * g + r * r;
-    assert.ok(p > 0.79 && p < 1.26, `the handoff's power is ${p} at ${t}`);
-  }
-});
-
-test("the score is silent from SCORE_END: the end card is the recording's", () => {
-  assert.ok(SCORE_END > SONG.segments[0].at && SCORE_END < sec("end").start);
-  // The recording's "mise" is the end card's downbeat, and its button follows the line.
-  const [line, button] = SONG.segments;
-  assert.ok(Math.abs(line.at + (72.3 - line.from) - sec("end").start) < 1e-9);
-  assert.ok(button.at > line.at + (line.to - line.from));
-  assert.ok(button.at + (button.to - button.from) < DURATION);
-  for (const { target, stop } of spans(render(0)))
-    assert.ok(stop <= SCORE_END + 0.5, `${target} rings until ${stop}`);
 });
 
 test("every automation curve runs forward in time, and every exponential ramp between positive values", () => {
@@ -452,65 +390,7 @@ test("a start mid-reel plays the same sounds, on the same samples, as playback f
   }
 });
 
-test("the climax's last bar is C whole, under the reed's E, as the song has it", () => {
-  const clone = sec("clone");
-  // The bass run is one voice: its pitch moves by setValueAtTime.
-  const notes = renderLayer("clone", "bass")
-    .calls.filter(
-      (x) => x.target.endsWith(".frequency") && x.method === "setValueAtTime",
-    )
-    .map((x) => ({
-      f: x.args[0] as number,
-      t: (x.args[1] as number) - WHEN + LATENCY,
-    }))
-    // Chorus bar 8: its last two beats (score/clone.ts CHORUS_AT).
-    .filter(
-      (p) => p.t > clone.beat(CHORUS_AT + 14) - 0.01 && p.t < clone.end - 0.01,
-    );
-  assert.ok(notes.length > 0, "no bass in bar 8");
-  // Each note's oscillators: the root, and a triangle an octave up.
-  const octaves = (f: number, g: number) => {
-    const k = Math.log2(f / g);
-    return Math.abs(k - Math.round(k)) < 0.006;
-  };
-  const cTones = [CH.C.root, CH.C.fifth].map(hz);
-  for (const { f, t } of notes)
-    assert.ok(
-      cTones.some((g) => octaves(f, g)),
-      `the bass plays ${f.toFixed(1)} Hz at ${t.toFixed(3)}, not C's root or fifth`,
-    );
-});
-
-test("in Acts V and VI no chop falls in the quarter beat before a click, so the click speaks alone", () => {
-  const crowded: string[] = [];
-  const clicks: [SectionId, string[]][] = [
-    ["track", ["checkpoints", "seat"]],
-    ["lock", ["thread", "dock", "run"]],
-  ];
-  for (const [id, names] of clicks) {
-    const s = sec(id);
-    const c = resolveCues(s as never, null, SCENE_MODULES) as {
-      all(n: string): number[];
-    };
-    // A chop is the band's only voice that starts pitched above 380 Hz on an "and".
-    const chops = oscillators(renderLayer(id, "pads"))
-      .filter(({ t, f }) => {
-        const b = (t - s.start) / BEAT;
-        return f > 380 && Math.abs(b - Math.round(b - 0.5) - 0.5) < 0.01;
-      })
-      .map(({ t }) => t);
-    for (const name of names)
-      for (const t of c.all(name))
-        for (const k of chops)
-          if (k > t - 0.3 * BEAT + 0.002 && k <= t + 0.002)
-            crowded.push(
-              `${id}.${name} at ${t.toFixed(3)}: a chop at ${k.toFixed(3)}`,
-            );
-  }
-  assert.deepEqual(crowded, []);
-});
-
-test("the groove's fader holds each section's level and moves only over the half beat before a bar line", () => {
+test("the bed's fader holds each section's level and moves only over the half beat before a bar line", () => {
   const pts = arc();
   // The fader's value at reel time t: it only ever moves in straight lines.
   const at = (t: number): number => {
@@ -537,4 +417,52 @@ test("the groove's fader holds each section's level and moves only over the half
       );
     }
   }
+});
+
+/** Pitched oscillators a layer starts (above 100 Hz: no LFOs), reel time and first pitch. */
+function tones(ac: MockContext): { t: number; f: number }[] {
+  const pitch = new Map<string, number>();
+  for (const c of ac.calls) {
+    if (!c.target.endsWith(".frequency")) continue;
+    const id = c.target.slice(0, -".frequency".length);
+    if (pitch.has(id)) continue;
+    if (c.method === "value=" || c.method === "setValueAtTime")
+      pitch.set(id, c.args[0] as number);
+  }
+  return ac
+    .starts()
+    .filter(({ target }) => target.startsWith("osc#"))
+    .map(({ target, t }) => ({
+      t: t - WHEN + LATENCY,
+      f: pitch.get(target) ?? 0,
+    }))
+    .filter(({ f }) => f > 100);
+}
+
+test("switch: each `cd` runs up the bed's chord, and each project's `node` lands on its root", () => {
+  // The bed plays F minor under `cd ../dashboard`, C minor as dashboard's
+  // `node --version` prints, C minor again under `cd ../api` and B♭ as
+  // api's prints (score/harmony.ts, the bed's chord chart): each project
+  // prints in a key of its own, on M1's head, its fifth rising a fourth.
+  const c = listen("switch", sec("switch"), null);
+  const heard = tones(renderLayer("switch", "cues"));
+  const struck = (t: number, n: number) =>
+    heard.some(
+      (h) => Math.abs(h.t - t) < 0.002 && Math.abs(h.f / hz(n) - 1) < 0.004,
+    );
+  const missing: string[] = [];
+  const want: [CueName<"switch">, number, number[]][] = [
+    ["cdDashboard", 0, [77, 80, 84, 89]],
+    ["dashboard", -0.2, [79, 84]],
+    ["cdApi", 0, [72, 75, 79, 84]],
+    ["api", -0.2, [77, 82]],
+  ];
+  for (const [name, from, notes] of want) {
+    const t = c.at(name)!;
+    notes.forEach((n, i) => {
+      const at = t + from + (name.startsWith("cd") ? 0.1 : 0.2) * i;
+      if (!struck(at, n)) missing.push(`${name}: ${n} at ${at.toFixed(3)}`);
+    });
+  }
+  assert.deepEqual(missing, []);
 });

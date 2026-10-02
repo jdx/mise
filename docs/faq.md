@@ -190,7 +190,7 @@ use the asdf spellings.
 Trust depends on the configuration contents and the command, not file authorship. Safe config files —
 those that only contain `min_version`, `[tools]` entries whose values are plain version
 strings or arrays of strings, and `[tasks]` without templates — load without trust. Tool-option
-tables, inline options in a tool name (`"tool[opt=value]"`), and other top-level settings require trust. In normal mode outside CI, `mise run`, naked task
+tables, inline options in a tool name (`"tool[opt=value]"`, also in `.tool-versions`), and other top-level settings require trust. In normal mode outside CI, `mise run`, naked task
 invocations such as `mise <TASK>`, `mise install`, `mise exec`, and `mise watch` automatically
 trust the active config because they explicitly execute project-defined behavior. Other unsafe
 config requires trust. Common issues:

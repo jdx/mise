@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::Value;
+use std::path::PathBuf;
 
 use crate::RubySourceChecksum;
 
@@ -44,6 +45,10 @@ pub struct Cask {
     /// metadata is always `brew-cask`, and inline declarations set it directly.
     #[serde(skip)]
     pub manager: CaskManager,
+    /// The resolved application directory selected for this install. Cask
+    /// metadata never supplies this; mise sets it from package configuration.
+    #[serde(skip)]
+    pub appdir: Option<PathBuf>,
 }
 
 impl Cask {

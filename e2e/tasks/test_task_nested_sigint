@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# One Ctrl-C reached a nested `mise run` twice: from the terminal, and again
+# from the outer mise's `kill_all`. The inner mise took the second as a
+# repeated Ctrl-C and killed its task instead of waiting for it to finish.
+#
+# This needs a controlling terminal: tasks then inherit the outer mise's
+# foreground process group, which is where the terminal delivers Ctrl-C.
+
+cat <<'TOML' >mise.toml
+[tasks.outer]
+run = "mise run inner"
+
+[tasks.inner]
+run = """
+trap '' INT
+touch "$HOME/inner-ready"
+sleep 2
+touch "$HOME/inner-done"
+"""
+TOML
+
+python3 - "$HOME" <<'PY'
+import fcntl
+import os
+import pty
+import select
+import signal
+import sys
+import termios
+import time
+
+home = sys.argv[1]
+ready = os.path.join(home, "inner-ready")
+done = os.path.join(home, "inner-done")
+
+master, slave = pty.openpty()
+
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+    for fd in (0, 1, 2):
+        os.dup2(slave, fd)
+    os.close(master)
+    os.close(slave)
+    os.execvp("mise", ["mise", "run", "outer"])
+    os._exit(127)
+
+os.close(slave)
+output = b""
+
+
+def drain():
+    global output
+    while select.select([master], [], [], 0)[0]:
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            return
+        if not chunk:
+            return
+        output += chunk
+
+
+def wait_for(predicate, what, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        drain()
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise SystemExit(f"timed out waiting for {what}: {output.decode(errors='replace')}")
+
+
+exited = []
+
+
+def mise_exited():
+    if not exited and os.waitpid(pid, os.WNOHANG)[0] == pid:
+        exited.append(True)
+    return bool(exited)
+
+
+try:
+    wait_for(lambda: os.path.exists(ready), "the inner task to start")
+    os.write(master, b"\x03")
+    wait_for(mise_exited, "mise to exit after Ctrl-C")
+    if not os.path.exists(done):
+        raise SystemExit(
+            "nested mise killed its task after one Ctrl-C: "
+            + output.decode(errors="replace")
+        )
+finally:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+print("nested task finished after one Ctrl-C")
+PY

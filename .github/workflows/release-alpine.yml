@@ -39,6 +39,7 @@ jobs:
         run: sudo -Eu packager ./scripts/release-alpine.sh
         env:
           ALPINE_GITLAB_TOKEN: ${{ secrets.ALPINE_GITLAB_TOKEN }}
+          ALPINE_GITLAB_SSH_KEY: ${{ secrets.ALPINE_GITLAB_SSH_KEY }}
           ALPINE_KEY_ID: ${{ secrets.ALPINE_KEY_ID }}
           ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
           ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}

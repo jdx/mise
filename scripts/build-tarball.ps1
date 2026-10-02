@@ -29,11 +29,21 @@ $Env:CARGO_PROFILE_SERIOUS_PANIC = "unwind"
 # the 4-vCPU/16 GB windows-latest runner that link ran from ~65 minutes to past
 # the 150-minute job timeout depending on memory pressure. Thin LTO keeps most
 # of the cross-crate inlining while optimizing in parallel with far less
-# memory. Go back to fat once the Windows builds move to a larger runner.
-$Env:CARGO_PROFILE_SERIOUS_LTO = "thin"
+# memory. Machines with plenty of RAM (the self-hosted Windows runner has 64 GB)
+# build with the serious profile's default fat LTO like the other platforms. An
+# explicit CARGO_PROFILE_SERIOUS_LTO always wins.
+$MemoryGB = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
+if (-not $Env:CARGO_PROFILE_SERIOUS_LTO -and $MemoryGB -lt 48) {
+    $Env:CARGO_PROFILE_SERIOUS_LTO = "thin"
+}
+Write-Host ("LTO: {0} ({1:N0} GB RAM)" -f $(if ($Env:CARGO_PROFILE_SERIOUS_LTO) { $Env:CARGO_PROFILE_SERIOUS_LTO } else { "fat (profile default)" }), $MemoryGB)
 
+# PowerShell keeps going after a failed native command, and packaging below would
+# then zip whatever an earlier build left in target/.
 cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cargo build --profile=serious -p mise-shim --target "$Target"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 mkdir -p dist/mise/bin
 cp "target/$Target/serious/mise.exe" dist/mise/bin/mise.exe
 cp "target/$Target/serious/mise-shim.exe" dist/mise/bin/mise-shim.exe

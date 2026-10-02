@@ -125,7 +125,7 @@ export function composeReel(
         // Over the vignette, so a caption reads the same at the frame's edge;
         // under the grain, so it sits in the picture.
         drawCaptions(ctx, t, captions);
-        grain(ctx, W, H, t, STAGE_FX.grain.amount);
+        grain(ctx, W, H, t, STAGE_FX.grain.amount, STAGE_FX.grain.fps);
       }
       if (options.burnIn) drawSlate(ctx, s, t);
       // Guard against a scene leaving the transform or blend mode dirty.

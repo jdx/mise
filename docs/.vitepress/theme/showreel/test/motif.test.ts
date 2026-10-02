@@ -1,37 +1,34 @@
 // The hook the score quotes (score/motif.ts), pinned to the transcription
-// of jdx's chorus (plan v3 §5), and where the score plays it: M1 whole at
-// the open and the climax, a fragment on each act's ticket landing F on the
-// tear, the "C-I both" cell at the packslip's skills link, chorus bars 7 to
-// 12 into and through the morph, and M2 never: the recording sings it.
+// of jdx's chorus (plan v3 §5), and the "C-I both" cell on the celesta at
+// the packslip's skills link, the one whole phrase of it the sound design
+// still plays. Its other quotes are fragments: the name's C D♭ C as it
+// writes on, on the open and the end card (props.ts writeName), and M1's
+// head on use's "ok" and switch's versions. The synthesized band's quotes
+// of it (M1 at the open and the climax, the tickets' fragments, the
+// morph's bars 7 to 12) went with the band, and the sung recording with
+// them.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReelFacts } from "../bible";
-import { TICKET } from "../kit/style";
 import { PARTS } from "../score";
-import { CHORUS_AT } from "../score/clone";
-import { LISTEN } from "../score/cues";
 import { listen } from "../score/listen";
-import { boardOf } from "../storyboard";
 import { hz, LATENCY, Mix, shared, X } from "../score/mix";
 import {
   BOTH,
   CHORUS,
   HEAD,
   type HookNote,
-  LAPTOP,
   M1,
   M2,
-  onReel,
   SIGH,
-  STARTS,
 } from "../score/motif";
-import { SECTIONS, type SectionId, sec } from "../timeline";
+import { type SectionId, sec } from "../timeline";
 import { MockContext } from "./mock-audio";
 
 const WHEN = 0.2;
 
-type Layer = "cues" | "drums" | "bass" | "lead" | "pads";
+type Layer = "cues";
 
 /** One layer of one section's part, alone, on a mix of its own. */
 function renderLayer(
@@ -42,14 +39,7 @@ function renderLayer(
   const ac = new MockContext();
   const ctx = ac.context;
   const bus = () => ctx.createGain();
-  const m = new Mix(
-    ctx,
-    shared(ctx),
-    0,
-    WHEN,
-    { sfx: bus(), drums: bus(), music: bus() },
-    bus(),
-  );
+  const m = new Mix(ctx, shared(ctx), 0, WHEN, bus(), bus());
   PARTS[id][layer]?.(m, sec(id), facts);
   return ac;
 }
@@ -103,51 +93,23 @@ test("M1 and M2 are the transcription's: their pitches and intervals", () => {
     );
 });
 
-test("the open plays M1 whole on the reed, its F on the chef's resolve", () => {
-  // The resolve as the score hears it: the scene's cue, else the fallback,
-  // which is the event plan's (the end of the chef's lift, sections.json).
-  const resolve = listen("open", sec("open"), null).at("resolve")!;
-  const lift = boardOf("open").plan?.find((e) => e.name === "lift");
-  assert.ok(lift && Math.abs(lift.end - LISTEN.open.resolve) <= 1 / 16);
-  const heard = tones(renderLayer("open", "lead"));
-  for (const [a, , n] of onReel(M1, resolve))
-    assert.ok(sounds(heard, a, n), `no ${n} at ${a}`);
-});
-
-test("the climax sings M1 over chorus bars 1–2, rests through 3–6, and returns for 7–8 into the morph", () => {
-  const clone = sec("clone");
-  // Chorus bar 1 falls 16 beats before the morph (score/clone.ts CHORUS_AT).
-  const e0 = clone.beat(CHORUS_AT);
-  assert.equal(CHORUS_AT, clone.beats - 16);
-  const heard = tones(renderLayer("clone", "lead"));
-  for (const [a, , n] of onReel(M1, e0))
-    assert.ok(sounds(heard, a, n), `no ${n} at ${a}`);
-  // Bars 3 to 6: the lead rests.
-  const bar = (k: number) => e0 + 8 * (k - 1) * X;
-  assert.ok(!heard.some((h) => h.t >= bar(3) - 0.001 && h.t < bar(7) - 0.001));
-  for (const [a, , n] of onReel(STARTS, e0))
-    assert.ok(sounds(heard, a, n), `no ${n} at ${a}`);
-  // Its pickup C4 two sixteenths before the morph lands the next note on its downbeat.
-  assert.ok(sounds(heard, sec("morph").start - 2 * X, 60));
-  assert.ok(Math.abs(e0 + 64 * X - sec("morph").start) < 1e-9);
-});
-
-test("the morph sings chorus bars 9–12: F on its downbeat, the G G G F sigh from beat 1.5, D♭ recited from beat 4", () => {
-  const heard = tones(renderLayer("morph", "lead"));
-  const morph = sec("morph");
-  const at = (t: number, n: number) =>
-    assert.ok(sounds(heard, t, n), `no ${n} at ${t}`);
-  at(morph.start, 65);
-  at(morph.beat(1.5), 67);
-  at(morph.beat(1.75), 67);
-  at(morph.beat(2), 67);
-  at(morph.beat(2.25), 65);
-  at(morph.beat(4), 61);
-  for (const [a, , n] of onReel(LAPTOP, sec("morph").start - 64 * X))
-    assert.ok(sounds(heard, a, n), `no ${n} at ${a}`);
-  // The recitation is done by beat 6.5, before the held bar's handoff.
-  const last = onReel(LAPTOP, sec("morph").start - 64 * X).at(-1);
-  assert.ok(last && last[1] <= morph.beat(6.5) + 1e-9);
+test("M2 is never played: no part's cues run its intervals", () => {
+  // M2's interval sequence, in any octave, in the tones each section's
+  // cues start, in order (plan v3 §5: the song's own ending is not quoted).
+  const want = steps(M2);
+  const midi = (f: number) => Math.round(69 + 12 * Math.log2(f / 440));
+  for (const id of Object.keys(PARTS) as SectionId[]) {
+    const ns = tones(renderLayer(id, "cues"))
+      .sort((a, b) => a.t - b.t)
+      .map(({ f }) => midi(f));
+    const run = ns.slice(1).map((n, i) => n - ns[i]);
+    for (let i = 0; i + want.length <= run.length; i++)
+      assert.notDeepEqual(
+        run.slice(i, i + want.length),
+        want,
+        `${id} plays M2 from its tone ${i}`,
+      );
+  }
 });
 
 test("the packslip's skills link rings the C-I both cell, G G G F, on the celesta as the link lights", () => {
@@ -156,46 +118,4 @@ test("the packslip's skills link rings the C-I both cell, G G G F, on the celest
   [79, 79, 79, 77].forEach((n, i) =>
     assert.ok(sounds(heard, link + X * i, n), `no ${n} at ${link + X * i}`),
   );
-});
-
-test("each ticket plays a fragment of M1 on its act's voice, alternating the head and the sigh, its F on the tear", () => {
-  const tickets = SECTIONS.filter((s) => "ticket" in s && s.ticket);
-  assert.equal(tickets.length, 7);
-  tickets.forEach(({ id }, i) => {
-    const s = sec(id);
-    const tear = s.beat(TICKET.cue.tear);
-    const heard = tones(renderLayer(id, "lead"));
-    const f = heard.filter(
-      (h) =>
-        Math.abs(h.t - tear) < 0.002 &&
-        Math.abs(Math.log2(h.f / hz(65)) % 1) < 0.025,
-    );
-    assert.ok(f.length > 0, `${id}: no F on the tear at ${tear}`);
-    // Its first note: C before the head's F, A♭ before the sigh's.
-    const first = Math.min(...heard.map((h) => h.t));
-    const head = i % 2 === 0;
-    const lead = heard.filter((h) => Math.abs(h.t - first) < 0.002);
-    const pc = (h: { f: number }) =>
-      ((Math.round(12 * Math.log2(h.f / 440)) % 12) + 12) % 12;
-    assert.ok(
-      lead.some((h) => pc(h) === (head ? 3 : 11)),
-      `${id}: it does not open on ${head ? "C" : "A♭"}`,
-    );
-    assert.ok(
-      Math.abs(tear - first - (head ? 2 : 3) * X) < 0.002,
-      `${id}: the fragment is not the ${head ? "head" : "sigh"}`,
-    );
-  });
-});
-
-test("M2 is never synthesized: no quote reaches the cadence, and no lead sings below C4", () => {
-  const quoted = [M1, HEAD, SIGH, BOTH, STARTS, LAPTOP].flat();
-  const lastQuoted = Math.max(...quoted.map(([e, len]) => e + len));
-  assert.ok(lastQuoted <= M2[0][0], "a quote runs into M2");
-  for (const { id } of SECTIONS) {
-    const low = tones(renderLayer(id, "lead")).filter(
-      (h) => h.f < hz(60) * 0.99 && h.f > 150,
-    );
-    assert.deepEqual(low, [], `${id}'s lead sings below C4`);
-  }
 });

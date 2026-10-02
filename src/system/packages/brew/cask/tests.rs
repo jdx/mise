@@ -94,6 +94,7 @@ fn test_cask(token: &str, version: &str) -> Cask {
         tap_git_head: None,
         raw_base: None,
         manager: CaskManager::BrewCask,
+        appdir: None,
     }
 }
 
@@ -5974,6 +5975,117 @@ fn detects_pkgutil_query_matches() {
 }
 
 #[test]
+fn receipt_pkg_ids_keep_only_registered_receipts() {
+    let declared = [
+        "com.google.drivefs.arm64",
+        "com.google.drivefs.filesystems.dfsfuse.arm64",
+        "com.google.drivefs.filesystems.dfsfuse.x86_64",
+        "com.google.drivefs.shortcuts",
+        "com.google.drivefs.x86_64",
+    ]
+    .map(String::from);
+    let registered = ["com.google.drivefs.arm64", "com.google.drivefs.shortcuts"];
+
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| {
+        Some(
+            registered
+                .iter()
+                .filter(|id| **id == pattern)
+                .map(|id| id.to_string())
+                .collect(),
+        )
+    });
+
+    assert_eq!(
+        ids,
+        vec![
+            "com.google.drivefs.arm64".to_string(),
+            "com.google.drivefs.shortcuts".to_string()
+        ]
+    );
+}
+
+#[test]
+fn receipt_pkg_ids_keep_matching_patterns_and_fall_back_when_unmatched() {
+    let declared = vec![
+        "com.example.pkg.*".to_string(),
+        "com.example.other".to_string(),
+    ];
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| {
+        Some(if pattern == "com.example.pkg.*" {
+            vec!["com.example.pkg.a".to_string()]
+        } else {
+            Vec::new()
+        })
+    });
+    assert_eq!(ids, vec!["com.example.pkg.*".to_string()]);
+
+    assert_eq!(
+        resolve_installed_pkg_ids(&declared, |_| Some(Vec::new())),
+        declared
+    );
+}
+
+#[test]
+fn receipt_pkg_ids_keep_patterns_whose_lookup_failed() {
+    let declared = vec![
+        "com.example.matched".to_string(),
+        "com.example.unknown".to_string(),
+        "com.example.absent".to_string(),
+    ];
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| match pattern {
+        "com.example.matched" => Some(vec![pattern.to_string()]),
+        "com.example.unknown" => None,
+        _ => Some(Vec::new()),
+    });
+    assert_eq!(
+        ids,
+        vec![
+            "com.example.matched".to_string(),
+            "com.example.unknown".to_string()
+        ]
+    );
+}
+
+#[test]
+fn receipt_persists_resolved_pkg_ids() -> Result<()> {
+    let cask = test_cask("google-drive", "132.0.0");
+    let declared = vec![
+        "com.google.drivefs.arm64".to_string(),
+        "com.google.drivefs.x86_64".to_string(),
+    ];
+    let artifacts = CaskArtifacts {
+        pkg_ids: resolve_installed_pkg_ids(&declared, |pattern| {
+            Some(if pattern.ends_with("arm64") {
+                vec![pattern.to_string()]
+            } else {
+                Vec::new()
+            })
+        }),
+        ..Default::default()
+    };
+    let temp = tempfile::tempdir()?;
+    let version_dir = temp.path().join("google-drive").join(&cask.version);
+    file::create_dir_all(&version_dir)?;
+    write_receipt_with_flight_targets(
+        &version_dir,
+        &cask,
+        &artifacts,
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    let receipt = read_receipt(&version_dir)?.expect("receipt was written");
+    assert_eq!(
+        receipt.pkg_ids,
+        vec!["com.google.drivefs.arm64".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
 fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
     let mut cask = test_cask("google-japanese-ime", "3.33.6130");
     cask.artifacts = vec![
@@ -6842,6 +6954,13 @@ fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
         ..Default::default()
     };
     assert_eq!(cask_prune_blocker(&cask, &direct), None);
+
+    cask.appdir = Some(PathBuf::from("/Users/example/Applications"));
+    assert_eq!(
+        cask_prune_blocker(&cask, &direct).as_deref(),
+        Some("per-cask app directories are not supported for pruning")
+    );
+    cask.appdir = None;
 
     cask.artifacts = vec![serde_json::json!({"uninstall": [{"quit": "com.example"}]})];
     assert!(cask_prune_blocker(&cask, &direct).is_some());
@@ -8182,6 +8301,204 @@ fn appdir_override_with_benign_symlink_is_resolved() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn package_appdir_expands_home_and_uses_the_same_path_validation() -> Result<()> {
+    assert_eq!(
+        package_app_dir("~/Applications")?,
+        crate::env::HOME.join("Applications")
+    );
+    for invalid in ["relative/Applications", "/Applications/../etc", "/"] {
+        assert!(
+            package_app_dir(invalid).is_err(),
+            "expected {invalid} to be rejected"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn package_appdir_takes_precedence_over_the_global_appdir() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir()?;
+    let global = tmp.path().join("global");
+    let package = tmp.path().join("package");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &global);
+
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(package.clone());
+    assert_eq!(
+        cask_app_target_path(&cask, "/Applications/Example.app")?,
+        package.join("Example.app")
+    );
+    Ok(())
+}
+
+#[test]
+fn package_appdir_applies_to_appdir_binary_artifacts() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir()?;
+    let package = tmp.path().join("package");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, "relative");
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(package.clone());
+
+    assert_eq!(
+        cask_binary_target_path(
+            &cask,
+            "$APPDIR/Example.app/Contents/MacOS/example",
+            &package
+        )?,
+        package.join("Example.app/Contents/MacOS/example")
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn appdir_upgrade_removes_the_unchanged_previously_owned_app() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let cask = test_cask("example", "2.0.0");
+    let old_target = root.join("old/Example.app");
+    file::create_dir_all(old_target.join("Contents"))?;
+    file::write(old_target.join("Contents/version"), "1.0.0")?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old_target.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: vec![CaskTargetRecord {
+            path: old_target.clone(),
+            fingerprint: cask_target_fingerprint(&old_target)?,
+            uninstall: None,
+        }],
+        prune_safe: true,
+        prune_blocker: None,
+    };
+
+    remove_obsolete_app_targets(&cask, Some(&receipt), &[root.join("new/Example.app")]);
+
+    assert!(!old_target.exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn appdir_upgrade_keeps_a_previously_owned_app_that_changed() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let cask = test_cask("example", "2.0.0");
+    let old_target = root.join("old/Example.app");
+    file::create_dir_all(old_target.join("Contents"))?;
+    file::write(old_target.join("Contents/version"), "1.0.0")?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old_target.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: vec![CaskTargetRecord {
+            path: old_target.clone(),
+            fingerprint: cask_target_fingerprint(&old_target)?,
+            uninstall: None,
+        }],
+        prune_safe: true,
+        prune_blocker: None,
+    };
+    file::write(old_target.join("Contents/version"), "changed")?;
+
+    remove_obsolete_app_targets(&cask, Some(&receipt), &[root.join("new/Example.app")]);
+
+    assert!(old_target.exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn appdir_upgrade_keeps_an_app_now_claimed_by_another_cask() -> Result<()> {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let cask = test_cask("original", "2.0.0");
+    let old_target = root.join("old/Example.app");
+    file::create_dir_all(old_target.join("Contents"))?;
+    file::write(old_target.join("Contents/version"), "1.0.0")?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old_target.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: vec![CaskTargetRecord {
+            path: old_target.clone(),
+            fingerprint: cask_target_fingerprint(&old_target)?,
+            uninstall: None,
+        }],
+        prune_safe: true,
+        prune_blocker: None,
+    };
+    let other = caskroom_version_dir(CaskManager::BrewCask, "other", "1.0.0");
+    file::create_dir_all(&other)?;
+    let mut legacy_owner = receipt.clone();
+    legacy_owner.targets.clear();
+    file::write(
+        other.join(".mise-cask.toml"),
+        toml::to_string_pretty(&legacy_owner)?,
+    )?;
+
+    remove_obsolete_app_targets(&cask, Some(&receipt), &[root.join("new/Example.app")]);
+
+    assert!(old_target.exists());
+    Ok(())
+}
+
+#[test]
+fn dependency_appdir_uses_its_own_package_setting() {
+    let parent = PathBuf::from("/Applications");
+    let dependency = PathBuf::from("/Users/example/Applications");
+    let options = ManagerPackageOptions::BrewCask {
+        adopt: BTreeSet::new(),
+        appdirs: BTreeMap::from([("dependency".to_string(), dependency.clone())]),
+    };
+    let request = PackageRequest {
+        name: "dependency".to_string(),
+        version: None,
+        tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
+    };
+
+    assert_eq!(
+        cask_appdir_for_request(&request, &options, Some(&parent)),
+        Some(dependency)
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
@@ -8624,6 +8941,7 @@ fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
         tap_git_head: None,
         raw_base: None,
         manager: CaskManager::BrewCask,
+        appdir: None,
     };
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -9015,6 +9333,160 @@ fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()>
     file::create_dir_all(&path)?;
     assert!(read_app_version(&app).is_err());
     assert!(read_app_version(&tmp.path().join("Missing.app")).is_err());
+    Ok(())
+}
+
+/// A self-updating cask may move its one owned bundle to a new appdir, but the
+/// old bundle remains the live version and running-app authority until the
+/// replacement is durable. The new destination is intentionally unowned, so
+/// installation will refuse a manual or another cask's bundle there.
+#[test]
+fn brew_cask_auto_update_appdir_relocation_checks_old_owned_bundle() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, tmp.path().join("default"));
+    let old = tmp.path().join("old/Example.app");
+    let new = tmp.path().join("new");
+    file::create_dir_all(old.join("Contents"))?;
+    let mut plist = plist::Dictionary::new();
+    plist.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("1.0.0".into()),
+    );
+    plist::Value::Dictionary(plist).to_file_xml(old.join("Contents/Info.plist"))?;
+
+    let mut cask = test_cask("example", "2.0.0");
+    cask.auto_updates = true;
+    cask.appdir = Some(new.clone());
+    cask.artifacts = vec![serde_json::json!({"app": ["Example.app"]})];
+    let artifacts = cask_artifacts(&cask)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: true,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        None,
+        "an outdated owned bundle permits a safe relocation"
+    );
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        &cask_app_target_path(&cask, "Example.app")?
+    ));
+
+    // Removing an override is the same relocation in reverse: Upgrade still
+    // assesses the old owned bundle before it considers the default appdir.
+    cask.appdir = None;
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        None
+    );
+
+    let mut current = plist::Dictionary::new();
+    current.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("2.0.0".into()),
+    );
+    plist::Value::Dictionary(current).to_file_xml(old.join("Contents/Info.plist"))?;
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Upgrade
+        )?,
+        Some("skipped: installed app is current, newer, or incomparable"),
+        "a newer or equal old owned bundle must still block relocation"
+    );
+    Ok(())
+}
+
+#[test]
+fn brew_cask_install_preserves_same_version_when_appdir_changes() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.appdir = Some(tmp.path().join("new"));
+    cask.artifacts = vec![serde_json::json!({"app": ["Example.app"]})];
+    let artifacts = cask_artifacts(&cask)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![tmp.path().join("old/Example.app")],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.0.0"),
+            InstallMode::Install
+        )?,
+        Some("already installed")
+    );
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        &cask_app_target_path(&cask, "Example.app")?
+    ));
+    Ok(())
+}
+
+#[test]
+fn app_target_path_equivalence_follows_the_fixture_filesystem() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let spelled = tmp.path().join("Example.app");
+    file::create_dir_all(&spelled)?;
+    let case_variant = tmp.path().join("example.app");
+
+    // On common Linux CI filesystems the second spelling is distinct and does
+    // not resolve. On a case-insensitive macOS volume it resolves to the same
+    // fixture, exercising the conservative receipt/cleanup path without ever
+    // touching a real application directory.
+    assert_eq!(
+        paths_resolve_to_same_target(&spelled, &case_variant),
+        case_variant.exists()
+    );
     Ok(())
 }
 
@@ -9723,18 +10195,15 @@ fn staging_directories_are_scoped_per_manager() -> Result<()> {
 /// authorize replacing a different app the declaration later points at — by
 /// renaming `artifact`, or by moving the app directory.
 #[test]
-fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
-    let spec = crate::system::AppSpec {
-        url: "https://example.com/Nuvio.dmg".to_string(),
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
-        artifact: "Nuvio.app".to_string(),
-        version: "1.1.20".to_string(),
-    };
-    let cask = declared_app_cask("nuvio", &spec)?;
-
-    let owned = Path::new("/Applications/Nuvio.app");
-    let renamed = Path::new("/Applications/Other.app");
-    let relocated = Path::new("/Users/someone/Applications/Nuvio.app");
+fn cask_ownership_does_not_follow_a_changed_target() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let owned_path = tmp.path().join("old/Nuvio.app");
+    file::create_dir_all(&owned_path)?;
+    let owned = owned_path.as_path();
+    let renamed_path = tmp.path().join("old/Other.app");
+    let renamed = renamed_path.as_path();
+    let relocated_path = tmp.path().join("new/Nuvio.app");
+    let relocated = relocated_path.as_path();
 
     let receipt = CaskReceipt {
         schema_version: 3,
@@ -9754,18 +10223,54 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
     };
 
     // The recorded target may be replaced: that is an ordinary upgrade.
-    assert!(!requires_unowned_target(&cask, Some(&receipt), owned));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        owned
+    ));
 
     // A renamed artifact names a target the receipt never covered. Without
     // this, changing `artifact` to an app someone else owns would replace it
     // while the stale receipt made the token look installed.
-    assert!(requires_unowned_target(&cask, Some(&receipt), renamed));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        renamed
+    ));
 
     // Same for the app directory moving out from under a valid receipt.
-    assert!(requires_unowned_target(&cask, Some(&receipt), relocated));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        relocated
+    ));
 
-    // No receipt at all means nothing is owned.
-    assert!(requires_unowned_target(&cask, None, owned));
+    // A first brew-cask install retains Homebrew's established overwrite
+    // behavior, while macos-app still refuses an unowned target.
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        None,
+        owned
+    ));
+    assert!(requires_unowned_target(
+        CaskManager::MacosApp,
+        false,
+        None,
+        owned
+    ));
+
+    // A per-cask appdir is a destination the user never had Homebrew's
+    // behavior for, so an unrelated app already there is not replaced.
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        true,
+        None,
+        owned
+    ));
 
     // An adopted app is recorded in metadata_only_apps and is owned too.
     let adopted = CaskReceipt {
@@ -9773,13 +10278,66 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
         metadata_only_apps: vec![owned.to_path_buf()],
         ..receipt
     };
-    assert!(!requires_unowned_target(&cask, Some(&adopted), owned));
-    assert!(requires_unowned_target(&cask, Some(&adopted), renamed));
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&adopted),
+        owned
+    ));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&adopted),
+        renamed
+    ));
 
-    // brew-cask keeps arbitrating by token against Homebrew's Caskroom.
-    let mut brew = cask.clone();
-    brew.manager = CaskManager::BrewCask;
-    assert!(!requires_unowned_target(&brew, None, renamed));
+    // brew-cask's Caskroom arbitrates tokens, but a new appdir destination is
+    // still unowned and must not be overwritten merely because the token has
+    // a receipt elsewhere.
+    assert!(!requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        None,
+        renamed
+    ));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn app_target_ownership_does_not_follow_a_replaced_bundle_symlink() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let old = tmp.path().join("old/Example.app");
+    let new = tmp.path().join("new/Example.app");
+    file::create_dir_all(&old)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.0.0".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![old.clone()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+    file::create_dir_all(new.parent().unwrap())?;
+    file::remove_all(&old)?;
+    file::create_dir_all(&new)?;
+    std::os::unix::fs::symlink(&new, &old)?;
+
+    assert!(paths_resolve_to_same_target(&old, &new));
+    assert!(requires_unowned_target(
+        CaskManager::BrewCask,
+        false,
+        Some(&receipt),
+        &new
+    ));
     Ok(())
 }
 
