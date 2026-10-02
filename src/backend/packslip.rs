@@ -2158,12 +2158,14 @@ mod tests {
     use super::*;
     use crate::args::BackendResolution;
     use crate::install_context::InstallContext;
-    use crate::toolset::{ToolRequest, ToolSource, Toolset};
+    use crate::toolset::{ToolRequest, ToolSource, Toolset, install_state};
     use crate::ui::progress_report::QuietReport;
     use packslip::model::Bin;
     use sha2::{Digest, Sha256};
     use std::io::{Cursor, Write};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::sync::OnceCell;
 
     #[derive(Debug)]
@@ -2191,6 +2193,13 @@ mod tests {
     impl Backend for RetryLifecycleBackend {
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> Result<Vec<VersionInfo>> {
+            Ok(vec![])
         }
 
         async fn is_install_satisfied(
@@ -2305,6 +2314,16 @@ mod tests {
         archive.finish().unwrap().into_inner()
     }
 
+    /// The test backend has a unique cache directory outside the TempDir-backed
+    /// install/download paths. Remove it even when an assertion aborts the test.
+    struct RetryLifecycleCacheCleanup(PathBuf);
+
+    impl Drop for RetryLifecycleCacheCleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[tokio::test]
     async fn failed_skill_fetch_keeps_the_binary_and_plain_retry_repairs_it() {
         let config = Config::get().await.unwrap();
@@ -2327,13 +2346,18 @@ mod tests {
             .unwrap()
             .as_nanos();
         let name = format!("test-packslip-retry-lifecycle-{suffix}");
-        let ba = Arc::new(BackendArg::new_raw(
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut backend_arg = BackendArg::new_raw(
             name.clone(),
-            None,
-            name,
+            Some("packslip:github.com/o/r".into()),
+            "github.com/o/r".into(),
             None,
             BackendResolution::new(true),
-        ));
+        );
+        backend_arg.set_installs_path(temp_dir.path().join("installs"));
+        backend_arg.set_downloads_path(temp_dir.path().join("downloads"));
+        let ba = Arc::new(backend_arg);
+        let _cache_cleanup = RetryLifecycleCacheCleanup(ba.cache_path().join("1.0.0"));
         let backend = RetryLifecycleBackend::new(ba.clone(), statement);
         let tv = ToolVersion::new(
             ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap(),
