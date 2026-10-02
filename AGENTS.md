@@ -16,7 +16,7 @@ Task-specific procedures live as skills in `.agents/skills/` (`.claude/skills` i
 - Never batch-post, loop over, or sweep Discussions or Issues to answer several of them, even for a merged contributor.
 - Lightly edited, human-reviewed, or disclosed model output does not create an exception. The disclosure footer does not make an AI reply acceptable on its own.
 - Permitted replies may be AI-assisted. The user must review and verify the reply before it is posted.
-- Creating a new Discussion or Issue with AI assistance is fine and is not restricted. The user should review it first, and it needs the AI disclosure below.
+- Creating a new Discussion or Issue with AI assistance is fine and is not restricted. The user must review it before it is posted, and it needs the AI disclosure below.
 
 When you post AI-contributed GitHub content, including a new Discussion or Issue, a reply, or a PR description or comment, append this disclosure: `*AI-assisted — Tool: <tool>; model: <provider>/<model>; version: <version-or-unavailable>.*` Use the exact model and version identifiers exposed by the runtime, never guessed values, and `unavailable` when one is not exposed.
 
