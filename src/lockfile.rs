@@ -793,6 +793,20 @@ impl PlatformInfo {
             && self.additional_artifacts.is_empty()
     }
 
+    /// Whether both describe the same persisted data. Ignores `size`, which is
+    /// read from existing lockfiles but never written.
+    pub(crate) fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
+        fn persisted(info: &PlatformInfo) -> PlatformInfo {
+            let mut info = info.clone();
+            info.size = None;
+            for artifact in &mut info.additional_artifacts {
+                artifact.size = None;
+            }
+            info
+        }
+        persisted(self) == persisted(other)
+    }
+
     /// Drop the fields that describe one specific downloaded artifact, keeping
     /// the fields that describe how the tool is built or what it depends on.
     /// Used when an entry is known to be for the right tool version but not
@@ -1809,10 +1823,12 @@ impl Lockfile {
                         !bound.specifiers.is_empty()
                             && bound.version == entry.version
                             && bound.backend == entry.backend
-                            && entry
-                                .platforms
-                                .iter()
-                                .all(|(key, info)| bound.platforms.get(key) == Some(info))
+                            && entry.platforms.iter().all(|(key, info)| {
+                                bound
+                                    .platforms
+                                    .get(key)
+                                    .is_some_and(|b| b.same_persisted_data(info))
+                            })
                     })
             };
             let drop = entries
@@ -5434,6 +5450,15 @@ mod tests {
         lockfile
             .tools
             .insert("e".to_string(), vec![unbound, empty_bound]);
+        // Identical persisted data but a differing read-only size: pruned.
+        let mut sized = with_platform("1", "x", &["1"]);
+        sized.backend = Some("f".to_string());
+        sized.platforms.get_mut("linux-x64").unwrap().size = Some(7);
+        let mut unsized_ = with_platform("1", "x", &[]);
+        unsized_.backend = Some("f".to_string());
+        lockfile
+            .tools
+            .insert("f".to_string(), vec![unsized_, sized]);
         lockfile.tools.insert(
             "d".to_string(),
             vec![
@@ -5449,6 +5474,7 @@ mod tests {
         assert_eq!(lockfile.tools["c"].len(), 2);
         assert_eq!(lockfile.tools["d"].len(), 1);
         assert_eq!(lockfile.tools["e"].len(), 2);
+        assert_eq!(lockfile.tools["f"].len(), 1);
     }
 
     #[test]
