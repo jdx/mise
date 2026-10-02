@@ -329,25 +329,35 @@ impl<'a> GitBackendOptions<'a> {
     }
 }
 
-/// The locked `url_api` to download from. A GitHub asset API URL ends in a
-/// numeric asset id, so its file name cannot be checked offline and an edited
-/// entry could point it at a different release asset than the validated `url`
-/// while keeping a binary name there. Drop it so the download uses `url`.
-fn locked_api_url_to_use(url_api: Option<&str>) -> String {
-    let Some(url_api) = url_api else {
-        return String::new();
-    };
-    let is_github_asset_id_url = url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-        && url_api
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()));
-    if is_github_asset_id_url {
-        String::new()
+/// A locked `url_api` (an opaque asset id on GitHub) is what private releases
+/// download from, and its file name cannot be checked offline, so an edited lock
+/// could keep a binary name in `url` and point `url_api` at an SBOM. A raw
+/// (non-archive) download that is a JSON or XML document is never a tool, so
+/// refuse to install one as the tool. Archives fail extraction instead.
+fn ensure_raw_download_is_not_a_document(
+    file_path: &Path,
+    opts: &ToolVersionOptions,
+) -> Result<()> {
+    use std::io::Read;
+    let name = file_path.file_name().unwrap_or_default().to_string_lossy();
+    let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
+        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
     } else {
-        url_api.to_string()
+        file::ExtractionFormat::from_file_name(&name)
+    };
+    if format != file::ExtractionFormat::Raw {
+        return Ok(());
     }
+    let mut head = [0u8; 64];
+    let read = std::fs::File::open(file_path)?.read(&mut head)?;
+    let first = head[..read].iter().find(|b| !b.is_ascii_whitespace());
+    if matches!(first, Some(b'{' | b'[' | b'<')) {
+        eyre::bail!(
+            "downloaded {name} is a JSON or XML document (for example an SBOM or attestation), not a tool binary.\n\
+             The lockfile entry may point at the wrong asset; run `mise lock` to regenerate it."
+        );
+    }
+    Ok(())
 }
 
 /// GitHub artifact attestations are only served by https://api.github.com. GHE
@@ -978,7 +988,7 @@ impl Backend for UnifiedGitBackend {
             ReleaseAsset {
                 name: get_filename_from_url(existing_platform.url.as_deref().unwrap_or("")),
                 url: existing_platform.url.clone().unwrap_or_default(),
-                url_api: locked_api_url_to_use(existing_platform.url_api.as_deref()),
+                url_api: existing_platform.url_api.clone().unwrap_or_default(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
         } else {
@@ -1005,7 +1015,7 @@ impl Backend for UnifiedGitBackend {
                 let mut assets = Vec::new();
                 for artifact in &platform.additional_artifacts {
                     let name = get_filename_from_url(&artifact.url);
-                    let url_api = locked_api_url_to_use(artifact.url_api.as_deref());
+                    let url_api = artifact.url_api.clone().unwrap_or_default();
                     let api_name = get_filename_from_url(&url_api);
                     if !url_api.is_empty()
                         && asset_matcher::is_metadata_asset(&api_name)
@@ -1863,6 +1873,11 @@ impl UnifiedGitBackend {
                 platform_info.provenance = provenance_result;
                 platform_info.github_attestations = None;
             }
+        }
+
+        // A metadata-looking name was already checked against the configured choice.
+        if !asset_matcher::is_metadata_asset(&filename) {
+            ensure_raw_download_is_not_a_document(&file_path, opts.raw())?;
         }
 
         ctx.pr.next_operation();
@@ -4195,14 +4210,18 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
-    fn test_locked_api_url_drops_unverifiable_github_asset_ids() {
-        let id_url = "https://api.github.com/repos/o/r/releases/assets/12345";
-        assert_eq!(locked_api_url_to_use(Some(id_url)), "");
-        assert_eq!(locked_api_url_to_use(None), "");
-        let custom = "https://ghe.example.com/api/v3/repos/o/r/releases/assets/12345";
-        assert_eq!(locked_api_url_to_use(Some(custom)), custom);
-        let named = "https://example.com/dl/tool.tar.gz";
-        assert_eq!(locked_api_url_to_use(Some(named)), named);
+    fn test_raw_download_document_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let opts = ToolVersionOptions::default();
+        let sbom = dir.path().join("tool-linux-x64");
+        std::fs::write(&sbom, b"  {\"spdxVersion\": \"SPDX-2.3\"}").unwrap();
+        assert!(ensure_raw_download_is_not_a_document(&sbom, &opts).is_err());
+        let script = dir.path().join("tool");
+        std::fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
+        assert!(ensure_raw_download_is_not_a_document(&script, &opts).is_ok());
+        let archive = dir.path().join("tool.tar.gz");
+        std::fs::write(&archive, b"{not really}").unwrap();
+        assert!(ensure_raw_download_is_not_a_document(&archive, &opts).is_ok());
     }
 
     #[test]
