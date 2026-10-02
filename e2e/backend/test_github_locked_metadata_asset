@@ -25,6 +25,29 @@ TOML
 assert_fail "mise install --locked" "is a metadata file"
 assert_fail "mise install" "is a metadata file"
 
-# The API URL can be downloaded instead of the browser URL, so it is checked too.
+# A url_api that names a metadata file is rejected too. (GitHub asset-id API URLs carry no name and are ignored at install time; see the unit tests.)
 sed -i "s|^url = .*|url = \"https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v4.0.2/editorconfig-checker-darwin-all.tar.gz\"\nurl_api = \"https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/x.tar.gz.intoto.jsonl\"|" mise.lock
 assert_fail "mise install --locked" "is a metadata file"
+
+# A configured asset_pattern that does not match the locked file does not exempt
+# the swapped entry.
+sed -i 's|^url_api = .*||; s|^url = .*|url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v4.0.2/editorconfig-checker-darwin-all.tar.gz.sbom.json"|' mise.lock
+cat >mise.toml <<'TOML'
+[settings]
+lockfile = true
+[tools]
+"github:editorconfig-checker/editorconfig-checker" = { version = "4.0.2", asset_pattern = "*-darwin-all.tar.gz" }
+TOML
+sed -i 's|^backend = .*|&\noptions = { asset_pattern = "*-darwin-all.tar.gz" }|' mise.lock
+assert_fail "mise install --locked" "is a metadata file"
+
+# A metadata-looking file selected by a matching asset_pattern is the user's own
+# choice: the guard lets it through, so any failure is not this one.
+cat >mise.toml <<'TOML'
+[settings]
+lockfile = true
+[tools]
+"github:editorconfig-checker/editorconfig-checker" = { version = "4.0.2", asset_pattern = "*.tar.gz.sbom.json" }
+TOML
+sed -i 's|^options = .*|options = { asset_pattern = "*.tar.gz.sbom.json" }|' mise.lock
+assert_succeed "mise install --locked"

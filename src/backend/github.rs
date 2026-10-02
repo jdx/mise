@@ -329,6 +329,27 @@ impl<'a> GitBackendOptions<'a> {
     }
 }
 
+/// The locked `url_api` to download from. A GitHub asset API URL ends in a
+/// numeric asset id, so its file name cannot be checked offline and an edited
+/// entry could point it at a different release asset than the validated `url`
+/// while keeping a binary name there. Drop it so the download uses `url`.
+fn locked_api_url_to_use(url_api: Option<&str>) -> String {
+    let Some(url_api) = url_api else {
+        return String::new();
+    };
+    let is_github_asset_id_url = url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+        && url_api
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()));
+    if is_github_asset_id_url {
+        String::new()
+    } else {
+        url_api.to_string()
+    }
+}
+
 /// GitHub artifact attestations are only served by https://api.github.com. GHE
 /// Server doesn't implement the attestations endpoint, so any verification
 /// attempt against a custom api_url will fail. Callers gate on this so users
@@ -926,8 +947,9 @@ impl Backend for UnifiedGitBackend {
             // A lock entry can be edited to point at any other attested file in
             // the release (an SBOM, say), which would pass provenance and then be
             // installed as the tool. Refuse metadata files in every URL that can
-            // be downloaded; auto-selection never picks them either, and an
-            // explicit `url` or `asset_pattern` is never a metadata file.
+            // be downloaded. The one exception is a metadata-looking file the user
+            // chose explicitly, which must still be the file the configured `url`
+            // or `asset_pattern` selects, so a swapped entry cannot ride on it.
             for locked_url in [
                 existing_platform.url.as_deref(),
                 existing_platform.url_api.as_deref(),
@@ -936,7 +958,14 @@ impl Backend for UnifiedGitBackend {
             .flatten()
             {
                 let locked_name = get_filename_from_url(locked_url);
-                if asset_matcher::is_metadata_asset(&locked_name) {
+                if asset_matcher::is_metadata_asset(&locked_name)
+                    && !self.locked_name_is_explicit_choice(
+                        &tv,
+                        &opts,
+                        &current_target,
+                        &locked_name,
+                    )
+                {
                     eyre::bail!(
                         "{} is locked to {} for platform {}, which is a metadata file (checksum, signature, SBOM, or similar), not a tool binary or archive.\n\
                          Run `mise lock` to regenerate the entry.",
@@ -949,7 +978,7 @@ impl Backend for UnifiedGitBackend {
             ReleaseAsset {
                 name: get_filename_from_url(existing_platform.url.as_deref().unwrap_or("")),
                 url: existing_platform.url.clone().unwrap_or_default(),
-                url_api: existing_platform.url_api.clone().unwrap_or_default(),
+                url_api: locked_api_url_to_use(existing_platform.url_api.as_deref()),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
         } else {
@@ -2480,6 +2509,26 @@ impl UnifiedGitBackend {
     /// shortest name, then lexicographic order for determinism. Mirrors the
     /// tiebreaker used by auto-detection.
     /// See: https://github.com/jdx/mise/discussions/9358
+    /// Whether `name` is exactly what the user's configured `url` or
+    /// `asset_pattern` selects for `target`.
+    fn locked_name_is_explicit_choice(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+        target: &PlatformTarget,
+        name: &str,
+    ) -> bool {
+        if let Some(direct_url) = opts.direct_url_for_target(target) {
+            let direct_url = template_string_for_target(&direct_url, tv, target);
+            return get_filename_from_url(&direct_url) == name;
+        }
+        if let Some(pattern) = opts.asset_pattern_for_target(target) {
+            let pattern = template_string_for_target(&pattern, tv, target);
+            return self.pick_by_pattern([name], &pattern, |n| *n).is_some();
+        }
+        false
+    }
+
     fn pick_by_pattern<T, I, F>(&self, assets: I, pattern: &str, name_of: F) -> Option<T>
     where
         I: IntoIterator<Item = T>,
@@ -4124,6 +4173,63 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_locked_api_url_drops_unverifiable_github_asset_ids() {
+        let id_url = "https://api.github.com/repos/o/r/releases/assets/12345";
+        assert_eq!(locked_api_url_to_use(Some(id_url)), "");
+        assert_eq!(locked_api_url_to_use(None), "");
+        let custom = "https://ghe.example.com/api/v3/repos/o/r/releases/assets/12345";
+        assert_eq!(locked_api_url_to_use(Some(custom)), custom);
+        let named = "https://example.com/dl/tool.tar.gz";
+        assert_eq!(locked_api_url_to_use(Some(named)), named);
+    }
+
+    #[test]
+    fn test_locked_name_is_explicit_choice() {
+        let backend = create_test_backend();
+        let linux = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
+        let request = ToolRequest::new(
+            std::sync::Arc::new(BackendArg::from("github:test/repo")),
+            "1.0.0",
+            crate::toolset::ToolSource::Unknown,
+        )
+        .unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let sbom = "tool-linux.tar.gz.sbom.json";
+
+        let none = ToolVersionOptions::default();
+        assert!(!backend.locked_name_is_explicit_choice(
+            &tv,
+            &backend.options(&none),
+            &linux,
+            sbom
+        ));
+
+        let mut pattern = ToolVersionOptions::default();
+        pattern.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("*.sbom.json".to_string()),
+        );
+        let opts = backend.options(&pattern);
+        assert!(backend.locked_name_is_explicit_choice(&tv, &opts, &linux, sbom));
+        assert!(!backend.locked_name_is_explicit_choice(&tv, &opts, &linux, "tool.intoto.jsonl"));
+
+        let mut platforms = toml::Table::new();
+        let mut linux_opts = toml::Table::new();
+        linux_opts.insert(
+            "url".to_string(),
+            toml::Value::String(format!("https://example.com/dl/{sbom}")),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux_opts));
+        let mut direct = ToolVersionOptions::default();
+        direct
+            .opts
+            .insert("platforms".to_string(), toml::Value::Table(platforms));
+        let opts = backend.options(&direct);
+        assert!(backend.locked_name_is_explicit_choice(&tv, &opts, &linux, sbom));
+        assert!(!backend.locked_name_is_explicit_choice(&tv, &opts, &linux, "other.sbom.json"));
     }
 
     #[test]
