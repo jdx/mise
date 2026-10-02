@@ -329,72 +329,6 @@ impl<'a> GitBackendOptions<'a> {
     }
 }
 
-/// Whether `content` is, as a whole, a JSON document or an XML/HTML document.
-/// Shell scripts that merely start with `[` or `{` do not parse as either.
-fn looks_like_document(content: &[u8]) -> bool {
-    if serde_json::from_slice::<serde::de::IgnoredAny>(content).is_ok() {
-        return true;
-    }
-    // JSON Lines, such as a multi-record `.intoto.jsonl` attestation bundle.
-    let mut lines = content
-        .split(|b| *b == b'\n')
-        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
-        .peekable();
-    if lines.peek().is_some()
-        && lines.all(|line| serde_json::from_slice::<serde::de::IgnoredAny>(line).is_ok())
-    {
-        return true;
-    }
-    let text = String::from_utf8_lossy(content);
-    let text = text.trim_start();
-    text.starts_with("<?xml")
-        || text.starts_with("<!")
-        || text
-            .strip_prefix('<')
-            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_alphabetic()))
-}
-
-/// A locked `url_api` (an opaque asset id on GitHub) is what private releases
-/// download from, and its file name cannot be checked offline, so an edited lock
-/// could keep a binary name in `url` and point `url_api` at an SBOM. A raw
-/// (non-archive) download that is a JSON or XML document is never a tool, so
-/// refuse to install one as the tool. Archives fail extraction instead.
-fn ensure_raw_download_is_not_a_document(
-    file_path: &Path,
-    opts: &ToolVersionOptions,
-) -> Result<()> {
-    use std::io::Read;
-    let name = file_path.file_name().unwrap_or_default().to_string_lossy();
-    let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        file::ExtractionFormat::from_ext(&format_opt).unwrap_or(file::ExtractionFormat::Raw)
-    } else {
-        file::ExtractionFormat::from_file_name(&name)
-    };
-    if format != file::ExtractionFormat::Raw {
-        return Ok(());
-    }
-    // Cheap first look: only text that could be JSON or markup is read in full.
-    const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
-    let mut file = std::fs::File::open(file_path)?;
-    let mut head = [0u8; 64];
-    let read = file.read(&mut head)?;
-    let Some(first) = head[..read].iter().find(|b| !b.is_ascii_whitespace()) else {
-        return Ok(());
-    };
-    if !matches!(first, b'{' | b'[' | b'<') {
-        return Ok(());
-    }
-    let mut content = head[..read].to_vec();
-    file.take(MAX_DOCUMENT_BYTES).read_to_end(&mut content)?;
-    if looks_like_document(&content) {
-        eyre::bail!(
-            "downloaded {name} is a JSON or XML document (for example an SBOM or attestation), not a tool binary.\n\
-             The lockfile entry may point at the wrong asset; run `mise lock` to regenerate it."
-        );
-    }
-    Ok(())
-}
-
 /// GitHub artifact attestations are only served by https://api.github.com. GHE
 /// Server doesn't implement the attestations endpoint, so any verification
 /// attempt against a custom api_url will fail. Callers gate on this so users
@@ -981,10 +915,6 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let reused_locked_url = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|p| p.url.is_some());
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
             && existing_platform.url.is_some()
         {
@@ -1106,7 +1036,7 @@ impl Backend for UnifiedGitBackend {
         };
 
         // Download and install
-        self.download_and_install(ctx, &mut tv, &asset, &opts, reused_locked_url)
+        self.download_and_install(ctx, &mut tv, &asset, &opts)
             .await?;
         for (index, asset) in additional_assets.iter().enumerate() {
             self.download_verify_and_install_additional_asset(ctx, &mut tv, asset, &opts, index)
@@ -1792,7 +1722,6 @@ impl UnifiedGitBackend {
         tv: &mut ToolVersion,
         asset: &ReleaseAsset,
         opts: &GitBackendOptions<'_>,
-        reused_locked_url: bool,
     ) -> Result<()> {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
@@ -1913,11 +1842,6 @@ impl UnifiedGitBackend {
                 platform_info.provenance = provenance_result;
                 platform_info.github_attestations = None;
             }
-        }
-
-        // A metadata-looking name was already checked against the configured choice.
-        if reused_locked_url && !asset_matcher::is_metadata_asset(&filename) {
-            ensure_raw_download_is_not_a_document(&file_path, opts.raw())?;
         }
 
         ctx.pr.next_operation();
@@ -2576,13 +2500,6 @@ impl UnifiedGitBackend {
             })
     }
 
-    /// Picks the best asset from `assets` whose name matches `pattern`.
-    ///
-    /// When a pattern matches more than one asset (e.g. `*linux*64` matching both
-    /// `cloudflared-linux-amd64` and `cloudflared-fips-linux-amd64`), prefer the
-    /// shortest name, then lexicographic order for determinism. Mirrors the
-    /// tiebreaker used by auto-detection.
-    /// See: https://github.com/jdx/mise/discussions/9358
     /// Whether `name` is exactly what the user's configured `url` or
     /// `asset_pattern` selects for `target`.
     fn locked_name_is_explicit_choice(
@@ -2603,6 +2520,13 @@ impl UnifiedGitBackend {
         false
     }
 
+    /// Picks the best asset from `assets` whose name matches `pattern`.
+    ///
+    /// When a pattern matches more than one asset (e.g. `*linux*64` matching both
+    /// `cloudflared-linux-amd64` and `cloudflared-fips-linux-amd64`), prefer the
+    /// shortest name, then lexicographic order for determinism. Mirrors the
+    /// tiebreaker used by auto-detection.
+    /// See: https://github.com/jdx/mise/discussions/9358
     fn pick_by_pattern<T, I, F>(&self, assets: I, pattern: &str, name_of: F) -> Option<T>
     where
         I: IntoIterator<Item = T>,
@@ -4247,28 +4171,6 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_raw_download_document_check() {
-        let dir = tempfile::tempdir().unwrap();
-        let opts = ToolVersionOptions::default();
-        let check = |name: &str, body: &[u8]| {
-            let path = dir.path().join(name);
-            std::fs::write(&path, body).unwrap();
-            ensure_raw_download_is_not_a_document(&path, &opts)
-        };
-        assert!(check("sbom", b"  {\"spdxVersion\": \"SPDX-2.3\"}").is_err());
-        assert!(check("list", b"[{\"a\": 1}]").is_err());
-        assert!(check("12345", b"{\"a\": 1}\n{\"b\": 2}\n").is_err());
-        assert!(check("multi.intoto.jsonl.raw", b"{\"a\": 1}\n\n{\"b\": 2}").is_err());
-        assert!(check("xml", b"<?xml version=\"1.0\"?><bom/>").is_err());
-        assert!(check("html", b"<html><body></body></html>").is_err());
-        assert!(check("test-script", b"[ -n \"$HOME\" ] || exit 1\necho hi\n").is_ok());
-        assert!(check("brace-script", b"{ echo hi; }\n").is_ok());
-        assert!(check("shebang", b"#!/bin/sh\necho hi\n").is_ok());
-        assert!(check("elf", b"\x7fELF\x02\x01").is_ok());
-        assert!(check("tool.tar.gz", b"{not really}").is_ok());
     }
 
     #[test]

@@ -25,7 +25,7 @@ TOML
 assert_fail "mise install --locked" "is a metadata file"
 assert_fail "mise install" "is a metadata file"
 
-# A url_api that names a metadata file is rejected too. (Asset-id API URLs carry no name; a raw download that is a JSON/XML document is refused after download, see the unit tests.)
+# A url_api that names a metadata file is rejected too. (Asset-id API URLs carry no name and are not detected; that is out of scope.)
 sed -i "s|^url = .*|url = \"https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v4.0.2/editorconfig-checker-darwin-all.tar.gz\"\nurl_api = \"https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/x.tar.gz.intoto.jsonl\"|" mise.lock
 assert_fail "mise install --locked" "is a metadata file"
 
