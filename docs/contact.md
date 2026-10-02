@@ -10,7 +10,7 @@ This keeps answers searchable and lets other users help. Report bugs in
 
 Before participating, read the [community participation policy](/contributing.html#community-participation).
 You may only use AI to reply to a Discussion or Issue if you created it, opened a PR that fixes it,
-or have already had a contribution merged into mise. Anyone else who does is banned from all of
+or have already had a contribution, attributed to your GitHub account, merged into the default branch of mise. Anyone else who does is banned from all of
 jdx's projects. Using AI to help write and file your own Discussion or Issue is fine.
 
 - [Issues](https://github.com/jdx/mise/issues): report a bug with the command, relevant
