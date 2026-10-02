@@ -335,6 +335,16 @@ fn looks_like_document(content: &[u8]) -> bool {
     if serde_json::from_slice::<serde::de::IgnoredAny>(content).is_ok() {
         return true;
     }
+    // JSON Lines, such as a multi-record `.intoto.jsonl` attestation bundle.
+    let mut lines = content
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        .peekable();
+    if lines.peek().is_some()
+        && lines.all(|line| serde_json::from_slice::<serde::de::IgnoredAny>(line).is_ok())
+    {
+        return true;
+    }
     let text = String::from_utf8_lossy(content);
     let text = text.trim_start();
     text.starts_with("<?xml")
@@ -971,10 +981,10 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let reused_locked_api = tv
+        let reused_locked_url = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(|p| p.url.is_some() && p.url_api.is_some());
+            .is_some_and(|p| p.url.is_some());
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
             && existing_platform.url.is_some()
         {
@@ -1096,7 +1106,7 @@ impl Backend for UnifiedGitBackend {
         };
 
         // Download and install
-        self.download_and_install(ctx, &mut tv, &asset, &opts, reused_locked_api)
+        self.download_and_install(ctx, &mut tv, &asset, &opts, reused_locked_url)
             .await?;
         for (index, asset) in additional_assets.iter().enumerate() {
             self.download_verify_and_install_additional_asset(ctx, &mut tv, asset, &opts, index)
@@ -1782,7 +1792,7 @@ impl UnifiedGitBackend {
         tv: &mut ToolVersion,
         asset: &ReleaseAsset,
         opts: &GitBackendOptions<'_>,
-        reused_locked_api: bool,
+        reused_locked_url: bool,
     ) -> Result<()> {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
@@ -1906,7 +1916,7 @@ impl UnifiedGitBackend {
         }
 
         // A metadata-looking name was already checked against the configured choice.
-        if reused_locked_api && !asset_matcher::is_metadata_asset(&filename) {
+        if reused_locked_url && !asset_matcher::is_metadata_asset(&filename) {
             ensure_raw_download_is_not_a_document(&file_path, opts.raw())?;
         }
 
@@ -4250,6 +4260,8 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         };
         assert!(check("sbom", b"  {\"spdxVersion\": \"SPDX-2.3\"}").is_err());
         assert!(check("list", b"[{\"a\": 1}]").is_err());
+        assert!(check("12345", b"{\"a\": 1}\n{\"b\": 2}\n").is_err());
+        assert!(check("multi.intoto.jsonl.raw", b"{\"a\": 1}\n\n{\"b\": 2}").is_err());
         assert!(check("xml", b"<?xml version=\"1.0\"?><bom/>").is_err());
         assert!(check("html", b"<html><body></body></html>").is_err());
         assert!(check("test-script", b"[ -n \"$HOME\" ] || exit 1\necho hi\n").is_ok());
