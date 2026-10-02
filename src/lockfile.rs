@@ -793,6 +793,20 @@ impl PlatformInfo {
             && self.additional_artifacts.is_empty()
     }
 
+    /// Whether both describe the same persisted data. Ignores `size`, which is
+    /// read from existing lockfiles but never written.
+    pub(crate) fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
+        fn persisted(info: &PlatformInfo) -> PlatformInfo {
+            let mut info = info.clone();
+            info.size = None;
+            for artifact in &mut info.additional_artifacts {
+                artifact.size = None;
+            }
+            info
+        }
+        persisted(self) == persisted(other)
+    }
+
     /// Drop the fields that describe one specific downloaded artifact, keeping
     /// the fields that describe how the tool is built or what it depends on.
     /// Used when an entry is known to be for the right tool version but not
@@ -1789,6 +1803,40 @@ impl Lockfile {
         for (short, entries) in &mut self.tools {
             entries
                 .retain(|entry| (entry.uv.is_none() && entry.aube.is_none()) || keep(short, entry));
+        }
+    }
+
+    /// Drop unbound (no specifiers) entries that a bound entry of the same
+    /// version and backend supersedes. An unbound entry with platform data the
+    /// bound entry lacks or records differently (checksum, URL) is kept, as is any unbound entry with no bound sibling.
+    /// `in_scope` limits the pruning to tools the caller resolved.
+    pub fn retain_unsuperseded_unbound_entries(
+        &mut self,
+        mut in_scope: impl FnMut(&str, &LockfileTool) -> bool,
+    ) {
+        for (short, entries) in &mut self.tools {
+            let superseded = |entry: &LockfileTool, all: &[LockfileTool]| {
+                entry.specifiers.is_empty()
+                    && entry.uv.is_none()
+                    && entry.aube.is_none()
+                    && all.iter().any(|bound| {
+                        !bound.specifiers.is_empty()
+                            && bound.version == entry.version
+                            && bound.backend == entry.backend
+                            && entry.platforms.iter().all(|(key, info)| {
+                                bound
+                                    .platforms
+                                    .get(key)
+                                    .is_some_and(|b| b.same_persisted_data(info))
+                            })
+                    })
+            };
+            let drop = entries
+                .iter()
+                .map(|entry| in_scope(short, entry) && superseded(entry, entries))
+                .collect_vec();
+            let mut drop = drop.into_iter();
+            entries.retain(|_| !drop.next().unwrap_or(false));
         }
     }
 
@@ -5343,6 +5391,91 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn test_retain_unsuperseded_unbound_entries() {
+        let tool = |version: &str, backend: &str, specifiers: &[&str]| LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            specifiers: specifiers.iter().map(|s| s.to_string()).collect(),
+            options: BTreeMap::new(),
+            platforms: BTreeMap::new(),
+            aube: None,
+            uv: None,
+        };
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "pipx:cowsay".to_string(),
+            vec![
+                tool("6.1", "pipx:cowsay", &[]),
+                tool("6.1", "pipx:cowsay", &["6.1"]),
+            ],
+        );
+        // No bound sibling with the same version: kept.
+        lockfile.tools.insert(
+            "a".to_string(),
+            vec![tool("1", "a", &[]), tool("2", "a", &["2"])],
+        );
+        // Bound sibling has a different backend: kept.
+        lockfile.tools.insert(
+            "b".to_string(),
+            vec![tool("1", "b", &[]), tool("1", "other", &["1"])],
+        );
+        // Same platform key but conflicting checksum: kept; identical: pruned.
+        let with_platform = |version: &str, checksum: &str, specifiers: &[&str]| {
+            let mut t = tool(version, "c", specifiers);
+            t.platforms.insert(
+                "linux-x64".to_string(),
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    ..Default::default()
+                },
+            );
+            t
+        };
+        lockfile.tools.insert(
+            "c".to_string(),
+            vec![
+                with_platform("1", "x", &[]),
+                with_platform("1", "y", &["1"]),
+            ],
+        );
+        // Matching platform key but the bound entry lacks the saved data: kept.
+        let mut empty_bound = tool("1", "e", &["1"]);
+        empty_bound
+            .platforms
+            .insert("linux-x64".to_string(), PlatformInfo::default());
+        let mut unbound = with_platform("1", "x", &[]);
+        unbound.backend = Some("e".to_string());
+        lockfile
+            .tools
+            .insert("e".to_string(), vec![unbound, empty_bound]);
+        // Identical persisted data but a differing read-only size: pruned.
+        let mut sized = with_platform("1", "x", &["1"]);
+        sized.backend = Some("f".to_string());
+        sized.platforms.get_mut("linux-x64").unwrap().size = Some(7);
+        let mut unsized_ = with_platform("1", "x", &[]);
+        unsized_.backend = Some("f".to_string());
+        lockfile
+            .tools
+            .insert("f".to_string(), vec![unsized_, sized]);
+        lockfile.tools.insert(
+            "d".to_string(),
+            vec![
+                with_platform("1", "x", &[]),
+                with_platform("1", "x", &["1"]),
+            ],
+        );
+        lockfile.retain_unsuperseded_unbound_entries(|_, _| true);
+        assert_eq!(lockfile.tools["pipx:cowsay"].len(), 1);
+        assert!(!lockfile.tools["pipx:cowsay"][0].specifiers.is_empty());
+        assert_eq!(lockfile.tools["a"].len(), 2);
+        assert_eq!(lockfile.tools["b"].len(), 2);
+        assert_eq!(lockfile.tools["c"].len(), 2);
+        assert_eq!(lockfile.tools["d"].len(), 1);
+        assert_eq!(lockfile.tools["e"].len(), 2);
+        assert_eq!(lockfile.tools["f"].len(), 1);
+    }
 
     #[test]
     fn test_outdated_lockfile_version_waits_six_months_after_newer_format() {
