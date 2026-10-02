@@ -1247,7 +1247,7 @@ fn has_linked_version(ba: &BackendArg) -> bool {
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
             if target.is_absolute()
                 && !is_mise_managed_symlink_target(&target)
-                && !is_rustup_bin_dir(ba, &target)
+                && !is_rustup_install(ba, &path, &target)
             {
                 return true;
             }
@@ -1257,16 +1257,44 @@ fn has_linked_version(ba: &BackendArg) -> bool {
 }
 
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
-/// outside mise's directories but is not a user-linked version.
-fn is_rustup_bin_dir(ba: &BackendArg, target: &Path) -> bool {
-    ba.full_without_opts() == "core:rust"
-        && target
-            .join(if cfg!(windows) {
-                "rustup.exe"
-            } else {
-                "rustup"
-            })
-            .exists()
+/// outside mise's directories. Unlike a `mise link` to the same directory,
+/// the toolchain behind them is registered in `$RUSTUP_HOME/toolchains`.
+fn is_rustup_install(ba: &BackendArg, link: &Path, target: &Path) -> bool {
+    if ba.full_without_opts() != "core:rust" {
+        return false;
+    }
+    let rustup = if cfg!(windows) {
+        "rustup.exe"
+    } else {
+        "rustup"
+    };
+    if !target.join(rustup).exists() {
+        return false;
+    }
+    let Some(name) = link.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let rustup_home = Settings::get()
+        .rust
+        .rustup_home
+        .clone()
+        .or_else(|| env::var_path("RUSTUP_HOME"))
+        .unwrap_or_else(|| dirs::HOME.join(".rustup"));
+    rustup_toolchain_installed(&rustup_home.join("toolchains"), name)
+}
+
+/// rustup names toolchain directories `<channel-or-version>-<host triple>`.
+fn rustup_toolchain_installed(toolchains: &Path, name: &str) -> bool {
+    let prefix = format!("{name}-");
+    fs::read_dir(toolchains)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| {
+            let n = e.file_name();
+            let n = n.to_string_lossy();
+            n == name || n.starts_with(&prefix)
+        })
 }
 
 fn is_mise_managed_symlink_target(target: &Path) -> bool {
@@ -1545,33 +1573,18 @@ mod tests {
     }
 
     #[test]
-    fn has_linked_version_ignores_rustup_bin_dir_for_core_rust() -> Result<()> {
+    fn rustup_toolchain_installed_matches_registered_toolchains() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let mut backend = BackendArg::new_raw(
-            "rust".to_string(),
-            Some("core:rust".to_string()),
-            "rust".to_string(),
-            None,
-            BackendResolution::new(false),
-        );
-        backend.set_installs_path(temp_dir.path().join("installs").join("rust"));
-        fs::create_dir_all(backend.installs_path())?;
+        let toolchains = temp_dir.path().join("toolchains");
+        fs::create_dir_all(toolchains.join("1.99.0-x86_64-unknown-linux-gnu"))?;
 
-        let cargo_bin = temp_dir.path().join("cargo").join("bin");
-        fs::create_dir_all(&cargo_bin)?;
-        let rustup = if cfg!(windows) {
-            "rustup.exe"
-        } else {
-            "rustup"
-        };
-        fs::write(cargo_bin.join(rustup), "")?;
-        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("1.99.0"))?;
-        assert!(!has_linked_version(&backend));
-
-        let other = temp_dir.path().join("other");
-        fs::create_dir_all(&other)?;
-        crate::file::make_symlink_or_file(&other, &backend.installs_path().join("custom"))?;
-        assert!(has_linked_version(&backend));
+        assert!(rustup_toolchain_installed(&toolchains, "1.99.0"));
+        assert!(!rustup_toolchain_installed(&toolchains, "1.9"));
+        assert!(!rustup_toolchain_installed(&toolchains, "custom"));
+        assert!(!rustup_toolchain_installed(
+            &temp_dir.path().join("missing"),
+            "1.99.0"
+        ));
 
         Ok(())
     }
