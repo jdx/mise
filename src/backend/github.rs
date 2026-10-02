@@ -329,6 +329,21 @@ impl<'a> GitBackendOptions<'a> {
     }
 }
 
+/// Whether `content` is, as a whole, a JSON document or an XML/HTML document.
+/// Shell scripts that merely start with `[` or `{` do not parse as either.
+fn looks_like_document(content: &[u8]) -> bool {
+    if serde_json::from_slice::<serde::de::IgnoredAny>(content).is_ok() {
+        return true;
+    }
+    let text = String::from_utf8_lossy(content);
+    let text = text.trim_start();
+    text.starts_with("<?xml")
+        || text.starts_with("<!")
+        || text
+            .strip_prefix('<')
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_alphabetic()))
+}
+
 /// A locked `url_api` (an opaque asset id on GitHub) is what private releases
 /// download from, and its file name cannot be checked offline, so an edited lock
 /// could keep a binary name in `url` and point `url_api` at an SBOM. A raw
@@ -348,10 +363,20 @@ fn ensure_raw_download_is_not_a_document(
     if format != file::ExtractionFormat::Raw {
         return Ok(());
     }
+    // Cheap first look: only text that could be JSON or markup is read in full.
+    const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
+    let mut file = std::fs::File::open(file_path)?;
     let mut head = [0u8; 64];
-    let read = std::fs::File::open(file_path)?.read(&mut head)?;
-    let first = head[..read].iter().find(|b| !b.is_ascii_whitespace());
-    if matches!(first, Some(b'{' | b'[' | b'<')) {
+    let read = file.read(&mut head)?;
+    let Some(first) = head[..read].iter().find(|b| !b.is_ascii_whitespace()) else {
+        return Ok(());
+    };
+    if !matches!(first, b'{' | b'[' | b'<') {
+        return Ok(());
+    }
+    let mut content = head[..read].to_vec();
+    file.take(MAX_DOCUMENT_BYTES).read_to_end(&mut content)?;
+    if looks_like_document(&content) {
         eyre::bail!(
             "downloaded {name} is a JSON or XML document (for example an SBOM or attestation), not a tool binary.\n\
              The lockfile entry may point at the wrong asset; run `mise lock` to regenerate it."
@@ -946,6 +971,10 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
+        let reused_locked_api = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|p| p.url.is_some() && p.url_api.is_some());
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
             && existing_platform.url.is_some()
         {
@@ -1067,7 +1096,7 @@ impl Backend for UnifiedGitBackend {
         };
 
         // Download and install
-        self.download_and_install(ctx, &mut tv, &asset, &opts)
+        self.download_and_install(ctx, &mut tv, &asset, &opts, reused_locked_api)
             .await?;
         for (index, asset) in additional_assets.iter().enumerate() {
             self.download_verify_and_install_additional_asset(ctx, &mut tv, asset, &opts, index)
@@ -1753,6 +1782,7 @@ impl UnifiedGitBackend {
         tv: &mut ToolVersion,
         asset: &ReleaseAsset,
         opts: &GitBackendOptions<'_>,
+        reused_locked_api: bool,
     ) -> Result<()> {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
@@ -1876,7 +1906,7 @@ impl UnifiedGitBackend {
         }
 
         // A metadata-looking name was already checked against the configured choice.
-        if !asset_matcher::is_metadata_asset(&filename) {
+        if reused_locked_api && !asset_matcher::is_metadata_asset(&filename) {
             ensure_raw_download_is_not_a_document(&file_path, opts.raw())?;
         }
 
@@ -4213,15 +4243,20 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     fn test_raw_download_document_check() {
         let dir = tempfile::tempdir().unwrap();
         let opts = ToolVersionOptions::default();
-        let sbom = dir.path().join("tool-linux-x64");
-        std::fs::write(&sbom, b"  {\"spdxVersion\": \"SPDX-2.3\"}").unwrap();
-        assert!(ensure_raw_download_is_not_a_document(&sbom, &opts).is_err());
-        let script = dir.path().join("tool");
-        std::fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
-        assert!(ensure_raw_download_is_not_a_document(&script, &opts).is_ok());
-        let archive = dir.path().join("tool.tar.gz");
-        std::fs::write(&archive, b"{not really}").unwrap();
-        assert!(ensure_raw_download_is_not_a_document(&archive, &opts).is_ok());
+        let check = |name: &str, body: &[u8]| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, body).unwrap();
+            ensure_raw_download_is_not_a_document(&path, &opts)
+        };
+        assert!(check("sbom", b"  {\"spdxVersion\": \"SPDX-2.3\"}").is_err());
+        assert!(check("list", b"[{\"a\": 1}]").is_err());
+        assert!(check("xml", b"<?xml version=\"1.0\"?><bom/>").is_err());
+        assert!(check("html", b"<html><body></body></html>").is_err());
+        assert!(check("test-script", b"[ -n \"$HOME\" ] || exit 1\necho hi\n").is_ok());
+        assert!(check("brace-script", b"{ echo hi; }\n").is_ok());
+        assert!(check("shebang", b"#!/bin/sh\necho hi\n").is_ok());
+        assert!(check("elf", b"\x7fELF\x02\x01").is_ok());
+        assert!(check("tool.tar.gz", b"{not really}").is_ok());
     }
 
     #[test]
