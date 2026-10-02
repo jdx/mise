@@ -7,15 +7,23 @@ outline: [2, 3]
 
 ## Community Participation
 
-AI-assisted responses are welcome, including one-off responses from people trying to help.
-This is especially true when you are answering your own question, are directly involved in or
-personally connected to the original question, or are an established project contributor. In
-all cases, review and verify the response before posting it.
+::: danger AI replies to Discussions and Issues are restricted
+AI replies to Discussions and Issues are restricted, and breaking the rule is **an instant ban across all of jdx's projects**.
 
-Do not use AI to spam project support channels with drive-by answers across Discussions when
-you have no connection to the questions or the project. This includes raw, lightly edited, or
-disclosed model output. This policy is intended to prevent discussion spam, not discourage
-individual responses. Accounts that engage in this behavior will be blocked from the project.
+You may only use AI to reply to a [Discussion](https://github.com/jdx/mise/discussions) or
+[Issue](https://github.com/jdx/mise/issues) if you created it, you opened a PR that fixes it, or
+you have already had a contribution, attributed to your GitHub account, merged into the default branch of mise. Everyone else is not allowed to use AI to
+reply. This is a growing problem.
+
+This includes raw, lightly edited, reviewed, and disclosed model output. Adding an "AI-assisted"
+footer does not make an AI reply acceptable on its own. If you are running an agent, make sure it
+does not post to threads you are not allowed to reply to, and never let it sweep through many
+threads at once.
+:::
+
+Using AI to help write and file your own Discussion or Issue is fine. Review it before posting, and
+disclose that AI contributed. If you are allowed to use AI to reply, review and verify the reply before
+posting it, and disclose that AI contributed.
 
 ## Contribution Expectations
 
