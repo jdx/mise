@@ -162,6 +162,11 @@ fn in_terminal_foreground_pgrp() -> bool {
 /// Whether the last SIGINT came from a process (`kill`, `sigqueue`) rather
 /// than from the terminal. Only Linux can tell: macOS gives a terminal Ctrl-C
 /// the same `si_code` and a sender pid, just like `kill`.
+///
+/// `si_code` doesn't say whom the sender targeted: `kill -INT -<pgid>` also
+/// reports SI_USER, so children in that group get the SIGINT twice. Nothing
+/// tells the two apart, and a second SIGINT beats none: a child that never
+/// gets one keeps mise waiting on it.
 #[cfg(target_os = "linux")]
 static SIGINT_FROM_PROCESS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
