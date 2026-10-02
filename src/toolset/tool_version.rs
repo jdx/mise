@@ -190,7 +190,7 @@ impl ToolVersion {
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
-            && !has_linked_version(config, request.ba()).await
+            && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -206,8 +206,7 @@ impl ToolVersion {
             request,
             ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
         ) {
-            let linked = has_linked_version(config, request.ba()).await;
-            Self::ensure_unlocked_resolution_allowed(config, &request, &opts, linked)?;
+            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
@@ -608,7 +607,6 @@ impl ToolVersion {
         config: &Config,
         request: &ToolRequest,
         opts: &ResolveOptions,
-        linked: bool,
     ) -> Result<()> {
         let settings = Settings::get();
         let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
@@ -616,7 +614,7 @@ impl ToolVersion {
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !linked
+            && !has_linked_version(request.ba())
             && request
                 .lockfile_source()
                 .and_then(ToolSource::path)
@@ -661,14 +659,13 @@ impl ToolVersion {
             None => (v.as_str(), false),
         };
         if opts.use_locked_version
-            && !has_linked_version(config, request.ba()).await
+            && !has_linked_version(request.ba())
             && let Some(lt) =
                 request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
-        let linked = has_linked_version(config, request.ba()).await;
-        Self::ensure_unlocked_resolution_allowed(config, &request, opts, linked)?;
+        Self::ensure_unlocked_resolution_allowed(config, &request, opts)?;
 
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -1233,16 +1230,7 @@ impl ResolveOptions {
 /// Check if a tool has any user-linked versions (created by `mise link`).
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
-async fn has_linked_version(config: &Arc<Config>, ba: &BackendArg) -> bool {
-    let rustup_home = if ba.full_without_opts() == "core:rust" {
-        crate::plugins::core::rustup_home(config).await
-    } else {
-        None
-    };
-    has_linked_version_in(ba, rustup_home.as_deref())
-}
-
-fn has_linked_version_in(ba: &BackendArg, rustup_home: Option<&Path>) -> bool {
+fn has_linked_version(ba: &BackendArg) -> bool {
     if install_state::get_tool_full(&ba.short)
         .is_some_and(|installed| installed != ba.full_without_opts())
     {
@@ -1259,7 +1247,7 @@ fn has_linked_version_in(ba: &BackendArg, rustup_home: Option<&Path>) -> bool {
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
             if target.is_absolute()
                 && !is_mise_managed_symlink_target(&target)
-                && !is_rustup_install(ba, rustup_home, &path, &target)
+                && !is_rustup_install(ba, &path, &target)
             {
                 return true;
             }
@@ -1269,46 +1257,30 @@ fn has_linked_version_in(ba: &BackendArg, rustup_home: Option<&Path>) -> bool {
 }
 
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
-/// outside mise's directories. Unlike a `mise link` to the same directory,
-/// the toolchain behind them is registered in `$RUSTUP_HOME/toolchains`.
-fn is_rustup_install(
-    ba: &BackendArg,
-    rustup_home: Option<&Path>,
-    link: &Path,
-    target: &Path,
-) -> bool {
-    if ba.full_without_opts() != "core:rust" {
-        return false;
-    }
+/// outside mise's directories. They are named after the rustup toolchain they
+/// stand for (`1.99.0`, `stable`, `nightly-2026-10-01`), so a link to that
+/// directory under any other name is a user's `mise link`.
+fn is_rustup_install(ba: &BackendArg, link: &Path, target: &Path) -> bool {
     let rustup = if cfg!(windows) {
         "rustup.exe"
     } else {
         "rustup"
     };
-    if !target.join(rustup).exists() {
-        return false;
-    }
-    let Some(name) = link.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    let Some(rustup_home) = rustup_home else {
-        return false;
-    };
-    rustup_toolchain_installed(&rustup_home.join("toolchains"), name)
+    ba.full_without_opts() == "core:rust"
+        && target.join(rustup).exists()
+        && link
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_rustup_toolchain_spec)
 }
 
-/// rustup names toolchain directories `<channel-or-version>-<host triple>`.
-fn rustup_toolchain_installed(toolchains: &Path, name: &str) -> bool {
-    let prefix = format!("{name}-");
-    fs::read_dir(toolchains)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|e| {
-            let n = e.file_name();
-            let n = n.to_string_lossy();
-            n == name || n.starts_with(&prefix)
-        })
+fn is_rustup_toolchain_spec(name: &str) -> bool {
+    let channel = name.split('-').next().unwrap_or(name);
+    matches!(channel, "stable" | "beta" | "nightly")
+        || (channel.split('.').count() >= 2
+            && channel
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit())))
 }
 
 fn is_mise_managed_symlink_target(target: &Path) -> bool {
@@ -1581,30 +1553,13 @@ mod tests {
         fs::create_dir_all(&external_target)?;
         crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("brew"))?;
 
-        assert!(has_linked_version_in(&backend, None));
+        assert!(has_linked_version(&backend));
 
         Ok(())
     }
 
     #[test]
-    fn rustup_toolchain_installed_matches_registered_toolchains() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let toolchains = temp_dir.path().join("toolchains");
-        fs::create_dir_all(toolchains.join("1.99.0-x86_64-unknown-linux-gnu"))?;
-
-        assert!(rustup_toolchain_installed(&toolchains, "1.99.0"));
-        assert!(!rustup_toolchain_installed(&toolchains, "1.9"));
-        assert!(!rustup_toolchain_installed(&toolchains, "custom"));
-        assert!(!rustup_toolchain_installed(
-            &temp_dir.path().join("missing"),
-            "1.99.0"
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn has_linked_version_distinguishes_rustup_installs_from_user_links() -> Result<()> {
+    fn has_linked_version_ignores_rustup_bin_dir_for_core_rust() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let mut backend = BackendArg::new_raw(
             "rust".to_string(),
@@ -1624,19 +1579,39 @@ mod tests {
             "rustup"
         };
         fs::write(cargo_bin.join(rustup), "")?;
-        let rustup_home = temp_dir.path().join("rustup");
-        fs::create_dir_all(rustup_home.join("toolchains/1.99.0-x86_64-unknown-linux-gnu"))?;
+        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("1.99.0"))?;
+        assert!(!has_linked_version(&backend));
 
-        let installed = backend.installs_path().join("1.99.0");
-        crate::file::make_symlink_or_file(&cargo_bin, &installed)?;
-        assert!(!has_linked_version_in(&backend, Some(&rustup_home)));
-        // Without the registered home, the same link cannot be proven mise's own.
-        assert!(has_linked_version_in(&backend, None));
+        // A user link to the same directory under a non-toolchain name stays linked.
+        let custom = backend.installs_path().join("custom");
+        crate::file::make_symlink_or_file(&cargo_bin, &custom)?;
+        assert!(has_linked_version(&backend));
+        fs::remove_file(&custom)?;
 
-        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("custom"))?;
-        assert!(has_linked_version_in(&backend, Some(&rustup_home)));
+        let other = temp_dir.path().join("other");
+        fs::create_dir_all(&other)?;
+        crate::file::make_symlink_or_file(&other, &backend.installs_path().join("custom"))?;
+        assert!(has_linked_version(&backend));
 
         Ok(())
+    }
+
+    #[test]
+    fn rustup_toolchain_spec_matches_mise_created_names() {
+        for name in [
+            "1.99.0",
+            "1.99",
+            "stable",
+            "beta",
+            "nightly",
+            "nightly-2026-10-01",
+            "1.99.0-x86_64-unknown-linux-gnu",
+        ] {
+            assert!(is_rustup_toolchain_spec(name), "{name}");
+        }
+        for name in ["custom", "latest", "1", "1.x", "my-stable", ""] {
+            assert!(!is_rustup_toolchain_spec(name), "{name}");
+        }
     }
 
     #[test]
@@ -1657,7 +1632,7 @@ mod tests {
             &backend.installs_path().join("escaped"),
         )?;
 
-        assert!(has_linked_version_in(&backend, None));
+        assert!(has_linked_version(&backend));
 
         Ok(())
     }
@@ -1694,7 +1669,7 @@ mod tests {
             managed_targets.push(target);
         }
 
-        assert!(!has_linked_version_in(&backend, None));
+        assert!(!has_linked_version(&backend));
 
         Ok(())
     }
@@ -1710,7 +1685,7 @@ mod tests {
             &backend.installs_path().join("latest"),
         )?;
 
-        assert!(!has_linked_version_in(&backend, None));
+        assert!(!has_linked_version(&backend));
 
         Ok(())
     }
