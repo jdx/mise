@@ -1984,15 +1984,14 @@ mod tests {
     }
 
     fn statement_with(resources: &str) -> Statement {
-        let skill_subject = resources
-            .contains(r#""asset":"t-skill.tar.gz""#)
-            .then(|| {
-                format!(
-                    r#",{{"name":"t-skill.tar.gz","digest":{{"sha256":"{}"}}}}"#,
-                    "b".repeat(64)
-                )
-            })
-            .unwrap_or_default();
+        let skill_subject = if resources.contains(r#""asset":"t-skill.tar.gz""#) {
+            format!(
+                r#",{{"name":"t-skill.tar.gz","digest":{{"sha256":"{}"}}}}"#,
+                "b".repeat(64)
+            )
+        } else {
+            String::new()
+        };
         let json = format!(
             r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}}{skill_subject}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1.0.0","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t","u"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
             a = "a".repeat(64),
