@@ -2156,7 +2156,249 @@ fn bin_link_path(bins_dir: &Path, name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::BackendResolution;
+    use crate::install_context::InstallContext;
+    use crate::toolset::{ToolRequest, ToolSource, Toolset};
+    use crate::ui::progress_report::QuietReport;
     use packslip::model::Bin;
+    use sha2::{Digest, Sha256};
+    use std::io::{Cursor, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::OnceCell;
+
+    #[derive(Debug)]
+    struct RetryLifecycleBackend {
+        ba: Arc<BackendArg>,
+        packslip: PackslipBackend,
+        statement: Statement,
+        payload_installs: AtomicUsize,
+        repairs: AtomicUsize,
+    }
+
+    impl RetryLifecycleBackend {
+        fn new(ba: Arc<BackendArg>, statement: Statement) -> Self {
+            Self {
+                packslip: PackslipBackend::from_arg((*ba).clone()),
+                ba,
+                statement,
+                payload_installs: AtomicUsize::new(0),
+                repairs: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for RetryLifecycleBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn is_install_satisfied(
+            &self,
+            config: &Arc<Config>,
+            tv: &ToolVersion,
+            check_symlink: bool,
+        ) -> Result<bool> {
+            self.packslip
+                .is_install_satisfied(config, tv, check_symlink)
+                .await
+        }
+
+        async fn repair_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<bool> {
+            self.repairs.fetch_add(1, Ordering::SeqCst);
+            self.packslip.repair_install(ctx, tv).await
+        }
+
+        async fn verify_install(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+            self.packslip.verify_install(ctx, tv).await
+        }
+
+        async fn verify_repaired_install(
+            &self,
+            ctx: &InstallContext,
+            tv: &ToolVersion,
+        ) -> Result<()> {
+            self.packslip.verify_repaired_install(ctx, tv).await
+        }
+
+        async fn install_version_(
+            &self,
+            ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            self.payload_installs.fetch_add(1, Ordering::SeqCst);
+            let install_path = tv.install_path();
+            file::write(install_path.join("binary"), b"original binary")?;
+            file::write(
+                install_path.join(STATEMENT_FILE),
+                serde_json::to_vec_pretty(&self.statement)?,
+            )?;
+            file::write(
+                install_path.join(SELECTED_ARTIFACT_FILE),
+                self.statement.predicate.artifacts[0].name.as_bytes(),
+            )?;
+            crate::packslip::fetch_files(
+                &tv,
+                &self.statement,
+                self.statement.predicate.artifacts.first(),
+                ctx.pr.as_ref(),
+            )
+            .await?;
+            Ok(tv)
+        }
+    }
+
+    fn retry_lifecycle_statement(skill_url: &str, skill_digest: &str) -> Statement {
+        serde_json::from_value(serde_json::json!({
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+                {"name": "binary", "digest": {"sha256": "a".repeat(64)}},
+                {"name": "skill.zip", "digest": {"sha256": skill_digest}}
+            ],
+            "predicateType": "https://packslip.dev/release/v1",
+            "predicate": {
+                "project": "github.com/o/r",
+                "version": "1.0.0",
+                "published_at": "2026-09-01T00:00:00Z",
+                "artifacts": [{
+                    "name": "binary",
+                    "size": 15,
+                    "format": "raw",
+                    "bin": ["binary"]
+                }],
+                "resources": [{
+                    "kind": "skill",
+                    "name": "retry",
+                    "asset": "skill.zip",
+                    "url": skill_url
+                }],
+                "identity": {
+                    "scheme": "sigstore-oidc",
+                    "key_id": "https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1",
+                    "issuer": "https://token.actions.githubusercontent.com"
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    fn retry_lifecycle_context(config: Arc<Config>) -> InstallContext {
+        InstallContext {
+            config,
+            ts: Arc::new(Toolset::default()),
+            pr: Arc::new(QuietReport::new()),
+            force: false,
+            dry_run: false,
+            explicit_yes: true,
+            locked: false,
+            before_date: None,
+            dependency_context: OnceCell::new(),
+        }
+    }
+
+    fn retry_lifecycle_skill_archive() -> Vec<u8> {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file("retry/SKILL.md", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(b"# retry skill\n").unwrap();
+        archive.finish().unwrap().into_inner()
+    }
+
+    #[tokio::test]
+    async fn failed_skill_fetch_keeps_the_binary_and_plain_retry_repairs_it() {
+        let config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let initial_failure = server
+            .mock("GET", "/skill.zip")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let skill_archive = retry_lifecycle_skill_archive();
+        let skill_digest = hex::encode(Sha256::digest(&skill_archive));
+        let statement = retry_lifecycle_statement(
+            &format!("{}/skill.zip", server.url()),
+            &skill_digest,
+        );
+        statement.validate().unwrap();
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let name = format!("test-packslip-retry-lifecycle-{suffix}");
+        let ba = Arc::new(BackendArg::new_raw(
+            name.clone(),
+            None,
+            name,
+            None,
+            BackendResolution::new(true),
+        ));
+        let backend = RetryLifecycleBackend::new(ba.clone(), statement);
+        let tv = ToolVersion::new(
+            ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap(),
+            "1.0.0".into(),
+        );
+        let install_path = tv.install_path();
+
+        let error = backend
+            .install_version(retry_lifecycle_context(config.clone()), tv.clone())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("declared skill"));
+        initial_failure.assert_async().await;
+        assert_eq!(
+            file::read_to_string(install_path.join("binary")).unwrap(),
+            "original binary"
+        );
+        assert!(
+            !install_state::incomplete_file_path(&ba, &tv.tv_pathname()).exists(),
+            "the generic marker is cleared after the payload succeeds"
+        );
+        assert!(crate::packslip::skills_incomplete_path(&install_path).is_file());
+        assert!(backend.is_version_installed(&config, &tv, true));
+        assert!(!backend
+            .is_install_satisfied(&config, &tv, true)
+            .await
+            .unwrap());
+        assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
+
+        initial_failure.remove_async().await;
+        let repair = server
+            .mock("GET", "/skill.zip")
+            .with_status(200)
+            .with_body(skill_archive)
+            .expect(1)
+            .create_async()
+            .await;
+        backend
+            .install_version(retry_lifecycle_context(config.clone()), tv.clone())
+            .await
+            .unwrap();
+        repair.assert_async().await;
+        assert_eq!(
+            file::read_to_string(install_path.join("binary")).unwrap(),
+            "original binary"
+        );
+        assert!(install_path
+            .join(crate::packslip::RESOURCES_DIR)
+            .join("skills/retry/SKILL.md")
+            .is_file());
+        assert!(!crate::packslip::skills_incomplete_path(&install_path).exists());
+        assert!(backend
+            .is_install_satisfied(&config, &tv, true)
+            .await
+            .unwrap());
+        assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
+        assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
+
+        backend
+            .install_version(retry_lifecycle_context(config.clone()), tv.clone())
+            .await
+            .unwrap();
+        assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
+        assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn release_list_policy_keeps_bundle_and_index_signers_separate() {
