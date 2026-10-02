@@ -26,6 +26,9 @@ mod nightly_channel;
 #[derive(Debug)]
 pub(super) struct RustPlugin {
     ba: Arc<BackendArg>,
+    /// Channels `rustup check` reported an update for in this run, so the install
+    /// that follows an upgrade does not ask rustup (and the network) again.
+    updatable_channels: std::sync::Mutex<BTreeSet<String>>,
 }
 
 const RUST_NIGHTLY_MANIFEST_URL: &str =
@@ -89,6 +92,18 @@ fn rustup_check_toolchain_names(version: &str, default_host: Option<&str>) -> Ve
         names.push(built_for);
     }
     names
+}
+
+/// The only `<version>-<host>` toolchain `rustup check` lists, if there is
+/// exactly one.
+fn rustup_check_sole_host_toolchain(output: &str, version: &str) -> Option<String> {
+    let mut names = output.lines().filter_map(|line| {
+        let name = line.split_once(" - ")?.0;
+        let host = name.strip_prefix(version)?.strip_prefix('-')?;
+        rustup_component_suffix_is_host_triple(host).then(|| name.to_string())
+    });
+    let sole = names.next()?;
+    names.next().is_none().then_some(sole)
 }
 
 fn rustup_toolchain_is_host_qualified(version: &str) -> bool {
@@ -189,6 +204,7 @@ impl RustPlugin {
     pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
+            updatable_channels: Default::default(),
         }
     }
 
@@ -328,12 +344,22 @@ impl RustPlugin {
         tv: &ToolVersion,
     ) -> Option<(String, &'a str, &'a str)> {
         let settings = Settings::get();
-        rustup_check_toolchain_names(&tv.version, settings.rust.default_host.as_deref())
-            .into_iter()
-            .find_map(|name| {
-                let (current, available) = rustup_check_update(output, &name)?;
-                Some((name, current, available))
-            })
+        let named =
+            rustup_check_toolchain_names(&tv.version, settings.rust.default_host.as_deref())
+                .into_iter()
+                .find_map(|name| {
+                    let (current, available) = rustup_check_update(output, &name)?;
+                    Some((name, current, available))
+                });
+        if named.is_some() {
+            return named;
+        }
+        // rustup may have been initialized for a host other than the configured
+        // one or the one mise was built for. A single host-qualified listing of
+        // this toolchain is unambiguous; with several, give up.
+        let name = rustup_check_sole_host_toolchain(output, &tv.version)?;
+        let (current, available) = rustup_check_update(output, &name)?;
+        Some((name, current, available))
     }
 
     fn rustup_installed_items(
@@ -685,6 +711,7 @@ impl Backend for RustPlugin {
         if let Err(err) = self.link_nightly_channel(&tv, &runtime) {
             warn!("failed to make rustup's nightly toolchain match {tv}: {err:#}");
         }
+        self.updatable_channels.lock().unwrap().remove(&tv.version);
 
         Ok(tv)
     }
@@ -770,8 +797,16 @@ impl Backend for RustPlugin {
                 return Ok(None);
             }
             let out = self.rustup_check(config, tv).await?;
-            let Some((toolchain, current, available)) = self.rustup_check_update_for(&out, tv)
-            else {
+            let update = self.rustup_check_update_for(&out, tv);
+            if is_moving_channel(&tv.version) {
+                let mut updatable = self.updatable_channels.lock().unwrap();
+                if update.is_some() {
+                    updatable.insert(tv.version.clone());
+                } else {
+                    updatable.remove(&tv.version);
+                }
+            }
+            let Some((toolchain, current, available)) = update else {
                 return Ok(None);
             };
             debug!("rustup check: {toolchain} {current} -> {available}");
@@ -783,19 +818,17 @@ impl Backend for RustPlugin {
     }
 
     /// A `stable` or `beta` toolchain keeps its name when rustup updates it, so
-    /// mise's install marker never goes stale. Ask rustup, so that `mise upgrade`
-    /// actually reinstalls the channel instead of skipping it as installed.
-    async fn is_rolling_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
-        if !is_moving_channel(&tv.version) || Settings::get().offline() {
-            return false;
-        }
-        match self.rustup_check(config, tv).await {
-            Ok(out) => self.rustup_check_update_for(&out, tv).is_some(),
-            Err(err) => {
-                debug!("rustup check failed for {tv}: {err:#}");
-                false
-            }
-        }
+    /// mise's install marker never goes stale. Reuse the answer `outdated_info`
+    /// got from `rustup check`, so that `mise upgrade` reinstalls the channel
+    /// instead of skipping it as installed while a plain `mise install` of an
+    /// installed channel never goes to the network.
+    async fn is_rolling_version_outdated(&self, _config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        is_moving_channel(&tv.version)
+            && self
+                .updatable_channels
+                .lock()
+                .unwrap()
+                .contains(&tv.version)
     }
 
     /// Confirm the compiler of a restored install still runs, which
@@ -1281,6 +1314,7 @@ const RUST_TARGET_ARCHES: &[&str] = &[
     "powerpc64le",
     "riscv32",
     "riscv64",
+    "riscv64gc",
     "s390x",
     "sparc",
     "sparc64",
@@ -1449,6 +1483,26 @@ rustup - up to date : 1.29.1
             rustup_check_toolchain_names("stable-x86_64-pc-windows-gnu", Some(TARGET)),
             vec!["stable-x86_64-pc-windows-gnu".to_string()]
         );
+    }
+
+    #[test]
+    fn rustup_check_finds_a_sole_toolchain_under_any_host() {
+        let out = "\
+stable-riscv64gc-unknown-linux-gnu - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)
+nightly-riscv64gc-unknown-linux-gnu - up to date : 1.100.0-nightly (cccc 2026-08-23)
+rustup - up to date : 1.29.1
+";
+        assert_eq!(
+            rustup_check_sole_host_toolchain(out, "stable").as_deref(),
+            Some("stable-riscv64gc-unknown-linux-gnu")
+        );
+        // Two hosts for one channel are ambiguous, and non-hosts never match.
+        let two = format!(
+            "{out}stable-x86_64-unknown-linux-gnu - up to date : 1.99.0 (bbbb 2026-09-28)\n"
+        );
+        assert_eq!(rustup_check_sole_host_toolchain(&two, "stable"), None);
+        assert_eq!(rustup_check_sole_host_toolchain(out, "beta"), None);
+        assert_eq!(rustup_check_sole_host_toolchain(out, "rustup"), None);
     }
 
     #[test]

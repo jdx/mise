@@ -93,6 +93,11 @@ export MISE_RUST_DEFAULT_HOST="$HOST"
 mise install
 assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "1"
 
+# Neither reinstalling something installed nor listing it asks rustup for updates.
+mise install rust
+mise ls rust >/dev/null
+assert "! grep -q '^check' '$STATE/rustup.log'"
+
 # Up to date: only nightly is outdated, which must not count against stable.
 assert "mise outdated rust --json" "{}"
 mise upgrade rust
