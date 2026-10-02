@@ -256,14 +256,14 @@ impl DepsInstall {
             let sources = provider
                 .sources()
                 .iter()
-                .map(|p| p.display().to_string())
+                .map(crate::file::display_path)
                 .collect::<Vec<_>>()
                 .join(", ");
             let outputs = provider
                 .outputs()
                 .iter()
                 .chain(provider.optional_outputs().iter())
-                .map(|p| p.display().to_string())
+                .map(crate::file::display_path)
                 .collect::<Vec<_>>()
                 .join(", ");
 
