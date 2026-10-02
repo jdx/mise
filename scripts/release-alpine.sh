@@ -5,6 +5,8 @@ MISE_VERSION=$(./scripts/get-latest-version.sh)
 
 export GITLAB_HOST=gitlab.alpinelinux.org
 export GITLAB_TOKEN="$ALPINE_GITLAB_TOKEN"
+# GitHub repo (a fork of alpinelinux/aports) that receives a copy of each bump
+ALPINE_BACKUP_REPO="${ALPINE_BACKUP_REPO:-jdx/aports}"
 
 sudo chown -R packager:packager /github/home
 mkdir -p /github/home/.abuild
@@ -22,7 +24,21 @@ git config --global user.email 6271-jdxcode@users.gitlab.alpinelinux.org
 git clone https://github.com/alpinelinux/aports.git /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
-git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git/"
+if [ -n "${ALPINE_GITLAB_SSH_KEY:-}" ]; then
+	# The 418 challenge is served by the HTTP proxy in front of GitLab; sshd is
+	# not behind it, so pushing over SSH avoids it. Optional until the deploy key
+	# secret exists, then preferred over HTTPS.
+	sudo apk add --no-cache openssh-client
+	mkdir -p /home/packager/.ssh
+	chmod 700 /home/packager/.ssh
+	echo "$ALPINE_GITLAB_SSH_KEY" >/home/packager/.ssh/gitlab_alpine
+	chmod 600 /home/packager/.ssh/gitlab_alpine
+	echo "gitlab.alpinelinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA3AxnPM+Cquq/2QXWWmuHdgmfMIU+v/7kV/k3p+KpBd" >/home/packager/.ssh/known_hosts
+	export GIT_SSH_COMMAND="ssh -i /home/packager/.ssh/gitlab_alpine -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/packager/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+	git remote add jdxcode "git@gitlab.alpinelinux.org:jdxcode/aports.git"
+else
+	git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git/"
+fi
 git checkout -mb mise
 cd community/mise
 
@@ -42,7 +58,36 @@ fi
 git commit -m "community/mise: upgrade to ${MISE_VERSION#v}"
 
 if [ "$DRY_RUN" == 0 ]; then
-	git push jdxcode -f
+	# Keep a copy of the bump on GitHub first. gitlab.alpinelinux.org may answer
+	# the push below with an HTTP 418 anti-bot challenge from CI IP ranges; the
+	# build takes ~40 minutes, so this lets someone finish the push from a
+	# machine GitLab accepts instead of re-running the whole job. Best effort:
+	# a failure here must not block the real push.
+	git remote add backup "https://x-access-token:$GITHUB_TOKEN@github.com/$ALPINE_BACKUP_REPO.git"
+	backup_branch="mise-${MISE_VERSION#v}"
+	if ! git push backup "HEAD:refs/heads/$backup_branch" -f; then
+		echo "::warning::could not push $backup_branch to github.com/$ALPINE_BACKUP_REPO"
+	fi
+
+	pushed=0
+	for attempt in 1 2 3; do
+		if git push jdxcode -f; then
+			pushed=1
+			break
+		fi
+		echo "git push to gitlab.alpinelinux.org failed (attempt $attempt/3)"
+		[ "$attempt" -lt 3 ] && sleep $((attempt * 60))
+	done
+	if [ "$pushed" == 0 ]; then
+		cat <<EOF
+::error::could not push to gitlab.alpinelinux.org/jdxcode/aports (likely an HTTP 418 bot challenge on CI IPs).
+The bump is committed at github.com/$ALPINE_BACKUP_REPO branch $backup_branch. To finish by hand:
+  git clone --branch $backup_branch --single-branch https://github.com/$ALPINE_BACKUP_REPO.git aports
+  cd aports && git push git@gitlab.alpinelinux.org:jdxcode/aports.git HEAD:refs/heads/mise -f
+  glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
+EOF
+		exit 1
+	fi
 fi
 
 open_mr="$(glab mr list -R alpine/aports --author=@me)"
