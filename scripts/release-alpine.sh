@@ -67,7 +67,7 @@ if [ "$DRY_RUN" == 0 ]; then
 	# machine GitLab accepts instead of re-running the whole job. Best effort:
 	# a failure here must not block the real push.
 	{ set +x; } 2>/dev/null
-	git remote add backup "https://x-access-token:$GITHUB_TOKEN@github.com/$ALPINE_BACKUP_REPO.git"
+	git remote add backup "https://x-access-token:$GH_TOKEN@github.com/$ALPINE_BACKUP_REPO.git"
 	set -x
 	backup_branch="mise-${MISE_VERSION#v}"
 	backup_ok=0
