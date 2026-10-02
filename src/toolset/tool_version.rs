@@ -190,7 +190,7 @@ impl ToolVersion {
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !has_linked_version(config, request.ba()).await
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -206,7 +206,8 @@ impl ToolVersion {
             request,
             ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
         ) {
-            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
+            let linked = has_linked_version(config, request.ba()).await;
+            Self::ensure_unlocked_resolution_allowed(config, &request, &opts, linked)?;
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
@@ -607,6 +608,7 @@ impl ToolVersion {
         config: &Config,
         request: &ToolRequest,
         opts: &ResolveOptions,
+        linked: bool,
     ) -> Result<()> {
         let settings = Settings::get();
         let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
@@ -614,7 +616,7 @@ impl ToolVersion {
         if (invocation_locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !has_linked_version(request.ba())
+            && !linked
             && request
                 .lockfile_source()
                 .and_then(ToolSource::path)
@@ -659,13 +661,14 @@ impl ToolVersion {
             None => (v.as_str(), false),
         };
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !has_linked_version(config, request.ba()).await
             && let Some(lt) =
                 request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
-        Self::ensure_unlocked_resolution_allowed(config, &request, opts)?;
+        let linked = has_linked_version(config, request.ba()).await;
+        Self::ensure_unlocked_resolution_allowed(config, &request, opts, linked)?;
 
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -1230,7 +1233,16 @@ impl ResolveOptions {
 /// Check if a tool has any user-linked versions (created by `mise link`).
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
-fn has_linked_version(ba: &BackendArg) -> bool {
+async fn has_linked_version(config: &Arc<Config>, ba: &BackendArg) -> bool {
+    let rustup_home = if ba.full_without_opts() == "core:rust" {
+        crate::plugins::core::rustup_home(config).await
+    } else {
+        None
+    };
+    has_linked_version_in(ba, rustup_home.as_deref())
+}
+
+fn has_linked_version_in(ba: &BackendArg, rustup_home: Option<&Path>) -> bool {
     if install_state::get_tool_full(&ba.short)
         .is_some_and(|installed| installed != ba.full_without_opts())
     {
@@ -1247,7 +1259,7 @@ fn has_linked_version(ba: &BackendArg) -> bool {
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
             if target.is_absolute()
                 && !is_mise_managed_symlink_target(&target)
-                && !is_rustup_install(ba, &path, &target)
+                && !is_rustup_install(ba, rustup_home, &path, &target)
             {
                 return true;
             }
@@ -1259,7 +1271,12 @@ fn has_linked_version(ba: &BackendArg) -> bool {
 /// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
 /// outside mise's directories. Unlike a `mise link` to the same directory,
 /// the toolchain behind them is registered in `$RUSTUP_HOME/toolchains`.
-fn is_rustup_install(ba: &BackendArg, link: &Path, target: &Path) -> bool {
+fn is_rustup_install(
+    ba: &BackendArg,
+    rustup_home: Option<&Path>,
+    link: &Path,
+    target: &Path,
+) -> bool {
     if ba.full_without_opts() != "core:rust" {
         return false;
     }
@@ -1274,12 +1291,9 @@ fn is_rustup_install(ba: &BackendArg, link: &Path, target: &Path) -> bool {
     let Some(name) = link.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    let rustup_home = Settings::get()
-        .rust
-        .rustup_home
-        .clone()
-        .or_else(|| env::var_path("RUSTUP_HOME"))
-        .unwrap_or_else(|| dirs::HOME.join(".rustup"));
+    let Some(rustup_home) = rustup_home else {
+        return false;
+    };
     rustup_toolchain_installed(&rustup_home.join("toolchains"), name)
 }
 
@@ -1567,7 +1581,7 @@ mod tests {
         fs::create_dir_all(&external_target)?;
         crate::file::make_symlink_or_file(&external_target, &backend.installs_path().join("brew"))?;
 
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version_in(&backend, None));
 
         Ok(())
     }
@@ -1607,7 +1621,7 @@ mod tests {
             &backend.installs_path().join("escaped"),
         )?;
 
-        assert!(has_linked_version(&backend));
+        assert!(has_linked_version_in(&backend, None));
 
         Ok(())
     }
@@ -1644,7 +1658,7 @@ mod tests {
             managed_targets.push(target);
         }
 
-        assert!(!has_linked_version(&backend));
+        assert!(!has_linked_version_in(&backend, None));
 
         Ok(())
     }
@@ -1660,7 +1674,7 @@ mod tests {
             &backend.installs_path().join("latest"),
         )?;
 
-        assert!(!has_linked_version(&backend));
+        assert!(!has_linked_version_in(&backend, None));
 
         Ok(())
     }

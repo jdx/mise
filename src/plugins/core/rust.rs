@@ -1232,6 +1232,16 @@ fn select_rust_home(
     resolve_rust_home(path)
 }
 
+/// The effective `RUSTUP_HOME`, honoring config `[env]` and settings.
+///
+/// Boxed because resolving config env can itself resolve tools, which would
+/// otherwise make the future type recursive.
+pub(crate) fn rustup_home(
+    config: &Arc<Config>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<PathBuf>> + Send + '_>> {
+    Box::pin(async move { Some(RustHomes::resolve(config).await.ok()?.rustup) })
+}
+
 fn resolve_rust_home(path: PathBuf) -> PathBuf {
     let path = file::replace_path(path);
     if path.is_relative() {
