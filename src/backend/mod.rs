@@ -3981,7 +3981,25 @@ pub trait Backend: Debug + Send + Sync {
         let kept_symlink = (rolling_reinstall && self.updates_rolling_version_in_place())
             .then(|| file::resolve_symlink(&tv.install_path()).ok().flatten())
             .flatten();
-        self.create_install_dirs(&tv)?;
+        let restore_kept_symlink = |tv: &ToolVersion| {
+            let Some(target) = kept_symlink.as_ref() else {
+                return;
+            };
+            let install_path = tv.install_path();
+            // A failure partway through create_install_dirs can leave a directory.
+            let _ = file::remove_all(&install_path);
+            let restored = install_path
+                .parent()
+                .map_or(Ok(()), file::create_dir_all)
+                .and_then(|()| file::make_symlink(target, &install_path));
+            if let Err(err) = restored {
+                warn!("failed to restore the install of {tv}: {err:#}");
+            }
+        };
+        if let Err(e) = self.create_install_dirs(&tv) {
+            restore_kept_symlink(&tv);
+            return Err(e);
+        }
         let install_env = tv.install_env();
         let tv = match crate::env::with_install_env(install_env, self.install_version_(&ctx, tv))
             .await
@@ -3989,16 +4007,7 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
-                if let Some(target) = kept_symlink {
-                    let install_path = old_tv.install_path();
-                    let restored = install_path
-                        .parent()
-                        .map_or(Ok(()), file::create_dir_all)
-                        .and_then(|()| file::make_symlink(&target, &install_path));
-                    if let Err(err) = restored {
-                        warn!("failed to restore the install of {old_tv}: {err:#}");
-                    }
-                }
+                restore_kept_symlink(&old_tv);
                 // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
