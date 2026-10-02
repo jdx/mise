@@ -3,6 +3,9 @@
 #![allow(unknown_lints)]
 #![deny(dead_code_pub_in_binary, unreachable_pub)]
 
+#[cfg(windows)]
+mod windows_process;
+
 use std::env;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -103,7 +106,24 @@ fn run() -> Result<i32, String> {
         }
     };
 
-    let status = command.env(MISE_SHIM_PATH_ENV, &exe).args(args).status();
+    // Keep this in the ordinary child command. The Windows libuv path below creates the process
+    // directly, so it passes this one child-only environment change explicitly rather than
+    // mutating this process's environment.
+    command.env(MISE_SHIM_PATH_ENV, &exe);
+    command.args(args);
+    #[cfg(windows)]
+    let status = if windows_process::has_inherited_node_ipc() {
+        windows_process::status_with_inherited_node_ipc_and_env(
+            command.get_program(),
+            command.get_args().map(|arg| arg.to_os_string()),
+            OsStr::new(MISE_SHIM_PATH_ENV),
+            exe.as_os_str(),
+        )
+    } else {
+        command.status()
+    };
+    #[cfg(not(windows))]
+    let status = command.status();
 
     match status {
         Ok(status) => Ok(status.code().unwrap_or(1)),
