@@ -152,6 +152,40 @@ pub(super) fn pkgutil_output_has_match(output: &[u8]) -> bool {
     output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
+/// Narrows a cask's declared `uninstall pkgutil` patterns to those that match
+/// a receipt the installed pkg registered. Homebrew treats that list as IDs to
+/// remove if present, so it can cover other architectures or optional
+/// components that never register here; requiring every pattern to match would
+/// report the cask missing forever. The patterns themselves are kept rather
+/// than the IDs they matched, so a self-updating package that replaces a
+/// receipt with a newer matching ID is still found. When nothing matches, the
+/// declared patterns are kept so an unverifiable install is still reported
+/// missing.
+pub(super) fn installed_pkg_receipt_ids(declared: &[String]) -> Vec<String> {
+    if !cfg!(target_os = "macos") {
+        return declared.to_vec();
+    }
+    resolve_installed_pkg_ids(declared, pkgutil_matching_ids_checked)
+}
+
+/// `matching_ids` returns `None` when the lookup itself failed. Such a pattern
+/// is kept, because a failed query says nothing about whether it matches.
+pub(super) fn resolve_installed_pkg_ids(
+    declared: &[String],
+    mut matching_ids: impl FnMut(&str) -> Option<Vec<String>>,
+) -> Vec<String> {
+    let matched = declared
+        .iter()
+        .filter(|pattern| matching_ids(pattern).is_none_or(|ids| !ids.is_empty()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if matched.is_empty() {
+        declared.to_vec()
+    } else {
+        matched
+    }
+}
+
 /// Returns the recorded version of every installed package receipt matching
 /// `pkg_ids`, which are Homebrew's pkgutil patterns rather than literal IDs.
 pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
@@ -176,18 +210,24 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
 /// `pkg_id_installed`, the printed IDs are authoritative and the exit status
 /// is ignored, because a query can exit unsuccessfully either way.
 fn pkgutil_matching_ids(pattern: &str) -> Vec<String> {
+    pkgutil_matching_ids_checked(pattern).unwrap_or_default()
+}
+
+/// Like `pkgutil_matching_ids`, but `None` means `pkgutil` could not be run,
+/// as opposed to running and matching nothing.
+fn pkgutil_matching_ids_checked(pattern: &str) -> Option<Vec<String>> {
     std::process::Command::new("pkgutil")
         .arg(format!("--pkgs={pattern}"))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()
+        .ok()
         .map(|output| {
             String::from_utf8_lossy(&output.stdout)
                 .split_whitespace()
                 .map(str::to_string)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// Runs a per-receipt `pkgutil` query and returns its stdout, or `None` if it
