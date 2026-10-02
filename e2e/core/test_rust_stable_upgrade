@@ -33,7 +33,12 @@ rustup)
 		rm -f "$STATE/update_available"
 		;;
 	"toolchain uninstall") rm -rf "$STATE/toolchains/$3" ;;
-	"component list" | "target list") ;;
+	"component list" | "target list")
+		if [[ -e $STATE/broken ]]; then
+			echo "error: the toolchain is damaged" >&2
+			exit 1
+		fi
+		;;
 	"check ")
 		if [[ -e $STATE/update_available ]]; then
 			echo "stable-aarch64-unknown-linux-musl - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)"
@@ -97,12 +102,18 @@ assert_contains "mise upgrade rust --dry-run" "Would install rust@stable"
 touch "$STATE/fail_install"
 MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
 assert "test -L '$MISE_DATA_DIR/installs/rust/stable'"
-assert_contains "mise ls rust --json" '"installed": true'
+assert_contains "mise ls --installed rust --json" '"version": "stable"'
 assert_contains "mise exec -- rustc -V" "rustc stable (fake)"
-rm "$STATE/fail_install"
+
+# If rustup can no longer vouch for the toolchain, the install stays incomplete
+# so the next install repairs it.
+touch "$STATE/broken"
+MISE_ALWAYS_KEEP_INSTALL=1 assert_fail "mise upgrade rust"
+assert "mise ls --installed rust --json" "[]"
+rm "$STATE/broken" "$STATE/fail_install"
 
 mise upgrade rust
-assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "3"
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "4"
 # The channel is updated in place: a failed install must not strand the old toolchain.
 assert "! grep -q '^toolchain uninstall' '$STATE/rustup.log'"
 assert "mise outdated rust --json" "{}"

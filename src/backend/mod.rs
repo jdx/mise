@@ -3981,9 +3981,9 @@ pub trait Backend: Debug + Send + Sync {
         let kept_symlink = (rolling_reinstall && self.updates_rolling_version_in_place())
             .then(|| file::resolve_symlink(&tv.install_path()).ok().flatten())
             .flatten();
-        let restore_kept_symlink = |tv: &ToolVersion| {
+        let restore_kept_symlink = |tv: &ToolVersion| -> bool {
             let Some(target) = kept_symlink.as_ref() else {
-                return;
+                return false;
             };
             let install_path = tv.install_path();
             // A failure partway through create_install_dirs can leave a directory.
@@ -3992,16 +3992,15 @@ pub trait Backend: Debug + Send + Sync {
                 .parent()
                 .map_or(Ok(()), file::create_dir_all)
                 .and_then(|()| file::make_symlink(target, &install_path));
-            match restored {
-                // `always_keep_install` leaves the marker create_install_dirs wrote.
-                Ok(_) => {
-                    install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname())
-                }
-                Err(err) => warn!("failed to restore the install of {tv}: {err:#}"),
+            if let Err(err) = &restored {
+                warn!("failed to restore the install of {tv}: {err:#}");
             }
+            restored.is_ok()
         };
         if let Err(e) = self.create_install_dirs(&tv) {
-            restore_kept_symlink(&tv);
+            if restore_kept_symlink(&tv) {
+                self.settle_restored_install(&ctx.config, &tv).await;
+            }
             return Err(e);
         }
         let install_env = tv.install_env();
@@ -4011,7 +4010,9 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
-                restore_kept_symlink(&old_tv);
+                if restore_kept_symlink(&old_tv) {
+                    self.settle_restored_install(&ctx.config, &old_tv).await;
+                }
                 // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
@@ -4464,6 +4465,17 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
     }
+    /// After a failed in-place update put the previous install's link back,
+    /// drop the incomplete marker `create_install_dirs` wrote (`always_keep_install`
+    /// leaves it behind), but only when the backend still considers the install
+    /// usable. Otherwise keep it so the next install repairs the version.
+    async fn settle_restored_install(&self, config: &Arc<Config>, tv: &ToolVersion) {
+        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.tv_pathname());
+        if !self.is_install_satisfied_or_false(config, tv, true).await {
+            let _ = file::create(&self.incomplete_file_path(tv));
+        }
+    }
+
     fn incomplete_file_path(&self, tv: &ToolVersion) -> PathBuf {
         install_state::incomplete_file_path(tv.ba(), &tv.tv_pathname())
     }
