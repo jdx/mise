@@ -285,12 +285,20 @@ jobs:
     name: build-tarball-windows-${{matrix.arch}}
     # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
     # with fat LTO and panic=unwind ran past the 150-minute timeout.
-    runs-on: ${{matrix.runner}}
+    # The x64 build runs on the trusted self-hosted Windows runner when the repository variable
+    # WINDOWS_SELF_HOSTED is 'true' and the run is trusted, under the same condition the Linux and
+    # macOS jobs use to pick their runners. The runner refuses anything else itself. arm64 stays on
+    # a hosted native runner.
+    runs-on: ${{ matrix.arch == 'x64' && vars.WINDOWS_SELF_HOSTED == 'true' && !(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || matrix.runner }}
     # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
     # past this timeout on windows-latest depending on memory pressure, so
-    # scripts/build-tarball.ps1 builds Windows with thin LTO until these jobs
-    # move to a runner with more RAM.
+    # scripts/build-tarball.ps1 builds with thin LTO on hosted runners and with
+    # the profile's fat LTO on the self-hosted runner, which has the RAM for it.
     timeout-minutes: 150
+    env:
+      # The release PR's dry run may use the shared build cache on the self-hosted
+      # runner; a real release (tag push or manual dispatch) never reads or writes it.
+      MBX_DISABLE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:
