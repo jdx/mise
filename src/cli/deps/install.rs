@@ -194,7 +194,7 @@ impl DepsInstall {
         for source in &sources {
             let exists = source.exists();
             let marker = if exists { "+" } else { "-" };
-            miseprintln!("  {} {}", marker, source.display());
+            miseprintln!("  {} {}", marker, crate::file::display_path(source));
         }
 
         // Outputs
@@ -203,7 +203,7 @@ impl DepsInstall {
         for output in &outputs {
             let exists = output.exists();
             let marker = if exists { "+" } else { "-" };
-            miseprintln!("  {} {}", marker, output.display());
+            miseprintln!("  {} {}", marker, crate::file::display_path(output));
         }
 
         // Optional outputs (tracked but not required on first run)
@@ -213,7 +213,7 @@ impl DepsInstall {
             for output in &optional_outputs {
                 let exists = output.exists();
                 let marker = if exists { "+" } else { "-" };
-                miseprintln!("  {} {}", marker, output.display());
+                miseprintln!("  {} {}", marker, crate::file::display_path(output));
             }
         }
 

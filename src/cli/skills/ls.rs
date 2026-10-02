@@ -62,7 +62,7 @@ impl SkillsLs {
             name: s.name,
             tool: s.tool,
             version: s.version,
-            path: s.path.display().to_string(),
+            path: crate::file::display_path(&s.path),
         });
         let mut table = Table::new(rows);
         table::print(&mut table, false)

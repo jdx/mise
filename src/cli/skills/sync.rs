@@ -79,14 +79,14 @@ impl SkillsSync {
             let skill = skills.iter().find(|s| &s.name == name);
             miseprintln!(
                 "linked {} -> {}",
-                dir.join(name).display(),
+                crate::file::display_path(dir.join(name)),
                 skill
-                    .map(|s| s.path.display().to_string())
+                    .map(|s| crate::file::display_path(&s.path))
                     .unwrap_or_default()
             );
         }
         for name in &report.pruned {
-            miseprintln!("removed {}", dir.join(name).display());
+            miseprintln!("removed {}", crate::file::display_path(dir.join(name)));
         }
         for (name, why) in &report.skipped {
             warn!("skipped {name}: {why}");
@@ -95,7 +95,7 @@ impl SkillsSync {
             miseprintln!(
                 "{} skill(s) already linked in {}",
                 report.unchanged.len(),
-                dir.display()
+                crate::file::display_path(&dir)
             );
         }
         Ok(())
