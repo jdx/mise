@@ -1604,6 +1604,42 @@ mod tests {
     }
 
     #[test]
+    fn has_linked_version_distinguishes_rustup_installs_from_user_links() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let mut backend = BackendArg::new_raw(
+            "rust".to_string(),
+            Some("core:rust".to_string()),
+            "rust".to_string(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.set_installs_path(temp_dir.path().join("installs").join("rust"));
+        fs::create_dir_all(backend.installs_path())?;
+
+        let cargo_bin = temp_dir.path().join("cargo").join("bin");
+        fs::create_dir_all(&cargo_bin)?;
+        let rustup = if cfg!(windows) {
+            "rustup.exe"
+        } else {
+            "rustup"
+        };
+        fs::write(cargo_bin.join(rustup), "")?;
+        let rustup_home = temp_dir.path().join("rustup");
+        fs::create_dir_all(rustup_home.join("toolchains/1.99.0-x86_64-unknown-linux-gnu"))?;
+
+        let installed = backend.installs_path().join("1.99.0");
+        crate::file::make_symlink_or_file(&cargo_bin, &installed)?;
+        assert!(!has_linked_version_in(&backend, Some(&rustup_home)));
+        // Without the registered home, the same link cannot be proven mise's own.
+        assert!(has_linked_version_in(&backend, None));
+
+        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("custom"))?;
+        assert!(has_linked_version_in(&backend, Some(&rustup_home)));
+
+        Ok(())
+    }
+
+    #[test]
     fn has_linked_version_normalizes_absolute_targets_before_managed_check() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let backend = test_backend(temp_dir.path().join("installs").join("dummy"));
