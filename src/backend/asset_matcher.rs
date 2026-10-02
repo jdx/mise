@@ -3124,6 +3124,23 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
         let assets = vec!["tool-linux-x64.intoto.jsonl".to_string()];
         assert_eq!(picker.pick_best_asset(&assets), None);
+
+        // A platform-tagged metadata file never wins, even when it is the only
+        // candidate carrying the platform tokens.
+        let assets = vec![
+            "tool-linux-x64.tar.gz.sbom.json".to_string(),
+            "tool-linux-x64.tar.gz".to_string(),
+            "tool-linux-x64.tar.gz.sha256".to_string(),
+        ];
+        assert_eq!(
+            picker.pick_best_asset(&assets).as_deref(),
+            Some("tool-linux-x64.tar.gz")
+        );
+        let only_metadata = vec![
+            "tool-linux-x64.tar.gz.sbom.json".to_string(),
+            "tool-linux-x64.tar.gz.sha256".to_string(),
+        ];
+        assert_eq!(picker.pick_best_asset(&only_metadata), None);
     }
 
     #[test]
