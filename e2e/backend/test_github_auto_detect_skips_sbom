@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# editorconfig-checker 4.0.2 publishes platform-tagged SBOMs
+# (editorconfig-checker-darwin-all.tar.gz.sbom.json) next to its archives.
+# Auto-detection must install the real archive and never an SBOM.
+
+mise use github:editorconfig-checker/editorconfig-checker@4.0.2
+assert_contains "mise x -- editorconfig-checker --version" "4.0.2"

@@ -345,7 +345,10 @@ impl AssetPicker {
         scored_assets
             .into_iter()
             .filter(|(score, asset)| {
-                *score > 0 && !self.has_arch_mismatch(asset) && !is_non_executable_asset(asset)
+                *score > 0
+                    && !self.has_arch_mismatch(asset)
+                    && !is_non_executable_asset(asset)
+                    && !is_metadata_asset(asset)
             })
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
@@ -654,28 +657,7 @@ impl AssetPicker {
         }
 
         // Penalize metadata/checksum/signature files
-        if asset.ends_with(".asc")
-            || asset.ends_with(".sig")
-            || asset.ends_with(".sign")
-            || asset.ends_with(".sha256")
-            || asset.ends_with(".sha512")
-            || asset.ends_with(".sha1")
-            || asset.ends_with(".md5")
-            || asset.ends_with(".json")
-            || asset.ends_with(".txt")
-            || asset.ends_with(".xml")
-            || asset.ends_with(".sbom")
-            || asset.ends_with(".spdx")
-            || asset.ends_with(".intoto")
-            || asset.ends_with(".attestation")
-            || asset.ends_with(".pem")
-            || asset.ends_with(".cert")
-            || asset.ends_with(".cer")
-            || asset.ends_with(".crt")
-            || asset.ends_with(".key")
-            || asset.ends_with(".pub")
-            || asset.ends_with(".manifest")
-        {
+        if is_metadata_asset(&asset) {
             penalty -= 100;
         }
 
@@ -697,6 +679,51 @@ impl AssetPicker {
             _ => 0,
         }
     }
+}
+
+/// Release assets that are metadata (checksums, signatures, SBOMs, attestations,
+/// manifests) rather than something installable as a tool.
+pub(crate) fn is_metadata_asset(asset: &str) -> bool {
+    let asset = asset.to_lowercase();
+    [
+        ".asc",
+        ".sig",
+        ".sign",
+        ".sha256",
+        ".sha256sum",
+        ".sha256sums",
+        ".sha512",
+        ".sha512sum",
+        ".sha512sums",
+        ".sha1",
+        ".sha1sum",
+        ".sha1sums",
+        ".md5",
+        ".md5sum",
+        ".md5sums",
+        ".b3",
+        ".blake3",
+        ".checksum",
+        ".checksums",
+        ".minisig",
+        ".json",
+        ".jsonl",
+        ".txt",
+        ".xml",
+        ".sbom",
+        ".spdx",
+        ".intoto",
+        ".attestation",
+        ".pem",
+        ".cert",
+        ".cer",
+        ".crt",
+        ".key",
+        ".pub",
+        ".manifest",
+    ]
+    .iter()
+    .any(|suffix| asset.ends_with(suffix))
 }
 
 /// Assets that cannot become a runnable tool through mise's normal extraction
@@ -3094,6 +3121,48 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             picked, "buildkit-v0.26.3.windows-amd64.provenance.json",
             "Should select Windows provenance for Windows target"
         );
+    }
+
+    #[test]
+    fn test_metadata_assets_are_never_selected() {
+        for name in [
+            "tool-linux-x64.tar.gz.sbom.json",
+            "tool-linux-x64.intoto.jsonl",
+            "tool-linux-x64.tar.gz.sha256",
+            "tool-linux-x64.tar.gz.SHA256SUM",
+            "tool-linux-x64.tar.gz.sha256sum",
+            "tool-linux-x64.tar.gz.sha512sum",
+            "tool-linux-x64.tar.gz.sha1sum",
+            "tool-linux-x64.tar.gz.md5sum",
+            "tool-linux-x64.tar.gz.b3",
+            "tool-linux-x64.tar.gz.blake3",
+            "tool-linux-x64.checksums",
+            "tool-linux-x64.tar.gz.minisig",
+        ] {
+            assert!(is_metadata_asset(name), "{name}");
+        }
+        assert!(!is_metadata_asset("tool-linux-x64.tar.gz"));
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["tool-linux-x64.intoto.jsonl".to_string()];
+        assert_eq!(picker.pick_best_asset(&assets), None);
+
+        // A platform-tagged metadata file never wins, even when it is the only
+        // candidate carrying the platform tokens.
+        let assets = vec![
+            "tool-linux-x64.tar.gz.sbom.json".to_string(),
+            "tool-linux-x64.tar.gz".to_string(),
+            "tool-linux-x64.tar.gz.sha256".to_string(),
+        ];
+        assert_eq!(
+            picker.pick_best_asset(&assets).as_deref(),
+            Some("tool-linux-x64.tar.gz")
+        );
+        let only_metadata = vec![
+            "tool-linux-x64.tar.gz.sbom.json".to_string(),
+            "tool-linux-x64.tar.gz.sha256".to_string(),
+        ];
+        assert_eq!(picker.pick_best_asset(&only_metadata), None);
     }
 
     #[test]
