@@ -695,6 +695,9 @@ def arrange(z: np.ndarray, segs: list[Segment], spec: dict, reel: Reel) -> tuple
     dc = int(round(0.003 * SR))
     out = np.zeros((reel.frames, 2), np.float64)
     notes = []
+    # Where a ringing segment's audio runs out, in reel frames: past its last
+    # bar it plays only as far as the source goes.
+    rang_to = 0
 
     def carries_on(a: Segment, b: Segment) -> bool:
         """True when b plays on from where a stops, on the same bar line."""
@@ -723,6 +726,8 @@ def arrange(z: np.ndarray, segs: list[Segment], spec: dict, reel: Reel) -> tuple
             post = min(dc, max(0, len(z) - (s + L)), reel.frames - E)
         else:
             post = 0
+        if seg.ring:
+            rang_to = E + post
         chunk = z[s - pre: s + L + post].astype(np.float64)
         g = np.ones(len(chunk))
         if seg.fade_in_ms is not None:
@@ -756,7 +761,10 @@ def arrange(z: np.ndarray, segs: list[Segment], spec: dict, reel: Reel) -> tuple
     over = [i for i in range(reel.bars) if count[i] > 1]
     ringing = [s for s in segs if s.ring]
     if ringing:
-        gaps = [i for i in gaps if i < ringing[0].end]
+        # Bars after the ringing segment are covered only as far as its
+        # audio reaches: a source shorter than the reel leaves the rest
+        # silent, and that is a gap too.
+        gaps = [i for i in gaps if i < ringing[0].end or i * BAR_FRAMES >= rang_to]
     if gaps:
         notes.append(f"  warning: silent reel bars {spans(gaps)}")
     if over:
@@ -820,8 +828,14 @@ def verify(path: Path, reel: Reel, args, work: Path) -> bool:
         ok = False
 
     mono = x.mean(1).astype(np.float32)
-    t, tempo, strength = track(mono, TRACK_BPM, None)
-    print(f"  tempo: tracked {tempo:.3f} BPM over {len(t)} beats")
+    # The tracker's tempo is a report only: the grid check below reads each
+    # bar line's own onset. A sparse bed, with too few beats for the tracker
+    # (which exits), is checked by ear with --no-grid-check, so it skips it.
+    if args.no_grid_check:
+        print("  tempo: not tracked (--no-grid-check)")
+    else:
+        t, tempo, _ = track(mono, TRACK_BPM, None)
+        print(f"  tempo: tracked {tempo:.3f} BPM over {len(t)} beats")
     # Each bar line's own onset: the strongest attack within 40 ms of the
     # grid line itself, if it is a clear one (a rise of CLEAR_DB). Starting
     # from the tracker's beat instead (a 23 ms frame, refined within 40 ms
@@ -844,8 +858,10 @@ def verify(path: Path, reel: Reel, args, work: Path) -> bool:
         cells = " ".join(f"{d:+5.1f}" if d is not None else "   - " for d in dev[row: row + 10])
         print(f"  {row:>4} {clock(row * BAR_S)[:-4]:>6}  {cells}")
     if len(have) < 8:
-        print(f"  FAIL: only {len(have)} bar lines have a clear onset; too few to check the grid "
-              "(a bed with no attacks: check the bars by ear, or pass --no-grid-check)")
+        print(f"  {'note' if args.no_grid_check else 'FAIL'}: only {len(have)} bar lines have a clear onset; "
+              "too few to check the grid"
+              + (" (--no-grid-check: check the bars by ear)" if args.no_grid_check
+                 else " (a bed with no attacks: check the bars by ear, or pass --no-grid-check)"))
         ok = ok and args.no_grid_check
     else:
         med = float(np.median(np.abs(have)))
@@ -855,7 +871,7 @@ def verify(path: Path, reel: Reel, args, work: Path) -> bool:
               f"(limit {args.max_median_ms:g}), 90th percentile {p90:.2f} ms (limit {args.max_p90_ms:g}); worst: "
               + ", ".join(f"bar {k} {d:+.1f}" for _, k, d in worst))
         if med > args.max_median_ms or p90 > args.max_p90_ms:
-            print("  FAIL: the bar lines are off the grid")
+            print(f"  {'note' if args.no_grid_check else 'FAIL'}: the bar lines are off the grid")
             ok = ok and args.no_grid_check
     # The phase: on a 0.5 s beat grid, bar lines every fourth beat. If the
     # source's downbeat was misread, the accents fall on another beat.
