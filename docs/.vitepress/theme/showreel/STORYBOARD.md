@@ -1,5 +1,39 @@
 # mise showreel storyboard
 
+## Landing-page edit
+
+The delivered films are assembled by `edit.ts` and `film.ts` from the recorded
+scenes below. The source scene clock remains intact for the pacing, capture and
+sound-design checks; all delivered picture, audio, chapter and runtime metadata
+uses the edit clock.
+
+- **Full tour: 4:44.** A six-second opening with tools, env vars and tasks in a
+  project config leads straight to project switching. The project workflow,
+  installing jq, registry, environments, task dependencies and skipping,
+  dotfile history, lockfile/CI, bootstrap and fresh-clone demos follow at their
+  recorded reading pace. Backend, packslip, redaction, argument and daemon
+  walkthroughs are omitted. The eight-second install card replaces the chef
+  morph and extended ending.
+- **Quick overview: 1:16.** Opening, project switching, installing jq, task
+  dependencies and install card. Both editions use the same source captures.
+- **Presentation.** Brand cards use large Space Grotesk type, the three pillar
+  colours and a simple ruled layout. The poster uses two large project/version
+  cards; the player supplies the selected runtime. Large command/result
+  callouts in the switching and project-workflow scenes quote the current
+  capture's rows. They contain no retyped version numbers.
+- **Audio.** Only sound effects follow the picture edit. `film-music.ts`
+  arranges the original song independently, removing long breakdowns and drum
+  breaks while preserving its complete final chorus, wind-down and ring-out.
+  Both buses pass through one master; retained accents duck the music lightly.
+  The source reel's breath fader and music jumps are never copied into a film.
+- **Player.** Both editions have visible chapter buttons and their own WebVTT
+  track. Switching editions resets playback; a chapter starts at its displayed
+  time, including before the first metadata load. Fullscreen remains available.
+
+The production renderer delivers both editions. Drafts can select either with
+`--edition tour|overview`, or inspect the original scene clock with
+`--edition source --section <id>`. The tables below describe that source clock.
+
 This is the storyboard the showreel's scenes are built from. It follows plan v3, jdx's decisions of 2026-09-27, the retime of 2026-09-28 ("Pacing" below), and jdx's decisions on the soundtrack of 2026-10-02 ("Decisions and references"). The same data, machine-readable, is `sections.json` (`id`, `act`, `actLabel`, `beats`, `start`, `end`, `captions`, `captures`, `visual`, `plan`). Generate `timeline.ts` from it or check the timeline against it; do not retype times.
 
 ## Rules that apply everywhere

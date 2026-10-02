@@ -141,24 +141,8 @@ function playBed(
   src.stop((zero + last) / sr);
 }
 
-/**
- * Schedule the soundtrack into `dest`, starting `from` seconds into the reel
- * at context time `when`, on a context that has not started rendering. Pass
- * the same `facts` the picture draws, so cues that follow them land with it,
- * and the decoded bed (score/bed.ts, at the context's rate) to play the
- * music under them; with none, only the sound design plays.
- */
-export function playScore(
-  ac: BaseAudioContext,
-  dest: AudioNode,
-  from: number,
-  when: number,
-  facts: ReelFacts | null = null,
-  bed: AudioBuffer | null = null,
-): void {
-  if (!(from < DURATION - 0.03)) return;
-  const sh = shared(ac);
-
+/** Shared delivery chain for the source reel and the independently mixed films. */
+function master(ac: BaseAudioContext, dest: AudioNode) {
   // Master: a DC blocker, a touch less sub and more air, a 16 kHz lowpass,
   // a glue compressor, makeup, a limiter and a soft ceiling. The EQ was
   // voiced on the synthesized band and kept as it was for the bed, which
@@ -232,7 +216,7 @@ export function playScore(
   // curve's domain is ±2.
   trim.gain.value = 0.5 * 10 ** ((0.6 * LIMIT * (1 - 1 / 20)) / 20);
   const ceiling = ac.createWaveShaper();
-  ceiling.curve = sh.ceiling;
+  ceiling.curve = shared(ac).ceiling;
   pre
     .connect(dc)
     .connect(low)
@@ -247,6 +231,34 @@ export function playScore(
     .connect(trim)
     .connect(ceiling)
     .connect(dest);
+
+  return { input: pre, compressor: comp };
+}
+
+/**
+ * Schedule the soundtrack into `dest`, starting `from` seconds into the reel
+ * at context time `when`, on a context that has not started rendering. Pass
+ * the same `facts` the picture draws, so cues that follow them land with it,
+ * and the decoded bed (score/bed.ts, at the context's rate) to play the
+ * music under them; with none, only the sound design plays.
+ */
+export function playScore(
+  ac: BaseAudioContext,
+  dest: AudioNode,
+  from: number,
+  when: number,
+  facts: ReelFacts | null = null,
+  bed: AudioBuffer | null = null,
+  effects = true,
+  mastered = true,
+): readonly Dip[] {
+  if (!(from < DURATION - 0.03)) return [];
+  const sh = shared(ac);
+
+  const { input: pre, compressor: comp } = mastered
+    ? master(ac, dest)
+    : { input: ac.createGain(), compressor: null };
+  if (!mastered) pre.connect(dest);
 
   const sfx = ac.createGain();
   sfx.connect(pre);
@@ -268,7 +280,7 @@ export function playScore(
   // The loudness arc rides the bed, section by section.
   m.set(music.gain, arc());
   // Every voice, recording the accents the bed ducks under.
-  compose(m, facts);
+  if (effects) compose(m, facts);
   // An offline render wires each voice in shortly before it starts, so the
   // thousands not yet due cost it nothing (score/mix.ts).
   m.wire();
@@ -278,7 +290,43 @@ export function playScore(
 
   // A fresh compressor starts clamped down and takes ~200 ms to open; a fast
   // release until just after the first sound lets it settle at once.
-  comp.release.value = 0.001;
-  comp.release.setValueAtTime(0.2, m.at(start) + 0.03);
+  if (comp) {
+    comp.release.value = 0.001;
+    comp.release.setValueAtTime(0.2, m.at(start) + 0.03);
+  }
   dipCurve(m, musicDuck.gain, start, ducks(m));
+  return m.ducks;
+}
+
+/** Mix edited effects with uninterrupted film music, through one master. */
+export function playFilmMix(
+  ac: BaseAudioContext,
+  dest: AudioNode,
+  effects: AudioBuffer,
+  bed: AudioBuffer,
+  accents: readonly Dip[],
+  when: number,
+): void {
+  const { input, compressor } = master(ac, dest);
+  const start = when - LATENCY;
+  compressor.release.value = 0.001;
+  compressor.release.setValueAtTime(0.2, start + 0.03);
+  const sfx = ac.createBufferSource();
+  sfx.buffer = effects;
+  sfx.connect(input);
+  sfx.start(start);
+  const music = ac.createBufferSource();
+  music.buffer = bed;
+  const gain = ac.createGain();
+  gain.gain.value = 10 ** (BED.gainDb / 20);
+  const duck = ac.createGain();
+  const curve = dips([[accents, BED.duck]]);
+  const end = Math.ceil(bed.duration / DIP_STEP) + 1;
+  duck.gain.setValueCurveAtTime(
+    curve.slice(0, end),
+    start,
+    (end - 1) * DIP_STEP,
+  );
+  music.connect(gain).connect(duck).connect(input);
+  music.start(start);
 }

@@ -1,6 +1,6 @@
 // from jdx/hk@37937824 docs/.vitepress/theme/showreel/test/chapters.test.ts
-// The chapters track served next to the video is generated from ACTS and
-// SECTIONS: one cue per act. When they change, rewrite it with
+// The served chapters follow the landing-page edit; the source chapters
+// still describe the complete scene clock. When they change, rewrite with
 // `UPDATE_CHAPTERS=1 aube run test:showreel` and commit it.
 
 import assert from "node:assert/strict";
@@ -9,14 +9,15 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { ACTS, CHAPTERS, chaptersVtt, DURATION } from "../timeline";
 import { REPO } from "./repo";
+import { filmChaptersVtt } from "../edit";
 
-test("docs/public/showreel-chapters.vtt is the chapters track the acts generate", () => {
+test("docs/public/showreel-chapters.vtt follows the delivered tour", () => {
   const file = join(REPO, "docs/public/showreel-chapters.vtt");
-  if (process.env.UPDATE_CHAPTERS) writeFileSync(file, chaptersVtt());
+  if (process.env.UPDATE_CHAPTERS) writeFileSync(file, filmChaptersVtt());
   const served = existsSync(file) ? readFileSync(file, "utf8") : "";
   assert.equal(
     served,
-    chaptersVtt(),
+    filmChaptersVtt(),
     "the chapters track is stale: run `UPDATE_CHAPTERS=1 aube run test:showreel`",
   );
 });

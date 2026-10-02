@@ -22,6 +22,7 @@
 //   aube run showreel:video --out <file.mp4> [--fps 30|60|120] [--from <s>] [--until <s>] [--section <id>] [--burn-in]
 //   aube run showreel:video --audio-only <file.wav> [--from <s>] [--until <s>] [--section <id>]
 //
+//   --edition tour|overview|source  choose a film (default tour; --section uses source)
 //   --out <file.mp4>         one video, at --fps (default 60), to this file only
 //   --fps 30|60|120          the draft's frame rate; 30 for animatics
 //   --from <seconds>         the first frame, reel time (default 0); with
@@ -39,7 +40,7 @@
 // full render ever replaces the files the site deploys.
 
 import { once } from "node:events";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
@@ -133,6 +134,11 @@ function parseArgs(argv) {
       case "--until":
         o.until = seconds(value(i++, a), a);
         break;
+      case "--edition":
+        o.edition = value(i++, a);
+        if (!["tour", "overview", "source"].includes(o.edition))
+          fail("--edition is tour, overview or source");
+        break;
       case "--section":
         o.section = value(i++, a);
         break;
@@ -197,6 +203,11 @@ function parseArgs(argv) {
 
 const opts = parseArgs(process.argv.slice(2));
 const draft = Boolean(opts.out || opts.audioOnly);
+const edition = opts.edition ?? (opts.section ? "source" : "tour");
+if (opts.section && edition !== "source")
+  fail("--section uses --edition source; edited films use --from/--until");
+if (!draft && edition === "source")
+  fail("--edition source needs a draft output");
 
 /** A small ESM bundle of `contents`, imported in node. */
 async function nodeModule(contents) {
@@ -216,11 +227,13 @@ async function nodeModule(contents) {
 
 // The timeline, the font list, the capture set's loader and the bed, read
 // in node from the same sources the page draws with.
-const { FONTS, SECTIONS, sec, loadFacts, BED } =
+const { FONTS, SECTIONS, sec, loadFacts, BED, MUSIC, filmChaptersVtt } =
   await nodeModule(`export { FONTS } from "./theme/showreel/fonts.ts";
 export { SECTIONS, sec } from "./theme/showreel/timeline.ts";
 export { loadFacts } from "./theme/showreel/load.ts";
-export { BED } from "./theme/showreel/score/bed.ts";`);
+export { BED } from "./theme/showreel/score/bed.ts";
+export { MUSIC } from "./theme/showreel/film-music.ts";
+export { filmChaptersVtt } from "./theme/showreel/edit.ts";`);
 const REPO = resolve(here, "../..");
 // The capture set every terminal line and version number comes from. A
 // missing take draws a labelled "CAPTURE MISSING" box.
@@ -238,7 +251,10 @@ if (
 const bundle = await build({
   stdin: {
     contents: `export { createReel, POSTER_TIME, resetTypeCache } from "./theme/showreel/reel.ts";
-export { playScore } from "./theme/showreel/audio.ts";`,
+export { playScore } from "./theme/showreel/audio.ts";
+export { createFilm, drawFilmPoster } from "./theme/showreel/film.ts";
+export { filmSoundtrack } from "./theme/showreel/film-audio.ts";
+export { DURATION as SOURCE_DURATION } from "./theme/showreel/timeline.ts";`,
     resolveDir: here,
     loader: "ts",
   },
@@ -298,12 +314,12 @@ function checkOpus(bytes, file) {
 }
 
 /**
- * Hand the bed (score/bed.ts) to `page`, which keeps its bytes as
+ * Hand the pinned music asset to `page`, which keeps its bytes as
  * window.bedBytes for the score's render to decode.
  */
-async function sendBed(page) {
-  const bytes = pinned(BED.file, BED.sha256, "bed");
-  checkOpus(bytes, BED.file);
+async function sendBed(page, asset) {
+  const bytes = pinned(asset.file, asset.sha256, "music");
+  checkOpus(bytes, asset.file);
   await page.evaluate(() => {
     window.bedPieces = [];
   });
@@ -350,7 +366,7 @@ function wavFile(pcm) {
 }
 
 const fps = opts.fps ?? 60;
-const FPS = opts.out ? fps : 120;
+const FPS = opts.out ? fps : edition === "overview" ? 60 : 120;
 const encoders = opts.audioOnly
   ? []
   : opts.out
@@ -364,7 +380,10 @@ const encoders = opts.audioOnly
           partial: join(dirname(opts.out), `.${basename(opts.out)}.partial`),
         },
       ]
-    : VIDEOS.map((video) => ({
+    : (edition === "overview"
+        ? [{ name: "showreel-overview.mp4", fps: 60, level: "4.2" }]
+        : VIDEOS
+      ).map((video) => ({
         ...video,
         out: join(PUBLIC, video.name),
         partial: join(staging, video.name),
@@ -393,7 +412,7 @@ try {
       );
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(
-        async ({ fonts, burnIn, facts }) => {
+        async ({ fonts, burnIn, facts, edition }) => {
           for (const font of fonts) {
             const bytes = Uint8Array.from(atob(font.bytes), (c) =>
               c.charCodeAt(0),
@@ -410,10 +429,13 @@ try {
           // The capture set (theme/showreel/load.ts): the takes' screens,
           // files and versions, as JSON.
           window.facts = facts;
-          window.reel = Showreel.createReel(window.facts, { burnIn });
+          window.reel =
+            edition === "source"
+              ? Showreel.createReel(window.facts, { burnIn })
+              : Showreel.createFilm(window.facts, edition, { burnIn });
           window.ctx = canvas.getContext("2d", { alpha: false });
         },
-        { fonts, burnIn: opts.burnIn, facts },
+        { fonts, burnIn: opts.burnIn, facts, edition },
       );
       return page;
     }),
@@ -444,11 +466,12 @@ try {
   // The score over the bed, as 16-bit stereo PCM, from the range's first
   // frame: it plays there exactly what a full render plays
   // (test/score.test.ts). The bed decodes in the page at the score's rate,
-  // Opus's own 48 kHz (Chromium honours Opus's pre-skip, so its sample 0 is
-  // reel time 0), and must run the whole reel.
-  await sendBed(page);
+  // Opus's own 48 kHz (Chromium honours Opus's pre-skip). Source renders
+  // use the original arranged bed; films use the original song instead.
+  const musicAsset = edition === "source" ? BED : MUSIC;
+  await sendBed(page, musicAsset);
   const pcm = await page.evaluate(
-    async ({ from, duration, preRoll, rate, full }) => {
+    async ({ from, duration, preRoll, rate, edition, minimumMusic }) => {
       const ac = new OfflineAudioContext(
         2,
         Math.ceil(rate * (duration + preRoll)),
@@ -462,13 +485,32 @@ try {
         throw new Error(
           `the bed decodes to ${bed.numberOfChannels} channels, not stereo`,
         );
-      if (bed.length < Math.round(full * rate))
+      if (bed.length < Math.round(minimumMusic * rate))
         throw new Error(
-          `the bed is ${bed.length / rate} s long, shorter than the ${full} s reel`,
+          `the bed is ${bed.length / rate} s long, shorter than the required ${minimumMusic} s`,
         );
-      Showreel.playScore(ac, ac.destination, from, preRoll, window.facts, bed);
-      const buffer = await ac.startRendering();
-      const skip = Math.round(preRoll * rate);
+      let buffer;
+      let skip;
+      if (edition === "source") {
+        Showreel.playScore(
+          ac,
+          ac.destination,
+          from,
+          preRoll,
+          window.facts,
+          bed,
+        );
+        buffer = await ac.startRendering();
+        skip = Math.round(preRoll * rate);
+      } else {
+        buffer = await Showreel.filmSoundtrack(
+          window.facts,
+          bed,
+          edition,
+          rate,
+        );
+        skip = Math.round(from * rate);
+      }
       const frames = Math.round(duration * rate);
       const left = buffer.getChannelData(0);
       const right = buffer.getChannelData(1);
@@ -487,7 +529,14 @@ try {
       }
       return btoa(binary);
     },
-    { from, duration, preRoll: PRE_ROLL, rate: SAMPLE_RATE, full },
+    {
+      from,
+      duration,
+      preRoll: PRE_ROLL,
+      rate: SAMPLE_RATE,
+      edition,
+      minimumMusic: edition === "source" ? 436 : MUSIC.duration,
+    },
   );
   if (pageError) throw pageError;
   if (opts.audioOnly) {
@@ -621,11 +670,17 @@ try {
       console.log(
         `Rendered ${total} frames to ${opts.out} in ${elapsed.toFixed(0)} s`,
       );
-    } else {
+    } else if (edition === "overview") {
+      for (const encoder of encoders) renameSync(encoder.partial, encoder.out);
+      writeFileSync(
+        join(PUBLIC, "showreel-overview-chapters.vtt"),
+        filmChaptersVtt("overview"),
+      );
+    } else if (edition === "tour") {
       // The poster the player shows until someone presses play.
       const jpeg = await page.evaluate(
         ({ w, h }) => {
-          window.reel.render(window.ctx, Showreel.POSTER_TIME, w, h);
+          Showreel.drawFilmPoster(window.ctx, w, h, window.facts);
           return document.getElementById("reel").toDataURL("image/jpeg", 0.9);
         },
         { w: WIDTH, h: HEIGHT },
@@ -637,6 +692,7 @@ try {
       if (pageError) throw pageError;
       for (const encoder of encoders) renameSync(encoder.partial, encoder.out);
       renameSync(posterPartial, poster);
+      writeFileSync(join(PUBLIC, "showreel-chapters.vtt"), filmChaptersVtt());
       const elapsed = (performance.now() - started) / 1000;
       console.log(
         `Rendered ${encoders.map((encoder) => encoder.out).join(", ")} and ${poster} in ${elapsed.toFixed(0)} s`,
@@ -651,4 +707,14 @@ try {
   rmSync(work, { recursive: true, force: true });
   for (const encoder of encoders) rmSync(encoder.partial, { force: true });
   if (!draft) rmSync(posterPartial, { force: true });
+}
+
+// Full site renders deliver both films. Drafts remain outside public/.
+if (!draft && edition === "tour") {
+  const child = spawnSync(
+    process.execPath,
+    [fileURLToPath(import.meta.url), "--edition", "overview"],
+    { stdio: "inherit" },
+  );
+  if (child.status !== 0) throw new Error("the overview render failed");
 }

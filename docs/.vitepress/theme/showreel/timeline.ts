@@ -260,8 +260,8 @@ function vttTime(s: number): string {
  * its id. docs/public/showreel-chapters.vtt is this text; a test keeps it
  * current.
  */
-export function chaptersVtt(): string {
-  const cues = CHAPTERS.map(
+export function chaptersVtt(chapters: readonly Chapter[] = CHAPTERS): string {
+  const cues = chapters.map(
     (c) => `${c.id}\n${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.label}\n`,
   );
   return ["WEBVTT\n", ...cues].join("\n");

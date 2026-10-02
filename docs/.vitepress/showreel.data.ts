@@ -12,13 +12,20 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHAPTERS, DURATION } from "./theme/showreel/timeline.ts";
+import { filmChapters, filmDuration } from "./theme/showreel/edit.ts";
+const CHAPTERS = filmChapters("tour");
+const DURATION = filmDuration("tour");
 
 const configDir = dirname(fileURLToPath(import.meta.url));
 const videoPath = resolve(configDir, "../public/showreel.mp4");
 const video120Path = resolve(configDir, "../public/showreel-120.mp4");
 const posterPath = resolve(configDir, "../public/showreel-poster.jpg");
 const chaptersPath = resolve(configDir, "../public/showreel-chapters.vtt");
+const overviewPath = resolve(configDir, "../public/showreel-overview.mp4");
+const overviewTrackPath = resolve(
+  configDir,
+  "../public/showreel-overview-chapters.vtt",
+);
 const boardPath = resolve(configDir, "theme/showreel/sections.json");
 
 export interface ShowreelFiles {
@@ -48,6 +55,12 @@ export interface ShowreelData extends ShowreelFiles {
   /** The 60 fps file's length in seconds. */
   seconds: number;
   chapters: ShowreelChapter[];
+  overview?: {
+    src: string;
+    seconds: number;
+    track: string;
+    chapters: ShowreelChapter[];
+  };
 }
 
 // Versioned so browsers and link previews that cached an earlier render fetch
@@ -163,7 +176,7 @@ function captureFacts(): {
  * build cannot fill, and bootstrap's second caption unless machine 2 ran
  * systemd (the reel rewords it for the plain fallback, storyboard.ts).
  */
-function chapters(): ShowreelChapter[] {
+function chapters(edition: "tour" | "overview" = "tour"): ShowreelChapter[] {
   const board: BoardSection[] = JSON.parse(readFileSync(boardPath, "utf8"));
   const facts = captureFacts();
   const quote = (s: BoardSection) =>
@@ -181,20 +194,22 @@ function chapters(): ShowreelChapter[] {
         .replaceAll("`", "");
       return gap ? [] : [text];
     });
-  return CHAPTERS.map((chapter) => {
-    const sections = chapter.sections.map((id) => {
-      const s = board.find((b) => b.id === id);
-      if (!s) throw new Error(`sections.json has no section "${id}"`);
-      return s;
-    });
-    const captions = sections.flatMap(quote);
-    return {
-      id: chapter.id,
-      label: chapter.label,
-      start: chapter.start,
-      text: captions.join(" "),
-    };
-  });
+  return (edition === "tour" ? CHAPTERS : filmChapters(edition)).map(
+    (chapter) => {
+      const sections = chapter.sections.map((id) => {
+        const s = board.find((b) => b.id === id);
+        if (!s) throw new Error(`sections.json has no section "${id}"`);
+        return s;
+      });
+      const captions = sections.flatMap(quote);
+      return {
+        id: chapter.id,
+        label: chapter.label,
+        start: chapter.start,
+        text: captions.join(" "),
+      };
+    },
+  );
 }
 
 /**
@@ -203,8 +218,10 @@ function chapters(): ShowreelChapter[] {
  * so a restored render is never paired with a newer storyboard's chapters;
  * null when there is none.
  */
-function keptChapters(): ShowreelChapter[] | null {
-  const file = process.env.SHOWREEL_CHAPTERS;
+function keptChapters(
+  variable = "SHOWREEL_CHAPTERS",
+): ShowreelChapter[] | null {
+  const file = process.env[variable];
   if (!file || !existsSync(file)) return null;
   const kept: unknown = JSON.parse(readFileSync(file, "utf8"));
   const ok =
@@ -222,10 +239,26 @@ function keptChapters(): ShowreelChapter[] | null {
 export function showreelData(): ShowreelData | null {
   const files = showreelFiles();
   if (!files) return null;
+  const overview =
+    existsSync(overviewPath) && existsSync(overviewTrackPath)
+      ? readFileSync(overviewPath)
+      : null;
   return {
     ...files,
     seconds: mp4Seconds(readFileSync(videoPath)) ?? DURATION,
     chapters: keptChapters() ?? chapters(),
+    ...(overview
+      ? {
+          overview: {
+            src: `/showreel-overview.mp4?v=${version(overview)}`,
+            seconds: mp4Seconds(overview) ?? filmDuration("overview"),
+            track: `/showreel-overview-chapters.vtt?v=${version(readFileSync(overviewTrackPath))}`,
+            chapters:
+              keptChapters("SHOWREEL_OVERVIEW_CHAPTERS") ??
+              chapters("overview"),
+          },
+        }
+      : {}),
   };
 }
 
@@ -238,6 +271,8 @@ export default {
     videoPath,
     video120Path,
     posterPath,
+    overviewPath,
+    overviewTrackPath,
     boardPath,
     resolve(configDir, "showreel-capture/out/versions.json"),
   ],

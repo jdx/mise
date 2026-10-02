@@ -158,7 +158,7 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/showreel"
           mkdir -p "$stage/captures"
-          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt; do
+          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt showreel-overview.mp4 showreel-overview-chapters.vtt; do
             if [ -s "docs/public/$f" ]; then cp "docs/public/$f" "$stage/"; fi
           done
           if [ -n "${SHOWREEL_CAPTURES:-}" ] && [ -f "$SHOWREEL_CAPTURES/versions.json" ]; then
@@ -172,6 +172,9 @@ jobs:
           fi
           if [ -n "${SHOWREEL_CHAPTERS:-}" ] && [ -s "$SHOWREEL_CHAPTERS" ]; then
             cp "$SHOWREEL_CHAPTERS" "$stage/chapters.json"
+          fi
+          if [ -n "${SHOWREEL_OVERVIEW_CHAPTERS:-}" ] && [ -s "$SHOWREEL_OVERVIEW_CHAPTERS" ]; then
+            cp "$SHOWREEL_OVERVIEW_CHAPTERS" "$stage/overview-chapters.json"
           fi
           ls -la "$stage"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -258,7 +261,7 @@ jobs:
             echo "::warning title=Showreel::The showreel job left no render, so the site builds without one"
             exit 0
           fi
-          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt; do
+          for f in showreel-120.mp4 showreel.mp4 showreel-poster.jpg showreel-chapters.vtt showreel-overview.mp4 showreel-overview-chapters.vtt; do
             if [ -s "$stage/$f" ]; then cp "$stage/$f" "docs/public/$f"; fi
           done
           if [ -f "$stage/captures/versions.json" ]; then
@@ -266,6 +269,9 @@ jobs:
           fi
           if [ -s "$stage/chapters.json" ]; then
             echo "SHOWREEL_CHAPTERS=$stage/chapters.json" >>"$GITHUB_ENV"
+          fi
+          if [ -s "$stage/overview-chapters.json" ]; then
+            echo "SHOWREEL_OVERVIEW_CHAPTERS=$stage/overview-chapters.json" >>"$GITHUB_ENV"
           fi
 
       # Built once, then uploaded. A build that fails only with the showreel
@@ -282,7 +288,7 @@ jobs:
             exit 1
           fi
           echo "::warning title=Showreel::The site did not build with the showreel, so it is built and deployed without it"
-          rm -f docs/public/showreel-120.mp4 docs/public/showreel.mp4 docs/public/showreel-poster.jpg
+          rm -f docs/public/showreel-120.mp4 docs/public/showreel.mp4 docs/public/showreel-poster.jpg docs/public/showreel-overview.mp4 docs/public/showreel-overview-chapters.vtt
           git checkout -- docs/public/showreel-chapters.vtt
           mise run docs:build
       - run: mise run --skip-deps docs:release
