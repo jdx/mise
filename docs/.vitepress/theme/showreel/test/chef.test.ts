@@ -6,8 +6,8 @@
 // the browser renders it, the toque's measured geometry against the SVG's
 // own lines, the mosaic landing on the chef, effects that stay inside it,
 // and frames that do not depend on the frame before them. The name card's
-// copy is held to its sources, and the end card's moments to the
-// recording's measured onsets.
+// copy is held to its sources, and the end card's moments to the reel's
+// eighth-beat grid.
 //
 // The Chromium tests skip when no Chromium is found, unless
 // SHOWREEL_REQUIRE_CHROMIUM is set; the capture test skips without the
@@ -190,23 +190,35 @@ test("the name card's copy is mise's own: Cargo.toml, README.md and the site", (
   );
 });
 
-test("the end card's cues are the recording's onsets (plan v3 §5, board5.py)", () => {
-  // board5.py's table: seconds after E0, good to about 10 ms.
-  const board: [keyof typeof END_CUES, number][] = [
-    ["mise", 0],
+test("the end card's cues sit on the reel's eighth-beat grid, mise on the bar line", () => {
+  // Each is a whole number of eighths of a beat (0.125 s at 60 BPM) after
+  // E0, the card's bar line, so the card moves with the bed's grid.
+  for (const [k, t] of Object.entries(END_CUES)) {
+    const n = (t * 8) / BEAT;
+    assert.ok(
+      Math.abs(n - Math.round(n)) < 1e-9,
+      `${k} at ${t} is not on an eighth`,
+    );
+  }
+  assert.equal(END_CUES.mise, 0, "mise writes on on the bar line");
+  // The card was first keyed to the sung line's onsets (board5.py, seconds
+  // after E0); each cue is the eighth nearest its onset, so the motion
+  // keeps the feel it was drawn with.
+  const onset: [keyof typeof END_CUES, number][] = [
     ["en", 0.36],
     ["place", 0.68],
-    ["dev", 1.48],
-    ["precise", 2.78],
-    ["operational", 3.8],
-    ["voiceGone", 6.25],
-    ["hit1", 7.52],
-    ["hit2", 8.269],
+    ["tagline", 1.48],
+    ["install", 2.78],
+    ["typed", 5.2],
+    ["platform", 6.25],
+    ["url", 7.515],
+    ["glint", 8.264],
   ];
-  for (const [k, at] of board)
-    assert.ok(
-      Math.abs(END_CUES[k] - at) < 0.01,
-      `${k}: ${END_CUES[k]} vs ${at}`,
+  for (const [k, at] of onset)
+    assert.equal(
+      END_CUES[k],
+      (Math.round((at * 8) / BEAT) * BEAT) / 8,
+      `${k} is not the eighth nearest ${at}`,
     );
   const order = Object.values(END_CUES);
   assert.deepEqual(
@@ -214,14 +226,14 @@ test("the end card's cues are the recording's onsets (plan v3 §5, board5.py)", 
     order,
     "cues in order",
   );
-  assert.ok(END_CUES.hit2 + 1 < sec("end").len);
+  assert.ok(END_CUES.glint + 1 < sec("end").len);
 });
 
 test("the end card holds the chef alone on its bar line and is still from 9.5 s", () => {
   const s0 = endCardState(0);
   // Nothing but the chef at rest (=== 0, so an eased -0 counts as none).
   const { taglineFrom, ...rest } = s0;
-  assert.equal(taglineFrom, END_CUES.dev);
+  assert.equal(taglineFrom, END_CUES.tagline);
   for (const [k, v] of Object.entries({
     ...rest,
     name: s0.name.reduce((a, b) => a + b),
@@ -230,23 +242,20 @@ test("the end card holds the chef alone on its bar line and is still from 9.5 s"
       assert.ok(v === 0, `${k} is ${v} on the bar line`);
   assert.equal(s0.cursor, false);
   assert.deepEqual(s0.glow, HALO);
-  // Each moment starts on its onset.
+  // Each moment starts on its cue.
   const c = END_CUES;
   assert.equal(endCardState(c.en).name[1], 0);
   assert.ok(endCardState(c.en + 0.05).name[1] > 0);
-  assert.equal(endCardState(c.precise - 1e-6).typed, 0);
-  assert.equal(endCardState(c.precise).typed, 1);
-  assert.equal(endCardState(c.precise).box, 1);
-  assert.equal(
-    endCardState(c.operationalEnd - 1e-3).typed,
-    INSTALL.command.length - 1,
-  );
-  assert.equal(endCardState(c.operationalEnd).typed, INSTALL.command.length);
-  assert.equal(endCardState(c.operationalEnd).cursor, false);
-  // mise.jdx.dev lands on the first hit, in over the 1/8 beat before it.
-  assert.equal(endCardState(c.hit1 - beats(DUR.flick)).url, 0);
-  assert.equal(endCardState(c.hit1).url, 1);
-  assert.equal(endCardState(c.hit2).glint, 0);
+  assert.equal(endCardState(c.install - 1e-6).typed, 0);
+  assert.equal(endCardState(c.install).typed, 1);
+  assert.equal(endCardState(c.install).box, 1);
+  assert.equal(endCardState(c.typed - 1e-3).typed, INSTALL.command.length - 1);
+  assert.equal(endCardState(c.typed).typed, INSTALL.command.length);
+  assert.equal(endCardState(c.typed).cursor, false);
+  // mise.jdx.dev lands on its cue, in over the 1/8 beat before it.
+  assert.equal(endCardState(c.url - beats(DUR.flick)).url, 0);
+  assert.equal(endCardState(c.url).url, 1);
+  assert.equal(endCardState(c.glint).glint, 0);
   // Still from 9.5 s (the glint's sparkle out) to the reel's last frame.
   assert.deepEqual(endCardState(9.5), endCardState(sec("end").len - 1 / 120));
 });

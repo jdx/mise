@@ -4,11 +4,11 @@
 // terminal at `~/work/api $`. C7's four commands play one at a time,
 // typed at TYPE_RATE, each result held for its read, the diagram dimmed
 // while the terminal acts and the terminal dimmed while the diagram
-// answers: `cd ../dashboard` (the chrome's cwd dot hops; the score moves
-// to D♭), then the diagram's cwd dot hops down the tree to dashboard/;
-// `node --version`, and the version it printed lifts out of its row onto
-// dashboard/ as a value chip; the caption. `cd ../api` (home, back to F
-// minor), the dot hops back to api/, and `node --version` again, whose
+// answers: `cd ../dashboard` (the chrome's cwd dot hops to a marimba run
+// up the bed's F minor), then the diagram's cwd dot hops down the tree to
+// dashboard/; `node --version`, and the version it printed lifts out of
+// its row onto dashboard/ as a value chip; the caption. `cd ../api` (a run
+// up C minor), the dot hops back to api/, and `node --version` again, whose
 // chip lands on api/ before the poster frame (beat 18): both versions on
 // their folders, api current, the caption up. After the poster each
 // version's thread draws from the row that printed it to its chip (ART.md

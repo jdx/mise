@@ -46,7 +46,7 @@ type Fallback = CueValue | ((facts: ReelFacts | null) => CueValue);
 const TICKET_CUES = {
   /** The feed starts: twelve printer steps to the tear. */
   print: 0,
-  /** The tear: the ticket drops and hangs, and the fragment lands its F. */
+  /** The tear: the ticket drops and hangs. */
   tear: TICKET.cue.tear,
   /** It lifts off the rail. */
   lift: TICKET.cue.liftAt,
@@ -58,26 +58,26 @@ const TICKET_CUES = {
  */
 export const LISTEN = {
   open: {
-    /** The block chef's cells lift off the help screen: the intro swells. */
+    /** The block chef's cells lift off the help screen: tiny bells glint up to it. */
     lift: 3.75,
-    /** The vector chef resolves and the name card lands: M1's F. */
+    /** The vector chef resolves and the name card lands: the service bell. */
     resolve: 5.25,
     /**
      * "mise", "-en", "-place" write on (scenes/g1-brand/open-card.ts
-     * NAME_AT): the end card's sung "mise-en-place", C D♭ C, on the celesta.
+     * NAME_AT): C D♭ C on the celesta, as the end card writes it on again.
      */
     name: [5.75, 6, 6.25],
     /**
      * The name card and the chef leave. No sound of its own: an air under
-     * it sat 12 to 18 dB below the band, and the reed's closing C carries
-     * the exit. Listened for so the scene's export stays typed.
+     * it sat 12 to 18 dB below the synthesized band that carried the exit.
+     * Listened for so the scene's export stays typed.
      */
     leave: 10,
   },
   pitch: {
     /** [tools], [env] and [tasks] light in turn. */
     tables: [1.5, 1.75, 2],
-    /** `cd api` runs: the cwd dot hops (a tick; only `cd ../dashboard` changes key). */
+    /** `cd api` runs: the cwd dot hops (a tick; the switch's `cd`s are pitched). */
     cd: 5.75,
     /** `mise run ci` prints its tasks' lines. */
     ci: 18.9375,
@@ -119,11 +119,11 @@ export const LISTEN = {
   },
   versions: TICKET_CUES,
   switch: {
-    /** `cd ../dashboard` runs: the key moves to D♭. */
+    /** `cd ../dashboard` runs: a marimba run up the bed's chord there. */
     cdDashboard: 2.3125,
     /** dashboard's `node --version` prints. */
     dashboard: 6.1875,
-    /** `cd ../api` runs: the key comes home to F minor. */
+    /** `cd ../api` runs: a marimba run up the bed's chord there. */
     cdApi: 11.5,
     /** api's `node --version` prints. */
     api: 15.375,
@@ -211,7 +211,11 @@ export const LISTEN = {
   daemons: {
     /** `cd ../shop` runs. */
     cd: 1.362,
-    /** `mise run db` runs: pitchfork waits on pg_isready. */
+    /**
+     * `mise run db` runs: pitchfork waits on pg_isready. No sound of its
+     * own: the synthesized band rested over the wait, and the bed plays
+     * through it. Listened for so the scene's export stays typed.
+     */
     run: 7.442,
     /** `✔ [shop/postgres] started on port 5432`: the pilot light. */
     started: 7.989,
@@ -261,18 +265,18 @@ export const LISTEN = {
     slam: 6.7,
     /** git's first line prints. */
     git: 8.826,
-    /** [tools] lights: the tools acts' instruments return. */
+    /** [tools] lights: its table's voice from the pitch. */
     tools: 11.638,
     /** Each lane appears, in the take's order. */
     test: 15,
     lint: 15.625,
     build: 15.313,
     ci: 16.25,
-    /** [tasks] lights: the tasks act's instruments return. */
+    /** [tasks] lights: its table's voice from the pitch. */
     tasks: 20.125,
     /** The `[ci] api ready` line lands as big type: the bell. */
     ready: 22.75,
-    /** [env] lights: the environments act's instruments return. */
+    /** [env] lights: its table's voice from the pitch. */
     env: 23.875,
     /** The card folds to its three headers once the lanes have settled into [tasks]. */
     fold: 21.125,
@@ -289,7 +293,7 @@ export const LISTEN = {
     lift: 0.125,
     /** Each band settles over its lobe, tools, env, tasks (kit/chef.ts MORPH_CUE.lands). */
     lands: MORPH_CUE.lands,
-    /** The toque starts its drop: the band's last hit, on the downbeat. */
+    /** The toque starts its drop, on bar 2's downbeat: a soft kick. */
     drop: 4,
     /** The toque touches the head and the chef blooms (MORPH_CUE.land). */
     land: MORPH_CUE.land,

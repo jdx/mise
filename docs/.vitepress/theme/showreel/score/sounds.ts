@@ -1,21 +1,20 @@
 // from jdx/hk@37937824 docs/.vitepress/theme/showreel/score/sounds.ts
 // The score's sound palette: small struck and blown voices shared by every
-// section, the bass run and the pads a groove is built on, and the effects
-// that mark an accent: air, crackles, blips, the shimmer and the riser. Every voice is synthesized; nothing is sampled. Each event varies a
-// little, seeded by its own time (`vary`), so repeats sound human while
-// every start point still hears the same sounds.
+// section, and the effects that mark an accent: air, crackles, blips, the
+// shimmer and the riser. Every voice is synthesized; nothing is sampled.
+// Each event varies a little, seeded by its own time (`vary`), so repeats
+// sound human while every start point still hears the same sounds.
 //
 // Adapted for mise: only hk's generic voices, without its shanty and props,
-// and the pitched runs (shimmer, the riser's fifths) default to F minor, the
-// reel's home key. mise's band is in instruments.ts, and the sounds of its
-// sync points in props.ts.
+// and the pitched runs (shimmer, the riser's fifths) default to F, the
+// reel's home key. The pitched voices are in instruments.ts, the sounds of
+// the sync points in props.ts, and the music is the bed (bed.ts).
 
 import { BEAT } from "../timeline";
 import { hash } from "../math";
 import {
   ad,
   type Curve,
-  hold,
   hz,
   type Mix,
   type NoiseKind,
@@ -23,7 +22,6 @@ import {
   type Pt,
   sweep,
   type VoiceOpts,
-  warmOf,
   X,
 } from "./mix";
 
@@ -154,114 +152,13 @@ export function whoosh(
   if (v) v.noise(kind, 1, v.filter("bandpass", band, q));
 }
 
-// The bass and the pads under the groove.
-
-/**
- * A run of bass notes as one voice: the oscillators keep their phase from
- * note to note, so repeated notes never cancel, and the envelope dips at each
- * change to articulate it. Notes are [start, end, MIDI note, velocity].
- * `grit` is a band-passed saw at the root that puts the line's third to
- * sixth harmonics (150 to 300 Hz) about 11 dB under the fundamental, so the
- * line survives on laptop and phone speakers that roll off below 200 Hz.
- * With `gap`, a note that ends before the next begins decays like a plucked
- * string and stops dead at its end: a staccato oom-pah.
- */
-export function bassRun(
-  m: Mix,
-  notes: readonly Note[],
-  level = 0.08,
-  cutoff = 360,
-  grit = 0.3,
-  gap = false,
-): void {
-  const env: Pt[] = [];
-  const freq: Pt[] = [];
-  let silent = true;
-  notes.forEach(([a, b, n, vel], i) => {
-    const peak = level * vel;
-    freq.push(i === 0 ? [a, hz(n)] : [a, hz(n), "set"]);
-    env.push([a, silent ? 0 : 0.3 * peak]);
-    const next = notes[i + 1];
-    if (gap && (!next || next[0] > b + 0.01)) {
-      env.push(
-        [a + 0.008, peak],
-        [Math.max(a + 0.01, b - 0.03), 0.6 * peak, "exp"],
-        [b, 0.02 * peak, "exp"],
-        [b + 0.004, 0],
-      );
-      silent = true;
-    } else {
-      env.push([a + 0.012, peak], [b - 0.02, 0.82 * peak]);
-      silent = false;
-    }
-  });
-  if (!silent) {
-    const end = notes[notes.length - 1][1];
-    env.push([end, 0.0001, "exp"], [end + 0.004, 0]);
-  }
-  const v = m.voice(env, { bus: "music", hold: true });
-  if (!v) return;
-  const lp = v.filter("lowpass", cutoff, -3);
-  const sat = v.shaper(m.sh.sat, lp);
-  v.osc("sine", freq, 0.7, sat);
-  v.osc(
-    "triangle",
-    freq.map(([t, f, k]): Pt => [t, f * 2, k]),
-    0.12,
-    sat,
-  );
-  if (grit)
-    v.osc(
-      "sawtooth",
-      freq,
-      grit,
-      v.filter("bandpass", 210, 1.1, v.filter("lowpass", 420, -3)),
-    );
-}
-
-/** A note of a bass run or a tune: start and end in reel seconds, MIDI note, velocity. */
+/** A note of a phrase (motif.ts onReel): start and end in reel seconds, MIDI note, velocity. */
 export type Note = readonly [
   start: number,
   end: number,
   midi: number,
   vel: number,
 ];
-
-/**
- * One pad chord: two detuned voices spread across the stereo field. `thin`
- * highpasses it and scoops 250 to 400 Hz, so a breakdown chord leaves the
- * low end to the downbeat and the low mids to the liquid.
- */
-export function pad(
-  m: Mix,
-  t0: number,
-  t1: number,
-  notes: number[],
-  level: number,
-  cutoff: Curve,
-  attack = 0.08,
-  rel = 0.3,
-  thin = 0,
-): void {
-  const each = level / notes.length;
-  for (const side of [-1, 1]) {
-    const v = m.voice(hold(t0, attack, each, t1, 0.9 * each, rel), {
-      bus: "music",
-      pan: side * 0.4,
-      send: 0.3,
-      hold: true,
-    });
-    if (!v) continue;
-    let into: AudioNode = v.amp;
-    if (thin) {
-      const scoop = v.filter("peaking", 320, 1, v.amp);
-      scoop.gain.value = -5;
-      into = v.filter("highpass", thin, -1, scoop);
-    }
-    const lp = v.filter("lowpass", cutoff, -1, into);
-    for (const n of notes) v.osc(warmOf(m.ac, m.sh), hz(n), 1, lp, side * 7);
-  }
-}
 
 // Blips, crackles, glints and the riser.
 
@@ -300,8 +197,12 @@ export function crackle(
   v.noise("white", 0.5, am);
 }
 
-/** F minor from F7 up an octave: the shimmer's default run. */
-const F_MINOR_RUN: readonly number[] = [101, 103, 104, 106, 108, 109, 111, 113];
+/**
+ * F minor's pentatonic with no third, F G B♭ C E♭, from F7 up an octave:
+ * the shimmer's default run. It has no D♭ a semitone over the bed's
+ * ringing C, and no A♭ to rub against the bed's F where its third is A.
+ */
+const F_RUN: readonly number[] = [101, 103, 106, 108, 111, 113];
 
 /** A glint from `t0` to `t1`: tiny bells running up `notes` (MIDI), over a breath of air. */
 export function shimmer(
@@ -310,7 +211,7 @@ export function shimmer(
   t1: number,
   vel = 0.05,
   pan = 0.1,
-  notes: readonly number[] = F_MINOR_RUN,
+  notes: readonly number[] = F_RUN,
 ): void {
   notes.forEach((n, i) => {
     const t =

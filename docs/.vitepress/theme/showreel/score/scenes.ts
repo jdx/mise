@@ -1,7 +1,7 @@
 // Every scene module, by section id, for the cue API (score/cues.ts): the
 // score reads a module's `cues` export where it has one. The modules are
 // the picture's own, which the renderer bundles anyway; a scene imports
-// from score/ only the cue types and score/song.ts, so there is no cycle.
+// from score/ only the cue types, so there is no cycle.
 
 import * as args from "../scenes/args";
 import * as backends from "../scenes/backends";

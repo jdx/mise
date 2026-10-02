@@ -40,6 +40,7 @@ comment.md
 
 .claude/settings.local.json
 
-# showreel capture runs (mise run docs:showreel-capture)
+# showreel capture runs (mise run docs:showreel-capture) and the bed fit tool (docs:showreel-bed)
 /docs/.vitepress/showreel-capture/out/
 /docs/.vitepress/showreel-capture/__pycache__/
+/docs/.vitepress/showreel-bed/__pycache__/

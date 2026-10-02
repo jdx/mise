@@ -1,0 +1,152 @@
+# The bed's arrangement: which bars of the (stretched) track play at which
+# bars of the reel. A bar is 2 s: 4/4 at 120 BPM, two of the reel's 60 BPM
+# beats. The reel is 218 bars (436 s); `mise run docs:showreel-bed --
+# sections` prints where each section starts, in bars, and `analyse` prints
+# the track's bars with a chord guess for each, so the two can be matched.
+#
+# Each [[segment]] copies source bars [src_bar_from, src_bar_to) (bar 0 is
+# the first downbeat the analysis found, or --first-downbeat; "end" is the
+# end of the track's last whole bar, so that bar is included) to the reel
+# starting at reel bar reel_bar_at.
+# Optional per segment:
+#
+#   gain_db       level trim (the whole bed is normalised afterwards)
+#   fade_in_ms    fade in over this long from its first bar line, instead of
+#                 crossfading with the segment before
+#   fade_out_ms   fade out over this long, ending on its last bar line
+#   ring          the segment that ends last only: keep playing the track
+#                 past src_bar_to (its next bars, then its own ring-out)
+#                 until the reel ends at 436.0 s
+#
+# Where one segment ends on the bar line the next starts on, they crossfade
+# over crossfade_ms, ending ON the bar line, so the incoming downbeat lands
+# at full level; where the next carries straight on in the source (its
+# src_bar_from is the one before's src_bar_to, at the same gain, with no
+# fade between), the join is a plain cut instead, which is seamless, since
+# an equal-power crossfade of the same audio would bump it by 3 dB. Segments that overlap sum; reel bars no segment covers are
+# silent (the tool warns). The bed must be silent at 436.0 s: if the last
+# 20 ms still sound above silence_db, the tool fades the last tail_fade_ms
+# and warns, and the fix is an arrangement whose ending rings out in time.
+# The end card is the last 7 bars (211-218); the bed's own ending goes there.
+
+crossfade_ms = 30
+tail_fade_ms = 2000
+silence_db = -60
+
+# The arrangement of "mise screenreel", jdx's Suno track (2026-10-02:
+# 5:59.72, 48 kHz; score/BED.md has its provenance). It is on an exact 120
+# BPM clock with its first downbeat at 0.105 s, so with --bpm 120
+# --first-downbeat 0.105 every bar line is already on its frame and the
+# build only trims it, with no stretch; verify then finds the clear onsets
+# (a 20 dB rise) on 111 of the reel's bar lines, median 1 ms and 90th
+# percentile 3 ms off the grid (the limits are 5 and 15 ms). Its 179 whole
+# bars fall in blocks: intro 0-15 (no drums), groove 16-43, break 44-47,
+# groove 48-75, riser 76-79, breakdown 80-95 (no drums, no hats), groove
+# 96-109, break 110-111, groove 112-135 (F major), build 136-143, groove
+# 144-155, break 156-159, the loudest groove 160-167, wind-down 168-171, and
+# the outro 172-178, which rings out. The reel needs 39 bars more than that,
+# so a few are played twice. Every repeat or cut is on a section's bar line,
+# where the picture holds still, but two: lock's repeat of the fourth groove
+# at 5:36 (reel bar 168), and the jump to the loudest groove on clone's
+# chorus downbeat (6:38, reel bar 199). Every act opens on a drop or a
+# change. Segments split at an act's line where the source runs on (reel
+# bars 21, 55, 85 and 105) join with a plain cut.
+
+# Act 0 (mise): the intro, its first bars twice, so the drop lands on Act
+# I's ticket rather than in the middle of pitch.
+[[segment]] # open
+src_bar_from = 0
+src_bar_to = 7
+reel_bar_at = 0
+
+[[segment]] # pitch
+src_bar_from = 2
+src_bar_to = 16
+reel_bar_at = 7
+
+# Act I (Dev tools): the first groove, with two Gm bars played twice where
+# registry starts, so its break is backends' last four bars, into Act II.
+[[segment]]
+src_bar_from = 16
+src_bar_to = 27
+reel_bar_at = 21
+
+[[segment]]
+src_bar_from = 25
+src_bar_to = 48
+reel_bar_at = 32
+
+# Act II (Versions): the second groove, two Fm bars cut where packslip
+# starts, so its riser ends on Act III's ticket.
+[[segment]]
+src_bar_from = 48
+src_bar_to = 60
+reel_bar_at = 55
+
+[[segment]]
+src_bar_from = 62
+src_bar_to = 80
+reel_bar_at = 67
+
+# Act III (Environments): the breakdown, sparse under the clicks, with four
+# bars played twice where redact starts.
+[[segment]]
+src_bar_from = 80
+src_bar_to = 91
+reel_bar_at = 85
+
+[[segment]]
+src_bar_from = 87
+src_bar_to = 96
+reel_bar_at = 96
+
+# Act IV (Tasks): the drop on its ticket, the third groove, the short break
+# and the F major groove, as they come (its last bar is cut).
+[[segment]]
+src_bar_from = 96
+src_bar_to = 135
+reel_bar_at = 105
+
+# Acts V (Dotfiles) and VI's ticket: the build, the fourth groove and its
+# break, as they come.
+[[segment]]
+src_bar_from = 136
+src_bar_to = 160
+reel_bar_at = 144
+
+# Act VI (Everywhere): the fourth groove's first bars again, out over the
+# last bar before the whip, so the reel's riser has the stage (5:50-5:54).
+[[segment]]
+src_bar_from = 144
+src_bar_to = 151
+reel_bar_at = 168
+fade_out_ms = 400
+
+# Act VII (A new machine): the breakdown again for bootstrap's valley and
+# the breath (the section fader takes the breath down), then the build's
+# last seven bars into the loudest groove on clone's chorus downbeat (6:38),
+# the wind-down under the morph, and the outro under the end card.
+[[segment]]
+src_bar_from = 80
+src_bar_to = 95
+reel_bar_at = 177
+
+[[segment]]
+src_bar_from = 137
+src_bar_to = 144
+reel_bar_at = 192
+
+[[segment]]
+src_bar_from = 160
+src_bar_to = "end"
+reel_bar_at = 199
+ring = true
+
+# For another track, start from the track as it comes, from its first
+# downbeat, ringing out at its end, and loop or cut bars from there:
+#
+#   [[segment]]
+#   src_bar_from = 0
+#   src_bar_to = "end"
+#   reel_bar_at = 0
+#   ring = true

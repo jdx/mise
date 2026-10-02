@@ -4,14 +4,14 @@
 // written from the section's origin (`sec(id)`), so lengthening or
 // inserting a section moves its sounds with it.
 //
-// Adapted for mise: 60 BPM in F minor, quoting the chorus of jdx's
-// "mise-en-place" with no voice (motif.ts), arranged act by act as plan v3
-// §5 sets out (band.ts, instruments.ts), with a sound for every sync point
-// (props.ts). From the morph's held B♭ minor the recording takes over: half
-// a second before the end card's downbeat it enters under the chord, which
-// is gone by SCORE_END
-// (score/song.ts), and from there the end card's recording is the only
-// sound, mixed in at mux time.
+// Adapted for mise: 60 BPM in F minor. The music is the bed (bed.ts), one
+// recorded instrumental track on reel time that audio.ts plays under the
+// effects; the score here is the sound design: a sound for every sync point
+// the picture choreographs (props.ts, sounds.ts, instruments.ts), its
+// pitched ones in F minor and on the bed's chord of the moment (harmony.ts),
+// a few quoting the chorus of jdx's "mise-en-place" (motif.ts). The
+// sections' levels are the bed's fader (arc below). The end card's sounds are keyed to
+// its picture (end.ts, kit/namecard.ts END_CUES).
 //
 // Cues for scene builders
 // -----------------------
@@ -38,10 +38,9 @@
 // score was written, or the storyboard's caption anchor or grid beat
 // (sections.json); null waits for the scene. Ticket scenes take their
 // feed, tear and lift from kit/style.ts TICKET.cue unless they say
-// otherwise. The score reads the
-// modules through score/scenes.ts; a scene imports from score/ only the
-// cue types and score/song.ts (the end card's onsets), so there is no
-// cycle. A part reads its section's cues with listen() (score/listen.ts).
+// otherwise. The score reads the modules through score/scenes.ts; a scene
+// imports from score/ only the cue types, so there is no cycle. A part
+// reads its section's cues with listen() (score/listen.ts).
 
 import type { ReelFacts } from "../bible";
 import { BEAT, SECTIONS, type Section, type SectionId, sec } from "../timeline";
@@ -52,6 +51,7 @@ import { part as breath } from "./breath";
 import { part as clone } from "./clone";
 import { part as daemons } from "./daemons";
 import { part as depends } from "./depends";
+import { part as end } from "./end";
 import { part as lock } from "./lock";
 import type { Mix, Pt } from "./mix";
 import { part as morph } from "./morph";
@@ -67,32 +67,23 @@ import { part as track } from "./track";
 import { part as use } from "./use";
 import { part as vars } from "./vars";
 
-/** One layer of a section's share: the mix, the section, and the facts the picture draws. */
+/** A section's sounds: the mix, the section, and the facts the picture draws. */
 type Layer = (m: Mix, s: Section, facts: ReelFacts | null) => void;
 
-/** One section's share of the score. Every layer is optional. */
+/** One section's share of the score. */
 export interface Part {
   /**
-   * The groove's fader for the section (the drums and music buses; the cues
-   * keep their own levels), 1 by default. Together the sections' levels are
-   * the reel's loudness arc: the song's own build of about 10 dB, with
-   * Act III quieter, the valley before the clone near silent, and the
-   * climax the peak.
+   * The bed's fader for the section (the music bus; the cues keep their
+   * own levels), 1 by default. The bed carries its own dynamics (its
+   * arrangement, docs/.vitepress/showreel-bed/bed.toml, puts its quiet
+   * intro, breakdowns, builds and loudest groove where the reel wants
+   * them), so the fader is flat but for a few: Act III's breakdown lifted,
+   * the breath near silent, and the climax pushed.
    */
   level?: number;
   /** Sound design: a sound for each accent the section's picture choreographs. */
   cues?: Layer;
-  /** The drums, and the kicks the bass and the pads pump with. */
-  drums?: Layer;
-  bass?: Layer;
-  /** The tune. */
-  lead?: Layer;
-  /** The chords, pads and the band's figures. */
-  pads?: Layer;
 }
-
-/** The end card's part: nothing; the recording plays there (score/song.ts). */
-const RECORDING: Part = {};
 
 /** Every section's part. A new section needs an entry, even an empty one. */
 export const PARTS: Record<SectionId, Part> = {
@@ -122,11 +113,11 @@ export const PARTS: Record<SectionId, Part> = {
   breath,
   clone,
   morph,
-  end: RECORDING,
+  end,
 };
 
 /**
- * The groove's fader over the whole reel, from each section's level: it
+ * The bed's fader over the whole reel, from each section's level: it
  * moves over the half beat before a bar line, so the new level arrives
  * with the downbeat.
  */
@@ -142,12 +133,7 @@ export function arc(): Pt[] {
   return pts;
 }
 
-/** The layers, built in this order: the effects first, then the music under them. */
-const LAYERS = ["cues", "drums", "bass", "lead", "pads"] as const;
-
-/** Build one pass of the whole score into `m`. */
+/** Build one pass of the whole score into `m`: every section's sounds. */
 export function compose(m: Mix, facts: ReelFacts | null = null): void {
-  for (const layer of LAYERS) {
-    for (const { id } of SECTIONS) PARTS[id][layer]?.(m, sec(id), facts);
-  }
+  for (const { id } of SECTIONS) PARTS[id].cues?.(m, sec(id), facts);
 }
