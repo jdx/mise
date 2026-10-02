@@ -25,6 +25,10 @@ rustup)
 	"--version ") echo "rustup 1.29.1 (fake)" ;;
 	"show profile") echo minimal ;;
 	"toolchain install")
+		if [[ -e $STATE/fail_install ]]; then
+			echo "error: could not download" >&2
+			exit 1
+		fi
 		mkdir -p "$STATE/toolchains/$3"
 		rm -f "$STATE/update_available"
 		;;
@@ -88,8 +92,16 @@ assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "1"
 # rustup 1.29 reports a stable update: mise sees it and reinstalls the channel.
 touch "$STATE/update_available"
 assert_contains "mise upgrade rust --dry-run" "Would install rust@stable"
+
+# A failed update must leave the installed toolchain linked and usable.
+touch "$STATE/fail_install"
+assert_fail "mise upgrade rust"
+assert "test -L '$MISE_DATA_DIR/installs/rust/stable'"
+assert_contains "mise exec -- rustc -V" "rustc stable (fake)"
+rm "$STATE/fail_install"
+
 mise upgrade rust
-assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "2"
+assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "3"
 # The channel is updated in place: a failed install must not strand the old toolchain.
 assert "! grep -q '^toolchain uninstall' '$STATE/rustup.log'"
 assert "mise outdated rust --json" "{}"
