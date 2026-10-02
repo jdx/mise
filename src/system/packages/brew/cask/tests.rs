@@ -6004,26 +6004,61 @@ fn receipt_pkg_ids_keep_only_registered_receipts() {
 }
 
 #[test]
-fn receipt_pkg_ids_expand_patterns_and_fall_back_when_unmatched() {
-    let declared = vec!["com.example.pkg.*".to_string()];
-    let ids = resolve_installed_pkg_ids(&declared, |_| {
-        vec![
-            "com.example.pkg.b".to_string(),
-            "com.example.pkg.a".to_string(),
-        ]
+fn receipt_pkg_ids_keep_matching_patterns_and_fall_back_when_unmatched() {
+    let declared = vec![
+        "com.example.pkg.*".to_string(),
+        "com.example.other".to_string(),
+    ];
+    let ids = resolve_installed_pkg_ids(&declared, |pattern| {
+        if pattern == "com.example.pkg.*" {
+            vec!["com.example.pkg.a".to_string()]
+        } else {
+            Vec::new()
+        }
     });
-    assert_eq!(
-        ids,
-        vec![
-            "com.example.pkg.a".to_string(),
-            "com.example.pkg.b".to_string()
-        ]
-    );
+    assert_eq!(ids, vec!["com.example.pkg.*".to_string()]);
 
     assert_eq!(
         resolve_installed_pkg_ids(&declared, |_| Vec::new()),
         declared
     );
+}
+
+#[test]
+fn receipt_persists_resolved_pkg_ids() -> Result<()> {
+    let cask = test_cask("google-drive", "132.0.0");
+    let declared = vec![
+        "com.google.drivefs.arm64".to_string(),
+        "com.google.drivefs.x86_64".to_string(),
+    ];
+    let artifacts = CaskArtifacts {
+        pkg_ids: resolve_installed_pkg_ids(&declared, |pattern| {
+            if pattern.ends_with("arm64") {
+                vec![pattern.to_string()]
+            } else {
+                Vec::new()
+            }
+        }),
+        ..Default::default()
+    };
+    let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    file::create_dir_all(&version_dir)?;
+    write_receipt_with_flight_targets(
+        &version_dir,
+        &cask,
+        &artifacts,
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+
+    let receipt = read_receipt(&version_dir)?.expect("receipt was written");
+    assert_eq!(
+        receipt.pkg_ids,
+        vec!["com.google.drivefs.arm64".to_string()]
+    );
+    Ok(())
 }
 
 #[test]

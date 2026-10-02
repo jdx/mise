@@ -152,12 +152,15 @@ pub(super) fn pkgutil_output_has_match(output: &[u8]) -> bool {
     output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
-/// Narrows a cask's declared `uninstall pkgutil` patterns to the receipt IDs
-/// the installed pkg actually registered. Homebrew treats that list as IDs to
+/// Narrows a cask's declared `uninstall pkgutil` patterns to those that match
+/// a receipt the installed pkg registered. Homebrew treats that list as IDs to
 /// remove if present, so it can cover other architectures or optional
 /// components that never register here; requiring every pattern to match would
-/// report the cask missing forever. When nothing matches, the declared
-/// patterns are kept so an unverifiable install is still reported missing.
+/// report the cask missing forever. The patterns themselves are kept rather
+/// than the IDs they matched, so a self-updating package that replaces a
+/// receipt with a newer matching ID is still found. When nothing matches, the
+/// declared patterns are kept so an unverifiable install is still reported
+/// missing.
 pub(super) fn installed_pkg_receipt_ids(declared: &[String]) -> Vec<String> {
     if !cfg!(target_os = "macos") {
         return declared.to_vec();
@@ -169,16 +172,15 @@ pub(super) fn resolve_installed_pkg_ids(
     declared: &[String],
     mut matching_ids: impl FnMut(&str) -> Vec<String>,
 ) -> Vec<String> {
-    let mut ids = declared
+    let matched = declared
         .iter()
-        .flat_map(|pattern| matching_ids(pattern))
+        .filter(|pattern| !matching_ids(pattern).is_empty())
+        .cloned()
         .collect::<Vec<_>>();
-    ids.sort();
-    ids.dedup();
-    if ids.is_empty() {
+    if matched.is_empty() {
         declared.to_vec()
     } else {
-        ids
+        matched
     }
 }
 
@@ -567,7 +569,7 @@ pub(super) fn write_receipt_with_flight_targets(
         completions: artifacts.completion_target_paths(cask)?,
         flight_directories: flight_directories.to_vec(),
         generic: artifacts.generic_artifact_targets()?,
-        pkg_ids: installed_pkg_receipt_ids(&artifacts.pkg_ids),
+        pkg_ids: artifacts.pkg_ids.clone(),
         targets,
         prune_safe: prune_blocker.is_none(),
         prune_blocker,

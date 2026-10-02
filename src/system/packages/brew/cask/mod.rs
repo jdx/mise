@@ -615,7 +615,7 @@ impl BrewCaskManager {
             );
             return Ok(version);
         }
-        let artifacts = cask_artifacts(&cask)?;
+        let mut artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         // Validate the whole app batch before dependencies, downloads, or hooks
         // can mutate anything, including when producing a dry-run plan.
@@ -899,6 +899,11 @@ impl BrewCaskManager {
         for (index, pkg) in artifacts.pkgs.iter().enumerate() {
             install_pkg(&stage, pkg)?;
             record_cask_action(cask.manager, &mut journal, &format!("pkg[{index}]"))?;
+        }
+        // The receipt records the declared pkgutil patterns that this install
+        // actually registered, not the full uninstall list.
+        if !artifacts.pkgs.is_empty() {
+            artifacts.pkg_ids = installed_pkg_receipt_ids(&artifacts.pkg_ids);
         }
         for (index, font) in artifacts.fonts.iter().enumerate() {
             stage_font(&stage, &tmp_caskroom, font)?;
