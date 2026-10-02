@@ -285,11 +285,13 @@ jobs:
     name: build-tarball-windows-${{matrix.arch}}
     # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
     # with fat LTO and panic=unwind ran past the 150-minute timeout.
-    # The x64 build runs on the trusted self-hosted Windows runner when the repository variable
-    # WINDOWS_SELF_HOSTED is 'true' and the run is trusted, under the same condition the Linux and
-    # macOS jobs use to pick their runners. The runner refuses anything else itself. arm64 stays on
-    # a hosted native runner.
-    runs-on: ${{ matrix.arch == 'x64' && vars.WINDOWS_SELF_HOSTED == 'true' && !(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || matrix.runner }}
+    # The x64 build runs on self-hosted Windows runners for trusted runs. The release PR's dry run uses
+    # the shared trusted runner (repository variable WINDOWS_SELF_HOSTED=true). A real release (tag push or
+    # manual dispatch) uses a separate runner and account that never runs pull requests, so the binary that
+    # gets signed is not built where pull-request code has run (repository variable
+    # WINDOWS_RELEASE_SELF_HOSTED=true). Either variable unset falls back to the hosted runner. Each runner
+    # also enforces this itself. arm64 stays on a hosted native runner.
+    runs-on: ${{ matrix.arch == 'x64' && !(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) && ((github.event_name == 'pull_request' && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]')) || (github.event_name != 'pull_request' && vars.WINDOWS_RELEASE_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-release-v1"]'))) || matrix.runner }}
     # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
     # past this timeout on windows-latest depending on memory pressure, so
     # scripts/build-tarball.ps1 builds with thin LTO on hosted runners and with
