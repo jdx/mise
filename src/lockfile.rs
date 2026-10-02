@@ -5424,6 +5424,16 @@ mod tests {
                 with_platform("1", "y", &["1"]),
             ],
         );
+        // Matching platform key but the bound entry lacks the saved data: kept.
+        let mut empty_bound = tool("1", "e", &["1"]);
+        empty_bound
+            .platforms
+            .insert("linux-x64".to_string(), PlatformInfo::default());
+        let mut unbound = with_platform("1", "x", &[]);
+        unbound.backend = Some("e".to_string());
+        lockfile
+            .tools
+            .insert("e".to_string(), vec![unbound, empty_bound]);
         lockfile.tools.insert(
             "d".to_string(),
             vec![
@@ -5438,6 +5448,7 @@ mod tests {
         assert_eq!(lockfile.tools["b"].len(), 2);
         assert_eq!(lockfile.tools["c"].len(), 2);
         assert_eq!(lockfile.tools["d"].len(), 1);
+        assert_eq!(lockfile.tools["e"].len(), 2);
     }
 
     #[test]
