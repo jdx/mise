@@ -46,6 +46,7 @@ const SHOTS: Record<Edition, readonly Shot[]> = {
   overview: [INTRO, "switch", "use", "depends", OUTRO],
 };
 
+/** Map retained scenes to film time without shortening their reading holds. */
 export function cuts(edition: Edition): Cut[] {
   let at = 0;
   return SHOTS[edition].map((shot) => {
@@ -66,12 +67,15 @@ export function cuts(edition: Edition): Cut[] {
   });
 }
 
+/** Runtime of the retained shots, in delivered-film seconds. */
 export const filmDuration = (edition: Edition) => cuts(edition).at(-1)!.end;
+/** Locate a film shot; hold the final shot after the film ends. */
 export function cutAt(edition: Edition, time: number): Cut {
   const list = cuts(edition);
   return list.find((cut) => time < cut.end) ?? list[list.length - 1];
 }
 
+/** Group edited shots into contiguous chapters, including the brand cards. */
 export function filmChapters(edition: Edition): Chapter[] {
   const chapters: Chapter[] = [];
   for (const cut of cuts(edition)) {
@@ -119,5 +123,6 @@ export function filmChapters(edition: Edition): Chapter[] {
   return chapters;
 }
 
+/** WebVTT chapter track on the selected edition's delivered clock. */
 export const filmChaptersVtt = (edition: Edition = "tour") =>
   chaptersVtt(filmChapters(edition));

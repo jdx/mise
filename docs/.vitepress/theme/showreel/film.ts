@@ -23,6 +23,7 @@ const COLORS = {
 const fade = (t: number, at = 0, duration = 0.35) =>
   Math.max(0, Math.min(1, (t - at) / duration));
 
+/** Draw a line of type, scaling long recorded strings to the safe width. */
 function text(
   ctx: CanvasRenderingContext2D,
   value: string,
@@ -46,6 +47,7 @@ function text(
   ctx.fillText(value, x, y);
 }
 
+/** Paint the shared brand-card background, rule, name and site address. */
 function stage(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = COLORS.bg;
   ctx.fillRect(0, 0, W, H);
@@ -59,6 +61,7 @@ function stage(ctx: CanvasRenderingContext2D) {
   text(ctx, "mise.jdx.dev", 1370, 112, 36, COLORS.muted);
 }
 
+/** Reveal the three pillars beside an excerpt of the captured project config. */
 function intro(
   ctx: CanvasRenderingContext2D,
   t: number,
@@ -108,6 +111,7 @@ function intro(
   ctx.restore();
 }
 
+/** Reveal the install commands and documentation address on the closing card. */
 function outro(ctx: CanvasRenderingContext2D, t: number) {
   stage(ctx);
   ctx.save();
@@ -179,6 +183,7 @@ export function commandCallout(
   return null;
 }
 
+/** Render an edition on film time while replaying scenes on their source clock. */
 export function createFilm(
   facts: ReelFacts | null,
   edition: Edition = "tour",

@@ -8,6 +8,7 @@ import { musicChannel } from "./film-music";
 import { type Dip, LATENCY } from "./score/mix";
 import { DURATION } from "./timeline";
 
+/** Render edited effects and independently arranged music at the supplied rate. */
 export async function filmSoundtrack(
   facts: ReelFacts | null,
   song: AudioBuffer,

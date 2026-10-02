@@ -63,6 +63,7 @@ let pendingSeek: number | undefined;
 // the page is hydrated.
 const hydrated = ref(false);
 const started = ref(false);
+/** Pause playback and discard any queued chapter seek when changing films. */
 function selectEdition(value: "tour" | "overview") {
   if (value === edition.value) return;
   player.value?.pause();
@@ -70,6 +71,7 @@ function selectEdition(value: "tour" | "overview") {
   started.value = false;
   edition.value = value;
 }
+/** Start a chapter, deferring the seek until metadata is available if needed. */
 function seek(seconds: number) {
   const video = player.value;
   if (!video) return;
@@ -77,11 +79,13 @@ function seek(seconds: number) {
   else pendingSeek = seconds;
   play();
 }
+/** Apply the chapter seek queued before this source loaded its metadata. */
 function loaded() {
   if (pendingSeek === undefined || !player.value) return;
   player.value.currentTime = pendingSeek;
   pendingSeek = undefined;
 }
+/** Start native playback and move keyboard focus from the overlay to the video. */
 function play() {
   started.value = true;
   const video = player.value;

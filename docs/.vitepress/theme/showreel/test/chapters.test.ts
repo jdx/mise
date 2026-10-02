@@ -1,7 +1,7 @@
 // from jdx/hk@37937824 docs/.vitepress/theme/showreel/test/chapters.test.ts
 // The served chapters follow the landing-page edit; the source chapters
 // still describe the complete scene clock. When they change, rewrite with
-// `UPDATE_CHAPTERS=1 aube run test:showreel` and commit it.
+// `UPDATE_CHAPTERS=1 aube run test:showreel` and commit both tracks.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,16 +11,22 @@ import { ACTS, CHAPTERS, chaptersVtt, DURATION } from "../timeline";
 import { REPO } from "./repo";
 import { filmChaptersVtt } from "../edit";
 
-test("docs/public/showreel-chapters.vtt follows the delivered tour", () => {
-  const file = join(REPO, "docs/public/showreel-chapters.vtt");
-  if (process.env.UPDATE_CHAPTERS) writeFileSync(file, filmChaptersVtt());
-  const served = existsSync(file) ? readFileSync(file, "utf8") : "";
-  assert.equal(
-    served,
-    filmChaptersVtt(),
-    "the chapters track is stale: run `UPDATE_CHAPTERS=1 aube run test:showreel`",
-  );
-});
+for (const [edition, name] of [
+  ["tour", "showreel-chapters.vtt"],
+  ["overview", "showreel-overview-chapters.vtt"],
+] as const) {
+  test(`docs/public/${name} follows the delivered ${edition}`, () => {
+    const file = join(REPO, "docs/public", name);
+    const expected = filmChaptersVtt(edition);
+    if (process.env.UPDATE_CHAPTERS) writeFileSync(file, expected);
+    const served = existsSync(file) ? readFileSync(file, "utf8") : "";
+    assert.equal(
+      served,
+      expected,
+      "the chapters track is stale: run `UPDATE_CHAPTERS=1 aube run test:showreel`",
+    );
+  });
+}
 
 test("the chapters track has one cue per act, end to end", () => {
   const blocks = chaptersVtt().trimEnd().split("\n\n");
