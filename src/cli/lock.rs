@@ -1464,6 +1464,22 @@ impl Lock {
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
+        if self.is_unfiltered_lock_run() {
+            // A bound entry resolved by this run supersedes a legacy unbound
+            // entry of the same version and backend (for example after a tool
+            // option change).
+            let resolved = tools
+                .iter()
+                .map(|(ba, tv)| (ba.short.clone(), ba.stored_full(), tv.version.clone()))
+                .collect::<Vec<_>>();
+            lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
+                resolved.iter().any(|(name, backend, version)| {
+                    name == short
+                        && version == &entry.version
+                        && entry.backend.as_deref().is_some_and(|b| b == backend)
+                })
+            });
+        }
         if self.is_unfiltered_lock_run()
             && lockfile
                 .tools()
