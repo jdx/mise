@@ -4,10 +4,15 @@
 #![deny(dead_code_pub_in_binary, unreachable_pub)]
 
 use std::env;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
 const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
+/// What `mise x` resolved a shim's tool to; see the tool-shim arm in `run`.
+const MISE_SHIM_TARGET_ENV: &str = "__MISE_SHIM_TARGET";
+/// The name this executable ships under. Run under it, the tool would be `mise-shim` itself.
+const LAUNCHER_NAME: &str = "mise-shim";
 #[used]
 static NATIVE_SHIM_MARKER: [u8; 30] = *include_bytes!("../../../src/assets/native-shim-marker");
 
@@ -69,6 +74,28 @@ fn run() -> Result<i32, String> {
             command.arg("run").arg(task);
             command
         }
+        None if is_launcher_name(&tool) => {
+            // `mise x -- mise-shim` finds a copy of this executable again (a package manager
+            // may put one on PATH), so running it would never reach a real tool.
+            return Err(format!(
+                "mise-shim: refusing to run as `{}`: {} is the template mise copies to create tool \
+                 shims (e.g. node.exe), not a tool",
+                tool.to_string_lossy(),
+                exe.display()
+            ));
+        }
+        // `mise x` records what it resolved. A real tool's children inherit the tool's path, so
+        // this matches only when `mise x` picked this shim, which would dispatch straight back.
+        None if env::var_os(MISE_SHIM_TARGET_ENV)
+            .is_some_and(|target| paths_eq(Path::new(&target), &exe)) =>
+        {
+            return Err(format!(
+                "mise-shim: `mise x` resolved {} to {}, which is another shim, not the tool. \
+                 Remove that directory from PATH.",
+                tool.to_string_lossy(),
+                exe.display()
+            ));
+        }
         None => {
             let mut command = Command::new("mise");
             command.arg("x").arg("--").arg(&tool);
@@ -86,6 +113,12 @@ fn run() -> Result<i32, String> {
              See https://mise.jdx.dev for installation instructions."
         )),
     }
+}
+
+/// Whether `tool` is this executable's own shipped name, as Windows matches file names.
+fn is_launcher_name(tool: &OsStr) -> bool {
+    tool.to_str()
+        .is_some_and(|tool| tool.eq_ignore_ascii_case(LAUNCHER_NAME))
 }
 
 /// What `mise generate task-stubs` wrote into the stub beside this executable.
@@ -177,6 +210,21 @@ fn split_first_word(line: &str) -> Option<(String, &str)> {
             }
             // The closing quote, which has to be followed by the separator.
             None => return Some((word, after.strip_prefix(' ')?)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod recursion_tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_its_own_name_in_any_case() {
+        for name in ["mise-shim", "MISE-SHIM", "Mise-Shim"] {
+            assert!(is_launcher_name(OsStr::new(name)), "{name}");
+        }
+        for name in ["mise", "node", "mise-shim2", "my-mise-shim", ""] {
+            assert!(!is_launcher_name(OsStr::new(name)), "{name}");
         }
     }
 }
