@@ -24,3 +24,7 @@ TOML
 
 assert_fail "mise install --locked" "is a metadata file"
 assert_fail "mise install" "is a metadata file"
+
+# The API URL can be downloaded instead of the browser URL, so it is checked too.
+sed -i "s|^url = .*|url = \"https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v4.0.2/editorconfig-checker-darwin-all.tar.gz\"\nurl_api = \"https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/x.tar.gz.intoto.jsonl\"|" mise.lock
+assert_fail "mise install --locked" "is a metadata file"

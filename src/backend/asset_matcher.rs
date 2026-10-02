@@ -345,7 +345,10 @@ impl AssetPicker {
         scored_assets
             .into_iter()
             .filter(|(score, asset)| {
-                *score > 0 && !self.has_arch_mismatch(asset) && !is_non_executable_asset(asset)
+                *score > 0
+                    && !self.has_arch_mismatch(asset)
+                    && !is_non_executable_asset(asset)
+                    && !is_metadata_asset(asset)
             })
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
@@ -691,6 +694,7 @@ pub(crate) fn is_metadata_asset(asset: &str) -> bool {
         ".sha1",
         ".md5",
         ".json",
+        ".jsonl",
         ".txt",
         ".xml",
         ".sbom",
@@ -3104,6 +3108,22 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             picked, "buildkit-v0.26.3.windows-amd64.provenance.json",
             "Should select Windows provenance for Windows target"
         );
+    }
+
+    #[test]
+    fn test_metadata_assets_are_never_selected() {
+        for name in [
+            "tool-linux-x64.tar.gz.sbom.json",
+            "tool-linux-x64.intoto.jsonl",
+            "tool-linux-x64.tar.gz.sha256",
+        ] {
+            assert!(is_metadata_asset(name), "{name}");
+        }
+        assert!(!is_metadata_asset("tool-linux-x64.tar.gz"));
+
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["tool-linux-x64.intoto.jsonl".to_string()];
+        assert_eq!(picker.pick_best_asset(&assets), None);
     }
 
     #[test]
