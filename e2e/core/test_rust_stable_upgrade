@@ -6,7 +6,7 @@ unset CARGO_HOME RUSTUP_HOME MISE_CARGO_HOME MISE_RUSTUP_HOME
 
 # A fake rustup whose `check` reports a stable update (rustup 1.29 wording)
 # for as long as $STATE/update_available exists. Installing stable clears it.
-HOST=x86_64-unknown-linux-gnu
+HOST=aarch64-unknown-linux-musl
 PREFIX=$PWD/prefix
 BIN=$PREFIX/bin
 STATE=$PREFIX/state
@@ -32,11 +32,11 @@ rustup)
 	"component list" | "target list") ;;
 	"check ")
 		if [[ -e $STATE/update_available ]]; then
-			echo "stable-x86_64-unknown-linux-gnu - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)"
+			echo "stable-aarch64-unknown-linux-musl - update available: 1.98.1 (aaaa 2026-09-01) -> 1.99.0 (bbbb 2026-09-28)"
 		else
-			echo "stable-x86_64-unknown-linux-gnu - up to date : 1.99.0 (bbbb 2026-09-28)"
+			echo "stable-aarch64-unknown-linux-musl - up to date : 1.99.0 (bbbb 2026-09-28)"
 		fi
-		echo "nightly-x86_64-unknown-linux-gnu - update available: 1.100.0-nightly (cccc 2026-08-23) -> 1.101.0-nightly (dddd 2026-10-01)"
+		echo "nightly-aarch64-unknown-linux-musl - update available: 1.100.0-nightly (cccc 2026-08-23) -> 1.101.0-nightly (dddd 2026-10-01)"
 		echo "rustup - up to date : 1.29.1"
 		exit 100
 		;;
@@ -90,4 +90,6 @@ touch "$STATE/update_available"
 assert_contains "mise upgrade rust --dry-run" "Would install rust@stable"
 mise upgrade rust
 assert_contains "grep -c '^toolchain install stable' '$STATE/rustup.log'" "2"
+# The channel is updated in place: a failed install must not strand the old toolchain.
+assert "! grep -q '^toolchain uninstall' '$STATE/rustup.log'"
 assert "mise outdated rust --json" "{}"

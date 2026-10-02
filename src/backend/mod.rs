@@ -3559,6 +3559,14 @@ pub trait Backend: Debug + Send + Sync {
         versions.into_iter().find(|v| v.version == version)
     }
 
+    /// Whether the backend's installer updates an already installed rolling
+    /// version in place. When it does, a rolling reinstall skips the uninstall
+    /// that would otherwise precede it, so a failed install leaves the old
+    /// version usable (rustup shares one toolchain between projects).
+    fn updates_rolling_version_in_place(&self) -> bool {
+        false
+    }
+
     /// Check if a rolling version has changed (by comparing checksums)
     /// Returns true if the version should be updated
     async fn is_rolling_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
@@ -3906,8 +3914,9 @@ pub trait Backend: Debug + Send + Sync {
             install_satisfied = false;
         }
 
-        let will_uninstall =
-            (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
+        let will_uninstall = (ctx.force
+            || (rolling_reinstall && !self.updates_rolling_version_in_place()))
+            && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
             if let Some((script, true)) = tv.request.options().postinstall() {

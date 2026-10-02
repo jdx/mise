@@ -791,6 +791,11 @@ impl Backend for RustPlugin {
         }
     }
 
+    /// `rustup toolchain install stable` updates the installed toolchain in place.
+    fn updates_rolling_version_in_place(&self) -> bool {
+        true
+    }
+
     fn uses_custom_outdated_info(&self) -> bool {
         true
     }
