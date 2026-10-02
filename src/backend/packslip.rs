@@ -2195,10 +2195,7 @@ mod tests {
             &self.ba
         }
 
-        async fn _list_remote_versions(
-            &self,
-            _config: &Arc<Config>,
-        ) -> Result<Vec<VersionInfo>> {
+        async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
             Ok(vec![])
         }
 
@@ -2336,10 +2333,8 @@ mod tests {
             .await;
         let skill_archive = retry_lifecycle_skill_archive();
         let skill_digest = hex::encode(Sha256::digest(&skill_archive));
-        let statement = retry_lifecycle_statement(
-            &format!("{}/skill.zip", server.url()),
-            &skill_digest,
-        );
+        let statement =
+            retry_lifecycle_statement(&format!("{}/skill.zip", server.url()), &skill_digest);
         statement.validate().unwrap();
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2381,10 +2376,12 @@ mod tests {
         );
         assert!(crate::packslip::skills_incomplete_path(&install_path).is_file());
         assert!(backend.is_version_installed(&config, &tv, true));
-        assert!(!backend
-            .is_install_satisfied(&config, &tv, true)
-            .await
-            .unwrap());
+        assert!(
+            !backend
+                .is_install_satisfied(&config, &tv, true)
+                .await
+                .unwrap()
+        );
         assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
 
         initial_failure.remove_async().await;
@@ -2404,15 +2401,19 @@ mod tests {
             file::read_to_string(install_path.join("binary")).unwrap(),
             "original binary"
         );
-        assert!(install_path
-            .join(crate::packslip::RESOURCES_DIR)
-            .join("skills/retry/SKILL.md")
-            .is_file());
+        assert!(
+            install_path
+                .join(crate::packslip::RESOURCES_DIR)
+                .join("skills/retry/SKILL.md")
+                .is_file()
+        );
         assert!(!crate::packslip::skills_incomplete_path(&install_path).exists());
-        assert!(backend
-            .is_install_satisfied(&config, &tv, true)
-            .await
-            .unwrap());
+        assert!(
+            backend
+                .is_install_satisfied(&config, &tv, true)
+                .await
+                .unwrap()
+        );
         assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
         assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
 
