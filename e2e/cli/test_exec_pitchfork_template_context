@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Pitchfork passes a daemon command it cannot render to `mise x`, with its own
+# template variables as JSON.
+cat >mise.toml <<'TOML'
+[env]
+FROM_MISE = "from_mise"
+SHARED = "mise"
+[vars]
+greeting = "it's"
+TOML
+
+export PITCHFORK_TEMPLATE_CONTEXT='{"name":"api","env":{"SHARED":"daemon"},"daemons":{"redis":{"port":6379}}}'
+assert "mise x -- sh -c 'echo {{ vars.greeting | quote }} {{ env.FROM_MISE }} {{ env.SHARED }} {{ name }} {{ daemons.redis.port }}'" "it's from_mise daemon api 6379"
+# The variable is for that command only, not for anything it starts.
+assert "mise x -- sh -c 'echo \${PITCHFORK_TEMPLATE_CONTEXT:-unset}'" "unset"
+assert_fail_contains "mise x -- sh -c 'echo {{ vars.missing }}'" "failed to render daemon command"
+# Without it, a command's braces are left alone.
+unset PITCHFORK_TEMPLATE_CONTEXT
+assert "mise x -- sh -c 'echo {{ vars.greeting }}'" "{{ vars.greeting }}"
