@@ -8,10 +8,12 @@ outline: [2, 3]
 ## Community Participation
 
 ::: danger AI replies to Discussions and Issues are restricted
+AI replies to Discussions and Issues are restricted, and breaking the rule is **an instant ban across all of jdx's projects**.
+
 You may only use AI to reply to a [Discussion](https://github.com/jdx/mise/discussions) or
 [Issue](https://github.com/jdx/mise/issues) if you created it, you opened a PR that fixes it, or
 you have already had a contribution, attributed to your GitHub account, merged into the default branch of mise. Everyone else is not allowed to use AI to
-reply. This is a growing problem, and **doing it is an instant ban across all of jdx's projects.**
+reply. This is a growing problem.
 
 This includes raw, lightly edited, reviewed, and disclosed model output. Adding an "AI-assisted"
 footer does not make an AI reply acceptable on its own. If you are running an agent, make sure it
