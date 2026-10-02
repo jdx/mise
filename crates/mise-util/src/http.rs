@@ -2575,25 +2575,24 @@ async fn warn_when_download_is_slow(
     let mut watch = SlowDownloadWatch::new(Instant::now());
     let mut ticks = tokio::time::interval(SLOW_DOWNLOAD_SAMPLE_INTERVAL);
     ticks.tick().await;
-    loop {
+    let (host, rate) = loop {
         ticks.tick().await;
         let served_by = progress.served_by.lock().unwrap().clone();
-        if let Some((host, rate)) =
-            watch.sample(Instant::now(), progress.total(), served_by.as_ref())
-        {
-            let host = host
-                .or_else(|| url.host_str().map(str::to_string))
-                .unwrap_or_else(|| "the server".to_string());
-            warn!(
-                "download from {} is very slow ({}/s over the last minute). \
-                 mise keeps trying until `http_download_timeout` runs out; \
-                 if the host is throttling this connection, switching to a mirror may help",
-                host,
-                bytesize::ByteSize::b(rate).display().iec(),
-            );
-            return std::future::pending().await;
+        if let Some(sample) = watch.sample(Instant::now(), progress.total(), served_by.as_ref()) {
+            break sample;
         }
-    }
+    };
+    let host = host
+        .or_else(|| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "the server".to_string());
+    warn!(
+        "download from {} is very slow ({}/s over the last minute). \
+         mise keeps trying until `http_download_timeout` runs out; \
+         if the host is throttling this connection, switching to a mirror may help",
+        host,
+        bytesize::ByteSize::b(rate).display().iec(),
+    );
+    std::future::pending().await
 }
 
 #[cfg(test)]
