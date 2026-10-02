@@ -1491,33 +1491,19 @@ fn task_run(mise: &str, task: &str, args: &[String], after_init: bool) -> toml::
 /// treat `'` as a quote, so the program path is double-quoted and so is any
 /// argument that needs it.
 fn cmd_task_command(mise: &str, task: &str, args: &[String]) -> String {
-    // cmd expands `%VAR%` inside quotes too, and `^` does not escape there, so each
-    // `%` of the path is left outside the quotes and escaped.
-    let mise = mise.replace('%', "\"^%\"");
-    let mut run = format!("\"{mise}\" run {}", cmd_escaped_arg(task));
+    let mut run = format!(
+        "{} run {}",
+        presets::cmd_program(mise),
+        presets::cmd_quote(task)
+    );
     if !args.is_empty() {
         run.push_str(" --");
         for arg in args {
             run.push(' ');
-            run.push_str(&cmd_escaped_arg(arg));
+            run.push_str(&presets::cmd_quote(arg));
         }
     }
     run
-}
-
-/// One argument quoted for the program, with cmd's own metacharacters escaped by
-/// `^`: cmd ignores `\"`, so an escaped quote would otherwise end its quoting and
-/// expose what follows, and it expands `%VAR%` even inside quotes.
-fn cmd_escaped_arg(arg: &str) -> String {
-    let quoted = crate::path::quote_arg_for_cmd_body(arg);
-    let mut escaped = String::with_capacity(quoted.len() * 2);
-    for c in quoted.chars() {
-        if matches!(c, '(' | ')' | '%' | '!' | '^' | '"' | '<' | '>' | '&' | '|') {
-            escaped.push('^');
-        }
-        escaped.push(c);
-    }
-    escaped
 }
 
 fn take_string(table: &mut toml::Table, key: &str) -> Result<Option<String>> {
@@ -2142,7 +2128,13 @@ mod tests {
             .to_string();
         let init = run.find(" daemons __init ").unwrap();
         assert!(init < run.find("echo ready").unwrap());
-        assert!(run.contains("&& echo ready && exec "));
+        // cmd.exe has no `exec`, so on Windows the server follows the steps directly.
+        let server = if cfg!(windows) {
+            "&& echo ready && postgres "
+        } else {
+            "&& echo ready && exec "
+        };
+        assert!(run.contains(server), "{run}");
         // A task daemon with init keeps pitchfork's `mise x` wrapper, so the
         // steps and the task share one shell that has the project's tools.
         let wrapped = files(&[(
