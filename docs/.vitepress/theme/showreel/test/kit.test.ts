@@ -6,9 +6,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { BEAT, PALETTE, PILLAR, sec, TERM } from "../bible";
+import { BEAT, DURATION, PALETTE, PILLAR, sec, TERM } from "../bible";
 import { FONTS } from "../fonts";
-import { lampAt } from "../fx";
+import { grain, lampAt } from "../fx";
 import {
   anticipate,
   cascade,
@@ -343,4 +343,61 @@ test("the pass lamp holds over the stage until the morph's chef glides to its pl
   // On the chef's own curve: half way across as the chef is half way.
   const k = (mid.x - STAGE_FX.lamp.x) / (STAGE_FX.lampEnd.x - STAGE_FX.lamp.x);
   assert.ok(Math.abs(k - 0.5) < 1e-9);
+});
+
+/**
+ * What fx.grain lays over a frame at reel time `t`: which of its noise
+ * tiles it patterns, and where it shifts it. Its tiles are made once, on
+ * stub canvases numbered as they are made.
+ */
+function grainAt(t: number, fps: number): string {
+  const g = globalThis as { document?: unknown };
+  const had = g.document;
+  let made = 0;
+  g.document = {
+    createElement: () => ({
+      id: made++,
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        createImageData: (w: number, h: number) => ({
+          data: new Uint8ClampedArray(w * h * 4),
+        }),
+        putImageData: () => {},
+      }),
+    }),
+  };
+  const ops: string[] = [];
+  const ctx = new Proxy(
+    {
+      createPattern: (tile: { id: number }) => ({ tile: tile.id }),
+      translate: (x: number, y: number) => ops.push(`translate ${x} ${y}`),
+      fillRect: () => ops.push("fill"),
+    } as Record<string | symbol, unknown>,
+    {
+      get: (o, k) => (k in o ? o[k] : () => {}),
+      set: (_o, k, v) => {
+        if (k === "fillStyle") ops.push(`tile ${(v as { tile: number }).tile}`);
+        return true;
+      },
+    },
+  ) as unknown as CanvasRenderingContext2D;
+  try {
+    grain(ctx, 1920, 1080, t, STAGE_FX.grain.amount, fps);
+  } finally {
+    g.document = had;
+  }
+  return ops.join("; ");
+}
+
+test("the grain is still: the same tile, at the same offset, on every frame", () => {
+  // Grain re-seeded every frame is noise x264 cannot predict, and it is
+  // rounded away, so the dark gradients' 8-bit steps band into rings.
+  assert.equal(STAGE_FX.grain.fps, 0);
+  const first = grainAt(0, STAGE_FX.grain.fps);
+  assert.match(first, /tile \d+/);
+  for (const t of [1 / 60, 0.5, 57.3, sec("end").start + 0.3, DURATION - 0.01])
+    assert.equal(grainAt(t, STAGE_FX.grain.fps), first, `at ${t} s`);
+  // The check sees a re-seed: at 24 a second, the next 1/24 s is another.
+  assert.notEqual(grainAt(1 / 24, 24), grainAt(0, 24));
 });
