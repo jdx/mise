@@ -1034,7 +1034,8 @@ def main() -> int:
             p.add_argument("--out", help=f"the Opus file (default <work>/bed.opus; the reel's is {BED_FILE})")
             p.add_argument("--lufs", type=float, default=-32.0,
                            help="integrated loudness target (default -32: the master chain lifts the bed "
-                                "about 11 dB, so this puts the reel near -17 LUFS at BED.gainDb 0)")
+                                "about 11 dB; \"mise screenreel\" at -32 put the reel at -17.0 LUFS "
+                                "at BED.gainDb 0.7)")
             p.add_argument("--peak", type=float, default=-3.0, help="sample peak ceiling, dBFS (default -3)")
             p.add_argument("--bitrate", default="192k", help="Opus bitrate (default 192k)")
     p = sub.add_parser("verify", help="check an encoded bed against the grid")
