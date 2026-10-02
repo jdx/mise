@@ -93,8 +93,19 @@ Use [`ports`](#ports) to configure a preset's additional listeners. Custom daemo
 also accept pitchfork's structured `port` table; presets accept only an integer or
 mise's automatic port syntax.
 
-User-provided strings retain pitchfork template syntax; mise renders only the
-embedded preset templates.
+User-provided strings retain pitchfork template syntax, except that mise fills in
+`{{ env.NAME }}` and `{{ vars.NAME }}` from the project's [`[env]`](/environments/) and
+[`[vars]`](/configuration/vars) first. A daemon's own `env` table takes precedence over
+`[env]`, and pitchfork's variables such as `{{ port }}` or `{{ url }}` are left for
+pitchfork to render. Beyond that, mise renders only the embedded preset templates.
+
+```toml
+[vars]
+greeting = "hello"
+
+[daemons.hello]
+run = "exec echo '{{ vars.greeting }} from {{ env.USER }}'"
+```
 
 ## Tasks that require daemons
 

@@ -208,6 +208,7 @@ impl Provider {
             runtime::Runtime {
                 bin: previous.bin,
                 env: ts.env_with_path(&global).await?,
+                vars: global.vars.clone(),
             }
         } else {
             runtime::Runtime::from_toolset(&global, &ts, which::which("pitchfork").ok().as_deref())

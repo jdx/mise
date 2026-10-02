@@ -90,6 +90,7 @@ pub async fn emit(
             let runtime = Runtime {
                 bin,
                 env: env.clone(),
+                vars: config.vars.clone(),
             };
             runtime::validate_tools(&scoped_set, config, ts).await?;
             // Task references belong to the declaring project's task list, the
