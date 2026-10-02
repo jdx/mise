@@ -105,11 +105,14 @@ This needs a pitchfork release newer than 2.29.0 and applies to `run` only.
 :::
 
 ```toml
+[env]
+AUDIENCE = "world"
+
 [vars]
 greeting = "hello"
 
 [daemons.hello]
-run = "exec echo {{ vars.greeting | quote }} from {{ env.USER | quote }}"
+run = "exec echo {{ vars.greeting | quote }} {{ env.AUDIENCE | quote }}"
 ```
 
 ## Tasks that require daemons
