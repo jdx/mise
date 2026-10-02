@@ -159,6 +159,47 @@ fn in_terminal_foreground_pgrp() -> bool {
         || nix::unistd::tcgetpgrp(std::io::stderr()) == Ok(pgrp)
 }
 
+/// Whether the last SIGINT came from a process (`kill`, `sigqueue`) rather
+/// than from the terminal. Only Linux can tell: macOS gives a terminal Ctrl-C
+/// the same `si_code` and a sender pid, just like `kill`.
+#[cfg(target_os = "linux")]
+static SIGINT_FROM_PROCESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Record where each SIGINT comes from, so `kill_all` still passes on a
+/// SIGINT that was sent to mise alone. Call this before handling Ctrl-C.
+#[cfg(unix)]
+pub fn track_sigint_origin() {
+    #[cfg(target_os = "linux")]
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            // SAFETY: the action only stores to an atomic, which is
+            // async-signal-safe.
+            let registered = unsafe {
+                signal_hook_registry::register_sigaction(nix::libc::SIGINT, |info| {
+                    // The terminal sends SI_KERNEL. `kill` sends SI_USER (0),
+                    // and `sigqueue`, `tgkill` and the like send negative codes.
+                    SIGINT_FROM_PROCESS
+                        .store(info.si_code <= 0, std::sync::atomic::Ordering::Relaxed);
+                })
+            };
+            if let Err(e) = registered {
+                debug!("failed to track SIGINT origin: {e}");
+            }
+        });
+    }
+}
+
+#[cfg(unix)]
+fn sigint_from_terminal() -> bool {
+    #[cfg(target_os = "linux")]
+    if SIGINT_FROM_PROCESS.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    in_terminal_foreground_pgrp()
+}
+
 #[cfg(unix)]
 fn signal_process_tree(pid: u32, signal: nix::sys::signal::Signal) {
     let pid = nix::unistd::Pid::from_raw(pid as i32);
@@ -692,8 +733,7 @@ impl<'a> CmdLineRunner<'a> {
     #[cfg(unix)]
     pub fn kill_all(signal: nix::sys::signal::Signal) {
         let use_pgroup = should_use_pgroup();
-        let terminal_delivered =
-            signal == nix::sys::signal::SIGINT && in_terminal_foreground_pgrp();
+        let terminal_delivered = signal == nix::sys::signal::SIGINT && sigint_from_terminal();
         let own_pgid = nix::unistd::getpgrp();
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
