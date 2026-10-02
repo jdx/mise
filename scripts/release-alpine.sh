@@ -31,7 +31,10 @@ if [ -n "${ALPINE_GITLAB_SSH_KEY:-}" ]; then
 	sudo apk add --no-cache openssh-client
 	mkdir -p /home/packager/.ssh
 	chmod 700 /home/packager/.ssh
+	# keep the key out of the xtrace output
+	{ set +x; } 2>/dev/null
 	echo "$ALPINE_GITLAB_SSH_KEY" >/home/packager/.ssh/gitlab_alpine
+	set -x
 	chmod 600 /home/packager/.ssh/gitlab_alpine
 	echo "gitlab.alpinelinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA3AxnPM+Cquq/2QXWWmuHdgmfMIU+v/7kV/k3p+KpBd" >/home/packager/.ssh/known_hosts
 	export GIT_SSH_COMMAND="ssh -i /home/packager/.ssh/gitlab_alpine -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/packager/.ssh/known_hosts -o StrictHostKeyChecking=yes"
@@ -63,9 +66,14 @@ if [ "$DRY_RUN" == 0 ]; then
 	# build takes ~40 minutes, so this lets someone finish the push from a
 	# machine GitLab accepts instead of re-running the whole job. Best effort:
 	# a failure here must not block the real push.
+	{ set +x; } 2>/dev/null
 	git remote add backup "https://x-access-token:$GITHUB_TOKEN@github.com/$ALPINE_BACKUP_REPO.git"
+	set -x
 	backup_branch="mise-${MISE_VERSION#v}"
-	if ! git push backup "HEAD:refs/heads/$backup_branch" -f; then
+	backup_ok=0
+	if git push backup "HEAD:refs/heads/$backup_branch" -f; then
+		backup_ok=1
+	else
 		echo "::warning::could not push $backup_branch to github.com/$ALPINE_BACKUP_REPO"
 	fi
 
@@ -76,16 +84,26 @@ if [ "$DRY_RUN" == 0 ]; then
 			break
 		fi
 		echo "git push to gitlab.alpinelinux.org failed (attempt $attempt/3)"
-		[ "$attempt" -lt 3 ] && sleep $((attempt * 60))
+		if [ "$attempt" -lt 3 ]; then
+			sleep $((attempt * 60))
+		fi
 	done
 	if [ "$pushed" == 0 ]; then
-		cat <<EOF
-::error::could not push to gitlab.alpinelinux.org/jdxcode/aports (likely an HTTP 418 bot challenge on CI IPs).
+		echo "::error::could not push to gitlab.alpinelinux.org/jdxcode/aports (likely an HTTP 418 bot challenge on CI IPs)."
+		if [ "$backup_ok" == 1 ]; then
+			cat <<EOF
 The bump is committed at github.com/$ALPINE_BACKUP_REPO branch $backup_branch. To finish by hand:
   git clone --branch $backup_branch --single-branch https://github.com/$ALPINE_BACKUP_REPO.git aports
-  cd aports && git push git@gitlab.alpinelinux.org:jdxcode/aports.git HEAD:refs/heads/mise -f
-  glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
+  cd aports && git checkout -b mise
+  git push git@gitlab.alpinelinux.org:jdxcode/aports.git mise -f
+  GITLAB_HOST=gitlab.alpinelinux.org glab mr create --fill --yes -H jdxcode/aports -R alpine/aports
 EOF
+		else
+			cat <<EOF
+The GitHub backup push also failed, so the commit only existed in this job. Re-run the job, or
+bump community/mise/APKBUILD (pkgver, then abuild checksum) by hand and push it to jdxcode/aports.
+EOF
+		fi
 		exit 1
 	fi
 fi
