@@ -6,8 +6,8 @@ set -euo pipefail
 # instead of assuming the terminal already did. Only Linux reports whether a
 # SIGINT came from the terminal or from a process; macOS can't tell them apart.
 if [[ "$(uname)" != "Linux" ]]; then
-	echo "skipping: only Linux reports where a SIGINT came from"
-	exit 0
+  echo "skipping: only Linux reports where a SIGINT came from"
+  exit 0
 fi
 
 cat <<'TOML' >mise.toml
