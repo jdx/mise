@@ -63,7 +63,16 @@ impl Git {
     /// set (or by gix honoring it) have no `origin`, so fall back to the only
     /// remote the repo has.
     fn remote_name(&self) -> String {
-        let remotes = git_cmd_read!(&self.dir, "remote").unwrap_or_default();
+        // Read through gix first so a lookup does not spawn a process.
+        let remotes = match self.repo() {
+            Ok(repo) => repo
+                .remote_names()
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Err(_) => git_cmd_read!(&self.dir, "remote").unwrap_or_default(),
+        };
         pick_remote_name(&remotes)
     }
 
