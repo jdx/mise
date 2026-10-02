@@ -7,6 +7,12 @@ assert "mise x zig@0.13.0 -- zig version" "0.13.0"
 # It must not short-circuit to the unrelated installed 0.13.0 or create a frozen
 # "master" install directory.
 master_version=$(curl -fsSL https://ziglang.org/download/index.json | jq -r '.master.version')
-assert "mise x zig@master -- zig version" "$master_version"
+resolved_version=$(mise x zig@master -- zig version)
+if [ "$resolved_version" != "$master_version" ]; then
+  # master can move between mise's index fetch and ours; accept only a fresh
+  # official index value, so a resolver regression still fails.
+  master_version=$(curl -fsSL https://ziglang.org/download/index.json | jq -r '.master.version')
+fi
+assert "printf '%s' \"$resolved_version\"" "$master_version"
 [ ! -d "$MISE_DATA_DIR/installs/zig/master" ] || fail "zig@master must not create a frozen installs/zig/master dir"
 [ -d "$MISE_DATA_DIR/installs/zig/$master_version" ] || fail "zig@master should install the concrete indexed version"
