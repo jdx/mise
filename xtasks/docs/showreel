@@ -32,10 +32,11 @@
 # The key is the capture set's key (`showreel-capture --resolve-only`: what
 # the captures show and the rig that records them) plus every file the render
 # reads: the reel's code and data (not its tests or notes), the fonts, the
-# logos, the song, the renderer and the capture harness, and the esbuild and
-# playwright-core versions in aube-lock.yaml (playwright-core fixes the Chromium
-# that draws the frames). Nothing else renders it again: a release reuses the
-# last render, which also keeps its versioned URLs stable for link previews.
+# logos, the soundtrack's bed (score/bed.opus), the renderer and the capture
+# harness, and the esbuild and playwright-core versions in aube-lock.yaml
+# (playwright-core fixes the Chromium that draws the frames). Nothing else
+# renders it again: a release reuses the last render, which also keeps its
+# versioned URLs stable for link previews.
 #
 # With --cache, a failure (the resolve, the captures, the tests, the render)
 # never fails the command: it warns, puts the last good render in

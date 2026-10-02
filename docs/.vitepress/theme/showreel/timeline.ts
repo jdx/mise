@@ -69,10 +69,11 @@ export type Pillar = NonNullable<Act["pillar"]>;
  * The retime of 2026-09-28 (STORYBOARD.md "Pacing"): 27 sections, 436
  * beats at 60 BPM, 7:16, each section as long as its event plan needs
  * (sections.json `plan`, from kit/pace.ts Pace) with its rest; `morph` 8
- * beats and `end` 14, exactly the sung line, the rest and the button with
- * the ring-out clear of the last beat (jdx's decision 5). sections.json is
- * the source; this file imports nothing, so it keeps its own copy, and
- * test/storyboard.test.ts holds the two equal.
+ * beats and `end` 14, the length jdx's sung line, the rest and the button
+ * needed (jdx's decision 5). The line went on 2026-10-02; the end card
+ * keeps its length, on its own grid, over the bed's ending (score/bed.ts).
+ * sections.json is the source; this file imports nothing, so it keeps its
+ * own copy, and test/storyboard.test.ts holds the two equal.
  */
 export const SECTIONS = [
   { id: "open", act: "mise", label: "The mise command", beats: 14 },

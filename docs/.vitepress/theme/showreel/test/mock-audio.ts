@@ -19,13 +19,20 @@ const PARAM_METHODS = [
   "cancelScheduledValues",
 ] as const;
 
-/** Typed arrays are recorded by length and sum, which keeps the log small. */
+/**
+ * Typed arrays are recorded by length, sum and lowest value (how deep a
+ * gain curve dips), which keeps the log small.
+ */
 function summarize(v: unknown): unknown {
   if (ArrayBuffer.isView(v) && "length" in v) {
     const a = v as unknown as ArrayLike<number>;
     let sum = 0;
-    for (let i = 0; i < a.length; i++) sum += a[i];
-    return `${v.constructor.name}(${a.length}, sum ${sum})`;
+    let min = Infinity;
+    for (let i = 0; i < a.length; i++) {
+      sum += a[i];
+      min = Math.min(min, a[i]);
+    }
+    return `${v.constructor.name}(${a.length}, sum ${sum}, min ${min})`;
   }
   if (v && typeof v === "object" && "id" in v) return (v as { id: unknown }).id;
   return v;

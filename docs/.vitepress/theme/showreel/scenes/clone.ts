@@ -782,12 +782,11 @@ function homePath(from: Pt, home: Pt): (u: number) => Pt {
 /**
  * The `[ci]` line in big type (ART.md §12.10): its two lines rising in,
  * the first with caption 2 and the bell; its underlines; the glow behind
- * and a slow push-in over the hold. Then, as the song's line comes back,
- * it goes home: `[ci]`, the node version and `APP_ENV=…` each fly into
- * the card header of the table they came from, shrinking to the card's
- * type and fading into it (the header ignites as each lands), while the
- * words that name no table fade where they stand. By the morph only the
- * card is left, its three headers lit.
+ * and a slow push-in over the hold. Then it goes home: `[ci]`, the node
+ * version and `APP_ENV=…` each fly into the card header of the table they
+ * came from, shrinking to the card's type and fading into it (the header
+ * ignites as each lands), while the words that name no table fade where
+ * they stand. By the morph only the card is left, its three headers lit.
  */
 function climax(g: G, h: Headline, rows: CardRows, x: Take): void {
   const { ctx, b } = g;

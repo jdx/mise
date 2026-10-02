@@ -10,12 +10,12 @@
 // (kit/pace.ts): the block chef's cells dip, lift off the screen and fly
 // into a mosaic at the chef's place, green turning to paper, while the
 // block chef's own glyphs fade; the vector chef shows through them and
-// resolves (M1's F), blooming. The tagline lifts out of the pane into the
-// name card, crossing from mono to Space Grotesk glyph on glyph, as the
-// pane falls away; then "mise-en-place" writes on above it, a syllable a
-// quarter beat. The card and the chef hold two seconds, then leave (rising
-// 32 px, 3/8 beat), and the pitch's terminal rises in at `~/work $` and
-// holds through the bar line.
+// resolves (with the service bell), blooming. The tagline lifts out of the
+// pane into the name card, crossing from mono to Space Grotesk glyph on
+// glyph, as the pane falls away; then "mise-en-place" writes on above it,
+// a syllable a quarter beat. The card and the chef hold two seconds, then
+// leave (rising 32 px, 3/8 beat), and the pitch's terminal rises in at
+// `~/work $` and holds through the bar line.
 //
 // Copies lift, originals stay: the block chef's cells and the tagline that
 // fly are copies (kit/chef.ts, scenes/g1-brand/open-card.ts); the pane

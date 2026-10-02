@@ -133,8 +133,6 @@ export type Floats = ReturnType<typeof floats>;
 interface Shared {
   noise: Partial<Record<NoiseKind, AudioBuffer>>;
   room: AudioBuffer | null;
-  warm: PeriodicWave | null;
-  sat: Floats;
   crush: Floats;
   ceiling: Floats;
 }
@@ -200,18 +198,6 @@ export function noiseOf(
   return buf;
 }
 
-/** Pad wave: harmonics falling faster than a saw's, so it glows instead of buzzing. */
-export function warmOf(ac: BaseAudioContext, sh: Shared): PeriodicWave {
-  if (!sh.warm) {
-    const H = 40;
-    const real = new Float32Array(H);
-    const imag = new Float32Array(H);
-    for (let k = 1; k < H; k++) imag[k] = (1 / k) ** 1.45 * (k % 2 ? 1 : 0.7);
-    sh.warm = ac.createPeriodicWave(real, imag);
-  }
-  return sh.warm;
-}
-
 export function roomOf(ac: BaseAudioContext, sh: Shared): AudioBuffer {
   sh.room ??= roomImpulse(ac);
   return sh.room;
@@ -262,8 +248,6 @@ export function shared(ac: BaseAudioContext): Shared {
   s = {
     noise: {},
     room: null,
-    warm: null,
-    sat: curve(2048, (x) => Math.tanh(1.8 * x) / Math.tanh(1.8)),
     crush: curve(2048, (x) => Math.round(x * 5) / 5),
     // Final safety after the limiter: unity below 0.66, then a smooth knee
     // that never passes 0.75 (-2.5 dBFS), so the true peak between samples
@@ -284,10 +268,7 @@ export function shared(ac: BaseAudioContext): Shared {
 
 // The mix: buses, time mapping, voices.
 
-type Bus = "sfx" | "drums" | "music";
-
 export interface VoiceOpts {
-  bus?: Bus;
   pan?: Curve;
   /** Reverb send level. */
   send?: number;
@@ -303,14 +284,12 @@ function rings(env: readonly Pt[], t: number): boolean {
 }
 
 /**
- * The score's voices, from reel time `from` on, and the accents and kicks
- * the duck curves follow (audio.ts), recorded as the composition builds them.
+ * The score's voices, from reel time `from` on, and the accents the duck
+ * curve follows (audio.ts), recorded as the composition builds them.
  */
 export class Mix {
   /** Effect accents the music ducks under: time, depth, release. */
   readonly ducks: Dip[] = [];
-  /** Groove kicks, for the bass and pad pump. */
-  readonly kicks: number[] = [];
   /**
    * The earliest reel time a sound can start: `from`, or later when `from`
    * plays less than LATENCY into the context, before its time 0.
@@ -326,7 +305,12 @@ export class Mix {
     readonly sh: Shared,
     readonly from: number,
     readonly when: number,
-    readonly buses: Record<Bus, AudioNode>,
+    /**
+     * The effects bus every voice mixes into. The music bus beside it is
+     * the bed's alone (audio.ts): it ducks under these voices and rides
+     * the sections' fader, and nothing the score composes plays on it.
+     */
+    readonly sfx: AudioNode,
     readonly verb: AudioNode,
   ) {
     this.floor = Math.max(from, from + LATENCY - when);
@@ -395,18 +379,14 @@ export class Mix {
     this.ducks.push([t, depth, release]);
   }
 
-  kick(t: number): void {
-    this.kicks.push(t);
-  }
-
   /**
    * A shared channel strip (static pan, reverb send) that voices mix into, so
    * a few dozen panners and send gains serve every voice.
    */
-  strip(bus: Bus, pan: number, send: number): AudioNode {
+  strip(pan: number, send: number): AudioNode {
     const p = Math.round(pan * 20) / 20;
     const s = Math.round(send * 50) / 50;
-    const key = `${bus}|${p}|${s}`;
+    const key = `${p}|${s}`;
     let input = this.strips.get(key);
     if (!input) {
       input = this.ac.createGain();
@@ -416,7 +396,7 @@ export class Mix {
         sp.pan.value = p;
         out = input.connect(sp);
       }
-      out.connect(this.buses[bus]);
+      out.connect(this.sfx);
       if (s) {
         const g = this.ac.createGain();
         g.gain.value = s;
@@ -505,11 +485,7 @@ export class Voice {
     }
     m.link(
       out,
-      m.strip(
-        o.bus ?? "sfx",
-        typeof o.pan === "number" ? o.pan : 0,
-        o.send ?? 0,
-      ),
+      m.strip(typeof o.pan === "number" ? o.pan : 0, o.send ?? 0),
       enter + shift,
     );
   }

@@ -6,12 +6,14 @@
 // 1, on "short"; a chorus bar is 8 eighths, 2 reel beats. Pitches are MIDI,
 // in F minor.
 //
-// The score quotes M1 whole at the open and the climax, a fragment of it
-// on each act's ticket (the head or the sigh), the "C-I both" cell at the
-// packslip's skills link, chorus bars 7 and 8 into the morph, and bars 9 to
-// 12 through it. M2, the cadence, is here only so test/motif.test.ts can
-// hold that the score never plays it: the end card's recording is the one
-// place it is heard, in jdx's voice.
+// The synthesized band quoted M1 whole at the open and the climax, a
+// fragment of it on each act's ticket, and chorus bars 7 to 12 into and
+// through the morph; the bed (bed.ts) has replaced it. What the sound
+// design still quotes is the "C-I both" cell, G G G F on the celesta at the
+// packslip's skills link (packslip.ts), and the name's C D♭ C as it writes
+// on (props.ts writeName). The phrases named below stay pinned to the
+// transcription (test/motif.test.ts), M2, the cadence, among them, which
+// the score never plays (the test listens to every part for it).
 
 import { X } from "./mix";
 import type { Note } from "./sounds";
@@ -123,14 +125,7 @@ export const HEAD = span(-2, 3);
 export const SIGH = span(6, 11);
 /** "the C-I both": G G G F, the sigh's cell recited on the second. */
 export const BOTH = span(70, 76);
-/**
- * Chorus bars 7 and 8, "that sim-ply starts for you", and the pickup "The"
- * whose C4 lands the next note, F4, on bar 9's downbeat.
- */
-export const STARTS = span(49, 64);
-/** Chorus bars 9 to 12: "The laptop and the CI both become interoperable". */
-export const LAPTOP = span(64, 95);
-/** M2, the cadence. Never played: the recording sings it on the end card. */
+/** M2, the cadence: the song's own ending. Never played (plan v3 §5). */
 export const M2 = span(111, 133);
 
 /**
