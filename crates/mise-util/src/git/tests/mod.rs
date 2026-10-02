@@ -181,3 +181,12 @@ fn update_resolves_short_branches_and_tags() {
 }
 
 mod worktree;
+
+#[test]
+fn test_pick_remote_name() {
+    assert_eq!(pick_remote_name(""), "origin");
+    assert_eq!(pick_remote_name("origin\n"), "origin");
+    assert_eq!(pick_remote_name("upstream\n"), "upstream");
+    assert_eq!(pick_remote_name("fork\norigin\n"), "origin");
+    assert_eq!(pick_remote_name("upstream\nfork\n"), "upstream");
+}
