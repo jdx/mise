@@ -60,6 +60,14 @@ mise install --locked
 install_path=$(mise where github:jdx/mise-test-fixtures)
 assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
 
+# A locked supplemental artifact whose url_api names a different metadata file is rejected.
+mise uninstall github:jdx/mise-test-fixtures
+sed '/^url = ".*\/fd-8.7.0.tar.gz"$/{n;s|.*|url_api = "https://example.com/dl/fd-8.7.0.tar.gz.sbom.json"|}' mise.lock.complete >mise.lock
+assert_contains "cat mise.lock" "fd-8.7.0.tar.gz.sbom.json"
+assert_fail "mise install --locked" "is a metadata file"
+cp mise.lock.complete mise.lock
+mise install --locked
+
 # Removing the supplemental pattern refreshes stale lock artifacts.
 sed '/additional_asset_patterns/d' mise.toml >mise.toml.primary-only
 mv mise.toml.primary-only mise.toml

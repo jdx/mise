@@ -999,16 +999,35 @@ impl Backend for UnifiedGitBackend {
                     &platform.additional_artifacts,
                 ) =>
             {
-                platform
-                    .additional_artifacts
-                    .iter()
-                    .map(|artifact| ReleaseAsset {
-                        name: get_filename_from_url(&artifact.url),
+                // Each locked `url` was just matched against the user's configured
+                // pattern, so it is an explicit choice. Its `url_api` must not be
+                // a different metadata file than that choice.
+                let mut assets = Vec::new();
+                for artifact in &platform.additional_artifacts {
+                    let name = get_filename_from_url(&artifact.url);
+                    let url_api = locked_api_url_to_use(artifact.url_api.as_deref());
+                    let api_name = get_filename_from_url(&url_api);
+                    if !url_api.is_empty()
+                        && asset_matcher::is_metadata_asset(&api_name)
+                        && api_name != name
+                    {
+                        eyre::bail!(
+                            "{} is locked to {} as an additional artifact for platform {}, which is a metadata file that does not match the selected asset {}.\n\
+                             Run `mise lock` to regenerate the entry.",
+                            tv.style(),
+                            api_name,
+                            platform_key,
+                            name
+                        );
+                    }
+                    assets.push(ReleaseAsset {
+                        name,
                         url: artifact.url.clone(),
-                        url_api: artifact.url_api.clone().unwrap_or_default(),
+                        url_api,
                         digest: None,
-                    })
-                    .collect()
+                    });
+                }
+                assets
             }
             _ if ctx.locked
                 && (!additional_patterns.is_empty() || locked_additional_artifacts_present) =>
