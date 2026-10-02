@@ -1,8 +1,15 @@
 name: auto-merge-release
 
-on:
+on: # zizmor: ignore[dangerous-triggers] reads metadata only; never checks out PR code
+  # A draft release PR is an explicit hold. This event disarms a release PR
+  # that was armed earlier in the day.
+  pull_request_target:
+    types: [converted_to_draft]
   schedule:
-    - cron: "0 10 * * *"
+    # GitHub Actions cron is UTC. Each afternoon hour covers either CDT or CST;
+    # the local-time guard ignores the non-matching hour. The later minutes are
+    # best-effort retries when GitHub delays the initial scheduled run.
+    - cron: "15,30,45 20,21 * * *"
   workflow_dispatch:
 
 jobs:
@@ -14,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -21,18 +29,62 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Match this repository's release branch only; a fork may also have a
+          # branch named release, but it must never be armed by this workflow.
+          PR_NUMBER=$(gh api "repos/jdx/mise/pulls?head=jdx:release&base=main&state=open" \
+            --jq '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR from jdx:release to main"
+            exit 0
+          fi
+
+          read -r DRAFT AUTO_MERGE HEAD_SHA RELEASE_NOW < <(gh pr view "$PR_NUMBER" -R jdx/mise \
+            --json isDraft,autoMergeRequest,headRefOid,labels \
+            --jq '[.isDraft, (.autoMergeRequest != null), .headRefOid, any(.labels[]; .name == "release-now")] | @tsv')
+          if [ "$DRAFT" = true ]; then
+            if [ "$AUTO_MERGE" = true ]; then
+              gh pr merge "$PR_NUMBER" -R jdx/mise --disable-auto
+              echo "Disabled auto-merge for draft release PR #$PR_NUMBER"
+            else
+              echo "Release PR #$PR_NUMBER is a draft; it is not armed"
+            fi
+            exit 0
+          fi
+
+          # Draft-conversion events only disarm. Making a draft ready again
+          # cannot release it early; only the scheduled run can arm it.
+          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request_target" ]; then
+            echo "Release PR #$PR_NUMBER is ready, but this is not the scheduled arming run"
+            exit 0
+          fi
+
+          if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ]; then
+            read -r HOUR _ < <(TZ=America/Chicago date '+%-H %-M')
+            if [ "$HOUR" -ne 15 ]; then
+              echo "Not the 15:15 America/Chicago arming window"
+              exit 0
+            fi
+
+            if [ "$RELEASE_NOW" = true ]; then
+              echo "release-now label overrides the scheduled-window guard"
+            else
+              # The required status prevents a delayed run from arming while the
+              # 15:00 cutoff is still reported as successful.
+              RELEASE_WINDOW=$(gh api "repos/jdx/mise/commits/$HEAD_SHA/status" \
+                --jq '[.statuses[] | select(.context == "release-window")][0].state // empty')
+              if [ "$RELEASE_WINDOW" != pending ]; then
+                echo "release-window is ${RELEASE_WINDOW:-unset}; not arming release PR #$PR_NUMBER"
+                exit 0
+              fi
+            fi
+          else
+            echo "Manual dispatch; skipping scheduled-window guard"
+          fi
+
           if [ "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ]; then
             latest_tag=$(git describe --tags --match 'v[0-9]*' --abbrev=0 || true)
             if [ -n "$latest_tag" ]; then
               range="${latest_tag}..HEAD"
-              tag_time=$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/$latest_tag")
-              now=$(date +%s)
-              min_age=$((7 * 24 * 60 * 60))
-              age=$((now - tag_time))
-              if [ "$age" -lt "$min_age" ]; then
-                echo "Latest release ${latest_tag} is less than 7 days old; not auto-merging release PRs"
-                exit 0
-              fi
             else
               echo "No v[0-9]* release tag found; allowing bootstrap release"
               range=""
@@ -48,12 +100,6 @@ jobs:
             echo "Manual dispatch; skipping release cadence guards"
           fi
 
-          PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number // empty')
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No open PR from release to main"
-            exit 0
-          fi
-
           BODY=$(gh pr view "$PR_NUMBER" -R jdx/mise --json body --jq '.body // ""')
           TRIMMED_BODY=$(echo "$BODY" | tr -d '[:space:]')
           if [ -z "$TRIMMED_BODY" ]; then
@@ -61,7 +107,36 @@ jobs:
             exit 0
           fi
 
-          echo "PR #$PR_NUMBER is ready for the daily release window"
+          # Recheck the mutable state after the cadence work before enabling
+          # auto-merge. A draft or new head must wait for the next schedule.
+          read -r DRAFT AUTO_MERGE CURRENT_HEAD CURRENT_RELEASE_NOW < <(gh pr view "$PR_NUMBER" -R jdx/mise \
+            --json isDraft,autoMergeRequest,headRefOid,labels \
+            --jq '[.isDraft, (.autoMergeRequest != null), .headRefOid, any(.labels[]; .name == "release-now")] | @tsv')
+          if [ "$DRAFT" = true ]; then
+            if [ "$AUTO_MERGE" = true ]; then
+              gh pr merge "$PR_NUMBER" -R jdx/mise --disable-auto
+            fi
+            echo "Release PR #$PR_NUMBER became a draft; it is not armed"
+            exit 0
+          fi
+          if [ "$CURRENT_HEAD" != "$HEAD_SHA" ]; then
+            echo "Release PR #$PR_NUMBER changed while checking guards; not arming"
+            exit 0
+          fi
+          if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ] && [ "$CURRENT_RELEASE_NOW" != true ]; then
+            RELEASE_WINDOW=$(gh api "repos/jdx/mise/commits/$CURRENT_HEAD/status" \
+              --jq '[.statuses[] | select(.context == "release-window")][0].state // empty')
+            if [ "$RELEASE_WINDOW" != pending ]; then
+              echo "release-window is ${RELEASE_WINDOW:-unset}; not arming release PR #$PR_NUMBER"
+              exit 0
+            fi
+          fi
+          if [ "$AUTO_MERGE" = true ]; then
+            echo "Release PR #$PR_NUMBER is already armed"
+            exit 0
+          fi
+
+          echo "PR #$PR_NUMBER is ready for the next 03:00 Central release window"
 
           gh pr merge "$PR_NUMBER" -R jdx/mise --squash --auto || {
             echo "Merge failed or PR not ready, will retry on the next run"
