@@ -161,6 +161,7 @@ for tools in \
   '"aqua:o/r":{"version":"1","libc":"musl","vars":{"a":"b"}}' \
   '"cargo:ripgrep":{"version":"1","features":["a"],"locked":false,"platforms":{"linux-x64":{"bin":"rg"}}}' \
   '"npm:x":{"version":"1","allow_builds":["a"],"allow_exotic_deps":true}' \
+  '"npm:x":{"version":"1","allow_low_downloads":"TRUE"}' \
   '"pipx:x":{"version":"1","extras":["a"],"uvx":false,"dependency_prereleases":"allow"}' \
   '"python":{"version":"3","patch_sysconfig":"false"}' \
   '"java":{"version":"21","release_type":"ea"}' \
@@ -183,6 +184,8 @@ for tools in \
   '"aqua:o/r":{"version":"1","libc":"uclibc"}' \
   '"cargo:ripgrep":{"version":"1","features":5}' \
   '"npm:x":{"version":"1","allow_low_downloads":"sure"}' \
+  '"npm:x":{"version":"1","allow_low_downloads":"1"}' \
+  '"npm:x":{"version":"1","allow_low_downloads":1}' \
   '"python":{"version":"3","patch_sysconfig":"nah"}' \
   '"java":{"version":"21","release_type":"stable"}' \
   '"dotnet-core":{"version":"8","runtime":"sdk"}' \

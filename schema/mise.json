@@ -3077,6 +3077,28 @@
         }
       ]
     },
+    "tool_bool_text": {
+      "description": "a boolean, also accepted as the string true or false",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\s*([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])\\s*$"
+        }
+      ]
+    },
+    "tool_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
     "tool_forge_options": {
       "type": "object",
       "properties": {
@@ -3233,6 +3255,55 @@
         }
       }
     },
+    "tool_forge_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "asset_pattern": {
+            "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
+          },
+          "additional_asset_patterns": {
+            "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
+          },
+          "url": {
+            "description": "direct download url for this platform, tera templated; skips release asset selection",
+            "type": "string"
+          },
+          "no_app": {
+            "$ref": "#/$defs/tool_forge_options/properties/no_app"
+          },
+          "filter_bins": {
+            "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_forge_options/properties/checksum"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_forge_options/properties/size"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_forge_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_forge_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_forge_options/properties/bin_path"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_forge_options/properties/format"
+          }
+        }
+      }
+    },
     "tool_github": {
       "description": "a tool installed with the github backend",
       "oneOf": [
@@ -3254,102 +3325,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 }
               }
             }
@@ -3388,102 +3369,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 }
               }
             }
@@ -3522,102 +3413,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "asset_pattern": {
-                        "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
-                      },
-                      "additional_asset_patterns": {
-                        "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-                      },
-                      "url": {
-                        "description": "direct download url for this platform, tera templated; skips release asset selection",
-                        "type": "string"
-                      },
-                      "no_app": {
-                        "$ref": "#/$defs/tool_forge_options/properties/no_app"
-                      },
-                      "filter_bins": {
-                        "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_forge_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_forge_options/properties/size"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_forge_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_forge_options/properties/bin_path"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_forge_options/properties/format"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
                 }
               }
             }
@@ -3668,6 +3469,21 @@
         }
       }
     },
+    "tool_ubi_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin_path": {
+            "$ref": "#/$defs/tool_ubi_options/properties/bin_path"
+          }
+        }
+      }
+    },
     "tool_ubi": {
       "description": "a tool installed with the ubi backend",
       "oneOf": [
@@ -3686,34 +3502,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_ubi_options/properties/bin_path"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_ubi_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_ubi_options/properties/bin_path"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_ubi_platforms"
                 }
               }
             }
@@ -3845,6 +3639,48 @@
         }
       }
     },
+    "tool_http_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "$ref": "#/$defs/tool_http_options/properties/url"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_http_options/properties/checksum"
+          },
+          "checksum_url": {
+            "$ref": "#/$defs/tool_http_options/properties/checksum_url"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_http_options/properties/size"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_http_options/properties/format"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_http_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_http_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_http_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_http_options/properties/bin_path"
+          },
+          "windows_script_interpreter": {
+            "$ref": "#/$defs/tool_http_options/properties/windows_script_interpreter"
+          }
+        }
+      }
+    },
     "tool_http": {
       "description": "a tool installed with the http backend",
       "oneOf": [
@@ -3863,88 +3699,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "url": {
-                        "$ref": "#/$defs/tool_http_options/properties/url"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_http_options/properties/checksum"
-                      },
-                      "checksum_url": {
-                        "$ref": "#/$defs/tool_http_options/properties/checksum_url"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_http_options/properties/size"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_http_options/properties/format"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_http_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_http_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_http_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_http_options/properties/bin_path"
-                      },
-                      "windows_script_interpreter": {
-                        "$ref": "#/$defs/tool_http_options/properties/windows_script_interpreter"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_http_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "url": {
-                        "$ref": "#/$defs/tool_http_options/properties/url"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_http_options/properties/checksum"
-                      },
-                      "checksum_url": {
-                        "$ref": "#/$defs/tool_http_options/properties/checksum_url"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_http_options/properties/size"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_http_options/properties/format"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_http_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_http_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_http_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_http_options/properties/bin_path"
-                      },
-                      "windows_script_interpreter": {
-                        "$ref": "#/$defs/tool_http_options/properties/windows_script_interpreter"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_http_platforms"
                 }
               }
             }
@@ -4072,6 +3832,63 @@
         }
       }
     },
+    "tool_s3_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "$ref": "#/$defs/tool_s3_options/properties/url"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_s3_options/properties/checksum"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_s3_options/properties/size"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_s3_options/properties/format"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_s3_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_s3_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_s3_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_s3_options/properties/bin_path"
+          },
+          "region": {
+            "$ref": "#/$defs/tool_s3_options/properties/region"
+          },
+          "endpoint": {
+            "$ref": "#/$defs/tool_s3_options/properties/endpoint"
+          },
+          "version_list_url": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_list_url"
+          },
+          "version_prefix": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_prefix"
+          },
+          "version_regex": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_regex"
+          },
+          "version_json_path": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_json_path"
+          },
+          "version_expr": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_expr"
+          }
+        }
+      }
+    },
     "tool_s3": {
       "description": "a tool installed with the s3 backend",
       "oneOf": [
@@ -4090,118 +3907,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "url": {
-                        "$ref": "#/$defs/tool_s3_options/properties/url"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_s3_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_s3_options/properties/size"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_s3_options/properties/format"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_s3_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_s3_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_s3_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_s3_options/properties/bin_path"
-                      },
-                      "region": {
-                        "$ref": "#/$defs/tool_s3_options/properties/region"
-                      },
-                      "endpoint": {
-                        "$ref": "#/$defs/tool_s3_options/properties/endpoint"
-                      },
-                      "version_list_url": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_list_url"
-                      },
-                      "version_prefix": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_prefix"
-                      },
-                      "version_regex": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_regex"
-                      },
-                      "version_json_path": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_json_path"
-                      },
-                      "version_expr": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_expr"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_s3_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "url": {
-                        "$ref": "#/$defs/tool_s3_options/properties/url"
-                      },
-                      "checksum": {
-                        "$ref": "#/$defs/tool_s3_options/properties/checksum"
-                      },
-                      "size": {
-                        "$ref": "#/$defs/tool_s3_options/properties/size"
-                      },
-                      "format": {
-                        "$ref": "#/$defs/tool_s3_options/properties/format"
-                      },
-                      "strip_components": {
-                        "$ref": "#/$defs/tool_s3_options/properties/strip_components"
-                      },
-                      "bin": {
-                        "$ref": "#/$defs/tool_s3_options/properties/bin"
-                      },
-                      "rename_exe": {
-                        "$ref": "#/$defs/tool_s3_options/properties/rename_exe"
-                      },
-                      "bin_path": {
-                        "$ref": "#/$defs/tool_s3_options/properties/bin_path"
-                      },
-                      "region": {
-                        "$ref": "#/$defs/tool_s3_options/properties/region"
-                      },
-                      "endpoint": {
-                        "$ref": "#/$defs/tool_s3_options/properties/endpoint"
-                      },
-                      "version_list_url": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_list_url"
-                      },
-                      "version_prefix": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_prefix"
-                      },
-                      "version_regex": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_regex"
-                      },
-                      "version_json_path": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_json_path"
-                      },
-                      "version_expr": {
-                        "$ref": "#/$defs/tool_s3_options/properties/version_expr"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_s3_platforms"
                 }
               }
             }
@@ -4294,6 +4005,21 @@
         }
       }
     },
+    "tool_cargo_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "$ref": "#/$defs/tool_cargo_options/properties/bin"
+          }
+        }
+      }
+    },
     "tool_cargo": {
       "description": "a tool installed with the cargo backend",
       "oneOf": [
@@ -4312,34 +4038,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "bin": {
-                        "$ref": "#/$defs/tool_cargo_options/properties/bin"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_cargo_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "bin": {
-                        "$ref": "#/$defs/tool_cargo_options/properties/bin"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_cargo_platforms"
                 }
               }
             }
@@ -4384,7 +4088,7 @@
         },
         "allow_low_downloads": {
           "description": "approve the requested package past aube's reputation checks",
-          "$ref": "#/$defs/tool_bool"
+          "$ref": "#/$defs/tool_bool_text"
         },
         "allow_exotic_deps": {
           "description": "dependencies allowed from non-registry sources (git, file, tarball url); true allows all",
@@ -4670,6 +4374,30 @@
         }
       }
     },
+    "tool_spm_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/$defs/tool_spm_options/properties/provider"
+          },
+          "api_url": {
+            "$ref": "#/$defs/tool_spm_options/properties/api_url"
+          },
+          "artifactbundle": {
+            "$ref": "#/$defs/tool_spm_options/properties/artifactbundle"
+          },
+          "artifactbundle_asset": {
+            "$ref": "#/$defs/tool_spm_options/properties/artifactbundle_asset"
+          }
+        }
+      }
+    },
     "tool_spm": {
       "description": "a tool installed with the spm backend",
       "oneOf": [
@@ -4688,52 +4416,12 @@
             {
               "properties": {
                 "platforms": {
-                  "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "$ref": "#/$defs/tool_spm_options/properties/provider"
-                      },
-                      "api_url": {
-                        "$ref": "#/$defs/tool_spm_options/properties/api_url"
-                      },
-                      "artifactbundle": {
-                        "$ref": "#/$defs/tool_spm_options/properties/artifactbundle"
-                      },
-                      "artifactbundle_asset": {
-                        "$ref": "#/$defs/tool_spm_options/properties/artifactbundle_asset"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_spm_platforms"
                 },
                 "platform": {
-                  "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-                  "type": "object",
-                  "propertyNames": {
-                    "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-                  },
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "$ref": "#/$defs/tool_spm_options/properties/provider"
-                      },
-                      "api_url": {
-                        "$ref": "#/$defs/tool_spm_options/properties/api_url"
-                      },
-                      "artifactbundle": {
-                        "$ref": "#/$defs/tool_spm_options/properties/artifactbundle"
-                      },
-                      "artifactbundle_asset": {
-                        "$ref": "#/$defs/tool_spm_options/properties/artifactbundle_asset"
-                      }
-                    }
-                  }
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_spm_platforms"
                 }
               }
             }
@@ -5045,23 +4733,11 @@
         },
         "platforms": {
           "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-          "type": "object",
-          "propertyNames": {
-            "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-          },
-          "additionalProperties": {
-            "type": "object"
-          }
+          "$ref": "#/$defs/tool_platforms"
         },
         "platform": {
-          "description": "per-platform option (alias of platforms) overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
-          "type": "object",
-          "propertyNames": {
-            "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
-          },
-          "additionalProperties": {
-            "type": "object"
-          }
+          "description": "per-platform option overrides (alias of platforms)",
+          "$ref": "#/$defs/tool_platforms"
         }
       },
       "oneOf": [
