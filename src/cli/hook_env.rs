@@ -57,9 +57,8 @@ impl HookEnv {
         // skipped (with a warning) rather than blocking the configs that are trusted.
         crate::config::skip_untrusted_configs();
         let config = Config::get().await?;
-        let untrusted_config = crate::config::skipped_untrusted_configs()
-            .into_iter()
-            .next();
+        let untrusted_configs = crate::config::skipped_untrusted_configs();
+        let untrusted_config = untrusted_configs.first();
         // Shell activation must stay fast and non-networked; missing tools are
         // handled by the normal install paths instead of hook-env.
         let ts = ToolsetBuilder::new()
@@ -224,7 +223,7 @@ impl HookEnv {
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
-        if let Some(config_path) = &untrusted_config
+        if let Some(config_path) = untrusted_config
             && hook_env::should_show_untrusted_config_warning(config_path)
         {
             if let Err(mark_err) =
@@ -235,12 +234,14 @@ impl HookEnv {
             // Written directly to stderr because the untrusted config's own
             // [settings] (e.g. quiet, log_level) are never applied and must not be
             // able to silence this notice.
-            safe_eprintln!(
-                "{} {} {} is not trusted, run `mise trust` to enable it",
-                style::eyellow("mise"),
-                style::eyellow("WARN"),
-                display_path(config_path)
-            );
+            for config_path in &untrusted_configs {
+                safe_eprintln!(
+                    "{} {} {} is not trusted, run `mise trust` to enable it",
+                    style::eyellow("mise"),
+                    style::eyellow("WARN"),
+                    display_path(config_path)
+                );
+            }
         }
         miseprint!("{daemon_commands}")?;
 
