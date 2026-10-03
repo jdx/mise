@@ -29,8 +29,9 @@ compiles a single entrypoint file. It does not install gems, copy data files, or
 
 ```sh
 mise settings experimental=true
-mise use spinel:tobi/try@1.10.1
 ```
+
+Most tools need options, such as the entrypoint, so declare them in `mise.toml` and then install:
 
 ```toml
 [tools."spinel:tobi/try"]
@@ -38,6 +39,10 @@ version = "1.10.1"
 entrypoint = "try.rb"
 bin = "try"
 tag_prefix = "v"
+```
+
+```sh
+mise install
 ```
 
 `mise ls-remote spinel:tobi/try` lists the repository's git tags (via `git ls-remote`, not the GitHub
