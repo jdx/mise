@@ -35,6 +35,9 @@ pub(crate) fn init_global_only() {
 /// Merge the system and global miserc files, skipping project files found
 /// from the working directory.
 fn load_global_miserc_settings() -> MisercSettings {
+    if super::Settings::no_config() {
+        return MisercSettings::default();
+    }
     let mut settings = MisercSettings::default();
     // A broken file must not block credentials or discard another valid layer.
     for path in [
@@ -80,7 +83,7 @@ pub(crate) fn invocation_cwd() -> Option<&'static Path> {
 
 /// Get the loaded miserc settings, or default if not initialized.
 pub(crate) fn get() -> &'static MisercSettings {
-    if super::Settings::is_package_query() {
+    if super::Settings::is_package_query() || super::Settings::no_config() {
         static QUERY_MISERC: std::sync::LazyLock<MisercSettings> =
             std::sync::LazyLock::new(MisercSettings::default);
         return &QUERY_MISERC;
@@ -122,6 +125,9 @@ pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
 /// directory mise runs from, so machine-wide operations such as `mise prune`
 /// reach the same verdict everywhere.
 pub(crate) fn get_global_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+    if super::Settings::no_config() {
+        return None;
+    }
     static GLOBAL: std::sync::LazyLock<Option<BTreeSet<PathBuf>>> =
         std::sync::LazyLock::new(|| {
             let settings = load_global_miserc_settings();
@@ -192,6 +198,9 @@ fn render_miserc_template(
 /// 2. Global ~/.config/mise/miserc.local.toml, then miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
+    if super::Settings::no_config() {
+        return Ok(MisercSettings::default());
+    }
     load_miserc_files(find_miserc_files())
 }
 

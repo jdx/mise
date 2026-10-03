@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# --no-config must skip miserc discovery entirely: a malformed .miserc.toml
+# anywhere in the chain must not fail config-free invocations.
+
+printf '[invalid' >.miserc.toml
+printf '[invalid' >"$MISE_CONFIG_DIR/miserc.toml"
+export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
+mkdir -p "$MISE_SYSTEM_CONFIG_DIR"
+printf '[invalid' >"$MISE_SYSTEM_CONFIG_DIR/miserc.toml"
+
+# Without --no-config, the malformed miserc chain still fails (control).
+assert_fail "mise version" "Invalid TOML in config file"
+
+# Env var and flag both succeed, from the project root ...
+MISE_NO_CONFIG=1 assert_succeed "mise version"
+assert_succeed "mise --no-config version"
+MISE_NO_CONFIG=1 assert "mise exec -- echo hello" "hello"
+assert "mise --no-config exec -- echo hello" "hello"
+
+# ... and from a nested directory (project miserc is discovered upward).
+mkdir -p nested
+cd nested || exit 1
+MISE_NO_CONFIG=1 assert_succeed "mise version"
+assert_succeed "mise --no-config version"
+MISE_NO_CONFIG=1 assert "mise exec -- echo hello" "hello"
+assert "mise --no-config exec -- echo hello" "hello"
