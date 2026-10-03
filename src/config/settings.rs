@@ -730,6 +730,8 @@ pub trait SettingsExt: Sized {
     /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
     /// --prerelease`) can layer on top of those without losing them, then
     /// rebuilds the settings with the override applied, like [`Self::reload`].
+    /// A rebuild that fails puts the CLI layer back as it was, so the override
+    /// it could not apply is not waiting for the next reload to pick up.
     fn override_with(updater: impl FnOnce(&mut SettingsPartial)) -> Result<()>;
 
     /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
@@ -1009,11 +1011,15 @@ impl SettingsExt for Settings {
     fn override_with(updater: impl FnOnce(&mut SettingsPartial)) -> Result<()> {
         *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         let mut lock = CLI_SETTINGS.lock().unwrap();
-        let partial = lock.get_or_insert_with(SettingsPartial::empty);
-        updater(partial);
+        let previous = lock.clone();
+        updater(lock.get_or_insert_with(SettingsPartial::empty));
         drop(lock);
         crate::toolset::install_state::reset_tools();
-        rebuild()
+        let result = rebuild();
+        if result.is_err() {
+            *CLI_SETTINGS.lock().unwrap() = previous;
+        }
+        result
     }
 
     fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
@@ -2731,6 +2737,12 @@ mod tests {
 
         let after = Settings::get();
         assert!(Arc::ptr_eq(&before, &after));
+
+        // The override that could not be applied is not waiting in the CLI layer for the next
+        // reload to pick it up.
+        drop(env);
+        Settings::reload().unwrap();
+        assert!(!Settings::get().offline);
     }
 
     #[test]
