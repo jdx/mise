@@ -29,6 +29,7 @@ pub enum BackendType {
     Packslip,
     #[strum(to_string = "pypi", serialize = "pipx")]
     Pipx,
+    Spinel,
     Spm,
     Http,
     S3,
@@ -75,6 +76,7 @@ impl BackendType {
             "npm" => BackendType::Npm,
             "packslip" => BackendType::Packslip,
             "pypi" | "pipx" => BackendType::Pipx,
+            "spinel" => BackendType::Spinel,
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
             "s3" => BackendType::S3,
@@ -86,11 +88,12 @@ impl BackendType {
 
     /// Returns true if this backend is still gated behind experimental mode.
     pub fn is_experimental(&self) -> bool {
-        use super::{dotnet, packslip, s3, spm};
+        use super::{dotnet, packslip, s3, spinel, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
             BackendType::Packslip => packslip::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
+            BackendType::Spinel => spinel::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,
             _ => false,
         }

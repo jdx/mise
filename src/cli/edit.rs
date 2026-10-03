@@ -84,6 +84,7 @@ impl BackendProvider for MiseBackendProvider {
                     ("packslip", Some("Install from a vendor's signed packslip"))
                 }
                 BackendType::Pipx => ("pipx", Some("Install Python CLI tools")),
+                BackendType::Spinel => ("spinel", Some("Compile Ruby tools with Spinel")),
                 BackendType::Spm => ("spm", Some("Install Swift packages")),
                 BackendType::Http => ("http", Some("Download files from HTTP URLs")),
                 BackendType::S3 => ("s3", Some("Download from S3 buckets")),
