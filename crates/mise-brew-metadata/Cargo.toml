@@ -5,7 +5,6 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT"
 description = "Homebrew formula metadata models for mise"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 readme = "README.md"
 
