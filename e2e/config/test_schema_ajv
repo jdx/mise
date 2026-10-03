@@ -185,6 +185,7 @@ for tools in \
   '"cargo:ripgrep":{"version":"1","features":5}' \
   '"npm:x":{"version":"1","allow_low_downloads":"sure"}' \
   '"npm:x":{"version":"1","allow_low_downloads":"1"}' \
+  '"npm:x":{"version":"1","allow_low_downloads":" true "}' \
   '"npm:x":{"version":"1","allow_low_downloads":1}' \
   '"python":{"version":"3","patch_sysconfig":"nah"}' \
   '"java":{"version":"21","release_type":"stable"}' \

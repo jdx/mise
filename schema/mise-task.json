@@ -2971,7 +2971,7 @@
         },
         {
           "type": "string",
-          "pattern": "^\\s*([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])\\s*$"
+          "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
         }
       ]
     },
