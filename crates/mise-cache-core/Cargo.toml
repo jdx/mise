@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Remote task cache protocol, CAS, authentication, and transport primitives for mise"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]

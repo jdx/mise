@@ -5,7 +5,6 @@ edition = "2024"
 license = "MIT"
 description = "Interactive TOML config editor for mise"
 documentation = "https://docs.rs/mise-interactive-config"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 include = ["src/**/*", "build.rs", "mise.json"]
 

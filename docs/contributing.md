@@ -178,9 +178,11 @@ eval "$(@mise activate zsh)"
 
 ### hk Configuration
 
-[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) defines `check` and `fix` workflows.
-It currently has no Git `pre-commit` hook, so `hk install --mise` may report that there is
-nothing to install. Run the checks explicitly before committing.
+[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) defines `check` and `fix` workflows
+and a Git `pre-commit` hook. `hk install --mise` installs the hook, which runs the same linters
+as `fix` and applies fixes before each commit (unstaged changes are stashed while it runs).
+You can also run the checks explicitly with `mise run lint` or `mise run lint-fix`. On Windows,
+`lint-fix` runs only Clippy, Prettier, and `cargo fmt`, not the other hk steps.
 
 ### Available Linters in hk
 

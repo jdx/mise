@@ -5,7 +5,6 @@ edition = "2024"
 license = "MIT"
 description = "Sigstore verification helpers for mise"
 documentation = "https://docs.rs/mise-sigstore"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [lib]

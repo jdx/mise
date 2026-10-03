@@ -193,7 +193,7 @@ Communique generates release notes from PR titles and descriptions, so write the
 2. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 3. Never run e2e tests by executing them directly — always use the mise task
 
-`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook). `hk install --mise` may print that nothing is installed; that is expected. Use `mise run lint` / `mise run lint-fix` (which run hk) instead.
+`hk.pkl` defines `check` and `fix` steps and a git `pre-commit` hook that runs the same linters with auto-fix (`stash = "git"` preserves unstaged work). `hk install --mise` installs that hook. You can still run `mise run lint` / `mise run lint-fix` by hand; on Linux and macOS they run hk, but on Windows `lint-fix` runs only Clippy, Prettier, and `cargo fmt`, so the other hk steps do not run there.
 
 ### hk Agent Workflow
 
@@ -318,7 +318,7 @@ The install script:
 - keeps `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, and `GH_TOKEN` in sync via one `sync_github_tokens` helper (prefer any already-set token; fall back to `gh auth token` only when all three are empty)
 - runs `MISE_SAFE=1 /usr/local/bin/mise install` with the just-built binary so checkout-controlled hooks/templates/`[env]` and tool-level `postinstall` / `install_env` cannot run with those tokens, then `mise trust` for later agent commands
 - runs `mise run build` so `target/` is warm for the `mbx`-wrapped cargo (`[wrappers.cargo]` in `mise.toml`) that agents build with, then points `/usr/local/bin/mise` at `target/debug/mise`. Every build runs with `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_API_TOKEN` unset
-- runs `hk install --mise` (`hk.pkl` has no git hook, so this may report that nothing is installed)
+- runs `hk install --mise` (installs the git `pre-commit` hook defined in `hk.pkl`)
 - persists mise shims and token sync in one `/etc/profile.d/mise-dev-env.sh` (shims first, then `sync_github_tokens`) and rewrites the Cloud Agent block in `/etc/bash.bashrc` so non-login interactive bash picks it up after a snapshot. Fish/zsh only get this from login shells (`profile.d`), not from bashrc
 - exposes the mise-installed `node` / `npm` / `npx` / `hk` / `gh` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims). Links freeze the version from install time — re-run `.cursor/install.sh` after upgrading those tools
 

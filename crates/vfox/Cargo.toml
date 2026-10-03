@@ -5,7 +5,6 @@ edition = "2024"
 license = "MIT"
 description = "Interface to vfox plugins"
 documentation = "https://docs.rs/vfox"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 include = [
   "src",

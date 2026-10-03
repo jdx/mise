@@ -4,7 +4,6 @@ version = "2026.9.0"
 edition = "2024"
 license = "MIT"
 description = "Environment, directory, and filesystem helpers shared by mise's crates"
-homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
