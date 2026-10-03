@@ -29,7 +29,7 @@ export const part: Part = {
       pizz(m, t + 0.2, hz(67), 0.05, PAN.term, 0.25, { len: 0.6 });
     }
     for (const t of c.all("slam"))
-      slam(m, t, chordAt(CHANGES, beatIn(s, t)).mid, 1, PAN.term);
+      slam(m, t, chordAt(CHANGES, beatIn(s, t), t).mid, 1, PAN.term);
     for (const t of c.all("seat")) seat(m, t);
     for (const t of c.all("clear")) keyClick(m, t);
     for (const t of c.all("ok")) {

@@ -229,17 +229,30 @@ onUnmounted(() => window.removeEventListener("hashchange", focusOnArrival));
 </template>
 
 <style scoped>
+/* Two buttons side by side at every width: on a phone they share the row
+   rather than wrapping the selected one onto a line of its own. Inside a
+   button the runtime may drop under the label where the row is too narrow
+   for both (a 320 px phone has 272 px between the gutters). */
 .home-showreel-editions {
   display: flex;
   gap: 8px;
   margin-bottom: 18px;
-  flex-wrap: wrap;
 }
 .home-showreel-editions button {
-  padding: 10px 16px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
   border: 1px solid var(--vp-c-border);
   border-radius: 8px;
   font-weight: 600;
+  line-height: 1.3;
+}
+@media (min-width: 641px) {
+  .home-showreel-editions button {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+  }
 }
 .home-showreel-editions button[aria-pressed="true"] {
   background: var(--vp-c-brand-soft);
@@ -256,11 +269,14 @@ onUnmounted(() => window.removeEventListener("hashchange", focusOnArrival));
   gap: 8px 18px;
   margin-top: 20px;
 }
+/* Each chapter a 44 px touch target, on one line. */
 .home-showreel-chapters button {
   color: var(--vp-c-text-1);
   font-size: 14px;
+  min-height: 44px;
   padding: 6px 0;
   text-align: left;
+  white-space: nowrap;
 }
 .home-showreel-chapters button span {
   color: var(--vp-c-brand-1);

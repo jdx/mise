@@ -9,7 +9,11 @@
 // passes take the stage's numbers (kit/style.ts STAGE_FX: the vignette at
 // 0.42, the grain). Each scene paints the stage itself, lamp and all
 // (fx.ts drawStage, from kit/grey.ts greyScene), as the bar lines' frames do
-// (handoff.ts).
+// (handoff.ts). A film (film.ts) that cuts between sections the source
+// never put side by side hands the scenes its joins (bible.ts Joins) and
+// may ask for a frame with the scene standing off its mark (Presence): it
+// is then drawn on a layer of its own over the stage, so the stage, the
+// vignette and the grain stay still while the scene enters or leaves.
 
 import {
   actOf,
@@ -18,14 +22,17 @@ import {
   CHAPTERS,
   DURATION,
   H,
+  type Joins,
   PALETTE,
   type ReelFacts,
   type Scene,
+  type SceneEnv,
   sec,
   W,
 } from "./bible";
 import { rgba } from "./color";
-import { grain, vignette } from "./fx";
+import { drawStage, grain, makeCanvas, vignette } from "./fx";
+import type { Presence } from "./kit/motion";
 import { STAGE_FX } from "./kit/style";
 import { clamp } from "./math";
 import { drawCaptions, font, MONO, timeCaptions } from "./type";
@@ -33,12 +40,19 @@ import { drawCaptions, font, MONO, timeCaptions } from "./type";
 export interface Reel {
   duration: number;
   chapters: Chapter[];
-  /** Draw the frame at `t` seconds into a canvas `pw` × `ph` device pixels. */
+  /**
+   * Draw the frame at `t` seconds into a canvas `pw` × `ph` device pixels.
+   * With `frame`, the scene stands off its mark as the presence says (its
+   * opacity and how far it is below its place, logical px), on a layer over
+   * the still stage: how a film enters and leaves a scene it cuts to
+   * (film.ts).
+   */
   render(
     ctx: CanvasRenderingContext2D,
     t: number,
     pw: number,
     ph: number,
+    frame?: Presence,
   ): void;
 }
 
@@ -51,6 +65,12 @@ export interface ReelOptions {
    * frames only; the published render never sets it.
    */
   burnIn?: boolean;
+  /**
+   * The bar lines a film gives the sections it plays out of the source
+   * order (bible.ts Joins): a ticket then takes down the stage of the
+   * section the film plays before it. None for the source reel.
+   */
+  joins?: Joins;
 }
 
 /** `m:ss.fff`, the slate's timecode. */
@@ -79,6 +99,23 @@ function drawSlate(ctx: CanvasRenderingContext2D, s: Scene, t: number): void {
   ctx.restore();
 }
 
+/** The layer a scene is drawn on when it stands off its mark (Reel.render's `frame`), one per canvas size. */
+let layer: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null =
+  null;
+function sceneLayer(pw: number, ph: number): CanvasRenderingContext2D {
+  if (!layer || layer.canvas.width !== pw || layer.canvas.height !== ph) {
+    const canvas = makeCanvas(pw, ph);
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("no 2d context for the scene layer");
+    layer = { canvas, ctx };
+  }
+  return layer.ctx;
+}
+
+/** Whether a presence leaves the scene exactly on its mark. */
+const onMark = (p: Presence | undefined): boolean =>
+  !p || (p.alpha >= 1 && p.dy === 0);
+
 /**
  * A reel of `scenes`, in timeline order. Given every section's scene it is
  * the whole reel; given one, it draws that section on the reel's clock, so
@@ -101,7 +138,7 @@ export function composeReel(
   return {
     duration: DURATION,
     chapters: CHAPTERS,
-    render(ctx, time, pw, ph) {
+    render(ctx, time, pw, ph, frame) {
       const t = clamp(time, 0, DURATION - 1e-6);
       ctx.setTransform(pw / W, 0, 0, ph / H, 0, 0);
       ctx.globalAlpha = 1;
@@ -110,21 +147,57 @@ export function composeReel(
       ctx.fillRect(0, 0, W, H);
       const s = sceneAt(t);
       const lt = t - s.start;
-      ctx.save();
-      s.draw(ctx, lt, { W, H, t, facts });
-      ctx.restore();
+      const env: SceneEnv = { W, H, t, facts, joins: options.joins };
+      // The scene off its mark (a film's entrance or exit): the stage
+      // stays, and the scene's own frame, lamp and all, rises or falls over
+      // it at the presence's opacity. The lamp is a soft gradient, so its
+      // copy moving a few px under the fade is not seen.
+      const off = onMark(frame) ? null : frame!;
+      if (!off) {
+        ctx.save();
+        s.draw(ctx, lt, env);
+        ctx.restore();
+      } else {
+        const lc = sceneLayer(pw, ph);
+        lc.setTransform(pw / W, 0, 0, ph / H, 0, 0);
+        lc.globalAlpha = 1;
+        lc.globalCompositeOperation = "source-over";
+        lc.save();
+        s.draw(lc, lt, env);
+        lc.restore();
+        lc.setTransform(1, 0, 0, 1, 0, 0);
+        drawStage(ctx, W, H, t);
+        if (off.alpha > 0) {
+          ctx.save();
+          ctx.globalAlpha = clamp(off.alpha);
+          ctx.setTransform(1, 0, 0, 1, 0, (off.dy * ph) / H);
+          ctx.drawImage(lc.canvas, 0, 0);
+          ctx.restore();
+          ctx.setTransform(pw / W, 0, 0, ph / H, 0, 0);
+        }
+      }
       if (!options.raw) {
-        // Darker toward the corners, but not over a terminal's window, a lit screen.
+        // Darker toward the corners, but not over a terminal's window, a lit
+        // screen (standing where the scene stands).
+        const lit = s.lit?.(lt, env) ?? null;
         vignette(
           ctx,
           W,
           H,
           STAGE_FX.vignette.strength,
-          s.lit?.(lt, { facts }) ?? null,
+          off && lit
+            ? { ...lit, y: lit.y + off.dy, alpha: lit.alpha * clamp(off.alpha) }
+            : lit,
         );
         // Over the vignette, so a caption reads the same at the frame's edge;
-        // under the grain, so it sits in the picture.
+        // under the grain, so it sits in the picture. With the scene.
+        ctx.save();
+        if (off) {
+          ctx.globalAlpha = clamp(off.alpha);
+          ctx.translate(0, off.dy);
+        }
         drawCaptions(ctx, t, captions);
+        ctx.restore();
         grain(ctx, W, H, t, STAGE_FX.grain.amount, STAGE_FX.grain.fps);
       }
       if (options.burnIn) drawSlate(ctx, s, t);

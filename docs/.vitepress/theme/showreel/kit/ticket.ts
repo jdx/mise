@@ -134,6 +134,8 @@ export interface TicketOptions {
   /** The rail is already up at beat 0 (a ticket straight after a ticket): it does not slide in. */
   railUp?: boolean;
   narrow?: boolean;
+  /** The meta line in place of the act's own ("ACT II"): a film numbering its acts in its order. */
+  meta?: string;
 }
 
 /**
@@ -390,7 +392,13 @@ export function drawTicketFor(
   b: number,
   o: Omit<TicketOptions, "narrow"> = {},
 ): void {
-  drawTicket(ctx, b, ticketFor(id), o);
+  const spec = ticketFor(id);
+  drawTicket(
+    ctx,
+    b,
+    o.meta === undefined ? spec : { ...spec, meta: o.meta },
+    o,
+  );
 }
 
 /** 0 to 1: how far the ticket has lifted off at beat `b` (for a scene timing what comes in under it). */

@@ -19,11 +19,18 @@
 // print, tear and lift), from the ticket's own constants, so the printer
 // ticks, the tear's F and the lift's air land where the paper does.
 
-import type { LitRect, SectionId } from "../../bible";
-import { type BoundaryId, handoffIn, handoffOut } from "../../handoff";
-import { type G, greyScene, keep, stagePresence } from "../../kit/grey";
+import type { Joins, LitRect, SectionId } from "../../bible";
+import type { BoundaryId } from "../../handoff";
+import {
+  boundaryIn,
+  boundaryOut,
+  type G,
+  greyScene,
+  keep,
+  stagePresence,
+} from "../../kit/grey";
 import type { Presence } from "../../kit/motion";
-import { drawLayer, RESTS } from "../../kit/rest";
+import { drawLayer, restLit, RESTS } from "../../kit/rest";
 import { DUR, EASE, MOTION, TICKET } from "../../kit/style";
 import { drawTicketFor, PRINT_TICKS } from "../../kit/ticket";
 import { progress } from "../../math";
@@ -79,39 +86,47 @@ const litLayer = (id: BoundaryId): number =>
 /**
  * A ticket's lit screen at beat `b` (kit/grey.ts sectionLit's ticket rule,
  * on the tickets' own clear): the incoming bar line's window as it
- * leaves, then the next one's as it arrives.
+ * leaves, then the next one's as it arrives. The bar lines are the reel's
+ * (kit/grey.ts boundaryIn, boundaryOut): a film's joins where it has them.
  */
-export function ticketLit(id: SectionId, b: number): LitRect | null {
-  const hin = handoffIn(id);
-  const hout = handoffOut(id);
-  const at = (r: LitRect | null | undefined, k: number): LitRect | null =>
+export function ticketLit(
+  id: SectionId,
+  b: number,
+  joins?: Joins,
+): LitRect | null {
+  const hin = boundaryIn(id, joins);
+  const hout = boundaryOut(id, joins);
+  const at = (r: LitRect | null, k: number): LitRect | null =>
     r && k > 0 ? { ...r, alpha: r.alpha * Math.min(1, k) } : null;
-  if (hout?.lit) {
-    const i = litLayer(hout.id);
-    const k = i < 0 ? 0 : stagePresence(hout.id, "enter", b)[i].alpha;
-    if (k > 0) return at(hout.lit, k);
+  const z = hout ? restLit(hout) : null;
+  if (hout && z) {
+    const i = litLayer(hout);
+    const k = i < 0 ? 0 : stagePresence(hout, "enter", b)[i].alpha;
+    if (k > 0) return at(z, k);
   }
-  if (!hin?.lit) return null;
-  const i = litLayer(hin.id);
-  return at(hin.lit, i < 0 ? 0 : clearPresence(hin.id, b)[i].alpha);
+  const a = hin ? restLit(hin) : null;
+  if (!hin || !a) return null;
+  const i = litLayer(hin);
+  return at(a, i < 0 ? 0 : clearPresence(hin, b)[i].alpha);
 }
 
 /**
  * A ticket section's scene: the stage it inherits taken down under the
  * printing paper (clearPresence), the next section's brought in under the
  * lifting ticket (the kit's entrance), and the act's ticket on its rail
- * (kit/ticket.ts drawTicketFor), lit as ticketLit says.
+ * (kit/ticket.ts drawTicketFor), lit as ticketLit says. The stage it
+ * inherits is the bar line it starts from in the reel being drawn (G.prev):
+ * the source's, or the section a film plays before it (film.ts).
  */
 export function ticketScene(id: SectionId) {
   return greyScene(
     id,
     (g) => {
-      const prev = handoffIn(id);
-      const next = handoffOut(id);
-      if (prev) drawStageAs(g, prev.id, clearPresence(prev.id, g.b));
-      if (next) drawStageAs(g, next.id, stagePresence(next.id, "enter", g.b));
-      drawTicketFor(g.ctx, id, g.b);
+      const { prev, next } = g;
+      if (prev) drawStageAs(g, prev, clearPresence(prev, g.b));
+      if (next) drawStageAs(g, next, stagePresence(next, "enter", g.b));
+      drawTicketFor(g.ctx, id, g.b, { meta: g.join?.meta });
     },
-    { lit: (b) => ticketLit(id, b) },
+    { lit: (b, _d, joins) => ticketLit(id, b, joins) },
   );
 }

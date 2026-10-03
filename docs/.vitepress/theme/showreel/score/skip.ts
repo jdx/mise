@@ -23,7 +23,7 @@ const CHANGES: Changes = [
 export const part: Part = {
   cues(m, s, facts) {
     const c = listen("skip", s, facts);
-    const at = (t: number) => chordAt(CHANGES, beatIn(s, t));
+    const at = (t: number) => chordAt(CHANGES, beatIn(s, t), t);
     for (const t of c.all("seat")) {
       seat(m, t);
       seat(m, t + 0.1, 0.7);

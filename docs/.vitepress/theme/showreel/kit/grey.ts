@@ -27,6 +27,8 @@
 import {
   BEAT,
   H,
+  type Join,
+  type Joins,
   type LitRect,
   type Scene,
   type Section,
@@ -64,6 +66,7 @@ import {
   drawPaneWindow,
   orderBadges,
   fittedPane,
+  restLit,
   RESTS,
   screenBadges,
   scrollOf,
@@ -83,6 +86,21 @@ import {
 
 export * from "./parts";
 
+/**
+ * The bar line section `id` starts from in the reel being drawn: a film's
+ * join (bible.ts Joins, film.ts) when it plays the section after another
+ * than the source's, else the timeline's own (handoff.ts handoffIn). Null
+ * for the first section.
+ */
+export function boundaryIn(id: SectionId, joins?: Joins): BoundaryId | null {
+  return joins?.[id]?.in ?? handoffIn(id)?.id ?? null;
+}
+
+/** The bar line section `id` ends on (boundaryIn's counterpart; handoffOut). Null for the last. */
+export function boundaryOut(id: SectionId, joins?: Joins): BoundaryId | null {
+  return joins?.[id]?.out ?? handoffOut(id)?.id ?? null;
+}
+
 /** What a scene's layers draw with on each frame. */
 export interface G {
   ctx: CanvasRenderingContext2D;
@@ -93,6 +111,16 @@ export interface G {
   t: number;
   d: ReelData | null;
   s: Section;
+  /**
+   * The bar lines the section starts from and ends on in this reel
+   * (boundaryIn, boundaryOut): the stage a ticket takes down and the one it
+   * brings in. A film that plays the sections out of order sets them
+   * (SceneEnv.joins); the source reel's are the timeline's.
+   */
+  prev: BoundaryId | null;
+  next: BoundaryId | null;
+  /** The section's film join, if a film gave it one (SceneEnv.joins): a ticket's meta line. */
+  join: Join | null;
   /** The edge fade the transient layers are drawn under (never 0: `keep` divides by it). */
   edge: number;
   /** How deep in `keep` the scene is drawing. */
@@ -111,9 +139,11 @@ export interface SceneOptions {
    * The lit screen at local beat `b` (Scene.lit): the terminal's window
    * (or the chef) the vignette spares, following the pane's own alpha as
    * it enters and leaves. It must be the bar lines' (kit/rest.ts restLit)
-   * on the section's first frame and its last. Without it, sectionLit.
+   * on the section's first frame and its last. Without it, sectionLit. A
+   * scene whose lit screen is a bar line's reads the bar line from `joins`
+   * (boundaryIn, boundaryOut), as `G.prev` and `G.next` do.
    */
-  lit?: (b: number, d: ReelData | null) => LitRect | null;
+  lit?: (b: number, d: ReelData | null, joins?: Joins) => LitRect | null;
   /**
    * Whether the transient layers take the section's edge fade (in over
    * its first sixteenth, out over its last). Default: every section but a
@@ -162,25 +192,29 @@ const litAt = (r: LitRect | null, k: number): LitRect | null =>
  * lets the first go over the beat before its middle and brings the second
  * up over the beat after.
  */
-export function sectionLit(id: SectionId, b: number): LitRect | null {
+export function sectionLit(
+  id: SectionId,
+  b: number,
+  joins?: Joins,
+): LitRect | null {
   const s = sec(id);
-  const hin = handoffIn(id);
-  const hout = handoffOut(id);
-  const a = hin?.lit ?? null;
-  const z = hout?.lit ?? null;
+  const hin = boundaryIn(id, joins);
+  const hout = boundaryOut(id, joins);
+  const a = hin ? restLit(hin) : null;
+  const z = hout ? restLit(hout) : null;
   if (s.ticket) {
-    const inK = hin ? stagePresence(hin.id, "leave", b) : [];
-    const outK = hout ? stagePresence(hout.id, "enter", b) : [];
-    const lit = (id2: BoundaryId | undefined, ks: Presence[]) => {
+    const inK = hin ? stagePresence(hin, "leave", b) : [];
+    const outK = hout ? stagePresence(hout, "enter", b) : [];
+    const lit = (id2: BoundaryId | null, ks: Presence[]) => {
       if (!id2) return 1;
       const i = RESTS[id2].findIndex(
         (l) => l.kind === "pane" || l.kind === "chef",
       );
       return i < 0 ? 0 : ks[i].alpha;
     };
-    const zk = lit(hout?.id, outK);
+    const zk = lit(hout, outK);
     if (z && zk > 0) return litAt(z, zk);
-    return litAt(a, lit(hin?.id, inK));
+    return litAt(a, lit(hin, inK));
   }
   if (sameLit(a, z)) return a;
   const mid = s.beats / 2;
@@ -214,7 +248,9 @@ export function greyScene(
       return captionsFor(id, d, o.events?.(d));
     },
     lit: (lt, env) =>
-      o.lit ? o.lit(lt / BEAT, reelData(env.facts)) : sectionLit(id, lt / BEAT),
+      o.lit
+        ? o.lit(lt / BEAT, reelData(env.facts), env.joins)
+        : sectionLit(id, lt / BEAT, env.joins),
     draw(ctx, lt, env) {
       drawStage(ctx, env.W, env.H, env.t);
       const a =
@@ -228,6 +264,9 @@ export function greyScene(
         t: env.t,
         d: reelData(env.facts),
         s,
+        prev: boundaryIn(id, env.joins),
+        next: boundaryOut(id, env.joins),
+        join: env.joins?.[id] ?? null,
         edge,
         kept: 0,
       };
@@ -443,12 +482,11 @@ export interface TicketStageOptions {
  * bar lines.
  */
 export function ticketStage(g: G, o: TicketStageOptions = {}): void {
-  const prev = handoffIn(g.s.id);
-  const next = handoffOut(g.s.id);
+  const { prev, next } = g;
   if (prev && o.clear !== false)
-    drawStageAs(g, prev.id, stagePresence(prev.id, "leave", g.b));
+    drawStageAs(g, prev, stagePresence(prev, "leave", g.b));
   if (next && o.bring !== false)
-    drawStageAs(g, next.id, stagePresence(next.id, "enter", g.b));
+    drawStageAs(g, next, stagePresence(next, "enter", g.b));
 }
 
 /**
@@ -459,7 +497,7 @@ export function ticketStage(g: G, o: TicketStageOptions = {}): void {
  * SceneOptions.over hook it comes down in place over the whip.
  */
 export function drawSectionTicket(g: G): void {
-  keep(g, () => drawTicketFor(g.ctx, g.s.id, g.b));
+  keep(g, () => drawTicketFor(g.ctx, g.s.id, g.b, { meta: g.join?.meta }));
 }
 
 /**

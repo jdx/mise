@@ -8,6 +8,7 @@
 // social card and the hero terminal), and the facts are left open for the
 // capture run's versions file.
 
+import type { BoundaryId } from "./handoff";
 import type { Pillar, SectionId } from "./timeline";
 import type { Caption } from "./type";
 
@@ -150,12 +151,31 @@ export const TERM = {
  */
 export type ReelFacts = Readonly<Record<string, unknown>>;
 
+/**
+ * The bar lines a section meets in a film that plays the sections out of
+ * the source order (film.ts): `in`, the bar line it starts from, whose
+ * persistent layers it inherits; `out`, the one it ends on. A ticket takes
+ * down the stage of the section the film plays before it, not the source's,
+ * so a scene reads its bar lines from kit/grey.ts `G.prev` and `G.next`,
+ * which take these over the timeline's own (handoff.ts handoffIn,
+ * handoffOut). Absent, a section keeps its own bar lines.
+ */
+export interface Join {
+  in?: BoundaryId;
+  out?: BoundaryId;
+  /** A ticket's meta line ("ACT II"): the act's number in the film's order. */
+  meta?: string;
+}
+export type Joins = Partial<Record<SectionId, Join>>;
+
 export interface SceneEnv {
   W: number;
   H: number;
   /** Global time in seconds. */
   t: number;
   facts: ReelFacts | null;
+  /** A film's joins (Join); none in the source reel. */
+  joins?: Joins;
 }
 
 export interface Scene {
@@ -180,7 +200,7 @@ export interface Scene {
    * facts as `draw`, so a scene whose picture depends on them needs no
    * state carried over from the frame it last drew.
    */
-  lit?(lt: number, env: Pick<SceneEnv, "facts">): LitRect | null;
+  lit?(lt: number, env: Pick<SceneEnv, "facts" | "joins">): LitRect | null;
 }
 
 /**
