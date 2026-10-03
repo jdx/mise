@@ -14,9 +14,6 @@ keeping while Spinel takes off and the backend stays cheap to maintain. If eithe
 it will be removed. Enable it with `mise settings experimental=true`.
 :::
 
-The backend started from [mise-backend-spinel](https://github.com/nateberkopec/mise-backend-spinel)
-by Nate Berkopec.
-
 ## Requirements
 
 - macOS or Linux (Windows is not supported).
