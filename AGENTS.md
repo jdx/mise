@@ -193,7 +193,7 @@ Communique generates release notes from PR titles and descriptions, so write the
 2. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 3. Never run e2e tests by executing them directly — always use the mise task
 
-`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook). `hk install --mise` may print that nothing is installed; that is expected. Use `mise run lint` / `mise run lint-fix` (which run hk) instead.
+`hk.pkl` defines `check` and `fix` steps and a git `pre-commit` hook that runs the same linters with auto-fix (`stash = "git"` preserves unstaged work). `hk install --mise` installs that hook. You can still run `mise run lint` / `mise run lint-fix` (which run hk) by hand.
 
 ### hk Agent Workflow
 
