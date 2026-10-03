@@ -28,7 +28,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml"]
+include = ["mise.toml", "mise-age.toml", "mise-env-directives.toml", "mise-os.toml", "mise-vars.toml", "mise-backend-options.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -234,7 +234,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-dotfiles-position.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml", "mise-bad-backend-options.toml", "mise-bad-core-options.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -595,3 +595,33 @@ backends = [
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-registry-tool.toml"
+
+# Backend-specific tool options are typed for tools of that backend only.
+cat >"$HOME/workdir/mise-backend-options.toml" <<'TOML'
+[tools]
+"github:cli/cli" = { version = "2", asset_pattern = "gh_*", no_app = true, platforms = { linux-x64 = { asset_pattern = "gh_linux*" } } }
+"cargo:ripgrep" = { version = "latest", features = ["pcre2"], locked = false }
+"spinel:tobi/try" = { version = "1.10.1", entrypoint = "try.rb", tag_prefix = "v" }
+python = { version = "3.13", patch_sysconfig = false }
+java = { version = "21", release_type = "ea" }
+node = { version = "22", prerelease = true, lazy_bins = "node" }
+
+[tasks.build.tools]
+"github:cli/cli" = { version = "2", asset_pattern = "gh_*" }
+TOML
+
+assert_succeed "$TOMBI_LINT mise-backend-options.toml"
+
+cat >"$HOME/workdir/mise-bad-backend-options.toml" <<'TOML'
+[tools]
+"github:cli/cli" = { version = "2", asset_pattern = 5 }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-backend-options.toml"
+
+cat >"$HOME/workdir/mise-bad-core-options.toml" <<'TOML'
+[tools]
+java = { version = "21", release_type = "stable" }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-core-options.toml"
