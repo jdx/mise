@@ -1245,12 +1245,42 @@ fn has_linked_version(ba: &BackendArg) -> bool {
         if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
             // Runtime symlinks start with "./" (e.g., latest -> ./1.35.0)
             // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
-            if target.is_absolute() && !is_mise_managed_symlink_target(&target) {
+            if target.is_absolute()
+                && !is_mise_managed_symlink_target(&target)
+                && !is_rustup_install(ba, &path, &target)
+            {
                 return true;
             }
         }
     }
     false
+}
+
+/// core:rust installs are symlinks to rustup's `$CARGO_HOME/bin`, which sits
+/// outside mise's directories. They are named after the rustup toolchain they
+/// stand for (`1.99.0`, `stable`, `nightly-2026-10-01`), so a link to that
+/// directory under any other name is a user's `mise link`.
+fn is_rustup_install(ba: &BackendArg, link: &Path, target: &Path) -> bool {
+    let rustup = if cfg!(windows) {
+        "rustup.exe"
+    } else {
+        "rustup"
+    };
+    ba.full_without_opts() == "core:rust"
+        && target.join(rustup).exists()
+        && link
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_rustup_toolchain_spec)
+}
+
+fn is_rustup_toolchain_spec(name: &str) -> bool {
+    let channel = name.split('-').next().unwrap_or(name);
+    matches!(channel, "stable" | "beta" | "nightly")
+        || (channel.split('.').count() >= 2
+            && channel
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit())))
 }
 
 fn is_mise_managed_symlink_target(target: &Path) -> bool {
@@ -1526,6 +1556,62 @@ mod tests {
         assert!(has_linked_version(&backend));
 
         Ok(())
+    }
+
+    #[test]
+    fn has_linked_version_ignores_rustup_bin_dir_for_core_rust() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let mut backend = BackendArg::new_raw(
+            "rust".to_string(),
+            Some("core:rust".to_string()),
+            "rust".to_string(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.set_installs_path(temp_dir.path().join("installs").join("rust"));
+        fs::create_dir_all(backend.installs_path())?;
+
+        let cargo_bin = temp_dir.path().join("cargo").join("bin");
+        fs::create_dir_all(&cargo_bin)?;
+        let rustup = if cfg!(windows) {
+            "rustup.exe"
+        } else {
+            "rustup"
+        };
+        fs::write(cargo_bin.join(rustup), "")?;
+        crate::file::make_symlink_or_file(&cargo_bin, &backend.installs_path().join("1.99.0"))?;
+        assert!(!has_linked_version(&backend));
+
+        // A user link to the same directory under a non-toolchain name stays linked.
+        let custom = backend.installs_path().join("custom");
+        crate::file::make_symlink_or_file(&cargo_bin, &custom)?;
+        assert!(has_linked_version(&backend));
+        fs::remove_file(&custom)?;
+
+        let other = temp_dir.path().join("other");
+        fs::create_dir_all(&other)?;
+        crate::file::make_symlink_or_file(&other, &backend.installs_path().join("custom"))?;
+        assert!(has_linked_version(&backend));
+
+        Ok(())
+    }
+
+    #[test]
+    fn rustup_toolchain_spec_matches_mise_created_names() {
+        for name in [
+            "1.99.0",
+            "1.99",
+            "stable",
+            "beta",
+            "nightly",
+            "nightly-2026-10-01",
+            "1.99.0-x86_64-unknown-linux-gnu",
+        ] {
+            assert!(is_rustup_toolchain_spec(name), "{name}");
+        }
+        for name in ["custom", "latest", "1", "1.x", "my-stable", ""] {
+            assert!(!is_rustup_toolchain_spec(name), "{name}");
+        }
     }
 
     #[test]
