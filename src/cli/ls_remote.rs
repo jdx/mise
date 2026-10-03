@@ -88,11 +88,16 @@ pub(crate) struct LsRemote {
 
 impl LsRemote {
     pub(crate) async fn run(self) -> Result<()> {
-        if self.prerelease {
-            Settings::override_with(|s| s.prereleases = Some(true));
-        }
-        if self.no_versions_host {
-            Settings::override_with(|s| s.use_versions_host = Some(false));
+        if self.prerelease || self.no_versions_host {
+            // One override, one rebuild: each `override_with` loads settings again.
+            Settings::override_with(|s| {
+                if self.prerelease {
+                    s.prereleases = Some(true);
+                }
+                if self.no_versions_host {
+                    s.use_versions_host = Some(false);
+                }
+            })?;
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;

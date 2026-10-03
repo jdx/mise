@@ -102,7 +102,8 @@ mod tests {
         Settings::override_with(|s| {
             s.gix = Some(true);
             s.libgit2 = Some(false);
-        });
+        })
+        .unwrap();
         let dst_gix = tmp.path().join("dst-gix");
         Git::new(&dst_gix)
             .clone(&url, CloneOptions::default().revision(&sha))
@@ -130,7 +131,8 @@ mod tests {
         Settings::override_with(|s| {
             s.gix = Some(false);
             s.libgit2 = Some(false);
-        });
+        })
+        .unwrap();
         let dst_cli = tmp.path().join("dst-cli");
         Git::new(&dst_cli)
             .clone(&url, CloneOptions::default().branch(&sha))

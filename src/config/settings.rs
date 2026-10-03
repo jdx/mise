@@ -3,7 +3,7 @@ use crate::file::FindUp;
 use crate::platform::Platform;
 use crate::{dirs, env, file};
 use confique::{Config, Layer};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
 use mise_util::network;
 use path_absolutize::Absolutize;
@@ -713,18 +713,26 @@ pub trait SettingsExt: Sized {
 
     fn reset(cli_settings: Option<SettingsPartial>);
 
-    /// Invalidate settings loaded from config files without discarding CLI overrides.
-    fn reload();
+    /// Rebuild settings from config files without discarding CLI overrides.
+    ///
+    /// Builds the new settings before swapping them in, so readers on other threads never
+    /// find the cache empty, and a build that fails leaves the previous settings in place and
+    /// reports why. Emptying the cache instead would only defer the failure to the next
+    /// `Settings::get()`, which can do nothing but unwrap it — and release builds abort on a
+    /// panic, so a bad setting would end a `mise install` with a SIGABRT and a core dump
+    /// rather than an error message.
+    fn reload() -> Result<()>;
 
     /// Merge an override into the CLI-level settings partial.
     ///
     /// `reset` replaces CLI_SETTINGS wholesale, which would clobber overrides
     /// installed earlier in startup (`--offline`, `--quiet`, etc.). This
     /// helper merges in-place so a subcommand flag (e.g. `mise ls-remote
-    /// --prerelease`) can layer on top of those without losing them. Clears
-    /// the cached settings so the next `Settings::get()` rebuilds with the override
-    /// applied.
-    fn override_with(updater: impl FnOnce(&mut SettingsPartial));
+    /// --prerelease`) can layer on top of those without losing them, then
+    /// rebuilds the settings with the override applied, like [`Self::reload`].
+    /// A rebuild that fails puts the CLI layer back as it was, so the override
+    /// it could not apply is not waiting for the next reload to pick up.
+    fn override_with(updater: impl FnOnce(&mut SettingsPartial)) -> Result<()>;
 
     /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
     /// Errors on invalid platform strings (same validation as `mise lock --platform`).
@@ -993,21 +1001,25 @@ impl SettingsExt for Settings {
         crate::toolset::install_state::reset_tools();
     }
 
-    fn reload() {
+    fn reload() -> Result<()> {
         *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
-        mise_settings::clear();
         crate::config::config_file::config_root::reset();
         crate::toolset::install_state::reset_tools();
+        rebuild()
     }
 
-    fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+    fn override_with(updater: impl FnOnce(&mut SettingsPartial)) -> Result<()> {
         *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         let mut lock = CLI_SETTINGS.lock().unwrap();
-        let partial = lock.get_or_insert_with(SettingsPartial::empty);
-        updater(partial);
+        let previous = lock.clone();
+        updater(lock.get_or_insert_with(SettingsPartial::empty));
         drop(lock);
-        mise_settings::clear();
         crate::toolset::install_state::reset_tools();
+        let result = rebuild();
+        if result.is_err() {
+            *CLI_SETTINGS.lock().unwrap() = previous;
+        }
+        result
     }
 
     fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
@@ -1529,6 +1541,16 @@ impl SettingsInternal for Settings {
 /// harness's constructor, before anything reads settings.
 pub(crate) fn register_loader() {
     mise_settings::set_loader(load);
+}
+
+/// Build settings from every source and make them the ones [`Settings::get`] returns.
+///
+/// On failure the settings cached so far stay current: the caller propagates the error, and
+/// nothing between here and the exit has to cope with an empty cache.
+fn rebuild() -> Result<()> {
+    let settings = load().wrap_err("failed to reload settings")?;
+    mise_settings::store(settings);
+    Ok(())
 }
 
 /// Build settings from every source. Registered with [`mise_settings::set_loader`], so
@@ -2694,8 +2716,33 @@ mod tests {
         Settings::reset(Some(partial));
         assert!(Settings::get().offline());
 
-        Settings::reload();
+        Settings::reload().unwrap();
         assert!(Settings::get().offline());
+    }
+
+    /// A reload that cannot build settings reports the error and keeps the previous settings,
+    /// rather than emptying the cache for the next `Settings::get()` to unwrap (#13923).
+    #[test]
+    fn test_failed_reload_keeps_previous_settings() {
+        let _settings = crate::test::SettingsGuard::lock();
+        Settings::reset(None);
+        let before = Settings::get();
+
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_YES", "maybe");
+        let err = Settings::reload().unwrap_err();
+        assert!(format!("{err:#}").contains("MISE_YES"), "{err:#}");
+        let err = Settings::override_with(|s| s.offline = Some(true)).unwrap_err();
+        assert!(format!("{err:#}").contains("MISE_YES"), "{err:#}");
+
+        let after = Settings::get();
+        assert!(Arc::ptr_eq(&before, &after));
+
+        // The override that could not be applied is not waiting in the CLI layer for the next
+        // reload to pick it up.
+        drop(env);
+        Settings::reload().unwrap();
+        assert!(!Settings::get().offline);
     }
 
     #[test]

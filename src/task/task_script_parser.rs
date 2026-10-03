@@ -1093,7 +1093,7 @@ mod tests {
 
     fn tera_v1() -> crate::test::SettingsGuard {
         let guard = crate::test::SettingsGuard::lock();
-        Settings::override_with(|settings| settings.tera_v1 = Some(true));
+        Settings::override_with(|settings| settings.tera_v1 = Some(true)).unwrap();
         guard
     }
 
