@@ -9,6 +9,7 @@ use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 use tokio::{sync::OnceCell, task::JoinSet};
@@ -3542,6 +3543,21 @@ fn declined_trust_prompt(path: &Path, err: &eyre::Report) -> bool {
     ) && (config_file::is_ignored(&config_trust_root(path)) || config_file::is_ignored(path))
 }
 
+static SKIP_UNTRUSTED_CONFIGS: AtomicBool = AtomicBool::new(false);
+static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Makes config loading skip untrusted config files instead of failing, so the
+/// remaining (e.g. global) configs still apply. Used by `hook-env`, where entering
+/// a directory is not an explicit request to run its config.
+pub fn skip_untrusted_configs() {
+    SKIP_UNTRUSTED_CONFIGS.store(true, Ordering::Relaxed);
+}
+
+/// Untrusted config files skipped so far when [`skip_untrusted_configs`] is active.
+pub fn skipped_untrusted_configs() -> Vec<PathBuf> {
+    SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap().clone()
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
@@ -3581,6 +3597,20 @@ async fn load_all_config_files(
                         "skipping config file ignored at the trust prompt: {}",
                         display_path(f)
                     );
+                    continue;
+                }
+                Err(err)
+                    if SKIP_UNTRUSTED_CONFIGS.load(Ordering::Relaxed)
+                        && matches!(
+                            err.downcast_ref::<crate::errors::Error>(),
+                            Some(crate::errors::Error::UntrustedConfig(_))
+                        ) =>
+                {
+                    debug!("skipping untrusted config file: {}", display_path(f));
+                    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
+                    if !skipped.contains(f) {
+                        skipped.push(f.clone());
+                    }
                     continue;
                 }
                 Err(err) => {

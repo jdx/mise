@@ -18,7 +18,6 @@ use std::sync::LazyLock as Lazy;
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
-use crate::errors::Error;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
@@ -97,14 +96,6 @@ fn mtime_to_millis(mtime: SystemTime) -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
-}
-
-pub fn untrusted_config_error_path(err: &eyre::Report) -> Option<PathBuf> {
-    err.chain()
-        .find_map(|cause| match cause.downcast_ref::<Error>() {
-            Some(Error::UntrustedConfig(path)) => Some(path.clone()),
-            _ => None,
-        })
 }
 
 pub fn should_show_untrusted_config_warning(config_path: &Path) -> bool {
