@@ -146,3 +146,61 @@ printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch","command":
 assert_fail "$ajv_validate services-invalid.json"
 printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch"}}}}\n' >services-valid.json
 assert_succeed "$ajv_validate services-valid.json"
+
+# --- backend-specific tool options (typed only for tools of that backend)
+for tools in \
+  '"spinel:tobi/try":"1.10.1"' \
+  '"spinel:tobi/try":{"version":"1.10.1","entrypoint":"try.rb","bin":"try","tag_prefix":"v","spinel":"/opt/spinel"}' \
+  '"spinel:tobi/try":[{"version":"1.10.1","entrypoint":"try.rb","source_ref":"be566829856ca6bd22963e38a28ffb5efa24c7de"}]' \
+  '"cargo:foo":{"version":"1","entrypoint":5}' \
+  '"github:cli/cli":{"version":"2","asset_pattern":"gh_*","no_app":true,"strip_components":1,"rename_exe":{"gh-*":"gh"}}' \
+  '"github:cli/cli":{"version":"2","no_app":"true","strip_components":"1"}' \
+  '"github:cli/cli":{"version":"2","platforms":{"linux-x64":{"asset_pattern":"a","url":"https://x/y"}}}' \
+  '"gitlab:o/r":{"version":"1","api_url":"https://git.example.com/api/v4"}' \
+  '"http:tool":{"version":"1","format":"tar.gz","platforms":{"macos-arm64":{"url":"https://x","checksum":"sha256:ab"}}}' \
+  '"aqua:o/r":{"version":"1","libc":"musl","vars":{"a":"b"}}' \
+  '"cargo:ripgrep":{"version":"1","features":["a"],"locked":false,"platforms":{"linux-x64":{"bin":"rg"}}}' \
+  '"npm:x":{"version":"1","allow_builds":["a"],"allow_exotic_deps":true}' \
+  '"npm:x":{"version":"1","allow_low_downloads":"TRUE"}' \
+  '"pipx:x":{"version":"1","extras":["a"],"uvx":false,"dependency_prereleases":"allow"}' \
+  '"python":{"version":"3","patch_sysconfig":"false"}' \
+  '"java":{"version":"21","release_type":"ea"}' \
+  '"rust":{"version":"1","profile":"minimal","components":"a,b","mr_boxington":true}' \
+  '"dotnet":{"version":"8","runtime":"aspnetcore"}' \
+  '"dotnet:Some.Tool":{"version":"1","runtime":"anything"}' \
+  '"node":{"version":"22","prerelease":true,"lazy_bins":"node"}'; do
+  printf '{"tools":{%s}}\n' "$tools" >tool-options-valid.json
+  assert_succeed "$ajv_validate tool-options-valid.json"
+done
+for tools in \
+  '"spinel:tobi/try":{"version":"1","entrypoint":5}' \
+  '"spinel:tobi/try":{"version":"1","source_ref":"abc"}' \
+  '"spinel:tobi/try":[{"version":"1","bin":false}]' \
+  '"github:cli/cli":{"version":"2","asset_pattern":5}' \
+  '"github:cli/cli":{"version":"2","no_app":"maybe"}' \
+  '"github:cli/cli":{"version":"2","platforms":{"linux-x64":{"asset_pattern":5}}}' \
+  '"github:cli/cli":{"version":"2","platforms":{"linux":{"asset_pattern":"a"}}}' \
+  '"http:tool":{"version":"1","format":"rar5"}' \
+  '"aqua:o/r":{"version":"1","libc":"uclibc"}' \
+  '"cargo:ripgrep":{"version":"1","features":5}' \
+  '"npm:x":{"version":"1","allow_low_downloads":"sure"}' \
+  '"npm:x":{"version":"1","allow_low_downloads":"1"}' \
+  '"npm:x":{"version":"1","allow_low_downloads":" true "}' \
+  '"npm:x":{"version":"1","allow_low_downloads":1}' \
+  '"python":{"version":"3","patch_sysconfig":"nah"}' \
+  '"java":{"version":"21","release_type":"stable"}' \
+  '"dotnet-core":{"version":"8","runtime":"sdk"}' \
+  '"node":{"version":"22","lazy_bins":["a/b"]}'; do
+  printf '{"tools":{%s}}\n' "$tools" >tool-options-invalid.json
+  assert_fail "$ajv_validate tool-options-invalid.json"
+done
+
+# Task tool tables use the same typed options.
+printf '{"tasks":{"build":{"run":"make","tools":{"github:cli/cli":{"version":"2","asset_pattern":"a"}}}}}\n' >task-tools-valid.json
+assert_succeed "$ajv_validate task-tools-valid.json"
+printf '{"tasks":{"build":{"run":"make","tools":{"github:cli/cli":{"version":"2","asset_pattern":5}}}}}\n' >task-tools-invalid.json
+assert_fail "$ajv_validate task-tools-invalid.json"
+
+# Deprecated root key that mise still accepts with a warning.
+printf '{"experimental_monorepo_root":true}\n' >legacy-monorepo-root.json
+assert_succeed "$ajv_validate legacy-monorepo-root.json"

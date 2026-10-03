@@ -170,7 +170,69 @@
           "additionalProperties": {
             "$ref": "#/$defs/tool"
           },
-          "type": "object"
+          "type": "object",
+          "patternProperties": {
+            "^github:": {
+              "$ref": "#/$defs/tool_github"
+            },
+            "^gitlab:": {
+              "$ref": "#/$defs/tool_gitlab"
+            },
+            "^forgejo:": {
+              "$ref": "#/$defs/tool_forgejo"
+            },
+            "^ubi:": {
+              "$ref": "#/$defs/tool_ubi"
+            },
+            "^http:": {
+              "$ref": "#/$defs/tool_http"
+            },
+            "^s3:": {
+              "$ref": "#/$defs/tool_s3"
+            },
+            "^aqua:": {
+              "$ref": "#/$defs/tool_aqua"
+            },
+            "^cargo:": {
+              "$ref": "#/$defs/tool_cargo"
+            },
+            "^npm:": {
+              "$ref": "#/$defs/tool_npm"
+            },
+            "^(pypi|pipx):": {
+              "$ref": "#/$defs/tool_pypi"
+            },
+            "^gem:": {
+              "$ref": "#/$defs/tool_gem"
+            },
+            "^go:": {
+              "$ref": "#/$defs/tool_go"
+            },
+            "^conda:": {
+              "$ref": "#/$defs/tool_conda"
+            },
+            "^spm:": {
+              "$ref": "#/$defs/tool_spm"
+            },
+            "^packslip:": {
+              "$ref": "#/$defs/tool_packslip"
+            },
+            "^spinel:": {
+              "$ref": "#/$defs/tool_spinel"
+            },
+            "^(core:)?python(\\[.*\\])?$": {
+              "$ref": "#/$defs/tool_core_python"
+            },
+            "^(core:)?java(\\[.*\\])?$": {
+              "$ref": "#/$defs/tool_core_java"
+            },
+            "^(core:)?rust(\\[.*\\])?$": {
+              "$ref": "#/$defs/tool_core_rust"
+            },
+            "^(core:dotnet|dotnet|dotnet-core)(\\[.*\\])?$": {
+              "$ref": "#/$defs/tool_core_dotnet"
+            }
+          }
         },
         "hide": {
           "default": false,
@@ -921,12 +983,21 @@
                 },
                 "lazy_bins": {
                   "description": "bootstrap shim names for lazy tools without registry bin metadata",
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "uniqueItems": true
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^/\\\\]+$"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^/\\\\]+$"
+                      }
+                    }
+                  ]
                 },
                 "postinstall": {
                   "description": "command to run after tool installation, or on every install when requested",
@@ -975,6 +1046,511 @@
               }
             ]
           }
+        }
+      ]
+    },
+    "tool_github": {
+      "description": "a tool installed with the github backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_forge_options"
+            },
+            {
+              "$ref": "#/$defs/tool_github_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_gitlab": {
+      "description": "a tool installed with the gitlab backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_forge_options"
+            },
+            {
+              "$ref": "#/$defs/tool_gitlab_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_forgejo": {
+      "description": "a tool installed with the forgejo backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_forge_options"
+            },
+            {
+              "$ref": "#/$defs/tool_forgejo_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_forge_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_ubi": {
+      "description": "a tool installed with the ubi backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_ubi_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_ubi_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_ubi_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_http": {
+      "description": "a tool installed with the http backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_http_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_http_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_http_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_s3": {
+      "description": "a tool installed with the s3 backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_s3_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_s3_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_s3_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_aqua": {
+      "description": "a tool installed with the aqua backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_aqua_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_cargo": {
+      "description": "a tool installed with the cargo backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_cargo_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_cargo_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_cargo_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_npm": {
+      "description": "a tool installed with the npm backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_npm_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_pypi": {
+      "description": "a tool installed with the pypi backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_pypi_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_gem": {
+      "description": "a tool installed with the gem backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_gem_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_go": {
+      "description": "a tool installed with the go backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_go_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_conda": {
+      "description": "a tool installed with the conda backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_conda_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_spm": {
+      "description": "a tool installed with the spm backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_spm_options"
+            },
+            {
+              "properties": {
+                "platforms": {
+                  "description": "per-platform option overrides",
+                  "$ref": "#/$defs/tool_spm_platforms"
+                },
+                "platform": {
+                  "description": "per-platform option overrides (alias of platforms)",
+                  "$ref": "#/$defs/tool_spm_platforms"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_packslip": {
+      "description": "a tool installed with the packslip backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_packslip_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_spinel": {
+      "description": "a tool installed with the spinel backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_spinel_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_core_python": {
+      "description": "the core python tool",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_core_python_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_core_java": {
+      "description": "the core java tool",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_core_java_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_core_rust": {
+      "description": "the core rust tool",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_core_rust_options"
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "tool_core_dotnet": {
+      "description": "the core dotnet tool",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "$ref": "#/$defs/tool_core_dotnet_options"
+            }
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1151,6 +1727,18 @@
         "version_order": {
           "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
           "enum": ["source", "semver"]
+        },
+        "prerelease": {
+          "description": "include pre-release versions when listing versions and resolving latest",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "platforms": {
+          "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+          "$ref": "#/$defs/tool_platforms"
+        },
+        "platform": {
+          "description": "per-platform option overrides (alias of platforms)",
+          "$ref": "#/$defs/tool_platforms"
         }
       },
       "oneOf": [
@@ -1212,6 +1800,893 @@
         }
       ]
     },
+    "tool_forge_options": {
+      "type": "object",
+      "properties": {
+        "version_prefix": {
+          "description": "release tag prefix stripped from versions and re-added when resolving tags",
+          "type": "string"
+        },
+        "asset_pattern": {
+          "description": "glob (* and ?) matched against release asset names, tera templated; replaces autodetection",
+          "type": "string"
+        },
+        "additional_asset_patterns": {
+          "description": "extra archives from the same release extracted over the primary asset, in order",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "matching": {
+          "description": "substring an asset name must contain, applied before platform autodetection",
+          "type": "string"
+        },
+        "matching_regex": {
+          "description": "regex an asset name must match, applied before platform autodetection",
+          "type": "string"
+        },
+        "no_app": {
+          "description": "penalize macos .app bundle assets during autodetection",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "filter_bins": {
+          "description": "only expose these binaries on PATH",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "format": {
+          "description": "force the archive format instead of detecting it from the file name",
+          "type": "string",
+          "enum": [
+            "tar.gz",
+            "tgz",
+            "gz",
+            "tar.xz",
+            "txz",
+            "xz",
+            "tar.bz2",
+            "tbz2",
+            "tbz",
+            "bz2",
+            "tar.zst",
+            "tzst",
+            "zst",
+            "tar",
+            "zip",
+            "vsix",
+            "7z",
+            "tar.br",
+            "tbr",
+            "br",
+            "tar.lz4",
+            "tlz4",
+            "lz4",
+            "tar.sz",
+            "tsz",
+            "sz",
+            "rar",
+            "raw"
+          ]
+        },
+        "checksum": {
+          "description": "expected artifact digest as algo:hash (sha256, sha512, sha1, md5, blake3)",
+          "type": "string"
+        },
+        "size": {
+          "description": "expected artifact size in bytes",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "strip_components": {
+          "description": "leading directory components to strip on extract (auto 1 for single-root archives)",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "bin": {
+          "description": "executable name (or safe relative path) to install the downloaded binary as",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "rename the extracted executable: a name, or a table of glob = new name",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "bin_path": {
+          "description": "directory inside the install that contains binaries (tera templated)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_github_options": {
+      "type": "object",
+      "properties": {
+        "api_url": {
+          "description": "api base url, for github enterprise or self-hosted instances",
+          "type": "string"
+        },
+        "github_attestations": {
+          "description": "verify github artifact attestations when available",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "slsa_signer_identity": {
+          "description": "expected fulcio certificate identity for slsa provenance, tera templated",
+          "type": "string"
+        },
+        "slsa_signer_issuer": {
+          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity",
+          "type": "string"
+        }
+      }
+    },
+    "tool_gitlab_options": {
+      "type": "object",
+      "properties": {
+        "api_url": {
+          "description": "api base url, for self-hosted gitlab instances",
+          "type": "string"
+        }
+      }
+    },
+    "tool_forgejo_options": {
+      "type": "object",
+      "properties": {
+        "api_url": {
+          "description": "api base url, for self-hosted forgejo or gitea instances",
+          "type": "string"
+        }
+      }
+    },
+    "tool_ubi_options": {
+      "type": "object",
+      "properties": {
+        "exe": {
+          "description": "name of the executable inside the archive to extract",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "name to give the extracted executable",
+          "type": "string"
+        },
+        "matching": {
+          "description": "substring to match release filenames when several match the os and arch",
+          "type": "string"
+        },
+        "matching_regex": {
+          "description": "regex release filenames must match before os and arch matching",
+          "type": "string"
+        },
+        "provider": {
+          "description": "forge used to fetch releases and assets",
+          "type": "string",
+          "enum": ["github", "gitlab"]
+        },
+        "api_url": {
+          "description": "provider api base url, for self-hosted instances",
+          "type": "string"
+        },
+        "tag_regex": {
+          "description": "regex release tags must match to be listed as versions",
+          "type": "string"
+        },
+        "extract_all": {
+          "description": "extract every file in the archive instead of only the binary",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "bin_path": {
+          "description": "directory in the install containing binaries, used with extract_all",
+          "type": "string"
+        }
+      }
+    },
+    "tool_http_options": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "download url, tera templated, http(s) or file://; required for each platform",
+          "type": "string"
+        },
+        "checksum": {
+          "description": "expected artifact digest as algo:hash",
+          "type": "string"
+        },
+        "checksum_url": {
+          "description": "checksum file or manifest url, used by mise lock without downloading",
+          "type": "string"
+        },
+        "checksum_expr": {
+          "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
+          "type": "string"
+        },
+        "size": {
+          "description": "expected artifact size in bytes",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "format": {
+          "description": "force the archive format instead of detecting it from the url",
+          "type": "string",
+          "enum": [
+            "tar.gz",
+            "tgz",
+            "gz",
+            "tar.xz",
+            "txz",
+            "xz",
+            "tar.bz2",
+            "tbz2",
+            "tbz",
+            "bz2",
+            "tar.zst",
+            "tzst",
+            "zst",
+            "tar",
+            "zip",
+            "vsix",
+            "7z",
+            "tar.br",
+            "tbr",
+            "br",
+            "tar.lz4",
+            "tlz4",
+            "lz4",
+            "tar.sz",
+            "tsz",
+            "sz",
+            "rar",
+            "raw"
+          ]
+        },
+        "strip_components": {
+          "description": "leading directory components to strip on extract (auto 1 for single-root archives)",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "bin": {
+          "description": "name for a downloaded raw or compressed single binary (ignored for archives)",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "rename the extracted executable: a name, or a table of glob = new name",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "bin_path": {
+          "description": "directory inside the install that contains binaries (tera templated)",
+          "type": "string"
+        },
+        "shared_extraction": {
+          "description": "share extracted content between installs with identical artifacts",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "windows_script_interpreter": {
+          "description": "windows only: write a .cmd launcher running the raw script with this interpreter",
+          "type": "string"
+        },
+        "version_list_url": {
+          "description": "url returning the version list (text, json or html)",
+          "type": "string"
+        },
+        "version_regex": {
+          "description": "regex extracting versions from the list (first capture group or whole match)",
+          "type": "string"
+        },
+        "version_json_path": {
+          "description": "jq-like path extracting versions from json, such as .[].version",
+          "type": "string"
+        },
+        "version_expr": {
+          "description": "expr-lang expression post-processing versions (variables: body, versions)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_s3_options": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "s3://bucket/key object url, tera templated; required for each platform",
+          "type": "string"
+        },
+        "checksum": {
+          "description": "expected artifact digest as algo:hash",
+          "type": "string"
+        },
+        "size": {
+          "description": "expected artifact size in bytes",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "format": {
+          "description": "force the archive format when the object key has no usable extension",
+          "type": "string",
+          "enum": [
+            "tar.gz",
+            "tgz",
+            "gz",
+            "tar.xz",
+            "txz",
+            "xz",
+            "tar.bz2",
+            "tbz2",
+            "tbz",
+            "bz2",
+            "tar.zst",
+            "tzst",
+            "zst",
+            "tar",
+            "zip",
+            "vsix",
+            "7z",
+            "tar.br",
+            "tbr",
+            "br",
+            "tar.lz4",
+            "tlz4",
+            "lz4",
+            "tar.sz",
+            "tsz",
+            "sz",
+            "rar",
+            "raw"
+          ]
+        },
+        "strip_components": {
+          "description": "leading directory components to strip on extract (auto 1 for single-root archives)",
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "bin": {
+          "description": "executable name (or safe relative path) to install the downloaded binary as",
+          "type": "string"
+        },
+        "rename_exe": {
+          "description": "rename the extracted executable: a name, or a table of glob = new name",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "bin_path": {
+          "description": "directory inside the install that contains binaries (tera templated)",
+          "type": "string"
+        },
+        "region": {
+          "description": "aws region used for the s3 client",
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "custom s3-compatible endpoint url (minio and similar); enables path-style addressing",
+          "type": "string"
+        },
+        "version_list_url": {
+          "description": "s3:// url of a manifest file listing versions",
+          "type": "string"
+        },
+        "version_prefix": {
+          "description": "s3 key prefix to list objects under for version discovery",
+          "type": "string"
+        },
+        "version_regex": {
+          "description": "regex extracting versions from the manifest or object keys",
+          "type": "string"
+        },
+        "version_json_path": {
+          "description": "jq-like path extracting versions from json, such as .[].version",
+          "type": "string"
+        },
+        "version_expr": {
+          "description": "expr-lang expression post-processing versions (variables: body, versions)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_aqua_options": {
+      "type": "object",
+      "properties": {
+        "symlink_bins": {
+          "description": "expose only the registry-declared binaries through a filtered bin directory",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "libc": {
+          "description": "force strict glibc or musl asset selection on linux",
+          "type": "string",
+          "enum": ["glibc", "gnu", "musl"]
+        },
+        "slsa_signer_identity": {
+          "description": "expected fulcio certificate subject for slsa provenance; requires slsa_signer_issuer",
+          "type": "string"
+        },
+        "slsa_signer_issuer": {
+          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity",
+          "type": "string"
+        },
+        "vars": {
+          "description": "values for aqua registry template variables",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tool_cargo_options": {
+      "type": "object",
+      "properties": {
+        "features": {
+          "description": "crate features to enable (cargo install --features); skips cargo-binstall",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "default-features": {
+          "description": "set to false to pass --no-default-features; skips cargo-binstall",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "bin": {
+          "description": "binary to install when a crate has several (cargo install --bin)",
+          "type": "string"
+        },
+        "crate": {
+          "description": "crate to install when a git repository contains several",
+          "type": "string"
+        },
+        "locked": {
+          "description": "pass --locked to cargo install (default true)",
+          "$ref": "#/$defs/tool_bool"
+        }
+      }
+    },
+    "tool_npm_options": {
+      "type": "object",
+      "properties": {
+        "allow_builds": {
+          "description": "dependency packages whose build scripts are approved; true approves all",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "trust_policy_excludes": {
+          "description": "packages or version ranges exempt from aube's trustPolicy no-downgrade check",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "allow_low_downloads": {
+          "description": "approve the requested package past aube's reputation checks",
+          "$ref": "#/$defs/tool_bool_text"
+        },
+        "allow_exotic_deps": {
+          "description": "dependencies allowed from non-registry sources (git, file, tarball url); true allows all",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "aube_args": {
+          "description": "extra arguments for aube add --global (only with npm.package_manager = aube_cli)",
+          "type": "string"
+        },
+        "pnpm_args": {
+          "description": "extra arguments for pnpm installs (shell-split)",
+          "type": "string"
+        },
+        "bun_args": {
+          "description": "extra arguments for bun installs (shell-split)",
+          "type": "string"
+        },
+        "npm_args": {
+          "description": "extra arguments for npm installs (shell-split)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_pypi_options": {
+      "type": "object",
+      "properties": {
+        "extras": {
+          "description": "python package extras to install",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "with": {
+          "description": "additional python requirements installed into the tool environment (requires uv)",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "expose": {
+          "description": "extra requirements whose executables are exposed (requires uv 0.8.5+)",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "dependency_prereleases": {
+          "description": "uv prerelease policy for dependency resolution (requires uv)",
+          "type": "string",
+          "enum": ["disallow", "allow", "if-necessary", "explicit"]
+        },
+        "package_name": {
+          "description": "distribution name for git sources, used to attach extras",
+          "type": "string"
+        },
+        "pipx_args": {
+          "description": "extra arguments for pipx install (shell-split)",
+          "type": "string"
+        },
+        "uvx": {
+          "description": "set to false to install with pipx instead of uv",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "uvx_args": {
+          "description": "extra arguments for uv tool install (shell-split)",
+          "type": "string"
+        },
+        "registry_url": {
+          "description": "version-listing url containing a {} placeholder for the package name",
+          "type": "string"
+        }
+      }
+    },
+    "tool_gem_options": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "gem registry http(s) url used to resolve and install this gem",
+          "type": "string"
+        }
+      }
+    },
+    "tool_go_options": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "description": "build tags passed to go install -tags",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tool_conda_options": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "description": "conda channel to resolve the package from (default conda-forge)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_spm_options": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "description": "git host used for release info and assets",
+          "type": "string",
+          "enum": ["github", "gitlab"]
+        },
+        "api_url": {
+          "description": "provider api url, for self-hosted instances",
+          "type": "string"
+        },
+        "artifactbundle": {
+          "description": "true requires an artifactbundle, false forces a source build, unset tries the bundle first",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "artifactbundle_asset": {
+          "description": "specific *.artifactbundle.zip release asset to use",
+          "type": "string"
+        },
+        "filter_bins": {
+          "description": "executable products to install",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "install_command": {
+          "description": "command run in the checkout instead of swift build; incompatible with filter_bins",
+          "type": "string"
+        }
+      }
+    },
+    "tool_packslip_options": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "description": "publisher-declared alternative build to select, such as fips",
+          "type": "string"
+        },
+        "pubkey": {
+          "description": "minisign public key line or path to a .pub file pinning the signer",
+          "type": "string"
+        },
+        "identity": {
+          "description": "exact keyless signer certificate identity",
+          "type": "string"
+        },
+        "identity_prefix": {
+          "description": "keyless signer certificate identity prefix",
+          "type": "string"
+        },
+        "list_identity_prefix": {
+          "description": "separate identity prefix for the vendor release list; needs an issuer, not valid with pubkey",
+          "type": "string"
+        },
+        "issuer": {
+          "description": "oidc issuer for the keyless signer",
+          "type": "string"
+        },
+        "allow_unlogged": {
+          "description": "accept key-signed bundles without transparency-log evidence",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "ignore_requirements": {
+          "description": "install despite confirmed host requirement failures",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "trust": {
+          "description": "vendor exempts this tool from configured packslip stampers",
+          "type": "string",
+          "enum": ["vendor"]
+        }
+      }
+    },
+    "tool_spinel_options": {
+      "type": "object",
+      "properties": {
+        "entrypoint": {
+          "description": "ruby file to compile, relative to the repository root (default main.rb)",
+          "type": "string"
+        },
+        "bin": {
+          "description": "name of the executable written to bin/ (default: the repository name)",
+          "type": "string"
+        },
+        "tag_prefix": {
+          "description": "text before the version in each git tag, such as v",
+          "type": "string"
+        },
+        "source_ref": {
+          "description": "full 40-character commit SHA to build instead of the tag",
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{40}$"
+        },
+        "spinel": {
+          "description": "spinel compiler to run (default: spinel on PATH)",
+          "type": "string"
+        }
+      }
+    },
+    "tool_core_python_options": {
+      "type": "object",
+      "properties": {
+        "patch_sysconfig": {
+          "description": "patch sysconfig paths of precompiled python after install (default true, unix only)",
+          "$ref": "#/$defs/tool_bool"
+        },
+        "virtualenv": {
+          "description": "virtualenv path to activate; use env._.python.venv instead",
+          "type": "string",
+          "deprecated": true
+        }
+      }
+    },
+    "tool_core_java_options": {
+      "type": "object",
+      "properties": {
+        "release_type": {
+          "description": "jdk metadata channel: ga (default) or ea for early access builds",
+          "type": "string",
+          "enum": ["ga", "ea"]
+        }
+      }
+    },
+    "tool_core_rust_options": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "description": "rustup profile to install, such as minimal, default or complete",
+          "type": "string"
+        },
+        "components": {
+          "description": "rustup components to install",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "targets": {
+          "description": "rustup targets to install, for cross-compilation",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "mr_boxington": {
+          "description": "wrap cargo with mr boxington (mbx); needs mr-boxington in tools (default false)",
+          "$ref": "#/$defs/tool_bool"
+        }
+      }
+    },
+    "tool_core_dotnet_options": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "description": "install a shared runtime instead of the sdk; the version is the runtime version",
+          "type": "string",
+          "enum": ["dotnet", "aspnetcore", "windowsdesktop"]
+        }
+      }
+    },
     "env_age_value": {
       "type": "string",
       "description": "[experimental] age-encrypted value"
@@ -1255,10 +2730,250 @@
         }
       ]
     },
+    "tool_bool": {
+      "description": "a boolean, also accepted as the strings true/false or the integers 1/0",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\s*([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|1|0)\\s*$"
+        },
+        {
+          "type": "integer",
+          "enum": [0, 1]
+        }
+      ]
+    },
+    "tool_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "tool_forge_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "asset_pattern": {
+            "$ref": "#/$defs/tool_forge_options/properties/asset_pattern"
+          },
+          "additional_asset_patterns": {
+            "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
+          },
+          "url": {
+            "description": "direct download url for this platform, tera templated; skips release asset selection",
+            "type": "string"
+          },
+          "no_app": {
+            "$ref": "#/$defs/tool_forge_options/properties/no_app"
+          },
+          "filter_bins": {
+            "$ref": "#/$defs/tool_forge_options/properties/filter_bins"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_forge_options/properties/checksum"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_forge_options/properties/size"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_forge_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_forge_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_forge_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_forge_options/properties/bin_path"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_forge_options/properties/format"
+          }
+        }
+      }
+    },
+    "tool_ubi_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin_path": {
+            "$ref": "#/$defs/tool_ubi_options/properties/bin_path"
+          }
+        }
+      }
+    },
+    "tool_http_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "$ref": "#/$defs/tool_http_options/properties/url"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_http_options/properties/checksum"
+          },
+          "checksum_url": {
+            "$ref": "#/$defs/tool_http_options/properties/checksum_url"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_http_options/properties/size"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_http_options/properties/format"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_http_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_http_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_http_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_http_options/properties/bin_path"
+          },
+          "windows_script_interpreter": {
+            "$ref": "#/$defs/tool_http_options/properties/windows_script_interpreter"
+          }
+        }
+      }
+    },
+    "tool_s3_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "$ref": "#/$defs/tool_s3_options/properties/url"
+          },
+          "checksum": {
+            "$ref": "#/$defs/tool_s3_options/properties/checksum"
+          },
+          "size": {
+            "$ref": "#/$defs/tool_s3_options/properties/size"
+          },
+          "format": {
+            "$ref": "#/$defs/tool_s3_options/properties/format"
+          },
+          "strip_components": {
+            "$ref": "#/$defs/tool_s3_options/properties/strip_components"
+          },
+          "bin": {
+            "$ref": "#/$defs/tool_s3_options/properties/bin"
+          },
+          "rename_exe": {
+            "$ref": "#/$defs/tool_s3_options/properties/rename_exe"
+          },
+          "bin_path": {
+            "$ref": "#/$defs/tool_s3_options/properties/bin_path"
+          },
+          "region": {
+            "$ref": "#/$defs/tool_s3_options/properties/region"
+          },
+          "endpoint": {
+            "$ref": "#/$defs/tool_s3_options/properties/endpoint"
+          },
+          "version_list_url": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_list_url"
+          },
+          "version_prefix": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_prefix"
+          },
+          "version_regex": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_regex"
+          },
+          "version_json_path": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_json_path"
+          },
+          "version_expr": {
+            "$ref": "#/$defs/tool_s3_options/properties/version_expr"
+          }
+        }
+      }
+    },
+    "tool_cargo_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "$ref": "#/$defs/tool_cargo_options/properties/bin"
+          }
+        }
+      }
+    },
+    "tool_spm_platforms": {
+      "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/$defs/tool_spm_options/properties/provider"
+          },
+          "api_url": {
+            "$ref": "#/$defs/tool_spm_options/properties/api_url"
+          },
+          "artifactbundle": {
+            "$ref": "#/$defs/tool_spm_options/properties/artifactbundle"
+          },
+          "artifactbundle_asset": {
+            "$ref": "#/$defs/tool_spm_options/properties/artifactbundle_asset"
+          }
+        }
+      }
+    },
     "env_file_expand": {
       "type": "boolean",
       "default": false,
       "description": "enable shell-style variable expansion for values loaded by env._.file"
+    },
+    "tool_bool_text": {
+      "description": "a boolean, also accepted as the string true or false",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$"
+        }
+      ]
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
