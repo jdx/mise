@@ -58,7 +58,6 @@ impl HookEnv {
         crate::config::skip_untrusted_configs();
         let config = Config::get().await?;
         let untrusted_configs = crate::config::skipped_untrusted_configs();
-        let untrusted_config = untrusted_configs.first();
         // Shell activation must stay fast and non-networked; missing tools are
         // handled by the normal install paths instead of hook-env.
         let ts = ToolsetBuilder::new()
@@ -217,17 +216,17 @@ impl HookEnv {
                 "1".into(),
             ));
         }
-        if untrusted_config.is_none() {
+        if untrusted_configs.is_empty() {
             hook_env::clear_untrusted_config_warning(&mut patches);
         }
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
-        if let Some(config_path) = untrusted_config
-            && hook_env::should_show_untrusted_config_warning(config_path)
+        if !untrusted_configs.is_empty()
+            && hook_env::should_show_untrusted_config_warning(&untrusted_configs)
         {
             if let Err(mark_err) =
-                hook_env::mark_untrusted_config_warning_seen(&*shell, config_path)
+                hook_env::mark_untrusted_config_warning_seen(&*shell, &untrusted_configs)
             {
                 trace!("failed to mark untrusted config warning seen: {mark_err}");
             }
