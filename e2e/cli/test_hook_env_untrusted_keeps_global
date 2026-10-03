@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# An untrusted project config must not stop hook-env from applying the
+# trusted global config (https://github.com/jdx/mise/issues/13918).
+export MISE_TRUSTED_CONFIG_PATHS="$HOME/.config/mise"
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+[env]
+GLOBAL_FOO = "global"
+TOML
+
+mkdir -p project
+cat >project/mise.toml <<'TOML'
+[env]
+LOCAL_FOO = "local"
+TOML
+cd project
+
+stdout="$(mise hook-env -s bash 2>stderr.txt)"
+assert_contains "cat stderr.txt" "not trusted"
+assert_contains "echo '$stdout'" "GLOBAL_FOO"
+assert_not_contains "echo '$stdout'" "LOCAL_FOO"
+eval "$stdout"
+assert "printenv GLOBAL_FOO" "global"
+
+# A second untrusted config in the same directory must warn again even though
+# the first one was already reported and is unchanged.
+cat >mise.local.toml <<'TOML'
+[env]
+LOCAL_BAR = "local"
+TOML
+eval "$stdout"
+mise hook-env -s bash >/dev/null 2>stderr2.txt
+assert_contains "cat stderr2.txt" "mise.local.toml is not trusted"

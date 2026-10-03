@@ -53,34 +53,11 @@ impl HookEnv {
             self.shell,
             &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
         )?;
-        let config = match Config::get().await {
-            Ok(config) => config,
-            Err(err) => {
-                let Some(config_path) = hook_env::untrusted_config_error_path(&err) else {
-                    return Err(err);
-                };
-                if hook_env::should_show_untrusted_config_warning(&config_path) {
-                    if let Err(mark_err) =
-                        hook_env::mark_untrusted_config_warning_seen(&*shell, &config_path)
-                    {
-                        trace!("failed to mark untrusted config warning seen: {mark_err}");
-                    }
-                    // Entering a directory is not an explicit action, so show a
-                    // single-line warning instead of the full error chain.
-                    // Explicit commands still raise the full UntrustedConfig error.
-                    // Written directly to stderr because the untrusted config's own
-                    // [settings] (e.g. quiet, log_level) are applied before the trust
-                    // check and must not be able to silence this notice.
-                    safe_eprintln!(
-                        "{} {} {} is not trusted, run `mise trust` to enable it",
-                        style::eyellow("mise"),
-                        style::eyellow("WARN"),
-                        display_path(&config_path)
-                    );
-                }
-                return Err(crate::request_exit(1));
-            }
-        };
+        // Entering a directory is not an explicit action, so an untrusted config is
+        // skipped (with a warning) rather than blocking the configs that are trusted.
+        crate::config::skip_untrusted_configs();
+        let config = Config::get().await?;
+        let untrusted_configs = crate::config::skipped_untrusted_configs();
         // Shell activation must stay fast and non-networked; missing tools are
         // handled by the normal install paths instead of hook-env.
         let ts = ToolsetBuilder::new()
@@ -239,10 +216,32 @@ impl HookEnv {
                 "1".into(),
             ));
         }
-        hook_env::clear_untrusted_config_warning(&mut patches);
+        if untrusted_configs.is_empty() {
+            hook_env::clear_untrusted_config_warning(&mut patches);
+        }
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
+        if !untrusted_configs.is_empty()
+            && hook_env::should_show_untrusted_config_warning(&untrusted_configs)
+        {
+            if let Err(mark_err) =
+                hook_env::mark_untrusted_config_warning_seen(&*shell, &untrusted_configs)
+            {
+                trace!("failed to mark untrusted config warning seen: {mark_err}");
+            }
+            // Written directly to stderr because the untrusted config's own
+            // [settings] (e.g. quiet, log_level) are applied before the trust
+            // check and must not be able to silence this notice.
+            for config_path in &untrusted_configs {
+                safe_eprintln!(
+                    "{} {} {} is not trusted, run `mise trust` to enable it",
+                    style::eyellow("mise"),
+                    style::eyellow("WARN"),
+                    display_path(config_path)
+                );
+            }
+        }
         miseprint!("{daemon_commands}")?;
 
         // Build and output alias commands

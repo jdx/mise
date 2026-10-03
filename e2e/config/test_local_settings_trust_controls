@@ -24,8 +24,10 @@ output=$(MISE_YES=0 MISE_PARANOID=1 mise hook-env -s bash --force 2>&1)
 status=$?
 set -e
 
-if [[ $status -eq 0 ]]; then
-  echo "FAIL: expected hook-env to reject untrusted local config"
+# hook-env skips the untrusted config with a warning instead of failing, so the
+# trusted configs still apply.
+if [[ $status -ne 0 ]]; then
+  echo "FAIL: expected hook-env to skip untrusted local config, got status $status"
   echo "Output: $output"
   exit 1
 fi
