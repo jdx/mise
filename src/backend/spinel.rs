@@ -65,6 +65,14 @@ impl Backend for SpinelBackend {
         &self.ba
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["tag_prefix"]
+    }
+
     fn get_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec!["spinel"])
     }
@@ -137,6 +145,8 @@ or point the `spinel` tool option at a compiler binary.",
         };
 
         let source = tv.download_path().join("source");
+        // A kept download directory must not leak files from an earlier build.
+        file::remove_all(&source)?;
         let bin_dir = tv.install_path().join("bin");
         file::create_dir_all(&source)?;
         file::create_dir_all(&bin_dir)?;
@@ -239,10 +249,16 @@ fn validate_tag(tag: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     path.metadata()
         .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// Parses `git ls-remote --tags --refs` output into opaque versions, keeping
