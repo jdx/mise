@@ -859,7 +859,7 @@ impl HistoryRepo {
                     }
                 }
             }
-            let tracked = manifest.tracking()?;
+            let tracked = manifest.saved_tracking()?;
             record.tree.modes.clear();
             let layout = super::sync::layout::Roots::current();
             // only the record under the key that governs the path on this
@@ -2183,6 +2183,62 @@ mod tests {
         let commit = repo.write_checkpoint(Some(&tree), &test_checkpoint("outer", Some(&tree)))?;
         let record = repo.read_meta(&commit)?;
         assert_eq!(record.tree.modes.get(&display_path(&private)), Some(&0o700));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_meta_preserves_enrollment_after_a_directory_becomes_a_symlink() -> eyre::Result<()> {
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::{Enrollment, Manifest};
+        use crate::system::history::sync::layout::Roots;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-saved-symlink-")
+            .tempdir_in(&roots.home)?;
+        let directory = scratch.path().join("skill");
+        std::fs::create_dir(&directory)?;
+        let path = directory.join("SKILL.md");
+        let portable = roots.branch_path(&path, None).unwrap();
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: portable.clone(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        };
+        let blob = repo.hash_blob(b"old skill")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: portable,
+                object: Some(("100644".into(), blob)),
+            }],
+        )?;
+        let tree = manifest.write(&repo, &files)?;
+        let commit = repo.write_checkpoint(Some(&tree), &test_checkpoint("skill", Some(&tree)))?;
+        let before = repo.read_meta(&commit)?;
+
+        std::fs::remove_dir(&directory)?;
+        std::os::unix::fs::symlink("shared-skill", &directory)?;
+        assert!(
+            manifest.tracking().is_err(),
+            "live enrollment must remain protected"
+        );
+        let after = repo.read_meta(&commit)?;
+        assert_eq!(before.tree.coverage.entries, after.tree.coverage.entries);
+        assert_eq!(before.tree.snapshot, after.tree.snapshot);
+        assert_eq!(before.changes.added, after.changes.added);
         Ok(())
     }
 
