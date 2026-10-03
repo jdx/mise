@@ -135,7 +135,7 @@ carrying the climax, the wind-down under the morph's lift, the outro's soft
 kick on the toque's drop at 4:42, and the ring-out under the end card. The
 overview (1:22) plays bars 11–39, then 168 to the end: the wind-down under
 depends' lanes, the outro under the end card. Joins crossfade the outgoing
-tail over 150 ms under the incoming downbeat. Arrangement and pin changes
+tail over 50 ms under the incoming downbeat. Arrangement and pin changes
 belong in `film-music.ts`; the renderer checks the pin before decoding, and
 `test/film-music.test.ts` holds each arrangement to the film's length, the
 first groove's drop and the outro's place under the end card.

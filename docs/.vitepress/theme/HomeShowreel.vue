@@ -230,7 +230,9 @@ onUnmounted(() => window.removeEventListener("hashchange", focusOnArrival));
 
 <style scoped>
 /* Two buttons side by side at every width: on a phone they share the row
-   rather than wrapping the selected one onto a line of its own. */
+   rather than wrapping the selected one onto a line of its own. Inside a
+   button the runtime may drop under the label where the row is too narrow
+   for both (a 320 px phone has 272 px between the gutters). */
 .home-showreel-editions {
   display: flex;
   gap: 8px;
@@ -238,16 +240,18 @@ onUnmounted(() => window.removeEventListener("hashchange", focusOnArrival));
 }
 .home-showreel-editions button {
   flex: 1 1 0;
+  min-width: 0;
   min-height: 44px;
-  padding: 10px 16px;
+  padding: 10px 12px;
   border: 1px solid var(--vp-c-border);
   border-radius: 8px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.3;
 }
 @media (min-width: 641px) {
   .home-showreel-editions button {
     flex: 0 0 auto;
+    padding: 10px 16px;
   }
 }
 .home-showreel-editions button[aria-pressed="true"] {
