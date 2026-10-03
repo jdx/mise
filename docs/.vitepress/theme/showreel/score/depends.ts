@@ -24,7 +24,7 @@ const CHANGES: Changes = [
 export const part: Part = {
   cues(m, s, facts) {
     const c = listen("depends", s, facts);
-    const at = (t: number) => chordAt(CHANGES, beatIn(s, t) + 1e-3);
+    const at = (t: number) => chordAt(CHANGES, beatIn(s, t) + 1e-3, t);
     for (const lane of LANES) {
       const t = c.at(lane);
       if (t !== null) laneIn(m, t, lane, at(t));

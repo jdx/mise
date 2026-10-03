@@ -47,7 +47,7 @@ const FOLDERS = PAN.card;
 export const part: Part = {
   cues(m, s, facts) {
     const c = listen("switch", s, facts);
-    const at = (t: number) => chordAt(CHANGES, beatIn(s, t) + 1e-3);
+    const at = (t: number) => chordAt(CHANGES, beatIn(s, t) + 1e-3, t);
     for (const t of [...c.all("cdDashboard"), ...c.all("cdApi")]) {
       const r = root(at(t));
       const up = at(t)

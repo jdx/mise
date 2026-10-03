@@ -121,14 +121,24 @@ ffmpeg -i 'mise screenreel.wav' \
   docs/.vitepress/theme/showreel/score/music.opus
 ```
 
-The tour plays source bars 12–44, 48–80, 96–110, 112–156, then 160 through
-the complete ending. This removes the long breakdown and drum breaks without
-cutting music at picture edits. Its last chorus begins at 4:04; the wind-down
-and outro continue naturally through the closing card. The overview plays
-bars 16–42, then 168 through the complete ending. Joins crossfade preceding
-tails over 150 ms, reaching full level on the incoming downbeat. Both editions
-leave just 0.385 s after the original ring-out. Arrangement and pin changes
-belong in `film-music.ts`; the renderer checks the pin before decoding.
+Each film is cut on the song's own bar lines (`film-music.ts` `musicCuts`),
+never at a picture edit, and ends on the song's complete wind-down, outro and
+ring-out, which dies out 0.385 s before the film does. The tour (4:58) plays
+bars 11–79 straight through (the intro's tail under the open, the first groove
+dropping at 0:10 as the open's card leaves and the switch begins, the break
+under `mise use jq`'s install, the second groove, the riser ending in
+depends), then 96–151 (the third and fourth grooves, the build under
+bootstrap, the fifth groove to its last phrase), skipping only the drumless
+breakdown and that phrase, then 156 to the end: the break under the clone
+command typing, the loudest groove dropping at 4:18 on its install rows and
+carrying the climax, the wind-down under the morph's lift, the outro's soft
+kick on the toque's drop at 4:42, and the ring-out under the end card. The
+overview (1:22) plays bars 11–39, then 168 to the end: the wind-down under
+depends' lanes, the outro under the end card. Joins crossfade the outgoing
+tail over 150 ms under the incoming downbeat. Arrangement and pin changes
+belong in `film-music.ts`; the renderer checks the pin before decoding, and
+`test/film-music.test.ts` holds each arrangement to the film's length, the
+first groove's drop and the outro's place under the end card.
 
 `film-audio.ts` renders unmastered source effects without any music, cuts those
 with the picture, remaps their duck cues, and mixes them with the independently

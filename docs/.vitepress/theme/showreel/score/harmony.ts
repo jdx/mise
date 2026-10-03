@@ -48,8 +48,30 @@ export const CH = {
 /** A section's changes: from each section beat on, a chord, until the next. */
 export type Changes = readonly (readonly [beat: number, chord: Chord])[];
 
-/** The chord sounding at section beat `b`. */
-export function chordAt(changes: Changes, b: number): Chord {
+/**
+ * A film's chart: the chord under reel second `t` where a film's music is
+ * not the bed (film-audio.ts sets it round its render of the effects from
+ * film-music.ts's song chart), or null where the film has no music under
+ * that moment. Null in the source reel, whose parts follow their own
+ * changes, set against the bed.
+ */
+type FilmChart = (t: number) => Chord | null;
+let film: FilmChart | null = null;
+
+/** Use `chart` for the chords under the reel's moments (null: the parts' own changes). */
+export function setFilmChart(chart: FilmChart | null): void {
+  film = chart;
+}
+
+/**
+ * The chord sounding at section beat `b`: the film's, when a film chart is
+ * set and the moment's reel second `t` is given, else the changes'.
+ */
+export function chordAt(changes: Changes, b: number, t?: number): Chord {
+  if (film && t !== undefined) {
+    const c = film(t);
+    if (c) return c;
+  }
   let c = changes[0][1];
   for (const [at, ch] of changes) if (at <= b + 1e-6) c = ch;
   return c;

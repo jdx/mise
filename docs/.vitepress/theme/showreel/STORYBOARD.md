@@ -7,25 +7,38 @@ scenes below. The source scene clock remains intact for the pacing, capture and
 sound-design checks; all delivered picture, audio, chapter and runtime metadata
 uses the edit clock.
 
-- **Full tour: 4:44.** A six-second opening with tools, env vars and tasks in a
-  project config leads straight to project switching. The project workflow,
-  installing jq, registry, environments, task dependencies and skipping,
-  dotfile history, lockfile/CI, bootstrap and fresh-clone demos follow at their
-  recorded reading pace. Backend, packslip, redaction, argument and daemon
-  walkthroughs are omitted. The eight-second install card replaces the chef
-  morph and extended ending.
-- **Quick overview: 1:16.** Opening, project switching, installing jq, task
-  dependencies and install card. Both editions use the same source captures.
-- **Presentation.** Brand cards use large Space Grotesk type, the three pillar
-  colours and a simple ruled layout. The poster uses two large project/version
-  cards; the player supplies the selected runtime. Large command/result
-  callouts in the switching and project-workflow scenes quote the current
-  capture's rows. They contain no retyped version numbers.
+- **Full tour: 4:58.** The open through its name card and its leave (10.75 s)
+  leads straight to project switching, cut before its fold into packslip's
+  card (19.5 s). The
+  project workflow, installing jq, registry, environments, task dependencies
+  and skipping, dotfile history, lockfile/CI, bootstrap and fresh-clone demos
+  follow at their recorded reading pace, then the morph and the end card
+  (12 s: its last move at +9 s and a hold under the music's ending). Backend,
+  packslip, redaction, argument and daemon walkthroughs are omitted.
+- **Quick overview: 1:22.** The open, project switching, installing jq, task
+  dependencies and the end card. Both editions use the same source captures.
+- **Joins (`film.ts`).** Where the film puts two sections side by side that the
+  source did not, the scenes are joined rather than dipped to black. A ticket
+  takes down the stage of the section the film plays before it (`bible.ts`
+  `Joins`, `kit/grey.ts` `G.prev`): the Environments ticket takes the
+  registry's card, the Tasks ticket vars' card and terminal, the Dotfiles
+  ticket skip's. Any other cut leaves on the kit's exit (fall 16 px and fade
+  over 3/8 beat) and enters on its entrance (rise 24 px and fade in over 1/2
+  beat) over the still stage (`compose.ts` `Reel.render`'s `frame`). The
+  source's own bar lines carry straight on. Tickets are numbered in the
+  film's order (ACT I to VI in the tour).
+- **Presentation.** Nothing is drawn that the source does not draw: the brand
+  cards are the open and the end card, the poster is the source's poster
+  frame (`reel.ts` `POSTER_TIME`), and the type, colours and motion are the
+  kit's (ART.md).
 - **Audio.** Only sound effects follow the picture edit. `film-music.ts`
-  arranges the original song independently, removing long breakdowns and drum
-  breaks while preserving its complete final chorus, wind-down and ring-out.
-  Both buses pass through one master; retained accents duck the music lightly.
-  The source reel's breath fader and music jumps are never copied into a film.
+  arranges the original song on the film clock, cut on its own bar lines: the
+  first groove drops as the open's card leaves, the song's break, build and
+  loudest groove fall under `mise use jq`, bootstrap and the clone's climax,
+  and its complete wind-down, outro and ring-out play under the morph and the
+  end card, ending a few frames before the film. Both buses pass through one
+  master; retained accents duck the music lightly. The source reel's breath
+  fader and bed arrangement are never copied into a film.
 - **Player.** Both editions have visible chapter buttons and their own WebVTT
   track. Switching editions resets playback; a chapter starts at its displayed
   time, including before the first metadata load. Fullscreen remains available.

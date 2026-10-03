@@ -62,18 +62,24 @@ export const part: Part = {
   cues(m, s, facts) {
     const c = listen("clone", s, facts);
     for (const t of c.all("slam"))
-      slam(m, t, chordAt(CHANGES, beatIn(s, t)).mid, 1.1, PAN.term);
+      slam(m, t, chordAt(CHANGES, beatIn(s, t), t).mid, 1.1, PAN.term);
     // Each header lights on its table's voice and its own tone of the
     // chord (the one its piece rises to when it lands home), quieter than
     // the landing.
     TABLES.forEach((table, i) => {
       for (const t of c.all(table))
-        VOICES[table](m, t, chordAt(CHANGES, beatIn(s, t) + 1e-3).high[i], 0.7);
+        VOICES[table](
+          m,
+          t,
+          chordAt(CHANGES, beatIn(s, t) + 1e-3, t).high[i],
+          0.7,
+        );
     });
     for (const lane of LANES)
       for (const t of c.all(lane))
-        laneIn(m, t, lane, chordAt(CHANGES, beatIn(s, t) + 1e-3), 0.9);
-    for (const t of c.all("ci")) ciIn(m, t, chordAt(CHANGES, beatIn(s, t)), 0);
+        laneIn(m, t, lane, chordAt(CHANGES, beatIn(s, t) + 1e-3, t), 0.9);
+    for (const t of c.all("ci"))
+      ciIn(m, t, chordAt(CHANGES, beatIn(s, t), t), 0);
     for (const t of c.all("ready")) {
       serviceBell(m, t, 0.06, 0);
       serviceBell(m, t + 0.1, 0.04, 0.1, hz(96));
@@ -85,7 +91,7 @@ export const part: Part = {
     }
     c.all("home").forEach((t, i) => {
       seat(m, t, 0.8);
-      const tones = chordAt(CHANGES, beatIn(s, t) + 1e-3).high;
+      const tones = chordAt(CHANGES, beatIn(s, t) + 1e-3, t).high;
       VOICES[TABLES[i % 3]](m, t, tones[i % 3] + 12, 1);
     });
   },
