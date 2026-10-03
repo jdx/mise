@@ -332,6 +332,16 @@ impl Manifest {
     /// Restore enrollment from Git without needing a captured mise config.
     /// Deployment inputs are validated separately; none are inferred here.
     pub fn tracking(&self) -> Result<super::tracked::TrackedSet> {
+        self.tracking_view(true)
+    }
+
+    /// Read saved enrollment without validating it against today's filesystem.
+    /// Live capture and replay still validate their destination paths separately.
+    pub(crate) fn saved_tracking(&self) -> Result<super::tracked::TrackedSet> {
+        self.tracking_view(false)
+    }
+
+    fn tracking_view(&self, check_ancestors: bool) -> Result<super::tracked::TrackedSet> {
         self.validate()?;
         let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
@@ -354,7 +364,9 @@ impl Manifest {
                 .path()
                 .ok_or_else(|| eyre::eyre!("invalid enrollment path {}", enrollment.path))?
                 .to_path_buf();
-            super::tracked::ensure_portable_ancestors(&local)?;
+            if check_ancestors {
+                super::tracked::ensure_portable_ancestors(&local)?;
+            }
             let mut policy =
                 crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
             policy.autosave = enrollment.autosave;
