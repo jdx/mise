@@ -11,7 +11,7 @@ neither Ruby nor Spinel to run.
 ::: warning
 This backend is experimental, and it may not stay. Spinel is young, and the backend is only worth
 keeping while Spinel takes off and the backend stays cheap to maintain. If either stops being true,
-it will be deprecated and removed. Enable it with `mise settings experimental=true`.
+it will be removed. Enable it with `mise settings experimental=true`.
 :::
 
 The backend started from [mise-backend-spinel](https://github.com/nateberkopec/mise-backend-spinel)
