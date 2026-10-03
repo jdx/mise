@@ -89,10 +89,10 @@ pub(crate) struct LsRemote {
 impl LsRemote {
     pub(crate) async fn run(self) -> Result<()> {
         if self.prerelease {
-            Settings::override_with(|s| s.prereleases = Some(true));
+            Settings::override_with(|s| s.prereleases = Some(true))?;
         }
         if self.no_versions_host {
-            Settings::override_with(|s| s.use_versions_host = Some(false));
+            Settings::override_with(|s| s.use_versions_host = Some(false))?;
         }
         backend::set_strict_metadata(self.strict_metadata);
         let config = Config::get().await?;

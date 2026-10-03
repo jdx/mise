@@ -47,7 +47,7 @@ impl TestTool {
     pub(crate) async fn run(self) -> Result<()> {
         // Registry validation must exercise new releases immediately, including
         // the first release supported by a newly added backend.
-        Settings::override_with(|s| s.minimum_release_age = Some("0".to_string()));
+        Settings::override_with(|s| s.minimum_release_age = Some("0".to_string()))?;
         let mut errored = vec![];
         self.github_summary(vec![
             "Tool".to_string(),

@@ -266,7 +266,7 @@ impl Config {
             Duration::from_secs(5),
         )
         .await?;
-        Settings::reload();
+        Settings::reload()?;
         Config::load().await
     }
 
