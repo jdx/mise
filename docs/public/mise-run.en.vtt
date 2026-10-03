@@ -1,257 +1,301 @@
 WEBVTT
 
 1
-00:00:02.410 --> 00:00:06.800
+00:00:02.270 --> 00:00:06.900
 meez... meez... meez-ahn-plahs
 
 2
-00:00:12.500 --> 00:00:15.460
+00:00:12.510 --> 00:00:15.285
 Everything... in its place.
 
 3
-00:00:16.650 --> 00:00:21.400
+00:00:16.680 --> 00:00:21.900
 Put your hands up if your shell just works!
 
 4
-00:00:35.760 --> 00:00:39.100
+00:00:35.670 --> 00:00:39.120
 CI's red at three a.m.
 
 5
-00:00:39.100 --> 00:00:42.750
+00:00:39.120 --> 00:00:43.030
 Pinned it once, it drifted again
 
 6
-00:00:43.020 --> 00:00:46.040
+00:00:43.030 --> 00:00:46.030
 Now the lockfile holds the line
 
 7
-00:00:46.040 --> 00:00:50.130
+00:00:46.030 --> 00:00:50.225
 Laptop, CI, same every time
 
 8
-00:00:50.360 --> 00:00:53.900
+00:00:50.350 --> 00:00:53.890
 Hooked my shell, I cd with ease
 
 9
-00:00:53.900 --> 00:00:58.240
+00:00:53.890 --> 00:00:58.280
 Everything in its place... mise
 
 10
-00:00:58.240 --> 00:01:01.410
+00:00:58.280 --> 00:01:01.460
 Give me one file, give me ease
 
 11
-00:01:01.660 --> 00:01:05.540
+00:01:01.740 --> 00:01:05.580
 Give me one command, give me mise
 
 12
-00:01:05.540 --> 00:01:07.430
+00:01:05.630 --> 00:01:07.530
 One file! (One file!)
 
 13
-00:01:07.430 --> 00:01:11.090
+00:01:07.530 --> 00:01:09.270
 One command! (One command!)
 
 14
-00:01:11.090 --> 00:01:13.030
-When I say MISE, you say RUN!
+00:01:09.390 --> 00:01:11.110
+One command! (One command!)
 
 15
-00:01:13.030 --> 00:01:13.970
-MISE! (RUN!)
+00:01:11.110 --> 00:01:13.050
+When I say MISE, you say RUN!
 
 16
-00:01:13.970 --> 00:01:16.300
+00:01:13.050 --> 00:01:13.880
 MISE! (RUN!)
 
 17
-00:01:16.300 --> 00:01:20.800
-FIFTY THOUSAND TERMINALS IN THE AIR!
+00:01:14.000 --> 00:01:14.820
+MISE! (RUN!)
 
 18
-00:01:24.550 --> 00:01:25.480
-Say...
+00:01:14.940 --> 00:01:16.280
+MISE! (RUN!)
 
 19
-00:01:25.480 --> 00:01:28.400
-MISE RUN!
+00:01:16.280 --> 00:01:20.040
+FIFTY THOUSAND TERMINALS IN THE AIR!
 
 20
-00:01:33.850 --> 00:01:34.950
-MISE RUN!
+00:01:25.020 --> 00:01:25.490
+Say...
 
 21
-00:01:34.950 --> 00:01:37.800
-meez-meez-meez-meez
+00:01:25.490 --> 00:01:27.730
+MISE RUN!
 
 22
-00:01:53.050 --> 00:01:56.600
+00:01:33.590 --> 00:01:34.970
 MISE RUN!
 
 23
-00:02:03.050 --> 00:02:06.400
-MISE! (RUN!)
+00:01:34.970 --> 00:01:37.900
+meez-meez-meez-meez
 
 24
-00:02:06.750 --> 00:02:11.610
-MISE! (RUN!)
+00:01:53.100 --> 00:01:53.980
+MISE RUN!
 
 25
-00:02:11.610 --> 00:02:13.150
-Who pinned Node? (mise use!)
+00:01:54.100 --> 00:01:56.270
+MISE RUN!
 
 26
-00:02:13.150 --> 00:02:14.990
-New hire Monday? (mise install!)
+00:02:03.120 --> 00:02:04.575
+MISE! (RUN!)
 
 27
-00:02:14.990 --> 00:02:16.790
-Who runs the tests? (mise run test!)
+00:02:07.890 --> 00:02:08.720
+MISE! (RUN!)
 
 28
-00:02:16.790 --> 00:02:18.690
-Where's the config? (mise dot toml!)
+00:02:08.840 --> 00:02:09.650
+MISE! (RUN!)
 
 29
-00:02:18.690 --> 00:02:19.770
-nvm? (Gone!)
+00:02:09.770 --> 00:02:10.550
+MISE! (RUN!)
 
 30
-00:02:19.770 --> 00:02:21.170
-pyenv, rbenv? (Gone!)
+00:02:10.670 --> 00:02:11.580
+MISE! (RUN!)
 
 31
-00:02:21.170 --> 00:02:22.770
-Makefile, direnv? (Gone! Gone! Gone!)
+00:02:11.580 --> 00:02:13.160
+Who pinned Node? (mise use!)
 
 32
-00:02:22.770 --> 00:02:25.000
-One tool! (MISE!)
+00:02:13.160 --> 00:02:15.020
+New hire Monday? (mise install!)
 
 33
-00:02:25.520 --> 00:02:27.970
-Before the doors open
+00:02:15.020 --> 00:02:16.820
+Who runs the tests? (mise run test!)
 
 34
-00:02:29.180 --> 00:02:30.750
-Before the heat
+00:02:16.820 --> 00:02:18.710
+Where's the config? (mise dot toml!)
 
 35
-00:02:31.780 --> 00:02:34.850
-Every blade laid out
+00:02:18.710 --> 00:02:19.840
+nvm? (Gone!)
 
 36
-00:02:35.440 --> 00:02:38.050
-And my heart on the beat
+00:02:19.840 --> 00:02:21.220
+pyenv, rbenv? (Gone!)
 
 37
-00:02:39.400 --> 00:02:41.640
-Let the whole world rush
+00:02:21.220 --> 00:02:22.860
+Makefile, direnv? (Gone! Gone! Gone!)
 
 38
-00:02:41.640 --> 00:02:46.030
-I'll be standing at ease
+00:02:22.860 --> 00:02:25.440
+One tool! (MISE!)
 
 39
-00:02:46.420 --> 00:02:49.210
-Everything in its place
+00:02:25.570 --> 00:02:28.695
+Before the doors open
 
 40
-00:02:50.740 --> 00:02:56.520
-'Cause I've got my mise
+00:02:29.220 --> 00:02:32.265
+Before the heat
 
 41
-00:02:56.520 --> 00:03:02.240
-Somewhere out there, they're rebuilding the world... just to boil water.
+00:02:32.270 --> 00:02:35.950
+Every blade laid out
 
 42
-00:03:02.240 --> 00:03:03.760
-Your flake's still flaking (flake!)
+00:02:35.950 --> 00:02:39.470
+And my heart on the beat
 
 43
-00:03:03.760 --> 00:03:05.820
-Your store's forty gigs (gigs!)
+00:02:39.470 --> 00:02:41.830
+Let the whole world rush
 
 44
-00:03:05.820 --> 00:03:07.760
-Still "experimental" (what?)
+00:02:43.250 --> 00:02:46.710
+I'll be standing at ease
 
 45
-00:03:07.760 --> 00:03:09.380
-Year after year (year!)
+00:02:46.710 --> 00:02:50.820
+Everything in its place
 
 46
-00:03:09.380 --> 00:03:12.600
-error: infinite recursion encountered
+00:02:50.820 --> 00:02:56.340
+'Cause I've got my mise
 
 47
-00:03:12.600 --> 00:03:15.040
-You spent the weekend configuring (config!)
+00:02:56.340 --> 00:03:02.250
+Somewhere out there, they're rebuilding the world... just to boil water.
 
 48
-00:03:15.040 --> 00:03:17.120
-We spent it shipping (ship!)
+00:03:02.250 --> 00:03:03.680
+Your flake's still flaking (flake!)
 
 49
-00:03:17.120 --> 00:03:20.100
-Ship! Ship! Ship! Ship!
+00:03:03.680 --> 00:03:05.710
+Your store's forty gigs (gigs!)
 
 50
-00:03:21.250 --> 00:03:28.200
-MISE IS NIX FOR PEOPLE WITH WORK TO DO!
+00:03:05.710 --> 00:03:07.440
+Still "experimental" (what?)
 
 51
-00:03:29.600 --> 00:03:31.900
-...so get to work.
+00:03:07.440 --> 00:03:09.590
+Year after year (year!)
 
 52
-00:03:38.450 --> 00:03:45.650
-MISE RUN!
+00:03:09.590 --> 00:03:12.590
+error: infinite recursion encountered
 
 53
-00:03:45.650 --> 00:03:49.550
-MISE RUN!
+00:03:12.590 --> 00:03:15.070
+You spent the weekend configuring (config!)
 
 54
-00:03:49.550 --> 00:04:00.100
-mee-mee-mee-MEEZ!
+00:03:15.070 --> 00:03:16.690
+We spent it shipping (ship!)
 
 55
-00:04:01.250 --> 00:04:13.400
-MISE RUN!
+00:03:16.690 --> 00:03:18.430
+Ship! Ship! Ship! Ship!
 
 56
-00:04:14.190 --> 00:04:16.050
-Every-thing in its place!
+00:03:18.550 --> 00:03:20.350
+Ship! Ship! Ship! Ship!
 
 57
-00:04:16.050 --> 00:04:18.450
-MISE! (RUN!)
+00:03:20.350 --> 00:03:21.150
+Ship! Ship!
 
 58
-00:04:18.450 --> 00:04:20.900
-MISE! (RUN!)
+00:03:21.150 --> 00:03:28.560
+MISE IS NIX FOR PEOPLE WITH WORK TO DO!
 
 59
-00:04:20.900 --> 00:04:27.000
-Let me hear you, people with work to do!
+00:03:29.670 --> 00:03:32.045
+...so get to work.
 
 60
-00:04:31.250 --> 00:04:40.200
+00:03:38.490 --> 00:03:40.325
 MISE RUN!
 
 61
-00:04:40.280 --> 00:04:42.790
-Everything in its place
+00:03:45.690 --> 00:03:48.025
+MISE RUN!
 
 62
-00:04:43.500 --> 00:04:46.190
-Everything in its place
+00:03:49.600 --> 00:03:54.450
+mee-mee-mee-MEEZ!
 
 63
-00:04:47.220 --> 00:04:54.300
-I've got my mise
+00:03:55.270 --> 00:04:00.800
+mee-mee-mee-MEEZ!
 
 64
-00:04:57.970 --> 00:05:00.100
+00:04:01.520 --> 00:04:07.600
+MISE RUN!
+
+65
+00:04:14.210 --> 00:04:16.070
+Every-thing in its place!
+
+66
+00:04:16.070 --> 00:04:17.710
+MISE! (RUN!)
+
+67
+00:04:17.830 --> 00:04:19.555
+MISE! (RUN!)
+
+68
+00:04:19.620 --> 00:04:21.250
+MISE!
+
+69
+00:04:21.250 --> 00:04:24.890
+Let me hear you, people with work to do!
+
+70
+00:04:30.790 --> 00:04:34.330
+MISE RUN!
+
+71
+00:04:34.450 --> 00:04:38.250
+MISE RUN!
+
+72
+00:04:39.810 --> 00:04:43.250
+Everything in its place
+
+73
+00:04:43.370 --> 00:04:47.270
+Everything in its place
+
+74
+00:04:47.270 --> 00:04:53.140
+I've got my mise
+
+75
+00:04:57.970 --> 00:05:00.125
 ...exit code zero.
