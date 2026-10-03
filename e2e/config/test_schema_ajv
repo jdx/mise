@@ -146,3 +146,20 @@ printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch","command":
 assert_fail "$ajv_validate services-invalid.json"
 printf '{"bootstrap":{"services":{"worker":{"builtin":"history-watch"}}}}\n' >services-valid.json
 assert_succeed "$ajv_validate services-valid.json"
+
+# --- spinel tool options (typed only for spinel: tools)
+for tools in \
+  '"spinel:tobi/try":"1.10.1"' \
+  '"spinel:tobi/try":{"version":"1.10.1","entrypoint":"try.rb","bin":"try","tag_prefix":"v","spinel":"/opt/spinel"}' \
+  '"spinel:tobi/try":[{"version":"1.10.1","entrypoint":"try.rb","source_ref":"be566829856ca6bd22963e38a28ffb5efa24c7de"}]' \
+  '"cargo:foo":{"version":"1","entrypoint":5}'; do
+  printf '{"tools":{%s}}\n' "$tools" >spinel-valid.json
+  assert_succeed "$ajv_validate spinel-valid.json"
+done
+for tools in \
+  '"spinel:tobi/try":{"version":"1","entrypoint":5}' \
+  '"spinel:tobi/try":{"version":"1","source_ref":"abc"}' \
+  '"spinel:tobi/try":[{"version":"1","bin":false}]'; do
+  printf '{"tools":{%s}}\n' "$tools" >spinel-invalid.json
+  assert_fail "$ajv_validate spinel-invalid.json"
+done
