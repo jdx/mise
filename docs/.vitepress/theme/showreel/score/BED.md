@@ -51,7 +51,7 @@ The result, as `verify` measures it (`mise run docs:showreel-bed -- verify docs/
 
 ### In the render
 
-`BED.gainDb` is 0.7 and `BED.duck` 0.5. The sections' levels (`Part.level`) are all 1 but Act III's (the `env` ticket, `vars`, `redact`: 1.4, the breakdown lifted), `clone`'s (1.1, the climax) and the breath's (0.07, 23 dB under bootstrap's: a recorded bed does not go quiet on its own, so the fader takes the whole dip). The whole reel renders at -17.0 LUFS integrated, LRA 8.1 LU, true peak -2.8 dBTP (`aube run showreel:video --audio-only`, ffmpeg `ebur128`). The master's EQ and `MAKEUP` (`audio.ts`) are as they were voiced on the synthesized band.
+`BED.gainDb` is 0.7 and `BED.duck` 0.5. The sections' levels (`Part.level`) are all 1 but Act III's (the `env` ticket, `vars`, `redact`: 1.4, the breakdown lifted), `clone`'s (1.1, the climax) and the breath's (0.07, 23 dB under bootstrap's: a recorded bed does not go quiet on its own, so the fader takes the whole dip). The whole reel renders at -17.0 LUFS integrated, LRA 8.1 LU, true peak -2.8 dBTP (`aube run showreel:video --edition source --audio-only`, ffmpeg `ebur128`). The master's EQ and `MAKEUP` (`audio.ts`) are as they were voiced on the synthesized band.
 
 ## The file
 
@@ -97,9 +97,40 @@ The bed is an original instrumental that jdx generated on a paid (Pro) Suno plan
 1. **Before anything, record the download:** its sha256 (`shasum -a 256`), length, rate and size, and the Suno model, style prompt and settings it was generated with, for the provenance table.
 2. **Fit it.** A track on an exact 120 BPM clock, as Suno's appear to be and "mise screenreel" is, needs no stretch: read its first downbeat with `analyse --bpm 120` and build with `--bpm 120 --first-downbeat SECONDS`, and the build only trims it. Do not trust a plain `analyse` there: on "mise screenreel" its unpinned fit read 119.72 BPM, p95 residual 202 ms and a first downbeat at 1.434 s, and suggested `--map detected`; with `--bpm 120` it reads 0.105 s, p95 3 ms. For such a track the fix is `--bpm 120`, not `--map detected`. Otherwise the build stretches it onto the grid with Rubber Band. Either way, `verify` must pass.
 3. **Pin it:** `BED.sha256` in `bed.ts`, the line the build prints. The renderer refuses any other file.
-4. **Level it:** `BED.gainDb`, against the -17 LUFS integrated target, with the true peak under -2 dBTP. Render the whole reel's audio (`aube run showreel:video --audio-only <out.wav>`), measure it (`ffmpeg -nostats -i <out.wav> -af ebur128=peak=true -f null -`), and move `gainDb` by the difference. The fit tool's -32 LUFS default is staged against the master, whose makeup lifts the bed about 11 dB: "mise screenreel" at -32 LUFS needed 0.7 dB; a bed fitted at -20 LUFS put the reel at -11.6 with the limiter clamped throughout.
+4. **Level it:** `BED.gainDb`, against the -17 LUFS integrated target, with the true peak under -2 dBTP. Render the whole reel's audio (`aube run showreel:video --edition source --audio-only <out.wav>`), measure it (`ffmpeg -nostats -i <out.wav> -af ebur128=peak=true -f null -`), and move `gainDb` by the difference. The fit tool's -32 LUFS default is staged against the master, whose makeup lifts the bed about 11 dB: "mise screenreel" at -32 LUFS needed 0.7 dB; a bed fitted at -20 LUFS put the reel at -11.6 with the limiter clamped throughout.
 5. **Duck it:** `BED.duck`, by ear: deep enough that the effects speak, shallow enough that the bed does not pump (0.5 for "mise screenreel").
 6. **Set the sections' fader** (`index.ts` `Part.level`, `arc`): 1 by default, since a produced track carries its own dynamics. Move a section only where the new arrangement needs it, and keep the breath near silent (the fader takes the whole dip there). Measure each section of the whole-reel render, not only the integrated figure.
 7. **Listen through the master** (`audio.ts`: the EQ and `MAKEUP` voiced on the synthesized band), and change it only if the bed needs it.
 8. **The stingers' chords:** the pitched stingers are struck on chord charts (`harmony.ts`, and the `CHANGES` of each part with a chart of its own: `clone.ts`, `depends.ts`, `skip.ts`, `switch.ts` and `use.ts`) that follow the bed's; the build and `verify` print the new bed's chart per section, to retune them against.
 9. **Update this file:** "The track", the arrangement and the provenance table, in the commit that changes `bed.opus` and `bed.ts`.
+
+## Landing-page films
+
+The source bed above remains the soundtrack of `--edition source`. The tour
+and overview use `music.opus`, the original supplied "mise screenreel.wav"
+trimmed by 0.105 s to its first downbeat and attenuated by 17.1 dB (the original
+measures -14.9 LUFS, giving a -32 LUFS music bus). It is encoded as 48 kHz
+stereo Opus at 128 kbps and pinned by `film-music.ts`.
+
+To regenerate that asset from the supplied original (no stretching):
+
+```sh
+ffmpeg -i 'mise screenreel.wav' \
+  -af 'atrim=start=0.105,asetpts=PTS-STARTPTS,volume=-17.1dB' \
+  -c:a libopus -b:a 128k -ar 48000 \
+  docs/.vitepress/theme/showreel/score/music.opus
+```
+
+The tour plays source bars 12–44, 48–80, 96–110, 112–156, then 160 through
+the complete ending. This removes the long breakdown and drum breaks without
+cutting music at picture edits. Its last chorus begins at 4:04; the wind-down
+and outro continue naturally through the closing card. The overview plays
+bars 16–42, then 168 through the complete ending. Joins crossfade preceding
+tails over 150 ms, reaching full level on the incoming downbeat. Both editions
+leave just 0.385 s after the original ring-out. Arrangement and pin changes
+belong in `film-music.ts`; the renderer checks the pin before decoding.
+
+`film-audio.ts` renders unmastered source effects without any music, cuts those
+with the picture, remaps their duck cues, and mixes them with the independently
+arranged song through the shared delivery master. The original source fader,
+especially the near-silent breath, is excluded from the films.

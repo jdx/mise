@@ -126,7 +126,7 @@ how it was built.
 
    ```sh
    cp <work>/bed.opus docs/.vitepress/theme/showreel/score/bed.opus
-   aube run showreel:video --audio-only /tmp/reel.wav --from 400 --until 436
+   aube run showreel:video --edition source --audio-only /tmp/reel.wav --from 400 --until 436
    ```
 
    Change the spec or the overrides and build again until it sits right.

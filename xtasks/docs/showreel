@@ -54,13 +54,15 @@ public="$root/docs/public"
 # Where the capture set is recorded and read, as the capture tool has it.
 out=${SHOWREEL_CAPTURE_OUT:-$root/docs/.vitepress/showreel-capture/out}
 capture="$root/xtasks/docs/showreel-capture"
-files=(showreel-120.mp4 showreel.mp4 showreel-poster.jpg)
+required_files=(showreel-120.mp4 showreel.mp4 showreel-poster.jpg)
+files=("${required_files[@]}" showreel-overview.mp4 showreel-overview-chapters.vtt)
 # Kept with each render, from the storyboard and capture set it was made
 # from, so a restored render never pairs an old video with a newer
 # storyboard's chapters: the chapters track (into docs/public) and the
 # chapters with their captions (showreel.data.ts reads SHOWREEL_CHAPTERS).
 chapters_vtt=showreel-chapters.vtt
 chapters_json=chapters.json
+overview_chapters_json=overview-chapters.json
 # Bump to render again when nothing in the key changed (a render made with a
 # fault the key cannot see).
 generation=1
@@ -185,6 +187,9 @@ point_page_at() {
 		if [ -s "$1/$chapters_json" ]; then
 			echo "SHOWREEL_CHAPTERS=$1/$chapters_json" >>"$GITHUB_ENV"
 		fi
+		if [ -s "$1/$overview_chapters_json" ]; then
+			echo "SHOWREEL_OVERVIEW_CHAPTERS=$1/$overview_chapters_json" >>"$GITHUB_ENV"
+		fi
 	fi
 }
 
@@ -194,17 +199,18 @@ point_page_at() {
 write_chapters() {
 	(
 		cd "$root"
-		SHOWREEL_CHAPTERS='' SHOWREEL_CAPTURES="$out" node --input-type=module -e '
+		SHOWREEL_CHAPTERS='' SHOWREEL_OVERVIEW_CHAPTERS='' SHOWREEL_CAPTURES="$out" node --input-type=module -e '
 			import { writeFileSync } from "node:fs";
 			import { join } from "node:path";
 			import { showreelData } from "./docs/.vitepress/showreel.data.ts";
-			import { chaptersVtt } from "./docs/.vitepress/theme/showreel/timeline.ts";
-			const [dir, vtt, json] = process.argv.slice(1);
+			import { filmChaptersVtt } from "./docs/.vitepress/theme/showreel/edit.ts";
+			const [dir, vtt, json, overviewJson] = process.argv.slice(1);
 			const data = showreelData();
 			if (!data) throw new Error("no render in docs/public to take the chapters of");
-			writeFileSync(join(dir, vtt), chaptersVtt());
+			writeFileSync(join(dir, vtt), filmChaptersVtt());
 			writeFileSync(join(dir, json), JSON.stringify(data.chapters, null, 2) + "\n");
-		' "$1" "$chapters_vtt" "$chapters_json"
+			writeFileSync(join(dir, overviewJson), JSON.stringify(data.overview?.chapters ?? [], null, 2) + "\n");
+		' "$1" "$chapters_vtt" "$chapters_json" "$overview_chapters_json"
 	)
 }
 
@@ -213,9 +219,15 @@ write_chapters() {
 # bash ignores `set -e`, so every step says what a failure does.
 restore() {
 	local dir="$cache/renders/$1" f
-	for f in "${files[@]}"; do [ -s "$dir/$f" ] || return 1; done
+	for f in "${required_files[@]}"; do [ -s "$dir/$f" ] || return 1; done
 	mkdir -p "$public" || return 1
 	for f in "${files[@]}"; do
+		# Older successful renders have no overview; keep them usable as a
+		# fallback and remove any overview left from a newer failed render.
+		if [ ! -s "$dir/$f" ]; then
+			rm -f "$public/$f"
+			continue
+		fi
 		if ! { cp "$dir/$f" "$public/.$f.partial" && mv -f "$public/.$f.partial" "$public/$f"; }; then
 			rm -f "$public/.$f.partial"
 			clear_public
