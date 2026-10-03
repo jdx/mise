@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.10.1](https://github.com/jdx/mise/compare/v2026.10.0..v2026.10.1) - 2026-10-03
+
+### 🐛 Bug Fixes
+
+- **(aqua)** invalidate incompatible compiled registry caches by @jdx in [#13884](https://github.com/jdx/mise/pull/13884)
+- **(brew-cask)** stop reinstalling pkg casks whose uninstall ids span architectures by @jdx in [#13893](https://github.com/jdx/mise/pull/13893)
+- **(completions)** complete `:task` shorthand for the current config root by @pikeas in [#13882](https://github.com/jdx/mise/pull/13882)
+- **(daemons)** start task daemons without a shell so they work on Windows by @JamBalaya56562 in [#13714](https://github.com/jdx/mise/pull/13714)
+- **(daemons)** render env and vars in daemon commands at launch by @jdx in [#13894](https://github.com/jdx/mise/pull/13894)
+- **(github)** never auto-select metadata assets as the tool by @jdx in [#13908](https://github.com/jdx/mise/pull/13908)
+- **(lock)** prune unbound entries superseded by a bound entry by @jdx in [#13909](https://github.com/jdx/mise/pull/13909)
+- **(packslip)** retry missing declared skills by @jdx in [#13885](https://github.com/jdx/mise/pull/13885)
+- **(plugins)** update plugin repos whose remote is not named origin by @jdx in [#13914](https://github.com/jdx/mise/pull/13914)
+- **(release)** back up alpine bump to GitHub and allow SSH push to GitLab by @jdx in [#13892](https://github.com/jdx/mise/pull/13892)
+- **(rust)** upgrade stable and beta when rustup reports an update by @jdx in [#13898](https://github.com/jdx/mise/pull/13898)
+- **(rust)** honor mise.lock for core:rust installs by @jdx in [#13915](https://github.com/jdx/mise/pull/13915)
+- **(shim)** stop native shim copies recursing through mise x by @JamBalaya56562 in [#13681](https://github.com/jdx/mise/pull/13681)
+- **(shim)** forward Node IPC through Windows shims by @jdx in [#13903](https://github.com/jdx/mise/pull/13903)
+- **(skills)** show $HOME as ~ in skills sync output by @jdx in [#13910](https://github.com/jdx/mise/pull/13910)
+- **(task)** stop running tasks when mise run --timeout expires by @Marukome0743 in [#13876](https://github.com/jdx/mise/pull/13876)
+- **(task)** let tasks shut down after a single Ctrl-C by @jdx in [#13904](https://github.com/jdx/mise/pull/13904)
+
+### 📚 Documentation
+
+- **(contributing)** make the restricted AI reply policy and instant ban unmissable by @jdx in [#13886](https://github.com/jdx/mise/pull/13886)
+- replace the landing-page showreel's synthesized music with a Suno track by @jdx in [#13900](https://github.com/jdx/mise/pull/13900)
+- stop the showreel's dark gradients from banding into rings by @jdx in [#13902](https://github.com/jdx/mise/pull/13902)
+- tighten the landing-page video and smooth its soundtrack by @jdx in [#13916](https://github.com/jdx/mise/pull/13916)
+- retime the mise run captions to the vocal by @jdx in [#13917](https://github.com/jdx/mise/pull/13917)
+
+### 🧪 Testing
+
+- **(zig)** follow indexed master version by @jdx in [#13911](https://github.com/jdx/mise/pull/13911)
+
+### Ci
+
+- **(release)** arm release PR after daily cutoff by @jdx in [#13905](https://github.com/jdx/mise/pull/13905)
+- give windows-unit enough time to save its cache by @jdx in [#13874](https://github.com/jdx/mise/pull/13874)
+- run trusted Windows jobs on a self-hosted runner by @jdx in [#13888](https://github.com/jdx/mise/pull/13888)
+- build real Windows releases on a dedicated release runner by @jdx in [#13899](https://github.com/jdx/mise/pull/13899)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`agentgateway/agentgateway/agctl`](https://github.com/agentgateway/agentgateway)
+- [`agentgateway/agentgateway/agentgateway`](https://github.com/agentgateway/agentgateway)
+
 ## [2026.10.0](https://github.com/jdx/mise/compare/v2026.9.18..v2026.10.0) - 2026-10-01
 
 ### 🚀 Features
