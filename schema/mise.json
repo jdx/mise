@@ -3052,6 +3052,48 @@
         }
       ]
     },
+    "tool_spinel": {
+      "description": "a tool installed with the spinel backend",
+      "oneOf": [
+        {
+          "description": "version of the tool to install",
+          "type": "string"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/tool"
+            },
+            {
+              "properties": {
+                "entrypoint": {
+                  "description": "Ruby file to compile, relative to the repository root (default: main.rb)",
+                  "type": "string"
+                },
+                "bin": {
+                  "description": "name of the executable written to bin/ (default: the repository name)",
+                  "type": "string"
+                },
+                "tag_prefix": {
+                  "description": "text before the version in each git tag, such as v",
+                  "type": "string"
+                },
+                "source_ref": {
+                  "description": "full 40-character commit SHA to build instead of the tag",
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{40}$"
+                },
+                "spinel": {
+                  "description": "Spinel compiler to run (default: spinel on PATH)",
+                  "type": "string"
+                }
+              }
+            }
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "tool_options": {
       "properties": {
         "version": {
@@ -6358,6 +6400,21 @@
       "type": "object"
     },
     "tools": {
+      "patternProperties": {
+        "^spinel:": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/tool_spinel"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/tool_spinel"
+            }
+          ]
+        }
+      },
       "additionalProperties": {
         "oneOf": [
           {
