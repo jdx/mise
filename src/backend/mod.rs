@@ -78,6 +78,7 @@ pub mod pipx;
 pub mod platform_target;
 mod platform_tokens;
 pub(crate) mod s3;
+pub(crate) mod spinel;
 pub(crate) mod spm;
 pub mod static_helpers;
 pub(crate) mod ubi;
@@ -663,6 +664,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Packslip => Some(Arc::new(packslip::PackslipBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::Spinel => Some(Arc::new(spinel::SpinelBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -695,6 +697,7 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Packslip => packslip::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
+        BackendType::Spinel => spinel::install_time_option_keys(),
         BackendType::Spm => spm::install_time_option_keys(),
         _ => vec![],
     }

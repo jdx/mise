@@ -104,6 +104,7 @@ export const sidebar: SidebarItem[] = [
           { text: "npm", link: "/dev-tools/backends/npm" },
           { text: "packslip", link: "/dev-tools/backends/packslip" },
           { text: "pypi", link: "/dev-tools/backends/pypi" },
+          { text: "spinel", link: "/dev-tools/backends/spinel" },
           { text: "spm", link: "/dev-tools/backends/spm" },
           { text: "ubi", link: "/dev-tools/backends/ubi" },
           { text: "vfox", link: "/dev-tools/backends/vfox" },
