@@ -232,8 +232,8 @@ impl HookEnv {
                 trace!("failed to mark untrusted config warning seen: {mark_err}");
             }
             // Written directly to stderr because the untrusted config's own
-            // [settings] (e.g. quiet, log_level) are never applied and must not be
-            // able to silence this notice.
+            // [settings] (e.g. quiet, log_level) are applied before the trust
+            // check and must not be able to silence this notice.
             for config_path in &untrusted_configs {
                 safe_eprintln!(
                     "{} {} {} is not trusted, run `mise trust` to enable it",
