@@ -180,4 +180,75 @@ fn update_resolves_short_branches_and_tags() {
     assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
 }
 
+#[test]
+fn works_when_the_remote_is_not_named_origin() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = tmp.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    let git_in = |dir: &std::path::Path, args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    git_in(&source, &["-c", "init.defaultBranch=main", "init", "-q"]);
+    git_in(&source, &["config", "user.email", "test@example.com"]);
+    git_in(&source, &["config", "user.name", "Test"]);
+    git_in(&source, &["config", "commit.gpgsign", "false"]);
+    std::fs::write(source.join("version"), "one\n").unwrap();
+    git_in(&source, &["add", "version"]);
+    git_in(&source, &["commit", "-q", "-m", "one"]);
+    git_in(&source, &["branch", "other"]);
+
+    let url = format!("file://{}", source.display());
+    let clone = tmp.path().join("clone");
+    git_in(
+        tmp.path(),
+        &[
+            "clone",
+            "-q",
+            "-o",
+            "upstream",
+            &url,
+            clone.to_str().unwrap(),
+        ],
+    );
+    git_in(&clone, &["config", "user.email", "test@example.com"]);
+    git_in(&clone, &["config", "user.name", "Test"]);
+
+    std::fs::write(source.join("version"), "two\n").unwrap();
+    git_in(&source, &["commit", "-q", "-am", "two"]);
+    let new_sha = git_in(&source, &["rev-parse", "HEAD"]);
+
+    let git = Git::new(&clone);
+    assert_eq!(git.get_remote_url().as_deref(), Some(url.as_str()));
+    assert_eq!(
+        git.remote_sha("main").unwrap().as_deref(),
+        Some(new_sha.as_str())
+    );
+    git.update(None).unwrap();
+    assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), new_sha);
+    git.update(Some("other".to_string())).unwrap();
+    assert_eq!(
+        git_in(&clone, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "other"
+    );
+}
+
 mod worktree;
+
+#[test]
+fn test_pick_remote_name() {
+    assert_eq!(pick_remote_name(""), "origin");
+    assert_eq!(pick_remote_name("origin\n"), "origin");
+    assert_eq!(pick_remote_name("upstream\n"), "upstream");
+    assert_eq!(pick_remote_name("fork\norigin\n"), "origin");
+    assert_eq!(pick_remote_name("upstream\nfork\n"), "upstream");
+}

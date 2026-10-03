@@ -59,6 +59,23 @@ impl Git {
         })
     }
 
+    /// The remote to fetch from. Clones made with `clone.defaultRemoteName`
+    /// set (or by gix honoring it) have no `origin`, so fall back to the only
+    /// remote the repo has.
+    fn remote_name(&self) -> String {
+        // Read through gix first so a lookup does not spawn a process.
+        let remotes = match self.repo() {
+            Ok(repo) => repo
+                .remote_names()
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Err(_) => git_cmd_read!(&self.dir, "remote").unwrap_or_default(),
+        };
+        pick_remote_name(&remotes)
+    }
+
     pub fn is_repo(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
@@ -93,7 +110,7 @@ impl Git {
             &self.dir,
             "ls-remote",
             "--refs",
-            "origin",
+            &self.remote_name(),
             &branch_ref,
             &tag_ref
         )?;
@@ -166,7 +183,7 @@ impl Git {
             "fetch",
             "--prune",
             "--update-head-ok",
-            "origin",
+            &self.remote_name(),
             &refspec
         ))?;
         let prev_rev = self.current_sha()?;
@@ -370,14 +387,20 @@ impl Git {
         if !self.exists() {
             return None;
         }
+        let remote_name = self.remote_name();
         if let Ok(repo) = self.repo()
-            && let Ok(remote) = repo.find_remote("origin")
+            && let Ok(remote) = repo.find_remote(remote_name.as_str())
             && let Some(url) = remote.url(gix::remote::Direction::Fetch)
         {
             trace!("remote url for {dir:?}: {url}");
             return Some(url.to_string());
         }
-        let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
+        let res = git_cmd_read!(
+            &self.dir,
+            "config",
+            "--get",
+            &format!("remote.{remote_name}.url")
+        );
         match res {
             Ok(url) => {
                 debug!("remote url for {dir:?}: {url}");
@@ -416,7 +439,7 @@ impl Git {
     }
 
     pub fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
-        let output = git_cmd_read!(&self.dir, "ls-remote", "origin", branch)?;
+        let output = git_cmd_read!(&self.dir, "ls-remote", &self.remote_name(), branch)?;
         Ok(output
             .lines()
             .next()
@@ -580,6 +603,15 @@ const GIT_CONTEXT_ENV: &[&str] = &[
 enum RemoteRefKind {
     Branch,
     Tag,
+}
+
+fn pick_remote_name(remotes: &str) -> String {
+    let mut names = remotes.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = names.next();
+    if first == Some("origin") || names.any(|n| n == "origin") {
+        return "origin".to_string();
+    }
+    first.unwrap_or("origin").to_string()
 }
 
 fn qualify_remote_ref(gitref: &str, kind: RemoteRefKind) -> String {
