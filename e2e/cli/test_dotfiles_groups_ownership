@@ -100,3 +100,71 @@ EOF
 echo "live" >"$HOME/.gitonly"
 assert_fail_contains "mise dot add --yes $HOME/.gitonly" "git add"
 assert "cat $HOME/.gitonly" "live"
+
+# Removal never follows a linked directory into a source tree. Fold a copied
+# group into one directory link: its old per-file records now resolve into
+# the source, and unapply must leave the source alone.
+mkdir -p "$DOTS/app"
+echo "app" >"$DOTS/app/app.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.app]
+target = "~/.config/app"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/app/app.conf" "app"
+sed -i 's/mode = "copy"/mode = "symlink"/' mise.toml
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/.config/app" "$DOTS/app"
+assert_succeed "mise dot unapply --group app --yes --force"
+assert "cat $DOTS/app/app.conf" "app"
+
+# The same when the target was replaced by a link outside mise and the
+# group is then deselected and pruned, even with --force.
+rm -f "$HOME/.config/app"
+sed -i 's/mode = "symlink"/mode = "copy"/' mise.toml
+assert_succeed "mise dot apply --yes"
+rm -rf "$HOME/.config/app"
+ln -s "$DOTS/app" "$HOME/.config/app"
+cat <<EOF2 >mise.toml
+[dotfile_groups.app]
+target = "~/.config/app"
+mode = "copy"
+
+[bootstrap]
+dotfile_groups = []
+EOF2
+assert_succeed "mise dot apply --prune --force --yes"
+assert "cat $DOTS/app/app.conf" "app"
+assert_succeed "mise dot unapply --group app --force --yes"
+assert "cat $DOTS/app/app.conf" "app"
+
+# An edit key under a group's target still opens its edit, not a group file.
+cat <<'EOF2' >editor-record
+#!/usr/bin/env bash
+echo "$1" >"$PWD/opened"
+EOF2
+chmod +x editor-record
+cat <<EOF2 >mise.toml
+[dotfile_groups.zsh]
+
+[dotfiles]
+"~/.zshrc/activate" = { block = "echo activate" }
+EOF2
+EDITOR="$PWD/editor-record" mise dot edit ~/.zshrc/activate
+assert "cat opened" "$PWD/mise.toml"
+
+# Editing one file of a copied group with --apply writes only that file.
+mkdir -p "$DOTS/conf2"
+echo "a" >"$DOTS/conf2/a.conf"
+echo "b" >"$DOTS/conf2/b.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.conf2]
+target = "~/.config/conf2"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+echo "local b" >"$HOME/.config/conf2/b.conf"
+EDITOR="$PWD/editor-write" mise dot edit --apply ~/.config/conf2/a.conf
+assert "cat $HOME/.config/conf2/a.conf" "edited"
+assert "cat $HOME/.config/conf2/b.conf" "local b"

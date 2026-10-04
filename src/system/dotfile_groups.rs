@@ -481,6 +481,9 @@ pub struct RecordedPath {
 impl RecordedPath {
     /// Whether the path still holds what the group deployed.
     pub fn is_owned(&self) -> bool {
+        if !self.safe_to_remove() {
+            return false;
+        }
         if let Some(source) = &self.link {
             files::link_points_to(source, &self.target)
         } else if let Some(digest) = &self.digest {
@@ -494,6 +497,16 @@ impl RecordedPath {
 
     fn exists(&self) -> bool {
         self.target.symlink_metadata().is_ok()
+    }
+
+    /// Whether removing the path deletes only what sits at it. A symlinked
+    /// directory at or above it, up to and including the entry target it
+    /// was deployed under, makes the path resolve somewhere else, such as
+    /// into a dotfiles source after a tree was folded into one directory
+    /// link. A path that physically lies inside `dotfiles.root` is a source
+    /// file, whatever it was recorded as.
+    fn safe_to_remove(&self) -> bool {
+        !behind_symlink(&self.target, &self.root) && !inside_dotfiles_root(&self.target)
     }
 }
 
@@ -634,14 +647,18 @@ pub(crate) fn record_applied(requests: &[FileRequest]) {
         });
         record.version = GROUP_RECORD_VERSION;
         let roots = reqs.iter().map(|req| &req.target).collect::<HashSet<_>>();
+        // a path reached through a linked directory is not one mise can
+        // ever remove safely, so it is neither recorded nor kept
         let deployed = reqs
             .iter()
             .flat_map(|req| deployed_paths(req))
+            .filter(RecordedPath::safe_to_remove)
             .collect::<Vec<_>>();
         // a path the group no longer deploys but still owns, such as the
         // copy of a source file since deleted, stays recorded until removed
         record.paths.retain(|path| {
             !deployed.iter().any(|p| p.target == path.target)
+                && path.safe_to_remove()
                 && (!roots.contains(&path.root) || path.is_owned())
         });
         record.paths.extend(deployed);
@@ -705,8 +722,18 @@ fn behind_symlink(target: &Path, root: &Path) -> bool {
     target
         .ancestors()
         .skip(1)
-        .take_while(|dir| *dir != root && dir.starts_with(root))
+        .take_while(|dir| dir.starts_with(root))
         .any(|dir| dir.is_symlink())
+}
+
+/// Whether `target`'s directory physically lies inside `dotfiles.root`.
+fn inside_dotfiles_root(target: &Path) -> bool {
+    let (Some(parent), Ok(root)) = (target.parent(), files::dotfiles_root().canonicalize()) else {
+        return false;
+    };
+    parent
+        .canonicalize()
+        .is_ok_and(|parent| parent.starts_with(root))
 }
 
 pub struct RemoveOpts {
@@ -726,9 +753,9 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
         if !path.exists() {
             continue;
         }
-        if behind_symlink(&path.target, &path.root) {
+        if !path.safe_to_remove() {
             warn!(
-                "files: group {}: {} is inside a linked directory now, leaving it",
+                "files: group {}: {} resolves through a linked directory or into dotfiles.root now, leaving it",
                 record.group,
                 path.target.display_user()
             );

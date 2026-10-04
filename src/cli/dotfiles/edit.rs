@@ -127,25 +127,12 @@ fn source_for_target(
     group: Option<&str>,
 ) -> Result<Option<PathBuf>> {
     let all_files = system::files::files_from_config(config)?;
-    // a file inside a dotfile group's tree has no entry of its own; once
-    // its source exists, that source is what to edit (before that, add
-    // captures the live file into the group)
-    if let Some(req) = group_route(&all_files, target, group)? {
-        let source = req.source.join(system::dotfile_groups::source_rel_for(
-            &req.source,
-            target.strip_prefix(&req.target)?,
-            req.dot_prefix,
-        ));
-        if source.symlink_metadata().is_ok() {
-            return Ok(Some(source));
-        }
-        return Ok(None);
-    }
     let matching_files = all_files
-        .into_iter()
+        .iter()
         .filter(|req| {
             system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()])
         })
+        .cloned()
         .collect::<Vec<_>>();
     // one target may be both tracked and deployed, and tracking composes
     // first. editing the source is what converges a deployed target — and
@@ -223,6 +210,17 @@ fn source_for_target(
             bail!("{raw}: multiple [dotfiles] edit entries match; choose one of: {keys}");
         }
     }
+    // a file inside a dotfile group's tree has no entry of its own, and
+    // edit keys such as `~/.zshrc/activate` are checked before it; once its
+    // source exists, that source is what to edit (before that, add captures
+    // the live file into the group)
+    if let Some(req) = group_route(&all_files, target, group)? {
+        let source = group_file_source(req, target)?;
+        if source.symlink_metadata().is_ok() {
+            return Ok(Some(source));
+        }
+        return Ok(None);
+    }
     if target.is_relative() {
         bail!("{raw}: target must be absolute or start with ~/");
     }
@@ -285,18 +283,18 @@ async fn apply_target(target: &str, group: Option<&str>, prompt_secrets: bool) -
     let all_files = system::files::files_from_config(&config)?;
     system::files::validate_composed_file_footprints(&all_files)?;
     let resolved = system::files::resolve_target_arg(target);
-    // a file inside a group tree is applied by applying that tree
-    let routed = group_route(&all_files, &resolved, group)?.cloned();
-    let files = all_files
+    let mut files = all_files
         .iter()
-        .filter(|req| {
-            system::files::matches_target(&req.target, &req.target_raw, &targets)
-                || routed
-                    .as_ref()
-                    .is_some_and(|r| r.target == req.target && r.source == req.source)
-        })
+        .filter(|req| system::files::matches_target(&req.target, &req.target_raw, &targets))
         .cloned()
         .collect::<Vec<_>>();
+    // a file inside a group tree is applied on its own, never the whole
+    // tree, which would overwrite changes to its other files without asking
+    if files.is_empty()
+        && let Some(req) = group_route(&all_files, &resolved, group)?
+    {
+        files.push(group_file_request(req, &resolved)?);
+    }
     let edits = system::edits::edits_from_config(&config)?
         .into_iter()
         .filter(|req| system::edits::matches_target(req, &targets))
@@ -334,4 +332,42 @@ fn group_route<'a>(
         return Ok(None);
     }
     system::dotfile_groups::route_add(files, target, group)
+}
+
+/// The source file in `req`'s group tree that deploys to `target`.
+fn group_file_source(
+    req: &system::files::FileRequest,
+    target: &std::path::Path,
+) -> Result<PathBuf> {
+    Ok(req.source.join(system::dotfile_groups::source_rel_for(
+        &req.source,
+        target.strip_prefix(&req.target)?,
+        req.dot_prefix,
+    )))
+}
+
+/// `req`, a group tree, narrowed to the one file that deploys to `target`:
+/// a link for a linked tree, a copy for a copied one.
+fn group_file_request(
+    req: &system::files::FileRequest,
+    target: &std::path::Path,
+) -> Result<system::files::FileRequest> {
+    let source = group_file_source(req, target)?;
+    let mode = match req.mode {
+        FileMode::SymlinkEach => FileMode::Symlink,
+        mode => mode,
+    };
+    let mut origin = req.origin.clone();
+    origin.source = Some(source.clone());
+    Ok(system::files::FileRequest {
+        target_raw: target.display_user(),
+        target: target.to_path_buf(),
+        source,
+        mode,
+        exclude: vec![],
+        manifest: None,
+        dot_prefix: false,
+        origin,
+        ..req.clone()
+    })
 }

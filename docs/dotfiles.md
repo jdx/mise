@@ -764,7 +764,10 @@ Removal compares files with what mise last wrote, not with the current
 source, so editing a group's source does not stop `unapply --group` from
 removing an untouched copy. When you delete a file from a `copy` group's
 source, its copy stays on disk and in the group's record, so
-`unapply --group` still removes it.
+`unapply --group` still removes it. Neither command removes a path that now
+resolves through a linked directory, for example after you fold a directory
+with `mode = "symlink"`, or a path inside `dotfiles.root`, even with
+`--force`, so they never delete source files.
 
 ### Adding files to a group
 
