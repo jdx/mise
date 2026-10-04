@@ -27949,6 +27949,13 @@ packages:
           algorithm: sha256
       - version_constraint: Version == "v1.19.0"
         no_asset: true
+      - version_constraint: semver("<= 1.227.0")
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
       - version_constraint: "true"
         asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
@@ -27956,6 +27963,15 @@ packages:
           type: github_release
           asset: atmos_{{trimV .Version}}_SHA256SUMS
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: atmos_{{trimV .Version}}_SHA256SUMS.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - ^https://github\.com/cloudposse/\.github/\.github/workflows/shared-go-auto-release\.yml@
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: cloudposse
     repo_name: github-commenter
@@ -36908,6 +36924,11 @@ packages:
     repo_owner: ducaale
     repo_name: xh
     description: Friendly and fast tool for sending HTTP requests
+    files:
+      - name: xh
+      - name: xhs
+        src: xh
+        link: xhs
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version == "v0.7.0"
@@ -36915,8 +36936,6 @@ packages:
         format: zip
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: xh
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -36975,6 +36994,9 @@ packages:
         files:
           - name: xh
             src: "{{.AssetWithoutExt}}/xh"
+          - name: xhs
+            src: "{{.AssetWithoutExt}}/xh"
+            link: xhs
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -36995,6 +37017,9 @@ packages:
         files:
           - name: xh
             src: "{{.AssetWithoutExt}}/xh"
+          - name: xhs
+            src: "{{.AssetWithoutExt}}/xh"
+            link: xhs
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -37011,6 +37036,9 @@ packages:
         files:
           - name: xh
             src: "{{.AssetWithoutExt}}/xh"
+          - name: xhs
+            src: "{{.AssetWithoutExt}}/xh"
+            link: xhs
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -42978,6 +43006,15 @@ packages:
     description: Distributed, offline-first bug tracker embedded in git, with bridges
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("< 0.11.0")
+        asset: git-bug_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
       - version_constraint: "true"
         asset: git-bug_{{.OS}}_{{.Arch}}
         format: raw
@@ -42987,6 +43024,19 @@ packages:
           - darwin
           - windows
           - amd64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/git-bug/git-bug/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: github_release
     repo_owner: git-chglog
     repo_name: git-chglog
@@ -45174,6 +45224,28 @@ packages:
     repo_name: kubetest
     description: A CLI for distributed execution of tasks on Kubernetes
     path: github.com/goccy/kubetest/cmd/kubetest
+  - type: github_release
+    repo_owner: goccy
+    repo_name: tobari
+    description: Tobari is a scoped coverage measurement tool for Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.12.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.8.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: tobari_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: goccy/tobari/.github/workflows/release.yml
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: godotengine
     repo_name: godot
@@ -74457,6 +74529,13 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.0.6--context-conduit-saphire"
         no_asset: true
+      - version_constraint: semver("<= 0.0.13")
+        asset: tunnel-client-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: tunnel-client-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
@@ -74464,6 +74543,15 @@ packages:
           type: github_release
           asset: SHA256SUMS.txt
           algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: tunnel-client-{{.Version}}-provenance.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/openai/tunnel-client/.github/workflows/release.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - name: openbao/openbao/bao
     type: github_release
     repo_owner: openbao
@@ -82036,11 +82124,21 @@ packages:
       - darwin
       - linux
       - amd64
-    version_constraint: semver(">= 0.3.9")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.3.9")
         rosetta2: true
+      - version_constraint: semver("< 0.11.6")
       - version_constraint: "true"
+        cosign:
+          bundle:
+            type: github_release
+            asset: regctl-{{.OS}}-{{.Arch}}.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/regclient/regclient/.github/workflows/go.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
   - name: regclient/regclient/regsync
     type: github_release
     repo_owner: regclient
@@ -106837,6 +106935,24 @@ packages:
           type: github_release
           asset: totp-cli_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: ymmt2005
+    repo_name: pbschema-lens
+    description: HTML site generator for protobuf schema
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: pbschema-lens_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: ymtdzzz
     repo_name: otel-tui
