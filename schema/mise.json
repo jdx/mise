@@ -6921,6 +6921,133 @@
             "additionalProperties": false
           }
         },
+        "compose": {
+          "type": "object",
+          "description": "Docker Compose projects managed with `mise bootstrap compose`, keyed by project name. Text fields support Tera templates.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "project_dir": {
+                "type": "string",
+                "minLength": 1,
+                "description": "absolute directory containing the Compose project"
+              },
+              "files": {
+                "type": "array",
+                "description": "Compose file paths relative to project_dir unless absolute",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env_files": {
+                "type": "array",
+                "description": "environment file paths relative to project_dir unless absolute",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "project_name": {
+                "type": "string",
+                "description": "optional Compose project name"
+              },
+              "profiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "services": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "oneshot": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "state": {
+                "type": "string",
+                "enum": ["running", "stopped", "absent"],
+                "default": "running"
+              },
+              "pull": {
+                "type": "string",
+                "enum": ["always", "missing", "never"],
+                "default": "missing"
+              },
+              "build": {
+                "type": "string",
+                "enum": ["auto", "always", "never"],
+                "default": "auto"
+              },
+              "recreate": {
+                "type": "string",
+                "enum": ["auto", "always", "never"],
+                "default": "auto"
+              },
+              "wait": {
+                "type": "boolean",
+                "default": true
+              },
+              "wait_timeout": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "wait timeout in seconds"
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Compose shutdown timeout in seconds"
+              },
+              "remove_orphans": {
+                "type": "boolean",
+                "default": true
+              },
+              "renew_anonymous_volumes": {
+                "type": "boolean",
+                "default": false
+              },
+              "down_volumes": {
+                "type": "boolean",
+                "default": false
+              },
+              "down_images": {
+                "type": "string",
+                "enum": ["local", "all"]
+              },
+              "sudo": {
+                "type": "boolean",
+                "default": false
+              },
+              "command": {
+                "type": "array",
+                "description": "standalone Compose command",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "engine_command": {
+                "type": "array",
+                "description": "container engine command",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "depends_on": {
+                "type": "array",
+                "description": "bootstrap resource dependencies",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["project_dir"],
+            "additionalProperties": false
+          }
+        },
         "plugins": {
           "type": "object",
           "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",

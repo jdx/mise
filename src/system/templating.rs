@@ -119,7 +119,7 @@ fn remove_ignored_fields(raw: &mut toml::Value, ignored: &[String]) {
         return;
     };
     for field in ignored {
-        if !field.contains('.') && !field.contains('[') {
+        if table.contains_key(field) {
             table.remove(field);
         }
     }
@@ -238,6 +238,23 @@ mod tests {
             r#"
             exec_start = "{{ config_root }}/bin/serve"
             exec_startt = "{{ unterminated"
+            "#,
+        );
+        let rendered = unit
+            .render_with(&ctx(), Path::new("/home/u/proj/mise.toml"))
+            .unwrap();
+        assert_eq!(
+            rendered.exec_start.as_deref(),
+            Some("/home/u/proj/bin/serve")
+        );
+    }
+
+    #[test]
+    fn test_ignored_dotted_root_fields_do_not_participate_in_rendering() {
+        let unit = templated(
+            r#"
+            exec_start = "{{ config_root }}/bin/serve"
+            "exec.startt" = "{{ unterminated"
             "#,
         );
         let rendered = unit
