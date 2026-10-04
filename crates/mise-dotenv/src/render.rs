@@ -45,11 +45,11 @@ impl error::Error for RenderError {}
 /// # Examples
 ///
 /// ```
-/// use dotenv_ng_core::render_value;
+/// use mise_dotenv::render_value;
 ///
 /// assert_eq!(render_value("hello world")?.as_ref(), "hello world");
 /// assert_eq!(render_value(" trailing ")?.as_ref(), r#"" trailing ""#);
-/// # Ok::<(), dotenv_ng_core::RenderError>(())
+/// # Ok::<(), mise_dotenv::RenderError>(())
 /// ```
 pub fn render_value(value: &str) -> Result<Cow<'_, str>, RenderError> {
     if value.contains('\0') {

@@ -148,7 +148,7 @@ fn environment_variables() -> Result<EnvMap, Error> {
 ///
 /// ```
 /// let key = "HOME";
-/// match dotenv_ng_core::var(key) {
+/// match mise_dotenv::var(key) {
 ///     Ok(val) => println!("{key}: {val:?}"),
 ///     Err(e) => println!("couldn't interpret {key}: {e}"),
 /// }

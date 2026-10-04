@@ -1634,7 +1634,9 @@ impl Config {
                                         env_results.env.insert(k, (v, env_file.clone()));
                                     }
                                 }
-                                Err(err) => warn!("env_file: {err}"),
+                                Err(err) => {
+                                    warn!("env_file: ignoring {}: {err}", display_path(&env_file))
+                                }
                             }
                         }
                         Err(err) => {
