@@ -484,7 +484,11 @@ fn dir_link_is_a_real_directory_link_that_resolves_and_removes() {
     fs::create_dir_all(installs.join("3.9.17")).unwrap();
     make_dir_link(Path::new("./3.9.17"), &link).unwrap();
     assert_eq!(
-        resolve_symlink(&link).unwrap().unwrap().file_name().unwrap(),
+        resolve_symlink(&link)
+            .unwrap()
+            .unwrap()
+            .file_name()
+            .unwrap(),
         "3.9.17"
     );
 
