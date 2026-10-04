@@ -245,7 +245,8 @@ takes the name does not match it. Without `--pin`, packslip trusts the
 repository GitHub reports for the name on first use and holds later installs
 on that machine to it.
 
-Omitting `--version` requests the current stable release. To fix mise too:
+Omitting `--version`, or passing `--version latest`, requests the current stable
+release. To fix mise too:
 
 ```sh
 packslip install github.com/jdx/mise --version 2026.10.1 \
