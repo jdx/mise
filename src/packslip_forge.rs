@@ -128,7 +128,35 @@ pub(crate) fn lock_signer_continues(locked: &str, signer: &str, check: Option<&C
     else {
         return false;
     };
-    locked_scheme == scheme && check.is_some_and(|check| packslip_pins::continues_signer(check, locked_signer))
+    locked_scheme == scheme
+        && check.is_some_and(|check| packslip_pins::continues_signer(check, locked_signer))
+}
+
+/// Whether a newly resolved lock entry for `project` is signed by the signer
+/// the old one committed to: the same scheme, and the same signer given the
+/// forge pin each entry recorded ([`packslip::forge::same_workflow`]). A
+/// rename or a transfer keeps the signer; a changed repository ID does not;
+/// without IDs on both sides the signer must be the same string. An entry
+/// that committed to no signer takes any. `project` is none when the
+/// backend names no packslip project, and then no IDs are compared.
+pub(crate) fn lock_entry_continues(
+    project: Option<&str>,
+    old: &PlatformInfo,
+    new: &PlatformInfo,
+) -> bool {
+    let (Some(previous), Some(current)) = (&old.signer, &new.signer) else {
+        return old.signer.is_none();
+    };
+    let ((previous_scheme, previous), (scheme, current)) =
+        (split_signer(previous), split_signer(current));
+    let pin = |info: &PlatformInfo| project.and_then(|project| lock_pin(project, info));
+    previous_scheme == scheme
+        && packslip::forge::same_workflow(previous, pin(old).as_ref(), current, pin(new).as_ref())
+}
+
+/// A signer as a lock entry records it, `scheme:identity`, split in two.
+fn split_signer(signer: &str) -> (&str, &str) {
+    signer.split_once(':').unwrap_or(("", signer))
 }
 
 impl ForgeExpect {
@@ -474,7 +502,10 @@ mod tests {
             vec![locked(hk_pin("github.com/acme/hk"))],
             None,
         );
-        for expect in [expect("github.com/acme/hk", vec![], Some("922514152")), pinned] {
+        for expect in [
+            expect("github.com/acme/hk", vec![], Some("922514152")),
+            pinned,
+        ] {
             let ok = verify(&expect).unwrap();
             assert_eq!(
                 ok.check.continuity,
@@ -486,6 +517,63 @@ mod tests {
             let pinned = "sigstore-oidc:https://github.com/acme/hk/.github/workflows/release.yml";
             assert!(lock_signer_continues(pinned, HK_SIGNER, Some(&ok.check)));
         }
+    }
+
+    #[test]
+    fn lock_entries_continue_by_their_forge_ids() {
+        let entry = |repo: &str, id: Option<&str>| PlatformInfo {
+            signer: Some(format!(
+                "sigstore-oidc:https://gitlab.com/{repo}//.gitlab-ci.yml"
+            )),
+            repository_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        let project = Some("gitlab.com/g/tool");
+        let old = entry("g/tool", Some("42"));
+        assert!(lock_entry_continues(project, &old, &old));
+        // Renamed, or moved to another group: the same repository.
+        for moved in ["g/tool2", "acme/tool"] {
+            assert!(lock_entry_continues(
+                project,
+                &old,
+                &entry(moved, Some("42"))
+            ));
+        }
+        assert!(!lock_entry_continues(
+            project,
+            &old,
+            &entry("g/tool", Some("43"))
+        ));
+        // Without IDs on both sides, the signer itself must be the same.
+        let legacy = entry("g/tool", None);
+        assert!(lock_entry_continues(project, &legacy, &old));
+        assert!(!lock_entry_continues(
+            project,
+            &legacy,
+            &entry("g/tool2", Some("42"))
+        ));
+        assert!(!lock_entry_continues(
+            None,
+            &old,
+            &entry("g/tool2", Some("42"))
+        ));
+        // Another scheme is another signer, whatever the identity.
+        let key = PlatformInfo {
+            signer: Some("sigstore-key:https://gitlab.com/g/tool//.gitlab-ci.yml".into()),
+            ..old.clone()
+        };
+        assert!(!lock_entry_continues(project, &old, &key));
+        // An entry that committed to no signer takes any.
+        assert!(lock_entry_continues(
+            project,
+            &PlatformInfo::default(),
+            &old
+        ));
+        assert!(!lock_entry_continues(
+            project,
+            &old,
+            &PlatformInfo::default()
+        ));
     }
 
     #[test]
