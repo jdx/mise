@@ -31,3 +31,11 @@ if [ -r /proc/self/cmdline ]; then
   assert_not_contains "mise x -- fish -c 'tr \"\\0\" \" \" </proc/\$fish_pid/cmdline'" "s3cr3t-fish-marker"
   assert_contains "mise x -- fish -c 'tr \"\\0\" \" \" </proc/\$fish_pid/cmdline'" "FISH_ENV_SECRET"
 fi
+
+# the sandbox's env filter applies to what fish re-applies: a denied variable stays unset and an
+# allowed one keeps its value
+export MISE_EXPERIMENTAL=1
+assert "mise x --deny-env -- fish -c 'echo \"[\$FISH_ENV_SECRET]\"'" "[]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'echo \"[\$FISH_ENV_SECRET]\"'" "[s3cr3t-fish-marker]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'echo \"[\$FISH_ENV_MULTILINE]\"'" "[]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'set -x | grep -c __MISE_FISH_ENV; true'" "0"

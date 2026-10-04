@@ -393,6 +393,33 @@ impl Exec {
             env.insert("__MISE_DIFF".to_string(), serialized);
         }
 
+        // Build sandbox config from settings and CLI flags.
+        let mut sandbox = SandboxConfig::from_settings_and_cli(
+            &Settings::get().sandbox,
+            self.deny_all,
+            SandboxConfig {
+                deny_read: self.deny_read,
+                deny_write: self.deny_write,
+                deny_net: self.deny_net,
+                deny_env: self.deny_env,
+                deny_process: false,
+                deny_temp_write: false,
+                allow_read: self.allow_read,
+                allow_write: self.allow_write,
+                allow_net: self.allow_net,
+                allow_env: self.allow_env,
+                pass_through_env: vec![],
+                cache_env: vec![],
+                symlinked_allow_paths: vec![],
+            },
+        );
+        sandbox.resolve_paths();
+
+        if sandbox.is_active() {
+            env = sandbox.filter_env(&env);
+        }
+
+        // After sandbox filtering, so a variable the sandbox removed is not put back.
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
             // fish's config files run before `-C` and may overwrite what it inherited, so
@@ -432,32 +459,6 @@ impl Exec {
             }
             args.insert(0, cmd.join("\n"));
             args.insert(0, "-C".into());
-        }
-
-        // Build sandbox config from settings and CLI flags.
-        let mut sandbox = SandboxConfig::from_settings_and_cli(
-            &Settings::get().sandbox,
-            self.deny_all,
-            SandboxConfig {
-                deny_read: self.deny_read,
-                deny_write: self.deny_write,
-                deny_net: self.deny_net,
-                deny_env: self.deny_env,
-                deny_process: false,
-                deny_temp_write: false,
-                allow_read: self.allow_read,
-                allow_write: self.allow_write,
-                allow_net: self.allow_net,
-                allow_env: self.allow_env,
-                pass_through_env: vec![],
-                cache_env: vec![],
-                symlinked_allow_paths: vec![],
-            },
-        );
-        sandbox.resolve_paths();
-
-        if sandbox.is_active() {
-            env = sandbox.filter_env(&env);
         }
 
         time!("exec");
