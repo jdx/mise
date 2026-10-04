@@ -3710,6 +3710,7 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+        crate::install_layout::resolver::purge_installs(self.ba())?;
         remove_all_with_progress(self.ba().installs_path(), pr)?;
         remove_all_with_progress(self.ba().cache_path(), pr)?;
         remove_all_with_progress(self.ba().downloads_path(), pr)?;
@@ -4399,7 +4400,17 @@ pub trait Backend: Debug + Send + Sync {
             }
             remove_all_with_progress(dir, pr)
         };
-        rmdir(&tv.install_path())?;
+        let install_path = tv.install_path();
+        if !dryrun {
+            crate::install_layout::resolver::guard_removal(&install_path)?;
+        }
+        rmdir(&install_path)?;
+        if !dryrun {
+            // Version links into the removed installation, from every tool that
+            // linked it. The catalog record stays, so a reinstall lands on the
+            // same path.
+            crate::install_layout::resolver::unlink_installation(&install_path);
+        }
         if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
         }

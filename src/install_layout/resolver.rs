@@ -210,7 +210,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     }
     // Not installed. Report where a record says it was (a pruned payload
     // keeps its path), or where it would be allocated.
-    let primary = Catalog::new(&*dirs::INSTALLS);
+    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
     let record = candidates(&primary, &identity).into_iter().next();
     let dir = match &record {
         Some(record) => primary.install_dir(record),
@@ -346,7 +346,7 @@ pub(crate) fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)
 
 /// The installation a listed version name stands for: the one its link names,
 /// else the first complete installation with that listing name.
-pub(crate) fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf> {
+pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf> {
     if !enabled() {
         return None;
     }
@@ -362,6 +362,99 @@ pub(crate) fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<P
         .into_iter()
         .find(|(n, _)| n == name)
         .map(|(_, dir)| dir)
+}
+
+/// The version of another installation of the same tool as `tv`, named by its
+/// directory in the installs root: another variant or version, if its receipt says
+/// it is an installation of `tv`'s backend. Used to explain what keeps a prune.
+pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
+    let dir = tv.install_path().parent()?.join(dir_name);
+    let receipt = read_receipt(&dir)?;
+    let backend = crate::backend::canonical_backend_full(&tv.ba().full_without_opts()).into_owned();
+    (receipt.record.identity.backend == backend).then_some(receipt.record.identity.version)
+}
+
+/// Refuse to remove an identity-layout path that mise did not create: a direct
+/// child of an installs root that has neither a receipt nor a reserved name.
+/// Anything else (a legacy `<tool>/<version>` dir, an explicit path) is not this
+/// function's business.
+pub(crate) fn guard_removal(path: &Path) -> Result<()> {
+    let Some(name) = dir_name_of(path) else {
+        return Ok(());
+    };
+    let root = path.parent().unwrap_or(path);
+    if read_receipt(path).is_some() || root.join(".mise").join("names").join(&name).exists() {
+        return Ok(());
+    }
+    eyre::bail!(
+        "refusing to remove {}: it is not an installation mise created",
+        path.display()
+    )
+}
+
+/// Remove every version link in the installs root that names the installation
+/// `dir`, from whichever tool directory holds it (`age` and
+/// `aqua:FiloSottile/age` each have their own). Best effort: a link left behind
+/// dangles and is collected by the next rebuild.
+pub(crate) fn unlink_installation(dir: &Path) {
+    let (Some(name), Some(root)) = (dir.file_name(), dir.parent()) else {
+        return;
+    };
+    for tool in file::dir_subdirs(root).unwrap_or_default() {
+        if is_reserved_dir(root, &tool) {
+            continue;
+        }
+        let tool_dir = root.join(&tool);
+        for entry in file::ls(&tool_dir).unwrap_or_default() {
+            if !is_dir_link(&entry) || !is_compat_link_shape(&entry) {
+                continue;
+            }
+            let names_it = file::resolve_symlink(&entry)
+                .ok()
+                .flatten()
+                .is_some_and(|target| target.file_name() == Some(name));
+            if names_it && let Err(err) = file::remove_dir_link(&entry) {
+                debug!("could not remove version link {}: {err:#}", entry.display());
+            }
+        }
+    }
+}
+
+/// Remove every identity-layout installation of a tool's backends, for
+/// `mise plugins uninstall --purge`. The catalog keeps its records.
+pub(crate) fn purge_installs(ba: &crate::args::BackendArg) -> Result<()> {
+    if !enabled() {
+        return Ok(());
+    }
+    for (_, dir) in installs_of(ba) {
+        if dir.parent() == Some(&**dirs::INSTALLS) {
+            file::remove_all(&dir)?;
+        }
+    }
+    Ok(())
+}
+
+/// The complete installations of canonical `backend` at logical `version`, and
+/// the checksum each was acquired or pinned with. Prune uses it to keep what a
+/// lockfile entry names.
+pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Option<String>)> {
+    let mut out = vec![];
+    for root in roots() {
+        let catalog = Catalog::new(&root);
+        for record in catalog.records_for_backend(backend) {
+            if record.identity.version != version || !is_complete(&catalog.install_dir(&record)) {
+                continue;
+            }
+            let checksum = record
+                .identity
+                .inputs
+                .get("artifact.checksum")
+                .or_else(|| record.provenance.artifacts.get("checksum"))
+                .cloned();
+            out.push((record.dir, checksum));
+        }
+    }
+    out
 }
 
 /// The path to put on PATH for an unlocked `tv`: the link users know
@@ -408,7 +501,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
     let Some(identity) = identity_of(tv) else {
         return Ok(None);
     };
-    let catalog = Catalog::new(&*dirs::INSTALLS);
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let key = identity.request_key();
     let locked = pin_of(&identity).is_some();
 
@@ -452,7 +545,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
 /// selection. The receipt goes in last; its presence is what marks the
 /// installation complete.
 pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
-    let catalog = Catalog::new(&*dirs::INSTALLS);
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let mut record = allocated.record.clone();
     if let Some(checksum) = tv
         .backend()
@@ -508,7 +601,7 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     let Some(identity) = identity_of(tv) else {
         return Ok(());
     };
-    let catalog = Catalog::new(&*dirs::INSTALLS);
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     if let Some(pin) = pin_of(&identity)
         && !record.provenance.pinned_by.iter().any(|p| p == pin)
     {
@@ -572,7 +665,7 @@ fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
 
 /// The installation directory a compatibility link names, if `slot` is one: a
 /// link whose target is a direct child of an installs root holding a receipt.
-pub(crate) fn link_target(slot: &Path) -> Option<PathBuf> {
+pub fn link_target(slot: &Path) -> Option<PathBuf> {
     let target = file::resolve_symlink(slot).ok().flatten()?;
     let target = if target.is_absolute() {
         target
@@ -623,12 +716,30 @@ pub(crate) fn is_compat_link_shape(path: &Path) -> bool {
     let (Some(target), Some(tool_dir)) = (clean(&target), path.parent().and_then(clean)) else {
         return false;
     };
-    target.parent() == tool_dir.parent() && target.parent().is_some()
+    target.parent() == tool_dir.parent()
+        && target.parent().is_some()
+        && target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(has_hash_suffix)
+}
+
+/// Whether `name` ends in `-<base32 digest prefix>` the way an allocated
+/// installation directory does (at least 8 lowercase base32 characters).
+fn has_hash_suffix(name: &str) -> bool {
+    name.rsplit_once('-').is_some_and(|(label, suffix)| {
+        !label.is_empty()
+            && suffix.len() >= 8
+            && suffix.len() <= 52
+            && suffix
+                .bytes()
+                .all(|b| matches!(b, b'a'..=b'z' | b'2'..=b'7'))
+    })
 }
 
 /// Whether `path` is an installation directory of the identity layout (a
 /// direct child of an installs root) rather than a legacy `<tool>/<version>`.
-pub(crate) fn dir_name_of(path: &Path) -> Option<String> {
+pub fn dir_name_of(path: &Path) -> Option<String> {
     let parent = path.parent()?;
     roots()
         .iter()
@@ -640,6 +751,17 @@ pub(crate) fn dir_name_of(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hash_suffix_shape() {
+        assert!(has_hash_suffix("age-p4n6w2ra"));
+        assert!(has_hash_suffix("node-k7m3q2vd6n"));
+        assert!(!has_hash_suffix("nowhere"));
+        assert!(!has_hash_suffix("age-short"));
+        assert!(!has_hash_suffix("-p4n6w2ra"));
+        assert!(!has_hash_suffix("age-P4N6W2RA"));
+        assert!(!has_hash_suffix("age-p4n6w2r1"));
+    }
 
     #[test]
     fn exempt_backends() {

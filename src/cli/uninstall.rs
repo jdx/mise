@@ -66,7 +66,15 @@ impl Uninstall {
         };
         let tool_versions = tool_versions
             .into_iter()
-            .unique_by(|(_, tv)| (tv.request.ba().short.clone(), tv.version.clone()))
+            // Variants of one version (different install options) are different
+            // installations, told apart by where they live.
+            .unique_by(|(_, tv)| {
+                (
+                    tv.request.ba().short.clone(),
+                    tv.version.clone(),
+                    tv.install_path(),
+                )
+            })
             .collect::<Vec<_>>();
         if !self.all && tool_versions.len() > self.installed_tool.len() {
             bail!("multiple tools specified, use --all to uninstall all versions");
@@ -204,7 +212,11 @@ impl Uninstall {
                     .into_iter()
                     .map(|v| {
                         let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
-                        let tv = ToolVersion::new(tvr, v.into());
+                        let mut tv = ToolVersion::new(tvr, v.into());
+                        // The name came from a version link or a receipt, so it names an
+                        // exact installation, whatever options it was installed with.
+                        tv.install_path =
+                            crate::install_layout::resolver::physical_dir(backend.ba(), v);
                         Ok((backend.clone(), tv))
                     })
                     .collect::<Result<Vec<_>>>()?,

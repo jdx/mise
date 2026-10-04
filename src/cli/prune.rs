@@ -227,7 +227,11 @@ async fn delete(
 /// The session key for a version being removed: the same `short@version`
 /// shape the install scheduler uses.
 fn removal_key(tv: &ToolVersion) -> String {
-    format!("{}@{}", tv.ba().short, tv.version)
+    match crate::install_layout::resolver::dir_name_of(&tv.install_path()) {
+        // Variants of one version are separate rows.
+        Some(dir) => format!("{}@{}#{dir}", tv.ba().short, tv.version),
+        None => format!("{}@{}", tv.ba().short, tv.version),
+    }
 }
 
 /// Say why `tv` is up for removal.
@@ -241,10 +245,21 @@ fn removal_key(tv: &ToolVersion) -> String {
 fn explain_removal(tv: &ToolVersion, needed: &NeededVersions) {
     let short = &tv.ba().short;
     // `needed` is a HashMap; collect into a BTreeMap so the order is stable.
-    let kept: BTreeMap<&String, &BTreeSet<PathBuf>> = needed
+    let layout_dir = crate::install_layout::resolver::dir_name_of(&tv.install_path());
+    let kept: BTreeMap<String, &BTreeSet<PathBuf>> = needed
         .iter()
-        .filter(|((s, _), _)| s == short)
-        .map(|((_, version), sources)| (version, sources))
+        .filter_map(|((s, name), sources)| {
+            if s.is_empty() {
+                // An identity-layout key: the same tool when its receipt says so.
+                if layout_dir.as_deref() == Some(name) {
+                    return None;
+                }
+                crate::install_layout::resolver::sibling_version(tv, name)
+                    .map(|version| (version, sources))
+            } else {
+                (s == short).then(|| (name.clone(), sources))
+            }
+        })
         .collect();
     // Match the short form the progress line below uses, not the fully
     // qualified `backend:name@version` that `Display` renders.

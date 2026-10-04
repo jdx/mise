@@ -18,7 +18,6 @@
 //! identity extends its suffix by two characters at a time. An existing
 //! installation is never renamed to make room.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr};
@@ -119,16 +118,6 @@ impl Catalog {
             .into_iter()
             .filter(|r| r.identity.backend == backend)
             .collect();
-        records.sort_by(|a, b| a.dir.cmp(&b.dir));
-        records
-    }
-
-    /// Every record in the catalog.
-    pub(crate) fn all_records(&self) -> Vec<IdentityRecord> {
-        let mut records = vec![];
-        for bucket in file::dir_subdirs(&self.identities_dir()).unwrap_or_default() {
-            records.extend(read_dir_records(&self.identities_dir().join(bucket)));
-        }
         records.sort_by(|a, b| a.dir.cmp(&b.dir));
         records
     }
@@ -290,18 +279,6 @@ impl Catalog {
             toml::to_string_pretty(&selection)?,
         )
     }
-
-    /// Digests that some selection still points at.
-    pub(crate) fn selected_digests(&self) -> BTreeSet<String> {
-        let dir = self.meta_dir().join("selections");
-        file::ls(&dir)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|p| std::fs::read_to_string(p).ok())
-            .filter_map(|body| toml::from_str::<Selection>(&body).ok())
-            .map(|s| s.selected)
-            .collect()
-    }
 }
 
 /// Opaque directory name for a backend's records.
@@ -372,7 +349,7 @@ pub(crate) fn write_receipt(install_dir: &Path, receipt: &Receipt) -> Result<()>
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
     use crate::install_layout::identity::Mode;
@@ -427,7 +404,6 @@ mod tests {
             .unwrap();
         assert_ne!(a.dir, b.dir);
         assert_eq!(catalog.records_for_backend("aqua:FiloSottile/age").len(), 2);
-        assert_eq!(catalog.all_records().len(), 2);
     }
 
     #[test]
@@ -570,7 +546,6 @@ mod tests {
         catalog.select(&key, &record, None).unwrap();
         let selection = catalog.selection(&key).unwrap();
         assert_eq!(selection.selected, record.digest);
-        assert!(catalog.selected_digests().contains(&record.digest));
         // A different version is a different request.
         assert_eq!(
             catalog.selection(&identity("aqua:FiloSottile/age", "1.2.2")),

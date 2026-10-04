@@ -866,6 +866,19 @@ impl From<ToolRequestSet> for Toolset {
 /// leaves nothing to point at (discussion #9045).
 pub type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
 
+/// The key a tool version is retained or pruned by.
+///
+/// A legacy install is `(short, version)`. An identity-layout installation is
+/// keyed by its directory alone, with an empty tool name, so that a request
+/// spelled `age` and one spelled `aqua:FiloSottile/age` protect the same
+/// installation, and two variants of one version are two keys.
+pub fn needed_key(tv: &ToolVersion) -> (String, String) {
+    match crate::install_layout::resolver::dir_name_of(&tv.install_path()) {
+        Some(dir) => (String::new(), dir),
+        None => (tv.ba().short.to_string(), tv.tv_pathname()),
+    }
+}
+
 /// Get all tool versions that are needed by tracked config files.
 /// This is used by both `mise prune` and `mise upgrade` to avoid
 /// uninstalling versions that other projects still need.
@@ -916,6 +929,32 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                                 .entry((short.clone(), version.clone()))
                                 .or_default()
                                 .insert(lockfile_path.clone());
+                            // Identity-layout installations the entry names: those of its
+                            // backend and version, narrowed to the pinned artifact when the
+                            // entry carries a checksum for this platform.
+                            let backend_name = tool
+                                .backend
+                                .clone()
+                                .unwrap_or_else(|| BackendArg::from(short).full_without_opts());
+                            let backend_name =
+                                backend::canonical_backend_full(&backend_name).into_owned();
+                            let pinned = tool
+                                .platforms
+                                .get(&crate::platform::Platform::current().to_key())
+                                .and_then(|p| p.checksum.clone());
+                            for (dir, checksum) in
+                                crate::install_layout::resolver::installs_matching(
+                                    &backend_name,
+                                    &tool.version,
+                                )
+                            {
+                                if pinned.is_none() || checksum == pinned {
+                                    needed
+                                        .entry((String::new(), dir))
+                                        .or_default()
+                                        .insert(lockfile_path.clone());
+                                }
+                            }
                             if let Some(backend) = &tool.backend {
                                 needed
                                     .entry((backend.clone(), version))
@@ -1018,7 +1057,7 @@ pub async fn prunable_tools_with_sources(
             crate::env::install_path_category(&tv.install_path())
                 == crate::env::InstallPathCategory::Local
         })
-        .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
+        .map(|(p, tv)| (needed_key(&tv), (p, tv)))
         .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
     if !tools.is_empty() {
@@ -1063,7 +1102,7 @@ fn collect_needed_versions(
 ) {
     for (_, tv) in ts.list_current_versions() {
         needed
-            .entry((tv.ba().short.to_string(), tv.tv_pathname()))
+            .entry(needed_key(&tv))
             .or_default()
             .insert(source.to_path_buf());
         // Offline can't resolve `sub-N:latest` to a concrete version
@@ -1077,10 +1116,15 @@ fn collect_needed_versions(
         {
             let short = tv.ba().short.to_string();
             for v in backend.list_installed_versions() {
-                needed
-                    .entry((short.clone(), v))
-                    .or_default()
-                    .insert(source.to_path_buf());
+                // An identity-layout version stands for the installation its link or
+                // receipt names; protect that one.
+                let key = match crate::install_layout::resolver::physical_dir(tv.ba(), &v)
+                    .and_then(|dir| crate::install_layout::resolver::dir_name_of(&dir))
+                {
+                    Some(dir) => (String::new(), dir),
+                    None => (short.clone(), v),
+                };
+                needed.entry(key).or_default().insert(source.to_path_buf());
             }
         }
     }

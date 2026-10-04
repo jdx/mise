@@ -485,6 +485,26 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         // legacy entries.
         let mut updated_manifest: Option<Manifest> = None;
         let mut tools = BTreeMap::new();
+        // Installations whose receipt is on disk but that the catalog does not know
+        // (it was lost, or a mise that predates it made them) are adopted, so the
+        // catalog can always be rebuilt from receipts alone.
+        if subdirs.iter().any(|name| {
+            !name.starts_with('.')
+                && dirs::INSTALLS
+                    .join(name)
+                    .join(crate::install_layout::record::RECEIPT_FILE)
+                    .exists()
+                && !dirs::INSTALLS
+                    .join(".mise")
+                    .join("names")
+                    .join(name)
+                    .exists()
+        }) && let Err(err) =
+            crate::install_layout::catalog::Catalog::new(dirs::INSTALLS.to_path_buf())
+                .rebuild_from_receipts()
+        {
+            warn!("failed to rebuild the install catalog from receipts: {err:#}");
+        }
         for dir_name in subdirs {
             // `.mise` holds the install catalog, and an identity-layout installation
             // is not a tool directory.
