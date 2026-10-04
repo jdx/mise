@@ -100,6 +100,7 @@ separate policy if your plugin also accepts absolute paths.
 | `redact`      | Request redaction of returned values in mise's processed output; defaults to `false`                          |
 
 A user's explicit directive-level `redact` option overrides the plugin's preference.
+A module whose values are redacted is never environment-cached, whatever `cacheable` says.
 Redaction does not remove values from the environment and raw task output bypasses it.
 See [redactions](/environments/#redactions).
 

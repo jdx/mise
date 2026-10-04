@@ -17,7 +17,7 @@ use std::sync::LazyLock as Lazy;
 
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
-use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap, hash_env_value};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
@@ -495,6 +495,8 @@ pub struct HookEnvSession {
     pub loaded_tools: IndexSet<String>,
     pub loaded_configs: IndexSet<PathBuf>,
     pub config_paths: IndexSet<PathBuf>,
+    /// Env var name to [`hash_env_value`] digest (plaintext in sessions written by older
+    /// mise versions). Values are only compared, so they are not stored.
     pub env: EnvMap,
     #[serde(default)]
     pub aliases: indexmap::IndexMap<String, String>,
@@ -638,7 +640,10 @@ pub async fn build_session(
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
-        env,
+        env: env
+            .into_iter()
+            .map(|(k, v)| (k, hash_env_value(&v)))
+            .collect(),
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),

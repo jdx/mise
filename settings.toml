@@ -728,6 +728,10 @@ cache when those changes are not reflected.
 Env plugins can return `cacheable = true` and `watch_files` from their `MiseEnv` hook.
 See [Env Plugin Development](/env-plugin-development.html) for the Lua return format.
 
+mise does not cache secrets: a configuration with an `age` value, a sops-encrypted `_.file`, or
+a directive with `redact = true` (including an env plugin that returns `redact = true`) is never
+written to the cache, and neither is any environment from a plugin that returns `cacheable = false`.
+
 Ordinary environment directives do not currently support a per-value `cacheable = false`
 option. Set `MISE_ENV_CACHE=0` before starting mise when a command must recompute values.
 Changes in an external service do not invalidate the cache by themselves; choose a suitable

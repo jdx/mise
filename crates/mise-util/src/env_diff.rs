@@ -27,6 +27,22 @@ pub struct EnvDiff {
     pub path: Vec<PathBuf>,
 }
 
+const HASH_PREFIX: &str = "blake3:";
+
+/// Digest stored in place of an env value in `__MISE_DIFF` and `__MISE_SESSION`.
+/// This is not a secret store: a low-entropy value can be brute-forced from its
+/// digest, and the value itself is in every child's environment anyway. The
+/// point is not to keep a second plaintext copy around.
+pub fn hash_env_value(value: &str) -> String {
+    format!("{HASH_PREFIX}{}", blake3::hash(value.as_bytes()).to_hex())
+}
+
+/// Whether `actual` is the value recorded as `stored`. Blobs written by older
+/// mise versions hold plaintext, newer ones a [`hash_env_value`] digest.
+pub fn env_value_matches(stored: &str, actual: &str) -> bool {
+    stored == actual || stored == hash_env_value(actual)
+}
+
 #[derive(Debug)]
 pub enum EnvDiffOperation {
     Add(String, String),
@@ -197,9 +213,29 @@ impl EnvDiff {
         Ok(rmp_serde::from_slice(&writer[..])?)
     }
 
+    /// Serializes for `__MISE_DIFF`. The `new` values are replaced by
+    /// [`hash_env_value`] digests: they are only ever compared against the live
+    /// environment (see [`env_value_matches`]), so secrets mise injected are
+    /// not duplicated as plaintext in a variable every child process inherits.
+    /// `old` stays as-is because restoring the environment needs those values.
     pub fn serialize(&self) -> Result<String> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            old: &'a IndexMap<String, String>,
+            new: IndexMap<&'a str, String>,
+            path: &'a [PathBuf],
+        }
+        let wire = Wire {
+            old: &self.old,
+            new: self
+                .new
+                .iter()
+                .map(|(k, v)| (k.as_str(), hash_env_value(v)))
+                .collect(),
+            path: &self.path,
+        };
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
-        gz.write_all(&rmp_serde::to_vec_named(self)?)?;
+        gz.write_all(&rmp_serde::to_vec_named(&wire)?)?;
         Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
     }
 
@@ -495,5 +531,33 @@ mod tests {
         assert_eq!(parsed.get("GOOD").map(String::as_str), Some("\"value\""));
         assert_eq!(parsed.get("AFTER").map(String::as_str), Some("\"after\""));
         assert!(!parsed.keys().any(|k| k.starts_with("BASH_FUNC_")));
+    }
+
+    #[test]
+    fn test_serialize_does_not_store_new_values() {
+        let original: EnvMap = [("CHANGED".into(), "before".into())].into();
+        let diff = EnvDiff::new(
+            &original,
+            [
+                ("CHANGED".to_string(), "after-secret".to_string()),
+                ("ADDED".to_string(), "added-secret".to_string()),
+            ],
+        );
+        let raw = diff.serialize().unwrap();
+        let back = EnvDiff::deserialize(&raw).unwrap();
+
+        assert_eq!(back.old.get("CHANGED").map(String::as_str), Some("before"));
+        for value in back.new.values() {
+            assert!(!value.contains("secret"), "{value}");
+        }
+        assert!(env_value_matches(&back.new["CHANGED"], "after-secret"));
+        assert!(!env_value_matches(&back.new["CHANGED"], "other"));
+        assert!(env_value_matches(&back.new["ADDED"], "added-secret"));
+    }
+
+    #[test]
+    fn test_env_value_matches_plaintext_from_older_mise() {
+        assert!(env_value_matches("plain", "plain"));
+        assert!(!env_value_matches("plain", "other"));
     }
 }

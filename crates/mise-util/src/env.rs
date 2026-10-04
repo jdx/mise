@@ -1,6 +1,6 @@
 //! Environment variables mise reads, and the directories derived from them.
 
-use crate::env_diff::{EnvDiff, EnvMap};
+use crate::env_diff::{EnvDiff, EnvMap, env_value_matches};
 use crate::env_value::EnvValue;
 use crate::file::replace_path;
 use indexmap::IndexMap;
@@ -931,7 +931,9 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
 fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> EnvMap {
     for (key, old_value) in &mise_diff.old {
         match env_diff_get(&mise_diff.new, key) {
-            Some(new_value) if env_map_get(&env, key) == Some(new_value) => {
+            Some(new_value)
+                if env_map_get(&env, key).is_some_and(|v| env_value_matches(new_value, v)) =>
+            {
                 let key = env_map_key(&env, key)
                     .cloned()
                     .unwrap_or_else(|| key.clone());
@@ -946,7 +948,7 @@ fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> En
 
     for (key, new_value) in &mise_diff.new {
         if env_diff_get(&mise_diff.old, key).is_none()
-            && env_map_get(&env, key) == Some(new_value)
+            && env_map_get(&env, key).is_some_and(|v| env_value_matches(new_value, v))
             && let Some(key) = env_map_key(&env, key).cloned()
         {
             env.remove(&key);
@@ -1452,6 +1454,30 @@ mod tests {
             .into()
         );
     }
+    #[test]
+    fn test_reverse_diff_with_hashed_new_values() {
+        let diff = EnvDiff {
+            old: [("CHANGED".into(), "before".into())].into(),
+            new: [
+                ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
+                ("CHANGED".into(), crate::env_diff::hash_env_value("managed")),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "override".into()),
+        ]
+        .into();
+        // CHANGED was overridden after mise applied it, so it is left alone;
+        // ADDED is still the managed value and is removed.
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [("CHANGED".into(), "override".into())].into()
+        );
+    }
+
     #[test]
     fn test_reverse_diff_restores_unchanged_managed_values() {
         let diff = EnvDiff {

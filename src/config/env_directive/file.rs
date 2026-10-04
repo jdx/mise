@@ -48,12 +48,17 @@ impl EnvResults {
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
+            let mut sops_used = false;
             let mut loaded = match ext.as_str() {
-                "json" => Self::json(config, exec_env, &p, parse_template).await?,
-                "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
-                "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
+                "json" => Self::json(config, exec_env, &p, parse_template, &mut sops_used).await?,
+                "yaml" => Self::yaml(config, exec_env, &p, parse_template, &mut sops_used).await?,
+                "toml" => Self::toml(config, exec_env, &p, parse_template, &mut sops_used).await?,
                 _ => Self::dotenv(&p, &acc, expand).await?,
             };
+            // Decrypted values must not be written to the env cache.
+            if sops_used {
+                ctx.results.has_uncacheable = true;
+            }
             // Structured files are literal by default. With `expand = true`, run
             // their values through the same `$VAR` engine used by `[env]` values
             // and accumulate key-by-key for same-file references.
@@ -80,6 +85,7 @@ impl EnvResults {
         exec_env: &TeraEnvMap,
         p: &Path,
         parse_template: PT,
+        sops_used: &mut bool,
     ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
@@ -92,6 +98,7 @@ impl EnvResults {
             let raw = file::strip_utf8_bom(&raw);
             let mut f: Env<serde_json::Value> = serde_json::from_str(raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
+                *sops_used = true;
                 let decrypted = sops::decrypt::<_, JsonFileFormat>(
                     config,
                     exec_env,
@@ -130,6 +137,7 @@ impl EnvResults {
         exec_env: &TeraEnvMap,
         p: &Path,
         parse_template: PT,
+        sops_used: &mut bool,
     ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
@@ -138,6 +146,7 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<serde_yaml::Value> = serde_yaml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
+                *sops_used = true;
                 let decrypted = sops::decrypt::<_, YamlFileFormat>(
                     config,
                     exec_env,
@@ -176,6 +185,7 @@ impl EnvResults {
         exec_env: &TeraEnvMap,
         p: &Path,
         parse_template: PT,
+        sops_used: &mut bool,
     ) -> Result<EnvMap>
     where
         PT: FnMut(String) -> Result<String>,
@@ -184,6 +194,7 @@ impl EnvResults {
         if let Ok(raw) = file::read_to_string(p) {
             let mut f: Env<toml::Value> = toml::from_str(&raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
+                *sops_used = true;
                 let decrypted = sops::decrypt::<_, TomlFileFormat>(
                     config,
                     exec_env,
@@ -310,8 +321,12 @@ mod tests {
         file::write(&p, encrypted_toml()).unwrap();
 
         let exec_env = TeraEnvMap::new();
-        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        let mut sops_used = false;
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok, &mut sops_used)
+            .await
+            .unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
+        assert!(sops_used, "decrypted sops values must not be env-cached");
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
@@ -340,7 +355,9 @@ mod tests {
             "MISE_SOPS_AGE_KEY_FILE".into(),
             key_file.to_string_lossy().to_string(),
         );
-        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok, &mut false)
+            .await
+            .unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
@@ -377,7 +394,9 @@ mod tests {
             "MISE_SOPS_AGE_KEY_FILE".into(),
             key_file.to_string_lossy().to_string(),
         );
-        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok, &mut false)
+            .await
+            .unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
@@ -408,7 +427,7 @@ mod tests {
             "MISE_SOPS_AGE_KEY_FILE".into(),
             key_file.to_string_lossy().to_string(),
         );
-        let err = EnvResults::toml(&config, &exec_env, &p, Ok)
+        let err = EnvResults::toml(&config, &exec_env, &p, Ok, &mut false)
             .await
             .unwrap_err();
         assert!(
@@ -443,7 +462,9 @@ mod tests {
 
         let mut exec_env = TeraEnvMap::new();
         exec_env.insert("SOPS_AGE_KEY".into(), "not-an-age-key".into());
-        let env = EnvResults::toml(&config, &exec_env, &p, Ok).await.unwrap();
+        let env = EnvResults::toml(&config, &exec_env, &p, Ok, &mut false)
+            .await
+            .unwrap();
         assert_eq!(env.get("SECRET").unwrap(), "mysecret");
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_mise_age_key);
@@ -468,7 +489,7 @@ mod tests {
         file::write(&p, encrypted_toml()).unwrap();
 
         let exec_env = TeraEnvMap::new();
-        let err = EnvResults::toml(&config, &exec_env, &p, Ok)
+        let err = EnvResults::toml(&config, &exec_env, &p, Ok, &mut false)
             .await
             .unwrap_err();
         assert!(
