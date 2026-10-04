@@ -389,9 +389,8 @@ _.file = '.env'
 ```
 
 ::: info
-Only dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have
-problems with dotenv parsing, report them there rather than to mise, since there is not much mise can
-do about how that crate works. JSON, YAML, and TOML files use separate parsers.
+Dotenv-format files are parsed by mise's own `mise-dotenv` crate, derived from
+[dotenv-ng](https://crates.io/crates/dotenv-ng-core). JSON, YAML, and TOML files use separate parsers.
 :::
 
 The `env._.file` directive supports:
@@ -429,7 +428,7 @@ _.file = { path = ".env.json", expand = true }
 ```
 
 The `env_shell_expand` setting remains the global switch and can disable expansion even when a file
-sets `expand = true`. Dotenv files retain dotenvy's normal same-file expansion behavior regardless;
+sets `expand = true`. Dotenv files always expand references to earlier assignments in the same file, and a file's own values take precedence over variables that are already set (for example ones exported by `mise activate` from another `.env`);
 for dotenv files, `expand = true` additionally enables references to previously loaded values.
 
 ```toml

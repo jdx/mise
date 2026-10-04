@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# A dotenv file's own values win over variables already in the environment when resolving `${VAR}`,
+# e.g. ones exported by `mise activate` from another `.env`.
+cat >mise.toml <<'EOF2'
+[env]
+_.file = [
+  { path = ".env", expand = true },
+  { path = ".env.test", expand = true },
+]
+EOF2
+printf 'VAR_A="base"\nVAR_B="base_${VAR_A}"\nVAR_C="base_${VAR_B}"\n' >.env
+printf 'VAR_A="test"\nVAR_B="test_${VAR_A}"\nVAR_C="test_${VAR_B}"\n' >.env.test
+
+for expand in true false; do
+  sed -i "s/expand = [a-z]*/expand = $expand/" mise.toml
+  export VAR_A=base VAR_B=base_base VAR_C=base_base_base
+  assert "mise env | grep '^export VAR_B='" "export VAR_B=test_test"
+  assert "mise env | grep '^export VAR_C='" "export VAR_C=test_test_test"
+  unset VAR_A VAR_B VAR_C
+  assert "mise env | grep '^export VAR_C='" "export VAR_C=test_test_test"
+done
+
+# The `env_file` setting keeps assignments read before a syntax error and does not shadow a
+# file's own values with exported ones.
+rm -f mise.toml
+export OUTER_A=exported
+printf 'OUTER_A=own\nOUTER_B="b_${OUTER_A}"\nBROKEN line\nOUTER_C=never\n' >.env.partial
+assert "MISE_ENV_FILE=.env.partial mise x -- sh -c 'echo \$OUTER_B'" "b_own"
+assert "MISE_ENV_FILE=.env.partial mise x -- sh -c 'echo \${OUTER_C:-unset}'" "unset"
+unset OUTER_A
+
+# Braced text that is not a substitution stays literal instead of failing the file.
+printf 'LIT=\"${LIT_X:=default}\"\nAFTER=ok\n' >.env.literal
+assert "MISE_ENV_FILE=.env.literal mise x -- sh -c 'echo \$AFTER'" "ok"

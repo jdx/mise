@@ -242,69 +242,21 @@ impl EnvResults {
                 return Ok(EnvMap::new());
             }
         };
-        if !expand {
-            // Preserve dotenvy's normal behavior unless cross-file expansion was
-            // explicitly requested.
-            let mut env = EnvMap::new();
-            for item in dotenvy::from_read_iter(content.as_bytes()) {
-                let (k, v) = item.wrap_err_with(errfn)?;
-                env.insert(k, v);
-            }
-            return Ok(env);
-        }
-        // dotenvy substitutes `${VAR}` only against the process env + vars defined
-        // earlier in the same file and has no API for a custom map. Seed the parse
-        // with accumulated values, then retain only keys defined by this file.
-        let mut own_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for item in dotenvy::from_read_iter(content.as_bytes()) {
-            let (k, _v) = item.wrap_err_with(errfn)?;
-            own_keys.insert(k);
-        }
-        if own_keys.is_empty() {
-            return Ok(EnvMap::new());
-        }
-        let mut prefix = String::new();
-        for (k, v) in acc {
-            if own_keys.contains(k) || !is_env_key(k) {
-                continue;
-            }
-            prefix.push_str(k);
-            prefix.push_str("=\"");
-            prefix.push_str(&escape_dotenv_double_quoted(v));
-            prefix.push_str("\"\n");
-        }
-        let augmented = format!("{prefix}{content}");
+        // `${VAR}` resolves against earlier assignments in this file first, so a file's own
+        // values are never shadowed by variables that happen to be set already (e.g. exported
+        // by `mise activate` from another `.env`). Only then do the surrounding values apply:
+        // everything loaded so far when `expand = true`, otherwise the process environment.
+        let outer: Vec<(String, String)> = if expand {
+            acc.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        } else {
+            crate::env::vars_safe().collect()
+        };
         let mut env = EnvMap::new();
-        for item in dotenvy::from_read_iter(augmented.as_bytes()) {
-            let (k, v) = item.wrap_err_with(errfn)?;
-            if own_keys.contains(&k) {
-                env.insert(k, v);
-            }
+        for (k, v) in mise_dotenv::parse(&content, true, outer).wrap_err_with(errfn)? {
+            env.insert(k, v);
         }
         Ok(env)
     }
-}
-
-fn is_env_key(k: &str) -> bool {
-    let mut chars = k.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-fn escape_dotenv_double_quoted(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '$' => out.push_str("\\$"),
-            '\n' => out.push_str("\\n"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -527,21 +479,6 @@ mod tests {
 
         restore_env_var("MISE_SOPS_AGE_KEY", prev_age_key);
         restore_env_var("MISE_SOPS_ROPS", prev_rops);
-    }
-
-    #[test]
-    fn escapes_seeded_dotenv_values() {
-        assert_eq!(escape_dotenv_double_quoted(r#"a$b"c\d"#), r#"a\$b\"c\\d"#);
-        assert_eq!(escape_dotenv_double_quoted("l1\nl2"), "l1\\nl2");
-    }
-
-    #[test]
-    fn validates_seeded_dotenv_keys() {
-        assert!(is_env_key("PGHOST"));
-        assert!(is_env_key("_FOO123"));
-        assert!(!is_env_key("1FOO"));
-        assert!(!is_env_key("FOO-BAR"));
-        assert!(!is_env_key(""));
     }
 
     #[tokio::test]

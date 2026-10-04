@@ -3037,12 +3037,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dotenvy"
-version = "0.15.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
-
-[[package]]
 name = "dsa"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6533,7 +6527,6 @@ dependencies = [
  "dashmap 6.2.1",
  "demand",
  "diffy",
- "dotenvy",
  "duct",
  "dunce",
  "exec",
@@ -6568,6 +6561,7 @@ dependencies = [
  "mise-brew-metadata",
  "mise-brew-relocation",
  "mise-cache-core",
+ "mise-dotenv",
  "mise-interactive-config",
  "mise-settings",
  "mise-util",
@@ -6707,6 +6701,14 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "mise-dotenv"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "temp-env",
 ]
 
 [[package]]
@@ -10676,6 +10678,15 @@ dependencies = [
  "filetime",
  "libc",
  "xattr",
+]
+
+[[package]]
+name = "temp-env"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]

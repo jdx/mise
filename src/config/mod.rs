@@ -1623,15 +1623,27 @@ impl Config {
                 continue;
             }
             debug!("env_file: {}", display_path(&env_file));
-            match dotenvy::from_path_iter(&env_file) {
-                Ok(iter) => {
+            match std::fs::read(&env_file) {
+                Ok(bytes) => {
                     env_results.env_files.push(env_file.clone());
-                    for item in iter {
-                        match item {
-                            Ok((k, v)) => {
+                    match file::decode_text(&bytes) {
+                        Ok(content) => {
+                            // Keep the assignments that precede a syntax error, like a
+                            // line-by-line loader would, and name the file cut short.
+                            let (items, err) =
+                                mise_dotenv::parse_partial(&content, true, crate::env::vars_safe());
+                            for (k, v) in items {
                                 env_results.env.insert(k, (v, env_file.clone()));
                             }
-                            Err(err) => warn!("env_file: {err}"),
+                            if let Some(err) = err {
+                                warn!(
+                                    "env_file: stopped reading {}: {err}",
+                                    display_path(&env_file)
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            warn!("env_file: ignoring {}: {err:#}", display_path(&env_file))
                         }
                     }
                 }
