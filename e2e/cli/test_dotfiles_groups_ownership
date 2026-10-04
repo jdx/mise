@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+
+# How dotfile groups decide which deployed files are theirs to remove.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/zsh" "$DOTS/extra" "$DOTS/conf"
+echo "zshrc" >"$DOTS/zsh/.zshrc"
+echo "extra" >"$DOTS/extra/.extrarc"
+echo "a" >"$DOTS/conf/a.conf"
+echo "b" >"$DOTS/conf/b.conf"
+
+cat <<'EOF' >editor-write
+#!/usr/bin/env bash
+echo edited >"$1"
+EOF
+chmod +x editor-write
+
+cat <<EOF >mise.toml
+[dotfile_groups.zsh]
+root = "zsh"
+[dotfile_groups.extra]
+root = "extra"
+[dotfile_groups.conf]
+root = "conf"
+target = "~/.config/conf"
+mode = "copy"
+EOF
+assert_succeed "mise dot apply --yes"
+
+# Editing a deployed file of a group opens its source.
+EDITOR="$PWD/editor-write" mise dot edit --apply ~/.zshrc
+assert "cat $DOTS/zsh/.zshrc" "edited"
+
+# A new file where two groups deploy needs --group, which edit accepts.
+assert_fail_contains "EDITOR=$PWD/editor-write mise dot edit --yes ~/.newrc" "choose one with --group"
+EDITOR="$PWD/editor-write" mise dot edit --yes --group extra --apply ~/.newrc
+assert "cat $DOTS/extra/.newrc" "edited"
+assert "readlink $HOME/.newrc" "$DOTS/extra/.newrc"
+
+# A copy whose source file is deleted stays recorded, so unapply --group
+# still finds it. Removal goes by what mise wrote, not by the current source.
+rm "$DOTS/conf/b.conf"
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/conf/b.conf" "b"
+echo "a changed in source" >"$DOTS/conf/a.conf"
+assert_succeed "mise dot unapply --group conf --yes"
+assert_fail "test -e $HOME/.config/conf/b.conf"
+assert_fail "test -e $HOME/.config/conf/a.conf"
+echo "a" >"$DOTS/conf/a.conf"
+
+# Moving an entry to another group keeps its file out of the prune.
+echo "work" >"$DOTS/work.conf"
+mkdir -p "$DOTS/old" "$DOTS/new"
+cat <<EOF >mise.toml
+[dotfile_groups.zsh]
+root = "zsh"
+[dotfile_groups.extra]
+root = "extra"
+[dotfile_groups.old]
+root = "old"
+entries."~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+sed -i 's/dotfile_groups.old/dotfile_groups.new/; s/root = "old"/root = "new"/' mise.toml
+assert_succeed "mise dot apply --prune --yes"
+assert "cat $HOME/.work.conf" "work"
+
+# Removing a group's table leaves its files orphaned until pruned.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+root = "extra"
+EOF
+assert_contains "mise dot status" "orphaned"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.zshrc"
+assert_fail "test -e $HOME/.work.conf"
+
+# Two groups deploying the same tree conflict instead of merging.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+root = "extra"
+[dotfile_groups.other]
+root = "extra"
+EOF
+assert_fail_contains "mise dot apply --yes" "conflicting"
+
+# A copy group whose source does not exist yet shares its target: it is
+# reported as missing its source, not as a conflict over ~.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+root = "extra"
+[dotfile_groups.later]
+root = "later"
+mode = "copy"
+EOF
+assert_fail_contains "mise dot apply --yes" "sources do not exist"
+assert_contains "mise dot status" "source missing"
+
+# A group that deploys only Git's index refuses captures it would not link.
+git -C "$DOTS/extra" init -q
+git -C "$DOTS/extra" add -A
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+root = "extra"
+manifest = "git"
+EOF
+echo "live" >"$HOME/.gitonly"
+assert_fail_contains "mise dot add --yes $HOME/.gitonly" "git add"
+assert "cat $HOME/.gitonly" "live"
+
+# Removal never follows a linked directory into a source tree. Fold a copied
+# group into one directory link: its old per-file records now resolve into
+# the source, and unapply must leave the source alone.
+mkdir -p "$DOTS/app"
+echo "app" >"$DOTS/app/app.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.app]
+root = "app"
+target = "~/.config/app"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/app/app.conf" "app"
+sed -i 's/mode = "copy"/mode = "symlink"/' mise.toml
+assert_succeed "mise dot apply --yes --force"
+assert "readlink $HOME/.config/app" "$DOTS/app"
+assert_succeed "mise dot unapply --group app --yes --force"
+assert "cat $DOTS/app/app.conf" "app"
+
+# The same when the target was replaced by a link outside mise and the
+# group is then deselected and pruned, even with --force.
+rm -f "$HOME/.config/app"
+sed -i 's/mode = "symlink"/mode = "copy"/' mise.toml
+assert_succeed "mise dot apply --yes"
+rm -rf "$HOME/.config/app"
+ln -s "$DOTS/app" "$HOME/.config/app"
+cat <<EOF2 >mise.toml
+[dotfile_groups.app]
+root = "app"
+target = "~/.config/app"
+mode = "copy"
+
+[bootstrap]
+dotfile_groups = []
+EOF2
+assert_succeed "mise dot apply --prune --force --yes"
+assert "cat $DOTS/app/app.conf" "app"
+assert_succeed "mise dot unapply --group app --force --yes"
+assert "cat $DOTS/app/app.conf" "app"
+
+# An edit key under a group's target still opens its edit, not a group file.
+cat <<'EOF2' >editor-record
+#!/usr/bin/env bash
+echo "$1" >"$PWD/opened"
+EOF2
+chmod +x editor-record
+cat <<EOF2 >mise.toml
+[dotfile_groups.zsh]
+root = "zsh"
+
+[dotfiles]
+"~/.zshrc/activate" = { block = "echo activate" }
+EOF2
+EDITOR="$PWD/editor-record" mise dot edit ~/.zshrc/activate
+assert "cat opened" "$PWD/mise.toml"
+EDITOR="$PWD/editor-record" mise dot edit --apply ~/.zshrc/activate
+assert "cat opened" "$PWD/mise.toml"
+assert_contains "cat $HOME/.zshrc" "echo activate"
+
+# Editing one file of a copied group with --apply writes only that file.
+mkdir -p "$DOTS/conf2"
+echo "a" >"$DOTS/conf2/a.conf"
+echo "b" >"$DOTS/conf2/b.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.conf2]
+root = "conf2"
+target = "~/.config/conf2"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+echo "local b" >"$HOME/.config/conf2/b.conf"
+EDITOR="$PWD/editor-write" mise dot edit --apply ~/.config/conf2/a.conf
+assert "cat $HOME/.config/conf2/a.conf" "edited"
+assert "cat $HOME/.config/conf2/b.conf" "local b"
+
+# Unapplying a group leaves a target another group now deploys, even when it
+# still matches what the first group wrote.
+echo "shared" >"$DOTS/shared.conf"
+mkdir -p "$DOTS/first" "$DOTS/second"
+cat <<EOF2 >mise.toml
+[dotfile_groups.first]
+root = "first"
+entries."~/.shared.conf" = { source = "$DOTS/shared.conf", mode = "copy" }
+EOF2
+assert_succeed "mise dot apply --yes"
+sed -i 's/dotfile_groups.first/dotfile_groups.second/; s/root = "first"/root = "second"/' mise.toml
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot unapply --group first --force --yes"
+assert "cat $HOME/.shared.conf" "shared"
+
+# edit --apply narrows to a file the group's own walk deploys: an excluded
+# file or a directory is refused rather than applied around the tree's rules.
+mkdir -p "$DOTS/conf3/sub"
+echo "kept" >"$DOTS/conf3/kept.conf"
+echo "skip" >"$DOTS/conf3/skip.conf"
+echo "nested" >"$DOTS/conf3/sub/nested.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.conf3]
+root = "conf3"
+target = "~/.config/conf3"
+mode = "copy"
+exclude = ["skip.conf"]
+EOF2
+assert_succeed "mise dot apply --yes"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.config/conf3/skip.conf" "is not managed by [dotfiles]"
+assert_fail "test -e $HOME/.config/conf3/skip.conf"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.config/conf3/sub" "does not deploy this file"
+assert "cat $HOME/.config/conf3/sub/nested.conf" "nested"
+
+# A file outside a Git-manifest group's index is not applied either.
+cat <<EOF2 >mise.toml
+[dotfile_groups.extra]
+root = "extra"
+manifest = "git"
+EOF2
+echo "untracked" >"$DOTS/extra/.untracked"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.untracked" "does not deploy this file"
+assert_fail "test -e $HOME/.untracked"
+
+# Tracking a group's file only observes it, so unapply --group still
+# removes it.
+echo "tracked" >"$DOTS/tracked.conf"
+mkdir -p "$HOME/.config/mise"
+cat <<EOF2 >"$HOME/.config/mise/config.toml"
+[dotfiles]
+"~/.tracked.conf" = { mode = "track" }
+EOF2
+mkdir -p "$DOTS/tracked"
+cat <<EOF2 >mise.toml
+[dotfile_groups.tracked]
+root = "tracked"
+entries."~/.tracked.conf" = { source = "$DOTS/tracked.conf", mode = "copy" }
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.tracked.conf" "tracked"
+assert_succeed "mise dot unapply --group tracked --yes"
+assert_fail "test -e $HOME/.tracked.conf"
+rm "$HOME/.config/mise/config.toml"
+
+# A file a still-selected group stops deploying, here by a new exclusion,
+# is orphaned, and a prune removes it.
+mkdir -p "$DOTS/narrow"
+echo "a" >"$DOTS/narrow/a.conf"
+echo "b" >"$DOTS/narrow/b.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.narrow]
+root = "narrow"
+target = "~/.config/narrow"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/narrow/b.conf" "b"
+sed -i 's/mode = "copy"/mode = "copy"\nexclude = ["b.conf"]/' mise.toml
+assert_succeed "mise dot apply --yes"
+assert_contains "mise dot status" "orphaned"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.config/narrow/b.conf"
+assert "cat $HOME/.config/narrow/a.conf" "a"
+
+# A failed apply records only what it wrote: a copy still waiting to be
+# overwritten holds the user's edit, which unapply must not take for mise's.
+# root can write through any mode bits, so nothing fails there
+if [ "$(id -u)" != 0 ]; then
+  mkdir -p "$DOTS/aa" "$DOTS/bb"
+  echo "aa" >"$DOTS/aa/x.conf"
+  echo "bb" >"$DOTS/bb/y.conf"
+  cat <<EOF2 >mise.toml
+[dotfile_groups.aa]
+root = "aa"
+target = "~/.config/aa"
+mode = "copy"
+
+[dotfile_groups.bb]
+root = "bb"
+target = "~/.config/bb"
+mode = "copy"
+EOF2
+  assert_succeed "mise dot apply --yes"
+  echo "my edit" >"$HOME/.config/bb/y.conf"
+  echo "aa changed" >"$DOTS/aa/x.conf"
+  chmod 444 "$HOME/.config/aa/x.conf"
+  chmod 555 "$HOME/.config/aa"
+  assert_fail "mise dot apply --yes"
+  chmod 755 "$HOME/.config/aa"
+  chmod 644 "$HOME/.config/aa/x.conf"
+  assert "cat $HOME/.config/bb/y.conf" "my edit"
+  assert_succeed "mise dot unapply --group bb --yes"
+  assert "cat $HOME/.config/bb/y.conf" "my edit"
+fi
+
+# A copied tree that fails partway records the files it did write, so they
+# are still found once the group is deselected.
+# root can write through any mode bits, so nothing fails there
+if [ "$(id -u)" != 0 ]; then
+  mkdir -p "$DOTS/pp/x" "$DOTS/pp/y"
+  echo "x1" >"$DOTS/pp/x/a.conf"
+  echo "y1" >"$DOTS/pp/y/b.conf"
+  cat <<EOF2 >mise.toml
+[dotfile_groups.pp]
+root = "pp"
+target = "~/.config/pp"
+mode = "copy"
+EOF2
+  assert_succeed "mise dot apply --yes"
+  echo "x2" >"$DOTS/pp/x/a.conf"
+  echo "y2" >"$DOTS/pp/y/b.conf"
+  chmod 444 "$HOME/.config/pp/y/b.conf"
+  chmod 555 "$HOME/.config/pp/y"
+  assert_fail "mise dot apply --yes"
+  chmod 755 "$HOME/.config/pp/y"
+  chmod 644 "$HOME/.config/pp/y/b.conf"
+  assert "cat $HOME/.config/pp/x/a.conf" "x2"
+  # the interrupted write is accepted as it is before going on
+  assert_succeed "mise dot recover --keep-current --yes"
+  cat <<EOF2 >>mise.toml
+
+[bootstrap]
+dotfile_groups = []
+EOF2
+  assert_succeed "mise dot apply --prune --yes"
+  assert_fail "test -e $HOME/.config/pp/x/a.conf"
+fi

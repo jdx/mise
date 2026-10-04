@@ -428,6 +428,10 @@ pub(crate) enum FileTomlEntry {
         /// `dotfiles.relative_symlinks`
         #[serde(default)]
         relative: Option<bool>,
+        /// the dotfile group this entry belongs to, selected with
+        /// `[bootstrap] dotfile_groups`
+        #[serde(default)]
+        group: Option<String>,
     },
 }
 
@@ -521,6 +525,9 @@ pub struct FileRequest {
     /// symlink modes only: links point at the source by a path relative to
     /// the link's directory (see [`relative_link_path`])
     pub relative: bool,
+    /// the dotfile group the entry belongs to: declared with `group` on an
+    /// ordinary entry, or generated from a `[dotfile_groups]` tree
+    pub group: Option<String>,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -537,6 +544,10 @@ struct SymlinkEachState {
     source: PathBuf,
     target: PathBuf,
     links: Vec<ManagedLink>,
+    /// the dotfile group that deployed these links: a deselected group's
+    /// links stay until pruned, so reconciliation leaves them alone
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
 }
 
 #[derive(Debug)]
@@ -610,10 +621,21 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     let trusted_roots = global_composed_roots(config);
+    let selection = crate::system::dotfile_groups::selection(&config.config_files);
+    // a deselected group is kept, disabled, out of the conflict checks: only
+    // the groups a machine applies have to agree with each other
+    let mut deselected = vec![];
     for config_files in config.bootstrap_config_maps() {
-        for request in
+        for mut request in
             files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
+                .into_iter()
+                .chain(crate::system::dotfile_groups::group_requests(config_files))
         {
+            if !crate::system::dotfile_groups::is_selected(&request, selection.as_deref()) {
+                request.enabled = false;
+                deselected.push(request);
+                continue;
+            }
             let siblings = composed.entry(request.target.clone()).or_default();
             if let Some(existing) = siblings
                 .iter_mut()
@@ -632,18 +654,39 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
                     && request.mode != FileMode::Track
                     && (existing.mode != FileMode::SymlinkEach
                         || request.mode != FileMode::SymlinkEach)
+                    // group trees share their target directory, such as
+                    // `~`; the footprint check compares their files
+                    && !(group_tree(existing) && group_tree(&request))
             }) {
                 bail!(
                     "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
                     request.target.display(),
-                    existing.origin.conflict_description(),
-                    request.origin.conflict_description(),
+                    conflict_origin(existing),
+                    conflict_origin(&request),
                 );
             }
             siblings.push(request);
         }
     }
-    Ok(composed.into_values().flatten().collect())
+    let mut requests = composed.into_values().flatten().collect::<Vec<_>>();
+    if let Some(selection) = &selection {
+        let declared = requests.iter().chain(&deselected).cloned().collect_vec();
+        crate::system::dotfile_groups::warn_unknown_selection(selection, &declared);
+    }
+    requests.extend(deselected);
+    Ok(requests)
+}
+
+/// A grouped entry that deploys a directory tree file by file. A grouped
+/// copy whose source does not exist yet counts too: a group names a tree,
+/// so its missing source is a directory to come, not a file.
+fn group_tree(req: &FileRequest) -> bool {
+    req.group.is_some()
+        && match req.mode {
+            FileMode::SymlinkEach => true,
+            FileMode::Copy => req.source.is_dir() || !req.source.exists(),
+            _ => false,
+        }
 }
 
 /// Whether a declaration comes from the system or global layers (or a root
@@ -746,7 +789,9 @@ pub fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()>
         let directory_walker = !source_unavailable
             && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
-        let unresolved_directory = source_unavailable && request.mode == FileMode::SymlinkEach;
+        let unresolved_directory = source_unavailable
+            && (request.mode == FileMode::SymlinkEach
+                || request.mode == FileMode::Copy && group_tree(request));
         let request_leaves = if unresolved_directory {
             vec![]
         } else if directory_walker {
@@ -812,14 +857,24 @@ fn composed_file_footprint_conflict(
     eyre::eyre!(
         "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
         path.display(),
-        first.origin.conflict_description(),
-        second.origin.conflict_description(),
+        conflict_origin(first),
+        conflict_origin(second),
     )
+}
+
+/// Where a conflicting declaration came from, with its group if it has one.
+fn conflict_origin(req: &FileRequest) -> String {
+    match &req.group {
+        Some(group) => format!("{}\n    group: {group}", req.origin.conflict_description()),
+        None => req.origin.conflict_description(),
+    }
 }
 
 /// Returns whether sibling declarations produce the same whole-file resource.
 fn file_requests_match(config: &Config, first: &FileRequest, second: &FileRequest) -> bool {
     first.target == second.target
+        // two groups deploying one tree are two declarations, not a repeat
+        && first.group == second.group
         && first.source == second.source
         && first.content == second.content
         && first.mode == second.mode
@@ -882,7 +937,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    for key in ["permissions", "relative", "dot_prefix"] {
+                    for key in ["permissions", "relative", "dot_prefix", "group"] {
                         if table.contains_key(key) {
                             bail!(
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
@@ -912,6 +967,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "remove_empty"
                             | "dot_prefix"
                             | "relative"
+                            | "group"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -937,9 +993,13 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 remove_empty,
                 dot_prefix,
                 relative,
+                group,
                 ..
             } = entry
             {
+                if group.is_some() {
+                    bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
+                }
                 let permissions_only = permissions.is_some()
                     && source.is_none()
                     && content.is_none()
@@ -1151,7 +1211,7 @@ fn files_from_config_files_with_tracking_roots(
                     continue;
                 }
                 let mut requests = IndexMap::new();
-                if let Some(entry) = parse_file_entry(&key, value, path) {
+                if let Some(entry) = parse_dotfiles_entry(&key, value, path) {
                     let overrides_target = matches!(&entry,
                         FileTomlEntry::Table { variants: Some(vs), .. }
                             if vs.iter().any(|v| v.target.is_some()));
@@ -1202,13 +1262,27 @@ fn files_from_config_files_with_tracking_roots(
             }
             if let Some(requests) = resolved_declarations.remove(&(path, target_raw.clone())) {
                 merged.extend(requests);
-            } else if let Some(entry) = parse_file_entry(&target_raw, value, path) {
+            } else if let Some(entry) = parse_dotfiles_entry(&target_raw, value, path) {
                 merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
             }
         }
     }
     merged.into_values().collect()
 }
+
+/// Parse a `[dotfiles]` whole-file declaration. A group's entries are
+/// declared under `[dotfile_groups.<name>.entries]`, which sets their group;
+/// `[dotfiles]` itself takes no `group`.
+fn parse_dotfiles_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    if value.as_table().is_some_and(|t| t.contains_key("group")) {
+        record_invalid(target, config, GROUP_KEY_IN_DOTFILES);
+        return None;
+    }
+    parse_file_entry(target, value, config)
+}
+
+const GROUP_KEY_IN_DOTFILES: &str =
+    "[dotfiles] entries take no group; declare the entry under [dotfile_groups.<name>.entries]";
 
 /// Parse a whole-file declaration and reject unsupported encryption combinations.
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
@@ -1274,7 +1348,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     || table.contains_key("content")
                     || table.contains_key("permissions")
                     || table.contains_key("relative")
-                    || table.contains_key("dot_prefix"))
+                    || table.contains_key("dot_prefix")
+                    || table.contains_key("group"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -1292,6 +1367,35 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             None
         }
     }
+}
+
+/// Resolve one entry generated from a `[dotfile_groups]` tree with the
+/// same validation as a declared `[dotfiles]` entry.
+pub(crate) fn merge_group_entry(
+    target_raw: String,
+    entry: FileTomlEntry,
+    base: &Path,
+    origin: &ResourceOrigin,
+    merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
+) {
+    merge_file_entry(target_raw, entry, base, origin, merged);
+}
+
+/// Resolve one `[dotfile_groups.<name>.entries]` declaration, completed
+/// from its group, with the same parsing and validation as a `[dotfiles]`
+/// entry.
+pub(crate) fn merge_group_toml_entry(
+    target_raw: String,
+    value: toml::Value,
+    base: &Path,
+    origin: &ResourceOrigin,
+    merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
+) -> Result<()> {
+    let Some(entry) = parse_file_entry(&target_raw, value, &origin.config) else {
+        bail!("entries.{target_raw:?}: not a valid whole-file entry");
+    };
+    merge_file_entry(target_raw, entry, base, origin, merged);
+    Ok(())
 }
 
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
@@ -1318,9 +1422,11 @@ fn merge_file_entry(
         remove_empty,
         dot_prefix,
         relative,
+        group,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1352,6 +1458,7 @@ fn merge_file_entry(
             remove_empty,
             dot_prefix,
             relative,
+            group,
         } => (
             source,
             content,
@@ -1368,6 +1475,7 @@ fn merge_file_entry(
             remove_empty,
             dot_prefix,
             relative,
+            group,
         ),
     };
     // `{ permissions = "0600" }` alone manages only an existing target's
@@ -1383,6 +1491,12 @@ fn merge_file_entry(
     };
     let remove_empty = remove_empty.unwrap_or(false);
     let dot_prefix = dot_prefix.unwrap_or(false);
+    if let Some(group) = &group
+        && let Err(err) = crate::system::dotfile_groups::validate_group_name(group)
+    {
+        record_invalid(&target_raw, &origin.config, err.to_string());
+        return;
+    }
     if encrypt == Some(true) && content.is_some() {
         record_invalid(
             &target_raw,
@@ -1450,11 +1564,12 @@ fn merge_file_entry(
             || remove_empty
             || relative == Some(true)
             || dot_prefix
+            || group.is_some()
         {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, or dot_prefix",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, dot_prefix, or group",
             );
             return;
         }
@@ -1528,6 +1643,7 @@ fn merge_file_entry(
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -1624,6 +1740,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1762,6 +1879,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1787,6 +1905,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1832,6 +1951,7 @@ fn merge_file_entry(
         remove_empty,
         dot_prefix,
         relative: relative_symlinks(mode, relative),
+        group,
     }) {
         merged.insert((req.target.clone(), false), req);
     }
@@ -1955,6 +2075,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         remove_empty,
         dot_prefix,
         relative,
+        group,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -1976,6 +2097,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             remove_empty,
             dot_prefix,
             relative,
+            group,
         }];
     }
 
@@ -2032,6 +2154,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             remove_empty,
             dot_prefix,
             relative,
+            group,
         }];
     }
 
@@ -2073,6 +2196,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 remove_empty,
                 dot_prefix,
                 relative,
+                group: group.clone(),
             })
         })
         .collect()
@@ -2654,6 +2778,7 @@ fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
                 target: lexical_normalize(&target),
             })
             .collect(),
+        group: req.group.clone(),
     })
 }
 
@@ -2666,6 +2791,7 @@ fn active_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
             source: lexical_normalize(&req.source),
             target: lexical_normalize(&req.target),
             links: vec![],
+            group: req.group.clone(),
         })
     }
 }
@@ -2743,12 +2869,24 @@ fn plan_symlink_each_reconciliation(
         })
         .map(active_symlink_each_state)
         .collect::<Result<Vec<_>>>()?;
+    // links of a group that is not active now are left for an explicit
+    // prune (see `dotfile_groups`), not reconciled away
+    let active_groups = active_requests
+        .iter()
+        .filter_map(|req| req.group.as_deref())
+        .collect::<HashSet<_>>();
     let state_dir = dirs::STATE.join("dotfiles");
     let stored = if state_dir.is_dir() {
         state_dir
             .read_dir()?
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| read_symlink_each_state(&entry.path()).ok())
+            .filter(|state| {
+                state
+                    .group
+                    .as_deref()
+                    .is_none_or(|group| active_groups.contains(group))
+            })
             .collect()
     } else {
         vec![]
@@ -3257,7 +3395,7 @@ fn empty_render_target(req: &FileRequest) -> Result<EmptyRenderTarget> {
     })
 }
 
-fn link_points_to(source: &Path, target: &Path) -> bool {
+pub(crate) fn link_points_to(source: &Path, target: &Path) -> bool {
     if !target.is_symlink() {
         return false;
     }
@@ -3591,7 +3729,7 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
 /// Every (source file, target path) pair of a directory-walking entry, for
 /// builds that skip apply's footprint validation: a `dot_prefix` source must
 /// be a directory, and no two of its paths may deploy to the same place.
-pub(crate) fn directory_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+pub fn directory_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     if req.dot_prefix && !req.source.is_dir() {
         return Err(dot_prefix_file_source(req));
     }
@@ -3873,6 +4011,8 @@ pub struct ApplyPlan<'a> {
     /// along; only computed when a removal has directories it could prune
     claimed_dirs: HashSet<PathBuf>,
     reconciliation: SymlinkEachReconciliation,
+    /// every planned request, so grouped ones can record what they deployed
+    requests: &'a [FileRequest],
 }
 
 /// Apply all entries that aren't already in the desired state. Conflicting
@@ -3918,6 +4058,7 @@ pub fn execute_apply(
                 journal::commit_changes(pending);
             }
             record_template_states(&plan.record_templates)?;
+            crate::system::dotfile_groups::record_applied(plan.requests);
         }
         info!("files: all files are applied");
         return Ok(true);
@@ -3981,26 +4122,52 @@ pub fn execute_apply(
         }
     }
     let mut removals = vec![];
-    for (req, rendered) in &plan.todo {
-        recheck_removal(req, rendered.as_deref(), opts.force)?;
-        let pending =
-            journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
-        apply_one(req, rendered.as_deref(), written)?;
-        if apply_removes_target(req, rendered.as_deref()) {
-            removals.push(*req);
+    let mut done = vec![];
+    // the request being applied, and where its writes start in `written`
+    let mut current = None;
+    let applied = (|| -> Result<()> {
+        for (req, rendered) in &plan.todo {
+            current = Some((*req, written.len()));
+            recheck_removal(req, rendered.as_deref(), opts.force)?;
+            let pending =
+                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            apply_one(req, rendered.as_deref(), written)?;
+            if apply_removes_target(req, rendered.as_deref()) {
+                removals.push(*req);
+            }
+            if req.mode == FileMode::SymlinkEach {
+                save_symlink_each_state(req);
+            }
+            journal::commit_changes(pending);
+            if removes_target(req, rendered.as_deref()) {
+                info!(
+                    "files: removed {} (template rendered empty)",
+                    req.target.display_user()
+                );
+            } else {
+                info!("files: {}", describe_applied(req)?);
+            }
+            done.push(*req);
         }
-        if req.mode == FileMode::SymlinkEach {
-            save_symlink_each_state(req);
+        Ok(())
+    })();
+    if let Err(err) = applied {
+        // what the entries before the failure wrote is a group's all the
+        // same. Only those, and entries that needed no change, are
+        // recorded: a target still waiting to be written may hold the
+        // user's edits, which must not be recorded as mise's
+        crate::system::dotfile_groups::record_applied(plan.requests.iter().filter(|req| {
+            done.iter().any(|d| std::ptr::eq(*d, *req))
+                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req))
+        }));
+        // the entry that failed may have written some of its files, such
+        // as part of a copied tree; those, and only those, are recorded
+        if let Some((req, start)) = current
+            && !done.iter().any(|d| std::ptr::eq(*d, req))
+        {
+            crate::system::dotfile_groups::record_written(req, &written[start..]);
         }
-        journal::commit_changes(pending);
-        if removes_target(req, rendered.as_deref()) {
-            info!(
-                "files: removed {} (template rendered empty)",
-                req.target.display_user()
-            );
-        } else {
-            info!("files: {}", describe_applied(req)?);
-        }
+        return Err(err);
     }
     prune_after_apply(removals, &plan);
     record_template_states(&plan.record_templates)?;
@@ -4016,6 +4183,7 @@ pub fn execute_apply(
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
+    crate::system::dotfile_groups::record_applied(plan.requests);
     let applied = plan
         .todo
         .iter()
@@ -4203,6 +4371,7 @@ pub fn plan_apply_with_active<'a>(
         prune_leftovers,
         claimed_dirs,
         reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
+        requests,
     })
 }
 
@@ -6035,6 +6204,7 @@ variants = [{{ {field} = "linux" }}]"#
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         }
     }
 
@@ -6557,6 +6727,7 @@ source = "oldrc""#,
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         };
         let mut first = request(vec!["sessions"], true);
         first.override_from(request(vec!["cache"], true));
@@ -6676,6 +6847,7 @@ source = "oldrc""#,
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         }
     }
 
@@ -6984,6 +7156,7 @@ source = "oldrc""#,
                 source: PathBuf::from(source).join(leaf),
                 target: target.join(leaf),
             }],
+            group: None,
         };
         let home = state("/repo/home", ".zshrc");
         let work = state("/repo/work", ".gitconfig");
@@ -7007,6 +7180,7 @@ source = "oldrc""#,
                 source: PathBuf::from("/repo/home/.zshrc"),
                 target: target.join(".zshrc"),
             }],
+            group: None,
         };
         let active = SymlinkEachState {
             links: vec![],
@@ -7046,6 +7220,7 @@ source = "oldrc""#,
                 source: PathBuf::from("/repo/home/config/../.zshrc"),
                 target: PathBuf::from("/home/example/./.zshrc"),
             }],
+            group: None,
         };
 
         assert_eq!(
@@ -7058,6 +7233,7 @@ source = "oldrc""#,
                     source: PathBuf::from("/repo/home/.zshrc"),
                     target: PathBuf::from("/home/example/.zshrc"),
                 }],
+                group: None,
             }
         );
     }
@@ -7842,6 +8018,20 @@ source = "oldrc""#,
                 .unwrap_err()
                 .to_string();
         assert!(err.contains("whole-file entries"), "{err}");
+    }
+
+    #[test]
+    fn incoming_dotfiles_entries_take_no_group() {
+        for body in [
+            "[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"work\" }\n",
+            "[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", group = \"work\" }\n",
+        ] {
+            let err = format!("{:#}", incoming(body).unwrap_err());
+            assert!(
+                err.contains("take no group") || err.contains("whole-file entries"),
+                "{err}"
+            );
+        }
     }
 
     /// The chmod acts on a descriptor opened without following a link, so a
@@ -8704,6 +8894,7 @@ source = "oldrc""#,
                 stale_links: vec![],
                 targets: vec![],
             },
+            requests: &[],
         };
         prune_after_apply([], &plan);
         assert!(!newapp.exists());

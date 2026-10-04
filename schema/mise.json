@@ -6570,6 +6570,72 @@
         ]
       }
     },
+    "dotfile_groups": {
+      "type": "object",
+      "description": "named directory trees of dotfiles, applied with `mise dotfiles apply` or `mise bootstrap` while [bootstrap] dotfile_groups selects them (or is unset)",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root"],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "the directory tree the group deploys; a relative path resolves against dotfiles.root"
+          },
+          "target": {
+            "type": "string",
+            "description": "target directory, absolute or starting with ~/",
+            "default": "~"
+          },
+          "mode": {
+            "type": "string",
+            "description": "how the tree is deployed",
+            "enum": ["symlink-each", "copy", "symlink"],
+            "default": "symlink-each"
+          },
+          "exclude": {
+            "type": "array",
+            "description": "glob patterns of source paths to skip, as for [dotfiles] exclude",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dot_prefix": {
+            "type": "boolean",
+            "default": false,
+            "description": "deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles"
+          },
+          "manifest": {
+            "type": "string",
+            "description": "source manifest used to select managed files from the tree",
+            "enum": ["git"]
+          },
+          "relative": {
+            "type": "boolean",
+            "description": "link by a path relative to the link's directory; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+          },
+          "entries": {
+            "type": "object",
+            "description": "whole-file entries for parts of the tree, keyed by target path inside the group's target and written like [dotfiles] entries; each is cut out of the walk. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "source path, relative to the group root"
+                },
+                {
+                  "type": "object",
+                  "description": "whole-file entry, as in [dotfiles]"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
     "bootstrap": {
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
@@ -6722,6 +6788,14 @@
               }
             },
             "additionalProperties": false
+          }
+        },
+        "dotfile_groups": {
+          "type": "array",
+          "description": "the dotfile groups this machine applies; when unset, every group applies. Entries without a group always apply, and a more local config's list replaces the others",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
           }
         },
         "config_roots": {

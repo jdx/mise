@@ -452,6 +452,8 @@ pub struct MiseToml {
     #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
     #[serde(default)]
+    dotfile_groups: Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig>,
+    #[serde(default)]
     history: Option<crate::system::history::config::HistoryTomlConfig>,
     #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
@@ -1972,6 +1974,12 @@ impl ConfigFile for MiseToml {
     fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
         self.dotfiles.clone()
     }
+
+    fn dotfile_groups_config(
+        &self,
+    ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
+        self.dotfile_groups.clone()
+    }
 }
 
 impl MiseToml {
@@ -2160,6 +2168,7 @@ impl Clone for MiseToml {
             bootstrap: self.bootstrap.clone(),
             doctor: self.doctor.clone(),
             dotfiles: self.dotfiles.clone(),
+            dotfile_groups: self.dotfile_groups.clone(),
             history: self.history.clone(),
             vars: self.vars.clone(),
             monorepo_root: self.monorepo_root,

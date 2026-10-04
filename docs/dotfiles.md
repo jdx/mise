@@ -650,7 +650,162 @@ unchanged:
 `dot-bashrc` and `.bashrc`, apply fails and reports both paths. `dot_prefix`
 requires a directory source and `symlink-each` or `copy` mode. `mise dot add` refuses to capture into
 a `dot_prefix` entry because it would copy target names into the source; edit
-the source directly instead.
+the source directly instead. A [group](#groups) with `dot_prefix` does accept
+new files and stores them under `dot-` names.
+
+## Groups {#groups}
+
+A **group** is a named directory tree of dotfiles, such as one per
+application or one per machine role, like the packages of GNU Stow. Each
+machine chooses which groups it applies. Define a group with a
+`[dotfile_groups.<name>]` table that names its `root`:
+
+```toml
+[dotfile_groups.zsh]
+root = "zsh"           # links ~/.dotfiles/zsh/.zshrc to ~/.zshrc
+
+[dotfile_groups.home]
+root = "home"          # ~/.dotfiles/home
+target = "~"
+mode = "symlink-each"
+dot_prefix = true
+exclude = ["README.md"]
+```
+
+mise walks the root and deploys each file at the same path under the
+target. You do not list the files.
+
+| Key          | Default        | Meaning                                                                                               |
+| ------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
+| `root`       | (required)     | The directory tree to deploy. A relative path starts at `dotfiles.root` (`~/.dotfiles`).              |
+| `target`     | `~`            | The directory the tree deploys into.                                                                  |
+| `mode`       | `symlink-each` | `symlink-each` links each file, `copy` copies each file, `symlink` links the whole tree.              |
+| `exclude`    |                | Root paths to skip, matched as in [Excluding files](#excluding-files).                                |
+| `dot_prefix` | `false`        | Deploy `dot-<name>` names as `.<name>`, as in [Visible source names](#dot-prefix).                    |
+| `manifest`   |                | `"git"` manages only files in Git's index, as in [Git-tracked directories](#git-tracked-directories). |
+| `relative`   |                | Link by relative paths, as in [Relative symlinks](#relative).                                         |
+| `entries`    |                | Whole-file entries for parts of the tree, described below.                                            |
+
+A group's relative `root` always starts at `dotfiles.root`, not at the
+directory of the config file that declares it. If a more local config file
+defines a group with the same name, its table replaces the whole group.
+
+### Group entries
+
+`[dotfile_groups.<name>.entries]` describes parts of the tree with the same
+syntax as [whole-file entries](#whole-file-entries), keyed by target path.
+Each entry is cut out of the walk, so it decides how its path is deployed.
+For example, to link a directory as a whole instead of each file in it, so
+that files the application creates there also land in your dotfiles:
+
+```toml
+[dotfile_groups.home]
+root = "home"
+dot_prefix = true
+
+[dotfile_groups.home.entries]
+"~/.config/kitty" = { mode = "symlink" }                     # ~/.config/kitty -> home/dot-config/kitty
+"~/.ssh/config" = { mode = "copy", permissions = "0600" }
+"~/.gitconfig" = { source = "git/config.tmpl", mode = "template" }
+"~/.kitty-old.conf" = { mode = "absent" }
+```
+
+- An entry without `source` finds it under the root, at its path inside the
+  group's target: `~/.config/kitty` in the `home` group above reads
+  `~/.dotfiles/home/dot-config/kitty`.
+- A relative `source` starts at the root. When it lies inside the root, or
+  inside the tree of another entry that walks a directory, that walk skips
+  it, so `git/config.tmpl` is rendered to `~/.gitconfig` and not also linked
+  to `~/git/config.tmpl`.
+- An entry without `mode` deploys like the group: a directory the group's
+  way, a file as one link, or as one copy in a `copy` group.
+- An entry that walks a directory inherits the group's `dot_prefix` and
+  `manifest`, and the group's `exclude` patterns that contain no `/`, unless
+  it sets its own.
+- Every entry, including each destination its `variants` name, must lie
+  inside the group's target. An entry beneath another
+  walking entry is cut out of that one too. An entry beneath a directory
+  linked as a whole would change a file in the root itself, so it is
+  reported as a conflict before anything is written.
+
+`[dotfiles]` entries belong to no group and take no `group` key. Declare an
+entry under its group instead.
+
+### Selecting groups
+
+All groups apply until you select some. Use `[bootstrap] dotfile_groups` to
+choose which groups a machine applies, for example in a machine's
+`config.local.toml`:
+
+```toml
+[bootstrap]
+dotfile_groups = ["home", "zsh"]
+```
+
+A more local config file's list replaces the others. `[dotfiles]` entries
+always apply. mise warns when the list names a group that nothing declares.
+
+Two selected groups cannot deploy the same target file. Nor can one group
+link a directory as a whole while another places files in that directory.
+Both are reported as conflicts naming the two groups, before anything is
+written.
+
+### Deselecting and removing groups
+
+Deselecting a group, or deleting its table, leaves its files in place.
+mise records what each group deployed under `$MISE_STATE_DIR/dotfiles/groups`,
+so it still knows those files: `mise dot status` lists them as `orphaned`.
+So is a file that a selected group stops deploying, for example after a new
+`exclude` pattern, or the copy of a source file you deleted. A file that an
+active entry still deploys is never orphaned, even when the entry has moved
+to another group. Neither are the files of a group that mise cannot read,
+such as one missing its `root`: mise warns about the group instead.
+
+```sh
+mise dot apply --prune          # apply, then remove orphaned files
+mise dot unapply --group work   # remove one group's files
+```
+
+`--prune` and `unapply --group` remove a link only while it still points at
+the source mise linked, and a copied file only while it still holds what mise
+wrote. They leave anything you changed with a warning; pass `--force` to
+remove changed copies too. Directories they empty are removed, up to the
+target of the group or entry that deployed the file. `unapply --group` works
+whether or not the group is still selected or declared. `--prune` asks
+before removing anything unless you pass `--yes`, and covers every group,
+so it takes no target arguments.
+
+Removal compares files with what mise last wrote, not with the current
+source, so editing a group's root does not stop `unapply --group` from
+removing an untouched copy. Neither command removes a path that resolves
+through a linked directory, for example after you link a directory as a
+whole, or a path inside `dotfiles.root`, even with `--force`, so they never
+delete source files.
+
+### Adding files to a group
+
+`mise dot add` captures a file inside a group's target into that group's
+root, without writing an entry. In a `dot_prefix` group the source gets the
+`dot-` name:
+
+```sh
+mise dot add ~/.config/starship.toml   # -> ~/.dotfiles/home/dot-config/starship.toml
+```
+
+When several groups contain the path, mise picks the one whose target is
+deepest. Among groups at the same depth, such as two groups that both deploy
+into `~`, the one whose root already holds the file wins. For a new file,
+choose one with `--group`:
+
+```sh
+mise dot add --group zsh ~/.zprofile
+```
+
+`mise dot edit` opens the group's source file for a path inside a group's
+tree, and takes `--group` the same way when it has to create the file. A
+group with `manifest = "git"` deploys only files in Git's index, so `add`
+refuses to capture into it. Copy the file into the root and `git add` it
+instead.
 
 ## Edit entries
 
@@ -787,7 +942,10 @@ mise dot apply --dry-run --verbose # include diff-like details
 mise dot apply --yes               # skip the confirmation prompt
 mise dot apply --force             # also replace conflicting files
 
+mise dot apply --prune             # also remove files of deselected groups
+
 mise dot unapply             # remove identifiable managed targets
+mise dot unapply --group work  # remove one dotfile group's files
 mise dot unapply --dry-run   # preview removals
 mise dot unapply --force     # also remove modified/ambiguous targets
 

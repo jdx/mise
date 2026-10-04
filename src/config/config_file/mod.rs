@@ -248,6 +248,12 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn dotfiles_config(&self) -> Option<crate::system::DotfilesTomlConfig> {
         None
     }
+
+    fn dotfile_groups_config(
+        &self,
+    ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
+        None
+    }
 }
 
 impl dyn ConfigFile {

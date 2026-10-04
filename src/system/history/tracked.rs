@@ -3496,6 +3496,7 @@ mod tests {
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: None,
             }]);
         }
         assert!(set.entries.is_empty());
@@ -4670,6 +4671,7 @@ mod tests {
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         }]);
         assert_eq!(set.manifest.enrollment.len(), 1);
         assert_eq!(

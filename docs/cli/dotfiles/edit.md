@@ -19,6 +19,7 @@ Edit a managed dotfile source
 - **`-m --mode <MODE>`** — Dotfile mode to use if the target is not yet managed
 - **`-s --source <PATH>`** — Source path to use if the target is not yet managed
 - **`-y --yes`** — Skip the confirmation prompt when adding an unmanaged target
+- **`--group <NAME>`** — Dotfile group whose tree holds the target, when several groups deploy into its directory
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
