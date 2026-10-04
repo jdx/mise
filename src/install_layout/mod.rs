@@ -8,6 +8,9 @@
 //!   platform, install-affecting options, pinned inputs) into a stable name.
 //! * [`label`] derives the readable half of the directory name.
 //! * [`record`] defines the on-disk receipt, catalog record and selection.
+//! * [`resolver`] connects a tool version to all of the above: it computes its
+//!   identity, locates or allocates its directory, and keeps links, receipt and
+//!   selection in step.
 //! * [`catalog`] allocates collision-free directory names under
 //!   `installs/.mise/` and remembers unlocked selections.
 //!
@@ -17,3 +20,4 @@ pub(crate) mod catalog;
 pub(crate) mod identity;
 pub(crate) mod label;
 pub(crate) mod record;
+pub(crate) mod resolver;

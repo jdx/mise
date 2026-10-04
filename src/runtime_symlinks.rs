@@ -143,8 +143,9 @@ fn rebuild_symlinks_in_dir(
                 {
                     continue;
                 }
-                trace!("Removing existing symlink: {}", from.display());
-                file::remove_dir_link(&from)?;
+                // `make_dir_link` below replaces it, keeping the old link if the
+                // new one cannot be made.
+                trace!("Retargeting existing symlink: {}", from.display());
             } else if from
                 .file_name()
                 .zip(to.file_name())
@@ -222,6 +223,19 @@ fn list_symlinks_for_dir(
                 continue;
             };
             let install_path = tv.install_path();
+            // An identity-layout install is a hashed directory in the installs root;
+            // the pin points at the version link beside it, which names the same
+            // installation, never at the hash.
+            if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
+                let name = tv.tv_pathname();
+                if installs_dir == tv.ba().installs_path()
+                    && install_path.exists()
+                    && installs_dir.join(&name).exists()
+                {
+                    symlinks.insert(from, PathBuf::from(".").join(name));
+                }
+                continue;
+            }
             if install_path.parent() != Some(installs_dir) || !install_path.exists() {
                 continue;
             }
@@ -244,7 +258,7 @@ fn list_symlinks_for_dir(
 fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
-        .filter(|v| !is_install_incomplete(backend, v))
+        .filter(|v| !is_install_incomplete(backend, installs_dir, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
@@ -253,8 +267,14 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
 /// Whether version dir `v` belongs to an install that never finished. The
 /// marker is keyed by the tool's name, not by the install dir's basename, which
 /// install state can map to a differently named directory.
-fn is_install_incomplete(backend: &Arc<dyn Backend>, v: &str) -> bool {
-    install_state::incomplete_file_path(backend.ba(), v).exists()
+///
+/// An identity-layout version is a link, and its marker is keyed by the
+/// installation the link names.
+fn is_install_incomplete(backend: &Arc<dyn Backend>, installs_dir: &Path, v: &str) -> bool {
+    let key = crate::install_layout::resolver::link_target(&installs_dir.join(v))
+        .and_then(|install| install.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| v.to_string());
+    install_state::incomplete_file_path(backend.ba(), &key).exists()
 }
 
 /// Real install directories a rebuild must never replace with a selector
@@ -270,7 +290,7 @@ fn concrete_installs_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> 
         .chain(
             real_installs_in_dir(installs_dir)
                 .into_iter()
-                .filter(|v| is_install_incomplete(backend, v)),
+                .filter(|v| is_install_incomplete(backend, installs_dir, v)),
         )
         .collect()
 }
@@ -460,6 +480,11 @@ fn missing_symlinks_in_dir(installs_dir: &Path) -> Result<Vec<PathBuf>> {
         if let Some(target) = runtime_symlink_target(&path)
             && !installs_dir.join(target).exists()
         {
+            missing.push(path);
+        } else if crate::install_layout::resolver::is_compat_link_shape(&path)
+            && crate::install_layout::resolver::link_target(&path).is_none()
+        {
+            // A version link into the identity layout whose installation is gone.
             missing.push(path);
         }
     }

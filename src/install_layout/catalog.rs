@@ -89,6 +89,29 @@ impl Catalog {
         (record.digest == digest).then_some(record)
     }
 
+    /// The record whose full digest is `digest`, for a backend.
+    pub(crate) fn record_by_digest(&self, backend: &str, digest: &str) -> Option<IdentityRecord> {
+        let record = read_record(&self.bucket_dir(backend).join(format!("{digest}.toml")))?;
+        (record.digest == digest && record.identity.backend == backend).then_some(record)
+    }
+
+    /// The installation an unlocked request's selection points at.
+    pub(crate) fn selected_record(&self, key: &InstallIdentity) -> Option<IdentityRecord> {
+        let selection = self.selection(key)?;
+        self.record_by_digest(&key.backend, &selection.selected)
+    }
+
+    /// The directory an identity would first be offered, without reserving it.
+    /// Used to report where an install that does not exist yet would go.
+    pub(crate) fn tentative_dir(&self, identity: &InstallIdentity) -> PathBuf {
+        let digest = identity.digest().to_base32();
+        self.root.join(format!(
+            "{}-{}",
+            label_for(&identity.backend),
+            &digest[..SHORT_CHARS]
+        ))
+    }
+
     /// Every record for one backend: all the installations (live or pruned) of
     /// every version of a tool.
     pub(crate) fn records_for_backend(&self, backend: &str) -> Vec<IdentityRecord> {

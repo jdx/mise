@@ -35,6 +35,8 @@ pub(crate) fn label_for(backend: &str) -> String {
     }
 
     // 3. Drop a leading `@`, lowercase, make it filesystem safe, cap it.
+    // A leading dot would make the directory hidden, and `.mise` is reserved
+    // for the catalog, so dots are dropped from the front (`.dotfiles` -> `dotfiles`).
     let label: String = segment
         .trim_start_matches('@')
         .to_lowercase()
@@ -43,6 +45,7 @@ pub(crate) fn label_for(backend: &str) -> String {
             'a'..='z' | '0'..='9' | '.' | '_' | '-' => c,
             _ => '-',
         })
+        .skip_while(|c| *c == '.')
         .take(MAX_LABEL_CHARS)
         .collect();
     if label.is_empty() {
@@ -104,6 +107,15 @@ mod tests {
         let long = label_for("github:o/abcdefghijklmnopqrstuvwxyz0123456789");
         assert_eq!(long, "abcdefghijklmnopqrstuvwx");
         assert_eq!(long.chars().count(), MAX_LABEL_CHARS);
+    }
+
+    #[test]
+    fn leading_dots_are_dropped_so_the_directory_is_not_hidden() {
+        assert_eq!(label_for("github:o/.dotfiles"), "dotfiles");
+        assert_eq!(label_for("github:o/...x"), "x");
+        assert_eq!(label_for("github:o/.mise"), "mise");
+        assert_eq!(label_for("github:o/."), "tool");
+        assert_eq!(label_for("github:o/..."), "tool");
     }
 
     #[test]

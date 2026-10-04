@@ -9,7 +9,6 @@ use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
 use std::sync::Mutex;
-#[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -1179,11 +1178,30 @@ pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
 
 #[cfg(windows)]
 pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let target = resolve_relative_link_target(link, target.to_path_buf());
     let target = target.absolutize()?.into_owned();
-    remove_dir_link(link)?;
-    make_symlink(&target, link)?;
-    Ok(())
+    if fs::symlink_metadata(link).is_err() {
+        make_symlink(&target, link)?;
+        return Ok(());
+    }
+    // Replacing a link: build the new one beside it first, so a failure to
+    // create it leaves the working link in place instead of an empty slot.
+    let name = link.file_name().and_then(|n| n.to_str()).unwrap_or("link");
+    let tmp = link.with_file_name(format!(
+        ".{name}.tmp.{}.{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    make_symlink(&target, &tmp)?;
+    let swapped = remove_dir_link(link).and_then(|()| {
+        fs::rename(&tmp, link)
+            .wrap_err_with(|| format!("failed to move {} to {}", tmp.display(), link.display()))
+    });
+    if swapped.is_err() {
+        let _ = remove_symlink_or_junction(&tmp);
+    }
+    swapped
 }
 
 /// Removes a link made by [`make_dir_link`], or an older text-file alias.

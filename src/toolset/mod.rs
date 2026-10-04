@@ -320,7 +320,13 @@ impl Toolset {
                             // must match `tv.request.version()` to stay consistent
                             // with the old `.resolve()` path.
                             let version = req.version();
-                            versions.push((b.clone(), ToolVersion::new(req, version)));
+                            let mut tv = ToolVersion::new(req, version);
+                            // The name came from a version link or a receipt, so the
+                            // installation it stands for is known exactly; it cannot
+                            // be recomputed from the request, which carries no options.
+                            tv.install_path =
+                                crate::install_layout::resolver::physical_dir(b.ba(), &v);
+                            versions.push((b.clone(), tv));
                         }
                         Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), v, e),
                     }
