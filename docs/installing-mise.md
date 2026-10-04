@@ -12,13 +12,13 @@ Choose one installation method, verify the executable, then configure your
 shell if you want automatic project activation. Use the same package manager
 for future updates when it owns your mise installation.
 
-| Platform         | Recommended    | Alternative     |
-| ---------------- | -------------- | --------------- |
-| macOS            | mise.run       | Homebrew        |
-| Linux            | mise.run       | System packages |
-| Windows          | Scoop          | winget          |
-| Any (Rust users) | cargo binstall | cargo install   |
-| CI/Docker        | mise.run       | GitHub Releases |
+| Platform         | Recommended     | Alternative     |
+| ---------------- | --------------- | --------------- |
+| macOS            | mise.run        | Homebrew        |
+| Linux            | mise.run        | System packages |
+| Windows          | Scoop           | winget          |
+| Any (Rust users) | cargo binstall  | cargo install   |
+| CI/Docker        | Official images | packslip        |
 
 The official single-binary release installed by `mise.run` is the preferred method on macOS and
 Linux. To install that release without running a script, use [packslip](#packslip). These binaries are built with mise's optimized release profile and can be updated immediately
@@ -68,7 +68,7 @@ configuration.
 ::: tip Keep mise up to date
 mise connects to many external registries and backends, such as aqua, GitHub releases, language package registries, and system package managers. Those services change over time, so mise works best when the CLI is kept on a recent version.
 
-Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, locking users to one mise version is generally discouraged. A fixed mise version can be useful in controlled CI builds, but it needs a
+Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. A [pinned packslip bootstrapper](#pin-the-bootstrapper-and-let-mise-float) lets you fix the installation mechanism while allowing mise to stay current. A fixed mise version can be useful in controlled CI builds, but it needs a
 planned update process as upstream registries evolve. `min_version` lets a
 project require a feature while allowing users to keep their CLI current.
 :::
@@ -215,31 +215,74 @@ If you need something else, compile it with `cargo install mise` (see below).
 
 ### packslip {#packslip}
 
-[packslip](https://packslip.dev) installs mise's signed release without
-running an install script. It checks the release's Sigstore signature and
+[packslip](https://packslip.dev) installs mise's signed upstream release without
+running a mise install script. It verifies the Sigstore signature and
 transparency-log entry against mise's GitHub repository, checks the archive's
-digest, and links `mise` into `~/.local/bin` (`/usr/local/bin` as root).
-packslip 1.5.1 or newer is required.
+digest and size, and exposes the `mise` executable from the complete archive.
+Use this method when you want an authenticated standalone install or a fixed
+bootstrapper that can install newer mise releases.
+
+Use packslip 1.5.1 or newer on Linux x64/arm64, macOS arm64, or Windows x64/arm64.
+Intel Macs need another installation method.
 
 Install packslip from its signed
 [APT or RPM repository](https://packslip.dev/docs/distributions/) or one of the
 other methods in its [getting started guide](https://packslip.dev/docs/getting-started/),
-then install mise:
+then install mise. For an ordinary Unix user:
 
 ```sh
 packslip install github.com/jdx/mise --pin ps1_nlhmwtfeufglxv5myvwvronk7a
-~/.local/bin/mise --version   # /usr/local/bin/mise --version as root
+~/.local/bin/mise --version
 ```
 
-The pin is the fingerprint of mise's GitHub repository. It stays the same
+packslip prints the installed command paths. A Unix user gets `~/.local/bin/mise`;
+root gets `/usr/local/bin/mise`. It does not change PATH or your shell files.
+Continue with [shell setup](#shells) for automatic project activation.
+
+The signer pin is the fingerprint of mise's GitHub repository. It stays the same
 across renames, transfers, and new releases, and a different repository that
 takes the name does not match it. Without `--pin`, packslip trusts the
 repository GitHub reports for the name on first use and holds later installs
 on that machine to it.
 
-`mise self-update` works in this installation. Running
-`packslip install github.com/jdx/mise` again replaces it with the newest
-release. Use `--version` to choose a release.
+Omitting `--version`, or passing `--version latest`, requests the current stable
+release. To fix mise too:
+
+```sh
+packslip install github.com/jdx/mise --version 2026.10.1 \
+  --pin ps1_nlhmwtfeufglxv5myvwvronk7a
+```
+
+`mise self-update` works through this installation. You can also rerun
+`packslip install` to replace mise with the release you request. See
+[packslip's install guide](https://packslip.dev/docs/bootstrap/) for system
+scope, destination overrides, and trust settings.
+
+#### Pin the bootstrapper and let mise float
+
+The packslip version, mise version, and signer pin control different things.
+You can keep a reviewed packslip binary or container digest fixed while
+omitting `--version` to install current mise releases. The signer pin continues
+to authenticate mise as new versions are published; it does not freeze a
+release. This is useful for a base image, CI bootstrap, or distribution package
+that should not need a new installer for each mise release.
+
+Pin packslip with its
+[versioned install script or container digest](https://packslip.dev/docs/getting-started/#install-packslip).
+The [Docker cookbook example](/mise-cookbook/docker.html#bootstrap-with-packslip)
+shows a complete pinned-verifier, floating-mise setup and how to rebuild it
+without reusing a cached installation. packslip does not update itself or
+automatically update mise; rerun installation, use `mise self-update`, or enable
+mise's [automatic updates](#installation-methods).
+
+The stable packslip version 1 format allows the bootstrapper and mise to evolve
+independently. Security fixes or new signing formats can still require a verifier
+update; an unchanged bootstrapper is not guaranteed to work forever. See
+[packslip's compatibility policy](https://packslip.dev/docs/compatibility/#maintaining-packaged-verifiers).
+
+Once mise is installed, its [packslip backend](/dev-tools/backends/packslip.html)
+can install other tools with commands such as `mise use -g packslip:github.com/jdx/hk`.
+That backend is built into mise and does not need a separate packslip executable.
 
 ### apk
 

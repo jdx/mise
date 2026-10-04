@@ -5,8 +5,10 @@ description: "Use mise in Docker: choose an official image, pin releases, instal
 # Docker Cookbook
 
 Use the Debian image to run mise and install project tools, or copy the static
-mise binary into an existing image. This cookbook also covers verified downloads
-and shared tool installations for development containers.
+mise binary into an existing image. To pin a small bootstrapper while allowing
+mise to float, [install it with packslip](#bootstrap-with-packslip). This cookbook
+also covers verified downloads and shared tool installations for development
+containers.
 
 ## Official images
 
@@ -134,8 +136,66 @@ Docker build shells do not run interactive activation hooks.
 ## Installing mise yourself
 
 If you need to install mise directly into an existing base image, choose a
-package repository, a verified release download, a committed wrapper, or the
+package repository, packslip, a verified release download, a committed wrapper, or the
 install script below.
+
+### Bootstrap with packslip
+
+Use [packslip](/installing-mise.html#packslip) when you want to fix the verifier
+in a Dockerfile while allowing mise to follow its upstream releases. This
+separates the bootstrapper's version from the mise version you install.
+packslip verifies the release's signature,
+publisher, and archive bytes without running a mise install script.
+
+This example pins packslip 1.5.1 by its multi-platform image digest and copies
+its CA bundle for HTTPS. packslip handles downloads and archive extraction, so
+the bootstrap needs no curl, tar, or additional package manager:
+
+```Dockerfile [Dockerfile]
+FROM ghcr.io/jdx/packslip:1.5.1@sha256:fcbbcb85ab02d433d6108c212ffc7eaeda0bbafca4b82111c452568ac680b9c4 AS bootstrap
+FROM debian:13-slim
+
+COPY --from=bootstrap /packslip /usr/local/bin/packslip
+COPY --from=bootstrap /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+ARG MISE_VERSION=latest
+RUN packslip install github.com/jdx/mise --version "$MISE_VERSION" \
+      --pin ps1_nlhmwtfeufglxv5myvwvronk7a \
+    && mise --version
+
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV PATH="/mise/shims:$PATH"
+
+CMD ["mise", "--version"]
+```
+
+The digest pins packslip for both `linux/amd64` and `linux/arm64`. The signer
+pin identifies mise's GitHub repository and stays valid as it publishes new
+releases. `MISE_VERSION=latest` lets mise float while packslip stays fixed.
+To fix mise as well, pass `--build-arg MISE_VERSION=2026.10.1`.
+
+Build from a directory containing this Dockerfile:
+
+```sh
+docker build --no-cache -t mise-bootstrap .
+docker run --rm mise-bootstrap
+```
+
+Docker caches `RUN` layers, including the result of an installation that asks
+for `latest`. Rebuild without that cached layer when you want packslip to check
+for a new release. A running container does not automatically update mise.
+The stable manifest format lets you retain the bootstrapper across ordinary
+mise updates, but [security or format changes](https://packslip.dev/docs/compatibility/#maintaining-packaged-verifiers)
+may still require a packslip update.
+
+Root installs mise's complete tree under `/opt/packslip` and exports a symlink
+in `/usr/local/bin`. If you move this installation into another build stage,
+copy the tree as well as the symlink. To install project tools, continue with
+[Installing project tools](#installing-project-tools) and add their OS
+dependencies as needed. Use `mise exec` or `mise run` in containers; shell
+activation is not required.
 
 ### Distribution packages
 
