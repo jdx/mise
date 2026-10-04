@@ -1494,13 +1494,13 @@ fn cmd_task_command(mise: &str, task: &str, args: &[String]) -> String {
     let mut run = format!(
         "{} run {}",
         presets::cmd_program(mise),
-        presets::cmd_quote(task)
+        crate::path::escape_arg_for_cmd_line(task)
     );
     if !args.is_empty() {
         run.push_str(" --");
         for arg in args {
             run.push(' ');
-            run.push_str(&presets::cmd_quote(arg));
+            run.push_str(&crate::path::escape_arg_for_cmd_line(arg));
         }
     }
     run
@@ -2046,7 +2046,7 @@ mod tests {
         let args = ["--port".to_string(), "it's 3000".into(), "a&b".into()];
         assert_eq!(
             cmd_task_command(mise, "dev", &args),
-            r#""C:\Program Files\mise\mise.exe" run dev -- --port ^"it's 3000^" ^"a^&b^""#
+            r#""C:\Program Files\mise\mise.exe" run dev -- --port "it's 3000" "a&b""#
         );
         // A quote inside an argument must not end cmd's quoting, and `%VAR%` is not expanded.
         let args = [r#"a" & echo x & "b"#.to_string(), "%APPDATA%".into()];
