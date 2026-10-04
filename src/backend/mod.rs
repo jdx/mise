@@ -4117,7 +4117,11 @@ pub trait Backend: Debug + Send + Sync {
         // complete), the version link for the requesting tool and the unlocked
         // selection.
         if let Some(allocated) = &allocated {
-            crate::install_layout::resolver::finish(&tv, allocated)?;
+            crate::install_layout::resolver::finish(
+                &tv,
+                allocated,
+                ctx.force || rolling_reinstall,
+            )?;
         }
         // Everything below that can fail runs with the install already published,
         // so a failure withdraws it again instead of leaving a receipt behind.
@@ -4161,7 +4165,12 @@ pub trait Backend: Debug + Send + Sync {
             }
             return Err(err);
         }
-        ctx.pr.finish_with_message("installed".to_string());
+        // A refresh of an unlocked request changes what every project that makes the
+        // same request selects; say so rather than leave it implied.
+        let selection_note = (ctx.force && allocated.as_ref().is_some_and(|a| a.selects.is_some()))
+            .then_some("installed (updated the shared selection for this version)");
+        ctx.pr
+            .finish_with_message(selection_note.unwrap_or("installed").to_string());
         Ok(tv)
     }
 

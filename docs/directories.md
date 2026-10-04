@@ -88,6 +88,14 @@ Stores installed tool versions. For example, `mise install node@24.0.0` installs
 symlinks that point at concrete installations. Use `mise where node` or `mise which node` to
 find the selected installation or executable, rather than constructing a path from an alias.
 
+With the experimental [install layout](/dev-tools/install-layout.html)
+(`experimental = true`), new installations go into `installs/<label>-<hash>/`
+instead, such as `installs/age-hlencrst`, and `installs/age/1.2.1` becomes a link
+to that directory. The `installs/.mise/` directory holds the catalog that
+remembers each installation's directory and which installation an unlocked request
+selected. It is durable metadata, not a cache: keep it with the installs it
+describes. Installations made before you enabled the layout stay where they are.
+
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 
 `MISE_INSTALLS_DIR` is read when mise starts. Set it in the environment before invoking mise and keep

@@ -742,16 +742,28 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
 /// compatibility link for the requesting tool at it, and remember the unlocked
 /// selection. The receipt goes in last; its presence is what marks the
 /// installation complete.
-pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
+///
+/// `adopt_new_artifact` is an explicit refresh (`--force`, a rolling update). Without
+/// it, an installation restored under a recorded identity must be made from the
+/// artifact that identity recorded: a different one is an error, never a silent
+/// replacement of what the selection stood for.
+pub(crate) fn finish(
+    tv: &ToolVersion,
+    allocated: &Allocated,
+    adopt_new_artifact: bool,
+) -> Result<()> {
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let mut record = allocated.record.clone();
-    if let Some(checksum) = tv
+    let acquired = tv
         .backend()
         .ok()
         .map(|b| b.get_platform_key())
         .and_then(|platform| tv.lock_platforms.get(&platform))
-        .and_then(|p| p.checksum.clone())
-    {
+        .and_then(|p| p.checksum.clone());
+    if allocated.reused && !adopt_new_artifact {
+        check_restored_artifact(tv, &record, acquired.as_deref())?;
+    }
+    if let Some(checksum) = acquired {
         record
             .provenance
             .artifacts
@@ -780,6 +792,37 @@ pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
     LOCATE_CACHE.clear();
     INSTALLS_OF_CACHE.clear();
     Ok(())
+}
+
+/// Fail when the artifact just acquired for a restored installation is not the one
+/// its record names. Compares only what both sides know; an installation recorded
+/// without a checksum (a plugin that does not report one) has nothing to compare.
+fn check_restored_artifact(
+    tv: &ToolVersion,
+    record: &IdentityRecord,
+    acquired: Option<&str>,
+) -> Result<()> {
+    let (Some(recorded), Some(acquired)) = (
+        record
+            .provenance
+            .artifacts
+            .get("checksum")
+            .map(String::as_str),
+        acquired,
+    ) else {
+        return Ok(());
+    };
+    if recorded == acquired {
+        return Ok(());
+    }
+    eyre::bail!(
+        "{} was installed from an artifact with checksum {recorded}, but the artifact now \
+         available has checksum {acquired}. Run `mise install --force {}@{}` to adopt the new \
+         artifact deliberately",
+        tv.style(),
+        tv.ba().short,
+        tv.version
+    )
 }
 
 /// Withdraw an installation [`finish`] published: remove its receipt (so it is
@@ -1169,6 +1212,38 @@ mod tests {
         // A legacy `<tool>/<version>` path is not this function's business.
         assert!(guard_removal(&fx.tool_dir.join("1.2.3")).is_ok());
         let _ = std::fs::remove_dir_all(&stranger);
+    }
+
+    #[test]
+    fn a_restored_install_must_come_from_the_recorded_artifact() {
+        let ba = std::sync::Arc::new(crate::args::BackendArg::from("dummy"));
+        let request = ToolRequest::new(ba, "1.0.0", crate::toolset::ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+        let mut record = IdentityRecord::new(
+            InstallIdentity {
+                backend: "asdf:dummy".into(),
+                version: "1.0.0".into(),
+                platform: "linux-x64".into(),
+                ..Default::default()
+            },
+            "dummy-aaaaaaaa".into(),
+        );
+        // Nothing recorded, or nothing acquired: nothing to compare.
+        assert!(check_restored_artifact(&tv, &record, Some("sha256:b")).is_ok());
+        record
+            .provenance
+            .artifacts
+            .insert("checksum".into(), "sha256:a".into());
+        assert!(check_restored_artifact(&tv, &record, None).is_ok());
+        assert!(check_restored_artifact(&tv, &record, Some("sha256:a")).is_ok());
+        let err = check_restored_artifact(&tv, &record, Some("sha256:b"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("sha256:a") && err.contains("sha256:b"),
+            "{err}"
+        );
+        assert!(err.contains("mise install --force dummy@1.0.0"), "{err}");
     }
 
     #[test]
