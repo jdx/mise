@@ -25,15 +25,24 @@ use crate::file;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
-/// Whether the identity layout is on.
-///
-/// `experimental` turns it on. The test harness forces `experimental` for every
-/// unit test, so unit tests opt in explicitly with `MISE_TEST_INSTALL_LAYOUT`.
+/// Whether the identity layout is on: `install_layout = "identity"`, which is
+/// opt-in even with `experimental` on and requires it. (Later, `experimental` will
+/// include it.)
 pub(crate) fn enabled() -> bool {
-    if mise_util::testing::in_tests() && std::env::var_os("MISE_TEST_INSTALL_LAYOUT").is_none() {
+    let Ok(settings) = crate::config::Settings::try_get() else {
+        return false;
+    };
+    if settings.install_layout.as_deref() != Some("identity") {
         return false;
     }
-    crate::config::Settings::try_get().is_ok_and(|s| s.experimental)
+    if !settings.experimental {
+        warn_once!(
+            "[experimental] install_layout = \"identity\" requires experimental = true; \
+             installing into the legacy layout"
+        );
+        return false;
+    }
+    true
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and
