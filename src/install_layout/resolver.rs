@@ -320,6 +320,18 @@ fn candidates(catalog: &Catalog, identity: &InstallIdentity) -> Vec<IdentityReco
     match pin_of(identity) {
         Some(pin) => {
             push(catalog.lookup(identity));
+            // An installation this pin already adopted is the one it keeps, even if a
+            // later refresh moved the unlocked selection to another copy of the same
+            // artifact.
+            push(
+                catalog
+                    .records_for_backend(&key.backend)
+                    .into_iter()
+                    .find(|r| {
+                        r.identity.request_key() == key
+                            && r.provenance.pinned_by.iter().any(|p| p == pin)
+                    }),
+            );
             let adoptable = |r: &IdentityRecord| {
                 r.provenance.artifacts.get("checksum").map(String::as_str) == Some(pin)
             };
@@ -782,6 +794,14 @@ pub(crate) fn unpublish(dir: &Path) {
     INSTALLS_OF_CACHE.clear();
 }
 
+/// [`note_reuse`] for a request found already satisfied, where nothing else will
+/// visit the install: a failure is only worth a debug line.
+pub(crate) fn note_satisfied(tv: &ToolVersion) {
+    if let Err(err) = note_reuse(tv) {
+        debug!("could not record the use of {}: {err:#}", tv.style());
+    }
+}
+
 /// Use an installation that already satisfies `tv` (found by [`locate`]): make
 /// sure the requesting tool has its compatibility link and, for a pinned
 /// request that adopted an unlocked installation, remember the pin so a later
@@ -797,7 +817,7 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     let (true, Some(record)) = (located.installed, located.record) else {
         return Ok(());
     };
-    if located.root != *dirs::INSTALLS {
+    if !is_primary_root(&located.root) {
         // A read-only shared installation: never written to.
         return Ok(());
     }

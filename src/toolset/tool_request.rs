@@ -486,11 +486,17 @@ impl ToolRequest {
                         if let Some(graph) = &tv.aube_lock {
                             graph.warn_if_missing();
                         }
+                        self.note_layout_use(config, &tv).await;
                     }
                     satisfied
                 }
                 Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
-                    Ok(satisfied) => satisfied,
+                    Ok(satisfied) => {
+                        if satisfied {
+                            self.note_layout_use(config, &tv).await;
+                        }
+                        satisfied
+                    }
                     Err(e) => {
                         debug!("ToolRequest.is_install_satisfied: {e:#}");
                         false
@@ -504,6 +510,26 @@ impl ToolRequest {
         } else {
             false
         }
+    }
+
+    /// An already-installed request is being used: let the install layout record
+    /// it. A request a lockfile pins is resolved from the lockfile for this, because
+    /// that pin is what a later refresh must not overwrite.
+    async fn note_layout_use(&self, config: &Arc<Config>, tv: &ToolVersion) {
+        if !crate::install_layout::resolver::enabled() {
+            return;
+        }
+        let opts = ResolveOptions {
+            use_locked_version: true,
+            offline: true,
+            ..Default::default()
+        };
+        let locked = self
+            .resolve(config, &opts)
+            .await
+            .ok()
+            .filter(|locked| locked.resolved_from_lockfile());
+        crate::install_layout::resolver::note_satisfied(locked.as_ref().unwrap_or(tv));
     }
 
     pub(crate) fn install_path(&self, config: &Config) -> Option<PathBuf> {
