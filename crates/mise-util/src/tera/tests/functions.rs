@@ -156,6 +156,21 @@ async fn test_quote() {
     assert_eq!(render_v1(template), expected);
 }
 #[tokio::test]
+async fn test_quote_for_cmd() {
+    let mut tera = get_tera_for_cmd(None);
+    let mut quote = |value: &str| {
+        let mut ctx = BASE_CONTEXT.clone();
+        ctx.insert("cwd", "/");
+        ctx.insert("value", value);
+        render_str(&mut tera, "{{ value | quote }}", &ctx).unwrap()
+    };
+    // cmd.exe reads neither `'` nor `\"` as a quote, and expands `%VAR%` inside quotes.
+    assert_eq!(quote("my title"), r#"^"my title^""#);
+    assert_eq!(quote("it's"), "it's");
+    assert_eq!(quote("50%"), "50^%");
+    assert_eq!(quote(r#"a" & b"#), r#"^"a\^" ^& b^""#);
+}
+#[tokio::test]
 async fn test_as_str() {
     assert_eq!(render("{{ true | as_str }}"), "true");
     assert_eq!(render("{{ \"hello\" | as_str }}"), "hello");

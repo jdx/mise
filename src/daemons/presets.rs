@@ -351,7 +351,7 @@ pub(crate) fn quote(value: impl AsRef<str>) -> String {
 /// `'` is not a quote.
 pub(crate) fn shell_quote(value: impl AsRef<str>) -> String {
     if cfg!(windows) {
-        cmd_quote(value.as_ref())
+        crate::path::escape_arg_for_cmd_line(value.as_ref())
     } else {
         quote(value)
     }
@@ -372,21 +372,6 @@ pub(crate) fn shell_program(path: impl AsRef<str>) -> String {
 /// each `%` left outside them, escaped.
 pub(crate) fn cmd_program(path: &str) -> String {
     format!("\"{}\"", path.replace('%', "\"^%\""))
-}
-
-/// One argument quoted for the program, with cmd's own metacharacters escaped by
-/// `^`: cmd ignores `\"`, so an escaped quote would otherwise end its quoting and
-/// expose what follows, and it expands `%VAR%` even inside quotes.
-pub(crate) fn cmd_quote(value: &str) -> String {
-    let quoted = crate::path::quote_arg_for_cmd_body(value);
-    let mut escaped = String::with_capacity(quoted.len() * 2);
-    for c in quoted.chars() {
-        if matches!(c, '(' | ')' | '%' | '!' | '^' | '"' | '<' | '>' | '&' | '|') {
-            escaped.push('^');
-        }
-        escaped.push(c);
-    }
-    escaped
 }
 
 /// The program to spawn for a preset command. Windows looks up only `.exe` for a
@@ -627,7 +612,10 @@ pub(crate) fn in_tool_env(command: &str) -> String {
     if cfg!(windows) {
         // The whole command runs in a cmd inside `mise x`, as `sh -c` does on Unix,
         // so every part of `a && b` gets the tool environment.
-        return format!("{mise} x -- cmd /c {}", cmd_quote(command));
+        return format!(
+            "{mise} x -- cmd /c {}",
+            crate::path::escape_arg_for_cmd_line(command)
+        );
     }
     format!("{mise} x -- sh -c {}", quote(command))
 }
@@ -1448,7 +1436,7 @@ mod tests {
             run.find(&format!("--context {quote}")).unwrap() + "--context ".len() + quote.len();
         let end = run[start..].find(&format!("{quote} && ")).unwrap() + start;
         let json = if cfg!(windows) {
-            // Undo `cmd_quote`: drop each escaping `^`, then turn `\"` back into `"`.
+            // Undo `escape_arg_for_cmd_line`: drop each escaping `^`, then turn `\"` back into `"`.
             let mut unescaped = String::new();
             let mut chars = run[start..end].chars();
             while let Some(c) = chars.next() {
@@ -1545,14 +1533,17 @@ mod tests {
 
     #[test]
     fn values_reach_cmd_unchanged() {
-        assert_eq!(cmd_quote("plain"), "plain");
-        assert_eq!(cmd_quote("a b"), r#"^"a b^""#);
+        assert_eq!(crate::path::escape_arg_for_cmd_line("plain"), "plain");
+        assert_eq!(crate::path::escape_arg_for_cmd_line("a b"), r#"^"a b^""#);
         // A quote inside a value must not end cmd's quoting, and `%VAR%` is not expanded.
         assert_eq!(
-            cmd_quote(r#"a" & echo x & "b"#),
+            crate::path::escape_arg_for_cmd_line(r#"a" & echo x & "b"#),
             r#"^"a\^" ^& echo x ^& \^"b^""#
         );
-        assert_eq!(cmd_quote("secret%USERNAME%key"), "secret^%USERNAME^%key");
+        assert_eq!(
+            crate::path::escape_arg_for_cmd_line("secret%USERNAME%key"),
+            "secret^%USERNAME^%key"
+        );
         // The program is found only between real quotes, so a `%` goes outside them.
         assert_eq!(
             shell_program(r"C:\Users\%TEMP% x\mise.exe"),

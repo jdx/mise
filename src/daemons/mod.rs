@@ -1494,13 +1494,13 @@ fn cmd_task_command(mise: &str, task: &str, args: &[String]) -> String {
     let mut run = format!(
         "{} run {}",
         presets::cmd_program(mise),
-        presets::cmd_quote(task)
+        crate::path::escape_arg_for_cmd_line(task)
     );
     if !args.is_empty() {
         run.push_str(" --");
         for arg in args {
             run.push(' ');
-            run.push_str(&presets::cmd_quote(arg));
+            run.push_str(&crate::path::escape_arg_for_cmd_line(arg));
         }
     }
     run

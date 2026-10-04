@@ -309,6 +309,22 @@ pub fn quote_arg_for_cmd_body(arg: &str) -> String {
     s
 }
 
+/// One argument for a cmd.exe command line: [`quote_arg_for_cmd_body`], then
+/// cmd's own metacharacters escaped with `^`. cmd ignores `\"`, so an escaped
+/// quote would otherwise end its quoting and expose what follows, and it expands
+/// `%VAR%` even inside quotes.
+pub fn escape_arg_for_cmd_line(arg: &str) -> String {
+    let quoted = quote_arg_for_cmd_body(arg);
+    let mut escaped = String::with_capacity(quoted.len() * 2);
+    for c in quoted.chars() {
+        if matches!(c, '(' | ')' | '%' | '!' | '^' | '"' | '<' | '>' | '&' | '|') {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
 /// Windows: if `program` is `cmd[.exe]` invoked with a `/c`|`/k` flag, build a
 /// configured-but-unspawned [`std::process::Command`] that hands `body` to cmd
 /// *verbatim* — raw args, a single outer quote pair, `/s` ensured (see

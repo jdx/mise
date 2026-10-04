@@ -1354,6 +1354,32 @@ pub fn get_tera_without_exec(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer for a command cmd.exe will read, whose
+/// `quote` filter quotes for cmd rather than a POSIX shell.
+pub fn get_tera_for_cmd(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_filter(
+            "quote",
+            move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
+                Ok(json!(crate::path::escape_arg_for_cmd_line(json_path(
+                    value
+                )?)))
+            },
+        );
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_filter(
+            "quote",
+            move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
+                Ok(Value::from(crate::path::escape_arg_for_cmd_line(s)))
+            },
+        );
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
 /// Returns the normal mise renderer with command execution disabled.
 pub fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {

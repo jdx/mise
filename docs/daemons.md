@@ -101,7 +101,10 @@ preset templates. A `run` command can also use `{{ env.NAME }}` and
 `quote`. Pitchfork renders the variables it defines (`{{ port }}`, `{{ url }}`, ...)
 and passes the command through to `mise x`, which renders the rest when the daemon
 starts. Values from `[env]` are never written to the generated pitchfork file.
-This needs a pitchfork release newer than 2.29.0 and applies to `run` only.
+This needs pitchfork 2.30.0 or later and applies to `run` only.
+
+On Windows, pitchfork runs the command with `cmd /C`, so write it for cmd: it has no
+`exec`, and `quote` there quotes a value for cmd instead of a POSIX shell.
 :::
 
 ```toml
