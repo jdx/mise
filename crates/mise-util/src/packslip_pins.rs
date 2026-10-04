@@ -290,13 +290,13 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
     };
     let signer = signer_of(observed.scheme, observed.key_id);
     let mut problems = Vec::new();
+    // A check made from the pin always holds the workflow; going through
+    // `continues_signer` keeps both arms on mise's one rule regardless.
     let same_signer = pin.signer == signer
-        || match &by_pin {
-            Some(check) => check.continues_signer(&pin.signer),
-            None => observed
-                .forge
-                .is_some_and(|check| continues_signer(check, &pin.signer)),
-        };
+        || by_pin
+            .as_ref()
+            .or(observed.forge)
+            .is_some_and(|check| continues_signer(check, &pin.signer));
     if pin.scheme != observed.scheme || !same_signer {
         problems.push(format!(
             "is signed by {signer} ({}), but {} ({}) signed what mise accepted before",
