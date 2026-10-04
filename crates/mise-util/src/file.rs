@@ -1100,10 +1100,18 @@ fn create_windows_unc_symlink(target: &Path, link: &Path) -> std::io::Result<()>
 #[cfg(windows)]
 fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
     if is_unc_path(target) {
-        create_windows_unc_symlink(target, link)
-    } else {
-        junction::create(target, link)
+        return create_windows_unc_symlink(target, link);
     }
+    let existed = fs::symlink_metadata(link).is_ok();
+    let result = junction::create(target, link);
+    // `junction::create` makes the directory before it sets the reparse point,
+    // so a later failure (a target too long for the reparse buffer) leaves a
+    // plain directory that would pass for an installed version. Remove only what
+    // this call created, and only if it is still an empty plain directory.
+    if result.is_err() && !existed && junction::get_target(link).is_err() {
+        let _ = fs::remove_dir(link);
+    }
+    result
 }
 
 #[cfg(windows)]

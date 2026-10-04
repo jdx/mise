@@ -496,3 +496,19 @@ fn dir_link_is_a_real_directory_link_that_resolves_and_removes() {
     assert!(!link.exists());
     assert!(installs.join("3.9.16").join("tool.txt").exists());
 }
+
+#[cfg(windows)]
+#[test]
+fn failed_junction_creation_leaves_no_placeholder_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let link = tmp.path().join("3");
+    // A target too long for the reparse buffer fails after the directory exists.
+    let target = tmp.path().join("x".repeat(9000));
+    assert!(make_dir_link(&target, &link).is_err());
+    assert!(!link.exists(), "a placeholder directory was left behind");
+
+    // A directory that was already there is never removed.
+    fs::create_dir(&link).unwrap();
+    assert!(make_symlink(&target, &link).is_err());
+    assert!(link.is_dir());
+}

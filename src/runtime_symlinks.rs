@@ -863,4 +863,50 @@ mod tests {
             ["temurin-21", "temurin-21.0", "temurin-latest"]
         );
     }
+
+    /// The links `rebuild_symlinks_in_dir` writes now: real symlinks on unix and
+    /// junctions on Windows. They must be recognised as runtime links, excluded
+    /// from the real installs, pruned when stale and removed once their target
+    /// is gone.
+    #[test]
+    fn dir_links_are_runtime_links_that_are_pruned_and_cleaned_up() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        let _interrupted = interrupted_install(&backend, "1.3.1-3")?;
+        file::make_dir_link(Path::new("./1.2.4"), &installs_dir.join("1.2"))?;
+        file::make_dir_link(Path::new("./1.3.1-3"), &installs_dir.join("1.3"))?;
+        file::make_dir_link(Path::new("./1.2.4"), &installs_dir.join("latest"))?;
+
+        // Recognised, and never mistaken for an installed version.
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert_eq!(
+            runtime_symlink_target(&installs_dir.join("1.2")),
+            Some(PathBuf::from("./1.2.4"))
+        );
+        assert_eq!(
+            real_installs_in_dir(&installs_dir)
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from(["1.2.4".to_string(), "1.3.1-3".to_string()])
+        );
+
+        // A link into an ineligible (incomplete) install is stale and removed;
+        // the others stay.
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
+        assert!(fs::symlink_metadata(installs_dir.join("1.3")).is_err());
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert!(is_runtime_symlink(&installs_dir.join("latest")));
+        assert!(installs_dir.join("1.3.1-3").is_dir(), "target must survive");
+
+        // A link whose target was deleted is cleaned up without touching others.
+        fs::remove_dir_all(installs_dir.join("1.2.4"))?;
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+        assert!(fs::symlink_metadata(installs_dir.join("1.2")).is_err());
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        assert!(installs_dir.join("1.3.1-3").is_dir());
+        Ok(())
+    }
 }
