@@ -347,6 +347,60 @@ pub(crate) fn quote(value: impl AsRef<str>) -> String {
     format!("'{}'", value.as_ref().replace('\'', "'\\''"))
 }
 
+/// Quote a value for pitchfork's shell: `sh` on Unix, `cmd.exe` on Windows, where
+/// `'` is not a quote.
+pub(crate) fn shell_quote(value: impl AsRef<str>) -> String {
+    if cfg!(windows) {
+        cmd_quote(value.as_ref())
+    } else {
+        quote(value)
+    }
+}
+
+/// [`shell_quote`] for the program a command line starts with. cmd.exe finds the
+/// program only between real quotes, where `^` does not escape, so each `%` is
+/// left outside them instead.
+pub(crate) fn shell_program(path: impl AsRef<str>) -> String {
+    if cfg!(windows) {
+        cmd_program(path.as_ref())
+    } else {
+        quote(path)
+    }
+}
+
+/// The program a cmd.exe command line starts with, between real quotes and with
+/// each `%` left outside them, escaped.
+pub(crate) fn cmd_program(path: &str) -> String {
+    format!("\"{}\"", path.replace('%', "\"^%\""))
+}
+
+/// One argument quoted for the program, with cmd's own metacharacters escaped by
+/// `^`: cmd ignores `\"`, so an escaped quote would otherwise end its quoting and
+/// expose what follows, and it expands `%VAR%` even inside quotes.
+pub(crate) fn cmd_quote(value: &str) -> String {
+    let quoted = crate::path::quote_arg_for_cmd_body(value);
+    let mut escaped = String::with_capacity(quoted.len() * 2);
+    for c in quoted.chars() {
+        if matches!(c, '(' | ')' | '%' | '!' | '^' | '"' | '<' | '>' | '&' | '|') {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
+/// The program to spawn for a preset command. Windows looks up only `.exe` for a
+/// bare name, and a tool can be on PATH as a `.cmd`, as conda's are. The search uses
+/// this process's PATH, which `mise x` put the preset's tool on.
+fn program(name: &str) -> PathBuf {
+    if cfg!(windows)
+        && let Ok(path) = which::which(name)
+    {
+        return path;
+    }
+    PathBuf::from(name)
+}
+
 fn port_value(name: &str, key: &str, value: &toml::Value) -> Result<u16> {
     value
         .as_integer()
@@ -484,7 +538,14 @@ fn context(
     shell: bool,
 ) -> tera::Context {
     let mut ctx = tera::Context::new();
-    ctx.insert("data", &if shell { quote(data) } else { data.to_string() });
+    ctx.insert(
+        "data",
+        &if shell {
+            shell_quote(data)
+        } else {
+            data.to_string()
+        },
+    );
     ctx.insert("port", &port);
     for (key, value) in ports {
         ctx.insert(key.clone(), value);
@@ -497,14 +558,14 @@ fn context(
                 if text.is_empty() || !shell {
                     ctx.insert(key, text);
                 } else {
-                    ctx.insert(key, &quote(text));
+                    ctx.insert(key, &shell_quote(text));
                 }
             }
             OptionValue::List(items) => {
                 // Lists reach argv steps today, but the shell context must hold
                 // shell-safe values for any preset that interpolates one.
                 if shell {
-                    ctx.insert(key, &items.iter().map(quote).collect::<Vec<_>>());
+                    ctx.insert(key, &items.iter().map(shell_quote).collect::<Vec<_>>());
                 } else {
                     ctx.insert(key, items);
                 }
@@ -562,11 +623,13 @@ fn render_value(
 /// Wrap a command so it runs inside the project's tool environment. Needed
 /// wherever pitchfork is told not to wrap the daemon itself in `mise x`.
 pub(crate) fn in_tool_env(command: &str) -> String {
-    format!(
-        "{} x -- sh -c {}",
-        quote(crate::env::MISE_BIN.to_string_lossy()),
-        quote(command)
-    )
+    let mise = shell_program(crate::env::MISE_BIN.to_string_lossy());
+    if cfg!(windows) {
+        // The whole command runs in a cmd inside `mise x`, as `sh -c` does on Unix,
+        // so every part of `a && b` gets the tool environment.
+        return format!("{mise} x -- cmd /c {}", cmd_quote(command));
+    }
+    format!("{mise} x -- sh -c {}", quote(command))
 }
 
 /// Probes are separate processes: wrapping the daemon does not give them its
@@ -702,8 +765,8 @@ pub(crate) fn expand(
     let mut plain_ctx = context(&data, port, &ports, &options, false);
     if let Some(host) = &host {
         let url = proxy.url(host);
-        shell_ctx.insert("url", &quote(&url));
-        shell_ctx.insert("host", &quote(host));
+        shell_ctx.insert("url", &shell_quote(&url));
+        shell_ctx.insert("host", &shell_quote(host));
         plain_ctx.insert("url", &url);
         plain_ctx.insert("host", host);
     }
@@ -741,20 +804,23 @@ pub(crate) fn expand(
     // callers can use `setup && exec server` without an extra shell or an `exec`
     // prefix that would terminate the shell before the second command.
     let run = super::take_string(&mut overrides, "run")?.unwrap_or_else(|| {
-        format!(
-            "exec {}",
-            table.get("run").and_then(toml::Value::as_str).unwrap()
-        )
+        let run = table.get("run").and_then(toml::Value::as_str).unwrap();
+        // cmd.exe has no `exec`; the server stays its child there.
+        if cfg!(windows) {
+            run.to_string()
+        } else {
+            format!("exec {run}")
+        }
     });
     // Data initialization always comes first; user `init` steps run after it,
     // once the data directory exists.
     let values = serde_json::to_string(&init_values(port, &ports, &options))?;
     let mut steps = vec![format!(
         "{} daemons __init {} {} --context {}",
-        quote(crate::env::MISE_BIN.to_string_lossy()),
-        quote(preset_name),
-        quote(&data),
-        quote(values),
+        shell_program(crate::env::MISE_BIN.to_string_lossy()),
+        shell_quote(preset_name),
+        shell_quote(&data),
+        shell_quote(values),
     )];
     steps.extend(extras.init.iter().cloned());
     table.insert("run".into(), toml::Value::String(with_init(&steps, &run)));
@@ -987,6 +1053,10 @@ fn kill_and_reap(child: &mut Child) {
 /// Terminates the ephemeral init server on every exit path, including errors.
 struct ServerGuard {
     child: Child,
+    /// The server's whole process tree on Windows: a `.cmd` shim, as conda's are,
+    /// runs the server as a grandchild that killing `child` alone would leave.
+    #[cfg(windows)]
+    job: Option<crate::windows_job::Job>,
     /// When a polite shutdown gives up and the process is killed. A server that is
     /// being abandoned carries the caller's remaining budget, so its shutdown cannot
     /// extend a wait the caller already bounded.
@@ -997,6 +1067,8 @@ impl ServerGuard {
     fn new(child: Child) -> Self {
         Self {
             child,
+            #[cfg(windows)]
+            job: None,
             kill_at: None,
         }
     }
@@ -1004,6 +1076,14 @@ impl ServerGuard {
     /// Stops the server now, killing it no later than `deadline`.
     fn stop_by(mut self, deadline: Instant) {
         self.kill_at = Some(deadline);
+    }
+
+    fn kill(&mut self) {
+        #[cfg(windows)]
+        if let Some(job) = &self.job {
+            job.kill();
+        }
+        kill_and_reap(&mut self.child);
     }
 }
 
@@ -1014,6 +1094,13 @@ impl Drop for ServerGuard {
             let pid = nix::unistd::Pid::from_raw(self.child.id() as i32);
             let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
         }
+        // Ctrl+Break reaches the server's own group (see `spawn_server`), and Go
+        // servers such as cockroach shut down on it. Without a console, kill it.
+        #[cfg(windows)]
+        if !interrupt_group(self.child.id()) {
+            self.kill();
+            return;
+        }
         let deadline = self
             .kill_at
             .unwrap_or_else(|| Instant::now() + SHUTDOWN_GRACE);
@@ -1023,7 +1110,7 @@ impl Drop for ServerGuard {
                 Ok(None) => {}
             }
             if Instant::now() >= deadline {
-                kill_and_reap(&mut self.child);
+                self.kill();
                 return;
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -1033,8 +1120,40 @@ impl Drop for ServerGuard {
 
 /// Runs one readiness probe, giving up at `deadline`. A probe that blocks, such as
 /// a client dialing a half-open socket, must not outlive the wait it belongs to.
+/// Start a temporary initialization server. On Windows it gets a process group of
+/// its own, so it can be sent Ctrl+Break without mise receiving it too.
+fn spawn_server(argv: &[String]) -> Result<ServerGuard> {
+    let mut command = Command::new(program(&argv[0]));
+    command.args(&argv[1..]).stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        let (child, job) = crate::windows_job::spawn(
+            &mut command,
+            windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
+        )
+        .wrap_err_with(|| format!("failed to start {}", argv[0]))?;
+        let mut guard = ServerGuard::new(child);
+        guard.job = Some(job);
+        Ok(guard)
+    }
+    #[cfg(not(windows))]
+    {
+        command
+            .spawn()
+            .map(ServerGuard::new)
+            .wrap_err_with(|| format!("failed to start {}", argv[0]))
+    }
+}
+
+/// Send Ctrl+Break to the process group led by `pid`. Fails without a console.
+#[cfg(windows)]
+fn interrupt_group(pid: u32) -> bool {
+    use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent};
+    unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) != 0 }
+}
+
 fn probe(argv: &[String], deadline: Instant) -> bool {
-    let Ok(mut child) = Command::new(&argv[0])
+    let Ok(mut child) = Command::new(program(&argv[0]))
         .args(&argv[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -1113,12 +1232,7 @@ fn run_steps(preset: &Preset, init: &InitContext, data: &Path, only_always: bool
                 ctx.insert("init_port", &init_port);
                 ctx.insert("init_http_port", &init_http_port);
                 let argv = render_argv(&mut renderer, &spec.run, &ctx)?;
-                let child = Command::new(&argv[0])
-                    .args(&argv[1..])
-                    .stdin(Stdio::null())
-                    .spawn()
-                    .wrap_err_with(|| format!("failed to start {}", argv[0]))?;
-                let mut guard = ServerGuard::new(child);
+                let mut guard = spawn_server(&argv)?;
                 let ready = render_argv(&mut renderer, &spec.ready, &ctx)?;
                 match wait_ready(&ready, &mut guard, deadline) {
                     Ok(()) => {
@@ -1172,7 +1286,7 @@ fn run_steps(preset: &Preset, init: &InitContext, data: &Path, only_always: bool
                 .as_ref()
                 .map(|text| crate::tera::render_str(&mut renderer, text, &ctx))
                 .transpose()?;
-            let mut command = Command::new(&argv[0]);
+            let mut command = Command::new(program(&argv[0]));
             command.args(&argv[1..]);
             command.stdin(if stdin.is_some() {
                 Stdio::piped()
@@ -1224,9 +1338,6 @@ pub fn initialize(
 ) -> Result<()> {
     crate::config::Settings::get().ensure_experimental("daemon presets")?;
     crate::config::Settings::ensure_not_safe("initializing daemon data")?;
-    if cfg!(windows) {
-        bail!("daemon presets are not supported on Windows yet");
-    }
     ensure_runnable_as_user("this daemon", preset_name)?;
     let preset = preset(preset_name)?;
     let owned;
@@ -1242,7 +1353,7 @@ pub fn initialize(
         .ok_or_else(|| eyre::eyre!("daemon data must have a parent directory"))?;
     std::fs::create_dir_all(parent)?;
     let _lock = crate::lock_file::LockFile::new(data).lock()?;
-    let output = Command::new(&preset.binary)
+    let output = Command::new(program(&preset.binary))
         .args(&preset.version.args)
         .output()?;
     if !output.status.success() {
@@ -1332,9 +1443,22 @@ mod tests {
     /// The JSON context embedded in the generated run command.
     fn init_json(daemon: &Daemon) -> serde_json::Value {
         let run = daemon.table["run"].as_str().unwrap();
-        let start = run.find("--context '").unwrap() + "--context '".len();
-        let end = run[start..].find("' && ").unwrap() + start;
-        serde_json::from_str(&run[start..end].replace("'\\''", "'")).unwrap()
+        let quote = if cfg!(windows) { "^\"" } else { "'" };
+        let start =
+            run.find(&format!("--context {quote}")).unwrap() + "--context ".len() + quote.len();
+        let end = run[start..].find(&format!("{quote} && ")).unwrap() + start;
+        let json = if cfg!(windows) {
+            // Undo `cmd_quote`: drop each escaping `^`, then turn `\"` back into `"`.
+            let mut unescaped = String::new();
+            let mut chars = run[start..end].chars();
+            while let Some(c) = chars.next() {
+                unescaped.push(if c == '^' { chars.next().unwrap() } else { c });
+            }
+            unescaped.replace("\\\"", "\"")
+        } else {
+            run[start..end].replace("'\\''", "'")
+        };
+        serde_json::from_str(&json).unwrap()
     }
 
     #[test]
@@ -1384,7 +1508,7 @@ mod tests {
             let expected = Path::new("/project").join(path);
             assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
             let run = daemon.table["run"].as_str().unwrap();
-            assert!(run.contains(&quote(expected.to_string_lossy())));
+            assert!(run.contains(&shell_quote(expected.to_string_lossy())));
             assert!(!daemon.table.contains_key("data_dir"));
         }
         let daemon = render("postgres", toml::Table::new());
@@ -1392,6 +1516,56 @@ mod tests {
             daemon.data_dir,
             Some(state_dir(Path::new("/project")).join("data/postgres"))
         );
+    }
+
+    #[test]
+    fn run_and_probes_suit_the_platform_shell() {
+        let daemon = render("postgres", toml::Table::new());
+        let run = daemon.table["run"].as_str().unwrap();
+        let mise = shell_program(crate::env::MISE_BIN.to_string_lossy());
+        let init = format!("{mise} daemons __init {} ", shell_quote("postgres"));
+        assert!(run.starts_with(&init), "{run}");
+        // `-k ""` is an empty argument to both sh and cmd.exe.
+        assert!(run.ends_with(r#" -h 127.0.0.1 -k """#), "{run}");
+        if cfg!(windows) {
+            // cmd.exe has neither `exec` nor `'` quoting, nor `sh` for the probe.
+            assert!(run.contains(" && postgres -D "), "{run}");
+            assert!(!run.contains('\''), "{run}");
+            assert_eq!(
+                daemon.table["ready_cmd"].as_str(),
+                Some(
+                    format!("{mise} x -- cmd /c ^\"pg_isready -h 127.0.0.1 -p 5432 -U postgres^\"")
+                        .as_str()
+                )
+            );
+        } else {
+            assert!(run.contains(" && exec postgres -D "), "{run}");
+        }
+    }
+
+    #[test]
+    fn values_reach_cmd_unchanged() {
+        assert_eq!(cmd_quote("plain"), "plain");
+        assert_eq!(cmd_quote("a b"), r#"^"a b^""#);
+        // A quote inside a value must not end cmd's quoting, and `%VAR%` is not expanded.
+        assert_eq!(
+            cmd_quote(r#"a" & echo x & "b"#),
+            r#"^"a\^" ^& echo x ^& \^"b^""#
+        );
+        assert_eq!(cmd_quote("secret%USERNAME%key"), "secret^%USERNAME^%key");
+        // The program is found only between real quotes, so a `%` goes outside them.
+        assert_eq!(
+            shell_program(r"C:\Users\%TEMP% x\mise.exe"),
+            if cfg!(windows) {
+                r#""C:\Users\"^%"TEMP"^%" x\mise.exe""#
+            } else {
+                r"'C:\Users\%TEMP% x\mise.exe'"
+            }
+        );
+        // A compound probe runs whole inside `mise x`.
+        if cfg!(windows) {
+            assert!(in_tool_env("a && b").ends_with(r#" x -- cmd /c ^"a ^&^& b^""#));
+        }
     }
 
     #[test]
@@ -1403,7 +1577,7 @@ mod tests {
             daemon.table["run"]
                 .as_str()
                 .unwrap()
-                .contains(&quote(expected.to_string_lossy()))
+                .contains(&shell_quote(expected.to_string_lossy()))
         );
         assert!(!daemon.table.contains_key("data_dir"));
     }
@@ -1833,11 +2007,16 @@ mod tests {
         let resolved = resolved.to_string_lossy();
         assert_ne!(resolved, "conf/nats.conf");
         assert!(
-            run.contains(&format!("--config {}", quote(&resolved))),
+            run.contains(&format!("--config {}", shell_quote(&resolved))),
             "{run}"
         );
         assert_eq!(init_json(&daemon)["config"], serde_json::json!(resolved));
-        assert!(run.contains("--tls --tlscert '"), "{run}");
+        let cert = if cfg!(windows) {
+            "--tls --tlscert "
+        } else {
+            "--tls --tlscert '"
+        };
+        assert!(run.contains(cert), "{run}");
         // A TLS-only listener needs clients to select TLS from the URL.
         assert_eq!(daemon.exports["NATS_URL"], "tls://127.0.0.1:4222");
         // Only Unix treats a leading slash as absolute, so only there is the root
@@ -1867,6 +2046,8 @@ mod tests {
         )
         .unwrap();
         let run = verified.table["run"].as_str().unwrap();
+        assert!(run.contains("--tlsverify --tlscacert "), "{run}");
+        #[cfg(unix)]
         assert!(
             run.contains("--tlsverify --tlscacert '/tls/ca.crt'"),
             "{run}"
@@ -1884,7 +2065,11 @@ mod tests {
         let daemon = render("spicedb", toml::Table::new());
         assert!(!daemon.table.contains_key("depends"));
         let run = daemon.table["run"].as_str().unwrap();
-        assert!(run.contains("--datastore-engine 'memory'"), "{run}");
+        let engine = shell_quote("memory");
+        assert!(
+            run.contains(&format!("--datastore-engine {engine}")),
+            "{run}"
+        );
         assert!(!run.contains("--datastore-conn-uri"), "{run}");
         assert_eq!(daemon.exports["SPICEDB_ENDPOINT"], "127.0.0.1:50051");
         let daemon = expand(
@@ -1913,10 +2098,9 @@ mod tests {
         );
         let run = daemon.table["run"].as_str().unwrap();
         // Connection URIs carry shell metacharacters and must reach the tool intact.
+        let uri = shell_quote("postgresql://root@127.0.0.1:26257/spicedb?sslmode=disable");
         assert!(
-            run.contains(
-                "--datastore-conn-uri 'postgresql://root@127.0.0.1:26257/spicedb?sslmode=disable'"
-            ),
+            run.contains(&format!("--datastore-conn-uri {uri}")),
             "{run}"
         );
     }
@@ -2304,7 +2488,8 @@ run = "sh"
         .unwrap();
         // The node must declare the region for a database to be able to use it.
         let run = daemon.table["run"].as_str().unwrap();
-        assert!(run.contains("--locality='region=us-east-2'"), "{run}");
+        let locality = shell_quote("region=us-east-2");
+        assert!(run.contains(&format!("--locality={locality}")), "{run}");
         assert_eq!(
             init_json(&daemon)["databases"],
             serde_json::json!(["entirecore=us-east-2", "spicedb"])

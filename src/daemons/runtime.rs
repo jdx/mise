@@ -1200,9 +1200,6 @@ pub async fn validate_tools(set: &DaemonSet, config: &Arc<Config>, ts: &Toolset)
         let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
             continue;
         };
-        if cfg!(windows) {
-            bail!("daemon presets are not supported on Windows yet");
-        }
         let ba: crate::args::BackendArg = tool.as_str().into();
         let Some(versions) = ts.versions.get(&ba) else {
             bail!("daemon {} requires {tool}@{version}", daemon.name);
