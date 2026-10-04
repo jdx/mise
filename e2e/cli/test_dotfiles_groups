@@ -12,19 +12,23 @@ echo "work" >"$DOTS/work/gitconfig"
 
 cat <<EOF >mise.toml
 [dotfile_groups.home]
-source = "home"
+root = "home"
 dot_prefix = true
 exclude = ["README.md"]
-paths.".config/kitty" = { mode = "symlink" }
+entries."~/.config/kitty" = { mode = "symlink" }
 
 [dotfile_groups.zsh]
+root = "zsh"
 
-[dotfiles]
-"~/.work.gitconfig" = { source = "$DOTS/work/gitconfig", mode = "copy", group = "work" }
+[dotfile_groups.work]
+root = "work"
+mode = "copy"
+entries."~/.work.gitconfig" = { source = "gitconfig" }
 EOF
 
 # Every group applies when none are selected: each file of a tree is
-# linked, and the overridden directory is linked whole.
+# linked, the directory an entry names is linked whole, and an entry's
+# source inside the tree is copied to its target only.
 assert_succeed "mise dot apply --yes"
 assert "readlink $HOME/.bashrc" "$DOTS/home/dot-bashrc"
 assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
@@ -33,6 +37,7 @@ assert "readlink $HOME/.config/app/config.toml" "$DOTS/home/dot-config/app/confi
 assert_fail "test -L $HOME/.config"
 assert_fail "test -e $HOME/README.md"
 assert "cat $HOME/.work.gitconfig" "work"
+assert_fail "test -e $HOME/gitconfig"
 assert_not_contains "mise dot status" "differs"
 
 # Selecting groups leaves the others' files in place, reported as orphaned.
@@ -63,15 +68,15 @@ assert_not_contains "mise dot status" "orphaned"
 # A selected name nothing declares is reported.
 cat <<EOF >mise.toml
 [dotfile_groups.home]
-source = "home"
+root = "home"
 dot_prefix = true
 exclude = ["README.md"]
-paths.".config/kitty" = { mode = "symlink" }
+entries."~/.config/kitty" = { mode = "symlink" }
 
 [bootstrap]
 dotfile_groups = ["home", "hmoe"]
 EOF
-assert_contains "mise dot status 2>&1" "no [dotfile_groups] table or [dotfiles] entry declares it"
+assert_contains "mise dot status 2>&1" "no [dotfile_groups] table declares it"
 
 # Adding a file under a group tree captures it into the group's source with
 # a dot- name, and writes no [dotfiles] entry.
@@ -84,11 +89,12 @@ assert_not_contains "cat mise.toml" "starship"
 # Two groups covering the same path need --group.
 cat <<EOF >mise.toml
 [dotfile_groups.home]
-source = "home"
+root = "home"
 dot_prefix = true
 exclude = ["README.md"]
 
 [dotfile_groups.zsh]
+root = "zsh"
 EOF
 echo "new" >"$HOME/.newrc"
 assert_fail_contains "mise dot add --yes $HOME/.newrc" "choose one with --group"
@@ -106,11 +112,83 @@ mkdir -p "$DOTS/zsh/.config/kitty"
 echo "theme" >"$DOTS/zsh/.config/kitty/theme.conf"
 cat <<EOF >mise.toml
 [dotfile_groups.home]
-source = "home"
+root = "home"
 dot_prefix = true
 exclude = ["README.md"]
-paths.".config/kitty" = { mode = "symlink" }
+entries."~/.config/kitty" = { mode = "symlink" }
 
 [dotfile_groups.zsh]
+root = "zsh"
 EOF
 assert_fail_contains "mise dot apply --yes" "conflicting"
+
+# Entries describe parts of a group's tree with ordinary entry syntax. Their
+# sources are found under the group root, and each is cut out of the walk.
+mkdir -p "$DOTS/app/dot-config/app/themes" "$DOTS/app/conf"
+echo "main" >"$DOTS/app/dot-config/app/main.toml"
+echo "dark" >"$DOTS/app/dot-config/app/themes/dark.toml"
+echo "light" >"$DOTS/app/dot-config/app/themes/light.toml"
+echo "secret={{ env.HOME }}" >"$DOTS/app/conf/secret.tmpl"
+echo "plain" >"$DOTS/app/dot-plainrc"
+echo "stale" >"$HOME/.app-old.conf"
+cat <<EOF >mise.toml
+[dotfile_groups.app]
+root = "app"
+dot_prefix = true
+
+[dotfile_groups.app.entries]
+"~/.config/app/themes" = { mode = "copy" }
+"~/.config/app/themes/light.toml" = { mode = "symlink" }
+"~/.secret.conf" = { source = "conf/secret.tmpl", mode = "template" }
+"~/.app-old.conf" = { mode = "absent" }
+"~/.plainrc" = {}
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.config/app/main.toml" "$DOTS/app/dot-config/app/main.toml"
+assert_fail "test -L $HOME/.config/app/themes/dark.toml"
+assert "cat $HOME/.config/app/themes/dark.toml" "dark"
+assert "readlink $HOME/.config/app/themes/light.toml" "$DOTS/app/dot-config/app/themes/light.toml"
+assert "cat $HOME/.secret.conf" "secret=$HOME"
+assert_fail "test -e $HOME/.app-old.conf"
+# a file entry without a mode is linked, like the tree's files
+assert "readlink $HOME/.plainrc" "$DOTS/app/dot-plainrc"
+# an entry's source inside the tree is not also deployed by the walk
+assert_fail "test -e $HOME/conf/secret.tmpl"
+
+# An entry beneath a directory linked whole is refused before anything is
+# written: that path is the file in the group's source.
+cat <<EOF >mise.toml
+[dotfile_groups.app]
+root = "app"
+dot_prefix = true
+exclude = ["conf"]
+
+[dotfile_groups.app.entries]
+"~/.config/app/themes" = { mode = "symlink" }
+"~/.config/app/themes/dark.toml" = { mode = "absent" }
+EOF
+assert_fail_contains "mise dot apply --yes --force" "conflicting"
+assert "cat $DOTS/app/dot-config/app/themes/dark.toml" "dark"
+
+# An entry must lie inside its group's target.
+cat <<EOF >mise.toml
+[dotfile_groups.app]
+root = "app"
+target = "~/.config"
+
+[dotfile_groups.app.entries]
+"~/.elsewhere" = { mode = "absent" }
+EOF
+assert_contains "mise dot status 2>&1" "must be inside the group's target"
+
+# Every group names its root, and [dotfiles] entries take no group.
+cat <<EOF >mise.toml
+[dotfile_groups.rootless]
+
+[dotfiles]
+"~/.grouped" = { source = "$DOTS/zsh/.zshrc", group = "zsh" }
+EOF
+assert_contains "mise dot status 2>&1" "root is required"
+assert_fail "test -e $HOME/.grouped"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.grouped"

@@ -658,59 +658,76 @@ new files and stores them under `dot-` names.
 A **group** is a named directory tree of dotfiles, such as one per
 application or one per machine role, like the packages of GNU Stow. Each
 machine chooses which groups it applies. Define a group with a
-`[dotfile_groups.<name>]` table:
+`[dotfile_groups.<name>]` table that names its `root`:
 
 ```toml
-[dotfile_groups.zsh]   # links ~/.dotfiles/zsh/.zshrc to ~/.zshrc
+[dotfile_groups.zsh]
+root = "zsh"           # links ~/.dotfiles/zsh/.zshrc to ~/.zshrc
 
 [dotfile_groups.home]
-source = "home"        # ~/.dotfiles/home
+root = "home"          # ~/.dotfiles/home
 target = "~"
 mode = "symlink-each"
 dot_prefix = true
 exclude = ["README.md"]
-paths.".config/kitty" = { mode = "symlink" }
-
-[dotfile_groups.work]
-source = "work"
-mode = "copy"
 ```
+
+mise walks the root and deploys each file at the same path under the
+target. You do not list the files.
 
 | Key          | Default        | Meaning                                                                                               |
 | ------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| `source`     | the group name | The source directory. A relative path starts at `dotfiles.root` (`~/.dotfiles`).                      |
+| `root`       | (required)     | The directory tree to deploy. A relative path starts at `dotfiles.root` (`~/.dotfiles`).              |
 | `target`     | `~`            | The directory the tree deploys into.                                                                  |
 | `mode`       | `symlink-each` | `symlink-each` links each file, `copy` copies each file, `symlink` links the whole tree.              |
-| `exclude`    |                | Source paths to skip, matched as in [Excluding files](#excluding-files).                              |
-| `dot_prefix` | `false`        | Deploy `dot-<name>` source names as `.<name>`, as in [Visible source names](#dot-prefix).             |
+| `exclude`    |                | Root paths to skip, matched as in [Excluding files](#excluding-files).                                |
+| `dot_prefix` | `false`        | Deploy `dot-<name>` names as `.<name>`, as in [Visible source names](#dot-prefix).                    |
 | `manifest`   |                | `"git"` manages only files in Git's index, as in [Git-tracked directories](#git-tracked-directories). |
 | `relative`   |                | Link by relative paths, as in [Relative symlinks](#relative).                                         |
-| `paths`      |                | Overrides for parts of the tree, described below.                                                     |
+| `entries`    |                | Whole-file entries for parts of the tree, described below.                                            |
 
-A group's relative `source` always starts at `dotfiles.root`, not at the
+A group's relative `root` always starts at `dotfiles.root`, not at the
 directory of the config file that declares it. If a more local config file
 defines a group with the same name, its table replaces the whole group.
 
-### Overriding part of a group
+### Group entries
 
-`paths` changes how one path inside the tree is deployed. Its keys are paths
-relative to the target, written as they appear in the target (`.config/kitty`,
-even when the source names it `dot-config/kitty`). Each override takes
-`mode`, `exclude`, and `permissions`.
-
-The most common override links a directory as a whole instead of each file
-in it, so files the application creates there also land in your dotfiles:
+`[dotfile_groups.<name>.entries]` describes parts of the tree with the same
+syntax as [whole-file entries](#whole-file-entries), keyed by target path.
+Each entry is cut out of the walk, so it decides how its path is deployed.
+For example, to link a directory as a whole instead of each file in it, so
+that files the application creates there also land in your dotfiles:
 
 ```toml
 [dotfile_groups.home]
-source = "home"
+root = "home"
 dot_prefix = true
-paths.".config/kitty" = { mode = "symlink" }       # ~/.config/kitty -> home/dot-config/kitty
-paths.".ssh/config" = { mode = "copy", permissions = "0600" }
+
+[dotfile_groups.home.entries]
+"~/.config/kitty" = { mode = "symlink" }                     # ~/.config/kitty -> home/dot-config/kitty
+"~/.ssh/config" = { mode = "copy", permissions = "0600" }
+"~/.gitconfig" = { source = "git/config.tmpl", mode = "template" }
+"~/.kitty-old.conf" = { mode = "absent" }
 ```
 
-An override's `exclude` replaces the group's list for that path. Without
-one, the group's patterns that contain no `/` still apply.
+- An entry without `source` finds it under the root, at its path inside the
+  group's target: `~/.config/kitty` in the `home` group above reads
+  `~/.dotfiles/home/dot-config/kitty`.
+- A relative `source` starts at the root. When it lies inside the root, the
+  walk skips it, so `git/config.tmpl` is rendered to `~/.gitconfig` and not
+  also linked to `~/git/config.tmpl`.
+- An entry without `mode` deploys like the group: a directory the group's
+  way, a file as one link, or as one copy in a `copy` group.
+- An entry that walks a directory inherits the group's `dot_prefix` and
+  `manifest`, and the group's `exclude` patterns that contain no `/`, unless
+  it sets its own.
+- Every entry must lie inside the group's target. An entry beneath another
+  walking entry is cut out of that one too. An entry beneath a directory
+  linked as a whole would change a file in the root itself, so it is
+  reported as a conflict before anything is written.
+
+`[dotfiles]` entries belong to no group and take no `group` key. Declare an
+entry under its group instead.
 
 ### Selecting groups
 
@@ -724,28 +741,22 @@ dotfile_groups = ["home", "zsh"]
 ```
 
 A more local config file's list replaces the others. `[dotfiles]` entries
-without a group always apply. An ordinary entry can join a group with
-`group`, so it applies only on machines that select that group:
+always apply. mise warns when the list names a group that nothing declares.
 
-```toml
-[dotfiles]
-"~/.gitconfig.work" = { source = "work/gitconfig", mode = "copy", group = "work" }
-```
-
-mise warns when the list names a group that nothing declares.
-
-Two selected groups cannot deploy the same target file. Nor can an override
-link a directory as a whole while another group places files in that
-directory. Both are reported as conflicts naming the two groups, before
-anything is written.
+Two selected groups cannot deploy the same target file. Nor can one group
+link a directory as a whole while another places files in that directory.
+Both are reported as conflicts naming the two groups, before anything is
+written.
 
 ### Deselecting and removing groups
 
 Deselecting a group, or deleting its table, leaves its files in place.
 mise records what each group deployed under `$MISE_STATE_DIR/dotfiles/groups`,
 so it still knows those files: `mise dot status` lists them as `orphaned`.
-A file that an active entry still deploys is never orphaned, even when the
-entry has moved to another group.
+So is a file that a selected group stops deploying, for example after a new
+`exclude` pattern, or the copy of a source file you deleted. A file that an
+active entry still deploys is never orphaned, even when the entry has moved
+to another group.
 
 ```sh
 mise dot apply --prune          # apply, then remove orphaned files
@@ -756,24 +767,22 @@ mise dot unapply --group work   # remove one group's files
 the source mise linked, and a copied file only while it still holds what mise
 wrote. They leave anything you changed with a warning; pass `--force` to
 remove changed copies too. Directories they empty are removed, up to the
-target of the group or override that deployed the file. `unapply --group` works whether or not the group is still
-selected or declared. `--prune` asks before removing anything unless you
-pass `--yes`.
+target of the group or entry that deployed the file. `unapply --group` works
+whether or not the group is still selected or declared. `--prune` asks
+before removing anything unless you pass `--yes`.
 
 Removal compares files with what mise last wrote, not with the current
-source, so editing a group's source does not stop `unapply --group` from
-removing an untouched copy. When you delete a file from a `copy` group's
-source, its copy stays on disk and in the group's record, so
-`unapply --group` still removes it. Neither command removes a path that now
-resolves through a linked directory, for example after you fold a directory
-with `mode = "symlink"`, or a path inside `dotfiles.root`, even with
-`--force`, so they never delete source files.
+source, so editing a group's root does not stop `unapply --group` from
+removing an untouched copy. Neither command removes a path that resolves
+through a linked directory, for example after you link a directory as a
+whole, or a path inside `dotfiles.root`, even with `--force`, so they never
+delete source files.
 
 ### Adding files to a group
 
 `mise dot add` captures a file inside a group's target into that group's
-source, without writing a `[dotfiles]` entry. In a `dot_prefix` group the
-source gets the `dot-` name:
+root, without writing an entry. In a `dot_prefix` group the source gets the
+`dot-` name:
 
 ```sh
 mise dot add ~/.config/starship.toml   # -> ~/.dotfiles/home/dot-config/starship.toml
@@ -781,7 +790,7 @@ mise dot add ~/.config/starship.toml   # -> ~/.dotfiles/home/dot-config/starship
 
 When several groups contain the path, mise picks the one whose target is
 deepest. Among groups at the same depth, such as two groups that both deploy
-into `~`, the one whose source already holds the file wins. For a new file,
+into `~`, the one whose root already holds the file wins. For a new file,
 choose one with `--group`:
 
 ```sh
@@ -791,7 +800,7 @@ mise dot add --group zsh ~/.zprofile
 `mise dot edit` opens the group's source file for a path inside a group's
 tree, and takes `--group` the same way when it has to create the file. A
 group with `manifest = "git"` deploys only files in Git's index, so `add`
-refuses to capture into it. Copy the file into the source and `git add` it
+refuses to capture into it. Copy the file into the root and `git add` it
 instead.
 
 ## Edit entries

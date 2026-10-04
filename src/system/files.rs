@@ -997,12 +997,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 ..
             } = entry
             {
-                if let Some(group) = &group {
-                    crate::system::dotfile_groups::validate_group_name(group)
-                        .wrap_err_with(|| format!("dotfile {target}"))?;
-                    if mode.as_deref() == Some("track") {
-                        bail!("dotfile {target}: mode = \"track\" takes no group");
-                    }
+                if group.is_some() {
+                    bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
                 }
                 let permissions_only = permissions.is_some()
                     && source.is_none()
@@ -1215,7 +1211,7 @@ fn files_from_config_files_with_tracking_roots(
                     continue;
                 }
                 let mut requests = IndexMap::new();
-                if let Some(entry) = parse_file_entry(&key, value, path) {
+                if let Some(entry) = parse_dotfiles_entry(&key, value, path) {
                     let overrides_target = matches!(&entry,
                         FileTomlEntry::Table { variants: Some(vs), .. }
                             if vs.iter().any(|v| v.target.is_some()));
@@ -1266,13 +1262,27 @@ fn files_from_config_files_with_tracking_roots(
             }
             if let Some(requests) = resolved_declarations.remove(&(path, target_raw.clone())) {
                 merged.extend(requests);
-            } else if let Some(entry) = parse_file_entry(&target_raw, value, path) {
+            } else if let Some(entry) = parse_dotfiles_entry(&target_raw, value, path) {
                 merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
             }
         }
     }
     merged.into_values().collect()
 }
+
+/// Parse a `[dotfiles]` whole-file declaration. A group's entries are
+/// declared under `[dotfile_groups.<name>.entries]`, which sets their group;
+/// `[dotfiles]` itself takes no `group`.
+fn parse_dotfiles_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
+    if value.as_table().is_some_and(|t| t.contains_key("group")) {
+        record_invalid(target, config, GROUP_KEY_IN_DOTFILES);
+        return None;
+    }
+    parse_file_entry(target, value, config)
+}
+
+const GROUP_KEY_IN_DOTFILES: &str =
+    "[dotfiles] entries take no group; declare the entry under [dotfile_groups.<name>.entries]";
 
 /// Parse a whole-file declaration and reject unsupported encryption combinations.
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
@@ -1369,6 +1379,23 @@ pub(crate) fn merge_group_entry(
     merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
 ) {
     merge_file_entry(target_raw, entry, base, origin, merged);
+}
+
+/// Resolve one `[dotfile_groups.<name>.entries]` declaration, completed
+/// from its group, with the same parsing and validation as a `[dotfiles]`
+/// entry.
+pub(crate) fn merge_group_toml_entry(
+    target_raw: String,
+    value: toml::Value,
+    base: &Path,
+    origin: &ResourceOrigin,
+    merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
+) -> Result<()> {
+    let Some(entry) = parse_file_entry(&target_raw, value, &origin.config) else {
+        bail!("entries.{target_raw:?}: not a valid whole-file entry");
+    };
+    merge_file_entry(target_raw, entry, base, origin, merged);
+    Ok(())
 }
 
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
@@ -4095,26 +4122,35 @@ pub fn execute_apply(
         }
     }
     let mut removals = vec![];
-    for (req, rendered) in &plan.todo {
-        recheck_removal(req, rendered.as_deref(), opts.force)?;
-        let pending =
-            journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
-        apply_one(req, rendered.as_deref(), written)?;
-        if apply_removes_target(req, rendered.as_deref()) {
-            removals.push(*req);
+    let applied = (|| -> Result<()> {
+        for (req, rendered) in &plan.todo {
+            recheck_removal(req, rendered.as_deref(), opts.force)?;
+            let pending =
+                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            apply_one(req, rendered.as_deref(), written)?;
+            if apply_removes_target(req, rendered.as_deref()) {
+                removals.push(*req);
+            }
+            if req.mode == FileMode::SymlinkEach {
+                save_symlink_each_state(req);
+            }
+            journal::commit_changes(pending);
+            if removes_target(req, rendered.as_deref()) {
+                info!(
+                    "files: removed {} (template rendered empty)",
+                    req.target.display_user()
+                );
+            } else {
+                info!("files: {}", describe_applied(req)?);
+            }
         }
-        if req.mode == FileMode::SymlinkEach {
-            save_symlink_each_state(req);
-        }
-        journal::commit_changes(pending);
-        if removes_target(req, rendered.as_deref()) {
-            info!(
-                "files: removed {} (template rendered empty)",
-                req.target.display_user()
-            );
-        } else {
-            info!("files: {}", describe_applied(req)?);
-        }
+        Ok(())
+    })();
+    if let Err(err) = applied {
+        // what the entries before the failure wrote is a group's all the
+        // same; recording only lists what is on disk and owned now
+        crate::system::dotfile_groups::record_applied(plan.requests);
+        return Err(err);
     }
     prune_after_apply(removals, &plan);
     record_template_states(&plan.record_templates)?;
@@ -7968,25 +8004,16 @@ source = "oldrc""#,
     }
 
     #[test]
-    fn incoming_groups_are_validated() {
-        incoming("[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"work\" }\n")
-            .unwrap();
-        for (body, expected) in [
-            (
-                "[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"a/b\" }\n",
-                "invalid dotfile group name",
-            ),
-            (
-                "[dotfiles]\n\"~/.zshrc\" = { mode = \"track\", group = \"work\" }\n",
-                "takes no group",
-            ),
-            (
-                "[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", group = \"work\" }\n",
-                "whole-file entries",
-            ),
+    fn incoming_dotfiles_entries_take_no_group() {
+        for body in [
+            "[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"work\" }\n",
+            "[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", group = \"work\" }\n",
         ] {
             let err = format!("{:#}", incoming(body).unwrap_err());
-            assert!(err.contains(expected), "{err}");
+            assert!(
+                err.contains("take no group") || err.contains("whole-file entries"),
+                "{err}"
+            );
         }
     }
 

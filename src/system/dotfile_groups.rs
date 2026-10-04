@@ -2,35 +2,34 @@
 //! `[bootstrap] dotfile_groups` selection of which groups a machine applies.
 //!
 //! ```toml
-//! [dotfile_groups.zsh]                   # ~/.dotfiles/zsh/* -> ~/*
 //! [dotfile_groups.home]
-//! source = "home"
-//! target = "~"
-//! mode = "symlink-each"
+//! root = "home"                          # ~/.dotfiles/home, walked into ~
 //! dot_prefix = true
 //! exclude = ["README.md"]
-//! paths.".config/kitty" = { mode = "symlink" } # link the directory itself
 //!
-//! [dotfiles]
-//! "~/.work.gitconfig" = { source = "work/gitconfig", group = "work" }
+//! [dotfile_groups.home.entries]          # whole-file entries, cut out of the walk
+//! "~/.config/kitty" = { mode = "symlink" }       # link the directory itself
+//! "~/.gitconfig" = { source = "git/config.tmpl", mode = "template" }
 //!
 //! [bootstrap]
-//! dotfile_groups = ["home", "zsh"]       # unset: every group applies
+//! dotfile_groups = ["home"]              # unset: every group applies
 //! ```
 //!
-//! A group expands into ordinary [`FileRequest`]s tagged with its name, so
+//! An entry without a source finds it under the group root at its path
+//! inside the group target, and a relative source starts at the root. A
+//! group expands into ordinary [`FileRequest`]s tagged with its name, so
 //! apply, status, and unapply treat its files like any other entry. Each
 //! apply also records what a group deployed under
 //! `$MISE_STATE_DIR/dotfiles/groups/`, so its files can still be found once
-//! the group is deselected or removed from config: `mise dot status` reports
-//! them as orphaned, `mise dot apply --prune` removes them, and
+//! the group stops deploying them: `mise dot status` reports them as
+//! orphaned, `mise dot apply --prune` removes them, and
 //! `mise dot unapply --group` removes a group's files whether or not it is
 //! still configured.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -51,10 +50,10 @@ pub struct DotfileGroupsTomlConfig(pub IndexMap<String, toml::Value>);
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GroupToml {
-    /// source directory; relative paths resolve against `dotfiles.root`,
-    /// and the default is the group name
+    /// the group's directory tree (required); relative paths resolve
+    /// against `dotfiles.root`
     #[serde(default)]
-    source: Option<String>,
+    root: Option<String>,
     /// target directory, `~` by default
     #[serde(default)]
     target: Option<String>,
@@ -69,20 +68,9 @@ struct GroupToml {
     manifest: Option<String>,
     #[serde(default)]
     relative: Option<bool>,
-    /// target-relative path -> override for that part of the tree
+    /// whole-file entries keyed by target, cut out of the tree's walk
     #[serde(default)]
-    paths: IndexMap<String, PathOverrideToml>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PathOverrideToml {
-    #[serde(default)]
-    mode: Option<String>,
-    #[serde(default)]
-    exclude: Option<Vec<String>>,
-    #[serde(default)]
-    permissions: Option<String>,
+    entries: IndexMap<String, toml::Value>,
 }
 
 /// Group names become state file names and CLI arguments.
@@ -95,7 +83,7 @@ fn valid_group_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-/// Check a `group = "..."` value on an ordinary `[dotfiles]` entry.
+/// Check a group name given on the command line.
 pub fn validate_group_name(name: &str) -> Result<()> {
     if !valid_group_name(name) {
         bail!("invalid dotfile group name {name:?}: use letters, digits, '-', '_', and '.'");
@@ -131,7 +119,7 @@ pub(crate) fn warn_unknown_selection(selection: &[String], requests: &[FileReque
     for name in selection {
         if !known.contains(name.as_str()) {
             warn_once!(
-                "[bootstrap] dotfile_groups selects {name:?}, but no [dotfile_groups] table or [dotfiles] entry declares it"
+                "[bootstrap] dotfile_groups selects {name:?}, but no [dotfile_groups] table declares it"
             );
         }
     }
@@ -192,156 +180,298 @@ fn expand_group(
         bail!("mode must be \"symlink-each\", \"copy\", or \"symlink\", not {mode:?}");
     }
     let mode = FileMode::parse(mode).expect("validated group mode");
-    let source = group_source(group.source.as_deref().unwrap_or(name));
-    let target_raw = group.target.unwrap_or_else(|| "~".to_string());
-    if mode == FileMode::Symlink && !group.paths.is_empty() {
-        bail!("paths overrides need a mode that walks the tree (symlink-each or copy)");
-    }
-
-    // overrides are written as target paths; their source spelling depends
-    // on dot_prefix and on what the source tree already holds
-    let mut overrides = vec![];
-    for (key, value) in group.paths {
-        let rel = override_rel(&key)?;
-        let source_rel = source_rel_for(&source, &rel, group.dot_prefix);
-        overrides.push((key, rel, source_rel, value));
-    }
-
-    let entry = |source: &Path,
-                 mode: FileMode,
-                 exclude: Vec<String>,
-                 dot_prefix: bool,
-                 walks: bool,
-                 permissions: Option<String>| FileTomlEntry::Table {
-        source: Some(source.to_string_lossy().to_string()),
-        content: None,
-        mode: Some(mode.name().to_string()),
-        exclude: (!exclude.is_empty()).then_some(exclude),
-        include: None,
-        manifest: if walks { group.manifest.clone() } else { None },
-        permissions,
-        autosave: None,
-        encrypt: None,
-        allow_plaintext: None,
-        variants: None,
-        enabled: None,
-        remove_empty: None,
-        dot_prefix: dot_prefix.then_some(true),
-        relative: if matches!(mode, FileMode::Symlink | FileMode::SymlinkEach) {
-            group.relative
-        } else {
-            None
-        },
-        group: Some(name.to_string()),
+    let Some(root) = group.root.as_deref() else {
+        bail!("root is required: the directory tree the group deploys");
     };
+    let root = group_root(root);
+    let target_raw = group.target.unwrap_or_else(|| "~".to_string());
+    let target = files::resolve_target_arg(&target_raw);
+    if mode == FileMode::Symlink && !group.entries.is_empty() {
+        bail!("entries need a mode that walks the tree (symlink-each or copy)");
+    }
+    let unanchored_exclude = group
+        .exclude
+        .iter()
+        .filter(|p| !p.contains('/') && !p.contains('\\'))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let defaults = EntryDefaults {
+        name,
+        root: &root,
+        target: &target,
+        mode,
+        manifest: group.manifest.as_deref(),
+        dot_prefix: group.dot_prefix,
+        relative: group.relative,
+        unanchored_exclude: &unanchored_exclude,
+    };
+    let mut entries = vec![];
+    for (key, value) in group.entries {
+        entries.push(group_entry(&defaults, &key, value)?);
+    }
+    // an entry beneath a walking entry is cut out of its walk, as every
+    // entry is cut out of the group's tree. Beneath anything else, such as
+    // a directory linked whole, both claim the same path, and planning
+    // reports the conflict.
+    let nested = entries
+        .iter()
+        .map(|outer| {
+            entries
+                .iter()
+                .filter(|inner| outer.walks && inner.target != outer.target)
+                .filter_map(|inner| inner.target.strip_prefix(&outer.target).ok())
+                .map(|rel| {
+                    format!(
+                        "/{}",
+                        glob_escape_rel(&source_rel_for(&outer.source, rel, outer.dot_prefix))
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
 
     let mut merged = IndexMap::new();
-    // the tree itself, minus every overridden subtree
+    // the tree itself, minus every path an entry describes, and minus a
+    // source inside the tree that an entry deploys somewhere else
     let mut exclude = group.exclude.clone();
-    exclude.extend(
-        overrides
-            .iter()
-            .map(|(_, _, source_rel, _)| format!("/{}", glob_escape_rel(source_rel))),
-    );
+    for entry in &entries {
+        let rel = entry
+            .target
+            .strip_prefix(&target)
+            .expect("entry inside target");
+        exclude.push(format!(
+            "/{}",
+            glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
+        ));
+        if let Ok(source_rel) = entry.source.strip_prefix(&root)
+            && !source_rel.as_os_str().is_empty()
+        {
+            exclude.push(format!("/{}", glob_escape_rel(source_rel)));
+        }
+    }
+    let walks = mode != FileMode::Symlink;
     files::merge_group_entry(
         target_raw.clone(),
-        entry(
-            &source,
-            mode,
-            exclude,
-            group.dot_prefix && mode != FileMode::Symlink,
-            mode != FileMode::Symlink,
-            None,
-        ),
+        FileTomlEntry::Table {
+            source: Some(root.to_string_lossy().to_string()),
+            content: None,
+            mode: Some(mode.name().to_string()),
+            exclude: (!exclude.is_empty()).then_some(exclude),
+            include: None,
+            manifest: if walks { group.manifest.clone() } else { None },
+            permissions: None,
+            autosave: None,
+            encrypt: None,
+            allow_plaintext: None,
+            variants: None,
+            enabled: None,
+            remove_empty: None,
+            dot_prefix: (group.dot_prefix && walks).then_some(true),
+            relative: group.relative,
+            group: Some(name.to_string()),
+        },
         base,
         origin,
         &mut merged,
     );
-    for (key, rel, source_rel, value) in &overrides {
-        let sub_mode = match value.mode.as_deref() {
-            None => mode,
-            Some(m @ ("symlink" | "symlink-each" | "copy" | "template")) => {
-                FileMode::parse(m).expect("validated override mode")
-            }
-            Some(m) => bail!(
-                "paths.{key:?}: mode must be \"symlink\", \"symlink-each\", \"copy\", or \"template\", not {m:?}"
-            ),
-        };
-        let sub_source = source.join(source_rel);
-        let walks =
-            matches!(sub_mode, FileMode::SymlinkEach | FileMode::Copy) && sub_source.is_dir();
-        // an override's own list replaces the group's; otherwise patterns
-        // that match any component still apply inside it, while anchored
-        // ones name paths relative to the group root
-        let mut sub_exclude = match &value.exclude {
-            Some(exclude) => exclude.clone(),
-            None => group
-                .exclude
-                .iter()
-                .filter(|p| !p.contains('/') && !p.contains('\\'))
+    for (entry, cut) in entries.into_iter().zip(nested) {
+        let mut table = entry.table;
+        if !cut.is_empty() {
+            let mut exclude = table
+                .get("exclude")
+                .and_then(toml::Value::as_array)
                 .cloned()
-                .collect(),
-        };
-        // a nested override owns its subtree, not this one
-        for (_, other_rel, other_source_rel, _) in &overrides {
-            if other_rel != rel
-                && other_rel.starts_with(rel)
-                && let Ok(nested) = other_source_rel.strip_prefix(source_rel)
-            {
-                sub_exclude.push(format!("/{}", glob_escape_rel(nested)));
-            }
+                .unwrap_or_default();
+            exclude.extend(cut.into_iter().map(toml::Value::String));
+            table.insert("exclude".into(), toml::Value::Array(exclude));
         }
-        files::merge_group_entry(
-            join_target_raw(&target_raw, rel),
-            entry(
-                &sub_source,
-                sub_mode,
-                sub_exclude,
-                group.dot_prefix && walks,
-                walks,
-                value.permissions.clone(),
-            ),
+        files::merge_group_toml_entry(
+            entry.key,
+            toml::Value::Table(table),
             base,
             origin,
             &mut merged,
-        );
+        )?;
     }
     Ok(merged.into_values().collect())
 }
 
-/// Resolve a group's `source`: relative paths start at `dotfiles.root`.
-fn group_source(source: &str) -> PathBuf {
-    let source = file::replace_path(source);
-    if source.is_relative() {
-        files::dotfiles_root().join(source)
+/// One `[dotfile_groups.<name>.entries]` declaration, completed from its
+/// group: a missing source is found under the group root at the entry's
+/// path inside the group target, a relative one starts at the group root,
+/// and a missing mode deploys like the group does.
+struct GroupEntry {
+    key: String,
+    target: PathBuf,
+    source: PathBuf,
+    walks: bool,
+    dot_prefix: bool,
+    table: toml::Table,
+}
+
+/// What a group's entries inherit from it.
+struct EntryDefaults<'a> {
+    name: &'a str,
+    root: &'a Path,
+    target: &'a Path,
+    mode: FileMode,
+    manifest: Option<&'a str>,
+    dot_prefix: bool,
+    relative: Option<bool>,
+    /// the group's exclusions that match any path component, which apply
+    /// inside an entry's tree too
+    unanchored_exclude: &'a [String],
+}
+
+fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Result<GroupEntry> {
+    let EntryDefaults {
+        name,
+        root,
+        target: group_target,
+        mode: group_mode,
+        manifest,
+        dot_prefix,
+        relative,
+        unanchored_exclude,
+    } = *defaults;
+    let mut table = match value {
+        toml::Value::String(source) => {
+            toml::Table::from_iter([("source".to_string(), toml::Value::String(source))])
+        }
+        toml::Value::Table(table) => table,
+        _ => bail!("entries.{key:?}: expected a string or table"),
+    };
+    if ["block", "line", "template", "comment", "position"]
+        .iter()
+        .any(|k| table.contains_key(*k))
+    {
+        bail!(
+            "entries.{key:?}: a group holds whole-file entries; declare block and line edits in [dotfiles]"
+        );
+    }
+    match table.get("group").map(|g| g.as_str()) {
+        None => {}
+        Some(Some(g)) if g == name => {}
+        Some(_) => bail!("entries.{key:?}: belongs to group {name:?} and cannot name another"),
+    }
+    table.insert("group".into(), toml::Value::String(name.to_string()));
+    let target = files::resolve_target_arg(key);
+    let Ok(rel) = target.strip_prefix(group_target) else {
+        bail!("entries.{key:?}: must be inside the group's target");
+    };
+    if rel.as_os_str().is_empty() {
+        bail!("entries.{key:?}: must be a path inside the group's target, not the target itself");
+    }
+    let rel = rel.to_path_buf();
+    let mode = table
+        .get("mode")
+        .and_then(toml::Value::as_str)
+        .map(str::to_string);
+    let has_source = table.contains_key("source");
+    let needs_source = !has_source
+        && !table.contains_key("content")
+        && mode.as_deref() != Some("absent")
+        && mode.as_deref() != Some("track")
+        // `{ permissions = "0600" }` alone manages an existing file's mode
+        && !(mode.is_none() && table.contains_key("permissions"));
+    let inferred = needs_source;
+    let source = if let Some(source) = table.get("source").and_then(toml::Value::as_str) {
+        let source = file::replace_path(source);
+        Some(if source.is_relative() {
+            root.join(source)
+        } else {
+            source
+        })
+    } else if needs_source {
+        Some(root.join(source_rel_for(root, &rel, dot_prefix)))
     } else {
-        source
-    }
-}
-
-/// A `paths` key as a relative path inside the group's target.
-fn override_rel(key: &str) -> Result<PathBuf> {
-    let rel = PathBuf::from(key.trim_start_matches("./").trim_end_matches('/'));
-    if rel.as_os_str().is_empty() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
-        bail!("paths.{key:?}: must be a relative path inside the group's target");
-    }
-    Ok(rel)
-}
-
-fn join_target_raw(target_raw: &str, rel: &Path) -> String {
-    let rel = rel_to_slash(rel);
-    if target_raw == "~" {
-        format!("~/{rel}")
+        None
+    };
+    let Some(source) = source else {
+        return Ok(GroupEntry {
+            key: key.to_string(),
+            target,
+            source: PathBuf::new(),
+            walks: false,
+            dot_prefix: false,
+            table,
+        });
+    };
+    table.insert(
+        "source".into(),
+        toml::Value::String(source.to_string_lossy().to_string()),
+    );
+    let mode = match mode {
+        Some(mode) => mode,
+        // deploy like the group: a directory the same way, a file as one
+        // link (or one copy)
+        None => {
+            let mode = if source.is_dir() {
+                group_mode
+            } else if group_mode == FileMode::Copy {
+                FileMode::Copy
+            } else {
+                FileMode::Symlink
+            };
+            table.insert("mode".into(), toml::Value::String(mode.name().into()));
+            mode.name().to_string()
+        }
+    };
+    let walks = matches!(mode.as_str(), "symlink-each" | "copy") && source.is_dir();
+    // a tree inferred from the group's root reads like the group's tree
+    let entry_dot_prefix = if walks && inferred && !table.contains_key("dot_prefix") && dot_prefix {
+        table.insert("dot_prefix".into(), toml::Value::Boolean(true));
+        true
     } else {
-        format!("{}/{rel}", target_raw.trim_end_matches(['/', '\\']))
+        table
+            .get("dot_prefix")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false)
+    };
+    if walks {
+        if let Some(manifest) = manifest
+            && !table.contains_key("manifest")
+        {
+            table.insert("manifest".into(), toml::Value::String(manifest.to_string()));
+        }
+        if !table.contains_key("exclude") && !unanchored_exclude.is_empty() {
+            table.insert(
+                "exclude".into(),
+                toml::Value::Array(
+                    unanchored_exclude
+                        .iter()
+                        .cloned()
+                        .map(toml::Value::String)
+                        .collect(),
+                ),
+            );
+        }
     }
+    if let Some(relative) = relative
+        && matches!(mode.as_str(), "symlink" | "symlink-each")
+        && !table.contains_key("relative")
+    {
+        table.insert("relative".into(), toml::Value::Boolean(relative));
+    }
+    Ok(GroupEntry {
+        key: key.to_string(),
+        target,
+        source,
+        walks,
+        dot_prefix: entry_dot_prefix,
+        table,
+    })
 }
 
-fn rel_to_slash(rel: &Path) -> String {
-    rel.components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
+/// Resolve a group's `root`: relative paths start at `dotfiles.root`.
+fn group_root(root: &str) -> PathBuf {
+    let root = file::replace_path(root);
+    if root.is_relative() {
+        files::dotfiles_root().join(root)
+    } else {
+        root
+    }
 }
 
 fn glob_escape_rel(rel: &Path) -> String {
@@ -666,11 +796,11 @@ pub(crate) fn record_applied(requests: &[FileRequest]) {
     }
 }
 
-/// What groups deployed that no active entry deploys now: everything of a
-/// group deselected by `[bootstrap] dotfile_groups` or no longer declared,
-/// and the paths of a tree or override removed from a group that is still
-/// active (say, its `[dotfile_groups]` table went while a `[dotfiles]` entry
-/// still names the group). Each returned record holds only those paths.
+/// What groups deployed that no active entry deploys now. That is every
+/// file of a group deselected by `[bootstrap] dotfile_groups` or no longer
+/// declared, and every file a still-active group stopped deploying: one its
+/// `exclude` now skips, an entry removed from it, or the copy of a source
+/// file since deleted. Each returned record holds only those paths.
 ///
 /// A path an active entry deploys is never orphaned, whichever group
 /// recorded it: a declaration moved from one group to another keeps its
@@ -684,14 +814,7 @@ pub fn orphaned(active: &[FileRequest]) -> Vec<GroupRecord> {
     records
         .into_iter()
         .filter_map(|mut record| {
-            let roots = active
-                .iter()
-                .filter(|req| req.group.as_deref() == Some(record.group.as_str()))
-                .map(|req| &req.target)
-                .collect::<HashSet<_>>();
-            record
-                .paths
-                .retain(|path| !roots.contains(&path.root) && !claimed.contains(&path.target));
+            record.paths.retain(|path| !claimed.contains(&path.target));
             (!record.paths.is_empty()).then_some(record)
         })
         .collect()
@@ -814,7 +937,7 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
             &path.target.display_user(),
             [path.target.clone()],
         )?;
-        file::remove_file(&path.target)?;
+        remove_no_follow(&path.root, &path.target)?;
         journal::commit_changes(pending);
         info!(
             "files: removed {} (group {})",
@@ -841,6 +964,43 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
         save_record(&stored);
     }
     Ok(removed)
+}
+
+/// Remove `target` without following a symlink on the way from `root`: each
+/// directory is opened from the one above it with `O_NOFOLLOW`, and the file
+/// is unlinked from the last, so a directory swapped for a link after the
+/// safety check fails the removal instead of redirecting it into a source
+/// tree.
+#[cfg(unix)]
+fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
+    use nix::fcntl::{OFlag, open, openat};
+    use nix::sys::stat::Mode;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    let failed = || format!("failed to remove {}", target.display_user());
+    // a single-file entry's target is its own root: start from its parent
+    let start = if target == root {
+        root.parent().unwrap_or(root)
+    } else {
+        root
+    };
+    let rel = target.strip_prefix(start).wrap_err_with(failed)?;
+    let mut components = rel.components().collect::<Vec<_>>();
+    let Some(name) = components.pop() else {
+        bail!("{}: nothing to remove", target.display_user());
+    };
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let mut dir = open(start, flags, Mode::empty()).wrap_err_with(failed)?;
+    for component in components {
+        dir = openat(&dir, component.as_os_str(), flags, Mode::empty()).wrap_err_with(failed)?;
+    }
+    unlinkat(&dir, name.as_os_str(), UnlinkatFlags::NoRemoveDir).wrap_err_with(failed)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn remove_no_follow(_root: &Path, target: &Path) -> Result<()> {
+    file::remove_file(target)
 }
 
 /// Remove empty directories from `dir` up to, but not including, `root`,
@@ -877,17 +1037,6 @@ mod tests {
     }
 
     #[test]
-    fn override_keys_must_stay_inside_the_target() {
-        assert_eq!(
-            override_rel("./.config/kitty/").unwrap(),
-            PathBuf::from(".config/kitty")
-        );
-        for key in ["", "/etc", "../x", ".config/../../x"] {
-            assert!(override_rel(key).is_err(), "{key}");
-        }
-    }
-
-    #[test]
     fn source_names_follow_dot_prefix_and_existing_spelling() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path();
@@ -909,15 +1058,6 @@ mod tests {
             source_rel_for(source, rel, true),
             PathBuf::from("dot-config/kitty/kitty.conf")
         );
-    }
-
-    #[test]
-    fn target_raw_joins_under_home_and_absolute_targets() {
-        assert_eq!(
-            join_target_raw("~", Path::new(".config/kitty")),
-            "~/.config/kitty"
-        );
-        assert_eq!(join_target_raw("/etc/", Path::new("x")), "/etc/x");
     }
 
     #[test]

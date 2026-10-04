@@ -6200,11 +6200,6 @@
                 "type": "boolean",
                 "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
               },
-              "group": {
-                "type": "string",
-                "description": "the dotfile group this whole-file entry belongs to; it applies only while [bootstrap] dotfile_groups selects that group (or is unset)",
-                "pattern": "^[A-Za-z0-9_.-]+$"
-              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -6576,10 +6571,11 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
+        "required": ["root"],
         "properties": {
-          "source": {
+          "root": {
             "type": "string",
-            "description": "source directory; a relative path resolves against dotfiles.root. Defaults to the group name"
+            "description": "the directory tree the group deploys; a relative path resolves against dotfiles.root"
           },
           "target": {
             "type": "string",
@@ -6613,31 +6609,20 @@
             "type": "boolean",
             "description": "link by a path relative to the link's directory; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
           },
-          "paths": {
+          "entries": {
             "type": "object",
-            "description": "overrides for parts of the tree, keyed by path relative to the target, such as \".config/kitty\"",
+            "description": "whole-file entries for parts of the tree, keyed by target path inside the group's target and written like [dotfiles] entries; each is cut out of the walk. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root",
             "additionalProperties": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "mode": {
+              "oneOf": [
+                {
                   "type": "string",
-                  "description": "how this path is deployed; \"symlink\" links a directory as a whole instead of each file in it",
-                  "enum": ["symlink", "symlink-each", "copy", "template"]
+                  "description": "source path, relative to the group root"
                 },
-                "exclude": {
-                  "type": "array",
-                  "description": "glob patterns, relative to this path, replacing the group's exclude list",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "permissions": {
-                  "type": "string",
-                  "description": "octal permissions for a copied or templated file, such as \"0600\" (Unix only)",
-                  "pattern": "^(0o)?[0-7]{1,4}$"
+                {
+                  "type": "object",
+                  "description": "whole-file entry, as in [dotfiles]"
                 }
-              }
+              ]
             }
           }
         }

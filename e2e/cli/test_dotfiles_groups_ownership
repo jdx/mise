@@ -17,8 +17,11 @@ chmod +x editor-write
 
 cat <<EOF >mise.toml
 [dotfile_groups.zsh]
+root = "zsh"
 [dotfile_groups.extra]
+root = "extra"
 [dotfile_groups.conf]
+root = "conf"
 target = "~/.config/conf"
 mode = "copy"
 EOF
@@ -45,38 +48,39 @@ assert_fail "test -e $HOME/.config/conf/b.conf"
 assert_fail "test -e $HOME/.config/conf/a.conf"
 echo "a" >"$DOTS/conf/a.conf"
 
-# Moving a declaration to another group keeps its file out of the prune.
+# Moving an entry to another group keeps its file out of the prune.
 echo "work" >"$DOTS/work.conf"
+mkdir -p "$DOTS/old" "$DOTS/new"
 cat <<EOF >mise.toml
 [dotfile_groups.zsh]
+root = "zsh"
 [dotfile_groups.extra]
-
-[dotfiles]
-"~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy", group = "old" }
+root = "extra"
+[dotfile_groups.old]
+root = "old"
+entries."~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy" }
 EOF
 assert_succeed "mise dot apply --yes"
-sed -i 's/group = "old"/group = "new"/' mise.toml
+sed -i 's/dotfile_groups.old/dotfile_groups.new/; s/root = "old"/root = "new"/' mise.toml
 assert_succeed "mise dot apply --prune --yes"
 assert "cat $HOME/.work.conf" "work"
 
-# Removing a group's table while an entry still names the group leaves the
-# tree's files orphaned.
+# Removing a group's table leaves its files orphaned until pruned.
 cat <<EOF >mise.toml
 [dotfile_groups.extra]
-
-[dotfiles]
-"~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy", group = "zsh" }
+root = "extra"
 EOF
 assert_contains "mise dot status" "orphaned"
 assert_succeed "mise dot apply --prune --yes"
 assert_fail "test -e $HOME/.zshrc"
-assert "cat $HOME/.work.conf" "work"
+assert_fail "test -e $HOME/.work.conf"
 
 # Two groups deploying the same tree conflict instead of merging.
 cat <<EOF >mise.toml
 [dotfile_groups.extra]
+root = "extra"
 [dotfile_groups.other]
-source = "extra"
+root = "extra"
 EOF
 assert_fail_contains "mise dot apply --yes" "conflicting"
 
@@ -84,7 +88,9 @@ assert_fail_contains "mise dot apply --yes" "conflicting"
 # reported as missing its source, not as a conflict over ~.
 cat <<EOF >mise.toml
 [dotfile_groups.extra]
+root = "extra"
 [dotfile_groups.later]
+root = "later"
 mode = "copy"
 EOF
 assert_fail_contains "mise dot apply --yes" "sources do not exist"
@@ -95,6 +101,7 @@ git -C "$DOTS/extra" init -q
 git -C "$DOTS/extra" add -A
 cat <<EOF >mise.toml
 [dotfile_groups.extra]
+root = "extra"
 manifest = "git"
 EOF
 echo "live" >"$HOME/.gitonly"
@@ -108,6 +115,7 @@ mkdir -p "$DOTS/app"
 echo "app" >"$DOTS/app/app.conf"
 cat <<EOF2 >mise.toml
 [dotfile_groups.app]
+root = "app"
 target = "~/.config/app"
 mode = "copy"
 EOF2
@@ -128,6 +136,7 @@ rm -rf "$HOME/.config/app"
 ln -s "$DOTS/app" "$HOME/.config/app"
 cat <<EOF2 >mise.toml
 [dotfile_groups.app]
+root = "app"
 target = "~/.config/app"
 mode = "copy"
 
@@ -147,6 +156,7 @@ EOF2
 chmod +x editor-record
 cat <<EOF2 >mise.toml
 [dotfile_groups.zsh]
+root = "zsh"
 
 [dotfiles]
 "~/.zshrc/activate" = { block = "echo activate" }
@@ -163,6 +173,7 @@ echo "a" >"$DOTS/conf2/a.conf"
 echo "b" >"$DOTS/conf2/b.conf"
 cat <<EOF2 >mise.toml
 [dotfile_groups.conf2]
+root = "conf2"
 target = "~/.config/conf2"
 mode = "copy"
 EOF2
@@ -175,12 +186,14 @@ assert "cat $HOME/.config/conf2/b.conf" "local b"
 # Unapplying a group leaves a target another group now deploys, even when it
 # still matches what the first group wrote.
 echo "shared" >"$DOTS/shared.conf"
+mkdir -p "$DOTS/first" "$DOTS/second"
 cat <<EOF2 >mise.toml
-[dotfiles]
-"~/.shared.conf" = { source = "$DOTS/shared.conf", mode = "copy", group = "first" }
+[dotfile_groups.first]
+root = "first"
+entries."~/.shared.conf" = { source = "$DOTS/shared.conf", mode = "copy" }
 EOF2
 assert_succeed "mise dot apply --yes"
-sed -i 's/group = "first"/group = "second"/' mise.toml
+sed -i 's/dotfile_groups.first/dotfile_groups.second/; s/root = "first"/root = "second"/' mise.toml
 assert_succeed "mise dot apply --yes"
 assert_succeed "mise dot unapply --group first --force --yes"
 assert "cat $HOME/.shared.conf" "shared"
@@ -193,6 +206,7 @@ echo "skip" >"$DOTS/conf3/skip.conf"
 echo "nested" >"$DOTS/conf3/sub/nested.conf"
 cat <<EOF2 >mise.toml
 [dotfile_groups.conf3]
+root = "conf3"
 target = "~/.config/conf3"
 mode = "copy"
 exclude = ["skip.conf"]
@@ -206,6 +220,7 @@ assert "cat $HOME/.config/conf3/sub/nested.conf" "nested"
 # A file outside a Git-manifest group's index is not applied either.
 cat <<EOF2 >mise.toml
 [dotfile_groups.extra]
+root = "extra"
 manifest = "git"
 EOF2
 echo "untracked" >"$DOTS/extra/.untracked"
@@ -220,12 +235,34 @@ cat <<EOF2 >"$HOME/.config/mise/config.toml"
 [dotfiles]
 "~/.tracked.conf" = { mode = "track" }
 EOF2
+mkdir -p "$DOTS/tracked"
 cat <<EOF2 >mise.toml
-[dotfiles]
-"~/.tracked.conf" = { source = "$DOTS/tracked.conf", mode = "copy", group = "tracked" }
+[dotfile_groups.tracked]
+root = "tracked"
+entries."~/.tracked.conf" = { source = "$DOTS/tracked.conf", mode = "copy" }
 EOF2
 assert_succeed "mise dot apply --yes"
 assert "cat $HOME/.tracked.conf" "tracked"
 assert_succeed "mise dot unapply --group tracked --yes"
 assert_fail "test -e $HOME/.tracked.conf"
 rm "$HOME/.config/mise/config.toml"
+
+# A file a still-selected group stops deploying, here by a new exclusion,
+# is orphaned, and a prune removes it.
+mkdir -p "$DOTS/narrow"
+echo "a" >"$DOTS/narrow/a.conf"
+echo "b" >"$DOTS/narrow/b.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.narrow]
+root = "narrow"
+target = "~/.config/narrow"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/narrow/b.conf" "b"
+sed -i 's/mode = "copy"/mode = "copy"\nexclude = ["b.conf"]/' mise.toml
+assert_succeed "mise dot apply --yes"
+assert_contains "mise dot status" "orphaned"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.config/narrow/b.conf"
+assert "cat $HOME/.config/narrow/a.conf" "a"
