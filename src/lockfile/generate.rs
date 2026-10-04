@@ -541,7 +541,7 @@ pub async fn generate(
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
                 ensure_no_downgrade(old, &info, &backend)?;
-                carry_forge_ids(old, &mut info);
+                carry_forge_ids(old, &mut info, &backend);
             }
         }
         if let Some(error) = check_single_tool_provenance(
@@ -754,14 +754,21 @@ pub async fn populate_uv_locks(
 /// the same signer, recorded none: explicit signer options verify a release
 /// without the forge check, and an older certificate carries no IDs. Neither
 /// says the repository changed, so the commitment stays for the next
-/// resolution that does check it. Another signer cannot drop them:
+/// resolution that does check it. That covers the same signer under a new
+/// ref, such as a new release tag, as [`crate::packslip_forge::lock_entry_continues`]
+/// accepts it. Another signer cannot drop them:
 /// [`crate::packslip_forge::lock_entry_continues`] refuses it.
 ///
 /// Likewise the owner ID alone, which only an older mise recorded, when the
 /// new entry records the same repository: it is ignored, but kept so that an
 /// unchanged entry is not rewritten.
-fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
-    if new.signer.is_some() && new.signer == old.signer && new.repository_id.is_none() {
+fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo, backend: &str) {
+    let project = packslip_project(backend);
+    if old.signer.is_some()
+        && new.signer.is_some()
+        && new.repository_id.is_none()
+        && crate::packslip_forge::lock_entry_continues(project.as_deref(), old, new)
+    {
         new.repository_id = old.repository_id.clone();
         new.repository_owner_id = old.repository_owner_id.clone();
     }
@@ -771,6 +778,13 @@ fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
     {
         new.repository_owner_id = old.repository_owner_id.clone();
     }
+}
+
+/// The packslip project a `packslip:` backend names, if it is one.
+fn packslip_project(backend: &str) -> Option<String> {
+    backend
+        .strip_prefix("packslip:")
+        .and_then(|name| crate::backend::packslip::project_name(name).ok())
 }
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
@@ -795,9 +809,7 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
     // it under the name it has now. A changed repository ID is a different
     // repository even under the same name and signer: install refuses it,
     // and so does this.
-    let project = backend
-        .strip_prefix("packslip:")
-        .and_then(|name| crate::backend::packslip::project_name(name).ok());
+    let project = packslip_project(backend);
     if old.signer.is_some()
         && (!crate::packslip_forge::lock_entry_continues(project.as_deref(), old, new)
             || new.attested_by != old.attested_by)
@@ -1540,7 +1552,7 @@ mod tests {
         };
         assert!(ensure_no_downgrade(&old, &unchecked, backend).is_ok());
         let mut carried = unchecked.clone();
-        carry_forge_ids(&old, &mut carried);
+        carry_forge_ids(&old, &mut carried, backend);
         assert_eq!(carried, old);
         let unchecked_renamed = PlatformInfo {
             signer: signer("new/tool"),
@@ -1548,8 +1560,21 @@ mod tests {
         };
         assert!(ensure_no_downgrade(&old, &unchecked_renamed, backend).is_err());
         let mut not_carried = unchecked_renamed.clone();
-        carry_forge_ids(&old, &mut not_carried);
+        carry_forge_ids(&old, &mut not_carried, backend);
         assert_eq!(not_carried.repository_id, None);
+        // The same workflow under a new ref, such as a new release tag, keeps
+        // the old entry's IDs, as the downgrade check accepts it.
+        let unchecked_new_tag = PlatformInfo {
+            signer: old
+                .signer
+                .as_ref()
+                .map(|signer| format!("{signer}@refs/tags/v2.0.0")),
+            ..unchecked.clone()
+        };
+        assert!(ensure_no_downgrade(&old, &unchecked_new_tag, backend).is_ok());
+        let mut retagged = unchecked_new_tag.clone();
+        carry_forge_ids(&old, &mut retagged, backend);
+        assert_eq!(retagged.repository_id, old.repository_id);
         // A new entry records no owner ID; the one an older mise recorded for
         // the same repository stays, and only for it.
         let ownerless = PlatformInfo {
@@ -1558,13 +1583,13 @@ mod tests {
         };
         assert!(ensure_no_downgrade(&old, &ownerless, backend).is_ok());
         let mut kept = ownerless.clone();
-        carry_forge_ids(&old, &mut kept);
+        carry_forge_ids(&old, &mut kept, backend);
         assert_eq!(kept, old);
         let mut other_repository = PlatformInfo {
             repository_id: Some("43".into()),
             ..ownerless
         };
-        carry_forge_ids(&old, &mut other_repository);
+        carry_forge_ids(&old, &mut other_repository, backend);
         assert_eq!(other_repository.repository_owner_id, None);
         // Another workflow of the same repository is another signer.
         let other_workflow = PlatformInfo {
