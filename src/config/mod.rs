@@ -1626,14 +1626,20 @@ impl Config {
             match std::fs::read(&env_file) {
                 Ok(bytes) => {
                     env_results.env_files.push(env_file.clone());
-                    let content = String::from_utf8_lossy(&bytes);
-                    match mise_dotenv::parse(&content, true, crate::env::vars_safe()) {
-                        Ok(items) => {
-                            for (k, v) in items {
-                                env_results.env.insert(k, (v, env_file.clone()));
+                    match file::decode_text(&bytes) {
+                        Ok(content) => {
+                            match mise_dotenv::parse(&content, true, crate::env::vars_safe()) {
+                                Ok(items) => {
+                                    for (k, v) in items {
+                                        env_results.env.insert(k, (v, env_file.clone()));
+                                    }
+                                }
+                                Err(err) => warn!("env_file: {err}"),
                             }
                         }
-                        Err(err) => warn!("env_file: {err}"),
+                        Err(err) => {
+                            warn!("env_file: ignoring {}: {err:#}", display_path(&env_file))
+                        }
                     }
                 }
                 Err(err) => trace!("env_file: {err}"),
