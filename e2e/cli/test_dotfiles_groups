@@ -192,3 +192,66 @@ assert_contains "mise dot status 2>&1" "root is required"
 assert_fail "test -e $HOME/.grouped"
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $HOME/.grouped"
+
+# A walking entry with its own source reads like the group's tree
+# (dot_prefix), and a nested entry's source inside it is not walked too.
+mkdir -p "$DOTS/tool/tooltree"
+echo "toolrc" >"$DOTS/tool/tooltree/dot-toolrc"
+echo "gen={{ env.HOME }}" >"$DOTS/tool/tooltree/gen.tmpl"
+cat <<EOF >mise.toml
+[dotfile_groups.tool]
+root = "tool"
+dot_prefix = true
+
+[dotfile_groups.tool.entries]
+"~/.config/tool" = { source = "tooltree", mode = "symlink-each" }
+"~/.config/tool/gen.conf" = { source = "tooltree/gen.tmpl", mode = "template" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.config/tool/.toolrc" "$DOTS/tool/tooltree/dot-toolrc"
+assert "cat $HOME/.config/tool/gen.conf" "gen=$HOME"
+assert_fail "test -e $HOME/.config/tool/gen.tmpl"
+assert_fail "test -e $HOME/tooltree"
+
+# A variant cannot deploy an entry outside its group's target.
+cat <<EOF >mise.toml
+[dotfile_groups.app]
+root = "app"
+target = "~/.config"
+
+[dotfile_groups.app.entries]
+"~/.config/tool.conf" = { mode = "absent", variants = [{ os = "linux", target = "~/.elsewhere" }, { default = true }] }
+EOF
+assert_contains "mise dot status 2>&1" "must be inside the group's target"
+
+# Removal works under a target whose parent directory is a symlink.
+mkdir -p "$HOME/realcfg" "$DOTS/linked"
+echo "single" >"$DOTS/linked/single.conf"
+ln -s "$HOME/realcfg" "$HOME/.cfg"
+cat <<EOF >mise.toml
+[dotfile_groups.linked]
+root = "linked"
+target = "~/.cfg"
+mode = "copy"
+entries."~/.cfg/single.conf" = { mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/realcfg/single.conf" "single"
+assert_succeed "mise dot unapply --group linked --yes"
+assert_fail "test -e $HOME/realcfg/single.conf"
+
+# A declared group that fails to expand keeps its files: they are not
+# orphaned, and a prune leaves them.
+mkdir -p "$DOTS/keep"
+echo "keep" >"$DOTS/keep/.keeprc"
+cat <<EOF >mise.toml
+[dotfile_groups.keep]
+root = "keep"
+EOF
+assert_succeed "mise dot apply --yes"
+cat <<EOF >mise.toml
+[dotfile_groups.keep]
+EOF
+assert_not_contains "mise dot status 2>&1" ".keeprc"
+assert_succeed "mise dot apply --prune --yes"
+assert "readlink $HOME/.keeprc" "$DOTS/keep/.keeprc"

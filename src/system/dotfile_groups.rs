@@ -29,7 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, WrapErr, bail};
+use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +125,15 @@ pub(crate) fn warn_unknown_selection(selection: &[String], requests: &[FileReque
     }
 }
 
+/// Groups declared in config that could not be expanded, such as one
+/// missing its `root`. Their recorded files are still the group's, so they
+/// are never orphaned and pruned for a configuration mistake.
+fn unexpanded() -> std::sync::MutexGuard<'static, HashSet<String>> {
+    static UNEXPANDED: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
+        std::sync::LazyLock::new(Default::default);
+    UNEXPANDED.lock().unwrap_or_else(|err| err.into_inner())
+}
+
 /// Expand every `[dotfile_groups]` table in one config hierarchy into file
 /// requests. A more local file's definition of a group replaces the whole
 /// definition from a more global one.
@@ -157,13 +166,17 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
         let group = match value.try_into::<GroupToml>() {
             Ok(group) => group,
             Err(err) => {
+                unexpanded().insert(name.clone());
                 warn_once!("[dotfile_groups].{name}: {err}, ignoring group");
                 continue;
             }
         };
         match expand_group(&name, group, &base, &origin) {
             Ok(requests) => out.extend(requests),
-            Err(err) => warn_once!("[dotfile_groups].{name}: {err}, ignoring group"),
+            Err(err) => {
+                unexpanded().insert(name.clone());
+                warn_once!("[dotfile_groups].{name}: {err}, ignoring group")
+            }
         }
     }
     out
@@ -217,17 +230,26 @@ fn expand_group(
     let nested = entries
         .iter()
         .map(|outer| {
-            entries
-                .iter()
-                .filter(|inner| outer.walks && inner.target != outer.target)
-                .filter_map(|inner| inner.target.strip_prefix(&outer.target).ok())
-                .map(|rel| {
-                    format!(
+            let mut cut = vec![];
+            if !outer.walks {
+                return cut;
+            }
+            for inner in entries.iter().filter(|inner| inner.target != outer.target) {
+                // the nested entry's target, and its source when that lies
+                // in this entry's tree, are the nested entry's to deploy
+                if let Ok(rel) = inner.target.strip_prefix(&outer.target) {
+                    cut.push(format!(
                         "/{}",
                         glob_escape_rel(&source_rel_for(&outer.source, rel, outer.dot_prefix))
-                    )
-                })
-                .collect::<Vec<_>>()
+                    ));
+                }
+                if let Ok(rel) = inner.source.strip_prefix(&outer.source)
+                    && !rel.as_os_str().is_empty()
+                {
+                    cut.push(format!("/{}", glob_escape_rel(rel)));
+                }
+            }
+            cut
         })
         .collect::<Vec<_>>();
 
@@ -364,6 +386,21 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         bail!("entries.{key:?}: must be a path inside the group's target, not the target itself");
     }
     let rel = rel.to_path_buf();
+    // a variant may deploy elsewhere; every destination stays in the group
+    for variant in table
+        .get("variants")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(variant_target) = variant.get("target").and_then(toml::Value::as_str)
+            && !files::resolve_target_arg(variant_target).starts_with(group_target)
+        {
+            bail!(
+                "entries.{key:?}: variant target {variant_target:?} must be inside the group's target"
+            );
+        }
+    }
     let mode = table
         .get("mode")
         .and_then(toml::Value::as_str)
@@ -375,7 +412,6 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         && mode.as_deref() != Some("track")
         // `{ permissions = "0600" }` alone manages an existing file's mode
         && !(mode.is_none() && table.contains_key("permissions"));
-    let inferred = needs_source;
     let source = if let Some(source) = table.get("source").and_then(toml::Value::as_str) {
         let source = file::replace_path(source);
         Some(if source.is_relative() {
@@ -420,7 +456,7 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     };
     let walks = matches!(mode.as_str(), "symlink-each" | "copy") && source.is_dir();
     // a tree inferred from the group's root reads like the group's tree
-    let entry_dot_prefix = if walks && inferred && !table.contains_key("dot_prefix") && dot_prefix {
+    let entry_dot_prefix = if walks && !table.contains_key("dot_prefix") && dot_prefix {
         table.insert("dot_prefix".into(), toml::Value::Boolean(true));
         true
     } else {
@@ -763,7 +799,7 @@ fn deployed_paths(req: &FileRequest) -> Vec<RecordedPath> {
 /// Paths under an applied entry's target are replaced by what it deployed
 /// this time; the rest of the record (other entries of a partially applied
 /// group) is kept.
-pub(crate) fn record_applied(requests: &[FileRequest]) {
+pub(crate) fn record_applied<'a>(requests: impl IntoIterator<Item = &'a FileRequest>) {
     let mut by_group: IndexMap<&str, Vec<&FileRequest>> = IndexMap::new();
     for req in requests {
         if let Some(group) = &req.group {
@@ -813,6 +849,8 @@ pub fn orphaned(active: &[FileRequest]) -> Vec<GroupRecord> {
     let claimed = claimed_paths(active);
     records
         .into_iter()
+        // a declared group that failed to expand still owns its files
+        .filter(|record| !unexpanded().contains(&record.group))
         .filter_map(|mut record| {
             record.paths.retain(|path| !claimed.contains(&path.target));
             (!record.paths.is_empty()).then_some(record)
@@ -937,8 +975,15 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
             &path.target.display_user(),
             [path.target.clone()],
         )?;
-        remove_no_follow(&path.root, &path.target)?;
+        let removal = remove_no_follow(&path.root, &path.target);
+        // nothing changed on a failure, which closes the change as well
         journal::commit_changes(pending);
+        if let Err(err) = removal {
+            // one path that cannot be removed safely does not stop the rest
+            warn!("files: group {}: {err:#}", record.group);
+            kept.push(path.clone());
+            continue;
+        }
         info!(
             "files: removed {} (group {})",
             path.target.display_user(),
@@ -973,6 +1018,7 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
 /// tree.
 #[cfg(unix)]
 fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
+    use eyre::WrapErr;
     use nix::fcntl::{OFlag, open, openat};
     use nix::sys::stat::Mode;
     use nix::unistd::{UnlinkatFlags, unlinkat};
@@ -990,7 +1036,14 @@ fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
         bail!("{}: nothing to remove", target.display_user());
     };
     let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-    let mut dir = open(start, flags, Mode::empty()).wrap_err_with(failed)?;
+    // only directories at or below the root are never followed; the parent
+    // of a single-file root, such as a symlinked ~/.config, may be a link
+    let start_flags = if start == root {
+        flags
+    } else {
+        flags - OFlag::O_NOFOLLOW
+    };
+    let mut dir = open(start, start_flags, Mode::empty()).wrap_err_with(failed)?;
     for component in components {
         dir = openat(&dir, component.as_os_str(), flags, Mode::empty()).wrap_err_with(failed)?;
     }

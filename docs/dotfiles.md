@@ -713,15 +713,17 @@ dot_prefix = true
 - An entry without `source` finds it under the root, at its path inside the
   group's target: `~/.config/kitty` in the `home` group above reads
   `~/.dotfiles/home/dot-config/kitty`.
-- A relative `source` starts at the root. When it lies inside the root, the
-  walk skips it, so `git/config.tmpl` is rendered to `~/.gitconfig` and not
-  also linked to `~/git/config.tmpl`.
+- A relative `source` starts at the root. When it lies inside the root, or
+  inside the tree of another entry that walks a directory, that walk skips
+  it, so `git/config.tmpl` is rendered to `~/.gitconfig` and not also linked
+  to `~/git/config.tmpl`.
 - An entry without `mode` deploys like the group: a directory the group's
   way, a file as one link, or as one copy in a `copy` group.
 - An entry that walks a directory inherits the group's `dot_prefix` and
   `manifest`, and the group's `exclude` patterns that contain no `/`, unless
   it sets its own.
-- Every entry must lie inside the group's target. An entry beneath another
+- Every entry, including each destination its `variants` name, must lie
+  inside the group's target. An entry beneath another
   walking entry is cut out of that one too. An entry beneath a directory
   linked as a whole would change a file in the root itself, so it is
   reported as a conflict before anything is written.
@@ -756,7 +758,8 @@ so it still knows those files: `mise dot status` lists them as `orphaned`.
 So is a file that a selected group stops deploying, for example after a new
 `exclude` pattern, or the copy of a source file you deleted. A file that an
 active entry still deploys is never orphaned, even when the entry has moved
-to another group.
+to another group. Neither are the files of a group that mise cannot read,
+such as one missing its `root`: mise warns about the group instead.
 
 ```sh
 mise dot apply --prune          # apply, then remove orphaned files

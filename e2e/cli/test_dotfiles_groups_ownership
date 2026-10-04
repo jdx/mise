@@ -266,3 +266,31 @@ assert_contains "mise dot status" "orphaned"
 assert_succeed "mise dot apply --prune --yes"
 assert_fail "test -e $HOME/.config/narrow/b.conf"
 assert "cat $HOME/.config/narrow/a.conf" "a"
+
+# A failed apply records only what it wrote: a copy still waiting to be
+# overwritten holds the user's edit, which unapply must not take for mise's.
+mkdir -p "$DOTS/aa" "$DOTS/bb"
+echo "aa" >"$DOTS/aa/x.conf"
+echo "bb" >"$DOTS/bb/y.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.aa]
+root = "aa"
+target = "~/.config/aa"
+mode = "copy"
+
+[dotfile_groups.bb]
+root = "bb"
+target = "~/.config/bb"
+mode = "copy"
+EOF2
+assert_succeed "mise dot apply --yes"
+echo "my edit" >"$HOME/.config/bb/y.conf"
+echo "aa changed" >"$DOTS/aa/x.conf"
+chmod 444 "$HOME/.config/aa/x.conf"
+chmod 555 "$HOME/.config/aa"
+assert_fail "mise dot apply --yes"
+chmod 755 "$HOME/.config/aa"
+chmod 644 "$HOME/.config/aa/x.conf"
+assert "cat $HOME/.config/bb/y.conf" "my edit"
+assert_succeed "mise dot unapply --group bb --yes"
+assert "cat $HOME/.config/bb/y.conf" "my edit"

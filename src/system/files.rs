@@ -4122,6 +4122,7 @@ pub fn execute_apply(
         }
     }
     let mut removals = vec![];
+    let mut done = vec![];
     let applied = (|| -> Result<()> {
         for (req, rendered) in &plan.todo {
             recheck_removal(req, rendered.as_deref(), opts.force)?;
@@ -4143,13 +4144,19 @@ pub fn execute_apply(
             } else {
                 info!("files: {}", describe_applied(req)?);
             }
+            done.push(*req);
         }
         Ok(())
     })();
     if let Err(err) = applied {
         // what the entries before the failure wrote is a group's all the
-        // same; recording only lists what is on disk and owned now
-        crate::system::dotfile_groups::record_applied(plan.requests);
+        // same. Only those, and entries that needed no change, are
+        // recorded: a target still waiting to be written may hold the
+        // user's edits, which must not be recorded as mise's
+        crate::system::dotfile_groups::record_applied(plan.requests.iter().filter(|req| {
+            done.iter().any(|d| std::ptr::eq(*d, *req))
+                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req))
+        }));
         return Err(err);
     }
     prune_after_apply(removals, &plan);
