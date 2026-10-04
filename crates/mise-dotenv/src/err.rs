@@ -7,7 +7,7 @@ use crate::iter::ParseBufError;
 #[non_exhaustive]
 pub enum Error {
     /// The input did not conform to the supported dotenv syntax.
-    Parse(ParseError, Option<PathBuf>),
+    Parse(Box<ParseError>, Option<PathBuf>),
     /// An IO error may be encountered when reading from a file or reader.
     Io(io::Error, Option<PathBuf>),
     /// The variable was not found in the environment. The `String` is the name of the variable.
@@ -91,7 +91,7 @@ impl From<io::Error> for Error {
 impl From<(ParseBufError, Option<PathBuf>)> for Error {
     fn from((e, path): (ParseBufError, Option<PathBuf>)) -> Self {
         match e {
-            ParseBufError::Parse(error) => Self::Parse(error, path),
+            ParseBufError::Parse(error) => Self::Parse(Box::new(error), path),
             ParseBufError::Io(e) => Self::Io(e, path),
         }
     }
@@ -108,7 +108,7 @@ mod tests {
         path::PathBuf,
     };
 
-    fn parse_error() -> crate::ParseError {
+    fn parse_error() -> Box<crate::ParseError> {
         let error = EnvLoader::with_reader(Cursor::new("BROKEN value"))
             .sequence(EnvSequence::InputOnly)
             .load()
