@@ -101,7 +101,7 @@ pub struct BootstrapTomlConfig {
     pub services: IndexMap<String, services::ServiceTomlConfig>,
     /// Docker Compose project name -> declarative project lifecycle.
     #[serde(default)]
-    pub compose: IndexMap<String, compose::ComposeTomlConfig>,
+    pub compose: IndexMap<String, Templated<compose::ComposeTomlConfig>>,
     /// OpenSSH targets used by `mise bootstrap remote`.
     #[serde(default)]
     pub remote: remote::RemoteTomlConfig,

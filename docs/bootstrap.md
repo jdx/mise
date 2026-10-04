@@ -500,6 +500,7 @@ Not every part of `mise.toml` is a [Tera template](/templates.html). Inside
 | ------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)  | every string value in a unit                                       |
 | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) | every string value in an agent                                     |
+| [`[bootstrap.compose]`](/bootstrap/compose.html)              | every string value in a Compose project                            |
 | `[bootstrap.hooks]`                                           | the hook command                                                   |
 | [`[bootstrap.files]`](/bootstrap/files.html)                  | file content, only with `template = true`                          |
 | [`[dotfiles]`](/dotfiles.html)                                | file content, only with `mode = "template"` or `template = "tera"` |
@@ -514,11 +515,11 @@ additionally gets <code v-pre>{{ target }}</code> and
 <code v-pre>{{ secret(name="...") }}</code>.
 
 Values with no template syntax skip the renderer entirely, so a literal
-`%h`, `%i`, or `$HOME` in a unit or agent reaches the generated file unchanged by
+`%h`, `%i`, or `$HOME` in a unit, agent, or Compose project reaches the generated file unchanged by
 templating. Any `~` expansion a section documents still happens afterwards.
 
 <code v-pre>{{ exec(...) }}</code> is available in `[bootstrap.hooks]` and in file
-content templates, but not in unit or agent values: those render identically for
+content templates, but not in unit, agent, or Compose values: those render identically for
 `status`, `plan`, `--dry-run`, and `apply`, so a read-only command must never
 shell out.
 

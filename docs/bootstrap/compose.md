@@ -62,6 +62,30 @@ and `env_files` resolve from it. With no `files`, Compose performs its normal
 project-directory discovery. mise passes multiple files and environment files
 in declaration order, so later entries retain Compose's override semantics.
 
+## Templates
+
+Compose project values are rendered as [Tera templates](/templates.html) before
+mise validates `project_dir` or resolves `files` and `env_files`. This lets a
+portable configuration use its declaring config's directory or environment:
+
+```toml
+[bootstrap.compose.mise-cache]
+project_dir = "{{ config_root }}/compose"
+files = ["{{ env.COMPOSE_FILE }}"]
+env_files = ["{{ config_root }}/compose/.env"]
+```
+
+Supported text and text-array fields are rendered, including entries in path,
+command, service, profile, and dependency arrays. Enum fields such as `state`,
+`pull`, `build`, `recreate`, and `down_images` must use their literal TOML
+values. Template rendering uses the context of the
+config file that declared the project, so <code v-pre>{{ config_root }}</code>
+does not change with the directory where you run `mise bootstrap`. Values with
+no template syntax pass through unchanged. <code v-pre>{{ exec(...) }}</code>
+is not available because `status`, `plan`, `apply --dry-run`, and `apply` must
+render the same declaration. A template failure stops the command and reports
+the declaring config file.
+
 ## Preview the whole setup
 
 ```sh

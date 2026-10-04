@@ -96,6 +96,7 @@ impl<T: DeserializeOwned> Templated<T> {
         }
         let mut tera = get_tera_without_exec(config_path.parent());
         let mut raw = self.raw;
+        remove_ignored_fields(&mut raw, &self.ignored);
         // Flatten the cause into the message: these surface through `warn!`,
         // which prints only the top-level error.
         render_value(&mut raw, &mut tera, ctx).map_err(|err| {
@@ -110,6 +111,17 @@ impl<T: DeserializeOwned> Templated<T> {
                 config_path.display()
             )
         })
+    }
+}
+
+fn remove_ignored_fields(raw: &mut toml::Value, ignored: &[String]) {
+    let Some(table) = raw.as_table_mut() else {
+        return;
+    };
+    for field in ignored {
+        if table.contains_key(field) {
+            table.remove(field);
+        }
     }
 }
 
@@ -218,6 +230,40 @@ mod tests {
             "#,
         );
         assert_eq!(unit.ignored_fields(), ["exec_startt"]);
+    }
+
+    #[test]
+    fn test_ignored_fields_do_not_participate_in_rendering() {
+        let unit = templated(
+            r#"
+            exec_start = "{{ config_root }}/bin/serve"
+            exec_startt = "{{ unterminated"
+            "#,
+        );
+        let rendered = unit
+            .render_with(&ctx(), Path::new("/home/u/proj/mise.toml"))
+            .unwrap();
+        assert_eq!(
+            rendered.exec_start.as_deref(),
+            Some("/home/u/proj/bin/serve")
+        );
+    }
+
+    #[test]
+    fn test_ignored_dotted_root_fields_do_not_participate_in_rendering() {
+        let unit = templated(
+            r#"
+            exec_start = "{{ config_root }}/bin/serve"
+            "exec.startt" = "{{ unterminated"
+            "#,
+        );
+        let rendered = unit
+            .render_with(&ctx(), Path::new("/home/u/proj/mise.toml"))
+            .unwrap();
+        assert_eq!(
+            rendered.exec_start.as_deref(),
+            Some("/home/u/proj/bin/serve")
+        );
     }
 
     #[test]
