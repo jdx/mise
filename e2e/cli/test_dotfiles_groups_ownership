@@ -211,3 +211,21 @@ EOF2
 echo "untracked" >"$DOTS/extra/.untracked"
 assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.untracked" "does not deploy this file"
 assert_fail "test -e $HOME/.untracked"
+
+# Tracking a group's file only observes it, so unapply --group still
+# removes it.
+echo "tracked" >"$DOTS/tracked.conf"
+mkdir -p "$HOME/.config/mise"
+cat <<EOF2 >"$HOME/.config/mise/config.toml"
+[dotfiles]
+"~/.tracked.conf" = { mode = "track" }
+EOF2
+cat <<EOF2 >mise.toml
+[dotfiles]
+"~/.tracked.conf" = { source = "$DOTS/tracked.conf", mode = "copy", group = "tracked" }
+EOF2
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.tracked.conf" "tracked"
+assert_succeed "mise dot unapply --group tracked --yes"
+assert_fail "test -e $HOME/.tracked.conf"
+rm "$HOME/.config/mise/config.toml"

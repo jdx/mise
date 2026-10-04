@@ -717,10 +717,18 @@ pub fn without_claimed(record: &GroupRecord, active: &[FileRequest]) -> GroupRec
 }
 
 /// Every target path an active entry deploys: its target, and each file of
-/// a tree it walks.
+/// a tree it walks. Tracking only observes a file, a permissions-only entry
+/// only adjusts one, and an absent entry removes one, so none of them takes
+/// a file over from the group that deployed it.
 fn claimed_paths<'a>(active: impl IntoIterator<Item = &'a FileRequest>) -> HashSet<PathBuf> {
     let mut claimed = HashSet::new();
     for req in active {
+        if matches!(
+            req.mode,
+            FileMode::Track | FileMode::Permissions | FileMode::Absent
+        ) {
+            continue;
+        }
         claimed.insert(req.target.clone());
         if matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy) && req.source.is_dir() {
             claimed.extend(
