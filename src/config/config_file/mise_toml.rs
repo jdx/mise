@@ -2584,7 +2584,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                             && let Some(redact) =
                                                                 table.remove("redact")
                                                         {
-                                                            opts.redact = redact.as_bool();
+                                                            opts.redact = Some(redact.as_bool().ok_or_else(|| {
+                                                                de::Error::custom(format!(
+                                                                    "_.{key}.redact must be a boolean"
+                                                                ))
+                                                            })?);
                                                         }
                                                         directives.push(EnvDirective::Module(
                                                             key, value, opts,
@@ -4962,6 +4966,15 @@ run = "cargo build"
         assert!(value.get("redact").is_none());
         assert_eq!(value.get("vault").and_then(|v| v.as_str()), Some("main"));
         assert_eq!(module("other-plugin").1.redact, None);
+    }
+
+    #[test]
+    fn test_env_module_redact_must_be_boolean() {
+        let err = parse_error("[env]\n_.my-plugin = { redact = \"true\" }\n");
+        assert!(
+            err.contains("_.my-plugin.redact must be a boolean"),
+            "{err}"
+        );
     }
 
     #[test]

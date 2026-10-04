@@ -1431,8 +1431,8 @@ mod tests {
             ]
             .into(),
             new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
+                ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
+                ("CHANGED".into(), crate::env_diff::hash_env_value("managed")),
             ]
             .into(),
             ..Default::default()
@@ -1487,8 +1487,8 @@ mod tests {
             ]
             .into(),
             new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
+                ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
+                ("CHANGED".into(), crate::env_diff::hash_env_value("managed")),
             ]
             .into(),
             ..Default::default()
@@ -1513,8 +1513,8 @@ mod tests {
         let diff = EnvDiff {
             old: [("CHANGED".into(), "before".into())].into(),
             new: [
-                ("ADDED".into(), "managed".into()),
-                ("CHANGED".into(), "managed".into()),
+                ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
+                ("CHANGED".into(), crate::env_diff::hash_env_value("managed")),
             ]
             .into(),
             ..Default::default()
@@ -1535,8 +1535,8 @@ mod tests {
             ]
             .into(),
             new: [
-                ("Added".into(), "managed".into()),
-                ("Changed".into(), "managed".into()),
+                ("Added".into(), crate::env_diff::hash_env_value("managed")),
+                ("Changed".into(), crate::env_diff::hash_env_value("managed")),
                 ("MÎSE_FOO".into(), "managed-unicode".into()),
             ]
             .into(),

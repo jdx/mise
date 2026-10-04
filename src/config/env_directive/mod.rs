@@ -639,6 +639,9 @@ impl EnvResults {
                         }
                     };
 
+                    // Decrypted, so never env-cached, even when `redact = false`.
+                    r.has_uncacheable = true;
+
                     if resolve_opts.vars {
                         match options.redact {
                             Some(false) => {}

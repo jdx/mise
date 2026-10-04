@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# A decrypted age value is never written to the env cache, even with redact = false.
+export MISE_EXPERIMENTAL=true
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+rm -f mise.toml age.txt
+
+mise x age -- age-keygen -o age.txt 2>/dev/null
+AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
+export MISE_AGE_KEY
+MISE_AGE_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
+
+mise set AGE_SECRET="my-secret-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+sed -i.bak 's/^\(AGE_SECRET = { age = "[^"]*"\) }/\1, redact = false }/' mise.toml
+assert_contains "cat mise.toml" "redact = false"
+
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert_contains "mise env -s bash" "export AGE_SECRET=my-secret-value"
+assert_contains "mise env -s bash" "export AGE_SECRET=my-secret-value"
+assert "find '$MISE_STATE_DIR/env-cache' -type f 2>/dev/null | wc -l | tr -d ' '" "0"
+
+# The same holds for an age value in [vars] that [env] renders through a template.
+VARS_LINE=$(grep '^AGE_SECRET = ' mise.toml | sed 's/^AGE_SECRET/VAR_SECRET/; s/, redact = false//')
+cat >mise.toml <<EOF
+[vars]
+$VARS_LINE
+
+[env]
+FROM_VAR = "{{ vars.VAR_SECRET }}"
+EOF
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert_contains "mise env -s bash" "export FROM_VAR=my-secret-value"
+assert_contains "mise env -s bash" "export FROM_VAR=my-secret-value"
+assert "find '$MISE_STATE_DIR/env-cache' -type f 2>/dev/null | wc -l | tr -d ' '" "0"

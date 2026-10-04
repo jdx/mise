@@ -37,10 +37,10 @@ pub fn hash_env_value(value: &str) -> String {
     format!("{HASH_PREFIX}{}", blake3::hash(value.as_bytes()).to_hex())
 }
 
-/// Whether `actual` is the value recorded as `stored`. Blobs written by older
-/// mise versions hold plaintext, newer ones a [`hash_env_value`] digest.
+/// Whether `actual` is the value recorded as `stored`. A blob written by an older
+/// mise holds plaintext, which never matches and so counts as changed.
 pub fn env_value_matches(stored: &str, actual: &str) -> bool {
-    stored == actual || stored == hash_env_value(actual)
+    stored == hash_env_value(actual)
 }
 
 #[derive(Debug)]
@@ -556,8 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn test_env_value_matches_plaintext_from_older_mise() {
-        assert!(env_value_matches("plain", "plain"));
-        assert!(!env_value_matches("plain", "other"));
+    fn test_env_value_matches_plaintext_from_older_mise_is_changed() {
+        assert!(!env_value_matches("plain", "plain"));
     }
 }

@@ -1520,8 +1520,16 @@ impl Config {
         time!("load_env start");
         // `mise oci` lets `[oci.env]` satisfy `required`, so what it resolves must not
         // be cached for a command that enforces it.
+        // `{{ vars.X }}` renders vars into the env, so a var that is decrypted or redacted
+        // (see `EnvResults::has_uncacheable`) taints every env value that may use it. Vars
+        // are loaded with the config, so a missing result is not expected; if it is, assume
+        // the worst.
+        let vars_uncacheable = self
+            .vars_results_cached()
+            .is_none_or(|vars| vars.has_uncacheable);
         let cache_enabled = use_cache
             && CachedNonToolEnv::is_enabled()
+            && !vars_uncacheable
             && !env_directive::is_oci_env_satisfying_required();
         let cache_key = if cache_enabled {
             let config_files: Vec<(PathBuf, u64)> = self
@@ -1660,6 +1668,7 @@ impl Config {
             &env_results.redactable_env(&env::PRISTINE_ENV),
             &env_results.redaction_exclusions,
         );
+        env_results.has_uncacheable |= vars_uncacheable;
         if cache_enabled
             && !env_results.has_uncacheable
             && let Some(cache_key) = cache_key
