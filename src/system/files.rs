@@ -4123,8 +4123,11 @@ pub fn execute_apply(
     }
     let mut removals = vec![];
     let mut done = vec![];
+    // the request being applied, and where its writes start in `written`
+    let mut current = None;
     let applied = (|| -> Result<()> {
         for (req, rendered) in &plan.todo {
+            current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
@@ -4157,6 +4160,13 @@ pub fn execute_apply(
             done.iter().any(|d| std::ptr::eq(*d, *req))
                 || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req))
         }));
+        // the entry that failed may have written some of its files, such
+        // as part of a copied tree; those, and only those, are recorded
+        if let Some((req, start)) = current
+            && !done.iter().any(|d| std::ptr::eq(*d, req))
+        {
+            crate::system::dotfile_groups::record_written(req, &written[start..]);
+        }
         return Err(err);
     }
     prune_after_apply(removals, &plan);

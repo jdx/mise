@@ -394,7 +394,9 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         .flatten()
     {
         if let Some(variant_target) = variant.get("target").and_then(toml::Value::as_str)
-            && !files::resolve_target_arg(variant_target).starts_with(group_target)
+            && !files::resolve_target_arg(variant_target)
+                .strip_prefix(group_target)
+                .is_ok_and(|rel| !rel.as_os_str().is_empty())
         {
             bail!(
                 "entries.{key:?}: variant target {variant_target:?} must be inside the group's target"
@@ -830,6 +832,31 @@ pub(crate) fn record_applied<'a>(requests: impl IntoIterator<Item = &'a FileRequ
         record.paths.extend(deployed);
         save_record(&record);
     }
+}
+
+/// After an entry failed partway, record the files of `req` it did write,
+/// replacing what the record held for them, and nothing it did not write.
+pub(crate) fn record_written(req: &FileRequest, written: &[PathBuf]) {
+    let Some(group) = &req.group else {
+        return;
+    };
+    let paths = deployed_paths(req)
+        .into_iter()
+        .filter(|path| written.contains(&path.target) && path.safe_to_remove())
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return;
+    }
+    let mut record = load_record(group).unwrap_or_else(|| GroupRecord {
+        group: group.to_string(),
+        ..Default::default()
+    });
+    record.version = GROUP_RECORD_VERSION;
+    record
+        .paths
+        .retain(|recorded| !paths.iter().any(|p| p.target == recorded.target));
+    record.paths.extend(paths);
+    save_record(&record);
 }
 
 /// What groups deployed that no active entry deploys now. That is every
