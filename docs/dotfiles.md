@@ -744,6 +744,8 @@ anything is written.
 Deselecting a group, or deleting its table, leaves its files in place.
 mise records what each group deployed under `$MISE_STATE_DIR/dotfiles/groups`,
 so it still knows those files: `mise dot status` lists them as `orphaned`.
+A file that an active entry still deploys is never orphaned, even when the
+entry has moved to another group.
 
 ```sh
 mise dot apply --prune          # apply, then remove orphaned files
@@ -755,7 +757,14 @@ the source mise linked, and a copied file only while it still holds what mise
 wrote. They leave anything you changed with a warning; pass `--force` to
 remove changed copies too. Directories they empty are removed, up to the
 target of the group or override that deployed the file. `unapply --group` works whether or not the group is still
-selected or declared.
+selected or declared. `--prune` asks before removing anything unless you
+pass `--yes`.
+
+Removal compares files with what mise last wrote, not with the current
+source, so editing a group's source does not stop `unapply --group` from
+removing an untouched copy. When you delete a file from a `copy` group's
+source, its copy stays on disk and in the group's record, so
+`unapply --group` still removes it.
 
 ### Adding files to a group
 
@@ -768,12 +777,19 @@ mise dot add ~/.config/starship.toml   # -> ~/.dotfiles/home/dot-config/starship
 ```
 
 When several groups contain the path, mise picks the one whose target is
-deepest. When groups at the same depth contain it, such as two groups that
-both deploy into `~`, choose one with `--group`:
+deepest. Among groups at the same depth, such as two groups that both deploy
+into `~`, the one whose source already holds the file wins. For a new file,
+choose one with `--group`:
 
 ```sh
 mise dot add --group zsh ~/.zprofile
 ```
+
+`mise dot edit` opens the group's source file for a path inside a group's
+tree, and takes `--group` the same way when it has to create the file. A
+group with `manifest = "git"` deploys only files in Git's index, so `add`
+refuses to capture into it. Copy the file into the source and `git add` it
+instead.
 
 ## Edit entries
 

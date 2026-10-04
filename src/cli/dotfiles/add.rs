@@ -244,6 +244,15 @@ impl DotfilesAdd {
                 }
             };
             if let Some(req) = routed {
+                // the group deploys only what Git's index lists, so a file
+                // moved into its source would not be linked back
+                if req.manifest == Some(FileManifest::Git) {
+                    bail!(
+                        "{target_raw}: dotfile group {} deploys only files in Git's index (manifest = \"git\"); copy it into {} and `git add` it instead",
+                        req.group.as_deref().unwrap_or_default(),
+                        req.source.display_user()
+                    );
+                }
                 let rel = target.strip_prefix(&req.target)?;
                 if self.mode.is_some() && req.mode != mode {
                     warn!(

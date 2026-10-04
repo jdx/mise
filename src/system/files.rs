@@ -677,11 +677,16 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     Ok(requests)
 }
 
-/// A grouped entry that deploys a directory tree file by file.
+/// A grouped entry that deploys a directory tree file by file. A grouped
+/// copy whose source does not exist yet counts too: a group names a tree,
+/// so its missing source is a directory to come, not a file.
 fn group_tree(req: &FileRequest) -> bool {
     req.group.is_some()
-        && matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy)
-        && req.source.is_dir()
+        && match req.mode {
+            FileMode::SymlinkEach => true,
+            FileMode::Copy => req.source.is_dir() || !req.source.exists(),
+            _ => false,
+        }
 }
 
 /// Whether a declaration comes from the system or global layers (or a root
@@ -784,7 +789,9 @@ pub fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()>
         let directory_walker = !source_unavailable
             && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
-        let unresolved_directory = source_unavailable && request.mode == FileMode::SymlinkEach;
+        let unresolved_directory = source_unavailable
+            && (request.mode == FileMode::SymlinkEach
+                || request.mode == FileMode::Copy && group_tree(request));
         let request_leaves = if unresolved_directory {
             vec![]
         } else if directory_walker {
@@ -866,6 +873,8 @@ fn conflict_origin(req: &FileRequest) -> String {
 /// Returns whether sibling declarations produce the same whole-file resource.
 fn file_requests_match(config: &Config, first: &FileRequest, second: &FileRequest) -> bool {
     first.target == second.target
+        // two groups deploying one tree are two declarations, not a repeat
+        && first.group == second.group
         && first.source == second.source
         && first.content == second.content
         && first.mode == second.mode

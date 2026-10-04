@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use eyre::Result;
 
 use crate::config::{Config, Settings};
+use crate::path::PathExt;
 use crate::system;
 
 /// Apply dotfiles from `[dotfiles]`
@@ -96,7 +97,30 @@ impl DotfilesApply {
             dry_run: self.dry_run,
             force: self.force,
         };
-        for record in system::dotfile_groups::orphaned(&active) {
+        let orphaned = system::dotfile_groups::orphaned(&active);
+        let present = orphaned
+            .iter()
+            .flat_map(|record| &record.paths)
+            .filter(|path| path.target.symlink_metadata().is_ok())
+            .map(|path| path.target.display_user())
+            .collect::<Vec<_>>();
+        if present.is_empty() {
+            return Ok(());
+        }
+        // removal is confirmed like any other apply change
+        if !self.dry_run
+            && !self.yes
+            && console::user_attended_stderr()
+            && !crate::ui::prompt::confirm(format!(
+                "files: remove orphaned {}?",
+                present.join(", ")
+            ))?
+            .is_yes()
+        {
+            info!("files: prune skipped");
+            return Ok(());
+        }
+        for record in orphaned {
             written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
         }
         Ok(())

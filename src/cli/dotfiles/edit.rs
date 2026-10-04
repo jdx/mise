@@ -43,6 +43,11 @@ pub(crate) struct DotfilesEdit {
     #[usage(long, short)]
     yes: bool,
 
+    /// Dotfile group whose tree holds the target, when several groups
+    /// deploy into its directory
+    #[usage(long, value_name = "NAME", conflicts = ["source"])]
+    group: Option<String>,
+
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
     prompt_secrets: bool,
@@ -64,11 +69,12 @@ impl DotfilesEdit {
             system::files::validate_composed_file_footprints(&files)?;
         }
 
-        if let Some(path) = source_for_target(&config, &target, &self.target)? {
+        let group = self.group.as_deref();
+        if let Some(path) = source_for_target(&config, &target, &self.target, group)? {
             open_or_create(&path)?;
             crate::cli::editor::open_in_editor(&path)?;
             if self.apply {
-                apply_target(&self.target, self.prompt_secrets).await?;
+                apply_target(&self.target, group, self.prompt_secrets).await?;
             }
             return Ok(());
         }
@@ -96,19 +102,19 @@ impl DotfilesEdit {
             force: false,
             yes: true,
             prompt_secrets: self.prompt_secrets,
-            group: None,
+            group: self.group.clone(),
         }
         .run()
         .await?;
 
         config = Config::reset().await?;
-        let Some(path) = source_for_target(&config, &target, &self.target)? else {
+        let Some(path) = source_for_target(&config, &target, &self.target, group)? else {
             bail!("failed to add {}", self.target);
         };
         open_or_create(&path)?;
         crate::cli::editor::open_in_editor(&path)?;
         if self.apply {
-            apply_target(&self.target, self.prompt_secrets).await?;
+            apply_target(&self.target, group, self.prompt_secrets).await?;
         }
         Ok(())
     }
@@ -118,8 +124,24 @@ fn source_for_target(
     config: &Config,
     target: &std::path::Path,
     raw: &str,
+    group: Option<&str>,
 ) -> Result<Option<PathBuf>> {
-    let matching_files = system::files::files_from_config(config)?
+    let all_files = system::files::files_from_config(config)?;
+    // a file inside a dotfile group's tree has no entry of its own; once
+    // its source exists, that source is what to edit (before that, add
+    // captures the live file into the group)
+    if let Some(req) = group_route(&all_files, target, group)? {
+        let source = req.source.join(system::dotfile_groups::source_rel_for(
+            &req.source,
+            target.strip_prefix(&req.target)?,
+            req.dot_prefix,
+        ));
+        if source.symlink_metadata().is_ok() {
+            return Ok(Some(source));
+        }
+        return Ok(None);
+    }
+    let matching_files = all_files
         .into_iter()
         .filter(|req| {
             system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()])
@@ -256,15 +278,24 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 }
 
 /// Apply a selected target after validating the complete composed footprint.
-async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
+async fn apply_target(target: &str, group: Option<&str>, prompt_secrets: bool) -> Result<()> {
     let config = Config::reset().await?;
     let secrets = system::secrets::resolve(&config, prompt_secrets)?;
     let targets = vec![target.to_string()];
     let all_files = system::files::files_from_config(&config)?;
     system::files::validate_composed_file_footprints(&all_files)?;
+    let resolved = system::files::resolve_target_arg(target);
+    // a file inside a group tree is applied by applying that tree
+    let routed = group_route(&all_files, &resolved, group)?.cloned();
     let files = all_files
-        .into_iter()
-        .filter(|req| system::files::matches_target(&req.target, &req.target_raw, &targets))
+        .iter()
+        .filter(|req| {
+            system::files::matches_target(&req.target, &req.target_raw, &targets)
+                || routed
+                    .as_ref()
+                    .is_some_and(|r| r.target == req.target && r.source == req.source)
+        })
+        .cloned()
         .collect::<Vec<_>>();
     let edits = system::edits::edits_from_config(&config)?
         .into_iter()
@@ -290,4 +321,17 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
         system::edits::apply(&config, &edits, &opts, &mut vec![])?;
     }
     Ok(())
+}
+
+/// The dotfile group tree `target` lies in, when no entry names the target
+/// itself.
+fn group_route<'a>(
+    files: &'a [system::files::FileRequest],
+    target: &std::path::Path,
+    group: Option<&str>,
+) -> Result<Option<&'a system::files::FileRequest>> {
+    if files.iter().any(|req| req.target == target) {
+        return Ok(None);
+    }
+    system::dotfile_groups::route_add(files, target, group)
 }

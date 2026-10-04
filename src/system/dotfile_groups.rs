@@ -384,7 +384,8 @@ pub fn source_rel_for(source: &Path, rel: &Path, dot_prefix: bool) -> PathBuf {
 
 /// The group request a new file at `target` belongs in: the deepest grouped
 /// tree whose target contains it and that would deploy it (not excluded).
-/// With `group`, only that group is considered. Two groups at the same depth
+/// With `group`, only that group is considered. Among groups at the same
+/// depth, the one whose source already holds the file wins; otherwise they
 /// are ambiguous and need `--group`.
 pub fn route_add<'a>(
     requests: &'a [FileRequest],
@@ -423,6 +424,19 @@ pub fn route_add<'a>(
         return Ok(None);
     };
     candidates.retain(|req| req.target.components().count() == depth);
+    // a file one group's source already holds belongs to that group
+    let in_source = |req: &&FileRequest| {
+        let rel = target
+            .strip_prefix(&req.target)
+            .expect("filtered by prefix");
+        req.source
+            .join(source_rel_for(&req.source, rel, req.dot_prefix))
+            .symlink_metadata()
+            .is_ok()
+    };
+    if candidates.len() > 1 && candidates.iter().any(in_source) {
+        candidates.retain(in_source);
+    }
     if candidates.len() > 1 {
         let names = candidates
             .iter()
@@ -620,28 +634,79 @@ pub(crate) fn record_applied(requests: &[FileRequest]) {
         });
         record.version = GROUP_RECORD_VERSION;
         let roots = reqs.iter().map(|req| &req.target).collect::<HashSet<_>>();
-        record.paths.retain(|path| !roots.contains(&path.root));
-        for req in reqs {
-            for path in deployed_paths(req) {
-                record.paths.retain(|p| p.target != path.target);
-                record.paths.push(path);
-            }
-        }
+        let deployed = reqs
+            .iter()
+            .flat_map(|req| deployed_paths(req))
+            .collect::<Vec<_>>();
+        // a path the group no longer deploys but still owns, such as the
+        // copy of a source file since deleted, stays recorded until removed
+        record.paths.retain(|path| {
+            !deployed.iter().any(|p| p.target == path.target)
+                && (!roots.contains(&path.root) || path.is_owned())
+        });
+        record.paths.extend(deployed);
         save_record(&record);
     }
 }
 
-/// Groups that deployed files but are not active now: deselected by
-/// `[bootstrap] dotfile_groups`, or no longer declared.
+/// What groups deployed that no active entry deploys now: everything of a
+/// group deselected by `[bootstrap] dotfile_groups` or no longer declared,
+/// and the paths of a tree or override removed from a group that is still
+/// active (say, its `[dotfile_groups]` table went while a `[dotfiles]` entry
+/// still names the group). Each returned record holds only those paths.
+///
+/// A path an active entry deploys is never orphaned, whichever group
+/// recorded it: a declaration moved from one group to another keeps its
+/// file.
 pub fn orphaned(active: &[FileRequest]) -> Vec<GroupRecord> {
-    let active = active
-        .iter()
-        .filter_map(|req| req.group.as_deref())
-        .collect::<HashSet<_>>();
-    load_records()
+    let records = load_records();
+    if records.is_empty() {
+        return vec![];
+    }
+    let claimed = claimed_paths(active);
+    records
         .into_iter()
-        .filter(|record| !active.contains(record.group.as_str()))
+        .filter_map(|mut record| {
+            let roots = active
+                .iter()
+                .filter(|req| req.group.as_deref() == Some(record.group.as_str()))
+                .map(|req| &req.target)
+                .collect::<HashSet<_>>();
+            record
+                .paths
+                .retain(|path| !roots.contains(&path.root) && !claimed.contains(&path.target));
+            (!record.paths.is_empty()).then_some(record)
+        })
         .collect()
+}
+
+/// Every target path an active entry deploys: its target, and each file of
+/// a tree it walks.
+fn claimed_paths(active: &[FileRequest]) -> HashSet<PathBuf> {
+    let mut claimed = HashSet::new();
+    for req in active {
+        claimed.insert(req.target.clone());
+        if matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy) && req.source.is_dir() {
+            claimed.extend(
+                files::directory_source_files(req)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(_, target)| target),
+            );
+        }
+    }
+    claimed
+}
+
+/// Whether `target` is reached through a symlinked directory below `root`:
+/// removing it would delete a file wherever that link points, such as in a
+/// dotfiles source.
+fn behind_symlink(target: &Path, root: &Path) -> bool {
+    target
+        .ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != root && dir.starts_with(root))
+        .any(|dir| dir.is_symlink())
 }
 
 pub struct RemoveOpts {
@@ -659,6 +724,15 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
     let mut kept = vec![];
     for path in &record.paths {
         if !path.exists() {
+            continue;
+        }
+        if behind_symlink(&path.target, &path.root) {
+            warn!(
+                "files: group {}: {} is inside a linked directory now, leaving it",
+                record.group,
+                path.target.display_user()
+            );
+            kept.push(path.clone());
             continue;
         }
         let removable =
@@ -698,11 +772,19 @@ pub fn remove_recorded(record: &GroupRecord, opts: &RemoveOpts) -> Result<Vec<Pa
             remove_empty_dirs(parent, &path.root)?;
         }
     }
-    if !opts.dry_run {
-        save_record(&GroupRecord {
-            paths: kept,
-            ..record.clone()
-        });
+    // `record` may be only part of what the group deployed (see
+    // [`orphaned`]); the rest of the stored record stays
+    if !opts.dry_run
+        && let Some(mut stored) = load_record(&record.group)
+    {
+        let handled = record
+            .paths
+            .iter()
+            .filter(|path| !kept.contains(path))
+            .map(|path| &path.target)
+            .collect::<HashSet<_>>();
+        stored.paths.retain(|path| !handled.contains(&path.target));
+        save_record(&stored);
     }
     Ok(removed)
 }

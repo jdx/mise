@@ -818,6 +818,9 @@ mise dot diff ~/.zshrc
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+            flag --group help="Dotfile group whose tree holds the target, when several groups deploy into its directory" conflicts=--source {
+                arg <NAME>
+            }
             flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <TARGET> help="Target to edit"
@@ -2606,6 +2609,9 @@ mise dot diff ~/.zshrc
             arg <PATH>
         }
         flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+        flag --group help="Dotfile group whose tree holds the target, when several groups deploy into its directory" conflicts=--source {
+            arg <NAME>
+        }
         flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TARGET> help="Target to edit"

@@ -100,6 +100,18 @@ impl DotfilesUnapply {
         if !self.group.is_empty() && !self.targets.is_empty() {
             eyre::bail!("--group cannot be combined with target arguments");
         }
+        // a group's record holds what mise wrote, which is the ownership
+        // evidence to remove by; the current source may have changed since.
+        // Only a group applied before it had a record goes through the
+        // ordinary planner.
+        let files = files
+            .into_iter()
+            .filter(|req| {
+                !records
+                    .iter()
+                    .any(|record| req.group.as_ref() == Some(&record.group))
+            })
+            .collect::<Vec<_>>();
         if files.is_empty()
             && edits.is_empty()
             && !self.targets.is_empty()

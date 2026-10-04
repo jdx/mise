@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# How dotfile groups decide which deployed files are theirs to remove.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/zsh" "$DOTS/extra" "$DOTS/conf"
+echo "zshrc" >"$DOTS/zsh/.zshrc"
+echo "extra" >"$DOTS/extra/.extrarc"
+echo "a" >"$DOTS/conf/a.conf"
+echo "b" >"$DOTS/conf/b.conf"
+
+cat <<'EOF' >editor-write
+#!/usr/bin/env bash
+echo edited >"$1"
+EOF
+chmod +x editor-write
+
+cat <<EOF >mise.toml
+[dotfile_groups.zsh]
+[dotfile_groups.extra]
+[dotfile_groups.conf]
+target = "~/.config/conf"
+mode = "copy"
+EOF
+assert_succeed "mise dot apply --yes"
+
+# Editing a deployed file of a group opens its source.
+EDITOR="$PWD/editor-write" mise dot edit --apply ~/.zshrc
+assert "cat $DOTS/zsh/.zshrc" "edited"
+
+# A new file where two groups deploy needs --group, which edit accepts.
+assert_fail_contains "EDITOR=$PWD/editor-write mise dot edit --yes ~/.newrc" "choose one with --group"
+EDITOR="$PWD/editor-write" mise dot edit --yes --group extra --apply ~/.newrc
+assert "cat $DOTS/extra/.newrc" "edited"
+assert "readlink $HOME/.newrc" "$DOTS/extra/.newrc"
+
+# A copy whose source file is deleted stays recorded, so unapply --group
+# still finds it. Removal goes by what mise wrote, not by the current source.
+rm "$DOTS/conf/b.conf"
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.config/conf/b.conf" "b"
+echo "a changed in source" >"$DOTS/conf/a.conf"
+assert_succeed "mise dot unapply --group conf --yes"
+assert_fail "test -e $HOME/.config/conf/b.conf"
+assert_fail "test -e $HOME/.config/conf/a.conf"
+echo "a" >"$DOTS/conf/a.conf"
+
+# Moving a declaration to another group keeps its file out of the prune.
+echo "work" >"$DOTS/work.conf"
+cat <<EOF >mise.toml
+[dotfile_groups.zsh]
+[dotfile_groups.extra]
+
+[dotfiles]
+"~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy", group = "old" }
+EOF
+assert_succeed "mise dot apply --yes"
+sed -i 's/group = "old"/group = "new"/' mise.toml
+assert_succeed "mise dot apply --prune --yes"
+assert "cat $HOME/.work.conf" "work"
+
+# Removing a group's table while an entry still names the group leaves the
+# tree's files orphaned.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+
+[dotfiles]
+"~/.work.conf" = { source = "$DOTS/work.conf", mode = "copy", group = "zsh" }
+EOF
+assert_contains "mise dot status" "orphaned"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.zshrc"
+assert "cat $HOME/.work.conf" "work"
+
+# Two groups deploying the same tree conflict instead of merging.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+[dotfile_groups.other]
+source = "extra"
+EOF
+assert_fail_contains "mise dot apply --yes" "conflicting"
+
+# A copy group whose source does not exist yet shares its target: it is
+# reported as missing its source, not as a conflict over ~.
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+[dotfile_groups.later]
+mode = "copy"
+EOF
+assert_fail_contains "mise dot apply --yes" "sources do not exist"
+assert_contains "mise dot status" "source missing"
+
+# A group that deploys only Git's index refuses captures it would not link.
+git -C "$DOTS/extra" init -q
+git -C "$DOTS/extra" add -A
+cat <<EOF >mise.toml
+[dotfile_groups.extra]
+manifest = "git"
+EOF
+echo "live" >"$HOME/.gitonly"
+assert_fail_contains "mise dot add --yes $HOME/.gitonly" "git add"
+assert "cat $HOME/.gitonly" "live"
