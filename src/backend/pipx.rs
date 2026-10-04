@@ -704,6 +704,17 @@ impl Backend for PIPXBackend {
         let opts = request.options();
         PipxOptions::new(&opts).lockfile_options()
     }
+
+    /// `pypi.uvx = false` turns uv off for every package, exactly as a per-package
+    /// `uvx = false` does, and uv and pipx lay an environment out differently. Both
+    /// spellings land on the same `uvx` key so they name the same install.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = super::static_helpers::request_identity_options(self, tv);
+        if Settings::get().pypi.uvx == Some(false) {
+            options.insert("uvx".to_string(), "false".to_string());
+        }
+        options
+    }
 }
 
 /// Returns install-time-only option keys for PIPX backend.
@@ -1369,8 +1380,7 @@ impl FromStr for PipxRequest {
 
 /// Check if a path is within mise's Python installs directory
 #[cfg(unix)]
-fn is_mise_managed_python(path: &Path) -> bool {
-    let installs_dir = &*env::MISE_INSTALLS_DIR;
+fn is_mise_managed_python(installs_dir: &Path, path: &Path) -> bool {
     path.starts_with(installs_dir.join("python"))
 }
 
@@ -1398,7 +1408,7 @@ fn path_with_minor_version(path: &Path) -> Option<PathBuf> {
 /// postinstall hooks. We need to create it early so that venv symlinks work
 /// immediately for postinstall hooks.
 #[cfg(unix)]
-fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
+fn ensure_minor_version_symlink(installs_dir: &Path, full_version_path: &Path) -> Result<()> {
     // Extract version components from path like .../python/3.12.1/bin/python3
     // Use same regex pattern as path_with_minor_version for consistency
     let re = regex!(r"/python/(\d+)\.(\d+)\.(\d+)/");
@@ -1415,7 +1425,6 @@ fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
     let minor_version = format!("{}.{}", &caps[1], &caps[2]); // e.g., "3.12"
     let full_version = format!("{}.{}.{}", &caps[1], &caps[2], &caps[3]); // e.g., "3.12.1"
 
-    let installs_dir = &*env::MISE_INSTALLS_DIR;
     let python_installs = installs_dir.join("python");
     let minor_version_dir = python_installs.join(&minor_version);
     let full_version_dir = python_installs.join(&full_version);
@@ -1444,6 +1453,12 @@ fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
 /// We need to fix the absolute symlink to use minor version path (3.12 instead of 3.12.1)
 #[cfg(unix)]
 fn fix_venv_python_symlink(install_path: &Path) -> Result<()> {
+    fix_venv_python_symlink_in(&env::MISE_INSTALLS_DIR, install_path)
+}
+
+/// [`fix_venv_python_symlink`] for the installs root `installs_dir`.
+#[cfg(unix)]
+fn fix_venv_python_symlink_in(installs_dir: &Path, install_path: &Path) -> Result<()> {
     // uv and pipx name the venv after the Python distribution, which the tool
     // name doesn't reliably give (`o/repo#subdirectory=cli` builds `cli-dist`).
     // Each install path holds one tool, so check every venv under it:
@@ -1483,7 +1498,15 @@ fn fix_venv_python_symlink(install_path: &Path) -> Result<()> {
                 continue;
             }
 
-            if !is_mise_managed_python(&target) {
+            // Under the identity layout an interpreter that was found through its own
+            // directory (a locked request, or a version link that names another variant) is
+            // recorded by its hashed directory. Name it through the version link instead,
+            // which is what the minor version alias below is built on.
+            let target =
+                crate::backend::static_helpers::tool_link_path(installs_dir, &target, "python")
+                    .unwrap_or(target);
+
+            if !is_mise_managed_python(installs_dir, &target) {
                 continue; // Leave non-mise Python alone (homebrew, uv, etc.)
             }
 
@@ -1494,7 +1517,7 @@ fn fix_venv_python_symlink(install_path: &Path) -> Result<()> {
                 // if it doesn't exist yet. This is normally done by runtime_symlinks::rebuild,
                 // but that runs after postinstall hooks, so we need to create it now
                 // to ensure the venv symlink works immediately for postinstall hooks.
-                ensure_minor_version_symlink(&target)?;
+                ensure_minor_version_symlink(installs_dir, &target)?;
 
                 trace!(
                     "Updating venv Python symlink {:?} to use minor version: {:?}",
@@ -1535,6 +1558,8 @@ mod tests {
         UV_EXCLUDE_NEWER_VERSION,
     };
     use crate::backend::Backend;
+    #[cfg(unix)]
+    use crate::file;
     use crate::github::GithubRelease;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
@@ -1982,6 +2007,103 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         let opts = PipxOptions::new(&opts);
         assert!(!opts.has_uv_only_options().unwrap());
         opts.validate_semantic().unwrap();
+    }
+
+    #[test]
+    fn test_install_identity_options_normalize_the_uvx_switch() {
+        use crate::backend::static_helpers::test_identity_options;
+        use crate::config::settings::SettingsPartial;
+        use crate::config::{Settings, SettingsExt};
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let backend = PIPXBackend::from_arg("pipx:black".into());
+        let identity = |uvx_setting: Option<bool>, options: &[(&str, &str)]| {
+            let mut partial = SettingsPartial::empty();
+            partial.pypi.uvx = uvx_setting;
+            Settings::reset(Some(partial));
+            test_identity_options(&backend, "24.3.0", options)
+        };
+
+        let default = identity(None, &[]);
+        assert!(default.is_empty(), "{default:?}");
+        assert_eq!(identity(Some(true), &[]), default);
+
+        // The setting and the per-package option turn uv off the same way.
+        let pipx_only = identity(None, &[("uvx", "false")]);
+        assert_ne!(pipx_only, default);
+        assert_eq!(identity(Some(false), &[]), pipx_only);
+        assert_eq!(identity(Some(false), &[("uvx", "false")]), pipx_only);
+
+        // A package option cannot turn uv back on while the setting has it off.
+        assert_eq!(identity(Some(false), &[("uvx", "true")]), pipx_only);
+        Settings::reset(None);
+    }
+
+    /// A venv whose `bin/python3` points at `target`, under `tool_install/<venv>`.
+    #[cfg(unix)]
+    fn venv_pointing_at(tool_install: &std::path::Path, venv: &str, target: &std::path::Path) {
+        let bin = tool_install.join(venv).join("bin");
+        file::create_dir_all(&bin).unwrap();
+        file::make_symlink(target, &bin.join("python3")).unwrap();
+        file::make_symlink(std::path::Path::new("python3"), &bin.join("python")).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_venv_python_follows_the_minor_alias_in_both_layouts() {
+        use super::fix_venv_python_symlink_in;
+        use crate::backend::static_helpers::{test_identity_install, test_link_install};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let tool_install = tmp.path().join("tool");
+
+        // Identity layout: the interpreter was found through its hashed directory.
+        let hashed = test_identity_install(&installs, "core:python", "3.12.1", "python-aaaaaaaa");
+        file::write(hashed.join("bin/python3"), "").unwrap();
+        test_link_install(&installs, "python", "3.12.1", "python-aaaaaaaa");
+        venv_pointing_at(&tool_install, "hashed", &hashed.join("bin/python3"));
+
+        // Identity layout again, the interpreter found through the version link.
+        venv_pointing_at(
+            &tool_install,
+            "linked",
+            &installs.join("python/3.12.1/bin/python3"),
+        );
+
+        // Legacy layout: a real version directory.
+        let legacy = installs.join("python/3.11.4");
+        file::create_dir_all(legacy.join("bin")).unwrap();
+        file::write(legacy.join("bin/python3"), "").unwrap();
+        venv_pointing_at(&tool_install, "legacy", &legacy.join("bin/python3"));
+
+        // Not mise's python.
+        let system = tmp.path().join("usr/bin/python3");
+        file::create_dir_all(system.parent().unwrap()).unwrap();
+        file::write(&system, "").unwrap();
+        venv_pointing_at(&tool_install, "system", &system);
+
+        fix_venv_python_symlink_in(&installs, &tool_install).unwrap();
+
+        let target = |venv: &str| {
+            file::resolve_symlink(&tool_install.join(venv).join("bin/python3"))
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(target("hashed"), installs.join("python/3.12/bin/python3"));
+        assert_eq!(target("linked"), installs.join("python/3.12/bin/python3"));
+        assert_eq!(target("legacy"), installs.join("python/3.11/bin/python3"));
+        assert_eq!(target("system"), system);
+
+        // The alias those venvs now go through is made on the spot, as before, and
+        // follows the version link on to the installation.
+        assert_eq!(
+            file::resolve_symlink(&installs.join("python/3.12")).unwrap(),
+            Some(std::path::PathBuf::from("./3.12.1"))
+        );
+        assert!(installs.join("python/3.12/bin/python3").exists());
+        assert!(installs.join("python/3.11/bin/python3").exists());
     }
 
     #[test]

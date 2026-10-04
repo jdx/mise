@@ -224,10 +224,15 @@ pub(crate) struct Located {
 }
 
 static LOCATE_CACHE: LazyLock<DashMap<(PathBuf, String), Located>> = LazyLock::new(DashMap::new);
+/// The installations of a set of backends (see [`installs_of`]), kept for the
+/// life of the process like the rest of install state and cleared with it.
+static INSTALLS_OF_CACHE: LazyLock<DashMap<String, Vec<(String, PathBuf)>>> =
+    LazyLock::new(DashMap::new);
 
 /// Forget cached lookups. Called when install state is reset.
 pub(crate) fn reset_cache() {
     LOCATE_CACHE.clear();
+    INSTALLS_OF_CACHE.clear();
 }
 
 /// A complete installation: the directory exists and its receipt is intact.
@@ -395,18 +400,26 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
     if !enabled() {
         return vec![];
     }
+    let backends = backends_of(ba);
+    let key = backends.join("\n");
+    if let Some(hit) = INSTALLS_OF_CACHE.get(&key) {
+        return hit.clone();
+    }
     let mut out: Vec<(String, PathBuf)> = vec![];
     for root in roots() {
         let catalog = Catalog::new(&root);
-        for backend in backends_of(ba) {
-            for record in catalog.records_for_backend(&backend) {
+        for backend in &backends {
+            for record in catalog.records_for_backend(backend) {
                 let dir = catalog.install_dir(&record);
-                if is_complete(&dir) && !out.iter().any(|(_, d)| *d == dir) {
+                // The receipt's presence is what marks an installation complete; its
+                // contents were validated when the record was written.
+                if dir.join(RECEIPT_FILE).is_file() && !out.iter().any(|(_, d)| *d == dir) {
                     out.push((listing_name(&record), dir));
                 }
             }
         }
     }
+    INSTALLS_OF_CACHE.insert(key, out.clone());
     out
 }
 
@@ -490,6 +503,7 @@ pub(crate) fn unlink_installation(dir: &Path) {
             }
         }
     }
+    reset_cache();
 }
 
 /// Remove every identity-layout installation of a tool's backends, for
@@ -503,6 +517,7 @@ pub(crate) fn purge_installs(ba: &crate::args::BackendArg) -> Result<()> {
             file::remove_all(&dir)?;
         }
     }
+    reset_cache();
     Ok(())
 }
 
@@ -751,6 +766,7 @@ pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
         catalog.select(key, &record, None)?;
     }
     LOCATE_CACHE.clear();
+    INSTALLS_OF_CACHE.clear();
     Ok(())
 }
 
@@ -763,6 +779,7 @@ pub(crate) fn unpublish(dir: &Path) {
     }
     unlink_installation(dir);
     LOCATE_CACHE.clear();
+    INSTALLS_OF_CACHE.clear();
 }
 
 /// Use an installation that already satisfies `tv` (found by [`locate`]): make
@@ -795,6 +812,7 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
         provenance.pinned_by.push(pin.to_string());
         catalog.update_provenance(&record.identity, provenance)?;
         LOCATE_CACHE.clear();
+        INSTALLS_OF_CACHE.clear();
     }
     link(tv, &located.dir)
 }

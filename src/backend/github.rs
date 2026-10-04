@@ -646,6 +646,18 @@ impl Backend for UnifiedGitBackend {
         &["api_url", "version_prefix"]
     }
 
+    /// `slsa_signer_identity` and `slsa_signer_issuer` name who is expected to have
+    /// signed a provenance file. They gate whether the install is accepted, never what
+    /// gets installed.
+    ///
+    /// `api_url` and `version_prefix` are not listed even though they also steer version
+    /// listing: both are read again at install time to find the release (a different
+    /// `version_prefix` can name a different tag of the same repository, and a different
+    /// `api_url` is a different server), so they select what is installed.
+    fn identity_ignored_options(&self) -> &'static [&'static str] {
+        &["slsa_signer_identity", "slsa_signer_issuer"]
+    }
+
     /// The registry baseline is read straight off the registry entry, not
     /// reconstructed from the effective options' provenance.
     ///
@@ -3455,6 +3467,45 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 .get("additional_asset_patterns"),
             Some(&"rocm.tar.gz".to_string())
         );
+    }
+
+    #[test]
+    fn test_identity_options_ignore_signer_but_keep_release_selection() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = create_test_backend();
+        let identity = |options: &[(&str, &str)]| test_identity_options(&backend, "1.0.0", options);
+        let base = identity(&[]);
+
+        // Who is expected to have signed a provenance file never changes the bytes.
+        assert_eq!(
+            identity(&[
+                (
+                    "slsa_signer_identity",
+                    "https://example.com/wf@refs/tags/v1"
+                ),
+                (
+                    "slsa_signer_issuer",
+                    "https://token.actions.githubusercontent.com"
+                ),
+            ]),
+            base
+        );
+
+        // Each of these selects a different release or a different layout.
+        for (key, value) in [
+            ("version_prefix", "release-"),
+            ("api_url", "https://ghe.example.com/api/v3"),
+            ("asset_pattern", "tool-*.tar.gz"),
+            ("bin_path", "tool/bin"),
+            ("filter_bins", "a,b"),
+            ("matching", "musl"),
+        ] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
     }
 
     #[test]

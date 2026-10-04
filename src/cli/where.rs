@@ -40,6 +40,8 @@ pub(crate) struct Where {
 impl Where {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        // A version named on the command line carries no install options.
+        let named_here = self.tool.tvr.is_some() || self.asdf_version.is_some();
         let tvr = match self.tool.tvr {
             Some(tvr) => tvr,
             None => match self.asdf_version {
@@ -63,10 +65,14 @@ impl Where {
         if tv.backend()?.is_version_installed(&config, &tv, true) {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
-        } else if let [only] = crate::install_layout::resolver::variants_of(&tv).as_slice() {
+        } else if let Some(dir) = named_here
+            .then(|| installed_variant(&tv))
+            .flatten()
+            .filter(|_| !tv.resolved_from_lockfile())
+        {
             // The version was installed with options a configuration sets; the one
             // named here carries none.
-            miseprintln!("{}", only.to_string_lossy());
+            miseprintln!("{}", dir.to_string_lossy());
             Ok(())
         } else {
             Err(Error::VersionNotInstalled(
@@ -75,4 +81,15 @@ impl Where {
             ))?
         }
     }
+}
+
+/// An installation of `tv`'s tool and version made with install options, when the
+/// version as named installs nothing of its own. With several, the one the version
+/// link names, else the first.
+fn installed_variant(tv: &crate::toolset::ToolVersion) -> Option<std::path::PathBuf> {
+    let variants = crate::install_layout::resolver::variants_of(tv);
+    let linked = crate::install_layout::resolver::physical_dir(tv.ba(), &tv.tv_pathname());
+    linked
+        .filter(|dir| variants.contains(dir))
+        .or_else(|| variants.into_iter().next())
 }

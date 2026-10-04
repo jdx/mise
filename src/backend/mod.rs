@@ -36,8 +36,8 @@ use crate::semver::semver_triplet;
 use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    EPHEMERAL_OPT_KEYS, ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion,
-    ToolVersionOptions, Toolset, install_state, is_outdated_version,
+    ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -2377,17 +2377,7 @@ pub trait Backend: Debug + Send + Sync {
     /// change the install would let two different installs share one directory,
     /// while including a harmless one only costs a second copy.
     fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
-        let mut options = self
-            .resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())
-            .unwrap_or_default();
-        let ignored = self.identity_ignored_options();
-        for (key, value) in tv.request.options().opts_as_strings() {
-            if EPHEMERAL_OPT_KEYS.contains(&key.as_str()) || ignored.contains(&key.as_str()) {
-                continue;
-            }
-            options.entry(key).or_insert(value);
-        }
-        options
+        static_helpers::request_identity_options(self, tv)
     }
 
     /// Returns all platform variants that should be locked for a given base platform.
@@ -3961,7 +3951,7 @@ pub trait Backend: Debug + Send + Sync {
         let state_version = tv.state_key();
         // An identity-layout installation is shared by every spelling of its tool, so
         // it is locked by its own directory as well as by this tool's state below.
-        let _identity_lock =
+        let mut _identity_lock =
             crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
                 ctx.pr.set_message(install_lock_wait_message(pid));
             })?;
@@ -3990,6 +3980,13 @@ pub trait Backend: Debug + Send + Sync {
             allocated = crate::install_layout::resolver::allocate(&bare, true)?;
             tv.install_path = allocated.as_ref().map(|a| a.dir.clone());
             install_satisfied = false;
+            // The destination is now the primary directory: lock that one before
+            // anything is changed in it. (A shared root is never locked.)
+            _identity_lock = None;
+            _identity_lock =
+                crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
+                    ctx.pr.set_message(install_lock_wait_message(pid));
+                })?;
         }
 
         // If the install path resolved to a shared dir (but wasn't explicitly set via
