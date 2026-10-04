@@ -153,6 +153,9 @@ cat <<EOF2 >mise.toml
 EOF2
 EDITOR="$PWD/editor-record" mise dot edit ~/.zshrc/activate
 assert "cat opened" "$PWD/mise.toml"
+EDITOR="$PWD/editor-record" mise dot edit --apply ~/.zshrc/activate
+assert "cat opened" "$PWD/mise.toml"
+assert_contains "cat $HOME/.zshrc" "echo activate"
 
 # Editing one file of a copied group with --apply writes only that file.
 mkdir -p "$DOTS/conf2"
@@ -168,3 +171,43 @@ echo "local b" >"$HOME/.config/conf2/b.conf"
 EDITOR="$PWD/editor-write" mise dot edit --apply ~/.config/conf2/a.conf
 assert "cat $HOME/.config/conf2/a.conf" "edited"
 assert "cat $HOME/.config/conf2/b.conf" "local b"
+
+# Unapplying a group leaves a target another group now deploys, even when it
+# still matches what the first group wrote.
+echo "shared" >"$DOTS/shared.conf"
+cat <<EOF2 >mise.toml
+[dotfiles]
+"~/.shared.conf" = { source = "$DOTS/shared.conf", mode = "copy", group = "first" }
+EOF2
+assert_succeed "mise dot apply --yes"
+sed -i 's/group = "first"/group = "second"/' mise.toml
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot unapply --group first --force --yes"
+assert "cat $HOME/.shared.conf" "shared"
+
+# edit --apply narrows to a file the group's own walk deploys: an excluded
+# file or a directory is refused rather than applied around the tree's rules.
+mkdir -p "$DOTS/conf3/sub"
+echo "kept" >"$DOTS/conf3/kept.conf"
+echo "skip" >"$DOTS/conf3/skip.conf"
+echo "nested" >"$DOTS/conf3/sub/nested.conf"
+cat <<EOF2 >mise.toml
+[dotfile_groups.conf3]
+target = "~/.config/conf3"
+mode = "copy"
+exclude = ["skip.conf"]
+EOF2
+assert_succeed "mise dot apply --yes"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.config/conf3/skip.conf" "is not managed by [dotfiles]"
+assert_fail "test -e $HOME/.config/conf3/skip.conf"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.config/conf3/sub" "does not deploy this file"
+assert "cat $HOME/.config/conf3/sub/nested.conf" "nested"
+
+# A file outside a Git-manifest group's index is not applied either.
+cat <<EOF2 >mise.toml
+[dotfile_groups.extra]
+manifest = "git"
+EOF2
+echo "untracked" >"$DOTS/extra/.untracked"
+assert_fail_contains "EDITOR=$PWD/editor-record mise dot edit --apply ~/.untracked" "does not deploy this file"
+assert_fail "test -e $HOME/.untracked"

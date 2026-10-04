@@ -290,15 +290,18 @@ async fn apply_target(target: &str, group: Option<&str>, prompt_secrets: bool) -
         .collect::<Vec<_>>();
     // a file inside a group tree is applied on its own, never the whole
     // tree, which would overwrite changes to its other files without asking
-    if files.is_empty()
-        && let Some(req) = group_route(&all_files, &resolved, group)?
-    {
-        files.push(group_file_request(req, &resolved)?);
-    }
     let edits = system::edits::edits_from_config(&config)?
         .into_iter()
         .filter(|req| system::edits::matches_target(req, &targets))
         .collect::<Vec<_>>();
+    // edit keys such as `~/.zshrc/activate` win over a group tree, as when
+    // opening the target
+    if files.is_empty()
+        && edits.is_empty()
+        && let Some(req) = group_route(&all_files, &resolved, group)?
+    {
+        files.push(group_file_request(req, &resolved)?);
+    }
     if !files.is_empty() {
         let opts = system::files::ApplyOpts {
             dry_run: false,
@@ -347,12 +350,24 @@ fn group_file_source(
 }
 
 /// `req`, a group tree, narrowed to the one file that deploys to `target`:
-/// a link for a linked tree, a copy for a copied one.
+/// a link for a linked tree, a copy for a copied one. The file comes from
+/// the tree's own walk, so `exclude`, `dot_prefix`, and a Git manifest
+/// apply as they do to the whole tree; a directory, or a file the tree
+/// would not deploy, is refused.
 fn group_file_request(
     req: &system::files::FileRequest,
     target: &std::path::Path,
 ) -> Result<system::files::FileRequest> {
-    let source = group_file_source(req, target)?;
+    let Some((source, _)) = system::files::directory_source_files(req)?
+        .into_iter()
+        .find(|(_, deployed)| deployed == target)
+    else {
+        bail!(
+            "{}: dotfile group {} does not deploy this file (a directory, excluded, or outside its manifest); run `mise dot apply` to apply the group",
+            target.display_user(),
+            req.group.as_deref().unwrap_or_default()
+        );
+    };
     let mode = match req.mode {
         FileMode::SymlinkEach => FileMode::Symlink,
         mode => mode,

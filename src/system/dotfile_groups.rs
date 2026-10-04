@@ -697,9 +697,28 @@ pub fn orphaned(active: &[FileRequest]) -> Vec<GroupRecord> {
         .collect()
 }
 
+/// `record` without the paths an active entry outside its group deploys
+/// now: what another group or an ungrouped entry took over is theirs, even
+/// when it still matches what this group wrote.
+pub fn without_claimed(record: &GroupRecord, active: &[FileRequest]) -> GroupRecord {
+    let others = active
+        .iter()
+        .filter(|req| req.group.as_deref() != Some(record.group.as_str()));
+    let claimed = claimed_paths(others);
+    GroupRecord {
+        paths: record
+            .paths
+            .iter()
+            .filter(|path| !claimed.contains(&path.target))
+            .cloned()
+            .collect(),
+        ..record.clone()
+    }
+}
+
 /// Every target path an active entry deploys: its target, and each file of
 /// a tree it walks.
-fn claimed_paths(active: &[FileRequest]) -> HashSet<PathBuf> {
+fn claimed_paths<'a>(active: impl IntoIterator<Item = &'a FileRequest>) -> HashSet<PathBuf> {
     let mut claimed = HashSet::new();
     for req in active {
         claimed.insert(req.target.clone());

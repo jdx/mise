@@ -147,7 +147,8 @@ impl DotfilesUnapply {
         let mut file_plan = system::files::plan_unapply(&files, &file_opts)?;
         let recorded = records
             .iter()
-            .flat_map(|record| &record.paths)
+            .map(|record| system::dotfile_groups::without_claimed(record, &all_files))
+            .flat_map(|record| record.paths)
             .filter(|path| path.target.symlink_metadata().is_ok())
             .filter(|path| !files.iter().any(|req| path.target.starts_with(&req.target)))
             .count();
@@ -184,7 +185,8 @@ impl DotfilesUnapply {
             force: self.force,
         };
         for record in &records {
-            system::dotfile_groups::remove_recorded(record, &remove_opts)?;
+            let record = system::dotfile_groups::without_claimed(record, &all_files);
+            system::dotfile_groups::remove_recorded(&record, &remove_opts)?;
         }
         Ok(())
     }

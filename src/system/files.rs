@@ -937,7 +937,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    for key in ["permissions", "relative", "dot_prefix"] {
+                    for key in ["permissions", "relative", "dot_prefix", "group"] {
                         if table.contains_key(key) {
                             bail!(
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
@@ -967,6 +967,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "remove_empty"
                             | "dot_prefix"
                             | "relative"
+                            | "group"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -992,9 +993,17 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 remove_empty,
                 dot_prefix,
                 relative,
+                group,
                 ..
             } = entry
             {
+                if let Some(group) = &group {
+                    crate::system::dotfile_groups::validate_group_name(group)
+                        .wrap_err_with(|| format!("dotfile {target}"))?;
+                    if mode.as_deref() == Some("track") {
+                        bail!("dotfile {target}: mode = \"track\" takes no group");
+                    }
+                }
                 let permissions_only = permissions.is_some()
                     && source.is_none()
                     && content.is_none()
@@ -3693,7 +3702,7 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
 /// Every (source file, target path) pair of a directory-walking entry, for
 /// builds that skip apply's footprint validation: a `dot_prefix` source must
 /// be a directory, and no two of its paths may deploy to the same place.
-pub(crate) fn directory_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+pub fn directory_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     if req.dot_prefix && !req.source.is_dir() {
         return Err(dot_prefix_file_source(req));
     }
@@ -7956,6 +7965,29 @@ source = "oldrc""#,
                 .unwrap_err()
                 .to_string();
         assert!(err.contains("whole-file entries"), "{err}");
+    }
+
+    #[test]
+    fn incoming_groups_are_validated() {
+        incoming("[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"work\" }\n")
+            .unwrap();
+        for (body, expected) in [
+            (
+                "[dotfiles]\n\"~/.gitconfig\" = { source = \"git\", group = \"a/b\" }\n",
+                "invalid dotfile group name",
+            ),
+            (
+                "[dotfiles]\n\"~/.zshrc\" = { mode = \"track\", group = \"work\" }\n",
+                "takes no group",
+            ),
+            (
+                "[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", group = \"work\" }\n",
+                "whole-file entries",
+            ),
+        ] {
+            let err = format!("{:#}", incoming(body).unwrap_err());
+            assert!(err.contains(expected), "{err}");
+        }
     }
 
     /// The chmod acts on a descriptor opened without following a link, so a

@@ -6801,7 +6801,8 @@
           "type": "array",
           "description": "the dotfile groups this machine applies; when unset, every group applies. Entries without a group always apply, and a more local config's list replaces the others",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
           }
         },
         "config_roots": {
