@@ -395,12 +395,22 @@ impl Exec {
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
-            for (k, v) in env.iter().filter(|(k, _)| *k != "PATH") {
+            // fish's config files run before `-C` and may overwrite what it inherited, so
+            // the values are re-applied from `-C`. They travel in temporary variables
+            // rather than in the script: argv is readable by every local user through
+            // `ps` and /proc, the environment only by the process's owner.
+            let reapplied = env
+                .iter()
+                .filter(|(k, _)| *k != "PATH")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect_vec();
+            for (i, (k, v)) in reapplied.into_iter().enumerate() {
+                let tmp = format!("__MISE_FISH_ENV_{i}");
                 cmd.push(format!(
-                    "set -gx {} {}",
-                    shell_escape::escape(k.into()),
-                    shell_escape::escape(v.into())
+                    "set -gx {} \"${tmp}\"; set -e {tmp}",
+                    shell_escape::escape(k.as_str().into()),
                 ));
+                env.insert(tmp, v);
             }
             // TODO: env is being calculated twice with final_env and env_with_path
             let (_, env_results) = ts.final_env(&config).await?;
