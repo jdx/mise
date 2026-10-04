@@ -429,7 +429,7 @@ _.file = { path = ".env.json", expand = true }
 ```
 
 The `env_shell_expand` setting remains the global switch and can disable expansion even when a file
-sets `expand = true`. Dotenv files retain dotenvy's normal same-file expansion behavior regardless;
+sets `expand = true`. Dotenv files always expand references to earlier assignments in the same file, and a file's own values take precedence over variables that are already set (for example ones exported by `mise activate` from another `.env`);
 for dotenv files, `expand = true` additionally enables references to previously loaded values.
 
 ```toml

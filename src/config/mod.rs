@@ -1623,16 +1623,17 @@ impl Config {
                 continue;
             }
             debug!("env_file: {}", display_path(&env_file));
-            match dotenvy::from_path_iter(&env_file) {
-                Ok(iter) => {
+            match std::fs::read(&env_file) {
+                Ok(bytes) => {
                     env_results.env_files.push(env_file.clone());
-                    for item in iter {
-                        match item {
-                            Ok((k, v)) => {
+                    let content = String::from_utf8_lossy(&bytes);
+                    match mise_dotenv::parse(&content, true, crate::env::vars_safe()) {
+                        Ok(items) => {
+                            for (k, v) in items {
                                 env_results.env.insert(k, (v, env_file.clone()));
                             }
-                            Err(err) => warn!("env_file: {err}"),
                         }
+                        Err(err) => warn!("env_file: {err}"),
                     }
                 }
                 Err(err) => trace!("env_file: {err}"),

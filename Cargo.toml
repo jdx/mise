@@ -13,6 +13,7 @@ members = [
   "crates/mise-sigstore",
   "crates/mise-settings",
   "crates/mise-util",
+  "crates/mise-dotenv",
 ]
 
 [package]
@@ -129,7 +130,7 @@ contracts = "0.6"
 dashmap = "6"
 demand = "2"
 diffy = "0.5"
-dotenvy = "0.15"
+mise-dotenv = { path = "crates/mise-dotenv", version = "0.1" }
 duct = "1"
 dunce = "1"
 expr-lang = "2"
