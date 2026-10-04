@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+# Group sources resolve against dotfiles.root (~/.dotfiles by default).
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/home/dot-config/kitty" "$DOTS/home/dot-config/app" "$DOTS/zsh" "$DOTS/work"
+echo "bashrc" >"$DOTS/home/dot-bashrc"
+echo "kitty" >"$DOTS/home/dot-config/kitty/kitty.conf"
+echo "app" >"$DOTS/home/dot-config/app/config.toml"
+echo "readme" >"$DOTS/home/README.md"
+echo "zshrc" >"$DOTS/zsh/.zshrc"
+echo "work" >"$DOTS/work/gitconfig"
+
+cat <<EOF >mise.toml
+[dotfile_groups.home]
+source = "home"
+dot_prefix = true
+exclude = ["README.md"]
+paths.".config/kitty" = { mode = "symlink" }
+
+[dotfile_groups.zsh]
+
+[dotfiles]
+"~/.work.gitconfig" = { source = "$DOTS/work/gitconfig", mode = "copy", group = "work" }
+EOF
+
+# Every group applies when none are selected: each file of a tree is
+# linked, and the overridden directory is linked whole.
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.bashrc" "$DOTS/home/dot-bashrc"
+assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
+assert "readlink $HOME/.config/kitty" "$DOTS/home/dot-config/kitty"
+assert "readlink $HOME/.config/app/config.toml" "$DOTS/home/dot-config/app/config.toml"
+assert_fail "test -L $HOME/.config"
+assert_fail "test -e $HOME/README.md"
+assert "cat $HOME/.work.gitconfig" "work"
+assert_not_contains "mise dot status" "differs"
+
+# Selecting groups leaves the others' files in place, reported as orphaned.
+cat <<EOF >>mise.toml
+
+[bootstrap]
+dotfile_groups = ["home"]
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
+assert "cat $HOME/.work.gitconfig" "work"
+assert_contains "mise dot status" "orphaned"
+assert_contains "mise dot status --json" '"group": "zsh"'
+
+# A deselected group's files can be unapplied by name.
+assert_succeed "mise dot unapply --group work --yes"
+assert_fail "test -e $HOME/.work.gitconfig"
+assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
+
+# An explicit prune removes the rest.
+assert_contains "mise dot apply --prune --dry-run" "rm ~/.zshrc"
+assert_succeed "test -L $HOME/.zshrc"
+assert_succeed "mise dot apply --prune --yes"
+assert_fail "test -e $HOME/.zshrc"
+assert "readlink $HOME/.bashrc" "$DOTS/home/dot-bashrc"
+assert_not_contains "mise dot status" "orphaned"
+
+# A selected name nothing declares is reported.
+cat <<EOF >mise.toml
+[dotfile_groups.home]
+source = "home"
+dot_prefix = true
+exclude = ["README.md"]
+paths.".config/kitty" = { mode = "symlink" }
+
+[bootstrap]
+dotfile_groups = ["home", "hmoe"]
+EOF
+assert_contains "mise dot status 2>&1" "no [dotfile_groups] table or [dotfiles] entry declares it"
+
+# Adding a file under a group tree captures it into the group's source with
+# a dot- name, and writes no [dotfiles] entry.
+echo "starship" >"$HOME/.config/starship.toml"
+assert_succeed "mise dot add --yes $HOME/.config/starship.toml"
+assert "cat $DOTS/home/dot-config/starship.toml" "starship"
+assert "readlink $HOME/.config/starship.toml" "$DOTS/home/dot-config/starship.toml"
+assert_not_contains "cat mise.toml" "starship"
+
+# Two groups covering the same path need --group.
+cat <<EOF >mise.toml
+[dotfile_groups.home]
+source = "home"
+dot_prefix = true
+exclude = ["README.md"]
+
+[dotfile_groups.zsh]
+EOF
+echo "new" >"$HOME/.newrc"
+assert_fail_contains "mise dot add --yes $HOME/.newrc" "choose one with --group"
+assert_succeed "mise dot add --yes --group zsh $HOME/.newrc"
+assert "cat $DOTS/zsh/.newrc" "new"
+assert "readlink $HOME/.newrc" "$DOTS/zsh/.newrc"
+
+# Selected groups that write the same target are an error.
+echo "other" >"$DOTS/zsh/.bashrc"
+assert_fail_contains "mise dot apply --yes" "group: zsh"
+rm "$DOTS/zsh/.bashrc"
+
+# So is an override that links a directory another group writes into.
+mkdir -p "$DOTS/zsh/.config/kitty"
+echo "theme" >"$DOTS/zsh/.config/kitty/theme.conf"
+cat <<EOF >mise.toml
+[dotfile_groups.home]
+source = "home"
+dot_prefix = true
+exclude = ["README.md"]
+paths.".config/kitty" = { mode = "symlink" }
+
+[dotfile_groups.zsh]
+EOF
+assert_fail_contains "mise dot apply --yes" "conflicting"

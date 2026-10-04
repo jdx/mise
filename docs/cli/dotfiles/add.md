@@ -17,6 +17,10 @@ under `dotfiles.root` unless `--source` is provided. Captured entries are
 applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
 source capture and config write without making those changes.
 
+A target inside the tree of a dotfile group is captured into that group's
+source instead, without a new `[dotfiles]` entry: the deepest group whose
+target contains it, or the one named with `--group`.
+
 ## Arguments
 - **`[TARGET]…`** — Targets to add or update
 
@@ -32,6 +36,7 @@ source capture and config write without making those changes.
 - **`-s --source <PATH>`** — Source path to use for a single target
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
+- **`--group <NAME>`** — Capture into the tree of this dotfile group
 - **`-h --help`** — Print help
 
 ## Examples
@@ -40,6 +45,7 @@ source capture and config write without making those changes.
 mise dot add ~/.zshrc
 mise dot add --mode copy ~/.config/starship.toml
 mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --group home ~/.config/starship.toml
 mise dot add --changed
 ```
 

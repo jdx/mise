@@ -11,12 +11,16 @@ use crate::system;
 /// desired state. Whole-file entries may symlink, copy, or render templates.
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
+///
+/// With `--prune`, files deployed by dotfile groups that are no longer
+/// selected or declared are removed too.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     example(
         r###"mise dot apply
 mise dot apply --dry-run
+mise dot apply --prune
 mise dot apply --force --yes"###
     )
 )]
@@ -36,6 +40,11 @@ pub(crate) struct DotfilesApply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Also remove files deployed by dotfile groups that are no longer
+    /// selected or declared
+    #[usage(long)]
+    prune: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
@@ -64,14 +73,33 @@ impl DotfilesApply {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
-        if files.is_empty() && edits.is_empty() {
+        if files.is_empty() && edits.is_empty() && !self.prune {
             super::warn_if_dotfiles_ignored();
             info!("no dotfiles configured in [dotfiles]");
             return Ok(true);
         }
         write_and_reload(self.dry_run, |written| {
-            self.write(&config, &files, &edits, &secrets, written)
+            if !self.write(&config, &files, &edits, &secrets, written)? {
+                return Ok(false);
+            }
+            if self.prune {
+                self.prune(&config, written)?;
+            }
+            Ok(true)
         })
+    }
+
+    /// Remove what deselected or undeclared groups left behind.
+    fn prune(&self, config: &Config, written: &mut Vec<PathBuf>) -> Result<()> {
+        let active = system::files::files_from_config(config)?;
+        let opts = system::dotfile_groups::RemoveOpts {
+            dry_run: self.dry_run,
+            force: self.force,
+        };
+        for record in system::dotfile_groups::orphaned(&active) {
+            written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
+        }
+        Ok(())
     }
 
     /// Apply the whole-file entries, then the edits, appending each written

@@ -14,6 +14,9 @@ use crate::ui::table::MiseTable;
 /// functions may execute. JSON includes each entry's origin and uses the states
 /// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
 ///
+/// Files deployed by a dotfile group that is no longer selected or declared
+/// are listed as `orphaned`; `mise dot apply --prune` removes them.
+///
 /// The management state of every declaration (applied, missing, differs,
 /// tracked) followed by the history state: what is tracked, the latest
 /// checkpoint, unfinished operations, and whether edits are saved
@@ -160,6 +163,49 @@ impl DotfilesStatus {
             }
         }
 
+        let mut json_orphans = vec![];
+        for record in system::dotfile_groups::orphaned(&all_files) {
+            for path in &record.paths {
+                if path.target.symlink_metadata().is_err()
+                    || !system::files::matches_target(
+                        &path.target,
+                        &path.target.display_user(),
+                        &self.targets,
+                    )
+                {
+                    continue;
+                }
+                let owned = path.is_owned();
+                if self.json {
+                    json_orphans.push(json!({
+                        "target": path.target.display_user(),
+                        "group": record.group,
+                        "state": if owned { "orphaned" } else { "orphaned_changed" },
+                    }));
+                } else {
+                    file_rows.push(vec![
+                        path.target.display_user(),
+                        if path.link.is_some() {
+                            "symlink"
+                        } else {
+                            "copy"
+                        }
+                        .to_string(),
+                        path.link
+                            .as_ref()
+                            .map(|link| link.display_user())
+                            .unwrap_or_else(|| "-".to_string()),
+                        format!("group {}", record.group),
+                        if owned {
+                            "orphaned".to_string()
+                        } else {
+                            "orphaned (changed since applied)".to_string()
+                        },
+                    ]);
+                }
+            }
+        }
+
         let all_edits = system::edits::edits_from_config(&config)?;
         let edits = all_edits
             .iter()
@@ -168,6 +214,8 @@ impl DotfilesStatus {
             .collect::<Vec<_>>();
         if files.is_empty()
             && edits.is_empty()
+            && json_orphans.is_empty()
+            && file_rows.is_empty()
             && !self.targets.is_empty()
             && (!all_files.is_empty() || !all_edits.is_empty())
         {
@@ -220,14 +268,16 @@ impl DotfilesStatus {
             super::warn_if_dotfiles_ignored();
         }
         if self.json {
-            miseprintln!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "files": json_files,
-                    "edits": json_edits,
-                    "history": history,
-                }))?
-            );
+            let mut out = json!({
+                "files": json_files,
+                "edits": json_edits,
+                "history": history,
+            });
+            // only present when a deselected or removed group left files
+            if !json_orphans.is_empty() {
+                out["orphaned"] = json!(json_orphans);
+            }
+            miseprintln!("{}", serde_json::to_string_pretty(&out)?);
         } else {
             if file_rows.is_empty() && edit_rows.is_empty() {
                 info!("nothing configured in [dotfiles]");

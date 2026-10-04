@@ -428,6 +428,10 @@ pub(crate) enum FileTomlEntry {
         /// `dotfiles.relative_symlinks`
         #[serde(default)]
         relative: Option<bool>,
+        /// the dotfile group this entry belongs to, selected with
+        /// `[bootstrap] dotfile_groups`
+        #[serde(default)]
+        group: Option<String>,
     },
 }
 
@@ -521,6 +525,9 @@ pub struct FileRequest {
     /// symlink modes only: links point at the source by a path relative to
     /// the link's directory (see [`relative_link_path`])
     pub relative: bool,
+    /// the dotfile group the entry belongs to: declared with `group` on an
+    /// ordinary entry, or generated from a `[dotfile_groups]` tree
+    pub group: Option<String>,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -537,6 +544,10 @@ struct SymlinkEachState {
     source: PathBuf,
     target: PathBuf,
     links: Vec<ManagedLink>,
+    /// the dotfile group that deployed these links: a deselected group's
+    /// links stay until pruned, so reconciliation leaves them alone
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
 }
 
 #[derive(Debug)]
@@ -610,10 +621,21 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     let trusted_roots = global_composed_roots(config);
+    let selection = crate::system::dotfile_groups::selection(&config.config_files);
+    // a deselected group is kept, disabled, out of the conflict checks: only
+    // the groups a machine applies have to agree with each other
+    let mut deselected = vec![];
     for config_files in config.bootstrap_config_maps() {
-        for request in
+        for mut request in
             files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
+                .into_iter()
+                .chain(crate::system::dotfile_groups::group_requests(config_files))
         {
+            if !crate::system::dotfile_groups::is_selected(&request, selection.as_deref()) {
+                request.enabled = false;
+                deselected.push(request);
+                continue;
+            }
             let siblings = composed.entry(request.target.clone()).or_default();
             if let Some(existing) = siblings
                 .iter_mut()
@@ -632,18 +654,34 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
                     && request.mode != FileMode::Track
                     && (existing.mode != FileMode::SymlinkEach
                         || request.mode != FileMode::SymlinkEach)
+                    // group trees share their target directory, such as
+                    // `~`; the footprint check compares their files
+                    && !(group_tree(existing) && group_tree(&request))
             }) {
                 bail!(
                     "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
                     request.target.display(),
-                    existing.origin.conflict_description(),
-                    request.origin.conflict_description(),
+                    conflict_origin(existing),
+                    conflict_origin(&request),
                 );
             }
             siblings.push(request);
         }
     }
-    Ok(composed.into_values().flatten().collect())
+    let mut requests = composed.into_values().flatten().collect::<Vec<_>>();
+    if let Some(selection) = &selection {
+        let declared = requests.iter().chain(&deselected).cloned().collect_vec();
+        crate::system::dotfile_groups::warn_unknown_selection(selection, &declared);
+    }
+    requests.extend(deselected);
+    Ok(requests)
+}
+
+/// A grouped entry that deploys a directory tree file by file.
+fn group_tree(req: &FileRequest) -> bool {
+    req.group.is_some()
+        && matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy)
+        && req.source.is_dir()
 }
 
 /// Whether a declaration comes from the system or global layers (or a root
@@ -812,9 +850,17 @@ fn composed_file_footprint_conflict(
     eyre::eyre!(
         "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
         path.display(),
-        first.origin.conflict_description(),
-        second.origin.conflict_description(),
+        conflict_origin(first),
+        conflict_origin(second),
     )
+}
+
+/// Where a conflicting declaration came from, with its group if it has one.
+fn conflict_origin(req: &FileRequest) -> String {
+    match &req.group {
+        Some(group) => format!("{}\n    group: {group}", req.origin.conflict_description()),
+        None => req.origin.conflict_description(),
+    }
 }
 
 /// Returns whether sibling declarations produce the same whole-file resource.
@@ -1274,7 +1320,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     || table.contains_key("content")
                     || table.contains_key("permissions")
                     || table.contains_key("relative")
-                    || table.contains_key("dot_prefix"))
+                    || table.contains_key("dot_prefix")
+                    || table.contains_key("group"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -1292,6 +1339,18 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             None
         }
     }
+}
+
+/// Resolve one entry generated from a `[dotfile_groups]` tree with the
+/// same validation as a declared `[dotfiles]` entry.
+pub(crate) fn merge_group_entry(
+    target_raw: String,
+    entry: FileTomlEntry,
+    base: &Path,
+    origin: &ResourceOrigin,
+    merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
+) {
+    merge_file_entry(target_raw, entry, base, origin, merged);
 }
 
 /// Resolve one declaration, merging explicit tracking policies into earlier layers.
@@ -1318,9 +1377,11 @@ fn merge_file_entry(
         remove_empty,
         dot_prefix,
         relative,
+        group,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1352,6 +1413,7 @@ fn merge_file_entry(
             remove_empty,
             dot_prefix,
             relative,
+            group,
         } => (
             source,
             content,
@@ -1368,6 +1430,7 @@ fn merge_file_entry(
             remove_empty,
             dot_prefix,
             relative,
+            group,
         ),
     };
     // `{ permissions = "0600" }` alone manages only an existing target's
@@ -1383,6 +1446,12 @@ fn merge_file_entry(
     };
     let remove_empty = remove_empty.unwrap_or(false);
     let dot_prefix = dot_prefix.unwrap_or(false);
+    if let Some(group) = &group
+        && let Err(err) = crate::system::dotfile_groups::validate_group_name(group)
+    {
+        record_invalid(&target_raw, &origin.config, err.to_string());
+        return;
+    }
     if encrypt == Some(true) && content.is_some() {
         record_invalid(
             &target_raw,
@@ -1450,11 +1519,12 @@ fn merge_file_entry(
             || remove_empty
             || relative == Some(true)
             || dot_prefix
+            || group.is_some()
         {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, or dot_prefix",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, dot_prefix, or group",
             );
             return;
         }
@@ -1528,6 +1598,7 @@ fn merge_file_entry(
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -1624,6 +1695,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1762,6 +1834,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1787,6 +1860,7 @@ fn merge_file_entry(
                 remove_empty: false,
                 dot_prefix: false,
                 relative: false,
+                group: group.clone(),
             },
         );
         return;
@@ -1832,6 +1906,7 @@ fn merge_file_entry(
         remove_empty,
         dot_prefix,
         relative: relative_symlinks(mode, relative),
+        group,
     }) {
         merged.insert((req.target.clone(), false), req);
     }
@@ -1955,6 +2030,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         remove_empty,
         dot_prefix,
         relative,
+        group,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -1976,6 +2052,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             remove_empty,
             dot_prefix,
             relative,
+            group,
         }];
     }
 
@@ -2032,6 +2109,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             remove_empty,
             dot_prefix,
             relative,
+            group,
         }];
     }
 
@@ -2073,6 +2151,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 remove_empty,
                 dot_prefix,
                 relative,
+                group: group.clone(),
             })
         })
         .collect()
@@ -2654,6 +2733,7 @@ fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
                 target: lexical_normalize(&target),
             })
             .collect(),
+        group: req.group.clone(),
     })
 }
 
@@ -2666,6 +2746,7 @@ fn active_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
             source: lexical_normalize(&req.source),
             target: lexical_normalize(&req.target),
             links: vec![],
+            group: req.group.clone(),
         })
     }
 }
@@ -2743,12 +2824,24 @@ fn plan_symlink_each_reconciliation(
         })
         .map(active_symlink_each_state)
         .collect::<Result<Vec<_>>>()?;
+    // links of a group that is not active now are left for an explicit
+    // prune (see `dotfile_groups`), not reconciled away
+    let active_groups = active_requests
+        .iter()
+        .filter_map(|req| req.group.as_deref())
+        .collect::<HashSet<_>>();
     let state_dir = dirs::STATE.join("dotfiles");
     let stored = if state_dir.is_dir() {
         state_dir
             .read_dir()?
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| read_symlink_each_state(&entry.path()).ok())
+            .filter(|state| {
+                state
+                    .group
+                    .as_deref()
+                    .is_none_or(|group| active_groups.contains(group))
+            })
             .collect()
     } else {
         vec![]
@@ -3257,7 +3350,7 @@ fn empty_render_target(req: &FileRequest) -> Result<EmptyRenderTarget> {
     })
 }
 
-fn link_points_to(source: &Path, target: &Path) -> bool {
+pub(crate) fn link_points_to(source: &Path, target: &Path) -> bool {
     if !target.is_symlink() {
         return false;
     }
@@ -3873,6 +3966,8 @@ pub struct ApplyPlan<'a> {
     /// along; only computed when a removal has directories it could prune
     claimed_dirs: HashSet<PathBuf>,
     reconciliation: SymlinkEachReconciliation,
+    /// every planned request, so grouped ones can record what they deployed
+    requests: &'a [FileRequest],
 }
 
 /// Apply all entries that aren't already in the desired state. Conflicting
@@ -3918,6 +4013,7 @@ pub fn execute_apply(
                 journal::commit_changes(pending);
             }
             record_template_states(&plan.record_templates)?;
+            crate::system::dotfile_groups::record_applied(plan.requests);
         }
         info!("files: all files are applied");
         return Ok(true);
@@ -4016,6 +4112,7 @@ pub fn execute_apply(
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
+    crate::system::dotfile_groups::record_applied(plan.requests);
     let applied = plan
         .todo
         .iter()
@@ -4203,6 +4300,7 @@ pub fn plan_apply_with_active<'a>(
         prune_leftovers,
         claimed_dirs,
         reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
+        requests,
     })
 }
 
@@ -6035,6 +6133,7 @@ variants = [{{ {field} = "linux" }}]"#
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         }
     }
 
@@ -6557,6 +6656,7 @@ source = "oldrc""#,
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         };
         let mut first = request(vec!["sessions"], true);
         first.override_from(request(vec!["cache"], true));
@@ -6676,6 +6776,7 @@ source = "oldrc""#,
             remove_empty: false,
             dot_prefix: false,
             relative: false,
+            group: None,
         }
     }
 
@@ -6984,6 +7085,7 @@ source = "oldrc""#,
                 source: PathBuf::from(source).join(leaf),
                 target: target.join(leaf),
             }],
+            group: None,
         };
         let home = state("/repo/home", ".zshrc");
         let work = state("/repo/work", ".gitconfig");
@@ -7007,6 +7109,7 @@ source = "oldrc""#,
                 source: PathBuf::from("/repo/home/.zshrc"),
                 target: target.join(".zshrc"),
             }],
+            group: None,
         };
         let active = SymlinkEachState {
             links: vec![],
@@ -7046,6 +7149,7 @@ source = "oldrc""#,
                 source: PathBuf::from("/repo/home/config/../.zshrc"),
                 target: PathBuf::from("/home/example/./.zshrc"),
             }],
+            group: None,
         };
 
         assert_eq!(
@@ -7058,6 +7162,7 @@ source = "oldrc""#,
                     source: PathBuf::from("/repo/home/.zshrc"),
                     target: PathBuf::from("/home/example/.zshrc"),
                 }],
+                group: None,
             }
         );
     }
@@ -8704,6 +8809,7 @@ source = "oldrc""#,
                 stale_links: vec![],
                 targets: vec![],
             },
+            requests: &[],
         };
         prune_after_apply([], &plan);
         assert!(!newapp.exists());

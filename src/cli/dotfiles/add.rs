@@ -23,6 +23,10 @@ use crate::ui::prompt;
 /// under `dotfiles.root` unless `--source` is provided. Captured entries are
 /// applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
 /// source capture and config write without making those changes.
+///
+/// A target inside the tree of a dotfile group is captured into that group's
+/// source instead, without a new `[dotfiles]` entry: the deepest group whose
+/// target contains it, or the one named with `--group`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -30,6 +34,7 @@ use crate::ui::prompt;
         r###"mise dot add ~/.zshrc
 mise dot add --mode copy ~/.config/starship.toml
 mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --group home ~/.config/starship.toml
 mise dot add --changed"###
     )
 )]
@@ -84,6 +89,10 @@ pub(crate) struct DotfilesAdd {
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
     pub(super) prompt_secrets: bool,
+
+    /// Capture into the tree of this dotfile group
+    #[usage(long, value_name = "NAME", conflicts = ["source"])]
+    pub(super) group: Option<String>,
 }
 
 impl DotfilesAdd {
@@ -219,6 +228,53 @@ impl DotfilesAdd {
                     req.source.display_user()
                 );
             }
+            // a path inside a group's tree is captured into its source
+            let routed = match existing {
+                Some(_) => {
+                    if let Some(group) = &self.group {
+                        warn!(
+                            "dotfiles: {target_raw} is already managed by its own entry; --group {group} was ignored"
+                        );
+                    }
+                    None
+                }
+                None if self.source.is_some() => None,
+                None => {
+                    system::dotfile_groups::route_add(&managed, &target, self.group.as_deref())?
+                }
+            };
+            if let Some(req) = routed {
+                let rel = target.strip_prefix(&req.target)?;
+                if self.mode.is_some() && req.mode != mode {
+                    warn!(
+                        "dotfiles: {target_raw} belongs to group {} with mode {}; --mode {} was ignored",
+                        req.group.as_deref().unwrap_or_default(),
+                        req.mode.name(),
+                        mode.name()
+                    );
+                }
+                let item = PlannedAdd {
+                    target_raw: normalized_target_raw(&target),
+                    source: req.source.join(system::dotfile_groups::source_rel_for(
+                        &req.source,
+                        rel,
+                        req.dot_prefix,
+                    )),
+                    target,
+                    mode: req.mode,
+                    implied_source: true,
+                    explicit_mode: false,
+                    already_managed: Some(req.clone()),
+                    group_capture: true,
+                };
+                if !planned
+                    .iter()
+                    .any(|planned: &PlannedAdd| planned.target == item.target)
+                {
+                    planned.push(item);
+                }
+                continue;
+            }
             let source = if let Some(req) = existing {
                 req.source.clone()
             } else if let Some(source) = &self.source {
@@ -246,6 +302,7 @@ impl DotfilesAdd {
                 implied_source: self.source.is_none(),
                 explicit_mode: self.mode.is_some(),
                 already_managed: existing.cloned(),
+                group_capture: false,
             };
             // Wildcard expansion and equivalent spellings can resolve more
             // than one argument to the same config key. The eventual config
@@ -338,7 +395,8 @@ impl DotfilesAdd {
                         )?,
                     ));
                     let move_before_apply = item.mode == FileMode::Symlink
-                        || (item.mode == FileMode::SymlinkEach && item.already_managed.is_none());
+                        || (item.mode == FileMode::SymlinkEach
+                            && (item.already_managed.is_none() || item.group_capture));
                     if !self.no_apply && move_before_apply && !item.target.is_symlink() {
                         let pending = journal::begin_changes(
                             "dotfiles",
@@ -400,11 +458,9 @@ impl DotfilesAdd {
                                 &backup_dir.path().join("targets").join(index.to_string()),
                             )?,
                         ));
-                        if let Some(request) = item
-                            .already_managed
-                            .as_ref()
-                            .filter(|request| request.manifest == Some(FileManifest::Git))
-                        {
+                        if let Some(request) = item.already_managed.as_ref().filter(|request| {
+                            request.manifest == Some(FileManifest::Git) && !item.group_capture
+                        }) {
                             system::files::capture_git_manifest(request)?;
                         } else {
                             system::files::copy_path(&item.target, &item.source)?;
@@ -438,11 +494,28 @@ impl DotfilesAdd {
                         )?,
                     ));
                 }
-                if item.already_managed.is_some() {
+                if item.group_capture {
+                    info!(
+                        "dotfiles: added {} to group {}",
+                        item.target_raw,
+                        item.already_managed
+                            .as_ref()
+                            .and_then(|req| req.group.as_deref())
+                            .unwrap_or_default()
+                    );
+                } else if item.already_managed.is_some() {
                     updated_targets.push(item.target_raw.as_str());
                 }
                 accepted.push(item);
-                apply_requests.push(item.managed_request(&config_path));
+                // files captured into one group tree apply it once
+                let request = item.managed_request(&config_path);
+                if !apply_requests.iter().any(|existing: &FileRequest| {
+                    existing.target == request.target
+                        && existing.source == request.source
+                        && existing.mode == request.mode
+                }) {
+                    apply_requests.push(request);
+                }
             }
 
             let apply_opts = system::files::ApplyOpts {
@@ -538,6 +611,8 @@ struct PlannedAdd {
     implied_source: bool,
     explicit_mode: bool,
     already_managed: Option<FileRequest>,
+    /// a new file captured into the tree of `already_managed`, a group
+    group_capture: bool,
 }
 
 impl PlannedAdd {
@@ -545,6 +620,10 @@ impl PlannedAdd {
     /// as the future source footprint when add is about to copy or move it.
     fn validation_request(&self, config_path: &std::path::Path) -> FileRequest {
         let mut request = self.managed_request(config_path);
+        // the group tree keeps its shape; the captured file joins it
+        if self.group_capture {
+            return request;
+        }
         if request.manifest.is_none()
             && self.target.exists()
             && !same_file(&self.target, &self.source)
@@ -589,6 +668,7 @@ impl PlannedAdd {
             remove_empty: false,
             dot_prefix: false,
             relative: system::files::relative_symlinks(self.mode, None),
+            group: None,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),

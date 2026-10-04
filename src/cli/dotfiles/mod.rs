@@ -164,7 +164,9 @@ pub(crate) fn ignored_configs_with_dotfiles() -> Vec<&'static Path> {
             crate::file::read_to_string(path)
                 .ok()
                 .and_then(|body| body.parse::<toml::Table>().ok())
-                .is_some_and(|table| table.contains_key("dotfiles"))
+                .is_some_and(|table| {
+                    table.contains_key("dotfiles") || table.contains_key("dotfile_groups")
+                })
         })
         .map(|path| path.as_path())
         .collect()

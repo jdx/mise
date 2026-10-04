@@ -6200,6 +6200,11 @@
                 "type": "boolean",
                 "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
               },
+              "group": {
+                "type": "string",
+                "description": "the dotfile group this whole-file entry belongs to; it applies only while [bootstrap] dotfile_groups selects that group (or is unset)",
+                "pattern": "^[A-Za-z0-9_.-]+$"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -6562,6 +6567,82 @@
         ]
       }
     },
+    "dotfile_groups": {
+      "type": "object",
+      "description": "named directory trees of dotfiles, applied with `mise dotfiles apply` or `mise bootstrap` while [bootstrap] dotfile_groups selects them (or is unset)",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "source directory; a relative path resolves against dotfiles.root. Defaults to the group name"
+          },
+          "target": {
+            "type": "string",
+            "description": "target directory, absolute or starting with ~/",
+            "default": "~"
+          },
+          "mode": {
+            "type": "string",
+            "description": "how the tree is deployed",
+            "enum": ["symlink-each", "copy", "symlink"],
+            "default": "symlink-each"
+          },
+          "exclude": {
+            "type": "array",
+            "description": "glob patterns of source paths to skip, as for [dotfiles] exclude",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dot_prefix": {
+            "type": "boolean",
+            "default": false,
+            "description": "deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles"
+          },
+          "manifest": {
+            "type": "string",
+            "description": "source manifest used to select managed files from the tree",
+            "enum": ["git"]
+          },
+          "relative": {
+            "type": "boolean",
+            "description": "link by a path relative to the link's directory; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+          },
+          "paths": {
+            "type": "object",
+            "description": "overrides for parts of the tree, keyed by path relative to the target, such as \".config/kitty\"",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "description": "how this path is deployed; \"symlink\" links a directory as a whole instead of each file in it",
+                  "enum": ["symlink", "symlink-each", "copy", "template"]
+                },
+                "exclude": {
+                  "type": "array",
+                  "description": "glob patterns, relative to this path, replacing the group's exclude list",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "permissions": {
+                  "type": "string",
+                  "description": "octal permissions for a copied or templated file, such as \"0600\" (Unix only)",
+                  "pattern": "^(0o)?[0-7]{1,4}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "bootstrap": {
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
@@ -6714,6 +6795,13 @@
               }
             },
             "additionalProperties": false
+          }
+        },
+        "dotfile_groups": {
+          "type": "array",
+          "description": "the dotfile groups this machine applies; when unset, every group applies. Entries without a group always apply, and a more local config's list replaces the others",
+          "items": {
+            "type": "string"
           }
         },
         "config_roots": {

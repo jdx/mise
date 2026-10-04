@@ -1704,6 +1704,7 @@ mod tests {
             enabled: true,
             remove_empty: false,
             relative: false,
+            group: None,
             dot_prefix: false,
         };
         // every path in the layer build_dotfiles_layer produces, so the
@@ -1787,6 +1788,7 @@ mod tests {
             enabled: true,
             remove_empty: false,
             relative: false,
+            group: None,
             dot_prefix: true,
         })
     }

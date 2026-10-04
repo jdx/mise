@@ -96,6 +96,7 @@ impl DotfilesEdit {
             force: false,
             yes: true,
             prompt_secrets: self.prompt_secrets,
+            group: None,
         }
         .run()
         .await?;

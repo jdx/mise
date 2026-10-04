@@ -47,6 +47,7 @@ pub mod accounts;
 pub mod compose;
 pub mod defaults;
 pub mod deps;
+pub mod dotfile_groups;
 pub mod driver;
 pub mod edits;
 pub mod files;
@@ -87,6 +88,9 @@ pub struct BootstrapTomlConfig {
     /// Independent configuration roots whose declarative files and dotfiles
     /// participate in bootstrap composition.
     pub config_roots: Option<Vec<String>>,
+    /// The `[dotfile_groups]` (and `group = "..."` entries) to apply; every
+    /// group applies when unset. A later layer's list replaces earlier ones.
+    pub dotfile_groups: Option<Vec<String>>,
     /// Logical secret name -> environment input declaration.
     #[serde(default)]
     pub secrets: IndexMap<String, secrets::SecretTomlConfig>,

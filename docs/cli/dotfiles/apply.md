@@ -16,6 +16,9 @@ desired state. Whole-file entries may symlink, copy, or render templates.
 Edit entries manage a marker-delimited block or a single line in a file
 mise doesn't otherwise own.
 
+With `--prune`, files deployed by dotfile groups that are no longer
+selected or declared are removed too.
+
 ## Arguments
 - **`[TARGET]…`** — Only apply these targets
 
@@ -23,6 +26,7 @@ mise doesn't otherwise own.
 - **`-f --force`** — Overwrite existing files that conflict with whole-file dotfile entries
 - **`-n --dry-run`** — Print the actions that would run without writing anything
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--prune`** — Also remove files deployed by dotfile groups that are no longer selected or declared
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
@@ -31,6 +35,7 @@ mise doesn't otherwise own.
 ```
 mise dot apply
 mise dot apply --dry-run
+mise dot apply --prune
 mise dot apply --force --yes
 ```
 

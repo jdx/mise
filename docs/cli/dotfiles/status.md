@@ -16,6 +16,9 @@ Template entries are rendered to compare their output; trusted template
 functions may execute. JSON includes each entry's origin and uses the states
 `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
 
+Files deployed by a dotfile group that is no longer selected or declared
+are listed as `orphaned`; `mise dot apply --prune` removes them.
+
 The management state of every declaration (applied, missing, differs,
 tracked) followed by the history state: what is tracked, the latest
 checkpoint, unfinished operations, and whether edits are saved

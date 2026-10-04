@@ -1591,6 +1591,10 @@ target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `\-\-source` is provided. Captured entries are
 applied unless `\-\-no\-apply` is passed. Use `\-\-dry\-run` to preview both the
 source capture and config write without making those changes.
+
+A target inside the tree of a dotfile group is captured into that group's
+source instead, without a new `[dotfiles]` entry: the deepest group whose
+target contains it, or the one named with `\-\-group`.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles add [OPTIONS] [<TARGET>] ...
 .PP
@@ -1630,6 +1634,9 @@ Skip the confirmation prompt
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
 .TP
+\fB\-\-group\fR \fI<NAME>\fR
+Capture into the tree of this dotfile group
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -1644,6 +1651,7 @@ Targets to add or update
 mise dot add ~/.zshrc
 mise dot add \-\-mode copy ~/.config/starship.toml
 mise dot add \-\-source dotfiles/gitconfig ~/.gitconfig
+mise dot add \-\-group home ~/.config/starship.toml
 mise dot add \-\-changed
 .RE
 .SH "MISE BOOTSTRAP DOTFILES APPLY"
@@ -1653,6 +1661,9 @@ Applies configured whole\-file entries and edits that aren't in their
 desired state. Whole\-file entries may symlink, copy, or render templates.
 Edit entries manage a marker\-delimited block or a single line in a file
 mise doesn't otherwise own.
+
+With `\-\-prune`, files deployed by dotfile groups that are no longer
+selected or declared are removed too.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles apply [OPTIONS] [<TARGET>] ...
 .PP
@@ -1667,6 +1678,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-prune\fR
+Also remove files deployed by dotfile groups that are no longer selected or declared
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
@@ -1684,6 +1698,7 @@ Only apply these targets
 .RS 4
 mise dot apply
 mise dot apply \-\-dry\-run
+mise dot apply \-\-prune
 mise dot apply \-\-force \-\-yes
 .RE
 .SH "MISE BOOTSTRAP DOTFILES CAPTURE"
@@ -2229,6 +2244,9 @@ Template entries are rendered to compare their output; trusted template
 functions may execute. JSON includes each entry's origin and uses the states
 `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
 
+Files deployed by a dotfile group that is no longer selected or declared
+are listed as `orphaned`; `mise dot apply \-\-prune` removes them.
+
 The management state of every declaration (applied, missing, differs,
 tracked) followed by the history state: what is tracked, the latest
 checkpoint, unfinished operations, and whether edits are saved
@@ -2351,6 +2369,10 @@ Removes configured whole\-file entries and edits while preserving files
 mise cannot identify as managed. Modified copies, templates, and plain\-line
 edits require `\-\-force`. Source files and configuration entries are retained.
 Run this before deleting a declaration so mise can still identify its targets.
+
+With `\-\-group`, only that dotfile group's files are removed, using what
+mise recorded when it applied them, so this works even after the group
+is deselected or deleted from the config.
 .PP
 \fBUsage:\fR mise bootstrap dotfiles unapply [OPTIONS] [<TARGET>] ...
 .PP
@@ -2365,6 +2387,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-group\fR \fI<NAME>\fR
+Only unapply the files of this dotfile group, even one that is no longer selected or declared
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
@@ -2382,6 +2407,7 @@ Only unapply these targets
 .RS 4
 mise dot unapply
 mise dot unapply ~/.zshrc
+mise dot unapply \-\-group work
 mise dot unapply \-\-dry\-run
 mise dot unapply \-\-force \-\-yes
 .RE
@@ -4221,6 +4247,10 @@ target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `\-\-source` is provided. Captured entries are
 applied unless `\-\-no\-apply` is passed. Use `\-\-dry\-run` to preview both the
 source capture and config write without making those changes.
+
+A target inside the tree of a dotfile group is captured into that group's
+source instead, without a new `[dotfiles]` entry: the deepest group whose
+target contains it, or the one named with `\-\-group`.
 .PP
 \fBUsage:\fR mise dotfiles add [OPTIONS] [<TARGET>] ...
 .PP
@@ -4260,6 +4290,9 @@ Skip the confirmation prompt
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
 .TP
+\fB\-\-group\fR \fI<NAME>\fR
+Capture into the tree of this dotfile group
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -4274,6 +4307,7 @@ Targets to add or update
 mise dot add ~/.zshrc
 mise dot add \-\-mode copy ~/.config/starship.toml
 mise dot add \-\-source dotfiles/gitconfig ~/.gitconfig
+mise dot add \-\-group home ~/.config/starship.toml
 mise dot add \-\-changed
 .RE
 .SH "MISE DOTFILES APPLY"
@@ -4283,6 +4317,9 @@ Applies configured whole\-file entries and edits that aren't in their
 desired state. Whole\-file entries may symlink, copy, or render templates.
 Edit entries manage a marker\-delimited block or a single line in a file
 mise doesn't otherwise own.
+
+With `\-\-prune`, files deployed by dotfile groups that are no longer
+selected or declared are removed too.
 .PP
 \fBUsage:\fR mise dotfiles apply [OPTIONS] [<TARGET>] ...
 .PP
@@ -4297,6 +4334,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-prune\fR
+Also remove files deployed by dotfile groups that are no longer selected or declared
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
@@ -4314,6 +4354,7 @@ Only apply these targets
 .RS 4
 mise dot apply
 mise dot apply \-\-dry\-run
+mise dot apply \-\-prune
 mise dot apply \-\-force \-\-yes
 .RE
 .SH "MISE DOTFILES CAPTURE"
@@ -4859,6 +4900,9 @@ Template entries are rendered to compare their output; trusted template
 functions may execute. JSON includes each entry's origin and uses the states
 `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
 
+Files deployed by a dotfile group that is no longer selected or declared
+are listed as `orphaned`; `mise dot apply \-\-prune` removes them.
+
 The management state of every declaration (applied, missing, differs,
 tracked) followed by the history state: what is tracked, the latest
 checkpoint, unfinished operations, and whether edits are saved
@@ -4981,6 +5025,10 @@ Removes configured whole\-file entries and edits while preserving files
 mise cannot identify as managed. Modified copies, templates, and plain\-line
 edits require `\-\-force`. Source files and configuration entries are retained.
 Run this before deleting a declaration so mise can still identify its targets.
+
+With `\-\-group`, only that dotfile group's files are removed, using what
+mise recorded when it applied them, so this works even after the group
+is deselected or deleted from the config.
 .PP
 \fBUsage:\fR mise dotfiles unapply [OPTIONS] [<TARGET>] ...
 .PP
@@ -4995,6 +5043,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-group\fR \fI<NAME>\fR
+Only unapply the files of this dotfile group, even one that is no longer selected or declared
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
@@ -5012,6 +5063,7 @@ Only unapply these targets
 .RS 4
 mise dot unapply
 mise dot unapply ~/.zshrc
+mise dot unapply \-\-group work
 mise dot unapply \-\-dry\-run
 mise dot unapply \-\-force \-\-yes
 .RE

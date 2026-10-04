@@ -16,6 +16,10 @@ mise cannot identify as managed. Modified copies, templates, and plain-line
 edits require `--force`. Source files and configuration entries are retained.
 Run this before deleting a declaration so mise can still identify its targets.
 
+With `--group`, only that dotfile group's files are removed, using what
+mise recorded when it applied them, so this works even after the group
+is deselected or deleted from the config.
+
 ## Arguments
 - **`[TARGET]…`** — Only unapply these targets
 
@@ -23,6 +27,7 @@ Run this before deleting a declaration so mise can still identify its targets.
 - **`-f --force`** — Remove modified or otherwise ambiguous managed files and lines
 - **`-n --dry-run`** — Print the actions that would run without writing anything
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--group <NAME>`** — Only unapply the files of this dotfile group, even one that is no longer selected or declared
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
@@ -31,6 +36,7 @@ Run this before deleting a declaration so mise can still identify its targets.
 ```
 mise dot unapply
 mise dot unapply ~/.zshrc
+mise dot unapply --group work
 mise dot unapply --dry-run
 mise dot unapply --force --yes
 ```
