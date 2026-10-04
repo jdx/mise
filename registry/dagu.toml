@@ -1,4 +1,8 @@
-backends = ["aqua:dagucloud/dagu"]
+backends = [
+  { full = "packslip:github.com/dagucloud/dagu", min_version = "2.18.0" },
+  "aqua:dagucloud/dagu",
+]
+bins = ["dagu"]
 description = "Yet another cron alternative with a Web UI, but with much more capabilities. It aims to solve greater problems"
 test = { cmd = "dagu version", expected = "{{version}}" }
 version_order = "semver"
