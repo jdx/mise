@@ -1,5 +1,51 @@
 # Changelog
 
+## [2026.10.2](https://github.com/jdx/mise/compare/v2026.10.1..v2026.10.2) - 2026-10-04
+
+### 🚀 Features
+
+- **(backend)** add experimental spinel backend by @jdx in [#13922](https://github.com/jdx/mise/pull/13922)
+- **(daemons)** support daemon presets on Windows by @JamBalaya56562 in [#13929](https://github.com/jdx/mise/pull/13929)
+- **(schema)** type tool options per backend and core tool by @jdx in [#13924](https://github.com/jdx/mise/pull/13924)
+
+### 🐛 Bug Fixes
+
+- **(activate)** keep loading trusted configs when a project config is untrusted by @jdx in [#13919](https://github.com/jdx/mise/pull/13919)
+- **(config)** report a failed settings reload instead of aborting by @jdx in [#13925](https://github.com/jdx/mise/pull/13925)
+- **(config)** skip miserc discovery with --no-config by @donbeave in [#13926](https://github.com/jdx/mise/pull/13926)
+- **(daemons)** start a task daemon with init under cmd.exe on Windows by @JamBalaya56562 in [#13928](https://github.com/jdx/mise/pull/13928)
+- **(dotfiles)** read saved history after directory-to-symlink changes by @jdx in [#13931](https://github.com/jdx/mise/pull/13931)
+- **(exec)** keep double quotes in a positional cmd /c command on Windows by @JamBalaya56562 in [#13887](https://github.com/jdx/mise/pull/13887)
+- **(task)** send Ctrl+C to a timed-out task on Windows before terminating it by @JamBalaya56562 in [#13889](https://github.com/jdx/mise/pull/13889)
+- **(task)** report a timed-out task as failed even when it exits cleanly by @Marukome0743 in [#13930](https://github.com/jdx/mise/pull/13930)
+
+### 📚 Documentation
+
+- join the showreel films' cuts and play the kit's own brand cards by @jdx in [#13927](https://github.com/jdx/mise/pull/13927)
+
+### 📦 Registry
+
+- prefer signed packslips for helmfile and dagu by @jdx in [#13933](https://github.com/jdx/mise/pull/13933)
+
+### Chore
+
+- add hk pre-commit hook and drop redundant crate homepages by @jdx in [#13920](https://github.com/jdx/mise/pull/13920)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`goccy/tobari`](https://github.com/goccy/tobari)
+- [`ymmt2005/pbschema-lens`](https://github.com/ymmt2005/pbschema-lens)
+
+#### Updated Packages (5)
+
+- [`cloudposse/atmos`](https://github.com/cloudposse/atmos)
+- [`ducaale/xh`](https://github.com/ducaale/xh)
+- [`git-bug/git-bug`](https://github.com/git-bug/git-bug)
+- [`openai/tunnel-client`](https://github.com/openai/tunnel-client)
+- [`regclient/regclient/regctl`](https://github.com/regclient/regclient)
+
 ## [2026.10.1](https://github.com/jdx/mise/compare/v2026.10.0..v2026.10.1) - 2026-10-03
 
 ### 🐛 Bug Fixes
