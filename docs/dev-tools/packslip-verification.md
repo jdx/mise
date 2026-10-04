@@ -146,10 +146,10 @@ checks but does not fetch and verify the linked build provenance.
 
 mise preserves trust in two places:
 
-| State                                                                                | What it records                                                                                                                                                      |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packslip/pins.toml` under the [state directory](/directories.html#local-state-mise) | Previously accepted signers, signing scheme, vendor versus repackager status, provenance-link presence, forge repository and owner IDs, and release-list continuity. |
-| `mise.lock`                                                                          | The project's signer, attestor, and forge-ID commitment alongside each platform's artifact URL and checksum, including on another machine's first install.           |
+| State                                                                                | What it records                                                                                                                                            |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packslip/pins.toml` under the [state directory](/directories.html#local-state-mise) | Previously accepted signers, signing scheme, vendor versus repackager status, provenance-link presence, forge repository IDs, and release-list continuity. |
+| `mise.lock`                                                                          | The project's signer, attestor, and forge-ID commitment alongside each platform's artifact URL and checksum, including on another machine's first install. |
 
 For a keyless signer, continuity compares the workflow path without its tag or
 branch ref. A new release tag of the same workflow is the same signer. A new
@@ -167,15 +167,20 @@ commitments affect a rotation.
 ### Renamed, transferred, and re-created repositories
 
 A GitHub or GitLab project's name locates it, but the forge's repository ID
-identifies it. GitHub Actions and GitLab CI signing certificates record that ID
-and the owner's ID, and neither changes when a repository is renamed. mise pins
-both with the signer, and compares each release's IDs with the pin:
+identifies it. GitHub Actions and GitLab CI signing certificates record that ID,
+and it does not change when a repository is renamed or transferred to another
+owner. mise pins it with the signer, and compares each release's ID with the
+pin:
 
 | What happened to the name                          | Result                                                                                                                    |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Renamed or moved within the same owner             | Installs. mise warns once that the project has a new name, and the pin follows it to that name.                           |
-| Transferred to another owner                       | Refused. Trusting the old owner says nothing about the new one; forget the pin and name the new owner's repository.       |
+| Renamed, or transferred to another owner           | Installs. mise warns once that the project has a new name, and the pin follows it to that name.                           |
 | Deleted and re-created, by anyone, under that name | Refused once the original is pinned, even though the name and workflow path match: the new repository has a different ID. |
+
+The owner is not part of the identity: only a repository's current owner can
+transfer it, and that owner already signs its releases. Pins and lockfile
+entries that an older mise wrote with the owner's ID still read; the owner ID is
+ignored.
 
 Signer continuity then compares the workflow's path inside the repository, so
 `github.com/old/tool/.github/workflows/release.yml` continues as
@@ -187,7 +192,7 @@ The pin is found by the repository ID in the release's certificate, whichever
 name changed first. A config switched to the new name before any release signed
 under it was accepted, or a pins file from a machine that never saw the rename,
 still holds the release to the pin recorded under the old name: its signer,
-owner, provenance, and attestor, as if the name had not changed. Once the release
+provenance, and attestor, as if the name had not changed. Once the release
 is accepted, the pin and its release-list state move to the new name, so a
 repository keeps one pin. A refusal names the pin as it is recorded, which is the
 name to give `mise packslip forget`.
@@ -250,16 +255,15 @@ separate identity policy are not supported here.
 
 ## Interpreting policy failures
 
-| Failure                                          | Next step                                                                                              |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Signer or signing scheme changed                 | Compare the old pin and lockfile commitment with the publisher's announced rotation                    |
-| Repository moved to another owner                | Confirm the transfer with the project, then name the repository as it is called now                    |
-| Name belongs to a different repository           | Treat it as a possible takeover; forget the pin only if the vendor re-created the repository itself    |
-| Signed list expired, rolled back, or disappeared | Check the publisher or stamper's current list; removing local state would discard the continuity check |
-| Release withdrawn or lacks a required stamp      | Select a release allowed by the configured policy                                                      |
-| Bundle or artifact digest mismatch               | Check the release source or mirror; do not accept new bytes merely to clear the error                  |
-| No matching artifact or unresolved tie           | Check the platform and variant, or ask the publisher to distinguish its builds                         |
-| Host requirement failed                          | Install the requirement or use a supported host; bypassing the check does not supply it                |
+| Failure                                          | Next step                                                                                                                              |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Signer or signing scheme changed                 | Compare the old pin and lockfile commitment with the publisher's announced rotation                                                    |
+| Name belongs to a different repository           | Treat it as a possible takeover; clear the pin or lockfile entries the error names only if the vendor re-created the repository itself |
+| Signed list expired, rolled back, or disappeared | Check the publisher or stamper's current list; removing local state would discard the continuity check                                 |
+| Release withdrawn or lacks a required stamp      | Select a release allowed by the configured policy                                                                                      |
+| Bundle or artifact digest mismatch               | Check the release source or mirror; do not accept new bytes merely to clear the error                                                  |
+| No matching artifact or unresolved tie           | Check the platform and variant, or ask the publisher to distinguish its builds                                                         |
+| Host requirement failed                          | Install the requirement or use a supported host; bypassing the check does not supply it                                                |
 
 The errors identify different stages. Changing an artifact option cannot repair
 an invalid signature, and forgetting a signer pin cannot repair a digest mismatch.
