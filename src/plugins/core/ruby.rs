@@ -293,9 +293,8 @@ impl RubyPlugin {
 
     async fn install_cmd<'a>(
         &self,
-        config: &Arc<Config>,
+        ctx: &'a InstallContext,
         tv: &ToolVersion,
-        pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner<'a>> {
         let settings = Settings::get();
         let cmd = if settings.ruby.ruby_install {
@@ -305,9 +304,22 @@ impl RubyPlugin {
                 .args(self.install_args_ruby_build(tv)?)
                 .stdin_string(self.fetch_patches().await?)
         };
+        // Only with declared `depends`: the dependency env rebuilds PATH without
+        // mise install dirs, which would change plain source builds.
+        let dependency_env = if ctx
+            .dependency_context(&tv.request)
+            .await?
+            .declarations
+            .is_empty()
+        {
+            BTreeMap::new()
+        } else {
+            self.dependency_env_for_install(ctx, tv).await?
+        };
         Ok(cmd
-            .with_pr(pr)
-            .envs(config.env().await?)
+            .with_pr(ctx.pr.as_ref())
+            .envs(dependency_env)
+            .envs(ctx.config.env().await?)
             .env_values(tv.install_env()))
     }
     fn install_args_ruby_build(&self, tv: &ToolVersion) -> Result<Vec<String>> {
@@ -1106,9 +1118,7 @@ impl Backend for RubyPlugin {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("ruby-build".into());
-        self.install_cmd(&ctx.config, &tv, ctx.pr.as_ref())
-            .await?
-            .execute()?;
+        self.install_cmd(ctx, &tv).await?.execute()?;
 
         self.install_rubygems_hook(&tv)?;
         if let Err(err) = self
