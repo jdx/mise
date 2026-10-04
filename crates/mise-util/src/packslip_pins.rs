@@ -37,11 +37,12 @@ pub struct Pin {
     pub unlogged: bool,
     /// RFC 3339, when the pin was set.
     pub pinned_at: String,
-    /// For a GitHub or GitLab project, the forge's repository and owner IDs
-    /// from the last accepted release, and the name it was signed under. A
-    /// rename keeps the IDs, so the pin follows the repository rather than
-    /// the name. Pins written before mise recorded it have none, and gain
-    /// it from the next release accepted.
+    /// For a GitHub or GitLab project, the forge's repository ID from the
+    /// last accepted release, and the name it was signed under. A rename or a
+    /// transfer to another owner keeps the ID, so the pin follows the
+    /// repository rather than the name. Pins written before mise recorded it
+    /// have none, and gain it from the next release accepted. An owner ID
+    /// that older pins recorded is still read, and ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<ForgePin>,
 }
@@ -141,10 +142,8 @@ impl Pins {
             *to = (*to).max(sequence);
         }
         if let Some(forge) = self.list_forges.remove(from) {
-            let kept = match self.list_forges.remove(to) {
-                Some(current) => keep_owner_id(current, &forge),
-                None => forge,
-            };
+            // What the list under the new name recorded is the newer.
+            let kept = self.list_forges.remove(to).unwrap_or(forge);
             self.list_forges.insert(to.to_string(), kept);
         }
     }
@@ -222,25 +221,14 @@ pub fn signer_of(scheme: &str, key_id: &str) -> String {
     key_id.to_string()
 }
 
-/// Whether two signers, as a pin or a lockfile records them (`scheme:` and
-/// all, or without it), are the same workflow inside their repository. Only
-/// meaningful once the forge's repository ID has shown the repository is the
-/// same one, whatever it was called when each was recorded.
-pub fn same_workflow(a: &str, b: &str) -> bool {
-    fn path(signer: &str) -> Option<(&str, &str)> {
-        let signer = signer.strip_prefix("sigstore-oidc:").unwrap_or(signer);
-        let rest = signer.strip_prefix("https://")?;
-        let rest = rest.rsplit_once('@').map_or(rest, |(path, _)| path);
-        if let Some(path) = rest.strip_prefix("github.com/") {
-            let mut parts = path.splitn(3, '/');
-            let (_owner, _repo, file) = (parts.next()?, parts.next()?, parts.next()?);
-            return Some(("github.com", file));
-        }
-        let path = rest.strip_prefix("gitlab.com/")?;
-        let (_project, file) = path.split_once("//")?;
-        Some(("gitlab.com", file))
-    }
-    matches!((path(a), path(b)), (Some(a), Some(b)) if a == b)
+/// Whether the signer of a release that passed `check` is `previous`, a
+/// signer mise recorded for the project: the same workflow of the same
+/// repository, perhaps under a new name. A release can declare
+/// `pin_workflow: false` to be held to its repository alone, but mise records
+/// no person's acceptance of that, so it holds every release to the workflow
+/// it pinned.
+pub fn continues_signer(check: &Check, previous: &str) -> bool {
+    check.pins_workflow() && check.continues_signer(previous)
 }
 
 /// The forge identity pinned for `project`, if any.
@@ -280,27 +268,35 @@ pub fn check_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<()
 /// Hold a release to one pin, recorded under `key`, which is `project` or
 /// the name a rename left the pin under.
 fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) -> Result<()> {
-    // A pin found by the repository's ID holds the release to the owner it
-    // recorded as well, as one found by name does: the repository is the
-    // same one, but a transfer is not a rename.
-    if let (Some(pinned), Some(check)) = (&pin.forge, observed.forge)
-        && let Some(signed) = &check.pin
-    {
-        forge::check(
-            &Expected::new(project).pinned(Some(pinned)),
-            &signed.project,
-            observed.key_id,
-            observed.issuer,
-            check.source.as_ref(),
-        )
-        .map_err(|err| forge_refusal(project, key, err))?;
-    }
+    // A pin found under another name holds the release to the repository
+    // it recorded, as one found by name does. The pin's repository ID is
+    // what shows the release is that repository, so the signer is compared
+    // with it: the same workflow path, whatever the repository is called now.
+    let by_pin = match (&pin.forge, observed.forge) {
+        (Some(pinned), Some(check)) => match &check.pin {
+            Some(signed) => Some(
+                forge::check(
+                    &Expected::new(project).pinned(Some(pinned)),
+                    &signed.project,
+                    observed.key_id,
+                    observed.issuer,
+                    check.source.as_ref(),
+                )
+                .map_err(|err| forge_refusal(project, key, err))?,
+            ),
+            None => None,
+        },
+        _ => None,
+    };
     let signer = signer_of(observed.scheme, observed.key_id);
     let mut problems = Vec::new();
+    // A check made from the pin always holds the workflow; going through
+    // `continues_signer` keeps both arms on mise's one rule regardless.
     let same_signer = pin.signer == signer
-        || observed
-            .forge
-            .is_some_and(|check| check.continues_signer(&pin.signer));
+        || by_pin
+            .as_ref()
+            .or(observed.forge)
+            .is_some_and(|check| continues_signer(check, &pin.signer));
     if pin.scheme != observed.scheme || !same_signer {
         problems.push(format!(
             "is signed by {signer} ({}), but {} ({}) signed what mise accepted before",
@@ -334,21 +330,12 @@ fn pinned_as(key: &str, project: &str) -> String {
     }
 }
 
-/// A release that is not the repository a pin recorded, or is it under
-/// another owner.
+/// A release that is not the repository a pin recorded.
 fn forge_refusal(project: &str, key: &str, err: IdentityError) -> Report {
-    let forget = format!("run `mise packslip forget {key}` and install again");
-    match err {
-        IdentityError::Transferred { signed, .. } => eyre!(
-            "packslip:{project}: this release was signed by {signed}, the repository mise pinned as packslip:{key}, but under another owner. \
-             mise follows a repository that was renamed, but not one that changed hands, since trusting the old owner says nothing about the new one.\n\n\
-             If you trust its new owner, {forget}."
-        ),
-        err => eyre!(
-            "packslip:{project}: this release is not from the repository mise pinned as packslip:{key}: {err}.\n\n\
-             If the vendor announced the change, {forget}."
-        ),
-    }
+    eyre!(
+        "packslip:{project}: this release is not from the repository mise pinned as packslip:{key}: {err}.\n\n\
+         If the vendor announced the change, run `mise packslip forget {key}` and install again."
+    )
 }
 
 /// Set the project's pin from an accepted release, or strengthen it: what
@@ -384,13 +371,6 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
     for key in &keys {
         check_against(&pins.pins[key], key, project, observed)?;
     }
-    // A certificate can record the repository's ID without its owner's; the
-    // owner ID a pin recorded for the same repository stays.
-    let forge = forge.map(|forge| {
-        keys.iter()
-            .filter_map(|key| pins.pins[key].forge.as_ref())
-            .fold(forge, keep_owner_id)
-    });
     let pin = &pins.pins[first];
     let any = |floor: fn(&Pin) -> bool| keys.iter().any(|key| floor(&pins.pins[key]));
     let updated = Pin {
@@ -418,16 +398,6 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         save(path, &pins)?;
     }
     Ok(updated)
-}
-
-/// `forge`, with the owner ID `recorded` has when it is the same repository
-/// and `forge` records none: a recorded ID is never dropped for the lack of
-/// one.
-pub fn keep_owner_id(mut forge: ForgePin, recorded: &ForgePin) -> ForgePin {
-    if forge.owner_id.is_none() && same_repository(&forge, recorded) {
-        forge.owner_id = recorded.owner_id.clone();
-    }
-    forge
 }
 
 /// Refuse a release list whose sequence is below one already accepted for
@@ -462,20 +432,12 @@ pub fn check_sequence_at(
     // Without the repository's ID from the list itself, a sequence found by
     // an ID recorded before still counts, but stays where it is.
     if let Some(forge) = forge {
-        // Every name linked to the repository may hold its owner ID, the
-        // current one included, so take it before the old names go.
-        let forge = pins
-            .forges()
-            .filter(|(key, _)| keys.contains(*key))
-            .fold(forge.clone(), |forge, (_, recorded)| {
-                keep_owner_id(forge, recorded)
-            });
         for key in keys.iter().filter(|key| key.as_str() != project) {
             changed |= pins.sequences.remove(key).is_some();
             changed |= pins.list_forges.remove(key).is_some();
         }
-        changed |= pins.list_forges.get(project) != Some(&forge);
-        pins.list_forges.insert(project.to_string(), forge);
+        changed |= pins.list_forges.get(project) != Some(forge);
+        pins.list_forges.insert(project.to_string(), forge.clone());
     }
     if changed {
         pins.sequences.insert(project.to_string(), sequence);
@@ -775,14 +737,14 @@ pinned_at = "2026-09-01T00:00:00Z"
                 provenance: false,
                 unlogged: false,
                 pinned_at: "2026-09-01T00:00:00Z".into(),
-                forge: Some(ForgePin::new("github.com/new/r", "42", Some("7".into()))),
+                forge: Some(ForgePin::of("github.com/new/r", "42")),
             },
         );
         save(&path, &pins).unwrap();
         let text = file::read_to_string(&path).unwrap();
         assert!(text.contains("[pins.\"github.com/old/r\".forge]"), "{text}");
         assert!(text.contains("repository_id = \"42\""), "{text}");
-        let pin = ForgePin::new("github.com/new/r", "42", Some("7".into()));
+        let pin = ForgePin::of("github.com/new/r", "42");
         assert_eq!(
             forge_pin_at(&path, "github.com/old/r").unwrap().as_ref(),
             Some(&pin)
@@ -798,33 +760,8 @@ pinned_at = "2026-09-01T00:00:00Z"
         assert_eq!(forge_pin_at(&path, "github.com/old/r").unwrap(), None);
     }
 
-    #[test]
-    fn workflows_are_compared_within_their_repository() {
-        let release =
-            |repo: &str| format!("https://github.com/{repo}/.github/workflows/release.yml");
-        assert!(same_workflow(&release("old/r"), &release("new/r")));
-        assert!(same_workflow(
-            &format!("sigstore-oidc:{}", release("old/r")),
-            &format!("{}@refs/tags/v2", release("new/r"))
-        ));
-        assert!(!same_workflow(
-            &release("o/r"),
-            "https://github.com/o/r/.github/workflows/other.yml"
-        ));
-        assert!(same_workflow(
-            "https://gitlab.com/g/old//.gitlab-ci.yml",
-            "https://gitlab.com/g/sub/new//.gitlab-ci.yml@refs/tags/v1"
-        ));
-        assert!(!same_workflow(
-            "https://gitlab.com/g/r//.github/workflows/release.yml",
-            &release("g/r")
-        ));
-        assert!(!same_workflow("sigstore-key:5A0A", "sigstore-key:5A0A"));
-        assert!(!same_workflow("alice@example.com", "alice@example.com"));
-    }
-
     fn repo(project: &str, id: &str) -> ForgePin {
-        ForgePin::new(project, id, Some("7".into()))
+        ForgePin::of(project, id)
     }
 
     #[test]
@@ -885,29 +822,52 @@ pinned_at = "2026-09-01T00:00:00Z"
     }
 
     #[test]
-    fn a_release_list_keeps_the_owner_id_a_rename_left_under_the_old_name() {
+    fn an_owner_id_an_older_pin_recorded_is_read_and_ignored() {
+        // mise 2026.9 recorded the repository's owner ID too. Such a pin still
+        // reads, and a release of the same repository under another owner,
+        // which is what a transfer looks like, is the same repository.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
-        let (old, new) = ("github.com/o/old", "github.com/o/new");
-        check_sequence_at(&path, old, 1, Some(&repo(old, "42"))).unwrap();
-        // The config follows the rename, and the new list's certificate
-        // records the repository's ID but not its owner's.
-        let ownerless = ForgePin::new(new, "42", None);
-        check_sequence_at(&path, new, 2, Some(&ownerless)).unwrap();
-        let pins = load(&path).unwrap();
-        assert_eq!(pins.list_forges.keys().collect::<Vec<_>>(), [new]);
-        assert_eq!(pins.list_forges[new].owner_id.as_deref(), Some("7"));
-        // Another repository's owner is not taken.
-        check_sequence_at(
+        file::write(
             &path,
-            "github.com/o/x",
-            1,
-            Some(&ForgePin::new("github.com/o/x", "43", None)),
+            format!(
+                r#"[pins."github.com/o/r"]
+scheme = "sigstore-oidc"
+signer = "{WORKFLOW}"
+attested_by = "vendor"
+pinned_at = "2026-09-01T00:00:00Z"
+
+[pins."github.com/o/r".forge]
+project = "github.com/o/r"
+repository_id = "42"
+owner_id = "7"
+
+[list_forges."github.com/o/r"]
+project = "github.com/o/r"
+repository_id = "42"
+owner_id = "7"
+
+[sequences]
+"github.com/o/r" = 1
+"#
+            ),
         )
         .unwrap();
         assert_eq!(
-            load(&path).unwrap().list_forges["github.com/o/x"].owner_id,
-            None
+            forge_pin_at(&path, "github.com/o/r").unwrap(),
+            Some(repo("github.com/o/r", "42"))
+        );
+        let moved = repo("github.com/acme/r", "42");
+        check_sequence_at(&path, "github.com/acme/r", 2, Some(&moved)).unwrap();
+        let pins = load(&path).unwrap();
+        assert_eq!(
+            pins.list_forges.keys().collect::<Vec<_>>(),
+            ["github.com/acme/r"]
+        );
+        assert_eq!(pins.sequences["github.com/acme/r"], 2);
+        assert!(
+            !file::read_to_string(&path).unwrap().contains("owner_id"),
+            "a pin rewritten for another reason drops the owner ID"
         );
     }
 

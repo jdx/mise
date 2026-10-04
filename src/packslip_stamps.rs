@@ -346,6 +346,7 @@ mod tests {
                     scheme: Scheme::SigstoreKey,
                     key_id: "5A0A0B8B9C6D7E1F".into(),
                     issuer: None,
+                    pin_workflow: None,
                 },
                 releases: entries
                     .iter()

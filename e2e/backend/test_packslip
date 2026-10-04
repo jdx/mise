@@ -88,9 +88,9 @@ EOF
 mise uninstall packslip:github.com/jdx/packslip@0.2.0
 mise install
 assert_contains "cat mise.lock" 'signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"'
-# The commitment carries the repository's forge IDs, so it follows a rename
+# The commitment carries the repository's forge ID, so it follows a rename
 # and refuses a different repository that takes the name.
-assert_contains "cat mise.lock" 'repository_ids = { repository = "1356006409", owner = "216188" }'
+assert_contains "cat mise.lock" 'repository_ids = { repository = "1356006409" }'
 # A lockfile is an already-reviewed selection. A later release-age policy must
 # not make that committed install unreproducible.
 mise uninstall packslip:github.com/jdx/packslip@0.2.0

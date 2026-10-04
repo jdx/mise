@@ -750,46 +750,16 @@ pub async fn populate_uv_locks(
     Ok(())
 }
 
-/// Whether a newly resolved Packslip entry is signed by the signer the old
-/// one committed to. That is the same signer string, or, when both entries
-/// record the same forge repository and owner IDs, the same workflow of that
-/// repository under the name it has now. A repository ID that changed is a
-/// different repository, and an owner ID that changed is a transfer, even
-/// under the same name and signer: install refuses both, and so does this.
-fn packslip_signer_continues(old: &PlatformInfo, new: &PlatformInfo) -> bool {
-    let (Some(old_signer), Some(new_signer)) = (&old.signer, &new.signer) else {
-        return old.signer.is_none();
-    };
-    let changed = |before: &Option<String>, now: &Option<String>| matches!((before, now), (Some(before), Some(now)) if before != now);
-    if changed(&old.repository_id, &new.repository_id)
-        || changed(&old.repository_owner_id, &new.repository_owner_id)
-    {
-        return false;
-    }
-    // A resolution that checked no forge identity, as under explicit signer
-    // options, continues only the same signer, whose IDs
-    // [`carry_forge_ids`] then keeps. Losing them otherwise is a change.
-    if old.repository_id.is_some() && new.repository_id.is_none() {
-        return old_signer == new_signer;
-    }
-    if old_signer == new_signer {
-        return true;
-    }
-    let same_repository = old.repository_id.is_some() && old.repository_id == new.repository_id;
-    let same_owner =
-        old.repository_owner_id.is_some() && old.repository_owner_id == new.repository_owner_id;
-    same_repository && same_owner && crate::packslip_pins::same_workflow(old_signer, new_signer)
-}
-
 /// Keep the forge IDs an old Packslip entry recorded when the new one, for
 /// the same signer, recorded none: explicit signer options verify a release
 /// without the forge check, and an older certificate carries no IDs. Neither
 /// says the repository changed, so the commitment stays for the next
-/// resolution that does check it.
+/// resolution that does check it. Another signer cannot drop them:
+/// [`crate::packslip_forge::lock_entry_continues`] refuses it.
 ///
-/// Likewise the owner ID alone, when the new entry records the same
-/// repository without it, as a certificate with the repository's ID but not
-/// its owner's does.
+/// Likewise the owner ID alone, which only an older mise recorded, when the
+/// new entry records the same repository: it is ignored, but kept so that an
+/// unchanged entry is not rewritten.
 fn carry_forge_ids(old: &PlatformInfo, new: &mut PlatformInfo) {
     if new.signer.is_some() && new.signer == old.signer && new.repository_id.is_none() {
         new.repository_id = old.repository_id.clone();
@@ -820,8 +790,17 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
     }
+    // A Packslip entry's signer continues as the same string, or, when both
+    // entries record the same forge repository ID, as the same workflow of
+    // it under the name it has now. A changed repository ID is a different
+    // repository even under the same name and signer: install refuses it,
+    // and so does this.
+    let project = backend
+        .strip_prefix("packslip:")
+        .and_then(|name| crate::backend::packslip::project_name(name).ok());
     if old.signer.is_some()
-        && (!packslip_signer_continues(old, new) || new.attested_by != old.attested_by)
+        && (!crate::packslip_forge::lock_entry_continues(project.as_deref(), old, new)
+            || new.attested_by != old.attested_by)
     {
         bail!(
             "lockfile generation would change the recorded signer; previous files were preserved"
@@ -1539,20 +1518,19 @@ mod tests {
             ..old.clone()
         };
         assert!(ensure_no_downgrade(&old, &squatted, backend).is_err());
-        // Another owner is a transfer, not a rename.
+        // A transfer to another owner is the same repository, like a rename,
+        // whatever owner ID an older mise recorded.
         let transferred = PlatformInfo {
             signer: signer("acme/tool"),
             repository_owner_id: Some("8".into()),
             ..old.clone()
         };
-        assert!(ensure_no_downgrade(&old, &transferred, backend).is_err());
-        // Even under the same name and signer: the owner commitment does not
-        // change without a transfer someone accepted.
-        let retaken = PlatformInfo {
-            repository_owner_id: Some("8".into()),
-            ..old.clone()
+        assert!(ensure_no_downgrade(&old, &transferred, backend).is_ok());
+        let ownerless_transfer = PlatformInfo {
+            repository_owner_id: None,
+            ..transferred
         };
-        assert!(ensure_no_downgrade(&old, &retaken, backend).is_err());
+        assert!(ensure_no_downgrade(&old, &ownerless_transfer, backend).is_ok());
         // A resolution under explicit signer options records no IDs: the same
         // signer keeps the old entry's, and another signer cannot drop them.
         let unchecked = PlatformInfo {
@@ -1572,8 +1550,8 @@ mod tests {
         let mut not_carried = unchecked_renamed.clone();
         carry_forge_ids(&old, &mut not_carried);
         assert_eq!(not_carried.repository_id, None);
-        // A certificate with the repository's ID but not its owner's keeps
-        // the owner ID recorded for the same repository, and only for it.
+        // A new entry records no owner ID; the one an older mise recorded for
+        // the same repository stays, and only for it.
         let ownerless = PlatformInfo {
             repository_owner_id: None,
             ..old.clone()

@@ -21,7 +21,7 @@ for future updates when it owns your mise installation.
 | CI/Docker        | mise.run       | GitHub Releases |
 
 The official single-binary release installed by `mise.run` is the preferred method on macOS and
-Linux. These binaries are built with mise's optimized release profile and can be updated immediately
+Linux. To install that release without running a script, use [packslip](#packslip). These binaries are built with mise's optimized release profile and can be updated immediately
 with `mise self-update`. Prefer them over third-party package builds: the Homebrew formula can be
 substantially slower and larger, and package-manager releases may also trail a mise release.
 
@@ -212,6 +212,34 @@ distributions omitted from the table.
 :::
 
 If you need something else, compile it with `cargo install mise` (see below).
+
+### packslip {#packslip}
+
+[packslip](https://packslip.dev) installs mise's signed release without
+running an install script. It checks the release's Sigstore signature and
+transparency-log entry against mise's GitHub repository, checks the archive's
+digest, and links `mise` into `~/.local/bin` (`/usr/local/bin` as root).
+packslip 1.5.1 or newer is required.
+
+Install packslip from its signed
+[APT or RPM repository](https://packslip.dev/docs/distributions/) or one of the
+other methods in its [getting started guide](https://packslip.dev/docs/getting-started/),
+then install mise:
+
+```sh
+packslip install github.com/jdx/mise --pin ps1_nlhmwtfeufglxv5myvwvronk7a
+~/.local/bin/mise --version   # /usr/local/bin/mise --version as root
+```
+
+The pin is the fingerprint of mise's GitHub repository. It stays the same
+across renames, transfers, and new releases, and a different repository that
+takes the name does not match it. Without `--pin`, packslip trusts the
+repository GitHub reports for the name on first use and holds later installs
+on that machine to it.
+
+`mise self-update` works in this installation. Running
+`packslip install github.com/jdx/mise` again replaces it with the newest
+release. Use `--version` to choose a release.
 
 ### apk
 

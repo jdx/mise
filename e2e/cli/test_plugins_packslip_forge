@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # A packslip project on GitHub is pinned by the repository ID its signing
-# certificate records, which a rename keeps and a re-created name does not.
+# certificate records, which a rename or a transfer keeps and a re-created name
+# does not.
 # The fixture server stands in for GitHub, including what it says a repository
 # name resolves to; the signed fixture is mise-plugins/vfox-bfs, repository
 # 1106235958 of owner 128710789.
@@ -36,15 +37,14 @@ assert_contains "mise plugins install vfox:renamed 'packslip:mise-plugins/bfs-re
   "packslip:github.com/mise-plugins/bfs-renamed was renamed to github.com/mise-plugins/vfox-bfs"
 assert "test -f '$MISE_DATA_DIR/plugins/renamed/metadata.lua'"
 assert_contains "cat '$pins'" 'repository_id = "1106235958"'
-assert_contains "cat '$pins'" 'owner_id = "128710789"'
+assert_not_contains "cat '$pins'" 'owner_id'
 # A config that follows the rename keeps the pin.
 mise plugins install vfox:current 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
 
-# The same repository under another owner is a transfer, which mise does not
-# follow on its own.
-assert_fail_contains "mise plugins install vfox:transferred 'packslip:someone-else/vfox-bfs#0.1.0-dev.2'" \
-  "the same repository under another owner"
-assert_directory_not_exists "$MISE_DATA_DIR/plugins/transferred"
+# The same repository under another owner, after a transfer, is followed by its
+# repository ID like a rename.
+mise plugins install vfox:transferred 'packslip:someone-else/vfox-bfs#0.1.0-dev.2'
+assert "test -f '$MISE_DATA_DIR/plugins/transferred/metadata.lua'"
 
 # A name the forge resolves to another repository is not the one that signed.
 assert_fail_contains "mise plugins install vfox:recreated 'packslip:mise-plugins/bfs-recreated#0.1.0-dev.2'" \
@@ -56,6 +56,10 @@ assert_directory_not_exists "$MISE_DATA_DIR/plugins/recreated"
 sed -i.bak 's/repository_id = "1106235958"/repository_id = "1"/' "$pins"
 assert_fail_contains "mise plugins install vfox:squatted 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'" \
   "The name now belongs to a different repository"
+# Only this machine's pin disagrees, so only it needs forgetting.
+# shellcheck disable=SC2016 # the backticks are literal
+assert_fail_contains "mise plugins install vfox:squatted 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'" \
+  'run `mise packslip forget github.com/mise-plugins/vfox-bfs` and install again'
 assert_directory_not_exists "$MISE_DATA_DIR/plugins/squatted"
 # Forgetting the pin is the explicit way to accept it.
 mise packslip forget github.com/mise-plugins/vfox-bfs
@@ -87,14 +91,10 @@ old_pin mise-plugins/bfs-old other.yml 128710789
 assert_fail_contains "mise plugins install vfox:followed 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'" \
   "mise packslip forget github.com/mise-plugins/bfs-old"
 assert_directory_not_exists "$MISE_DATA_DIR/plugins/followed"
-# ...including the owner it recorded...
+# ...and, once it passes, moves to the new name rather than leaving two pins,
+# whatever owner ID an older mise recorded in it.
 old_pin someone-else/vfox-bfs release.yml 999
-assert_fail_contains "mise plugins install vfox:followed 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'" \
-  "the repository mise pinned as packslip:github.com/someone-else/vfox-bfs, but under another owner"
-assert_directory_not_exists "$MISE_DATA_DIR/plugins/followed"
-# ...and, once it passes, moves to the new name rather than leaving two pins.
-old_pin mise-plugins/bfs-old release.yml 128710789
 mise plugins install vfox:followed 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
-assert_not_contains "cat '$pins'" "bfs-old"
+assert_not_contains "cat '$pins'" "someone-else"
 assert_contains "cat '$pins'" '[pins."github.com/mise-plugins/vfox-bfs"]'
 assert_contains "cat '$pins'" 'pinned_at = "2026-09-01T00:00:00Z"'

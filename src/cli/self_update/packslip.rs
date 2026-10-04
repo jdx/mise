@@ -18,15 +18,14 @@ pub(super) fn required(version: &str) -> Result<bool> {
 
 fn expected(pin: &ForgePin) -> Expected<'_> {
     // The built-in repository ID, rather than its current owner's name, is
-    // the trust anchor. Moving this same repository to an org is supported.
-    Expected::new(PROJECT)
-        .pinned(Some(pin))
-        .accepting_transfer(true)
+    // the trust anchor. Moving this same repository to an org is supported:
+    // packslip follows a transfer by the repository ID, as it does a rename.
+    Expected::new(PROJECT).pinned(Some(pin))
 }
 
 fn verify_manifest(bundle: &str, artifacts: &[&Path]) -> Result<Verified> {
     let root = ::packslip::sigstore::trusted_root(None).map_err(|err| eyre!("{err}"))?;
-    let pin = ForgePin::new(PROJECT, REPOSITORY_ID, None);
+    let pin = ForgePin::of(PROJECT, REPOSITORY_ID);
     let accepted = ::packslip::verify_forge(
         bundle,
         &expected(&pin),
@@ -148,7 +147,7 @@ mod tests {
 
     #[test]
     fn repository_pin_allows_renames_and_transfers_but_not_replacements() {
-        let pin = ForgePin::new(PROJECT, REPOSITORY_ID, None);
+        let pin = ForgePin::of(PROJECT, REPOSITORY_ID);
         for project in [
             PROJECT,
             "github.com/jdx/renamed",
