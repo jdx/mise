@@ -1194,12 +1194,22 @@ pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     make_symlink(&target, &tmp)?;
+    // What the link pointed at, to put it back if the swap cannot be completed.
+    let previous = resolve_symlink(link)
+        .ok()
+        .flatten()
+        .map(|old| resolve_relative_link_target(link, old));
     let swapped = remove_dir_link(link).and_then(|()| {
         fs::rename(&tmp, link)
             .wrap_err_with(|| format!("failed to move {} to {}", tmp.display(), link.display()))
     });
     if swapped.is_err() {
         let _ = remove_symlink_or_junction(&tmp);
+        if let Some(previous) = previous
+            && fs::symlink_metadata(link).is_err()
+        {
+            let _ = make_symlink(&previous, link);
+        }
     }
     swapped
 }

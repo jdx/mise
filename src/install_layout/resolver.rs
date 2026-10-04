@@ -529,6 +529,35 @@ pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Op
     out
 }
 
+/// The installations of `tv`'s tool and version on this platform, whatever install
+/// options they were made with. A version named on the command line carries no
+/// options, so `mise where tool@1.0` has to find a copy made with the options a
+/// configuration file sets.
+pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
+    if !enabled() {
+        return vec![];
+    }
+    let Ok(b) = tv.backend() else {
+        return vec![];
+    };
+    let backend = crate::backend::canonical_backend_full(&tv.ba().full_without_opts()).into_owned();
+    let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
+    let mut out = vec![];
+    for root in roots() {
+        let catalog = Catalog::new(&root);
+        for record in catalog.records_for_backend(&backend) {
+            let dir = catalog.install_dir(&record);
+            if record.identity.version == version
+                && record.identity.platform == platform
+                && is_complete(&dir)
+            {
+                out.push(dir);
+            }
+        }
+    }
+    out
+}
+
 /// The path to put on PATH for an unlocked `tv`: the link users know
 /// (`installs/<short>/<alias or version>`) when it resolves to the installation
 /// this request selects, else the installation directory itself. A link can point
@@ -557,6 +586,11 @@ pub(crate) fn lock_install(
     let (Some(name), Some(root)) = (dir_name_of(dir), dir.parent()) else {
         return Ok(None);
     };
+    // A shared root is read-only: a satisfied install there is used without a lock,
+    // and nothing is ever installed into it.
+    if !is_primary_root(root) {
+        return Ok(None);
+    }
     let path = root
         .join(".mise")
         .join("locks")
@@ -591,6 +625,9 @@ pub(crate) struct Allocated {
     /// An existing installation that already satisfies the request: nothing
     /// needs to be installed, only recorded.
     pub(crate) reused: bool,
+    /// The installation is in a read-only shared root: it may be used, never
+    /// written to. Installing means allocating again, in the primary root.
+    pub(crate) read_only: bool,
     /// The unlocked request this allocation answers; set when its selection
     /// should be (re)recorded on success. `None` for locked requests, which
     /// never touch a selection.
@@ -625,6 +662,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
             // read-only shared root, is reused as it is.
             Some(record) if !refresh => {
                 return Ok(Some(Allocated {
+                    read_only: !is_primary_root(&located.root),
                     dir: located.dir,
                     reused: true,
                     selects: (!locked).then_some(key),
@@ -639,6 +677,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
         let pinned_elsewhere = !existing.provenance.pinned_by.is_empty() && !locked;
         if !(refresh && pinned_elsewhere) {
             return Ok(Some(Allocated {
+                read_only: false,
                 dir: catalog.install_dir(&existing),
                 reused: true,
                 selects: (!locked).then_some(key),
@@ -655,6 +694,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
         record.provenance.generation = existing.provenance.generation + 1;
         catalog.update_provenance(&next, record.provenance.clone())?;
         return Ok(Some(Allocated {
+            read_only: false,
             dir: catalog.install_dir(&record),
             reused: false,
             selects: Some(key),
@@ -663,6 +703,7 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
     }
     let record = catalog.allocate(&identity)?;
     Ok(Some(Allocated {
+        read_only: false,
         dir: catalog.install_dir(&record),
         reused: false,
         selects: (!locked).then_some(key),
@@ -952,6 +993,144 @@ mod tests {
             windows_comparable(Path::new(r"\\server\share")),
             windows_comparable(Path::new(r"C:\server\share"))
         );
+    }
+
+    #[test]
+    fn credentials_never_reach_identity_values() {
+        assert_eq!(
+            redact_credentials("https://user:tok@registry.example.com/simple/"),
+            "https://registry.example.com/simple/"
+        );
+        assert_eq!(
+            redact_credentials("https://tok@host.example/a?b=c@d"),
+            "https://host.example/a?b=c@d"
+        );
+        assert_eq!(redact_credentials("plain value"), "plain value");
+        assert_eq!(redact_credentials("https://host/a@b"), "https://host/a@b");
+        assert_eq!(
+            redact_credentials("--index-url https://u:p@h.example/x --other https://h2/y"),
+            "--index-url https://h.example/x --other https://h2/y"
+        );
+    }
+
+    /// An installation in the real installs root of the test environment with a
+    /// unique name, removed on drop, plus a tool directory beside it.
+    struct Fixture {
+        install: PathBuf,
+        tool_dir: PathBuf,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let unique = format!(
+                "{}{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let id = InstallIdentity {
+                backend: format!("core:fixture{unique}"),
+                version: "1.2.3".into(),
+                platform: "linux-x64".into(),
+                ..Default::default()
+            };
+            let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+            let record = catalog.allocate(&id).unwrap();
+            let install = catalog.install_dir(&record);
+            std::fs::create_dir_all(install.join("bin")).unwrap();
+            write_receipt(
+                &install,
+                &Receipt {
+                    record,
+                    requested_as: None,
+                    mise_version: None,
+                },
+            )
+            .unwrap();
+            let tool_dir = dirs::INSTALLS.join(format!("fixture-tool-{unique}"));
+            std::fs::create_dir_all(&tool_dir).unwrap();
+            Self { install, tool_dir }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.install);
+            let _ = std::fs::remove_dir_all(&self.tool_dir);
+        }
+    }
+
+    #[test]
+    fn a_version_link_names_its_installation_and_an_alias_does_not() {
+        let fx = Fixture::new();
+        let version = fx.tool_dir.join("1.2.3");
+        let alias = fx.tool_dir.join("1");
+        let target = Path::new("..").join(fx.install.file_name().unwrap());
+        file::make_dir_link(&target, &version).unwrap();
+        file::make_dir_link(Path::new("./1.2.3"), &alias).unwrap();
+
+        assert!(is_compat_link_shape(&version));
+        assert_eq!(link_target(&version), Some(fx.install.clone()));
+        assert_eq!(
+            dir_name_of(&fx.install).as_deref(),
+            fx.install.file_name().unwrap().to_str()
+        );
+        // A runtime alias points at a sibling inside the tool directory, never at an
+        // installation, even though it resolves to one through the version link.
+        assert!(!is_compat_link_shape(&alias));
+        assert_eq!(link_target(&alias), None);
+        // A link into the same root that is not a receipt-bearing installation.
+        let stranger = dirs::INSTALLS.join(format!(
+            "stranger-{}",
+            fx.tool_dir.file_name().unwrap().to_string_lossy()
+        ));
+        std::fs::create_dir_all(&stranger).unwrap();
+        let stray = fx.tool_dir.join("stray");
+        file::make_dir_link(&Path::new("..").join(stranger.file_name().unwrap()), &stray).unwrap();
+        assert_eq!(link_target(&stray), None);
+        let _ = std::fs::remove_dir_all(&stranger);
+    }
+
+    #[test]
+    fn unlinking_an_installation_removes_every_link_to_it_and_only_those() {
+        let fx = Fixture::new();
+        let other = Fixture::new();
+        let name = fx.install.file_name().unwrap();
+        file::make_dir_link(&Path::new("..").join(name), &fx.tool_dir.join("1.2.3")).unwrap();
+        file::make_dir_link(&Path::new("..").join(name), &other.tool_dir.join("1.2.3")).unwrap();
+        file::make_dir_link(
+            &Path::new("..").join(other.install.file_name().unwrap()),
+            &fx.tool_dir.join("9.9.9"),
+        )
+        .unwrap();
+
+        unlink_installation(&fx.install);
+
+        assert!(std::fs::symlink_metadata(fx.tool_dir.join("1.2.3")).is_err());
+        assert!(std::fs::symlink_metadata(other.tool_dir.join("1.2.3")).is_err());
+        assert!(
+            is_dir_link(&fx.tool_dir.join("9.9.9")),
+            "a link to another installation stays"
+        );
+        assert!(
+            fx.install.join("bin").is_dir(),
+            "the installation itself is not touched"
+        );
+    }
+
+    #[test]
+    fn removal_is_refused_for_a_directory_mise_did_not_create() {
+        let fx = Fixture::new();
+        assert!(guard_removal(&fx.install).is_ok());
+        let stranger = dirs::INSTALLS.join(format!("stranger-{}", std::process::id()));
+        std::fs::create_dir_all(&stranger).unwrap();
+        let err = guard_removal(&stranger).unwrap_err().to_string();
+        assert!(err.contains("not an installation mise created"), "{err}");
+        // A legacy `<tool>/<version>` path is not this function's business.
+        assert!(guard_removal(&fx.tool_dir.join("1.2.3")).is_ok());
+        let _ = std::fs::remove_dir_all(&stranger);
     }
 
     #[test]

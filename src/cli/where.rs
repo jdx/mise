@@ -63,6 +63,11 @@ impl Where {
         if tv.backend()?.is_version_installed(&config, &tv, true) {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
+        } else if let [only] = crate::install_layout::resolver::variants_of(&tv).as_slice() {
+            // The version was installed with options a configuration sets; the one
+            // named here carries none.
+            miseprintln!("{}", only.to_string_lossy());
+            Ok(())
         } else {
             Err(Error::VersionNotInstalled(
                 Box::new(tv.ba().clone()),

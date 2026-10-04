@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use console::style;
@@ -74,6 +75,22 @@ impl Uninstall {
                     tv.version.clone(),
                     tv.install_path(),
                 )
+            })
+            .collect::<Vec<_>>();
+        // The version as the user wrote it is resolved with no install options, so
+        // under the identity layout it names a directory nothing was installed
+        // into when the installed copies carry options. Where a copy of the version
+        // exists, only existing copies are candidates.
+        let present: HashSet<(String, String)> = tool_versions
+            .iter()
+            .filter(|(_, tv)| file::entry_exists(tv.install_path()))
+            .map(|(_, tv)| (tv.ba().short.clone(), tv.version.clone()))
+            .collect();
+        let tool_versions = tool_versions
+            .into_iter()
+            .filter(|(_, tv)| {
+                file::entry_exists(tv.install_path())
+                    || !present.contains(&(tv.ba().short.clone(), tv.version.clone()))
             })
             .collect::<Vec<_>>();
         if !self.all && tool_versions.len() > self.installed_tool.len() {
@@ -242,7 +259,10 @@ impl Uninstall {
                     .into_iter()
                     .map(|v| {
                         let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
-                        let mut tv = ToolVersion::new(tvr, v.into());
+                        // `request.version()`, not the raw name: a ref install is named
+                        // `ref-main` on disk and `ref:main` everywhere else.
+                        let version = tvr.version();
+                        let mut tv = ToolVersion::new(tvr, version);
                         // The name came from a version link or a receipt, so it names an
                         // exact installation, whatever options it was installed with.
                         tv.install_path =

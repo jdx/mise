@@ -898,12 +898,15 @@ pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
     versions
 }
 
-/// Whether the legacy tool directory `<root>/<tool dir of short>` was installed
-/// by `backend` (a canonical full backend identifier, no options).
+/// Whether the legacy tool directory `<root>/<tool dir of short>` may be used for
+/// `backend` (a canonical full backend identifier, no options).
 ///
-/// Legacy metadata records one backend per tool directory. Missing metadata is
-/// not evidence of compatibility: unless the short is itself a full backend
-/// identifier, an install with no recorded backend is not claimed.
+/// Legacy metadata records one backend per tool directory. When it records a
+/// different backend the directory holds another backend's payload and is not
+/// claimed (the registry moved the tool, or a version-split tool changed backend):
+/// the version is installed afresh instead of being reinterpreted. A directory
+/// with no recorded backend at all is, as it always was, the tool directory of its
+/// short.
 pub(crate) fn legacy_backend_matches(root: &Path, short: &str, backend: &str) -> bool {
     let manifest = if root == &**dirs::INSTALLS {
         root_manifest()
@@ -912,13 +915,18 @@ pub(crate) fn legacy_backend_matches(root: &Path, short: &str, backend: &str) ->
     };
     let dir_name = crate::backend::tool_directory_name(short);
     let sidecar = read_tool_manifest_from(&tool_manifest_path(root, short));
-    let full = sidecar
+    let recorded = sidecar
         .as_ref()
         .or_else(|| manifest.get(&dir_name))
         .and_then(|mt| mt.full.clone())
-        .or_else(|| short.contains(':').then(|| short.to_string()));
-    let Some(full) = full else {
-        return false;
+        .or_else(|| {
+            (root == &**dirs::INSTALLS)
+                .then(|| read_legacy_backend_meta(short))
+                .flatten()
+                .and_then(|(_, full, _)| full)
+        });
+    let Some(full) = recorded else {
+        return true;
     };
     let name = crate::args::split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
     crate::backend::canonical_backend_full(name) == backend
