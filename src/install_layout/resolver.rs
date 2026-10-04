@@ -328,7 +328,7 @@ fn candidates(catalog: &Catalog, identity: &InstallIdentity) -> Vec<IdentityReco
                     .records_for_backend(&key.backend)
                     .into_iter()
                     .find(|r| {
-                        r.identity.request_key() == key
+                        same_request(&r.identity, &key)
                             && r.provenance.pinned_by.iter().any(|p| p == pin)
                     }),
             );
@@ -344,6 +344,16 @@ fn candidates(catalog: &Catalog, identity: &InstallIdentity) -> Vec<IdentityReco
         }
     }
     found
+}
+
+/// Whether `identity` answers the unlocked request `key`, whichever refresh
+/// generation of the request it belongs to.
+fn same_request(identity: &InstallIdentity, key: &InstallIdentity) -> bool {
+    let mut a = identity.request_key();
+    let mut b = key.request_key();
+    a.inputs.remove("generation");
+    b.inputs.remove("generation");
+    a == b
 }
 
 /// A legacy `installs/<short>/<version>` directory that this request may use.
@@ -1244,6 +1254,29 @@ mod tests {
             "{err}"
         );
         assert!(err.contains("mise install --force dummy@1.0.0"), "{err}");
+    }
+
+    #[test]
+    fn a_refresh_generation_still_answers_its_request() {
+        let key = InstallIdentity {
+            backend: "aqua:jqlang/jq".into(),
+            version: "1.7.1".into(),
+            platform: "linux-x64".into(),
+            ..Default::default()
+        };
+        let mut generation = key.clone();
+        generation.inputs.insert("generation".into(), "2".into());
+        let mut pinned = generation.clone();
+        pinned.mode = Mode::Resolved;
+        pinned
+            .inputs
+            .insert("artifact.checksum".into(), "sha256:a".into());
+        assert!(same_request(&key, &key));
+        assert!(same_request(&generation, &key));
+        assert!(same_request(&pinned, &key));
+        let mut other = key.clone();
+        other.version = "1.7.2".into();
+        assert!(!same_request(&other, &key));
     }
 
     #[test]
