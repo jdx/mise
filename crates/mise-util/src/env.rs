@@ -932,7 +932,8 @@ fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> En
     for (key, old_value) in &mise_diff.old {
         match env_diff_get(&mise_diff.new, key) {
             Some(new_value)
-                if env_map_get(&env, key).is_some_and(|v| env_value_matches(new_value, v)) =>
+                if env_map_get(&env, key)
+                    .is_some_and(|v| env_value_matches(mise_diff.v, new_value, v)) =>
             {
                 let key = env_map_key(&env, key)
                     .cloned()
@@ -948,7 +949,7 @@ fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> En
 
     for (key, new_value) in &mise_diff.new {
         if env_diff_get(&mise_diff.old, key).is_none()
-            && env_map_get(&env, key).is_some_and(|v| env_value_matches(new_value, v))
+            && env_map_get(&env, key).is_some_and(|v| env_value_matches(mise_diff.v, new_value, v))
             && let Some(key) = env_map_key(&env, key).cloned()
         {
             env.remove(&key);
@@ -1425,6 +1426,7 @@ mod tests {
     #[test]
     fn test_reverse_diff_preserves_runtime_overrides() {
         let diff = EnvDiff {
+            v: crate::env_diff::ENV_STATE_VERSION,
             old: [
                 ("CHANGED".into(), "before".into()),
                 ("REMOVED".into(), "before".into()),
@@ -1457,6 +1459,7 @@ mod tests {
     #[test]
     fn test_reverse_diff_with_hashed_new_values() {
         let diff = EnvDiff {
+            v: crate::env_diff::ENV_STATE_VERSION,
             old: [("CHANGED".into(), "before".into())].into(),
             new: [
                 ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
@@ -1503,9 +1506,36 @@ mod tests {
         );
     }
 
+    /// The pristine env derived from a version 1 diff must not keep managed values: a changed
+    /// variable's previous value would otherwise be recorded as `old` in the next diff.
+    #[test]
+    fn test_pristine_env_from_plaintext_v1_diff() {
+        let diff = EnvDiff {
+            v: 1,
+            old: [("CHANGED".into(), "before".into())].into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let orig = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+            ("OTHER".into(), "kept".into()),
+        ]
+        .into();
+        let pristine = get_pristine_env(&diff, orig);
+        assert_eq!(pristine.get("CHANGED").map(String::as_str), Some("before"));
+        assert!(!pristine.contains_key("ADDED"));
+        assert_eq!(pristine.get("OTHER").map(String::as_str), Some("kept"));
+    }
+
     #[test]
     fn test_reverse_diff_restores_unchanged_managed_values() {
         let diff = EnvDiff {
+            v: crate::env_diff::ENV_STATE_VERSION,
             old: [
                 ("CHANGED".into(), "before".into()),
                 ("REMOVED".into(), "before".into()),
@@ -1536,6 +1566,7 @@ mod tests {
     #[test]
     fn test_reverse_diff_preserves_runtime_removals() {
         let diff = EnvDiff {
+            v: crate::env_diff::ENV_STATE_VERSION,
             old: [("CHANGED".into(), "before".into())].into(),
             new: [
                 ("ADDED".into(), crate::env_diff::hash_env_value("managed")),
@@ -1554,6 +1585,7 @@ mod tests {
     #[test]
     fn test_reverse_diff_matches_environment_keys_case_insensitively_on_windows() {
         let diff = EnvDiff {
+            v: crate::env_diff::ENV_STATE_VERSION,
             old: [
                 ("Changed".into(), "before".into()),
                 ("MÎSE_FOO".into(), "before-unicode".into()),

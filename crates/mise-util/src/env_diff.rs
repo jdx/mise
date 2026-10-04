@@ -17,8 +17,21 @@ use std::sync::LazyLock as Lazy;
 use crate::env::PATH_KEY;
 use crate::file;
 
+/// Schema version of the `__MISE_DIFF` and `__MISE_SESSION` blobs. Version 1 (a blob with no
+/// version field) stores the added env values as plaintext; version 2 stores a
+/// [`hash_env_value`] digest instead.
+pub const ENV_STATE_VERSION: u32 = 2;
+
+/// What a blob without a version field is.
+pub fn legacy_env_state_version() -> u32 {
+    1
+}
+
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {
+    /// See [`ENV_STATE_VERSION`]. Decides how `new` is compared, see [`env_value_matches`].
+    #[serde(default = "legacy_env_state_version")]
+    pub v: u32,
     #[serde(default)]
     pub old: IndexMap<String, String>,
     #[serde(default)]
@@ -37,11 +50,16 @@ pub fn hash_env_value(value: &str) -> String {
     format!("{HASH_PREFIX}{}", blake3::hash(value.as_bytes()).to_hex())
 }
 
-/// Whether `actual` is the value recorded as `stored`. Blobs written by this mise hold a
-/// [`hash_env_value`] digest; a shell that keeps running across an upgrade still holds
-/// plaintext written by the previous version, which must reverse cleanly.
-pub fn env_value_matches(stored: &str, actual: &str) -> bool {
-    stored == actual || stored == hash_env_value(actual)
+/// Whether `actual` is the value recorded as `stored` in a blob of schema `version`. Only the
+/// version decides how values are compared: a shell that keeps running across an upgrade still
+/// holds a version 1 blob of plaintext, which must reverse cleanly, while a version 2 blob holds
+/// digests and a plaintext value that happens to look like one is not a match.
+pub fn env_value_matches(version: u32, stored: &str, actual: &str) -> bool {
+    if version >= 2 {
+        stored == hash_env_value(actual)
+    } else {
+        stored == actual
+    }
 }
 
 #[derive(Debug)]
@@ -222,11 +240,13 @@ impl EnvDiff {
     pub fn serialize(&self) -> Result<String> {
         #[derive(Serialize)]
         struct Wire<'a> {
+            v: u32,
             old: &'a IndexMap<String, String>,
             new: IndexMap<&'a str, String>,
             path: &'a [PathBuf],
         }
         let wire = Wire {
+            v: ENV_STATE_VERSION,
             old: &self.old,
             new: self
                 .new
@@ -260,6 +280,8 @@ impl EnvDiff {
 
     pub fn reverse(&self) -> EnvDiff {
         EnvDiff {
+            // `new` now holds the plaintext originals.
+            v: legacy_env_state_version(),
             old: self.new.clone(),
             new: self.old.clone(),
             path: self.path.clone(),
@@ -551,14 +573,64 @@ mod tests {
         for value in back.new.values() {
             assert!(!value.contains("secret"), "{value}");
         }
-        assert!(env_value_matches(&back.new["CHANGED"], "after-secret"));
-        assert!(!env_value_matches(&back.new["CHANGED"], "other"));
-        assert!(env_value_matches(&back.new["ADDED"], "added-secret"));
+        assert!(env_value_matches(
+            back.v,
+            &back.new["CHANGED"],
+            "after-secret"
+        ));
+        assert!(!env_value_matches(back.v, &back.new["CHANGED"], "other"));
+        assert!(env_value_matches(
+            back.v,
+            &back.new["ADDED"],
+            "added-secret"
+        ));
     }
 
     #[test]
-    fn test_env_value_matches_plaintext_from_older_mise() {
-        assert!(env_value_matches("plain", "plain"));
-        assert!(!env_value_matches("plain", "other"));
+    fn test_env_value_matches_by_version() {
+        // v1: plaintext
+        assert!(env_value_matches(1, "plain", "plain"));
+        assert!(!env_value_matches(1, "plain", "other"));
+        // v2: digests only
+        assert!(env_value_matches(2, &hash_env_value("plain"), "plain"));
+        assert!(!env_value_matches(2, "plain", "plain"));
+        // a plaintext value that looks like a digest is not a match in v2
+        let lookalike = hash_env_value("x");
+        assert!(!env_value_matches(2, &lookalike, &lookalike));
+        // ...and v1 does not hash
+        assert!(!env_value_matches(1, &hash_env_value("plain"), "plain"));
+    }
+
+    #[test]
+    fn test_blob_without_version_is_v1_and_reserializes_as_v2() {
+        // what the previous mise wrote: no version field, plaintext `new`
+        #[derive(Serialize)]
+        struct Legacy {
+            old: IndexMap<String, String>,
+            new: IndexMap<String, String>,
+            path: Vec<PathBuf>,
+        }
+        let legacy = Legacy {
+            old: IndexMap::new(),
+            new: [("K".to_string(), "secret".to_string())].into(),
+            path: vec![],
+        };
+        let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
+        gz.write_all(&rmp_serde::to_vec_named(&legacy).unwrap())
+            .unwrap();
+        let raw = BASE64_STANDARD_NO_PAD.encode(gz.finish().unwrap());
+
+        let diff = EnvDiff::deserialize(&raw).unwrap();
+        assert_eq!(diff.v, 1);
+        assert!(env_value_matches(diff.v, &diff.new["K"], "secret"));
+
+        let rewritten = EnvDiff::deserialize(&diff.serialize().unwrap()).unwrap();
+        assert_eq!(rewritten.v, ENV_STATE_VERSION);
+        assert!(!rewritten.new["K"].contains("secret"));
+        assert!(env_value_matches(
+            rewritten.v,
+            &rewritten.new["K"],
+            "secret"
+        ));
     }
 }

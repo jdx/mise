@@ -80,7 +80,12 @@ mod tests {
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
         assert_eq!(deserialized.old, diff.old);
         assert_eq!(deserialized.new.keys().collect_vec(), ["b", "c"]);
-        assert!(env_value_matches(&deserialized.new["b"], "3"));
+        assert_eq!(deserialized.v, ENV_STATE_VERSION);
+        assert!(env_value_matches(
+            deserialized.v,
+            &deserialized.new["b"],
+            "3"
+        ));
     }
 
     #[tokio::test]

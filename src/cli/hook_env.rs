@@ -292,7 +292,7 @@ impl HookEnv {
             let mut env_diff = cur_env
                 .iter()
                 .filter_map(|(k, v)| match PREV_SESSION.env.get(k) {
-                    Some(prev) if env_value_matches(prev, v) => None,
+                    Some(prev) if env_value_matches(PREV_SESSION.v, prev, v) => None,
                     Some(_) => Some(EnvDiffOperation::Change(k.clone(), String::new())),
                     None => Some(EnvDiffOperation::Add(k.clone(), String::new())),
                 })
