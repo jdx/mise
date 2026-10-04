@@ -1628,15 +1628,18 @@ impl Config {
                     env_results.env_files.push(env_file.clone());
                     match file::decode_text(&bytes) {
                         Ok(content) => {
-                            match mise_dotenv::parse(&content, true, crate::env::vars_safe()) {
-                                Ok(items) => {
-                                    for (k, v) in items {
-                                        env_results.env.insert(k, (v, env_file.clone()));
-                                    }
-                                }
-                                Err(err) => {
-                                    warn!("env_file: ignoring {}: {err}", display_path(&env_file))
-                                }
+                            // Keep the assignments that precede a syntax error, like a
+                            // line-by-line loader would, and name the file cut short.
+                            let (items, err) =
+                                mise_dotenv::parse_partial(&content, true, crate::env::vars_safe());
+                            for (k, v) in items {
+                                env_results.env.insert(k, (v, env_file.clone()));
+                            }
+                            if let Some(err) = err {
+                                warn!(
+                                    "env_file: stopped reading {}: {err}",
+                                    display_path(&env_file)
+                                );
                             }
                         }
                         Err(err) => {

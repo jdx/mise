@@ -516,9 +516,17 @@ impl Parser {
                     )
                 })?;
             let expression = &raw[expression_start..expression_end];
-            let expanded =
-                self.evaluate_substitution(expression, source_offset + expression_start, style)?;
-            output.push_str(&expanded);
+            // Braced text that is not a substitution (`${VAR:=x}`, `${}`, ...) stays literal
+            // rather than failing the whole file; the dotenv parser mise used before did the same.
+            match self.evaluate_substitution(expression, source_offset + expression_start, style) {
+                Ok(expanded) => output.push_str(&expanded),
+                Err(error) if error.kind == ParseErrorKind::InvalidSubstitution => {
+                    output.push_str("${");
+                    output.push_str(expression);
+                    output.push('}');
+                }
+                Err(error) => return Err(error),
+            }
             *position = expression_end + '}'.len_utf8();
             return Ok(());
         }
@@ -1268,10 +1276,10 @@ LITERAL=$$FOO_BAR
     }
 
     #[test]
-    fn rejects_an_empty_braced_substitution() {
-        let error =
-            parse_with_options("VALUE=${}", ParseOptions::new().substitution(true)).unwrap_err();
-        assert_eq!(error.kind(), &ParseErrorKind::InvalidSubstitution);
+    fn keeps_an_empty_braced_substitution_literal() {
+        let parsed =
+            parse_with_options("VALUE=${}", ParseOptions::new().substitution(true)).unwrap();
+        assert_eq!(parsed[0].1, "${}");
     }
 
     #[test]
@@ -1289,7 +1297,7 @@ LITERAL=$$FOO_BAR
     }
 
     #[test]
-    fn reports_invalid_and_unterminated_substitutions() {
+    fn keeps_invalid_substitutions_literal_and_reports_unterminated_ones() {
         let options = ParseOptions::new().substitution(true);
         assert_eq!(
             parse_with_options("KEY=${VALUE", options)
@@ -1298,16 +1306,12 @@ LITERAL=$$FOO_BAR
             &ParseErrorKind::UnterminatedSubstitution
         );
         assert_eq!(
-            parse_with_options("KEY=${9VALUE}", options)
-                .unwrap_err()
-                .kind(),
-            &ParseErrorKind::InvalidSubstitution
+            parse_with_options("KEY=${9VALUE}", options).unwrap()[0].1,
+            "${9VALUE}"
         );
         assert_eq!(
-            parse_with_options("KEY=${VALUE:=default}", options)
-                .unwrap_err()
-                .kind(),
-            &ParseErrorKind::InvalidSubstitution
+            parse_with_options("KEY=${VALUE:=default}", options).unwrap()[0].1,
+            "${VALUE:=default}"
         );
     }
 

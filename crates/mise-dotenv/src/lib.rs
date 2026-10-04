@@ -189,6 +189,40 @@ where
         .map_err(|error| Error::from((error, None::<PathBuf>)))
 }
 
+/// Like [`parse`], but keeps the assignments read before a syntax error.
+///
+/// Returns every assignment that parsed cleanly, in file order, plus the error that stopped
+/// parsing, if any. Nothing after the error is read.
+pub fn parse_partial<I>(
+    content: &str,
+    substitution: bool,
+    substitutions: I,
+) -> (Vec<(String, String)>, Option<Error>)
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut protected = HashMap::new();
+    for (key, value) in substitutions {
+        key::insert(&mut protected, key, value);
+    }
+    let iter = Iter::new(
+        content.as_bytes(),
+        ParseOptions::new().substitution(substitution),
+        HashMap::new(),
+        protected,
+        None,
+        true,
+    );
+    let mut items = Vec::new();
+    for item in iter {
+        match item {
+            Ok(item) => items.push(item),
+            Err(error) => return (items, Some(Error::from((error, None::<PathBuf>)))),
+        }
+    }
+    (items, None)
+}
+
 /// The sequence in which to load environment variables.
 ///
 /// Values in the latter override values in the former.
@@ -482,7 +516,9 @@ impl<'a> EnvLoader<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EnvLoader, EnvSequence, Error, Input, ParseErrorKind, ParseOptions, parse};
+    use crate::{
+        EnvLoader, EnvSequence, Error, Input, ParseErrorKind, ParseOptions, parse, parse_partial,
+    };
     use std::path::Path;
     use std::{
         env, fs,
@@ -1047,6 +1083,20 @@ Line 6
         )
         .unwrap();
         assert_eq!(parsed[1], ("VAR_B".to_owned(), "test_test".to_owned()));
+    }
+
+    #[test]
+    fn parse_partial_keeps_assignments_before_the_error() {
+        let (items, error) = parse_partial("A=1\nB=2\nBROKEN line\nC=3\n", true, []);
+        assert_eq!(
+            items,
+            [
+                ("A".to_owned(), "1".to_owned()),
+                ("B".to_owned(), "2".to_owned())
+            ]
+        );
+        assert!(matches!(error, Some(Error::Parse(_, _))));
+        assert!(parse_partial("A=1\n", true, []).1.is_none());
     }
 
     #[test]

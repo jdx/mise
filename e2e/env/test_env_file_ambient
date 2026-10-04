@@ -21,3 +21,16 @@ for expand in true false; do
   unset VAR_A VAR_B VAR_C
   assert "mise env | grep '^export VAR_C='" "export VAR_C=test_test_test"
 done
+
+# The `env_file` setting keeps assignments read before a syntax error and does not shadow a
+# file's own values with exported ones.
+rm -f mise.toml
+export OUTER_A=exported
+printf 'OUTER_A=own\nOUTER_B="b_${OUTER_A}"\nBROKEN line\nOUTER_C=never\n' >.env.partial
+assert "MISE_ENV_FILE=.env.partial mise x -- sh -c 'echo \$OUTER_B'" "b_own"
+assert "MISE_ENV_FILE=.env.partial mise x -- sh -c 'echo \${OUTER_C:-unset}'" "unset"
+unset OUTER_A
+
+# Braced text that is not a substitution stays literal instead of failing the file.
+printf 'LIT=\"${LIT_X:=default}\"\nAFTER=ok\n' >.env.literal
+assert "MISE_ENV_FILE=.env.literal mise x -- sh -c 'echo \$AFTER'" "ok"
