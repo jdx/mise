@@ -228,7 +228,7 @@ then install mise:
 
 ```sh
 packslip install github.com/jdx/mise --pin ps1_nlhmwtfeufglxv5myvwvronk7a
-~/.local/bin/mise --version
+~/.local/bin/mise --version   # /usr/local/bin/mise --version as root
 ```
 
 The pin is the fingerprint of mise's GitHub repository. It stays the same
