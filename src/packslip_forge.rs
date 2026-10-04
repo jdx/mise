@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use eyre::{Report, eyre};
-use packslip::forge::{Check, Continuity, Evidence, Expected, ForgePin, IdentityError};
+use packslip::forge::{Check, Continuity, Expected, ForgePin, IdentityError, PinSource};
 use packslip::{ForgeError, ForgeVerified, Options, Verified, VerifiedList};
 
 use crate::config::{Settings, SettingsExt};
@@ -23,8 +23,9 @@ use crate::{github, gitlab, packslip_pins};
 #[derive(Debug, Clone)]
 pub(crate) struct ForgeExpect {
     project: String,
-    /// This machine's pin first, then the lockfile's. Each one must hold.
-    pins: Vec<ForgePin>,
+    /// This machine's pin first, then the lockfile's, each with where it
+    /// came from. Each one must hold.
+    pins: Vec<(PinSource, ForgePin)>,
     resolved: Option<String>,
 }
 
@@ -74,12 +75,11 @@ async fn lookup(project: &str) -> Option<ForgeRepository> {
 }
 
 /// The project a bundle's statement claims, before anything is verified.
+/// Only fit to decide whether a forge lookup is worth making.
 fn claimed_project(bundle: &str) -> Option<String> {
-    let payload = packslip::sigstore::peek_statement(bundle).ok()?;
-    let statement: serde_json::Value = serde_json::from_slice(&payload).ok()?;
-    statement["predicate"]["project"]
-        .as_str()
-        .map(str::to_string)
+    packslip::peek_unverified(bundle)
+        .ok()
+        .map(|claimed| claimed.project)
 }
 
 /// The forge identity a lock entry committed to, if it recorded one.
@@ -146,9 +146,10 @@ impl ForgeExpect {
     ) -> eyre::Result<Self> {
         let mut pins = Vec::new();
         if let Some(pin) = packslip_pins::forge_pin(project)? {
-            pins.push(pin);
+            pins.push((PinSource::Local, pin));
         }
         for pin in lock.into_iter().filter_map(|info| lock_pin(project, info)) {
+            let pin = (PinSource::Lockfile, pin);
             if !pins.contains(&pin) {
                 pins.push(pin);
             }
@@ -167,30 +168,8 @@ impl ForgeExpect {
 
     fn expected(&self) -> Expected<'_> {
         Expected::new(&self.project)
-            .pinned(self.pins.first())
+            .pinned_by(&self.pins)
             .resolved(self.resolved.as_deref())
-    }
-
-    /// Hold the release to every pin after the first, which the crate
-    /// already checked.
-    fn check_other_pins(
-        &self,
-        signed_project: &str,
-        identity: &str,
-        issuer: Option<&str>,
-        check: &Check,
-    ) -> eyre::Result<()> {
-        for pin in self.pins.iter().skip(1) {
-            packslip::forge::check(
-                &Expected::new(&self.project).pinned(Some(pin)),
-                signed_project,
-                identity,
-                issuer,
-                check.source.as_ref(),
-            )
-            .map_err(|err| self.identity_error(err))?;
-        }
-        Ok(())
     }
 
     /// Verify a bundle under the forge's policy and check who signed it.
@@ -200,15 +179,8 @@ impl ForgeExpect {
         options: Options<'_>,
         artifacts: &[&Path],
     ) -> eyre::Result<ForgeVerified<Verified>> {
-        let verified = packslip::verify_forge(bundle, &self.expected(), options, artifacts)
-            .map_err(|err| self.error(err))?;
-        self.check_other_pins(
-            &verified.verified.project,
-            &verified.verified.key_id,
-            verified.verified.issuer.as_deref(),
-            &verified.check,
-        )?;
-        Ok(verified)
+        packslip::verify_forge(bundle, &self.expected(), options, artifacts)
+            .map_err(|err| self.error(err))
     }
 
     /// Verify a release list under the forge's policy and check who signed it.
@@ -217,15 +189,8 @@ impl ForgeExpect {
         bundle: &str,
         options: Options<'_>,
     ) -> eyre::Result<ForgeVerified<VerifiedList>> {
-        let verified = packslip::verify_forge_release_list(bundle, &self.expected(), options)
-            .map_err(|err| self.error(err))?;
-        self.check_other_pins(
-            &verified.verified.list.predicate.project,
-            &verified.verified.key_id,
-            verified.verified.issuer.as_deref(),
-            &verified.check,
-        )?;
-        Ok(verified)
+        packslip::verify_forge_release_list(bundle, &self.expected(), options)
+            .map_err(|err| self.error(err))
     }
 
     fn error(&self, err: ForgeError) -> Report {
@@ -235,8 +200,73 @@ impl ForgeExpect {
         }
     }
 
+    /// Which records pin another repository than `actual`, the ID the
+    /// release's certificate records: this machine's pin, mise.lock, or
+    /// both. packslip reports the first pin that failed, but a recovery has
+    /// to clear every one, or the next install is refused by the next.
+    fn disagreeing(&self, actual: &str, cited: Option<PinSource>) -> Disagreeing {
+        let from = |want: PinSource| {
+            cited == Some(want)
+                || self
+                    .pins
+                    .iter()
+                    .any(|(source, pin)| *source == want && pin.repository_id != actual)
+        };
+        Disagreeing {
+            local: from(PinSource::Local),
+            lockfile: from(PinSource::Lockfile),
+        }
+    }
+
     fn identity_error(&self, err: IdentityError) -> Report {
-        identity_error(&self.project, err)
+        let requested = &self.project;
+        match err {
+            IdentityError::DifferentRepository {
+                project,
+                expected,
+                actual,
+                evidence,
+            } => {
+                let kind = id_kind(requested);
+                let Some(cited) = evidence.pin_source() else {
+                    return eyre!(
+                        "packslip:{requested}: this release was signed by {project} as {kind} {actual}, but {requested} is {kind} {expected} now. \
+                         The release comes from a different repository than the one the name belongs to, so mise refuses it."
+                    );
+                };
+                let pinned = match cited {
+                    PinSource::Lockfile => "mise.lock pins",
+                    _ => "mise pinned",
+                };
+                let steps = self.disagreeing(&actual, Some(cited)).steps(requested);
+                eyre!(
+                    "packslip:{requested}: this release was signed by {project} as {kind} {actual}, but {pinned} {kind} {expected} for it. \
+                     The name now belongs to a different repository, as it would if the original was deleted and someone else created one under its name, so mise refuses it.\n\n\
+                     If the vendor re-created the repository itself, {steps}."
+                )
+            }
+            err => eyre!("{err}"),
+        }
+    }
+}
+
+/// The pins a refused release disagrees with, by where they came from.
+#[derive(Debug, Clone, Copy)]
+struct Disagreeing {
+    local: bool,
+    lockfile: bool,
+}
+
+impl Disagreeing {
+    /// Every step that clears them, for the project as `requested` names it.
+    fn steps(self, requested: &str) -> String {
+        let forget = format!("run `mise packslip forget {requested}`");
+        let unlock = "remove the tool's entries from mise.lock";
+        match (self.local, self.lockfile) {
+            (true, true) => format!("{forget}, {unlock}, and install again"),
+            (true, false) => format!("{forget} and install again"),
+            (false, _) => format!("{unlock} and install again"),
+        }
     }
 }
 
@@ -246,31 +276,6 @@ fn id_kind(project: &str) -> &'static str {
         "GitLab project ID"
     } else {
         "GitHub repository ID"
-    }
-}
-
-fn identity_error(requested: &str, err: IdentityError) -> Report {
-    match err {
-        IdentityError::DifferentRepository {
-            project,
-            expected,
-            actual,
-            evidence,
-        } => {
-            let kind = id_kind(requested);
-            match evidence {
-                Evidence::Pin => eyre!(
-                    "packslip:{requested}: this release was signed by {project} as {kind} {actual}, but mise pinned {kind} {expected} for it. \
-                     The name now belongs to a different repository, as it would if the original was deleted and someone else created one under its name, so mise refuses it.\n\n\
-                     If the vendor re-created the repository itself, run `mise packslip forget {requested}`, remove the tool's entries from mise.lock, and install again."
-                ),
-                _ => eyre!(
-                    "packslip:{requested}: this release was signed by {project} as {kind} {actual}, but {requested} is {kind} {expected} now. \
-                     The release comes from a different repository than the one the name belongs to, so mise refuses it."
-                ),
-            }
-        }
-        err => eyre!("{err}"),
     }
 }
 
@@ -314,7 +319,11 @@ mod tests {
         expect.verify(HK, options, &[])
     }
 
-    fn expect(project: &str, pins: Vec<ForgePin>, resolved: Option<&str>) -> ForgeExpect {
+    fn expect(
+        project: &str,
+        pins: Vec<(PinSource, ForgePin)>,
+        resolved: Option<&str>,
+    ) -> ForgeExpect {
         ForgeExpect {
             project: project.into(),
             pins,
@@ -326,11 +335,28 @@ mod tests {
         ForgePin::of(project, "922514152")
     }
 
+    fn local(pin: ForgePin) -> (PinSource, ForgePin) {
+        (PinSource::Local, pin)
+    }
+
+    fn locked(pin: ForgePin) -> (PinSource, ForgePin) {
+        (PinSource::Lockfile, pin)
+    }
+
     #[test]
     fn the_same_repository_under_its_own_name_is_accepted() {
         for expect in [
             expect("github.com/jdx/hk", vec![], None),
-            expect("github.com/jdx/hk", vec![hk_pin("github.com/jdx/hk")], None),
+            expect(
+                "github.com/jdx/hk",
+                vec![local(hk_pin("github.com/jdx/hk"))],
+                None,
+            ),
+            expect(
+                "github.com/jdx/hk",
+                vec![locked(hk_pin("github.com/jdx/hk"))],
+                None,
+            ),
         ] {
             let ok = verify(&expect).unwrap();
             assert_eq!(ok.check.continuity, Continuity::Same);
@@ -355,7 +381,7 @@ mod tests {
         for expect in [
             expect(
                 "github.com/jdx/hook",
-                vec![hk_pin("github.com/jdx/hook")],
+                vec![local(hk_pin("github.com/jdx/hook"))],
                 None,
             ),
             expect("github.com/jdx/hook", vec![], Some("922514152")),
@@ -391,28 +417,44 @@ mod tests {
 
     #[test]
     fn a_recreated_name_is_refused() {
-        let other = ForgePin::of("github.com/jdx/hk", "1");
-        let err = verify(&expect("github.com/jdx/hk", vec![other.clone()], None)).unwrap_err();
-        let msg = err.to_string();
+        let forget = "run `mise packslip forget github.com/jdx/hk` and install again";
+        let unlock = "remove the tool's entries from mise.lock and install again";
+        let both = "run `mise packslip forget github.com/jdx/hk`, remove the tool's entries from mise.lock, and install again";
+        let other = || ForgePin::of("github.com/jdx/hk", "1");
+        let refusal = |pins| {
+            verify(&expect("github.com/jdx/hk", pins, None))
+                .unwrap_err()
+                .to_string()
+        };
+
+        let msg = refusal(vec![local(other())]);
         assert!(msg.contains("belongs to a different repository"), "{msg}");
-        assert!(msg.contains("GitHub repository ID 922514152"), "{msg}");
         assert!(
-            msg.contains("mise packslip forget github.com/jdx/hk"),
+            msg.contains("signed by github.com/jdx/hk as GitHub repository ID 922514152, but mise pinned GitHub repository ID 1 for it"),
             "{msg}"
         );
+        assert!(msg.contains(forget), "{msg}");
 
-        // Every pin must hold: a lockfile's is checked after this machine's.
-        let err = verify(&expect(
-            "github.com/jdx/hk",
-            vec![hk_pin("github.com/jdx/hk"), other],
-            None,
-        ))
-        .unwrap_err();
+        // Every pin must hold, and the refusal says which one did not.
+        let msg = refusal(vec![local(hk_pin("github.com/jdx/hk")), locked(other())]);
         assert!(
-            err.to_string()
-                .contains("belongs to a different repository"),
-            "{err}"
+            msg.contains("mise.lock pins GitHub repository ID 1 for it"),
+            "{msg}"
         );
+        assert!(msg.contains(unlock), "{msg}");
+        assert!(!msg.contains("mise packslip forget"), "{msg}");
+
+        // packslip stops at the first pin that fails, but the advice clears
+        // every record that pins another repository, whichever comes first.
+        let two = || ForgePin::of("github.com/jdx/hk", "2");
+        for pins in [
+            vec![local(other()), locked(two())],
+            vec![local(two()), locked(other())],
+            vec![local(other()), locked(other())],
+        ] {
+            let msg = refusal(pins);
+            assert!(msg.contains(both), "{msg}");
+        }
 
         let err = verify(&expect("github.com/jdx/hook", vec![], Some("555"))).unwrap_err();
         assert!(
@@ -429,7 +471,7 @@ mod tests {
         // transfer as signed by jdx: the same repository, by its ID.
         let pinned = expect(
             "github.com/acme/hk",
-            vec![hk_pin("github.com/acme/hk")],
+            vec![locked(hk_pin("github.com/acme/hk"))],
             None,
         );
         for expect in [expect("github.com/acme/hk", vec![], Some("922514152")), pinned] {
