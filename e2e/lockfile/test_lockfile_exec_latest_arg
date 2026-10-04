@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# `mise x <tool>@latest` resolves only the named tool to the newest release.
+# Configured `latest` tools keep using the locked, installed version instead of
+# being reported missing at a newer release that `mise install` does not want.
+
+export MISE_LOCKFILE=1
+
+touch mise.lock
+mise use tiny@1.0.0
+cat <<EOF2 >mise.toml
+[tools]
+tiny = "latest"
+EOF2
+# A newer version is installed, so only the lockfile keeps tiny at 1.0.0.
+mise install tiny@1.0.1
+assert "mise x -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
+
+assert "mise x dummy@latest -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
+assert_not_contains "mise x dummy@latest -- rtx-tiny 2>&1" "missing"
+assert_contains "mise x dummy@latest -- dummy" "2.0.0"

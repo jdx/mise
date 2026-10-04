@@ -30,6 +30,19 @@ impl ToolVersionList {
         opts: &ResolveOptions,
     ) -> eyre::Result<()> {
         self.versions.clear();
+        let configured_opts;
+        let opts = if opts.latest_versions_for_arguments_only && self.source != ToolSource::Argument
+        {
+            configured_opts = ResolveOptions {
+                latest_versions: false,
+                latest_versions_for_all_requests: false,
+                use_locked_version: true,
+                ..opts.clone()
+            };
+            &configured_opts
+        } else {
+            opts
+        };
         for tvr in &mut self.requests {
             // Only use special options (latest_versions) for requests that
             // explicitly specify "latest". This ensures `mise x node@20 npm@latest` only

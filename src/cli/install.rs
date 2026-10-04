@@ -494,6 +494,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
                 latest_versions_for_all_requests: false,
+                latest_versions_for_arguments_only: false,
                 resolve_rolling_channels: false,
                 prefer_exact_version: false,
                 before_date: self.get_before_date()?,

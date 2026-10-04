@@ -516,6 +516,7 @@ impl ToolVersion {
         let opts = ResolveOptions {
             latest_versions: true,
             latest_versions_for_all_requests: false,
+            latest_versions_for_arguments_only: false,
             use_locked_version: false,
             resolve_rolling_channels: false,
             prefer_exact_version: false,
@@ -1139,6 +1140,11 @@ pub struct ResolveOptions {
     /// `mise lock --bump` needs this; `mise x node@20 npm@latest` must not
     /// look up newer Node releases.
     pub latest_versions_for_all_requests: bool,
+    /// Apply `latest_versions` and `use_locked_version = false` only to tools
+    /// named as command-line arguments. Configured tools keep resolving
+    /// against installed versions and the lockfile, so `mise x tool@latest`
+    /// does not bump every `latest` tool in mise.toml past what is installed.
+    pub latest_versions_for_arguments_only: bool,
     pub use_locked_version: bool,
     /// Resolve rolling channels to their current concrete version even when
     /// ordinary version requests may reuse installed versions.
@@ -1173,6 +1179,7 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             latest_versions_for_all_requests: false,
+            latest_versions_for_arguments_only: false,
             use_locked_version: true,
             resolve_rolling_channels: false,
             prefer_exact_version: false,
@@ -1319,6 +1326,9 @@ impl Display for ResolveOptions {
         }
         if self.latest_versions_for_all_requests {
             opts.push("latest_versions_for_all_requests".to_string());
+        }
+        if self.latest_versions_for_arguments_only {
+            opts.push("latest_versions_for_arguments_only".to_string());
         }
         if self.use_locked_version {
             opts.push("use_locked_version".to_string());

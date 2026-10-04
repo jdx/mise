@@ -133,7 +133,8 @@ impl Exec {
         let mut config = Config::get().await?;
 
         // Check if any tool arg explicitly specified @latest
-        // If so, resolve to the actual latest version from the registry (not just latest installed)
+        // If so, resolve to the actual latest version from the registry (not just latest installed).
+        // Configured tools still resolve from installed versions and the lockfile.
         let has_explicit_latest = self
             .tool
             .iter()
@@ -142,6 +143,7 @@ impl Exec {
         let resolve_options = if has_explicit_latest {
             ResolveOptions {
                 latest_versions: true,
+                latest_versions_for_arguments_only: true,
                 use_locked_version: false,
                 ..Default::default()
             }

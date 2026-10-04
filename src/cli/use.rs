@@ -292,6 +292,7 @@ impl Use {
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             latest_versions_for_all_requests: false,
+            latest_versions_for_arguments_only: false,
             use_locked_version: true,
             resolve_rolling_channels: false,
             prefer_exact_version: pin,

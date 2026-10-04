@@ -526,6 +526,7 @@ impl Lock {
             filter_installed_versions_by_release_date: true,
             latest_versions: self.bump,
             latest_versions_for_all_requests: self.bump,
+            latest_versions_for_arguments_only: false,
             use_locked_version: !self.bump,
             // Lock moving channels to their current concrete value without making
             // ordinary `latest` requests ignore an installed concrete version.
