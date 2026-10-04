@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+# An env module that is not cacheable must keep the whole environment out of the env cache,
+# whether it says so itself (cacheable = false) or the user marks its values redact = true.
+
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+COUNTER_FILE="$MISE_DATA_DIR/env_cache_test_counter"
+
+make_plugin() {
+  local name="$1" cacheable="$2"
+  local dir="$MISE_DATA_DIR/plugins/$name"
+  mkdir -p "$dir/hooks"
+  cat >"$dir/metadata.lua" <<EOFMETA
+PLUGIN = {}
+PLUGIN.name = "$name"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test plugin"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+  cat >"$dir/hooks/mise_env.lua" <<EOFHOOK
+function PLUGIN:MiseEnv(ctx)
+    local f = io.open("$COUNTER_FILE", "r")
+    local count = tonumber(f:read("*all")) or 0
+    f:close()
+    f = io.open("$COUNTER_FILE", "w")
+    f:write(tostring(count + 1))
+    f:close()
+    return {
+        env = {{key = "UNCACHEABLE_TEST_VAR", value = "value"}},
+        cacheable = $cacheable,
+        watch_files = {}
+    }
+end
+EOFHOOK
+}
+
+cached_files() {
+  find "$MISE_STATE_DIR/env-cache" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
+run_three_times() {
+  rm -rf "$MISE_STATE_DIR/env-cache"
+  echo 0 >"$COUNTER_FILE"
+  mise env -s bash >/dev/null 2>&1
+  mise env -s bash >/dev/null 2>&1
+  mise env -s bash >/dev/null 2>&1
+  cat "$COUNTER_FILE"
+}
+
+make_plugin test-uncacheable-env false
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.test-uncacheable-env = {}
+EOF
+count="$(run_three_times)"
+assert "echo $count" "3"
+assert "echo 0" "$(cached_files)"
+
+# the plugin says cacheable = true, but the user redacts its values: still not cached
+make_plugin test-redacted-env true
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.test-redacted-env = { redact = true }
+EOF
+count="$(run_three_times)"
+assert "echo $count" "3"
+assert "echo 0" "$(cached_files)"
+
+# control: without redact the same plugin is cached
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.test-redacted-env = {}
+EOF
+count="$(run_three_times)"
+assert "echo $count" "1"
+[ "$(cached_files)" -gt 0 ] || fail "expected the cacheable environment to be cached"

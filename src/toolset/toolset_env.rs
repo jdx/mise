@@ -573,6 +573,10 @@ impl Toolset {
                 .extend(non_tool_env.watch_files.clone());
         }
 
+        // The non-tool env is merged into the final env too, so a module there
+        // that returned cacheable = false must keep the combined env uncached.
+        env_results.has_uncacheable |= non_tool_env.has_uncacheable;
+
         // Store add_paths separately to maintain consistent PATH ordering
         env_results.tool_add_paths = add_paths;
 

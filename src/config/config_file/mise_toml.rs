@@ -2588,6 +2588,17 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                                             opts.tools =
                                                                 tools.as_bool().unwrap_or(false);
                                                         }
+                                                        // The user's explicit `redact` overrides the plugin's own preference.
+                                                        if let Some(table) = value.as_table_mut()
+                                                            && let Some(redact) =
+                                                                table.remove("redact")
+                                                        {
+                                                            opts.redact = Some(redact.as_bool().ok_or_else(|| {
+                                                                de::Error::custom(format!(
+                                                                    "_.{key}.redact must be a boolean"
+                                                                ))
+                                                            })?);
+                                                        }
                                                         directives.push(EnvDirective::Module(
                                                             key, value, opts,
                                                         ));
@@ -4938,6 +4949,41 @@ run = "cargo build"
         foo1 default=fallback
         foo2 default=2
         "#);
+    }
+
+    #[test]
+    fn test_env_module_redact_option() {
+        let toml = indoc! {r#"
+        [env]
+        _.secret-plugin = { redact = false, vault = "main" }
+        _.other-plugin = { vault = "main" }
+        "#}
+        .to_string();
+        let entries = parse(toml).env_entries().unwrap();
+        let module = |name: &str| {
+            entries
+                .iter()
+                .find_map(|d| match d {
+                    EnvDirective::Module(n, value, opts) if n == name => Some((value, opts)),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let (value, opts) = module("secret-plugin");
+        assert_eq!(opts.redact, Some(false));
+        // `redact` is a mise directive control, not an option for the plugin
+        assert!(value.get("redact").is_none());
+        assert_eq!(value.get("vault").and_then(|v| v.as_str()), Some("main"));
+        assert_eq!(module("other-plugin").1.redact, None);
+    }
+
+    #[test]
+    fn test_env_module_redact_must_be_boolean() {
+        let err = parse_error("[env]\n_.my-plugin = { redact = \"true\" }\n");
+        assert!(
+            err.contains("_.my-plugin.redact must be a boolean"),
+            "{err}"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@ use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap, env_value_matches};
 use crate::file::{self, canonicalize_cached, display_path, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
@@ -289,16 +289,21 @@ impl HookEnv {
             }
         }
         if self.status || Settings::get().status.show_env {
-            let mut env_diff = EnvDiff::new(&PREV_SESSION.env, cur_env.clone()).to_patches();
-            // TODO: this logic should be in EnvDiff
-            let removed_keys = PREV_SESSION
-                .env
-                .keys()
-                .collect::<IndexSet<_>>()
-                .difference(&cur_env.keys().collect::<IndexSet<_>>())
-                .map(|k| EnvDiffOperation::Remove(k.to_string()))
+            let mut env_diff = cur_env
+                .iter()
+                .filter_map(|(k, v)| match PREV_SESSION.env.get(k) {
+                    Some(prev) if env_value_matches(PREV_SESSION.v, prev, v) => None,
+                    Some(_) => Some(EnvDiffOperation::Change(k.clone(), String::new())),
+                    None => Some(EnvDiffOperation::Add(k.clone(), String::new())),
+                })
                 .collect_vec();
-            env_diff.extend(removed_keys);
+            env_diff.extend(
+                PREV_SESSION
+                    .env
+                    .keys()
+                    .filter(|k| !cur_env.contains_key(*k))
+                    .map(|k| EnvDiffOperation::Remove(k.clone())),
+            );
             if !env_diff.is_empty() {
                 let env_diff = env_diff.into_iter().map(patch_to_status).join(" ");
                 info!("{}", format_status(&env_diff));

@@ -7,6 +7,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use itertools::Itertools;
 
     use insta::assert_debug_snapshot;
 
@@ -77,7 +78,14 @@ mod tests {
         let diff = EnvDiff::new(&new_from_hashmap(), new_to_hashmap());
         let serialized = diff.serialize().unwrap();
         let deserialized = EnvDiff::deserialize(&serialized).unwrap();
-        assert_debug_snapshot!(deserialized.to_patches());
+        assert_eq!(deserialized.old, diff.old);
+        assert_eq!(deserialized.new.keys().collect_vec(), ["b", "c"]);
+        assert_eq!(deserialized.v, ENV_STATE_VERSION);
+        assert!(env_value_matches(
+            deserialized.v,
+            &deserialized.new["b"],
+            "3"
+        ));
     }
 
     #[tokio::test]

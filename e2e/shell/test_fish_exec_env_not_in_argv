@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# `mise exec -- fish` re-applies mise's env from `-C` because fish's config files run first and may
+# overwrite what it inherited (see `mise en`, #1697). The values must not be in fish's argv, which
+# any local user can read through ps and /proc.
+
+if ! type -p fish >/dev/null; then
+  echo "fish not installed, skipping"
+  exit 0
+fi
+
+export XDG_CONFIG_HOME="$PWD/xdg"
+mkdir -p "$XDG_CONFIG_HOME/fish"
+# a user config that clobbers a variable mise set
+echo 'set -gx FISH_ENV_SECRET clobbered-by-config' >"$XDG_CONFIG_HOME/fish/config.fish"
+
+cat <<'TOML' >mise.toml
+[env]
+FISH_ENV_SECRET = "s3cr3t-fish-marker"
+FISH_ENV_MULTILINE = "line1\nline2"
+TOML
+
+# the value mise set wins over the config file, as before
+assert "mise x -- fish -c 'echo \$FISH_ENV_SECRET'" "s3cr3t-fish-marker"
+assert "mise x -- fish -c 'echo \$FISH_ENV_MULTILINE | string join /'" "line1/line2"
+# the temporary carrier variables are gone
+assert "mise x -- fish -c 'set -x | grep -c __MISE_FISH_ENV; true'" "0"
+
+# fish's own argv has the name but not the value
+if [ -r /proc/self/cmdline ]; then
+  assert_not_contains "mise x -- fish -c 'tr \"\\0\" \" \" </proc/\$fish_pid/cmdline'" "s3cr3t-fish-marker"
+  assert_contains "mise x -- fish -c 'tr \"\\0\" \" \" </proc/\$fish_pid/cmdline'" "FISH_ENV_SECRET"
+fi
+
+# the sandbox's env filter applies to what fish re-applies: a denied variable stays unset and an
+# allowed one keeps its value
+export MISE_EXPERIMENTAL=1
+assert "mise x --deny-env -- fish -c 'echo \"[\$FISH_ENV_SECRET]\"'" "[]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'echo \"[\$FISH_ENV_SECRET]\"'" "[s3cr3t-fish-marker]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'echo \"[\$FISH_ENV_MULTILINE]\"'" "[]"
+assert "mise x --deny-env --allow-env FISH_ENV_SECRET -- fish -c 'set -x | grep -c __MISE_FISH_ENV; true'" "0"

@@ -259,7 +259,8 @@ pub struct EnvResults {
     pub tool_add_paths: Vec<PathBuf>,
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
-    /// True if any directive declared cacheable=false or is a dynamic module
+    /// True if any directive declared cacheable=false, is a dynamic module, or produced a
+    /// redacted or decrypted (age, sops) value, none of which may be written to the env cache
     pub has_uncacheable: bool,
 }
 
@@ -638,6 +639,9 @@ impl EnvResults {
                         }
                     };
 
+                    // Decrypted, so never env-cached, even when `redact = false`.
+                    r.has_uncacheable = true;
+
                     if resolve_opts.vars {
                         match options.redact {
                             Some(false) => {}
@@ -885,6 +889,12 @@ impl EnvResults {
             resolve_opts.warn_on_missing_required,
             resolve_opts.vars,
         )?;
+
+        // A redacted value is a secret by the user's or the directive's own account
+        // (age values are redacted by default), and the env cache would write it to disk.
+        if !r.redactions.is_empty() {
+            r.has_uncacheable = true;
+        }
 
         Ok(r)
     }
@@ -1329,6 +1339,52 @@ mod tests {
         let keys: Vec<String> = results.env.keys().cloned().collect();
         assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
         assert!(results.env_paths.is_empty());
+    }
+
+    async fn resolve_for_cache_test(directives: Vec<EnvDirective>) -> EnvResults {
+        let config = Config::get().await.unwrap();
+        EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &EnvMap::new(),
+            directives
+                .into_iter()
+                .map(|d| (d, PathBuf::from("/config")))
+                .collect(),
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_plain_value_stays_cacheable() {
+        let results = resolve_for_cache_test(vec![EnvDirective::Val(
+            "PLAIN".into(),
+            "value".into(),
+            Default::default(),
+        )])
+        .await;
+        assert!(!results.has_uncacheable);
+    }
+
+    #[tokio::test]
+    async fn test_redacted_value_is_uncacheable() {
+        let options = EnvDirectiveOptions {
+            redact: Some(true),
+            ..Default::default()
+        };
+        let results = resolve_for_cache_test(vec![EnvDirective::Val(
+            "SECRET".into(),
+            "value".into(),
+            options,
+        )])
+        .await;
+        assert!(results.has_uncacheable);
     }
 
     #[tokio::test]

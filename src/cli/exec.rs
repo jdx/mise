@@ -393,37 +393,6 @@ impl Exec {
             env.insert("__MISE_DIFF".to_string(), serialized);
         }
 
-        if program.rsplit('/').next() == Some("fish") {
-            let mut cmd = vec![];
-            for (k, v) in env.iter().filter(|(k, _)| *k != "PATH") {
-                cmd.push(format!(
-                    "set -gx {} {}",
-                    shell_escape::escape(k.into()),
-                    shell_escape::escape(v.into())
-                ));
-            }
-            // TODO: env is being calculated twice with final_env and env_with_path
-            let (_, env_results) = ts.final_env(&config).await?;
-            let paths = ts.list_final_paths(&config, env_results).await?;
-            if !paths.is_empty() {
-                // One call with every path, not one call per path. fish's own
-                // config.fish installs an `--on-variable fish_user_paths` handler
-                // (`__fish_reconstruct_path`) that rebuilds PATH with a linear
-                // scan, so N separate calls cost O(N^2) — over a second of shell
-                // startup for a large toolset. Batching also preserves precedence:
-                // each call prepends, so sequential calls reversed the order
-                // `list_final_paths` returns, pushing `env._.path` entries and
-                // command wrappers behind every tool directory.
-                let paths = paths
-                    .iter()
-                    .map(|p| shell_escape::escape(p.to_string_lossy()))
-                    .join(" ");
-                cmd.push(format!("fish_add_path -gm {paths}"));
-            }
-            args.insert(0, cmd.join("\n"));
-            args.insert(0, "-C".into());
-        }
-
         // Build sandbox config from settings and CLI flags.
         let mut sandbox = SandboxConfig::from_settings_and_cli(
             &Settings::get().sandbox,
@@ -448,6 +417,48 @@ impl Exec {
 
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
+        }
+
+        // After sandbox filtering, so a variable the sandbox removed is not put back.
+        if program.rsplit('/').next() == Some("fish") {
+            let mut cmd = vec![];
+            // fish's config files run before `-C` and may overwrite what it inherited, so
+            // the values are re-applied from `-C`. They travel in temporary variables
+            // rather than in the script: argv is readable by every local user through
+            // `ps` and /proc, the environment only by the process's owner.
+            let reapplied = env
+                .iter()
+                .filter(|(k, _)| *k != "PATH")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect_vec();
+            for (i, (k, v)) in reapplied.into_iter().enumerate() {
+                let tmp = format!("__MISE_FISH_ENV_{i}");
+                cmd.push(format!(
+                    "set -gx {} \"${tmp}\"; set -e {tmp}",
+                    shell_escape::escape(k.as_str().into()),
+                ));
+                env.insert(tmp, v);
+            }
+            // TODO: env is being calculated twice with final_env and env_with_path
+            let (_, env_results) = ts.final_env(&config).await?;
+            let paths = ts.list_final_paths(&config, env_results).await?;
+            if !paths.is_empty() {
+                // One call with every path, not one call per path. fish's own
+                // config.fish installs an `--on-variable fish_user_paths` handler
+                // (`__fish_reconstruct_path`) that rebuilds PATH with a linear
+                // scan, so N separate calls cost O(N^2) — over a second of shell
+                // startup for a large toolset. Batching also preserves precedence:
+                // each call prepends, so sequential calls reversed the order
+                // `list_final_paths` returns, pushing `env._.path` entries and
+                // command wrappers behind every tool directory.
+                let paths = paths
+                    .iter()
+                    .map(|p| shell_escape::escape(p.to_string_lossy()))
+                    .join(" ");
+                cmd.push(format!("fish_add_path -gm {paths}"));
+            }
+            args.insert(0, cmd.join("\n"));
+            args.insert(0, "-C".into());
         }
 
         time!("exec");

@@ -17,7 +17,10 @@ use std::sync::LazyLock as Lazy;
 
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
-use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::env_diff::{
+    ENV_STATE_VERSION, EnvDiffOperation, EnvDiffPatches, EnvMap, hash_env_value,
+    legacy_env_state_version,
+};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
@@ -492,9 +495,14 @@ fn have_mise_env_vars_been_modified() -> bool {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct HookEnvSession {
+    /// See [`ENV_STATE_VERSION`]. Decides how `env` is compared.
+    #[serde(default = "legacy_env_state_version")]
+    pub v: u32,
     pub loaded_tools: IndexSet<String>,
     pub loaded_configs: IndexSet<PathBuf>,
     pub config_paths: IndexSet<PathBuf>,
+    /// Env var name to [`hash_env_value`] digest (plaintext in a version 1 session). Values
+    /// are only compared, so they are not stored.
     pub env: EnvMap,
     #[serde(default)]
     pub aliases: indexmap::IndexMap<String, String>,
@@ -636,9 +644,13 @@ pub async fn build_session(
     }
 
     Ok(HookEnvSession {
+        v: ENV_STATE_VERSION,
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
-        env,
+        env: env
+            .into_iter()
+            .map(|(k, v)| (k, hash_env_value(&v)))
+            .collect(),
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),
@@ -884,6 +896,45 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn session_version_decides_how_env_is_compared() {
+        use super::{HookEnvSession, deserialize, serialize};
+        use crate::env_diff::{ENV_STATE_VERSION, env_value_matches, hash_env_value};
+
+        // what the previous mise wrote: no version field, plaintext values
+        #[derive(serde::Serialize)]
+        struct Legacy {
+            loaded_tools: Vec<String>,
+            loaded_configs: Vec<String>,
+            config_paths: Vec<String>,
+            env: std::collections::BTreeMap<String, String>,
+            env_var_hash: String,
+            latest_update: u64,
+        }
+        let legacy = serialize(&Legacy {
+            loaded_tools: vec![],
+            loaded_configs: vec![],
+            config_paths: vec![],
+            env: [("K".to_string(), "secret".to_string())].into(),
+            env_var_hash: String::new(),
+            latest_update: 0,
+        })
+        .unwrap();
+        let session: HookEnvSession = deserialize(legacy).unwrap();
+        assert_eq!(session.v, 1);
+        assert!(env_value_matches(session.v, &session.env["K"], "secret"));
+
+        let current = HookEnvSession {
+            v: ENV_STATE_VERSION,
+            env: [("K".to_string(), hash_env_value("secret"))].into(),
+            ..Default::default()
+        };
+        let current: HookEnvSession = deserialize(serialize(&current).unwrap()).unwrap();
+        assert_eq!(current.v, ENV_STATE_VERSION);
+        assert!(env_value_matches(current.v, &current.env["K"], "secret"));
+        assert!(!env_value_matches(current.v, &current.env["K"], "other"));
     }
 
     #[test]

@@ -63,6 +63,11 @@ a cached environment. Clear or disable the cache if those edits are not reflecte
 Changes in an external service, such as a
 rotated secret, are not file changes: choose a suitable TTL or disable environment caching.
 
+mise does not cache secrets. A configuration with an `age`-encrypted value, a sops-encrypted
+`_.file`, any directive with `redact = true`, or an env plugin that returns `redact = true` is
+not environment-cached at all; mise recomputes its environment every time instead of writing the
+decrypted values to disk.
+
 For a command that must recompute environment values, set `MISE_ENV_CACHE=0` before starting
 mise. For example, in a Node.js project with a `test` script:
 
