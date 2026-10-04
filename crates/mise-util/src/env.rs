@@ -1478,6 +1478,31 @@ mod tests {
         );
     }
 
+    /// A shell that keeps running across a mise upgrade still holds a `__MISE_DIFF` the
+    /// previous version wrote with plaintext `new` values. It must reverse cleanly, or the
+    /// managed variables would be treated as part of the pristine environment.
+    #[test]
+    fn test_reverse_diff_with_plaintext_new_values_from_older_mise() {
+        let diff = EnvDiff {
+            old: [("CHANGED".into(), "before".into())].into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+        ]
+        .into();
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [("CHANGED".into(), "before".into())].into()
+        );
+    }
+
     #[test]
     fn test_reverse_diff_restores_unchanged_managed_values() {
         let diff = EnvDiff {
@@ -1537,7 +1562,10 @@ mod tests {
             new: [
                 ("Added".into(), crate::env_diff::hash_env_value("managed")),
                 ("Changed".into(), crate::env_diff::hash_env_value("managed")),
-                ("MÎSE_FOO".into(), "managed-unicode".into()),
+                (
+                    "MÎSE_FOO".into(),
+                    crate::env_diff::hash_env_value("managed-unicode"),
+                ),
             ]
             .into(),
             ..Default::default()
