@@ -12,6 +12,8 @@ cat <<EOF2 >mise.toml
 [tools]
 tiny = "latest"
 EOF2
+# A newer version is installed, so only the lockfile keeps tiny at 1.0.0.
+mise install tiny@1.0.1
 assert "mise x -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
 
 assert "mise x dummy@latest -- rtx-tiny" "rtx-tiny: v1.0.0 args:"
