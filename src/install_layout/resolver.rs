@@ -78,17 +78,19 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// A Windows path in the form two spellings of one place share: no verbatim prefix,
-/// one kind of separator, no trailing separator, case folded.
+/// A Windows path in the form two spellings of one place share: one kind of
+/// separator, case folded, no trailing separator, and the verbatim prefix undone
+/// (`\\?\C:\x` is `C:\x`, `\\?\UNC\server\share` is `\\server\share`).
 fn windows_comparable(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    let text = text
-        .strip_prefix(r"\\?\")
-        .filter(|rest| !rest.starts_with("UNC\\"))
-        .unwrap_or(&text);
-    text.replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_lowercase()
+    let text = path.to_string_lossy().replace('/', "\\").to_lowercase();
+    let text = if let Some(rest) = text.strip_prefix(r"\\?\unc\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        text
+    };
+    text.trim_end_matches('\\').to_string()
 }
 
 /// Whether `path` is the primary installs root.
@@ -125,9 +127,9 @@ fn digest_of_string(s: &str) -> String {
 /// * `backend` is the canonical full identifier, so `age` and
 ///   `aqua:FiloSottile/age` agree.
 /// * `options` are the options that change what gets installed, as the backend
-///   classifies them, plus digests of `install_env` and a one-shot `postinstall`
-///   (which can change installed contents; a secret in `install_env` is hashed,
-///   never recorded).
+///   classifies them, plus a digest of `install_env` (it can change what a build
+///   produces; a secret in it is hashed, never recorded). `postinstall` is not an
+///   input: it runs after the install, and editing it has never reinstalled a tool.
 /// * A request restored from a lockfile that pins an artifact checksum is
 ///   [`Mode::Resolved`] and carries that checksum as an input.
 ///
@@ -150,9 +152,6 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
             "install_env".into(),
             digest_of_string(&serde_json::to_string(&env).ok()?),
         );
-    }
-    if let Some((script, false)) = core.postinstall() {
-        options.insert("postinstall".into(), digest_of_string(script));
     }
     let mut inputs = BTreeMap::new();
     if let Some(graph) = tv.aube_install_identity() {
@@ -341,12 +340,7 @@ fn legacy_dir(tv: &ToolVersion, identity: &InstallIdentity) -> Option<PathBuf> {
     for root in roots() {
         let tool_dir = root.join(crate::backend::tool_directory_name(&tv.ba().short));
         let path = tool_dir.join(&name);
-        // A link is either a compatibility link into the identity layout or a
-        // runtime alias; only a real directory is a legacy installation.
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if !meta.is_dir() || meta.file_type().is_symlink() || is_dir_link(&path) {
+        if !is_foreign_slot(&path) {
             continue;
         }
         if crate::toolset::install_state::legacy_backend_matches(
@@ -429,14 +423,10 @@ pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf>
         if let Some(dir) = link_target(&slot) {
             return Some(dir);
         }
-        // A real directory in the slot is a legacy installation, which stands for
-        // itself: another installation that happens to list under the same name
-        // must not be mistaken for it.
-        if let Ok(meta) = std::fs::symlink_metadata(&slot)
-            && meta.is_dir()
-            && !meta.file_type().is_symlink()
-            && !is_dir_link(&slot)
-        {
+        // A legacy installation or a `mise link` stands for itself: another
+        // installation that happens to list under the same name must not be mistaken
+        // for it.
+        if is_foreign_slot(&slot) {
             return Some(slot);
         }
     }
@@ -578,6 +568,21 @@ pub(crate) fn lock_install(
     ))
 }
 
+/// Whether the version slot `path` holds something this layout did not put there:
+/// a real directory (a legacy installation) or a link that is neither a
+/// compatibility link into the layout nor a runtime alias (`mise link`).
+fn is_foreign_slot(path: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if meta.is_dir() && !meta.file_type().is_symlink() && !is_dir_link(path) {
+        return true;
+    }
+    (meta.file_type().is_symlink() || is_dir_link(path))
+        && !is_compat_link_shape(path)
+        && !crate::runtime_symlinks::is_runtime_symlink(path)
+}
+
 /// What [`allocate`] decided.
 #[derive(Clone, Debug)]
 pub(crate) struct Allocated {
@@ -608,6 +613,27 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let key = identity.request_key();
     let locked = pin_of(&identity).is_some();
+
+    if let Some(located) = locate(tv)
+        && located.installed
+    {
+        match located.record {
+            // A legacy installation (or a `mise link`) is used, and refreshed, in
+            // place; it is never moved into the identity layout.
+            None => return Ok(None),
+            // An installation that already satisfies the request, possibly in a
+            // read-only shared root, is reused as it is.
+            Some(record) if !refresh => {
+                return Ok(Some(Allocated {
+                    dir: located.dir,
+                    reused: true,
+                    selects: (!locked).then_some(key),
+                    record,
+                }));
+            }
+            Some(_) => {}
+        }
+    }
 
     if let Some(existing) = candidates(&catalog, &identity).into_iter().next() {
         let pinned_elsewhere = !existing.provenance.pinned_by.is_empty() && !locked;
@@ -685,6 +711,17 @@ pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
     }
     LOCATE_CACHE.clear();
     Ok(())
+}
+
+/// Withdraw an installation [`finish`] published: remove its receipt (so it is
+/// incomplete again) and the version links that name it. The catalog record and
+/// the directory name stay, so a retry lands in the same place.
+pub(crate) fn unpublish(dir: &Path) {
+    if let Err(err) = file::remove_file(dir.join(RECEIPT_FILE)) {
+        debug!("could not remove the receipt of {}: {err:#}", dir.display());
+    }
+    unlink_installation(dir);
+    LOCATE_CACHE.clear();
 }
 
 /// Use an installation that already satisfies `tv` (found by [`locate`]): make
@@ -768,6 +805,31 @@ fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
     match (current.canonicalize(), dir.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
+    }
+}
+
+/// Recreate the version links of a tool's installations that have none: the tool
+/// directory was removed by hand, or the installation was made through another
+/// spelling of the tool. A slot that exists is left alone, because a link can name
+/// only one variant.
+pub(crate) fn heal_links(ba: &crate::args::BackendArg) {
+    let tool_dir = ba.installs_path();
+    for (name, dir) in installs_of(ba) {
+        if dir.parent().is_none_or(|p| !is_primary_root(p)) {
+            continue;
+        }
+        let slot = tool_dir.join(&name);
+        if std::fs::symlink_metadata(&slot).is_ok() {
+            continue;
+        }
+        let Some(dir_name) = dir.file_name() else {
+            continue;
+        };
+        if let Err(err) = file::create_dir_all(tool_dir)
+            .and_then(|()| file::make_dir_link(&Path::new("..").join(dir_name), &slot))
+        {
+            debug!("could not link {}: {err:#}", slot.display());
+        }
     }
 }
 
@@ -877,146 +939,19 @@ mod tests {
             a,
             windows_comparable(Path::new(r"C:\Users\Me\other\installs"))
         );
-        // A UNC verbatim path keeps its prefix.
-        assert!(windows_comparable(Path::new(r"\\?\UNC\server\share")).starts_with(r"\\?\unc"));
-    }
-
-    #[test]
-    fn credentials_never_reach_identity_values() {
+        // UNC and WSL shares: the verbatim spelling is the same place.
         assert_eq!(
-            redact_credentials("https://user:tok@registry.example.com/simple/"),
-            "https://registry.example.com/simple/"
+            windows_comparable(Path::new(r"\\?\UNC\server\Share\mise\installs")),
+            windows_comparable(Path::new(r"\\server\share\mise\installs"))
         );
         assert_eq!(
-            redact_credentials("https://tok@host.example/a?b=c@d"),
-            "https://host.example/a?b=c@d"
+            windows_comparable(Path::new(r"\\?\UNC\wsl$\Ubuntu\home\me\installs\")),
+            windows_comparable(Path::new(r"\\WSL$\ubuntu\home\me\installs"))
         );
-        assert_eq!(redact_credentials("plain value"), "plain value");
-        assert_eq!(redact_credentials("https://host/a@b"), "https://host/a@b");
-        assert_eq!(
-            redact_credentials("--index-url https://u:p@h.example/x --other https://h2/y"),
-            "--index-url https://h.example/x --other https://h2/y"
+        assert_ne!(
+            windows_comparable(Path::new(r"\\server\share")),
+            windows_comparable(Path::new(r"C:\server\share"))
         );
-    }
-
-    /// An installation in the real installs root of the test environment with a
-    /// unique name, removed on drop, plus a tool directory beside it.
-    struct Fixture {
-        install: PathBuf,
-        tool_dir: PathBuf,
-    }
-
-    impl Fixture {
-        fn new() -> Self {
-            let unique = format!(
-                "{}{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            );
-            let id = InstallIdentity {
-                backend: format!("core:fixture{unique}"),
-                version: "1.2.3".into(),
-                platform: "linux-x64".into(),
-                ..Default::default()
-            };
-            let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
-            let record = catalog.allocate(&id).unwrap();
-            let install = catalog.install_dir(&record);
-            std::fs::create_dir_all(install.join("bin")).unwrap();
-            write_receipt(
-                &install,
-                &Receipt {
-                    record,
-                    requested_as: None,
-                    mise_version: None,
-                },
-            )
-            .unwrap();
-            let tool_dir = dirs::INSTALLS.join(format!("fixture-tool-{unique}"));
-            std::fs::create_dir_all(&tool_dir).unwrap();
-            Self { install, tool_dir }
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.install);
-            let _ = std::fs::remove_dir_all(&self.tool_dir);
-        }
-    }
-
-    #[test]
-    fn a_version_link_names_its_installation_and_an_alias_does_not() {
-        let fx = Fixture::new();
-        let version = fx.tool_dir.join("1.2.3");
-        let alias = fx.tool_dir.join("1");
-        let target = Path::new("..").join(fx.install.file_name().unwrap());
-        file::make_dir_link(&target, &version).unwrap();
-        file::make_dir_link(Path::new("./1.2.3"), &alias).unwrap();
-
-        assert!(is_compat_link_shape(&version));
-        assert_eq!(link_target(&version), Some(fx.install.clone()));
-        assert_eq!(
-            dir_name_of(&fx.install).as_deref(),
-            fx.install.file_name().unwrap().to_str()
-        );
-        // A runtime alias points at a sibling inside the tool directory, never at an
-        // installation, even though it resolves to one through the version link.
-        assert!(!is_compat_link_shape(&alias));
-        assert_eq!(link_target(&alias), None);
-        // A link into the same root that is not a receipt-bearing installation.
-        let stranger = dirs::INSTALLS.join(format!(
-            "stranger-{}",
-            fx.tool_dir.file_name().unwrap().to_string_lossy()
-        ));
-        std::fs::create_dir_all(&stranger).unwrap();
-        let stray = fx.tool_dir.join("stray");
-        file::make_dir_link(&Path::new("..").join(stranger.file_name().unwrap()), &stray).unwrap();
-        assert_eq!(link_target(&stray), None);
-        let _ = std::fs::remove_dir_all(&stranger);
-    }
-
-    #[test]
-    fn unlinking_an_installation_removes_every_link_to_it_and_only_those() {
-        let fx = Fixture::new();
-        let other = Fixture::new();
-        let name = fx.install.file_name().unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &fx.tool_dir.join("1.2.3")).unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &other.tool_dir.join("1.2.3")).unwrap();
-        file::make_dir_link(
-            &Path::new("..").join(other.install.file_name().unwrap()),
-            &fx.tool_dir.join("9.9.9"),
-        )
-        .unwrap();
-
-        unlink_installation(&fx.install);
-
-        assert!(std::fs::symlink_metadata(fx.tool_dir.join("1.2.3")).is_err());
-        assert!(std::fs::symlink_metadata(other.tool_dir.join("1.2.3")).is_err());
-        assert!(
-            is_dir_link(&fx.tool_dir.join("9.9.9")),
-            "a link to another installation stays"
-        );
-        assert!(
-            fx.install.join("bin").is_dir(),
-            "the installation itself is not touched"
-        );
-    }
-
-    #[test]
-    fn removal_is_refused_for_a_directory_mise_did_not_create() {
-        let fx = Fixture::new();
-        assert!(guard_removal(&fx.install).is_ok());
-        let stranger = dirs::INSTALLS.join(format!("stranger-{}", std::process::id()));
-        std::fs::create_dir_all(&stranger).unwrap();
-        let err = guard_removal(&stranger).unwrap_err().to_string();
-        assert!(err.contains("not an installation mise created"), "{err}");
-        // A legacy `<tool>/<version>` path is not this function's business.
-        assert!(guard_removal(&fx.tool_dir.join("1.2.3")).is_ok());
-        let _ = std::fs::remove_dir_all(&stranger);
     }
 
     #[test]

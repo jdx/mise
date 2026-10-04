@@ -301,8 +301,17 @@ impl Toolset {
         let mut versions = vec![];
         for b in self.list_backends_for_installed_version_listing() {
             for v in b.list_installed_versions() {
+                // A configured version stands for the listed one only when it is that
+                // very installation: with the identity layout the same version name can
+                // be an installation the configuration no longer asks for (another
+                // backend or options).
+                let same_installation = |tv: &ToolVersion| {
+                    crate::install_layout::resolver::physical_dir(b.ba(), &v)
+                        .is_none_or(|dir| tv.install_path() == dir)
+                };
                 if let Some((p, tv)) =
                     current_versions.get(&(b.ba().installs_path().to_path_buf(), v.clone()))
+                    && same_installation(tv)
                 {
                     versions.push((p.clone(), tv.clone()));
                 } else {
@@ -1144,15 +1153,19 @@ fn collect_needed_versions(
         {
             let short = tv.ba().short.to_string();
             for v in backend.list_installed_versions() {
-                // An identity-layout version stands for the installation its link or
-                // receipt names; protect that one.
-                let key = match crate::install_layout::resolver::physical_dir(tv.ba(), &v)
-                    .and_then(|dir| crate::install_layout::resolver::dir_name_of(&dir))
-                {
-                    Some(dir) => (String::new(), dir),
-                    None => (short.clone(), v),
-                };
-                needed.entry(key).or_default().insert(source.to_path_buf());
+                needed
+                    .entry((short.clone(), v))
+                    .or_default()
+                    .insert(source.to_path_buf());
+            }
+            // Every identity-layout installation of the tool, every variant.
+            for (_, dir) in crate::install_layout::resolver::installs_of(tv.ba()) {
+                if let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir) {
+                    needed
+                        .entry((String::new(), dir))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                }
             }
         }
     }

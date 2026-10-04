@@ -231,7 +231,8 @@ impl Uninstall {
             for (name, dir) in crate::install_layout::resolver::installs_of(backend.ba()) {
                 if matches.iter().any(|m| **m == name) {
                     let tvr = ToolRequest::new(backend.ba().clone(), &name, ToolSource::Unknown)?;
-                    let mut tv = ToolVersion::new(tvr, name);
+                    let version = tvr.version();
+                    let mut tv = ToolVersion::new(tvr, version);
                     tv.install_path = Some(dir);
                     tvs.push((backend.clone(), tv));
                 }

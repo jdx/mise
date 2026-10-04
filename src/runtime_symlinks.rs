@@ -82,6 +82,9 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
+    if installs_dir == backend.ba().installs_path() {
+        crate::install_layout::resolver::heal_links(backend.ba());
+    }
     let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
     let default_alias = Alias::default();

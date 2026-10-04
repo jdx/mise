@@ -4125,8 +4125,19 @@ pub trait Backend: Debug + Send + Sync {
 
         self.cleanup_install_dirs(&tv);
         install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
-        self.finish_install_changes(&ctx, &tv).await?;
-        self.verify_install(&ctx, &tv).await?;
+        let finished = match self.finish_install_changes(&ctx, &tv).await {
+            Ok(()) => self.verify_install(&ctx, &tv).await,
+            Err(err) => Err(err),
+        };
+        if let Err(err) = finished {
+            // A failed postinstall or verification leaves a half-done install: take
+            // it back out of the layout so it is not selected, linked, or taken for
+            // complete, and the next install repairs it.
+            if allocated.is_some() {
+                crate::install_layout::resolver::unpublish(&install_path);
+            }
+            return Err(err);
+        }
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
     }
