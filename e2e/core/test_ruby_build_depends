@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# A tool listed in ruby's `depends` must be usable by ruby-build itself, not only
+# installed first. JRuby definitions run `require_java`, which checks $JAVA_HOME
+# before the `java` on PATH; without the dependency env a system JDK wins.
+
+RUBY_BUILD_REPO="$PWD/ruby-build"
+DEPENDENCY_SEEN_FILE="$PWD/dependency-seen"
+
+mkdir -p "$RUBY_BUILD_REPO/bin"
+
+cat >"$RUBY_BUILD_REPO/install.sh" <<'SH'
+#!/bin/sh
+set -eu
+mkdir -p "$PREFIX/bin"
+cp bin/ruby-build "$PREFIX/bin/ruby-build"
+chmod +x "$PREFIX/bin/ruby-build"
+SH
+
+cat >"$RUBY_BUILD_REPO/bin/ruby-build" <<'SH'
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+--version)
+  echo "ruby-build 99999999"
+  exit 0
+  ;;
+--definitions)
+  echo "4.0.7"
+  exit 0
+  ;;
+esac
+
+# Stand-in for require_java: run the dependency the way a definition would.
+dummy 2>/dev/null >"$DEPENDENCY_SEEN_FILE" || echo "dependency missing" >"$DEPENDENCY_SEEN_FILE"
+
+install_path=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "4.0.7" ]; then
+    shift
+    install_path="$1"
+    break
+  fi
+  shift
+done
+
+[ -n "$install_path" ]
+mkdir -p "$install_path/bin"
+cat >"$install_path/bin/ruby" <<'RUBY'
+#!/bin/sh
+echo "ruby 4.0.7"
+RUBY
+chmod +x "$install_path/bin/ruby"
+SH
+
+git -C "$RUBY_BUILD_REPO" init
+git -C "$RUBY_BUILD_REPO" add .
+git -C "$RUBY_BUILD_REPO" -c user.name=mise -c user.email=mise@example.com commit -m init
+
+cat >mise.toml <<EOF
+[settings.ruby]
+compile = true
+ruby_build_repo = "file://$RUBY_BUILD_REPO"
+
+[tools]
+ruby = { version = "4.0.7", depends = ["dummy"] }
+dummy = "2.0.0"
+
+[env]
+DEPENDENCY_SEEN_FILE = "$DEPENDENCY_SEEN_FILE"
+EOF
+
+assert "MISE_JOBS=1 mise install"
+assert_contains "cat '$DEPENDENCY_SEEN_FILE'" "This is Dummy 2.0.0!"
+assert "mise exec -- ruby --version" "ruby 4.0.7"
