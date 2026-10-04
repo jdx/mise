@@ -772,7 +772,8 @@ wrote. They leave anything you changed with a warning; pass `--force` to
 remove changed copies too. Directories they empty are removed, up to the
 target of the group or entry that deployed the file. `unapply --group` works
 whether or not the group is still selected or declared. `--prune` asks
-before removing anything unless you pass `--yes`.
+before removing anything unless you pass `--yes`, and covers every group,
+so it takes no target arguments.
 
 Removal compares files with what mise last wrote, not with the current
 source, so editing a group's root does not stop `unapply --group` from

@@ -58,6 +58,8 @@ assert_fail "test -e $HOME/.work.gitconfig"
 assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
 
 # An explicit prune removes the rest.
+assert_fail_contains "mise dot apply --prune --yes ~/.bashrc" "cannot be combined with target arguments"
+assert_succeed "test -L $HOME/.zshrc"
 assert_contains "mise dot apply --prune --dry-run" "rm ~/.zshrc"
 assert_succeed "test -L $HOME/.zshrc"
 assert_succeed "mise dot apply --prune --yes"

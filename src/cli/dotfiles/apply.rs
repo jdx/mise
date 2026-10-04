@@ -65,6 +65,13 @@ impl DotfilesApply {
         Vec<system::files::FileRequest>,
         Vec<system::edits::EditRequest>,
     )> {
+        // orphans belong to no configured target, so a prune cannot be
+        // narrowed to some; like `unapply --group`, it refuses targets
+        if self.prune && !self.targets.is_empty() {
+            eyre::bail!(
+                "--prune removes orphaned files of every group and cannot be combined with target arguments"
+            );
+        }
         super::select_requests(config, &self.targets)
     }
 

@@ -938,7 +938,8 @@ fn behind_symlink(target: &Path, root: &Path) -> bool {
         .ancestors()
         .skip(1)
         .take_while(|dir| dir.starts_with(root))
-        .any(|dir| dir.is_symlink())
+        // a junction redirects a Windows directory the way a symlink does
+        .any(file::is_symlink_or_junction)
 }
 
 /// Whether `target`'s directory physically lies inside `dotfiles.root`.
@@ -1078,8 +1079,18 @@ fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Windows has no descriptor-relative unlink to pin the directories down,
+/// so the safety checks run again right before the removal: a directory
+/// swapped for a link or junction since planning is refused, and only the
+/// moment between this check and the removal remains.
 #[cfg(not(unix))]
-fn remove_no_follow(_root: &Path, target: &Path) -> Result<()> {
+fn remove_no_follow(root: &Path, target: &Path) -> Result<()> {
+    if behind_symlink(target, root) || inside_dotfiles_root(target) {
+        bail!(
+            "{} now resolves through a linked directory or into dotfiles.root",
+            target.display_user()
+        );
+    }
     file::remove_file(target)
 }
 
