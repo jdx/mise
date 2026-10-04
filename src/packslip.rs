@@ -2367,7 +2367,7 @@ mod tests {
         std::fs::write(root.join("t.kdl"), "").unwrap();
         let s = statement_with(
             r#"[
-            {"kind":"completion","bin":"t","shell":"zsh","exec":["t","completion","zsh"]},
+            {"kind":"completion","bin":"t","shells":["zsh"],"exec":["t","completion","{shell}"]},
             {"kind":"completion","bin":"t","shells":["bash","zsh"],"exec":["t","completions","{shell}"]},
             {"kind":"completion","bin":"t","shell":"zsh","repo":"completions/t.zsh"},
             {"kind":"completion","bin":"t","shell":"zsh","asset":"t-skill.tar.gz"},

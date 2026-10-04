@@ -750,12 +750,15 @@ pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attested_by: Option<String>,
     /// For a GitHub or GitLab packslip, the forge's repository ID from the
-    /// signing certificate. A rename keeps it, so the commitment follows the
-    /// repository; a new repository under the same name has another.
+    /// signing certificate. A rename or a transfer keeps it, so the
+    /// commitment follows the repository; a new repository under the same
+    /// name has another.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository_id: Option<String>,
-    /// The forge's ID of the repository's owner from the same certificate,
-    /// which a transfer to another owner changes.
+    /// The forge's ID of the repository's owner, as an older mise recorded
+    /// it. Read and kept while the repository ID is unchanged, so existing
+    /// lockfiles are not rewritten, but ignored: the owner is not part of a
+    /// forge project's identity, and mise no longer records a new one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository_owner_id: Option<String>,
     /// Ordered release artifacts extracted into the primary artifact's install directory.
