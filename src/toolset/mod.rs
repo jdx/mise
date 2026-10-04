@@ -332,6 +332,27 @@ impl Toolset {
                     }
                 }
             }
+            // Variants of one version (different install options) share a version
+            // name and at most one of them has the version link, so they are listed
+            // from their receipts. Everything that removes or retains installs works
+            // from this inventory.
+            for (name, dir) in crate::install_layout::resolver::installs_of(b.ba()) {
+                let covered = versions
+                    .iter()
+                    .any(|(vb, tv)| vb.ba() == b.ba() && tv.install_path() == dir);
+                if covered {
+                    continue;
+                }
+                match ToolRequest::new(b.ba().clone(), &name, ToolSource::Unknown) {
+                    Ok(req) => {
+                        let version = req.version();
+                        let mut tv = ToolVersion::new(req, version);
+                        tv.install_path = Some(dir);
+                        versions.push((b.clone(), tv));
+                    }
+                    Err(e) => warn!("Error listing {}@{}: {:#}", b.id(), name, e),
+                }
+            }
         }
         Ok(versions)
     }
@@ -400,7 +421,14 @@ impl Toolset {
             .list_current_versions()
             .into_iter()
             .chain(self.list_installed_versions(config).await?)
-            .unique_by(|(ba, tv)| (ba.clone(), tv.tv_pathname().to_string()))
+            // Variants of one version are separate installations.
+            .unique_by(|(ba, tv)| {
+                (
+                    ba.clone(),
+                    tv.tv_pathname().to_string(),
+                    crate::install_layout::resolver::dir_name_of(&tv.install_path()),
+                )
+            })
             .collect();
         Ok(versions)
     }

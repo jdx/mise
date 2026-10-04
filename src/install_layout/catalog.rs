@@ -507,19 +507,15 @@ mod tests {
     #[test]
     fn concurrent_allocators_of_colliding_identities_stay_separate() {
         let (_tmp, catalog) = catalog();
-        let ids: Vec<_> = (0..8)
-            .map(|i| identity("core:node", &format!("20.0.{i}")))
-            .collect();
-        let handles: Vec<_> = ids
-            .iter()
-            .cloned()
-            .map(|id| {
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let id = identity("core:node", &format!("20.0.{i}"));
                 let catalog = catalog.clone();
                 std::thread::spawn(move || catalog.allocate(&id).unwrap().dir)
             })
             .collect();
         let dirs: BTreeSet<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        assert_eq!(dirs.len(), ids.len());
+        assert_eq!(dirs.len(), 8);
     }
 
     #[test]

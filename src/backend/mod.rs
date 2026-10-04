@@ -294,7 +294,9 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
     // Under the identity layout the install is a hashed directory in the installs
     // root and the runtime path is a link in the tool's own directory.
     let hashed_alias = crate::install_layout::resolver::dir_name_of(&install_path).is_some()
-        && install_path.parent() == Some(&**dirs::INSTALLS)
+        && install_path
+            .parent()
+            .is_some_and(crate::install_layout::resolver::is_primary_root)
         && runtime_path.parent() == Some(tv.ba().installs_path());
     if install_path.parent() != runtime_path.parent() && !hashed_alias {
         return path;
@@ -2935,20 +2937,7 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
     fn list_installed_versions(&self) -> Vec<String> {
-        let mut versions = install_state::list_versions(&self.ba().short);
-        // Identity-layout installs are shared between the spellings of a tool
-        // (`age`, `aqua:FiloSottile/age`), so a version installed through one is
-        // listed for the others even before they have a link of their own.
-        let layout = crate::install_layout::resolver::installs_of(self.ba());
-        if !layout.is_empty() {
-            for (name, _) in layout {
-                if !versions.contains(&name) {
-                    versions.push(name);
-                }
-            }
-            install_state::sort_versions(&mut versions);
-        }
-        versions
+        install_state::list_versions_for(self.ba())
     }
     fn is_version_installed(
         &self,
@@ -3001,7 +2990,7 @@ pub trait Backend: Debug + Send + Sync {
                 // The identity layout resolves the exact installation for this
                 // request. The request's version slot is a compatibility link that
                 // can point at only one variant, so it is not consulted.
-                if crate::install_layout::resolver::applies_to(tv) {
+                if crate::install_layout::resolver::governs(tv) {
                     return check_path(&tv.install_path(), check_symlink);
                 }
                 if let Some(install_path) = tv.request.install_path(config)
@@ -3970,6 +3959,12 @@ pub trait Backend: Debug + Send + Sync {
         // uninstall so shared and system installs cannot have their marker
         // cleared while an install is still in progress.
         let state_version = tv.state_key();
+        // An identity-layout installation is shared by every spelling of its tool, so
+        // it is locked by its own directory as well as by this tool's state below.
+        let _identity_lock =
+            crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
+                ctx.pr.set_message(install_lock_wait_message(pid));
+            })?;
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
         let _state_lock =
@@ -4369,6 +4364,11 @@ pub trait Backend: Debug + Send + Sync {
         dryrun: bool,
     ) -> eyre::Result<()> {
         let state_version = tv.state_key();
+        let _identity_lock = if dryrun {
+            None
+        } else {
+            crate::install_layout::resolver::lock_install(&tv.install_path(), &|_| {})?
+        };
         let _state_lock = if dryrun {
             None
         } else {

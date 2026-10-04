@@ -478,7 +478,7 @@ impl ToolVersion {
         // Identity layout: an unlocked request puts the friendly link path on
         // PATH (`installs/node/20`, `installs/node/20.1.0`), never the hashed
         // directory it points at, whenever that link is this installation.
-        if crate::install_layout::resolver::applies_to(self) {
+        if crate::install_layout::resolver::governs(self) {
             return crate::install_layout::resolver::runtime_dir(self);
         }
         let Some(pathname) = self.runtime_pathname() else {

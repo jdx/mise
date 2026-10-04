@@ -876,6 +876,28 @@ pub(crate) fn list_versions(short: &str) -> Vec<String> {
     with_tool(short, |tool| tool.versions.clone()).unwrap_or_default()
 }
 
+/// The installed versions of `ba`: its tool directory's versions plus the
+/// identity-layout installations of the same tool.
+///
+/// Identity-layout installs are shared between the spellings of a tool (`age`,
+/// `aqua:FiloSottile/age`), so a version installed through one is listed for the
+/// others before they have a version link of their own. The result keeps the
+/// ordering rule everything here lists by.
+pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
+    let mut versions = list_versions(&ba.short);
+    let layout = crate::install_layout::resolver::installs_of(ba);
+    if layout.is_empty() {
+        return versions;
+    }
+    for (name, _) in layout {
+        if !versions.contains(&name) {
+            versions.push(name);
+        }
+    }
+    sort_versions(&mut versions);
+    versions
+}
+
 /// Whether the legacy tool directory `<root>/<tool dir of short>` was installed
 /// by `backend` (a canonical full backend identifier, no options).
 ///

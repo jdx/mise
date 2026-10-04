@@ -67,6 +67,47 @@ pub(crate) fn applies_to(tv: &ToolVersion) -> bool {
         && !is_exempt(&tv.ba().full_without_opts())
 }
 
+/// Whether two paths name the same place, compared as written (no symlink
+/// resolution). On Windows case, separators and the `\\?\` verbatim prefix are
+/// ignored, which canonicalizing would add and the configured roots do not carry.
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) {
+        windows_comparable(a) == windows_comparable(b)
+    } else {
+        a == b
+    }
+}
+
+/// A Windows path in the form two spellings of one place share: no verbatim prefix,
+/// one kind of separator, no trailing separator, case folded.
+fn windows_comparable(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    let text = text
+        .strip_prefix(r"\\?\")
+        .filter(|rest| !rest.starts_with("UNC\\"))
+        .unwrap_or(&text);
+    text.replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_lowercase()
+}
+
+/// Whether `path` is the primary installs root.
+pub(crate) fn is_primary_root(path: &Path) -> bool {
+    same_path(path, &dirs::INSTALLS)
+}
+
+/// Whether the identity layout governs `tv`, either because it will choose where
+/// `tv` installs or because an install already chose (the install path is set to a
+/// directory of the layout).
+pub(crate) fn governs(tv: &ToolVersion) -> bool {
+    applies_to(tv)
+        || (enabled()
+            && tv
+                .install_path
+                .as_deref()
+                .is_some_and(|path| dir_name_of(path).is_some()))
+}
+
 /// The installs roots to search, primary first. Only the primary root is ever
 /// written to by an install.
 fn roots() -> Vec<PathBuf> {
@@ -94,7 +135,14 @@ fn digest_of_string(s: &str) -> String {
 /// is used.
 pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     let backend = tv.backend().ok()?;
-    let mut options = backend.install_identity_options(tv);
+    // Credentials in an option (a registry URL) do not change what is installed, so
+    // they neither take part in the identity nor reach the catalog or a receipt,
+    // which are plain files.
+    let mut options: BTreeMap<String, String> = backend
+        .install_identity_options(tv)
+        .into_iter()
+        .map(|(key, value)| (key, redact_credentials(&value)))
+        .collect();
     let core = tv.request.options();
     if !core.install_env.is_empty() {
         let env: BTreeMap<_, _> = core.install_env.iter().collect();
@@ -132,6 +180,30 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
         options,
         inputs,
     })
+}
+
+/// `value` with any userinfo (`user:token@`) removed from URLs in it. Applied to
+/// whole values and to values that merely contain a URL.
+fn redact_credentials(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(i) = rest.find("://") {
+        let (head, tail) = rest.split_at(i + 3);
+        out.push_str(head);
+        // The authority ends at the first `/`, `?`, `#` or whitespace; userinfo is
+        // whatever precedes the last `@` inside it.
+        let end = tail
+            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
+            .unwrap_or(tail.len());
+        let authority = &tail[..end];
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        out.push_str(host);
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The pinned artifact checksum of a [`Mode::Resolved`] identity.
@@ -274,7 +346,7 @@ fn legacy_dir(tv: &ToolVersion, identity: &InstallIdentity) -> Option<PathBuf> {
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
             continue;
         };
-        if !meta.is_dir() || meta.file_type().is_symlink() {
+        if !meta.is_dir() || meta.file_type().is_symlink() || is_dir_link(&path) {
             continue;
         }
         if crate::toolset::install_state::legacy_backend_matches(
@@ -325,7 +397,7 @@ fn listing_name(record: &IdentityRecord) -> String {
 }
 
 /// The complete identity-layout installations of a tool: `(listing name, directory)`.
-pub(crate) fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
+pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
     if !enabled() {
         return vec![];
     }
@@ -356,6 +428,16 @@ pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf>
             .join(name);
         if let Some(dir) = link_target(&slot) {
             return Some(dir);
+        }
+        // A real directory in the slot is a legacy installation, which stands for
+        // itself: another installation that happens to list under the same name
+        // must not be mistaken for it.
+        if let Ok(meta) = std::fs::symlink_metadata(&slot)
+            && meta.is_dir()
+            && !meta.file_type().is_symlink()
+            && !is_dir_link(&slot)
+        {
+            return Some(slot);
         }
     }
     installs_of(ba)
@@ -427,7 +509,7 @@ pub(crate) fn purge_installs(ba: &crate::args::BackendArg) -> Result<()> {
         return Ok(());
     }
     for (_, dir) in installs_of(ba) {
-        if dir.parent() == Some(&**dirs::INSTALLS) {
+        if dir.parent().is_some_and(is_primary_root) {
             file::remove_all(&dir)?;
         }
     }
@@ -463,7 +545,7 @@ pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Op
 /// at only one variant of a version, so it is not trusted blindly.
 pub(crate) fn runtime_dir(tv: &ToolVersion) -> PathBuf {
     let install = tv.install_path();
-    if install.parent() != Some(&**dirs::INSTALLS) {
+    if !install.parent().is_some_and(is_primary_root) {
         return install;
     }
     let name = tv.runtime_pathname().unwrap_or_else(|| tv.tv_pathname());
@@ -472,6 +554,28 @@ pub(crate) fn runtime_dir(tv: &ToolVersion) -> PathBuf {
         (Ok(a), Ok(b)) if a == b => candidate,
         _ => install,
     }
+}
+
+/// Serialize installs and removals of one installation across every spelling of
+/// its tool. The per-tool install lock is keyed by the tool's own cache directory,
+/// which `age` and `aqua:FiloSottile/age` do not share, while the installation
+/// they share has exactly one directory.
+pub(crate) fn lock_install(
+    dir: &Path,
+    on_wait: &dyn Fn(Option<u32>),
+) -> Result<Option<fslock::LockFile>> {
+    let (Some(name), Some(root)) = (dir_name_of(dir), dir.parent()) else {
+        return Ok(None);
+    };
+    let path = root
+        .join(".mise")
+        .join("locks")
+        .join(format!("{name}.lock"));
+    Ok(Some(
+        crate::lock_file::LockFile::at(&path)
+            .with_pid()
+            .lock_with_notice(on_wait)?,
+    ))
 }
 
 /// What [`allocate`] decided.
@@ -588,7 +692,11 @@ pub(crate) fn finish(tv: &ToolVersion, allocated: &Allocated) -> Result<()> {
 /// request that adopted an unlocked installation, remember the pin so a later
 /// refresh does not replace it in place.
 pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
-    let Some(located) = locate(tv) else {
+    // `tv` may already carry the path an install chose; what is needed here is
+    // the installation its identity resolves to.
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let Some(located) = locate(&bare) else {
         return Ok(());
     };
     let (true, Some(record)) = (located.installed, located.record) else {
@@ -672,11 +780,13 @@ pub fn link_target(slot: &Path) -> Option<PathBuf> {
     } else {
         slot.parent()?.join(target)
     };
-    let target = target.canonicalize().ok().or(Some(target))?;
+    // Lexical, not canonical: a canonical path on Windows carries a verbatim
+    // prefix the configured roots do not, so the same installation would no
+    // longer compare equal to its own directory.
+    use path_absolutize::Absolutize;
+    let target = target.absolutize().ok()?.into_owned();
     let parent = target.parent()?;
-    let is_root = roots()
-        .iter()
-        .any(|r| r.canonicalize().ok().as_deref() == Some(parent) || r.as_path() == parent);
+    let is_root = roots().iter().any(|r| same_path(r, parent));
     (is_root && target.join(RECEIPT_FILE).exists()).then_some(target)
 }
 
@@ -743,7 +853,7 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
     let parent = path.parent()?;
     roots()
         .iter()
-        .any(|r| r.as_path() == parent)
+        .any(|r| same_path(r, parent))
         .then(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
         .flatten()
 }
@@ -751,6 +861,163 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_spellings_of_one_root_compare_equal() {
+        let a = windows_comparable(Path::new(r"C:\Users\Me\AppData\Local\mise\installs"));
+        assert_eq!(
+            a,
+            windows_comparable(Path::new(r"\\?\c:\users\me\appdata\local\mise\installs\"))
+        );
+        assert_eq!(
+            a,
+            windows_comparable(Path::new("C:/Users/Me/AppData/Local/mise/installs"))
+        );
+        assert_ne!(
+            a,
+            windows_comparable(Path::new(r"C:\Users\Me\other\installs"))
+        );
+        // A UNC verbatim path keeps its prefix.
+        assert!(windows_comparable(Path::new(r"\\?\UNC\server\share")).starts_with(r"\\?\unc"));
+    }
+
+    #[test]
+    fn credentials_never_reach_identity_values() {
+        assert_eq!(
+            redact_credentials("https://user:tok@registry.example.com/simple/"),
+            "https://registry.example.com/simple/"
+        );
+        assert_eq!(
+            redact_credentials("https://tok@host.example/a?b=c@d"),
+            "https://host.example/a?b=c@d"
+        );
+        assert_eq!(redact_credentials("plain value"), "plain value");
+        assert_eq!(redact_credentials("https://host/a@b"), "https://host/a@b");
+        assert_eq!(
+            redact_credentials("--index-url https://u:p@h.example/x --other https://h2/y"),
+            "--index-url https://h.example/x --other https://h2/y"
+        );
+    }
+
+    /// An installation in the real installs root of the test environment with a
+    /// unique name, removed on drop, plus a tool directory beside it.
+    struct Fixture {
+        install: PathBuf,
+        tool_dir: PathBuf,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let unique = format!(
+                "{}{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let id = InstallIdentity {
+                backend: format!("core:fixture{unique}"),
+                version: "1.2.3".into(),
+                platform: "linux-x64".into(),
+                ..Default::default()
+            };
+            let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+            let record = catalog.allocate(&id).unwrap();
+            let install = catalog.install_dir(&record);
+            std::fs::create_dir_all(install.join("bin")).unwrap();
+            write_receipt(
+                &install,
+                &Receipt {
+                    record,
+                    requested_as: None,
+                    mise_version: None,
+                },
+            )
+            .unwrap();
+            let tool_dir = dirs::INSTALLS.join(format!("fixture-tool-{unique}"));
+            std::fs::create_dir_all(&tool_dir).unwrap();
+            Self { install, tool_dir }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.install);
+            let _ = std::fs::remove_dir_all(&self.tool_dir);
+        }
+    }
+
+    #[test]
+    fn a_version_link_names_its_installation_and_an_alias_does_not() {
+        let fx = Fixture::new();
+        let version = fx.tool_dir.join("1.2.3");
+        let alias = fx.tool_dir.join("1");
+        let target = Path::new("..").join(fx.install.file_name().unwrap());
+        file::make_dir_link(&target, &version).unwrap();
+        file::make_dir_link(Path::new("./1.2.3"), &alias).unwrap();
+
+        assert!(is_compat_link_shape(&version));
+        assert_eq!(link_target(&version), Some(fx.install.clone()));
+        assert_eq!(
+            dir_name_of(&fx.install).as_deref(),
+            fx.install.file_name().unwrap().to_str()
+        );
+        // A runtime alias points at a sibling inside the tool directory, never at an
+        // installation, even though it resolves to one through the version link.
+        assert!(!is_compat_link_shape(&alias));
+        assert_eq!(link_target(&alias), None);
+        // A link into the same root that is not a receipt-bearing installation.
+        let stranger = dirs::INSTALLS.join(format!(
+            "stranger-{}",
+            fx.tool_dir.file_name().unwrap().to_string_lossy()
+        ));
+        std::fs::create_dir_all(&stranger).unwrap();
+        let stray = fx.tool_dir.join("stray");
+        file::make_dir_link(&Path::new("..").join(stranger.file_name().unwrap()), &stray).unwrap();
+        assert_eq!(link_target(&stray), None);
+        let _ = std::fs::remove_dir_all(&stranger);
+    }
+
+    #[test]
+    fn unlinking_an_installation_removes_every_link_to_it_and_only_those() {
+        let fx = Fixture::new();
+        let other = Fixture::new();
+        let name = fx.install.file_name().unwrap();
+        file::make_dir_link(&Path::new("..").join(name), &fx.tool_dir.join("1.2.3")).unwrap();
+        file::make_dir_link(&Path::new("..").join(name), &other.tool_dir.join("1.2.3")).unwrap();
+        file::make_dir_link(
+            &Path::new("..").join(other.install.file_name().unwrap()),
+            &fx.tool_dir.join("9.9.9"),
+        )
+        .unwrap();
+
+        unlink_installation(&fx.install);
+
+        assert!(std::fs::symlink_metadata(fx.tool_dir.join("1.2.3")).is_err());
+        assert!(std::fs::symlink_metadata(other.tool_dir.join("1.2.3")).is_err());
+        assert!(
+            is_dir_link(&fx.tool_dir.join("9.9.9")),
+            "a link to another installation stays"
+        );
+        assert!(
+            fx.install.join("bin").is_dir(),
+            "the installation itself is not touched"
+        );
+    }
+
+    #[test]
+    fn removal_is_refused_for_a_directory_mise_did_not_create() {
+        let fx = Fixture::new();
+        assert!(guard_removal(&fx.install).is_ok());
+        let stranger = dirs::INSTALLS.join(format!("stranger-{}", std::process::id()));
+        std::fs::create_dir_all(&stranger).unwrap();
+        let err = guard_removal(&stranger).unwrap_err().to_string();
+        assert!(err.contains("not an installation mise created"), "{err}");
+        // A legacy `<tool>/<version>` path is not this function's business.
+        assert!(guard_removal(&fx.tool_dir.join("1.2.3")).is_ok());
+        let _ = std::fs::remove_dir_all(&stranger);
+    }
 
     #[test]
     fn hash_suffix_shape() {

@@ -77,6 +77,25 @@ impl Uninstall {
             })
             .collect::<Vec<_>>();
         if !self.all && tool_versions.len() > self.installed_tool.len() {
+            let variants = tool_versions
+                .iter()
+                .filter_map(|(_, tv)| {
+                    crate::install_layout::resolver::dir_name_of(&tv.install_path())
+                })
+                .collect_vec();
+            if variants.len() == tool_versions.len()
+                && tool_versions
+                    .iter()
+                    .map(|(_, tv)| (tv.ba().short.clone(), tv.version.clone()))
+                    .all_equal()
+            {
+                bail!(
+                    "{} installations match, installed with different options: {}\n\
+                     use --all to uninstall all of them",
+                    variants.len(),
+                    variants.join(", ")
+                );
+            }
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
         let removed_install_paths = tool_versions
@@ -207,6 +226,16 @@ impl Uninstall {
                 ));
             }
 
+            // Installations of a matching version that differ in install options
+            // share its name, so they are listed from their receipts.
+            for (name, dir) in crate::install_layout::resolver::installs_of(backend.ba()) {
+                if matches.iter().any(|m| **m == name) {
+                    let tvr = ToolRequest::new(backend.ba().clone(), &name, ToolSource::Unknown)?;
+                    let mut tv = ToolVersion::new(tvr, name);
+                    tv.install_path = Some(dir);
+                    tvs.push((backend.clone(), tv));
+                }
+            }
             tvs.extend(
                 matches
                     .into_iter()
