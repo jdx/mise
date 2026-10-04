@@ -6,7 +6,6 @@ use crate::backend::Backend;
 #[cfg(unix)]
 use crate::config::SettingsExt;
 use crate::config::{Alias, Config};
-use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
 use crate::toolset::{ToolRequest, Toolset, install_state};
@@ -139,11 +138,13 @@ fn rebuild_symlinks_in_dir(
         if from.exists() {
             if is_runtime_symlink(&from) {
                 // Existing runtime symlink: only rewrite if the target changed.
-                if file::resolve_symlink(&from)?.unwrap_or_default() == *to {
+                // A Windows text-file alias is rewritten as a real link.
+                if runtime_symlink_target(&from).as_ref() == Some(to) && !is_text_file_alias(&from)
+                {
                     continue;
                 }
                 trace!("Removing existing symlink: {}", from.display());
-                file::remove_file(&from)?;
+                file::remove_dir_link(&from)?;
             } else if from
                 .file_name()
                 .zip(to.file_name())
@@ -158,7 +159,19 @@ fn rebuild_symlinks_in_dir(
                 continue;
             }
         }
-        make_symlink_or_file(to, &from)?;
+        if let Err(err) = file::make_dir_link(to, &from) {
+            if cfg!(windows) {
+                warn!(
+                    "could not create {} -> {}: {err:#}. The tool works through mise, but \
+                     external programs cannot use this path. Enable Developer Mode or run \
+                     `mise where` for the real install path.",
+                    from.display(),
+                    to.display()
+                );
+            } else {
+                return Err(err);
+            }
+        }
     }
     prune_stale_generated_symlinks(backend, installs_dir, &symlinks, &alias_names)?;
     remove_missing_symlinks_in_dir(installs_dir)?;
@@ -363,7 +376,7 @@ fn prune_stale_generated_symlinks(
 ) -> Result<()> {
     for path in stale_generated_symlinks(backend, installs_dir, desired, alias_names)? {
         trace!("Removing stale runtime symlink: {}", path.display());
-        file::remove_file(&path)?;
+        file::remove_dir_link(&path)?;
     }
     Ok(())
 }
@@ -425,7 +438,7 @@ pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> 
     }
     for path in missing_symlinks_in_dir(installs_dir)? {
         trace!("Removing missing symlink: {}", path.display());
-        file::remove_file(path)?;
+        file::remove_dir_link(&path)?;
     }
     // remove install dir if empty (ignore metadata)
     file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
@@ -460,17 +473,29 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 /// Returns the (relative) target a runtime symlink points to, or None if
 /// `path` is not a runtime symlink.
 fn runtime_symlink_target(path: &Path) -> Option<PathBuf> {
-    if let Ok(Some(link)) = file::resolve_symlink(path)
-        && link.starts_with("./")
-    {
+    let link = file::resolve_symlink(path).ok().flatten()?;
+    if link.starts_with("./") {
         return Some(link);
     }
-    None
+    // A Windows junction records an absolute target; one that points at a
+    // sibling directory is the same runtime link written as `./name`.
+    if !cfg!(windows) {
+        return None;
+    }
+    let (parent, name) = (link.parent()?, link.file_name()?);
+    (std::fs::canonicalize(parent).ok()? == std::fs::canonicalize(path.parent()?).ok()?)
+        .then(|| Path::new(".").join(name))
+}
+
+/// A pre-junction Windows alias: a regular file holding the target path.
+fn is_text_file_alias(path: &Path) -> bool {
+    cfg!(windows) && path.is_file() && !path.is_symlink()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file::make_symlink_or_file;
     use std::fs;
 
     fn npm_test_backend() -> Arc<dyn Backend> {

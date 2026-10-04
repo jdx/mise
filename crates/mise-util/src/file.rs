@@ -1134,14 +1134,67 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
 }
 
 pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
-    // Windows symlink are write in file currently
-    // may be changed to symlink in the future
+    // Windows aliases created before runtime links became junctions are plain
+    // files holding the target path, so both forms are read here.
     if link.is_symlink() {
         Ok(Some(fs::read_link(link)?))
+    } else if let Some(target) = junction_target(link) {
+        Ok(Some(target))
     } else if link.is_file() {
         Ok(Some(fs::read_to_string(link)?.into()))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(windows)]
+fn junction_target(link: &Path) -> Option<PathBuf> {
+    junction::get_target(link).ok()
+}
+
+#[cfg(not(windows))]
+fn junction_target(_link: &Path) -> Option<PathBuf> {
+    None
+}
+
+/// Links `link` to the directory `target` (a relative target is taken from
+/// `link`'s parent) for a runtime alias such as `installs/node/latest`.
+///
+/// On Windows this is a real junction, which tools that enumerate the path
+/// (IDE SDK selectors) can follow; it never falls back to a text file. A failure
+/// is returned so the caller can warn and carry on without the link.
+#[cfg(unix)]
+pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
+    let target = resolve_relative_link_target(link, target.to_path_buf());
+    let target = target.absolutize()?.into_owned();
+    remove_dir_link(link)?;
+    make_symlink(&target, link)?;
+    Ok(())
+}
+
+/// Removes a link made by [`make_dir_link`], or an older text-file alias.
+#[cfg(unix)]
+pub fn remove_dir_link(link: &Path) -> Result<()> {
+    if link.is_symlink() || link.is_file() {
+        remove_file(link)?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn remove_dir_link(link: &Path) -> Result<()> {
+    if is_symlink_or_junction(link) {
+        remove_symlink_or_junction(link)
+    } else if link.is_file() {
+        remove_file(link)
+    } else {
+        Ok(())
     }
 }
 
