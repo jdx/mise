@@ -158,3 +158,62 @@ EOF
   assert_contains "mise bootstrap --dry-run --yes --only files,compose" "deferred-compose --project-directory"
   assert_fail "mise bootstrap --dry-run --yes --only compose"
 fi
+
+# Compose declarations render the same template values as other bootstrap
+# resources before validating paths and building the command line.
+template_project="$PWD/template-project"
+template_compose="$PWD/template-compose"
+template_engine="$PWD/template-engine"
+mkdir -p "$template_project"
+touch "$template_project/compose.yaml" "$template_project/.env"
+cat >"$template_compose" <<'EOF'
+#!/bin/sh
+root=$(dirname "$0")
+printf '%s\n' "$@" >"$root/template-compose-args"
+case " $* " in
+*" config --services "*) echo cache ;;
+*" config --hash=* "*) echo "cache template-hash" ;;
+*" ps "*) ;;
+*) exit 2 ;;
+esac
+EOF
+
+cat >"$template_engine" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"com.docker.compose.config-hash":"template-hash"}'
+EOF
+
+cat >mise.toml <<'EOF'
+[vars]
+compose_project_name = "template-cache"
+
+[bootstrap.compose.templated]
+project_dir = "{{ config_root }}/template-project"
+files = ["{{ config_root }}/template-project/compose.yaml"]
+env_files = ["{{ config_root }}/template-project/.env"]
+project_name = "{{ vars.compose_project_name }}"
+command = ["sh", "{{ config_root }}/template-compose"]
+engine_command = ["sh", "{{ config_root }}/template-engine"]
+EOF
+
+assert_contains "mise bootstrap compose status" "create"
+assert_contains "cat template-compose-args" "--project-directory"
+assert_contains "cat template-compose-args" "$template_project"
+assert_contains "cat template-compose-args" "$template_project/compose.yaml"
+assert_contains "cat template-compose-args" "$template_project/.env"
+
+# A more local project replaces a global declaration before either is rendered.
+# The shadowed declaration deliberately cannot render in this environment.
+cat >global.toml <<'EOF'
+[bootstrap.compose.shadowed]
+project_dir = "{{ env.MISSING_COMPOSE_PROJECT_DIR }}"
+EOF
+cat >mise.toml <<EOF
+[bootstrap.compose.shadowed]
+project_dir = "$template_project"
+command = ["sh", "$template_compose"]
+engine_command = ["sh", "$template_engine"]
+EOF
+export MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml"
+assert_contains "mise bootstrap compose status" "create"
+unset MISE_GLOBAL_CONFIG_FILE

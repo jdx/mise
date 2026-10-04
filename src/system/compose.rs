@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
+#[cfg(test)]
+use crate::system::templating::Templated;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -158,7 +160,7 @@ struct ComposeContainer {
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut composed: IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in compose_from_config_files(config_files) {
+        for (name, declaration) in compose_from_config_files(config, config_files)? {
             if let Some(existing) = composed.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -181,8 +183,9 @@ pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeReques
 }
 
 fn compose_from_config_files(
+    config: &Config,
     config_files: &ConfigMap,
-) -> IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> {
+) -> Result<IndexMap<String, (ComposeTomlConfig, ResourceOrigin)>> {
     let mut merged = IndexMap::new();
     for (path, cf) in config_files {
         if let Some(bootstrap) = cf.bootstrap_config() {
@@ -193,6 +196,14 @@ fn compose_from_config_files(
                 source: None,
             };
             for (name, project) in bootstrap.compose {
+                // Capturing raw TOML for templating hides unknown fields from
+                // the config-wide serde_ignored pass, so report them here.
+                for field in project.ignored_fields() {
+                    warn!(
+                        "unknown field in {}: bootstrap.compose.{name}.{field}",
+                        crate::file::display_path(path)
+                    );
+                }
                 merged
                     .entry(name)
                     .or_insert_with(|| (project, origin.clone()));
@@ -200,6 +211,11 @@ fn compose_from_config_files(
         }
     }
     merged
+        .into_iter()
+        .map(|(name, (project, origin))| {
+            Ok((name, (project.render(config, &origin.config)?, origin)))
+        })
+        .collect()
 }
 
 pub fn requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
@@ -1193,6 +1209,7 @@ fn default_compose_command() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tera::Context;
 
     fn request(state: ComposeState) -> ComposeRequest {
         ComposeRequest::from_toml(
@@ -1223,6 +1240,51 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn renders_template_values_before_validating_project_dir() {
+        let config_root = std::env::temp_dir().join("mise-compose-template");
+        let project: Templated<ComposeTomlConfig> = toml::from_str(
+            r#"
+            project_dir = "{{ config_root }}/compose"
+            files = ["{{ config_root }}/compose/compose.yaml"]
+            env_files = ["{{ config_root }}/compose/.env"]
+            project_name = "{{ vars.project_name }}"
+            profiles = ["{{ vars.profile }}"]
+            command = ["{{ config_root }}/bin/compose"]
+            depends_on = ["file:{{ config_root }}/compose/compose.yaml"]
+            "#,
+        )
+        .unwrap();
+        let mut ctx = Context::new();
+        ctx.insert("config_root", &config_root);
+        ctx.insert(
+            "vars",
+            &HashMap::from([("project_name", "cache"), ("profile", "production")]),
+        );
+
+        let project = project
+            .render_with(&ctx, &config_root.join("mise.toml"))
+            .unwrap();
+        let request = ComposeRequest::from_toml("cache".to_string(), project).unwrap();
+
+        assert_eq!(request.project_dir, config_root.join("compose"));
+        assert_eq!(request.files, [config_root.join("compose/compose.yaml")]);
+        assert_eq!(request.env_files, [config_root.join("compose/.env")]);
+        assert_eq!(request.project_name.as_deref(), Some("cache"));
+        assert_eq!(request.profiles, ["production"]);
+        assert_eq!(
+            request.command,
+            [format!("{}/bin/compose", config_root.display())]
+        );
+        assert_eq!(
+            request.explicit_dependencies,
+            [ResourceId::new(
+                "file",
+                format!("{}/compose/compose.yaml", config_root.display())
+            )]
+        );
     }
 
     #[test]
