@@ -1981,7 +1981,14 @@ impl TaskExecutor {
         if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
-            let message = if contains_template_syntax(confirm.message()) {
+            let texts = [
+                Some(confirm.message()),
+                confirm.yes_label(),
+                confirm.no_label(),
+            ];
+            let mut rendered: Vec<Option<String>> =
+                texts.iter().map(|t| t.map(str::to_string)).collect();
+            if texts.iter().flatten().any(|t| contains_template_syntax(t)) {
                 let config_root = task.config_root.clone().unwrap_or_default();
                 let mut tera = crate::tera::get_tera(Some(&config_root));
                 let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
@@ -1994,15 +2001,27 @@ impl TaskExecutor {
                     }
                 }
                 tera_ctx.insert("usage", &usage_ctx);
-                render_str(&mut tera, confirm.message(), &tera_ctx)?
-            } else {
-                confirm.message().to_string()
-            };
+                for (slot, text) in rendered.iter_mut().zip(texts) {
+                    if let Some(text) = text
+                        && contains_template_syntax(text)
+                    {
+                        *slot = Some(render_str(&mut tera, text, &tera_ctx)?);
+                    }
+                }
+            }
+            let [message, yes_label, no_label]: [Option<String>; 3] =
+                rendered.try_into().expect("three confirm texts");
+            let message = message.unwrap_or_default();
             let default_yes = match confirm.default_value() {
                 Some(default) => Self::parse_confirm_default(default)?,
                 None => true, // keep backwards compatible default of yes if not specified
             };
-            match crate::ui::prompt::confirm_with_default(&message, default_yes) {
+            match crate::ui::prompt::confirm_with_labels(
+                &message,
+                default_yes,
+                yes_label.as_deref(),
+                no_label.as_deref(),
+            ) {
                 Ok(Confirmation::Yes) => {}
                 Ok(Confirmation::No) => return Err(eyre!("aborted by user")),
                 Ok(Confirmation::Unanswered) => {

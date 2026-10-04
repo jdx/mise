@@ -74,6 +74,18 @@ pub fn confirm_with_default<S: Into<String>>(
     message: S,
     default_yes: bool,
 ) -> eyre::Result<Confirmation> {
+    confirm_with_labels(message, default_yes, None, None)
+}
+
+/// Like [`confirm_with_default`], with optional custom labels for the two
+/// answers. Typed answers (`y`/`n`) are accepted regardless of the labels, so
+/// relabeling a prompt never breaks scripts that pipe an answer in.
+pub fn confirm_with_labels<S: Into<String>>(
+    message: S,
+    default_yes: bool,
+    yes_label: Option<&str>,
+    no_label: Option<&str>,
+) -> eyre::Result<Confirmation> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 
@@ -92,11 +104,17 @@ pub fn confirm_with_default<S: Into<String>>(
     // answer "yes" to every deletion. Read the line here instead, so that no
     // answer means no.
     if !std::io::stdin().is_terminal() {
-        return read_confirm_from_stdin(&message, default_yes);
+        return read_confirm_from_stdin(&message, default_yes, yes_label, no_label);
     }
     let theme = get_theme();
-    let result = Confirm::new(message)
-        .selected(default_yes)
+    let mut confirm = Confirm::new(message).selected(default_yes);
+    if let Some(label) = yes_label {
+        confirm = confirm.affirmative(label);
+    }
+    if let Some(label) = no_label {
+        confirm = confirm.negative(label);
+    }
+    let result = confirm
         .theme(&theme)
         .run()
         .inspect_err(|_| restore_cursor())?;
@@ -110,9 +128,21 @@ pub fn confirm_with_default<S: Into<String>>(
 /// Prints `message` to stderr and reads a single answer from a non-terminal
 /// stdin, which is what makes `echo y | mise ...` work without letting an
 /// unanswered prompt (EOF) count as consent.
-fn read_confirm_from_stdin(message: &str, default_yes: bool) -> eyre::Result<Confirmation> {
+fn read_confirm_from_stdin(
+    message: &str,
+    default_yes: bool,
+    yes_label: Option<&str>,
+    no_label: Option<&str>,
+) -> eyre::Result<Confirmation> {
     let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
-    safe_eprintln!("{message} {hint}");
+    match (yes_label, no_label) {
+        (None, None) => safe_eprintln!("{message} {hint}"),
+        _ => safe_eprintln!(
+            "{message} {hint} (y = {}, n = {})",
+            yes_label.unwrap_or("Yes"),
+            no_label.unwrap_or("No")
+        ),
+    }
     let mut line = String::new();
     let read = std::io::stdin().lock().read_line(&mut line)?;
     // A 0-byte read is EOF, which is the case `demand` cannot distinguish.

@@ -5158,7 +5158,7 @@
               "type": "string"
             },
             {
-              "description": "confirmation message before running this task with default value",
+              "description": "confirmation message before running this task with optional default value and custom answer labels",
               "properties": {
                 "message": {
                   "description": "confirmation message before running this task",
@@ -5168,9 +5168,17 @@
                   "description": "default value for confirmation (yes/no/true/false)",
                   "enum": ["yes", "no", "y", "n", "true", "false"],
                   "type": "string"
+                },
+                "yes": {
+                  "description": "custom label for the affirmative answer",
+                  "type": "string"
+                },
+                "no": {
+                  "description": "custom label for the negative answer",
+                  "type": "string"
                 }
               },
-              "required": ["message", "default"],
+              "required": ["message"],
               "unevaluatedProperties": false,
               "type": "object"
             }

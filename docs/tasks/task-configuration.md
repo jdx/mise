@@ -415,7 +415,7 @@ run = "echo my internal task"
 
 ### `confirm`
 
-- **Type**: `string` | `{ message: string, default: string }`
+- **Type**: `string` | `{ message: string, default?: string, yes?: string, no?: string }`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
 time to run. The user is prompted to confirm before the task's own `run` command executes.
@@ -431,7 +431,16 @@ description = 'Cut a new release'
 file = 'scripts/release.sh'
 ```
 
-The confirm message supports Tera templates and can reference usage arguments:
+Use `yes` and `no` to customize the labels of the two answers when plain "Yes" / "No" doesn't fit.
+`default` is optional and defaults to `yes`. Piped answers (`echo y | mise run release`) still accept `y`/`n`.
+
+```mise-toml
+[tasks.deploy]
+confirm = { message = "Deploy to production?", yes = "Deploy", no = "Cancel", default = "no" }
+run = "deploy.sh"
+```
+
+The confirm message and the `yes`/`no` labels support Tera templates and can reference usage arguments:
 
 ```mise-toml
 [tasks.deploy]
