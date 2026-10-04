@@ -63,7 +63,7 @@ fn equivalent(left: &str, right: &str) -> bool {
     const TRUE: i32 = 1;
 
     #[link(name = "kernel32")]
-    extern "system" {
+    unsafe extern "system" {
         fn CompareStringOrdinal(
             left: *const u16,
             left_len: i32,
