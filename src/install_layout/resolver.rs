@@ -386,6 +386,19 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
                 return Some(located);
             }
             Unlocked::Ambiguous(_) => ambiguous = true,
+            // A version named on the command line without options means whatever
+            // is installed of it, as it did before this layout: a lone installation
+            // made with options a configuration set (`filter_bins`, `matching`)
+            // stands for it. With several, which is meant is not known.
+            Unlocked::Nothing
+                if identity.options.is_empty()
+                    && matches!(tv.request.source(), crate::toolset::ToolSource::Argument) =>
+            {
+                if let [only] = variant_installations(&identity).as_slice() {
+                    locate_cache().insert(cache_key, only.clone());
+                    return Some(only.clone());
+                }
+            }
             Unlocked::Nothing => {}
         }
     } else {
@@ -521,6 +534,32 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
         1 => Unlocked::Found(complete.remove(0)),
         _ => Unlocked::Ambiguous(complete),
     }
+}
+
+/// The complete installations, in every root, of `identity`'s backend, version and
+/// platform made for another request (other install options).
+fn variant_installations(identity: &InstallIdentity) -> Vec<Located> {
+    let own = request_of(identity);
+    let mut out = vec![];
+    for root in roots() {
+        let catalog = Catalog::new(&root);
+        for record in catalog.records_for_backend(&identity.backend) {
+            let dir = catalog.install_dir(&record);
+            if record.identity.version == identity.version
+                && record.identity.platform == identity.platform
+                && request_of(&record.identity) != own
+                && is_complete(&dir)
+            {
+                out.push(Located {
+                    dir,
+                    root: root.clone(),
+                    record: Some(record),
+                    installed: true,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// The catalog records that could satisfy a request pinning an artifact, best
@@ -1324,7 +1363,9 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     // a lockfile, another spelling or a shared root made) remembers it, so the
     // choice stays put when more installations of the request appear.
     let key = identity.request_key();
-    if pin_of(&identity).is_none() {
+    // A variant standing in for a bare request named on the command line is not
+    // its selection.
+    if pin_of(&identity).is_none() && same_request(&record.identity, &key) {
         let shared = (!is_primary_root(&located.root)).then_some(located.root.as_path());
         if catalog.select_if_unset(&key, &record, shared)? {
             reset_cache();

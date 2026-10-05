@@ -36,7 +36,8 @@ pub use install_options::InstallOptions;
 pub use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{
-    ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
+    ToolRequestSet, ToolRequestSetBuilder, apply_config_options_to_runtime_arg, tool_env_var_name,
+    tool_env_vars, tool_from_env_var_name,
 };
 pub use tool_source::ToolSource;
 pub use tool_version::resolve_sub_base;

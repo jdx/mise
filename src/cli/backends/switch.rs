@@ -455,9 +455,11 @@ impl BackendsSwitch {
     }
 
     /// Reinstall the switched versions that are installed, from the new
-    /// backend. Installs are keyed by tool and version, not backend, so an
-    /// install from the old backend would otherwise keep satisfying the new
-    /// lock entry.
+    /// backend. In the legacy layout installs are keyed by tool and version, not
+    /// backend, so an install from the old backend would otherwise keep
+    /// satisfying the new lock entry. In the identity layout the new backend's
+    /// installation is a different one, so a version is reinstalled when its
+    /// version path (the old backend's install, or its version link) is there.
     async fn reinstall(
         &self,
         switched: &BTreeSet<(String, String)>,
@@ -466,9 +468,12 @@ impl BackendsSwitch {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
         for (lockfile, tv) in self.scoped_versions(&config).await? {
+            let installed = tv.backend()?.is_version_installed(&config, &tv, false)
+                || (crate::install_layout::resolver::enabled()
+                    && tv.ba().installs_path().join(tv.tv_pathname()).exists());
             if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
                 || relocked_tools.contains(&(lockfile, tv.short().to_string())))
-                && tv.backend()?.is_version_installed(&config, &tv, false)
+                && installed
             {
                 requests.push(tv.request);
             }
