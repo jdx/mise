@@ -201,17 +201,38 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
     let root: &Path = &dirs::INSTALLS;
     for tool in file::dir_subdirs(root).unwrap_or_default() {
         let tool_dir = root.join(&tool);
-        for entry in file::ls(&tool_dir).unwrap_or_default() {
-            let Some(found) = entry
-                .file_name()
-                .and_then(|n| n.to_str())
-                .and_then(leftover)
-            else {
-                continue;
-            };
+        let entries = file::ls(&tool_dir).unwrap_or_default();
+        let names: Vec<String> = entries
+            .iter()
+            .filter_map(|e| e.file_name()?.to_str().map(str::to_string))
+            .collect();
+        // A directory still moved aside first: a finished mark beside it (a file,
+        // left where the directory could not be renamed) is what tells it apart,
+        // so the mark goes only after it.
+        let mut found: Vec<(PathBuf, Leftover<'_>)> = entries
+            .iter()
+            .zip(&names)
+            .filter_map(|(entry, name)| Some((entry.clone(), leftover(name)?)))
+            .collect();
+        found.sort_by_key(|(_, l)| matches!(l, Leftover::Migrated { .. }));
+        for (entry, found) in found {
             let (version, finished, made) = match found {
-                Leftover::Migrated { version } => (version, true, None),
-                Leftover::Migrating { version, made } => (version, false, made),
+                Leftover::Migrated { version } => {
+                    // A mark whose directory could not be removed stays with it.
+                    let pending = file::ls(&tool_dir).unwrap_or_default().iter().any(|e| {
+                        e.file_name().and_then(|n| n.to_str()).and_then(leftover).is_some_and(
+                            |l| matches!(l, Leftover::Migrating { version: v, .. } if v == version),
+                        )
+                    });
+                    if pending {
+                        continue;
+                    }
+                    (version, true, None)
+                }
+                Leftover::Migrating { version, made } => {
+                    let marked = aside_path(&tool_dir.join(version), MIGRATED).is_file();
+                    (version, marked, made)
+                }
             };
             let legacy = tool_dir.join(version);
             // Free, or holding only the version link the interrupted install made.
@@ -361,22 +382,31 @@ async fn migrate(tv: &ToolVersion, target: &Path) -> Result<()> {
     guard.armed = false;
     match installed {
         Ok(dir) => {
-            // Marked finished before it is removed, so an interruption from here
-            // on is completed by the next run rather than undone.
+            // Marked finished before it is removed, so an interruption, or a
+            // failure to remove it, is completed by the next run rather than
+            // undone. Renaming the directory is the mark; where it cannot be
+            // renamed, a file of that name beside it is.
             let migrated = aside_path(&legacy, MIGRATED);
             let old = match file::rename(&aside, &migrated) {
-                Ok(()) => migrated,
+                Ok(()) => migrated.clone(),
                 Err(err) => {
-                    debug!("could not mark {} migrated: {err:#}", display_path(&aside));
+                    debug!("could not rename {}: {err:#}", display_path(&aside));
+                    if let Err(err) = file::write(&migrated, "") {
+                        warn!("could not mark {} migrated: {err:#}", display_path(&aside));
+                    }
                     aside.clone()
                 }
             };
-            if let Err(err) = file::remove_all(&old) {
-                warn!(
+            match file::remove_all(&old) {
+                Ok(()) if old != migrated => {
+                    let _ = file::remove_file(&migrated);
+                }
+                Ok(()) => {}
+                Err(err) => warn!(
                     "migrated {}, but could not remove the old directory {}: {err:#}",
                     tv.style(),
                     display_path(&old)
-                );
+                ),
             }
             miseprintln!("migrated {} to {}", tv.style(), display_path(&dir));
             Ok(())
