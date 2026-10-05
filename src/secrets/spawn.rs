@@ -180,10 +180,6 @@ impl SpawnSecrets {
 mod tests {
     use super::*;
 
-    fn name(s: &str) -> SecretName {
-        SecretName::new(s).unwrap()
-    }
-
     fn spawn(remove: &[&str]) -> SpawnSecrets {
         SpawnSecrets::new(
             BTreeMap::from([
@@ -223,7 +219,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let t = tempfile::tempdir().unwrap();
         let dir = t.path().join("secrets");
-        let entries = BTreeMap::from([(name("GCP_SA_JSON"), SecretValue::new("{\"k\":1}"))]);
+        let entries = BTreeMap::from([(
+            SecretName::new("GCP_SA_JSON").unwrap(),
+            SecretValue::new("{\"k\":1}"),
+        )]);
         let (files, env) = TempSecretFiles::create(&dir, &entries).unwrap();
         let path = PathBuf::from(&env["GCP_SA_JSON"]);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"k\":1}");

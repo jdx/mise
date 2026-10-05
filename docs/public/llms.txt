@@ -104,6 +104,7 @@
 - [Environment Variables](https://mise.jdx.dev/environments/): Define project environment variables in [env]. mise supplies them to commands run with mise exec, tasks, and activated interactive shells.
 - [Shell Aliases](https://mise.jdx.dev/shell-aliases.html): Define project shortcuts for an interactive Bash, Zsh, or Fish shell with mise activate. mise sets the aliases as you enter a directory and removes them when they are no longer configured.
 - [Secrets](https://mise.jdx.dev/environments/secrets/): Choose how to supply secret values to the project. mise passes resolved values to commands as environment variables; the secret provider or encryption key controls who can resolve them.
+- [fnox (mise secrets)](https://mise.jdx.dev/environments/secrets/fnox.html): fnox can be the secrets source for a project. A task receives exactly the secrets it lists in secrets = [...], as environment variables, and only while it runs.
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
 - [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.

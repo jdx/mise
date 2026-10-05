@@ -538,7 +538,11 @@ fn task_env_literals(task: &Task) -> Vec<(String, String)> {
 pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = s;
-    while let Some(start) = rest.find("{{").or_else(|| rest.find("{%")) {
+    while let Some(start) = [rest.find("{{"), rest.find("{%")]
+        .into_iter()
+        .flatten()
+        .min()
+    {
         let tag = &rest[start..];
         let close = if tag.starts_with("{{") { "}}" } else { "%}" };
         let end = tag.find(close).map(|e| e + 2).unwrap_or(tag.len());
@@ -658,6 +662,12 @@ mod tests {
             "echo {{ env.A }} {{ env[\"B\"] }} {{ get_env(name='C') }} {{ get_env(name=\"D\", default=\"x\") }} $E {{ other.F }} {{ environ.G }}",
         );
         assert_eq!(r, BTreeSet::from(["A", "B", "C", "D"].map(String::from)));
+    }
+
+    #[test]
+    fn earliest_tag_is_scanned() {
+        let r = tera_env_refs("{% if env.KEY %}x{% endif %} {{ foo }}");
+        assert!(r.contains("KEY"), "{r:?}");
     }
 
     #[test]
