@@ -7,11 +7,11 @@ PLATFORM="$MISE_PLATFORM"
 
 touch mise.lock
 mise use tiny
+mise uninstall --all tiny
 cat <<EOF >mise.lock
 [[tools.tiny]]
 version = "1.0.0"
 EOF
-mise uninstall --all tiny
 mise install
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "latest"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
