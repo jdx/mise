@@ -390,7 +390,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
             // Nothing of the request's own: a bare version named on the command
             // line may still stand for a variant, after a legacy install (below).
             Unlocked::Nothing => {
-                try_variant = identity.options.is_empty()
+                try_variant = !sets_install_options(tv)
                     && matches!(tv.request.source(), crate::toolset::ToolSource::Argument);
             }
         }
@@ -538,6 +538,25 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
     }
 }
 
+/// Whether `tv`'s request sets options that change what is installed (named on
+/// the command line, or applied from a configuration). The options of a bare
+/// version's identity come from settings alone (a cargo registry, a pip index).
+fn sets_install_options(tv: &ToolVersion) -> bool {
+    tv.request.options().opts.keys().any(|key| {
+        !crate::toolset::EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            && !crate::backend::static_helpers::LISTING_ONLY_OPT_KEYS.contains(&key.as_str())
+    })
+}
+
+/// Whether a variant `a` was made with the settings a bare version's identity `b`
+/// records: every option of `b` (which a bare version gets only from settings) is
+/// one `a` has too.
+fn same_settings(a: &InstallIdentity, b: &InstallIdentity) -> bool {
+    b.options
+        .iter()
+        .all(|(key, value)| a.options.get(key) == Some(value))
+}
+
 /// Whether `a` was built from the dependency graph (aube, uv) `b` names, or
 /// neither has one. A graph is not an option a configuration sets: an
 /// installation built from another one is not a variant of the request.
@@ -560,6 +579,7 @@ fn variant_installations(ba: &crate::args::BackendArg, identity: &InstallIdentit
             if record.identity.version == identity.version
                 && record.identity.platform == identity.platform
                 && same_graph(&record.identity, Some(identity))
+                && same_settings(&record.identity, identity)
                 && request_of(&record.identity) != own
                 && is_complete(&dir)
                 && belongs_to(ba, &record, &dir)
@@ -967,10 +987,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let own_request = own_identity.as_ref().map(request_of);
     // A request with options of its own (named, or set by a configuration) means
     // exactly those; only a bare version can stand for a variant.
-    if own_request
-        .as_ref()
-        .is_some_and(|own| !own.options.is_empty())
-    {
+    if sets_install_options(tv) {
         return vec![];
     }
     // The request has installations of its own, or a selection: which one it uses
@@ -991,6 +1008,9 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
             if record.identity.version == version
                 && record.identity.platform == platform
                 && same_graph(&record.identity, own_identity.as_ref())
+                && own_identity
+                    .as_ref()
+                    .is_none_or(|own| same_settings(&record.identity, own))
                 && own_request
                     .as_ref()
                     .is_none_or(|own| request_of(&record.identity) != *own)
