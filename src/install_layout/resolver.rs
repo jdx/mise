@@ -1107,8 +1107,20 @@ fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
     if same_path(root, store) {
         return Path::new("..").join(name);
     }
-    match (root.parent(), store.parent(), store.file_name()) {
-        (Some(a), Some(b), Some(store_name)) if same_path(a, b) => {
+    // `..` from the tool directory is taken physically: through a symlinked
+    // installs directory it leaves the symlink's target, not the data directory
+    // that holds the store. The sibling form is only used when the two agree.
+    let physical_parent = |p: &Path| {
+        p.canonicalize()
+            .ok()
+            .and_then(|p| p.parent().map(Path::to_path_buf))
+    };
+    match (
+        physical_parent(root),
+        physical_parent(store),
+        store.file_name(),
+    ) {
+        (Some(a), Some(b), Some(store_name)) if a == b => {
             Path::new("..").join("..").join(store_name).join(name)
         }
         _ => absolute(),
@@ -1559,26 +1571,48 @@ mod tests {
 
     #[test]
     fn a_version_link_reaches_the_store_relatively_when_it_can() {
-        let tool_dir = Path::new("/d/installs/age");
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let tool_dir = base.join("data/installs/age");
+        for dir in ["data/installs/age", "data/i", "elsewhere/store"] {
+            std::fs::create_dir_all(base.join(dir)).unwrap();
+        }
         assert_eq!(
-            link_value(tool_dir, Path::new("/d/installs/age-p4n6w2ra")),
-            Path::new("../age-p4n6w2ra")
+            link_value(&tool_dir, &base.join("data/installs/age-p4n6w2ra")),
+            Path::new("..").join("age-p4n6w2ra")
         );
         // Windows' default: the store is `i` beside `installs`.
         assert_eq!(
-            link_value(tool_dir, Path::new("/d/i/age-p4n6w2ra")),
-            Path::new("../../i/age-p4n6w2ra")
+            link_value(&tool_dir, &base.join("data/i/age-p4n6w2ra")),
+            Path::new("..").join("..").join("i").join("age-p4n6w2ra")
         );
         // A store somewhere else entirely is named absolutely, even when it was
         // configured as a relative path.
         assert_eq!(
-            link_value(tool_dir, Path::new("/e/store/age-p4n6w2ra")),
-            Path::new("/e/store/age-p4n6w2ra")
+            link_value(&tool_dir, &base.join("elsewhere/store/age-p4n6w2ra")),
+            base.join("elsewhere/store/age-p4n6w2ra")
         );
         assert_eq!(
-            link_value(tool_dir, Path::new("store/age-p4n6w2ra")),
+            link_value(&tool_dir, Path::new("store/age-p4n6w2ra")),
             std::env::current_dir().unwrap().join("store/age-p4n6w2ra")
         );
+        // Through a symlinked installs directory, `../..` would leave the
+        // symlink's target, so the link is absolute.
+        #[cfg(unix)]
+        {
+            std::fs::create_dir_all(base.join("real/installs/age")).unwrap();
+            std::fs::create_dir_all(base.join("linked")).unwrap();
+            std::os::unix::fs::symlink(base.join("real/installs"), base.join("linked/installs"))
+                .unwrap();
+            std::fs::create_dir_all(base.join("linked/i")).unwrap();
+            assert_eq!(
+                link_value(
+                    &base.join("linked/installs/age"),
+                    &base.join("linked/i/age-p4n6w2ra")
+                ),
+                base.join("linked/i/age-p4n6w2ra")
+            );
+        }
     }
 
     #[test]

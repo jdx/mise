@@ -480,6 +480,7 @@ pub(crate) fn compute_settings_hash() -> String {
     // tool's env (JAVA_HOME, PATH entries) names.
     hasher.update(settings.install_layout.as_deref().unwrap_or("").as_bytes());
     hasher.update(dirs::INSTALLS.to_string_lossy().as_bytes());
+    hasher.update(dirs::INSTALL_STORE.to_string_lossy().as_bytes());
 
     // Add any other relevant settings
     if let Some(env_file) = &settings.env_file {

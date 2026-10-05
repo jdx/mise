@@ -1716,9 +1716,9 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
     out
 }
 
-/// A path inside an identity-layout installation of `tool` under the installs root
-/// `installs` (`installs/<name>-<hash>/…`), spelled through the tool's version link
-/// (`installs/<tool>/<version>/…`).
+/// A path inside an identity-layout installation of `tool` of the installs root
+/// `installs` (`installs/<name>-<hash>/…`, or the same under its install store),
+/// spelled through the tool's version link (`installs/<tool>/<version>/…`).
 ///
 /// What other tools record about an interpreter (a venv's `python`, a gem's shebang) has to
 /// name it the way the runtime aliases do, so that a patch upgrade can retarget it. The
@@ -1728,8 +1728,14 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
 /// name that installation, and the caller keeps `path`. A legacy path is never rewritten.
 #[cfg(unix)]
 pub(crate) fn tool_link_path(installs: &Path, path: &Path, tool: &str) -> Option<PathBuf> {
-    let mut components = path.strip_prefix(installs).ok()?.components();
-    let install = installs.join(components.next()?.as_os_str());
+    // The installation is in the install store, which may be a directory of its own.
+    let store = crate::install_layout::resolver::store_of(installs);
+    let (base, rest) = match path.strip_prefix(&store) {
+        Ok(rest) => (store.as_path(), rest),
+        Err(_) => (installs, path.strip_prefix(installs).ok()?),
+    };
+    let mut components = rest.components();
+    let install = base.join(components.next()?.as_os_str());
     let receipt = crate::install_layout::catalog::read_receipt(&install)?;
     let identity = &receipt.record.identity;
     if crate::backend::unalias_backend(&identity.backend) != tool {
