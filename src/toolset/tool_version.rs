@@ -600,6 +600,11 @@ impl ToolVersion {
     /// logical version; the identity layout by the installation directory, so
     /// two variants of one version never share it.
     pub(crate) fn state_key(&self) -> String {
+        // Resolving the install path is not free, and with the layout off it is
+        // never an installation directory.
+        if !crate::install_layout::resolver::governs(self) {
+            return self.tv_pathname();
+        }
         crate::install_layout::resolver::dir_name_of(&self.install_path())
             .unwrap_or_else(|| self.tv_pathname())
     }

@@ -226,7 +226,7 @@ async fn delete(
 
 /// The session key for a version being removed: the same `short@version`
 /// shape the install scheduler uses.
-fn removal_key(tv: &ToolVersion) -> String {
+pub(crate) fn removal_key(tv: &ToolVersion) -> String {
     match crate::install_layout::resolver::dir_name_of(&tv.install_path()) {
         // Variants of one version are separate rows.
         Some(dir) => format!("{}@{}#{dir}", tv.ba().short, tv.version),

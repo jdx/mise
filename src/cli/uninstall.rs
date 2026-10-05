@@ -146,11 +146,11 @@ impl Uninstall {
                 &mpr,
                 to_remove
                     .iter()
-                    .map(|(_, tv)| (format!("{}@{}", tv.ba().short, tv.version), tv.style())),
+                    .map(|(_, tv)| (crate::cli::prune::removal_key(tv), tv.style())),
             )
         };
         for (plugin, tv) in to_remove {
-            let key = format!("{}@{}", tv.ba().short, tv.version);
+            let key = crate::cli::prune::removal_key(&tv);
             let tool = progress
                 .as_ref()
                 .and_then(|progress| progress.start_tool(&key));

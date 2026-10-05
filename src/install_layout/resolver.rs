@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
 use dashmap::DashMap;
 use eyre::Result;
@@ -163,9 +163,10 @@ pub(crate) fn canonical_backend(full: &str) -> String {
 /// is used.
 pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     let backend = tv.backend().ok()?;
-    // Credentials in an option (a registry URL) do not change what is installed, so
-    // they neither take part in the identity nor reach the catalog or a receipt,
-    // which are plain files.
+    // Credentials in an option (a registry URL, a signed download URL) do not change
+    // what is installed, so they neither take part in the identity nor reach the
+    // catalog or a receipt, which are plain files. A URL's query string is dropped
+    // with them: that is where signed URLs and API keys carry theirs.
     let mut options: BTreeMap<String, String> = backend
         .install_identity_options(tv)
         .into_iter()
@@ -207,9 +208,12 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     })
 }
 
-/// `value` with any userinfo (`user:token@`) removed from URLs in it. Applied to
-/// whole values and to values that merely contain a URL.
+/// `value` with the parts of URLs in it that carry credentials removed: userinfo
+/// (`user:token@`) and the query string, where signed URLs and API keys
+/// (`?token=`) put them. Applied to whole values and to values that merely
+/// contain a URL.
 fn redact_credentials(value: &str) -> String {
+    let ends_at = |s: &str, stop: &dyn Fn(char) -> bool| s.find(stop).unwrap_or(s.len());
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
     while let Some(i) = rest.find("://") {
@@ -217,15 +221,21 @@ fn redact_credentials(value: &str) -> String {
         out.push_str(head);
         // The authority ends at the first `/`, `?`, `#` or whitespace; userinfo is
         // whatever precedes the last `@` inside it.
-        let end = tail
-            .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
-            .unwrap_or(tail.len());
+        let end = ends_at(tail, &|c| matches!(c, '/' | '?' | '#') || c.is_whitespace());
         let authority = &tail[..end];
         let host = authority
             .rsplit_once('@')
             .map_or(authority, |(_, host)| host);
         out.push_str(host);
-        rest = &tail[end..];
+        // The path runs to the query; the query to the fragment or whitespace.
+        let tail = &tail[end..];
+        let path = ends_at(tail, &|c| matches!(c, '?' | '#') || c.is_whitespace());
+        out.push_str(&tail[..path]);
+        let mut tail = &tail[path..];
+        if tail.starts_with('?') {
+            tail = &tail[ends_at(tail, &|c| c == '#' || c.is_whitespace())..];
+        }
+        rest = tail;
     }
     out.push_str(rest);
     out
@@ -249,16 +259,29 @@ pub(crate) struct Located {
     pub(crate) installed: bool,
 }
 
-static LOCATE_CACHE: LazyLock<DashMap<(PathBuf, String), Located>> = LazyLock::new(DashMap::new);
+static LOCATE_CACHE: OnceLock<DashMap<(PathBuf, String), Located>> = OnceLock::new();
 /// The installations of a set of backends (see [`installs_of`]), kept for the
 /// life of the process like the rest of install state and cleared with it.
-static INSTALLS_OF_CACHE: LazyLock<DashMap<String, Vec<(String, PathBuf)>>> =
-    LazyLock::new(DashMap::new);
+static INSTALLS_OF_CACHE: OnceLock<DashMap<String, Vec<(String, PathBuf)>>> = OnceLock::new();
+
+fn locate_cache() -> &'static DashMap<(PathBuf, String), Located> {
+    LOCATE_CACHE.get_or_init(DashMap::new)
+}
+
+fn installs_of_cache() -> &'static DashMap<String, Vec<(String, PathBuf)>> {
+    INSTALLS_OF_CACHE.get_or_init(DashMap::new)
+}
 
 /// Forget cached lookups. Called when install state is reset.
 pub(crate) fn reset_cache() {
-    LOCATE_CACHE.clear();
-    INSTALLS_OF_CACHE.clear();
+    // Install state is reset on every run, usually before anything here was
+    // looked up: building a cache only to empty it is not free.
+    if let Some(cache) = LOCATE_CACHE.get() {
+        cache.clear();
+    }
+    if let Some(cache) = INSTALLS_OF_CACHE.get() {
+        cache.clear();
+    }
 }
 
 /// A complete installation: the directory exists and its receipt is intact.
@@ -282,7 +305,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     let digest = identity.digest().to_base32();
     for root in roots() {
         let cache_key = (root.clone(), digest.clone());
-        if let Some(hit) = LOCATE_CACHE.get(&cache_key) {
+        if let Some(hit) = locate_cache().get(&cache_key) {
             return Some(hit.clone());
         }
         let catalog = Catalog::new(&root);
@@ -296,7 +319,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
                 installed,
             };
             if installed {
-                LOCATE_CACHE.insert(cache_key, located.clone());
+                locate_cache().insert(cache_key, located.clone());
                 return Some(located);
             }
         }
@@ -447,7 +470,7 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
     }
     let backends = backends_of(ba);
     let key = format!("{}|{:?}|{}", ba.short, ba.opts, backends.join("\n"));
-    if let Some(hit) = INSTALLS_OF_CACHE.get(&key) {
+    if let Some(hit) = installs_of_cache().get(&key) {
         return hit.clone();
     }
     let mut out: Vec<(String, PathBuf)> = vec![];
@@ -467,7 +490,7 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
             }
         }
     }
-    INSTALLS_OF_CACHE.insert(key, out.clone());
+    installs_of_cache().insert(key, out.clone());
     out
 }
 
@@ -488,10 +511,6 @@ fn belongs_to(ba: &crate::args::BackendArg, record: &IdentityRecord, dir: &Path)
     {
         return true;
     }
-    // Dependency-graph installs are told apart by their graph, not by options.
-    if record.identity.inputs.contains_key("aube") || record.identity.inputs.contains_key("uv") {
-        return true;
-    }
     let Ok(request) = ToolRequest::new(
         std::sync::Arc::new(ba.clone()),
         &record.identity.version,
@@ -500,7 +519,13 @@ fn belongs_to(ba: &crate::args::BackendArg, record: &IdentityRecord, dir: &Path)
         return true;
     };
     let tv = ToolVersion::new(request, record.identity.version.clone());
-    identity_of(&tv).is_none_or(|identity| same_request(&record.identity, &identity))
+    // `ba`'s plain request carries no dependency graph (that comes from a
+    // lockfile), so a graph install is `ba`'s when it was otherwise the same
+    // request. Two aliases of one backend still differ in their options.
+    let mut recorded = record.identity.clone();
+    recorded.inputs.remove("aube");
+    recorded.inputs.remove("uv");
+    identity_of(&tv).is_none_or(|identity| same_request(&recorded, &identity))
 }
 
 /// The installation a listed version name stands for: the one its link names,
@@ -544,11 +569,15 @@ pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
 /// Anything else (a legacy `<tool>/<version>` dir, an explicit path) is not this
 /// function's business.
 pub(crate) fn guard_removal(path: &Path) -> Result<()> {
-    let Some(name) = dir_name_of(path) else {
+    // Any direct child of a root, whatever it is named: a tool directory is not
+    // an installation either.
+    let (Some(name), Some(root)) = (path.file_name(), path.parent()) else {
         return Ok(());
     };
-    let root = path.parent().unwrap_or(path);
-    if read_receipt(path).is_some() || root.join(".mise").join("names").join(&name).exists() {
+    if !roots().iter().any(|r| same_path(r, root)) {
+        return Ok(());
+    }
+    if read_receipt(path).is_some() || root.join(".mise").join("names").join(name).exists() {
         return Ok(());
     }
     eyre::bail!(
@@ -857,8 +886,7 @@ pub(crate) fn finish(
     if let Some(key) = &allocated.selects {
         catalog.select(key, &record, None)?;
     }
-    LOCATE_CACHE.clear();
-    INSTALLS_OF_CACHE.clear();
+    reset_cache();
     Ok(())
 }
 
@@ -901,8 +929,7 @@ pub(crate) fn unpublish(dir: &Path) {
         debug!("could not remove the receipt of {}: {err:#}", dir.display());
     }
     unlink_installation(dir);
-    LOCATE_CACHE.clear();
-    INSTALLS_OF_CACHE.clear();
+    reset_cache();
 }
 
 /// [`note_reuse`] for a request found already satisfied, where nothing else will
@@ -942,8 +969,7 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
         let mut provenance = record.provenance.clone();
         provenance.pinned_by.push(pin.to_string());
         catalog.update_provenance(&record.identity, provenance)?;
-        LOCATE_CACHE.clear();
-        INSTALLS_OF_CACHE.clear();
+        reset_cache();
     }
     link(tv, &located.dir)
 }
@@ -1051,9 +1077,12 @@ pub fn is_receipt_name(name: &std::ffi::OsStr) -> bool {
 /// catalog (`.mise`, or any hidden entry) or an identity-layout installation,
 /// told apart by its reservation or its receipt rather than by how it is named.
 pub(crate) fn is_reserved_dir(root: &Path, name: &str) -> bool {
+    // Every name the catalog assigns ends in a hash, so a tool directory is told
+    // apart without touching the disk.
     name.starts_with('.')
-        || root.join(".mise").join("names").join(name).exists()
-        || root.join(name).join(RECEIPT_FILE).exists()
+        || (has_hash_suffix(name)
+            && (root.join(".mise").join("names").join(name).exists()
+                || root.join(name).join(RECEIPT_FILE).exists()))
 }
 
 /// Whether `path` is a directory link: a symlink, or a junction on Windows.
@@ -1093,7 +1122,7 @@ pub(crate) fn is_compat_link_shape(path: &Path) -> bool {
 
 /// Whether `name` ends in `-<base32 digest prefix>` the way an allocated
 /// installation directory does (at least 8 lowercase base32 characters).
-fn has_hash_suffix(name: &str) -> bool {
+pub(crate) fn has_hash_suffix(name: &str) -> bool {
     name.rsplit_once('-').is_some_and(|(label, suffix)| {
         !label.is_empty()
             && suffix.len() >= 8
@@ -1107,12 +1136,17 @@ fn has_hash_suffix(name: &str) -> bool {
 /// Whether `path` is an installation directory of the identity layout (a
 /// direct child of an installs root) rather than a legacy `<tool>/<version>`.
 pub fn dir_name_of(path: &Path) -> Option<String> {
+    // The name is checked first: it costs nothing, and listing the installs roots
+    // reads settings and the disk on every call, which hot paths make often.
+    let name = path.file_name()?.to_str()?;
+    if !has_hash_suffix(name) {
+        return None;
+    }
     let parent = path.parent()?;
     roots()
         .iter()
         .any(|r| same_path(r, parent))
-        .then(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
-        .flatten()
+        .then(|| name.to_string())
 }
 
 #[cfg(test)]
@@ -1157,8 +1191,18 @@ mod tests {
         );
         assert_eq!(
             redact_credentials("https://tok@host.example/a?b=c@d"),
-            "https://host.example/a?b=c@d"
+            "https://host.example/a"
         );
+        // Signed URLs and API keys travel in the query string.
+        assert_eq!(
+            redact_credentials("https://bucket.example/t.tgz?X-Amz-Signature=s#frag"),
+            "https://bucket.example/t.tgz#frag"
+        );
+        assert_eq!(
+            redact_credentials("https://api.example?token=t other"),
+            "https://api.example other"
+        );
+        assert_eq!(redact_credentials("plain value?x=1"), "plain value?x=1");
         assert_eq!(redact_credentials("plain value"), "plain value");
         assert_eq!(redact_credentials("https://host/a@b"), "https://host/a@b");
         assert_eq!(

@@ -489,7 +489,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         // (it was lost, or a mise that predates it made them) are adopted, so the
         // catalog can always be rebuilt from receipts alone.
         if subdirs.iter().any(|name| {
-            !name.starts_with('.')
+            crate::install_layout::resolver::has_hash_suffix(name)
                 && dirs::INSTALLS
                     .join(name)
                     .join(crate::install_layout::record::RECEIPT_FILE)

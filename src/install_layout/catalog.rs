@@ -202,7 +202,11 @@ impl Catalog {
             .wrap_err_with(|| format!("failed to reserve install directory {dir}"))
     }
 
-    /// Replace the provenance on an identity's record.
+    /// Merge `provenance` into an identity's record, under the catalog lock and
+    /// against the record as it is on disk, so concurrent updates from
+    /// several processes add up instead of overwriting each other: artifact
+    /// digests are set (a newer digest for the same algorithm wins), lockfile
+    /// pins are added, and the refresh generation only grows.
     pub(crate) fn update_provenance(
         &self,
         identity: &InstallIdentity,
@@ -212,7 +216,14 @@ impl Catalog {
         let Some(mut record) = self.lookup(identity) else {
             return Ok(());
         };
-        record.provenance = provenance;
+        let merged = &mut record.provenance;
+        merged.artifacts.extend(provenance.artifacts);
+        for pin in provenance.pinned_by {
+            if !merged.pinned_by.contains(&pin) {
+                merged.pinned_by.push(pin);
+            }
+        }
+        merged.generation = merged.generation.max(provenance.generation);
         write_record(&self.record_path(identity, &record.digest), &record)
     }
 
@@ -465,6 +476,40 @@ mod tests {
         assert_eq!(catalog.lookup(&id).unwrap().dir, record.dir);
         // Allocation finds the surviving installation instead of extending.
         assert_eq!(catalog.allocate(&id).unwrap().dir, record.dir);
+    }
+
+    #[test]
+    fn provenance_updates_merge_instead_of_overwriting() {
+        let (_tmp, catalog) = catalog();
+        let id = identity("aqua:jqlang/jq", "1.7.1");
+        catalog.allocate(&id).unwrap();
+        // Two processes each read the record before either wrote, and each adds a pin.
+        let first = Provenance {
+            pinned_by: vec!["sha256:a".into()],
+            ..Default::default()
+        };
+        let second = Provenance {
+            artifacts: [("checksum".to_string(), "sha256:a".to_string())].into(),
+            pinned_by: vec!["sha256:b".into()],
+            generation: 0,
+        };
+        catalog.update_provenance(&id, first).unwrap();
+        catalog.update_provenance(&id, second).unwrap();
+        let mut stale = Provenance {
+            generation: 2,
+            ..Default::default()
+        };
+        catalog.update_provenance(&id, stale.clone()).unwrap();
+        stale.generation = 1;
+        catalog.update_provenance(&id, stale).unwrap();
+
+        let provenance = catalog.lookup(&id).unwrap().provenance;
+        assert_eq!(provenance.pinned_by, ["sha256:a", "sha256:b"]);
+        assert_eq!(
+            provenance.artifacts.get("checksum").map(String::as_str),
+            Some("sha256:a")
+        );
+        assert_eq!(provenance.generation, 2);
     }
 
     #[test]
