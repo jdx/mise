@@ -113,6 +113,10 @@ assert_contains "mise installs migrate 2>&1" "restored"
 assert "test -f '$installs/$made/.mise-install.toml'"
 rm -rf "$installs/dummy/2.0.0"
 assert "mise install dummy@2.0.0"
+# a journal that cannot be read does not block the next run
+echo "not a journal [" >"$installs/.mise/migrations/dummy@2.0.0.toml"
+assert_contains "mise installs migrate 2>&1" "cannot be read"
+assert_empty "ls '$installs/.mise/migrations'"
 
 echo "=== a legacy version with an installation already in the new layout keeps its path ==="
 assert "MISE_INSTALL_LAYOUT=legacy MISE_EXPERIMENTAL=0 mise install tiny@3.0.0"

@@ -204,7 +204,7 @@ impl Journal {
 
     fn write(&self) -> Result<()> {
         file::create_dir_all(Self::dir())?;
-        file::write(Self::path_for(&self.legacy), toml::to_string(self)?)
+        file::write_atomic(Self::path_for(&self.legacy), toml::to_string(self)?)
     }
 
     fn remove(&self) {
@@ -213,17 +213,23 @@ impl Journal {
         }
     }
 
-    fn all() -> Vec<Self> {
-        file::ls(&Self::dir())
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|path| {
-                let body = std::fs::read_to_string(&path).ok()?;
-                toml::from_str(&body)
-                    .inspect_err(|err| debug!("ignoring {}: {err}", display_path(&path)))
-                    .ok()
-            })
-            .collect()
+    /// Every journal, and the files in their place that cannot be read as one.
+    fn all() -> (Vec<Self>, Vec<PathBuf>) {
+        let mut journals = vec![];
+        let mut unreadable = vec![];
+        for path in file::ls(&Self::dir()).unwrap_or_default() {
+            match std::fs::read_to_string(&path)
+                .map_err(eyre::Report::from)
+                .and_then(|body| Ok(toml::from_str::<Self>(&body)?))
+            {
+                Ok(journal) => journals.push(journal),
+                Err(err) => {
+                    debug!("cannot read {}: {err:#}", display_path(&path));
+                    unreadable.push(path);
+                }
+            }
+        }
+        (journals, unreadable)
     }
 
     /// Withdraw the installations of the version the migration made, each under
@@ -272,7 +278,21 @@ impl Journal {
 /// a replacement's receipt and version link are no proof it finished, since an
 /// install writes them before its postinstall runs.
 fn recover_interrupted(dry_run: bool) -> Result<()> {
-    for journal in Journal::all() {
+    let (journals, unreadable) = Journal::all();
+    // A journal that cannot be read says nothing about what its run made: only
+    // the old directory it moved aside can still be put back (below).
+    for path in unreadable {
+        if dry_run {
+            miseprintln!("would remove {}, which cannot be read", display_path(&path));
+        } else {
+            warn!(
+                "removing {}, a migration journal that cannot be read",
+                display_path(&path)
+            );
+            file::remove_file(&path)?;
+        }
+    }
+    for journal in journals {
         let legacy = &journal.legacy;
         let aside = aside_path(legacy);
         // Free, or holding only the version link the interrupted install made.
@@ -329,6 +349,47 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             "restored {} from an interrupted migration",
             display_path(legacy)
         );
+    }
+    // Old directories moved aside by a run whose journal is gone.
+    let root: &Path = &dirs::INSTALLS;
+    for tool in file::dir_subdirs(root).unwrap_or_default() {
+        let tool_dir = root.join(&tool);
+        for entry in file::ls(&tool_dir).unwrap_or_default() {
+            let Some(version) = entry
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix('.'))
+                .and_then(|n| n.strip_suffix(".mise-migrating"))
+            else {
+                continue;
+            };
+            let legacy = tool_dir.join(version);
+            if Journal::path_for(&legacy).exists() {
+                continue;
+            }
+            let free = std::fs::symlink_metadata(&legacy).is_err()
+                || file::is_symlink_or_junction(&legacy);
+            if dry_run {
+                if free {
+                    miseprintln!(
+                        "would restore {} from an interrupted migration, then migrate it",
+                        display_path(&legacy)
+                    );
+                }
+            } else if free {
+                restore(&legacy, &entry)?;
+                info!(
+                    "restored {} from an interrupted migration",
+                    display_path(&legacy)
+                );
+            } else {
+                warn!(
+                    "{} was left by an interrupted migration; {} is in use, so it is kept",
+                    display_path(&entry),
+                    display_path(&legacy)
+                );
+            }
+        }
     }
     Ok(())
 }
