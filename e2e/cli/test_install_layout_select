@@ -106,5 +106,10 @@ assert "mise where tiny@3.1.0" "$shared_dir"
 echo "=== a selected shared installation that is gone is not replaced silently ==="
 rm -rf "$shared_dir"
 assert_fail "mise install tiny@3.1.0" "no longer has it"
+# even with the whole root gone, the copy of the same identity in the user's own
+# root is not quietly used in its place
+rm -rf "$shared"
+assert_fail "mise install tiny@3.1.0" "no longer has it"
+assert_fail "mise x tiny@3.1.0 -- rtx-tiny" "no longer has it"
 assert "mise installs select $own_dir"
 assert "mise where tiny@3.1.0" "$own_dir"

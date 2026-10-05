@@ -359,24 +359,30 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
         }
         let catalog = Catalog::new(&root);
         // A selection the user made of an installation in a read-only shared root
-        // is kept in their own catalog and names that root.
+        // is kept in their own catalog and names that root. It is answered from
+        // that root alone: if the root or its record cannot be read, the
+        // installation is reported missing, and nothing else (not even a copy of
+        // the same identity here) is chosen in its place without the user saying so.
         if unlocked
-            && let Some((other_root, other, record)) =
-                selected_in_other_root(&catalog, &identity.request_key())
+            && let Some(selection) = catalog.selection(&identity.request_key())
+            && let Some(other_root) = selection.root.map(PathBuf::from)
         {
-            let dir = other.install_dir(&record);
-            let installed = is_complete(&dir);
+            let other = Catalog::new(&other_root);
+            let record = other.record_by_digest(&identity.backend, &selection.selected);
+            let dir = match &record {
+                Some(record) => other.install_dir(record),
+                None => other.store().join(&selection.selected),
+            };
+            let installed = record.is_some() && is_complete(&dir);
             let located = Located {
                 dir,
                 root: other_root,
-                record: Some(record),
+                record,
                 installed,
             };
             if installed {
                 locate_cache().insert(cache_key, located.clone());
             }
-            // Gone with its root, it is reported missing: nothing else is
-            // chosen in its place without the user saying so.
             return Some(located);
         }
         let Ok(records) = candidates(&catalog, &identity) else {
@@ -488,19 +494,6 @@ fn candidates(
         },
     }
     Ok(found)
-}
-
-/// The installation a selection in `catalog` names in another installs root,
-/// with that root and its catalog.
-fn selected_in_other_root(
-    catalog: &Catalog,
-    key: &InstallIdentity,
-) -> Option<(PathBuf, Catalog, IdentityRecord)> {
-    let selection = catalog.selection(key)?;
-    let root = PathBuf::from(selection.root?);
-    let other = Catalog::new(&root);
-    let record = other.record_by_digest(&key.backend, &selection.selected)?;
-    Some((root, other, record))
 }
 
 /// The unlocked request an installation answers: its identity without a pin

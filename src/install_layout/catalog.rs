@@ -112,9 +112,14 @@ impl Catalog {
         (record.digest == digest && record.identity.backend == backend).then_some(record)
     }
 
-    /// The installation an unlocked request's selection points at.
+    /// The installation an unlocked request's selection points at, when it is
+    /// one of this catalog's. A selection naming another root's installation is
+    /// not answered from here, even if this catalog has the same identity.
     pub(crate) fn selected_record(&self, key: &InstallIdentity) -> Option<IdentityRecord> {
         let selection = self.selection(key)?;
+        if selection.root.is_some() {
+            return None;
+        }
         self.record_by_digest(&key.backend, &selection.selected)
     }
 
