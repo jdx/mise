@@ -1264,10 +1264,11 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     // a lockfile, another spelling or a shared root made) remembers it, so the
     // choice stays put when more installations of the request appear.
     let key = identity.request_key();
-    if pin_of(&identity).is_none() && catalog.selection(&key).is_none() {
+    if pin_of(&identity).is_none() {
         let shared = (!is_primary_root(&located.root)).then_some(located.root.as_path());
-        catalog.select(&key, &record, shared)?;
-        reset_cache();
+        if catalog.select_if_unset(&key, &record, shared)? {
+            reset_cache();
+        }
     }
     // A pin is recorded in the catalog that lists the installation, and a shared
     // root's is never written to. The version link is the user's own.

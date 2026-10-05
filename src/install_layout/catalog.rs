@@ -301,11 +301,13 @@ impl Catalog {
     /// Forget the selections that name the installation with `digest` in this
     /// catalog's own root. Returns how many were removed.
     pub(crate) fn remove_selections_of(&self, digest: &str) -> Result<usize> {
+        // Under the lock selections are written with, so a choice made meanwhile
+        // is never the one removed.
+        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
         let dir = self.meta_dir().join("selections");
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return Ok(0);
         };
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
         let mut removed = 0;
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -335,6 +337,32 @@ impl Catalog {
     /// Only an unlocked install or an explicit refresh calls this. A locked
     /// install reuses an installation without touching the selection.
     pub(crate) fn select(
+        &self,
+        key: &InstallIdentity,
+        selected: &IdentityRecord,
+        root: Option<&Path>,
+    ) -> Result<()> {
+        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        self.write_selection(key, selected, root)
+    }
+
+    /// [`Catalog::select`], unless `key` already has a selection. Returns whether
+    /// it wrote one.
+    pub(crate) fn select_if_unset(
+        &self,
+        key: &InstallIdentity,
+        selected: &IdentityRecord,
+        root: Option<&Path>,
+    ) -> Result<bool> {
+        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        if self.selection(key).is_some() {
+            return Ok(false);
+        }
+        self.write_selection(key, selected, root)?;
+        Ok(true)
+    }
+
+    fn write_selection(
         &self,
         key: &InstallIdentity,
         selected: &IdentityRecord,
