@@ -1050,20 +1050,38 @@ pub(crate) fn legacy_in_place(tv: &ToolVersion) -> Option<PathBuf> {
 
 /// What a command watching the installs it runs is told about each one: the
 /// directory an install is about to write into, its canonical backend and its
-/// version.
-pub type AllocationObserver = Box<dyn Fn(&Path, &str, &str) + Send>;
+/// version. An error stops that install before it writes anything.
+pub type WriteObserver = Box<dyn Fn(&Path, &str, &str) -> Result<()> + Send>;
 
-static ALLOCATION_OBSERVER: std::sync::Mutex<Option<AllocationObserver>> =
-    std::sync::Mutex::new(None);
+static WRITE_OBSERVER: std::sync::Mutex<Option<WriteObserver>> = std::sync::Mutex::new(None);
 
 /// Have `observer` told about every installation directory an install in this
-/// process is about to write into, before anything is written there; `None`
-/// stops it. `mise installs migrate` records them, so that undoing an
-/// interrupted migration withdraws exactly what it made.
-pub fn observe_allocations(observer: Option<AllocationObserver>) {
-    *ALLOCATION_OBSERVER
+/// process is about to write into, once it holds that directory's lock and has
+/// found it has to write; `None` stops it. `mise installs migrate` records
+/// them, so that undoing an interrupted migration withdraws exactly what it
+/// made.
+pub fn observe_writes(observer: Option<WriteObserver>) {
+    *WRITE_OBSERVER.lock().unwrap_or_else(|e| e.into_inner()) = observer;
+}
+
+/// Tell the observer (see [`observe_writes`]) that an install is about to write
+/// into `allocated`.
+pub(crate) fn note_writing(allocated: &Allocated) -> Result<()> {
+    if allocated.read_only {
+        return Ok(());
+    }
+    match WRITE_OBSERVER
         .lock()
-        .unwrap_or_else(|e| e.into_inner()) = observer;
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        Some(observer) => observer(
+            &allocated.dir,
+            &allocated.record.identity.backend,
+            &allocated.record.identity.version,
+        ),
+        None => Ok(()),
+    }
 }
 
 /// Choose (and reserve) the directory an install of `tv` goes into.
@@ -1073,26 +1091,6 @@ pub fn observe_allocations(observer: Option<AllocationObserver>) {
 /// selection to a new generation instead, so the pinned installation stays as
 /// the lockfile expects.
 pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocated>> {
-    let allocated = allocate_unobserved(tv, refresh)?;
-    // A complete installation that is reused is not written to.
-    if let Some(a) = &allocated
-        && !a.read_only
-        && (refresh || !is_complete(&a.dir))
-        && let Some(observer) = ALLOCATION_OBSERVER
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-    {
-        observer(
-            &a.dir,
-            &a.record.identity.backend,
-            &a.record.identity.version,
-        );
-    }
-    Ok(allocated)
-}
-
-fn allocate_unobserved(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocated>> {
     if !applies_to(tv) {
         return Ok(None);
     }

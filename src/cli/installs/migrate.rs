@@ -120,20 +120,20 @@ impl InstallsMigrate {
     }
 
     /// Whether `tv` is one of the tools asked for: `None` when none were named.
-    /// A version names the installed versions it matches, as `mise uninstall
-    /// node@20` does.
+    /// A version names the installed versions that start with it, as for
+    /// `mise uninstall node@20`; `latest` names the newest installed one.
     fn named(&self, tv: &ToolVersion) -> Option<bool> {
         if self.tool.is_empty() {
             return None;
         }
         Some(self.tool.iter().any(|ta| {
             ta.ba.short == tv.ba().short
-                && ta.version.as_deref().is_none_or(|v| {
-                    v == tv.version
-                        || v == tv.tv_pathname()
-                        || tv.backend().is_ok_and(|b| {
-                            b.list_installed_versions_matching(v).contains(&tv.version)
-                        })
+                && ta.version.as_deref().is_none_or(|v| match v {
+                    "latest" => tv.backend().is_ok_and(|b| {
+                        b.latest_installed_version(None).ok().flatten().as_deref()
+                            == Some(tv.version.as_str())
+                    }),
+                    v => v == tv.tv_pathname() || tv.version.starts_with(v),
                 })
         }))
     }
@@ -411,7 +411,7 @@ struct Undo {
 
 impl Drop for Undo {
     fn drop(&mut self) {
-        resolver::observe_allocations(None);
+        resolver::observe_writes(None);
         let journal = snapshot(&self.journal);
         if self.armed
             && let Err(err) = journal.undo(false)
@@ -448,22 +448,18 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
         return Err(err);
     }
     // Every directory the install is about to write into is in the journal
-    // before anything is written there.
+    // before anything is written there; one it cannot record is not written.
     let recorder = journal.clone();
-    resolver::observe_allocations(Some(Box::new(move |dir, backend, version| {
+    resolver::observe_writes(Some(Box::new(move |dir, backend, version| {
         let mut journal = recorder.lock().unwrap_or_else(|e| e.into_inner());
         if backend == journal.backend
             && version == journal.version
             && !journal.made.iter().any(|d| d == dir)
         {
             journal.made.push(dir.to_path_buf());
-            if let Err(err) = journal.write() {
-                warn!(
-                    "could not record {} in the migration journal: {err:#}",
-                    display_path(dir)
-                );
-            }
+            journal.write()?;
         }
+        Ok(())
     })));
     let mut guard = Undo {
         journal: journal.clone(),

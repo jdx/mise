@@ -4044,6 +4044,10 @@ pub trait Backend: Debug + Send + Sync {
             }
             return Ok(tv);
         }
+        // From here the install writes into its directory.
+        if let Some(allocated) = &allocated {
+            crate::install_layout::resolver::note_writing(allocated)?;
+        }
 
         // The scheduler has released this tool only after its in-batch dependencies
         // succeeded. Validate configured dependencies before replacing the target or
