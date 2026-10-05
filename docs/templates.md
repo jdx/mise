@@ -249,7 +249,7 @@ with information about the current environment:
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
 - `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
-- `secrets` – Not a general template variable. `{{ secrets.NAME }}` is allowed only in a
+- `secrets` – Not a general template variable. <span v-pre>`{{ secrets.NAME }}`</span> is allowed only in a
   task's own `env` values <Badge type="warning" text="experimental" />: it is rendered when
   the task starts, and the reference grants that key to the task. See
   [Compose values](/environments/secrets/fnox.html#compose-values).
