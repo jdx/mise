@@ -697,10 +697,6 @@ pub(crate) fn static_problems(
         run_refs.extend(tera_env_refs(&script));
     }
     let env_texts = task.non_late_env_texts();
-    let env_refs: Vec<(String, BTreeSet<String>)> = env_texts
-        .iter()
-        .map(|(name, value)| (name.clone(), tera_env_refs(value)))
-        .collect();
     for key in task_template_refs(task) {
         // a key built from secrets is read from env only through T5 below
         let late = grant.is_late_key(&key) && run_refs.contains(&key);
@@ -723,20 +719,7 @@ pub(crate) fn static_problems(
             );
         }
     }
-    // T5: an env value reads a key that is built from secrets when the task starts
-    for (name, keys) in &env_refs {
-        for key in keys.iter().filter(|k| grant.is_late_key(k)) {
-            problems.push(Problem::new(
-                &task.name,
-                Some(key),
-                ProblemKind::Template,
-                format!(
-                    "task {}: env.{name} uses {{{{ env.{key} }}}}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
-                    task.name
-                ),
-            ));
-        }
-    }
+    problems.extend(tera_read_problems(task, grant, &env_texts));
     problems.extend(shell_expansion_problems(
         task,
         grant,
@@ -770,6 +753,45 @@ fn shell_expansion_problems(
             ));
         }
     }
+    problems.extend(shell_read_problems(task, grant, env_texts, expand));
+    problems
+}
+
+/// T5: an env value reads, through Tera, a key that is built from secrets when the task
+/// starts. Names only the env key and the composed key, never a text.
+fn tera_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    for (name, value) in env_texts {
+        for key in tera_env_refs(value).iter().filter(|k| grant.is_late_key(k)) {
+            problems.push(Problem::new(
+                &task.name,
+                Some(key),
+                ProblemKind::Template,
+                format!(
+                    "task {}: env.{name} uses {{{{ env.{key} }}}}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
+                    task.name
+                ),
+            ));
+        }
+    }
+    problems
+}
+
+/// T5 through a shell-style `$KEY` that `env_shell_expand` expands. Same rule on names only.
+fn shell_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    if !expand || grant.late.is_empty() {
+        return problems;
+    }
     for (name, value) in env_texts.iter().filter(|(_, v)| v.contains('$')) {
         for late in &grant.late {
             let key = &late.key;
@@ -794,6 +816,44 @@ fn shell_expansion_problems(
         }
     }
     problems
+}
+
+/// Both T5 checks over texts that are not the task's own config text.
+pub(crate) fn composed_read_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = tera_read_problems(task, grant, texts);
+    problems.extend(shell_read_problems(task, grant, texts, expand));
+    problems
+}
+
+/// T5 for age-encrypted env values: mise renders the plaintext after decrypting it, so it
+/// can read a composed key, and only a decrypted text shows that. Nothing is returned unless
+/// the task composes a value and has an age value, a decrypt error is left for the render to
+/// report (`age.strict`), and the plaintext lives in a local that is dropped here. The
+/// problems name env keys only.
+pub(crate) async fn age_read_problems(task: &Task, grant: &SecretGrant) -> Vec<Problem> {
+    use crate::config::env_directive::EnvDirective;
+    if grant.late.is_empty() {
+        return vec![];
+    }
+    let mut texts = vec![];
+    for (directive, _) in task.render_env_directives() {
+        if let EnvDirective::Age { key, .. } = &directive
+            && let Ok(plain) = crate::agecrypt::decrypt_age_directive(&directive).await
+        {
+            texts.push((key.clone(), plain));
+        }
+    }
+    composed_read_problems(
+        task,
+        grant,
+        &texts,
+        crate::config::Settings::try_get().is_ok_and(|s| s.env_shell_expand),
+    )
 }
 
 /// G1 and G2 for a grant, against what the source describes.
@@ -1418,6 +1478,35 @@ mod tests {
         assert_eq!(on.len(), 1, "{on:?}");
         assert!(on[0].render().contains("uses $VAR expansion together with"));
         assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+    }
+
+    #[test]
+    fn composed_reads_in_given_texts_are_t5_and_value_free() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let texts = vec![
+            ("OTHER".to_string(), "x-s3cr3t-{{ env.PGURL }}".to_string()),
+            ("THIRD".to_string(), "$PGURL".to_string()),
+            ("FINE".to_string(), "{{ env.HOME }}-s3cr3t".to_string()),
+        ];
+        let found = composed_read_problems(&task, &grant, &texts, true);
+        let text: Vec<String> = found.iter().map(|p| p.render()).collect();
+        assert_eq!(found.len(), 2, "{text:?}");
+        assert!(
+            text.iter()
+                .any(|m| m.contains("env.OTHER uses {{ env.PGURL }}"))
+        );
+        assert!(text.iter().any(|m| m.contains("env.THIRD uses $PGURL")));
+        assert!(text.iter().all(|m| !m.contains("s3cr3t")), "{text:?}");
+        // with expansion off only the Tera read counts
+        assert_eq!(
+            composed_read_problems(&task, &grant, &texts, false).len(),
+            1
+        );
+        // nothing composed, nothing to check
+        let plain = named("m", &[]);
+        let (none, _) = grant_for_task(&plain);
+        assert!(composed_read_problems(&plain, &none, &texts, true).is_empty());
     }
 
     #[test]
