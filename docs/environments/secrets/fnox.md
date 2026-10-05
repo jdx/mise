@@ -147,8 +147,10 @@ run = 'psql "$PGURL" -f schema.sql'
 is not exported unless the task also lists it in `secrets` (`secrets = ["DB_PASSWORD"]` exports it
 alongside `PGURL`). An env value cannot take the name of a key the task exports: `secrets =
 ["DB_PASSWORD"]` with <span v-pre>`env.DB_PASSWORD = "{{ secrets.DB_PASSWORD }}x"`</span> is an
-error, because both would claim the name. `--secrets-all` does not export a key that an env value
-only reads either.
+error, because both would claim the name. `--secrets-all` still gives the task every injectable key
+under its own name, `DB_PASSWORD` included; a reference only keeps a key from going through the
+checks for listed keys, so a name mise sets or the sandbox drops is skipped with a warning instead
+of failing.
 
 - Only literal text and <span v-pre>`{{ secrets.NAME }}`</span> (spaces inside the braces are
   optional) may appear in such a value. Filters, other variables, <span v-pre>`{{-`</span>,
