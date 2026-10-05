@@ -9,7 +9,7 @@ use crate::toolset::install_state;
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, example(r###"mise plugins ls-remote"###), verbatim_doc_comment)]
 pub(super) struct PluginsLsRemote {
-    /// Show the plugin source for each registry shorthand, e.g. vfox:jdx/vfox-poetry
+    /// Show the plugin source for each shorthand, e.g. vfox:jdx/vfox-poetry
     #[usage(short, long)]
     pub urls: bool,
 
