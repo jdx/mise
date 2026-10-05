@@ -265,7 +265,13 @@ impl Journal {
                 resolver::try_lock_install(dir)
             };
             match lock {
-                Ok(Some(_lock)) => resolver::unpublish(dir),
+                // A receipt that could not be removed still marks it complete.
+                Ok(Some(_lock)) => {
+                    resolver::unpublish(dir);
+                    if resolver::is_complete(dir) {
+                        done = false;
+                    }
+                }
                 Ok(None) | Err(_) => done = false,
             }
         }
@@ -355,9 +361,12 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             // Something else put a directory where the old one has to return (an
             // install with the legacy layout). It stays; the old one is kept
             // under another name, so nothing blocks migrating the version again.
-            journal.withdraw(true);
+            let withdrawn = journal.withdraw(true);
             let kept = keep_aside(&aside)?;
-            journal.remove();
+            // What could not be withdrawn is tried again on the next run.
+            if withdrawn {
+                journal.remove();
+            }
             warn!(
                 "{} took the place of the directory an interrupted migration moved aside; \
                  that one is kept at {}: remove it if {} works",

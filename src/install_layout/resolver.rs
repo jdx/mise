@@ -334,7 +334,7 @@ pub(crate) fn reset_cache() {
 /// A complete installation: the directory exists and its receipt is intact.
 /// The receipt is written last, so its absence means the install was
 /// interrupted or has not finished.
-pub(crate) fn is_complete(dir: &Path) -> bool {
+pub fn is_complete(dir: &Path) -> bool {
     dir.is_dir() && read_receipt(dir).is_some()
 }
 
