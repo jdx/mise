@@ -14,7 +14,7 @@ could not say which backend produced the files, which platform build they are, o
 which install options were used. So `age` and `aqua:FiloSottile/age` were two
 separate downloads, and two variants of one version overwrote each other.
 
-::: tip Opting out
+::: warning Opting out is deprecated
 `install_layout = "legacy"` keeps installing into `installs/<tool>/<version>`. It is
 deprecated and will be removed. Files that tools generate while installing, such as
 virtual environments and shebangs, record the hashed path; read

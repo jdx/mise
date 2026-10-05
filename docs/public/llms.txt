@@ -34,7 +34,7 @@
 - [Packslip Verification and Policy](https://mise.jdx.dev/dev-tools/packslip-verification.html): mise uses Packslip's signed metadata to discover releases, verify publishers, and select compatible builds. This guide describes the discovery and policy rules behind the Packslip backend.
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): mise deps runs project dependency installers when tracked inputs change or outputs go missing. It compares source hashes with the last successful run, then invokes the configured package manager.
-- [Install Layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): mise installs each tool into its own directory, installs/<label>-<hash>/, named by what was installed: the backend, version, platform, and the options that change what gets installed.
+- [Install Layout](https://mise.jdx.dev/dev-tools/install-layout.html): mise installs each tool into its own directory, installs/<label>-<hash>/, named by what was installed: the backend, version, platform, and the options that change what gets installed.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): A backend resolves a tool's versions, installs it, and supplies its executable paths and environment. The registry maps short names such as node and ripgrep to backends.
 - [Core tools](https://mise.jdx.dev/core-tools.html): Core tools have installation logic built into mise. They do not require a separately installed plugin.
 - [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
