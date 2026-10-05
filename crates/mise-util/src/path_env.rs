@@ -118,6 +118,9 @@ impl FromStr for PathEnv {
 /// and passed to [`is_mise_install_path`] so the per-PATH-entry check stays cheap.
 pub fn mise_install_dirs() -> Vec<PathBuf> {
     let mut install_dirs = vec![dirs::INSTALLS.to_path_buf()];
+    if *dirs::INSTALL_STORE != *dirs::INSTALLS {
+        install_dirs.push(dirs::INSTALL_STORE.to_path_buf());
+    }
     install_dirs.extend(crate::env::shared_install_dirs());
     install_dirs
 }

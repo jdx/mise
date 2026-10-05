@@ -1,14 +1,14 @@
 Describe 'install layout' {
     # The identity install layout (jdx/mise#13678, behind install_layout = "identity"): an installation lives in
-    # installs\<label>-<hash>, and installs\<short>\<version> plus the runtime aliases (latest, 1.7)
-    # are links to it. On Windows they have to be real junctions: a text file standing in for a
+    # i\<label>-<hash> beside the installs directory (a shorter path than installs\, for MAX_PATH),
+    # and installs\<short>\<version> plus the runtime aliases (latest, 1.7) are links to it. On Windows they have to be real junctions: a text file standing in for a
     # link is invisible to the IDE SDK selectors and external tools this layout keeps working
     # for, and a junction is what makes Test-Path and Get-ChildItem see through to the install.
 
     BeforeAll {
         $script:OriginalLocation = Get-Location
         $script:Saved = @{}
-        foreach ($name in 'MISE_DATA_DIR', 'MISE_CONFIG_FILE', 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_EXPERIMENTAL', 'MISE_INSTALL_LAYOUT', 'MISE_YES') {
+        foreach ($name in 'MISE_DATA_DIR', 'MISE_INSTALLS_DIR', 'MISE_INSTALL_STORE_DIR', 'MISE_CONFIG_FILE', 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_EXPERIMENTAL', 'MISE_INSTALL_LAYOUT', 'MISE_YES') {
             $script:Saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
         }
 
@@ -16,6 +16,8 @@ Describe 'install layout' {
         New-Item -ItemType Directory -Path $script:Root | Out-Null
         Set-Location $script:Root
         $env:MISE_DATA_DIR = Join-Path $script:Root 'data'
+        # the default installs directory, which is what moves installations to the short store
+        Remove-Item -Path Env:\MISE_INSTALLS_DIR, Env:\MISE_INSTALL_STORE_DIR -ErrorAction SilentlyContinue
         $env:MISE_CONFIG_FILE = Join-Path $script:Root 'mise.toml'
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:Root
         $env:MISE_EXPERIMENTAL = '1'
@@ -24,6 +26,7 @@ Describe 'install layout' {
         '' | Out-File -FilePath $env:MISE_CONFIG_FILE -Encoding utf8NoBOM
 
         $script:Installs = Join-Path $env:MISE_DATA_DIR 'installs'
+        $script:Store = Join-Path $env:MISE_DATA_DIR 'i'
         $script:ToolDir = Join-Path $script:Installs 'jq'
 
         # Whether an entry is there, asked by enumerating the parent rather than by resolving the
@@ -61,13 +64,16 @@ Describe 'install layout' {
         }
     }
 
-    It 'installs into a hashed directory next to the tool directory' {
+    It 'installs into a hashed directory in the short store beside the installs directory' {
         $script:InstallExit | Should -Be 0
         $script:Name171 | Should -Match '^jq-[a-z2-7]{8}$'
         $script:Name182 | Should -Match '^jq-[a-z2-7]{8}$'
         $script:Name171 | Should -Not -Be $script:Name182
-        (Split-Path (Split-Path $script:Dir171 -Parent) -Leaf) | Should -Be 'installs'
-        (Split-Path (Split-Path $script:Dir182 -Parent) -Leaf) | Should -Be 'installs'
+        (Split-Path $script:Dir171 -Parent) | Should -Be $script:Store
+        (Split-Path $script:Dir182 -Parent) | Should -Be $script:Store
+        # the catalog stays with the links, in the installs directory
+        Test-Path -LiteralPath (Join-Path $script:Installs ".mise\names\$($script:Name171)") | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $script:Store '.mise') | Should -BeFalse
     }
 
     It 'reports a real, existing directory from mise where' {
@@ -173,8 +179,8 @@ Describe 'install layout' {
         $LASTEXITCODE | Should -Be 0
         Test-Path -LiteralPath $script:Dir171 | Should -BeFalse
         Test-Path -LiteralPath $script:Dir182 | Should -BeFalse
-        # nothing is left behind in the installs directory but the catalog
-        $left = Get-ChildItem -LiteralPath $script:Installs -Force |
+        # nothing is left behind in the store
+        $left = Get-ChildItem -LiteralPath $script:Store -Force |
             Where-Object { $_.Name -like 'jq-*' } | ForEach-Object { $_.Name }
         $left | Should -BeNullOrEmpty
         foreach ($version in '1.7.1', '1.8.2') {

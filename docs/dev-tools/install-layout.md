@@ -71,7 +71,9 @@ installs/
 ```
 
 **Installation directories.** Each installation lives in
-`installs/<label>-<hash>/`. The label comes from the backend, not from the
+`installs/<label>-<hash>/`. The directory that holds them is the install store.
+It is the installs directory itself, except on Windows, where it is a shorter
+sibling directory (see [Windows](#windows)). The label comes from the backend, not from the
 registry shorthand, so a registry change never moves an existing install.
 `aqua:FiloSottile/age` gives `age`, `aqua:yarnpkg/berry` gives `berry`, and
 `go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` gives
@@ -120,7 +122,8 @@ same bytes.
 **The catalog.** `installs/.mise/` records which directory each identity was
 assigned and which installation each unlocked request selected. It is durable
 metadata, not a cache. Keep it with the installs it describes when you copy or
-cache the installs directory.
+cache the installs directory, together with the install store when that is a
+separate directory (on Windows, `i` beside `installs`; see [Windows](#windows)).
 
 **Version links.** `installs/<tool>/<version>` links to the installation, so
 paths you wrote down, such as an IDE SDK entry, keep working. A link can point at
@@ -277,7 +280,7 @@ Both work on one installation directory at a time.
 - `mise uninstall age@1.2.1` removes the installation directory, and the version
   links that name it from every tool directory that has one. It does not follow a
   link to decide what to delete, and it refuses to remove a path directly under
-  the installs directory that has neither a receipt nor a reservation in the
+  the install store that has neither a receipt nor a reservation in the
   catalog. Removing one variant leaves the others in place.
 - Removing an installation keeps its catalog record, so installing the same
   identity again lands in the same directory.
@@ -312,13 +315,30 @@ The layout works the same way on Windows, with these differences:
   location keeps pointing at the old one. mise finds installations through the
   catalog, relative to the installs directory it is using, so this affects
   programs that follow the link, not mise.
+- **A shorter real path.** Installations go into `%LOCALAPPDATA%\mise\i\`
+  instead of `installs\`, seven characters shorter, because the real path is
+  where installers extract files and what counts toward the 260-character limit.
+  The version links, runtime aliases and catalog stay in `installs\`, so
+  `installs\java\21` keeps working in an IDE:
+
+  ```text
+  %LOCALAPPDATA%\mise\
+    installs\
+      jq\1.7.1 -> %LOCALAPPDATA%\mise\i\jq-ezjqmxa4   junction
+      .mise\                                           catalog
+    i\
+      jq-ezjqmxa4\                                     the installation
+  ```
+
+  Setting `MISE_INSTALLS_DIR` keeps installations in that directory, as on other
+  platforms. `MISE_INSTALL_STORE_DIR` chooses where installations go, on any
+  platform, without moving the links.
 - **Path length.** The installation's directory name has a bounded length: a label
   of at most 24 characters, a dash, and eight hash characters, longer only after a
-  collision. It sits directly under the installs directory, whatever the version
-  string looks like. The installs directory itself,
-  `%LOCALAPPDATA%\mise\installs`, and the paths inside tools still count toward
-  the 260-character limit, so a shorter `MISE_INSTALLS_DIR` remains the main
-  lever. mise does not shorten the default installs directory in this release.
+  collision. It sits directly under the install store, whatever the version
+  string looks like. The data directory and the paths inside tools still count
+  toward the limit, so a short `MISE_INSTALL_STORE_DIR` (such as `C:\m`) is the
+  main lever left.
 
 ## Downgrading and compatibility
 

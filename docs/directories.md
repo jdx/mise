@@ -96,6 +96,13 @@ remembers each installation's directory and which installation an unlocked reque
 selected. It is durable metadata, not a cache: keep it with the installs it
 describes. Installations made before you enabled the layout stay where they are.
 
+On Windows the installations themselves go into `i` beside `installs`
+(`%LOCALAPPDATA%\mise\i\age-hlencrst`), a shorter path that leaves more room
+under the 260-character limit. The links, runtime aliases and catalog stay in
+`installs`. Set `MISE_INSTALL_STORE_DIR` to choose where installations go on any
+platform; it defaults to the installs directory, and on Windows to `i` unless
+`MISE_INSTALLS_DIR` is set.
+
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 
 `MISE_INSTALLS_DIR` is read when mise starts. Set it in the environment before invoking mise and keep

@@ -172,6 +172,21 @@ pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
 pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_INSTALLS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("installs")));
 
+/// Where the identity install layout keeps its installation directories. The
+/// installs directory itself, except on Windows with the default installs
+/// directory: there it is `<data>\i`, seven characters shorter than `installs`,
+/// because the real installation path is what counts against `MAX_PATH`. Version
+/// links and the catalog stay in the installs directory either way.
+pub static MISE_INSTALL_STORE_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_INSTALL_STORE_DIR").unwrap_or_else(|| {
+        if cfg!(windows) && var_path("MISE_INSTALLS_DIR").is_none() {
+            MISE_DATA_DIR.join("i")
+        } else {
+            MISE_INSTALLS_DIR.clone()
+        }
+    })
+});
+
 pub static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_DOWNLOADS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("downloads")));
 
