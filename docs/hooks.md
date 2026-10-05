@@ -91,7 +91,7 @@ The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable co
 [hooks]
 postinstall = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
-# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node/20.10.0"}]
+# Example output: [{"name":"node","version":"20.10.0","requested_version":"20","backend":"core:node","install_path":"/home/user/.local/share/mise/installs/node-k3q7x2ma"}]
 '''
 ```
 
