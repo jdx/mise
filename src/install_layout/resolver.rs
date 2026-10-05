@@ -1109,17 +1109,13 @@ fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
     }
     // `..` from the tool directory is taken physically: through a symlinked
     // installs directory it leaves the symlink's target, not the data directory
-    // that holds the store. The sibling form is only used when the two agree.
-    let physical_parent = |p: &Path| {
-        p.canonicalize()
-            .ok()
-            .and_then(|p| p.parent().map(Path::to_path_buf))
+    // that holds the store. The sibling form is only used when the physical
+    // directories are siblings, and names the store by its physical name (the
+    // configured one may be a symlink with another name).
+    let (Ok(root), Ok(store)) = (root.canonicalize(), store.canonicalize()) else {
+        return absolute();
     };
-    match (
-        physical_parent(root),
-        physical_parent(store),
-        store.file_name(),
-    ) {
+    match (root.parent(), store.parent(), store.file_name()) {
         (Some(a), Some(b), Some(store_name)) if a == b => {
             Path::new("..").join("..").join(store_name).join(name)
         }
@@ -1611,6 +1607,14 @@ mod tests {
                     &base.join("linked/i/age-p4n6w2ra")
                 ),
                 base.join("linked/i/age-p4n6w2ra")
+            );
+            // A store reached through a symlink with another name is named by
+            // the directory it really is.
+            std::fs::create_dir_all(base.join("links")).unwrap();
+            std::os::unix::fs::symlink(base.join("data/i"), base.join("links/alias")).unwrap();
+            assert_eq!(
+                link_value(&tool_dir, &base.join("links/alias/age-p4n6w2ra")),
+                Path::new("..").join("..").join("i").join("age-p4n6w2ra")
             );
         }
     }
