@@ -150,6 +150,10 @@ assert "mise installs select $mine"
 rm -rf "$installs/tiny"
 assert "mise installs select $shared2/$(basename "$mine")"
 assert "readlink '$installs/tiny/3.0.0'" "$shared2/$(basename "$mine")"
+# ...and rebuilding the tool's links keeps it there, not on the user's own copy
+rm "$installs/tiny/3.0.0"
+assert "mise install tiny@1.0.0"
+assert "readlink '$installs/tiny/3.0.0'" "$shared2/$(basename "$mine")"
 
 echo "=== removing the user's own copy keeps the version link to the shared one ==="
 assert "mise prune --yes tiny"

@@ -1378,23 +1378,47 @@ fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
 /// Recreate the version links of a tool's installations that have none: the tool
 /// directory was removed by hand, or the installation was made through another
 /// spelling of the tool. A slot that exists is left alone, because a link can name
-/// only one variant.
+/// only one variant. A missing one names the selected installation of its version,
+/// in whichever root that is, or else the first of the user's own.
 pub(crate) fn heal_links(ba: &crate::args::BackendArg) {
     let tool_dir = ba.installs_path();
+    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let mut missing: indexmap::IndexMap<String, (PathBuf, bool)> = indexmap::IndexMap::new();
     for (name, dir) in installs_of(ba) {
-        if !is_primary_install(&dir) {
+        if std::fs::symlink_metadata(tool_dir.join(&name)).is_ok() {
             continue;
         }
+        let selected = is_selected_install(&primary, &dir);
+        if !selected && !is_primary_install(&dir) {
+            continue;
+        }
+        match missing.get(&name) {
+            Some((_, true)) => {}
+            Some((_, false)) if !selected => {}
+            _ => {
+                missing.insert(name, (dir, selected));
+            }
+        }
+    }
+    for (name, (dir, _)) in missing {
         let slot = tool_dir.join(&name);
-        if std::fs::symlink_metadata(&slot).is_ok() {
-            continue;
-        }
         if let Err(err) = file::create_dir_all(tool_dir)
             .and_then(|()| file::make_dir_link(&link_value(tool_dir, &dir), &slot))
         {
             debug!("could not link {}: {err:#}", slot.display());
         }
     }
+}
+
+/// Whether the installation at `dir` is the one its request's selection names.
+fn is_selected_install(primary: &Catalog, dir: &Path) -> bool {
+    let (Some(store), Some(name)) = (dir.parent(), dir.file_name().and_then(|n| n.to_str())) else {
+        return false;
+    };
+    let Some(root) = root_of_store(store) else {
+        return false;
+    };
+    describe(primary, &Catalog::new(&root), &root, name).is_some_and(|i| i.selected)
 }
 
 /// The installation directory a compatibility link names, if `slot` is one: a
