@@ -14,6 +14,10 @@ assert "MISE_INSTALL_LAYOUT=legacy mise install dummy@1.1.0"
 assert "MISE_INSTALL_LAYOUT=legacy mise where dummy@1.1.0" "$installs/dummy/1.1.0"
 assert "test -d '$installs/dummy/1.1.0' && test ! -L '$installs/dummy/1.1.0'"
 
+echo "=== an unknown install_layout is not taken for identity ==="
+assert_contains "MISE_INSTALL_LAYOUT=idenity mise install dummy@1.0.1 2>&1" "neither"
+assert "test -d '$installs/dummy/1.0.1' && test ! -L '$installs/dummy/1.0.1'"
+
 echo "=== experimental off: the legacy layout, even when asked for identity ==="
 export MISE_EXPERIMENTAL=0
 assert "mise install dummy@2.0.0"

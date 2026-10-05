@@ -34,14 +34,22 @@ pub fn enabled() -> bool {
     };
     match settings.install_layout.as_deref() {
         Some("legacy") => false,
-        Some(_) if !settings.experimental => {
+        Some("identity") if !settings.experimental => {
             warn_once!(
                 "[experimental] install_layout = \"identity\" requires experimental = true; \
                  installing into the legacy layout"
             );
             false
         }
-        Some(_) => true,
+        Some("identity") => true,
+        // A misspelling must not turn on a layout nobody asked for.
+        Some(other) => {
+            warn_once!(
+                "install_layout = \"{other}\" is neither \"identity\" nor \"legacy\"; \
+                 installing into the legacy layout"
+            );
+            false
+        }
         // Unit tests run with `experimental` forced on for everything; they get
         // this layout only when they ask for it.
         None => settings.experimental && !mise_util::testing::in_tests(),
