@@ -149,13 +149,14 @@ pub(crate) async fn create_python_venv(
     } = options;
     let python = python.as_deref();
     let ba = BackendArg::from("python");
-    // `mise install` passes its toolset before resolving it. An unresolved python request would
-    // otherwise read as "python comes from outside mise", and uv would pick or download its own.
+    // `mise install` passes its toolset unresolved, and `mise install <tool>` leaves python out of
+    // it. Either would read as "python comes from outside mise", and uv would pick or download its
+    // own.
     let resolved;
     let ts = if ts
         .versions
         .get(&ba)
-        .is_some_and(|tvl| tvl.versions.is_empty())
+        .is_none_or(|tvl| tvl.versions.is_empty())
     {
         resolved = python_uv_toolset(config).await?;
         &resolved
