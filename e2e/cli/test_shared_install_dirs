@@ -46,8 +46,11 @@ mise install --force tiny@2.0.0
 assert_contains "ls $primary_install" "VERSION"
 # Shared dir should be untouched
 assert_contains "ls $shared_dir/tiny/2.0.0" "VERSION"
-# Clean up the primary copy for the next test
-rm -rf "$primary_install"
+# Remove the primary copy through mise (the version directory can be a link to
+# it), and the shared one is used again
+mise uninstall tiny@2.0.0
+assert "mise where tiny" "$shared_dir/tiny/2.0.0"
+assert_contains "ls $shared_dir/tiny/2.0.0" "VERSION"
 
 # Primary version (1.0.1) can be uninstalled without affecting shared version (2.0.0)
 mise uninstall tiny@1.0.1
