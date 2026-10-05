@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# `mise installs migrate` reinstalls legacy installations (made before the
+# identity install layout was turned on) into their own hashed directories, and
+# leaves the version link where the old directory was.
+export MISE_EXPERIMENTAL=1
+installs="$MISE_DATA_DIR/installs"
+
+echo "=== legacy installations, made with the layout off ==="
+assert "mise install dummy@1.0.0 dummy@1.1.0 tiny@3.1.0"
+for v in 1.0.0 1.1.0; do
+  assert "test -d '$installs/dummy/$v' && test ! -L '$installs/dummy/$v'"
+done
+# something only the old copy has, to tell a reinstall from a move
+echo old >"$installs/dummy/1.1.0/marker"
+
+export MISE_INSTALL_LAYOUT=identity
+
+echo "=== a dry run lists what would move and changes nothing ==="
+assert_contains "mise installs migrate --dry-run" "would migrate dummy@1.1.0"
+assert_contains "mise installs migrate --dry-run" "would migrate tiny@3.1.0"
+assert "test ! -L '$installs/dummy/1.1.0' && test -f '$installs/dummy/1.1.0/marker'"
+
+echo "=== one version moves; the version link takes its place ==="
+assert_contains "mise installs migrate dummy@1.1.0" "migrated dummy@1.1.0"
+new="$(mise where dummy@1.1.0)"
+assert_matches "mise where dummy@1.1.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test -f '$new/.mise-install.toml'"
+assert "test ! -e '$new/marker'"
+assert "readlink '$installs/dummy/1.1.0'" "../$(basename "$new")"
+assert_contains "$installs/dummy/1.1.0/bin/dummy" "This is Dummy 1.1.0!"
+# the runtime alias made for the legacy install still resolves, through the link
+assert "readlink '$installs/dummy/1.1'" "./1.1.0"
+assert_contains "$installs/dummy/1.1/bin/dummy" "This is Dummy 1.1.0!"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
+# the version that was not named is still legacy
+assert "test -d '$installs/dummy/1.0.0' && test ! -L '$installs/dummy/1.0.0'"
+
+echo "=== a failed reinstall puts the legacy directory back ==="
+# the dummy plugin refuses to install this version
+mkdir -p "$installs/dummy/other-dummy/bin"
+echo kept >"$installs/dummy/other-dummy/marker"
+assert_fail "mise installs migrate dummy@other-dummy"
+assert "test -d '$installs/dummy/other-dummy' && test ! -L '$installs/dummy/other-dummy'"
+assert_contains "cat '$installs/dummy/other-dummy/marker'" "kept"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
+rm -rf "$installs/dummy/other-dummy"
+
+echo "=== with no arguments, every remaining legacy installation moves ==="
+assert "mise installs migrate"
+assert "test -L '$installs/dummy/1.0.0'"
+assert "test -L '$installs/tiny/3.1.0'"
+assert_matches "mise where tiny@3.1.0" "^$installs/tiny-[a-z2-7]{8}\$"
+assert_contains "mise x tiny@3.1.0 -- rtx-tiny" "3.1.0"
+assert_contains "mise installs migrate" "no legacy installations to migrate"
+assert "mise installs ls --json | jq length" "3"

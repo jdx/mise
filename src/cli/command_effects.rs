@@ -248,6 +248,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("install-into", Write),
     ("installs", Read),
     ("installs ls", Read),
+    ("installs migrate", Write),
     ("installs select", Write),
     ("latest", Read),
     ("link", Write),

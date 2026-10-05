@@ -1726,6 +1726,64 @@ fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str
     }
 }
 
+/// Whether `dir` is a legacy installation in the primary installs root: a real
+/// directory at `installs/<tool>/<version>`, not a link of any kind.
+pub fn is_legacy_install(dir: &Path) -> bool {
+    let in_primary_tool_dir = dir
+        .parent()
+        .and_then(Path::parent)
+        .is_some_and(is_primary_root);
+    in_primary_tool_dir
+        && !is_dir_link(dir)
+        && std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+}
+
+/// Where reinstalling `tv`'s legacy installation into this layout would put it,
+/// or why it would not be moved: the layout does not cover it, or the backend
+/// recorded for the legacy directory is not the one the request resolves to now
+/// (so it is not what the request means, and installing would not replace it).
+pub fn migration_target(tv: &ToolVersion) -> std::result::Result<PathBuf, String> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    if !applies_to(&bare) {
+        return Err("it keeps the legacy layout".into());
+    }
+    let identity = identity_of(&bare).ok_or("its backend cannot be loaded")?;
+    if !crate::toolset::install_state::legacy_backend_matches(
+        &dirs::INSTALLS,
+        &tv.ba().short,
+        &identity.backend,
+    ) {
+        return Err(format!(
+            "it was installed from another backend than {} now resolves to ({}); \
+             uninstall it if nothing uses it",
+            tv.ba().short,
+            identity.backend
+        ));
+    }
+    match locate(&bare) {
+        Some(located) if located.record.is_some() => Ok(located.dir),
+        _ => {
+            let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+            Ok(match catalog.lookup(&identity) {
+                Some(record) => catalog.install_dir(&record),
+                None => catalog.tentative_dir(&identity),
+            })
+        }
+    }
+}
+
+/// The complete installation of this layout that `tv`'s request resolves to,
+/// ignoring any path `tv` already carries.
+pub fn installation_of(tv: &ToolVersion) -> Option<PathBuf> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    reset_cache();
+    locate(&bare)
+        .filter(|located| located.installed && located.record.is_some())
+        .map(|located| located.dir)
+}
+
 /// Adopt installations whose receipt is on disk but that the primary catalog does
 /// not know (it was lost, or a mise that predates it made them), so the catalog can
 /// always be rebuilt from receipts alone. `root_entries` are the names in the

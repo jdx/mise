@@ -3938,8 +3938,9 @@ cmd installs help="[experimental] Inspect and choose installations of the identi
 With `install_layout = "identity"`, each installation lives in its own
 `<label>-<hash>` directory, and several installations of one version can
 exist side by side (different options, platforms, pinned artifacts, or a
-refreshed copy). These commands list them and choose which one requests
-without a lockfile use.
+refreshed copy). These commands list them, choose which one requests
+without a lockfile use, and move installations made before the layout
+was turned on into it.
 """#
     flag "-h --help" help="Print help" action=help builtin=#true
     cmd ls help="List the installations of the identity install layout" effect=read {
@@ -3959,6 +3960,34 @@ live in a read-only shared installs directory (`shared`).
         arg "[TOOL]…" help="Only show the installations of these tools" required=#false var=#true
         example "mise installs ls" help="Every installation in the identity layout"
         example "mise installs ls node --json" help="The installations of node, as JSON"
+    }
+    cmd migrate help="Reinstall legacy installations into the identity install layout" effect=write {
+        long_help #"""
+Reinstall legacy installations into the identity install layout
+
+Installations made before `install_layout = "identity"` was turned on stay in
+`installs/<tool>/<version>` and keep working; mise never moves them on its own,
+because tools record their own path in shebangs, virtual environments and
+package-manager files. This reinstalls each one into its own `<label>-<hash>`
+directory, then removes the old directory and puts the version link in its
+place, so a path that pointed into the old directory still resolves.
+
+Each version is reinstalled from its backend, not copied, so the files are
+written for their new path. Run it while nothing is using the tools: the old
+directory is moved aside while its replacement installs, and put back if that
+fails. Versions whose recorded backend is not the one their tool resolves to
+now are left alone, as are tools that keep the legacy layout (`http:`,
+`rust`, `dotnet`).
+"""#
+        flag "-n --dry-run" help="Show what would move without changing anything"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL@VERSION]…" help="Only migrate these tools, or these versions of them" help_long=#"""
+Only migrate these tools, or these versions of them
+
+Defaults to every legacy installation.
+"""# required=#false var=#true
+        example "mise installs migrate --dry-run" help="List the legacy installations that would move"
+        example "mise installs migrate node python@3.12.1" help="Move every installed node, and one python"
     }
     cmd select help="Choose the installation that requests without a lockfile use" effect=write {
         long_help #"""
