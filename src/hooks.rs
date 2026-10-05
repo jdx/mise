@@ -621,18 +621,10 @@ async fn run_matched_hook(
                     out.push('\n');
                 }
             }
-            // The script runs in the user's own shell, so mark it there for its duration: a
-            // `mise run` inside it refuses task secrets like any other hook.
-            if let Some(shell) = shell {
-                out.push_str(&shell.set_env(crate::secrets::DENIED_MARKER, "hook"));
-                out.push('\n');
-            }
-            out.push_str(script);
-            out.push('\n');
-            if let Some(shell) = shell {
-                out.push_str(&shell.unset_env(crate::secrets::DENIED_MARKER));
-                out.push('\n');
-            }
+            let marker_free = std::env::var(crate::secrets::DENIED_MARKER)
+                .map(|v| v.is_empty())
+                .unwrap_or(true);
+            out.push_str(&shell_hook_script(shell, script, marker_free));
             if let Err(err) = miseprint!("{out}") {
                 record_output_error(err);
             }
@@ -931,8 +923,45 @@ fn task_hook_args(root: &Path, hook: Hooks, task_name: &str) -> Vec<String> {
     args
 }
 
+/// The script of a `shell = ...` hook, marked for the length of its run so a `mise run`
+/// inside it refuses task secrets. Nothing is added when another launcher's mark is already
+/// set: a nested hook-env keeps the outer mark, and the outer unset still runs.
+fn shell_hook_script(shell: Option<&dyn Shell>, script: &str, marker_free: bool) -> String {
+    let mark = shell.filter(|_| marker_free);
+    let mut out = String::new();
+    if let Some(shell) = mark {
+        out.push_str(&shell.set_env(
+            crate::secrets::DENIED_MARKER,
+            crate::secrets::SecretsDenied::ShellHook.marker(),
+        ));
+        out.push('\n');
+    }
+    out.push_str(script);
+    out.push('\n');
+    if let Some(shell) = mark {
+        out.push_str(&shell.unset_env(crate::secrets::DENIED_MARKER));
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shell_hook_script_marks_only_when_unmarked() {
+        let bash = crate::shell::get_shell(Some(crate::shell::ShellType::Bash)).unwrap();
+        let bash = &*bash;
+        let marked = super::shell_hook_script(Some(bash), "echo hi", true);
+        assert!(marked.contains("__MISE_SECRETS_DENIED"), "{marked}");
+        assert!(marked.contains("shell_hook"), "{marked}");
+        assert!(marked.contains("unset __MISE_SECRETS_DENIED"), "{marked}");
+        assert_eq!(
+            super::shell_hook_script(Some(bash), "echo hi", false),
+            "echo hi\n"
+        );
+        assert_eq!(super::shell_hook_script(None, "echo hi", true), "echo hi\n");
+    }
+
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolRequest, ToolSource};

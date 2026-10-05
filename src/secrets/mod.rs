@@ -22,11 +22,11 @@ mod spawn;
 
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
-pub use grant::{DENIED_MARKER, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    SecretGrant, aggregate_error, collision_problem, declared_env_keys, grant_for_task,
-    sandbox_problem, static_problems,
+    DENIED_MARKER, SecretGrant, aggregate_error, collision_problem, declared_env_keys,
+    grant_for_task, sandbox_problem, static_problems,
 };
+pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub(crate) use spawn::SpawnSecrets;
