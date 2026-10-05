@@ -104,6 +104,21 @@ tinier_dir="$(mise -C "$work/aliased" where tinier)"
 [[ $tinier_dir == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$tinier_dir is not an identity installation"
 assert_fail "mise where tiny@2.1.0"
 
+echo "=== a version a configuration gives options never takes an installation with more ==="
+mkdir env2 more
+cat >env2/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.0", install_env = { TINY_BUILD = "1" } }
+EOF2
+cat >more/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.0", install_env = { TINY_BUILD = "1" }, flavor = "full" }
+EOF2
+assert "mise -C $work/more install"
+assert_fail "mise -C $work/env2 where tiny@1.0.0"
+# while the version named alone does find it
+assert "mise where tiny@1.0.0" "$(mise -C "$work/more" where tiny)"
+
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
 cat >minimal/mise.toml <<'EOF2'

@@ -390,7 +390,8 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
             // Nothing of the request's own: a bare version named on the command
             // line may still stand for a variant, after a legacy install (below).
             Unlocked::Nothing => {
-                try_variant = matches!(tv.request.source(), crate::toolset::ToolSource::Argument);
+                try_variant = matches!(tv.request.source(), crate::toolset::ToolSource::Argument)
+                    && is_bare(tv, &identity);
             }
         }
     } else {
@@ -535,6 +536,21 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
         1 => Unlocked::Found(complete.remove(0)),
         _ => Unlocked::Ambiguous(complete),
     }
+}
+
+/// Whether the request `identity` came from sets no install options of its own:
+/// its options are those the same version named with nothing else gets (from the
+/// tool's registry entry or backend alias, and from settings).
+fn is_bare(tv: &ToolVersion, identity: &InstallIdentity) -> bool {
+    let Ok(plain) = ToolRequest::new(
+        std::sync::Arc::new(tv.ba().clone()),
+        &tv.version,
+        crate::toolset::ToolSource::Argument,
+    ) else {
+        return false;
+    };
+    identity_of(&ToolVersion::new(plain, tv.version.clone()))
+        .is_some_and(|plain| plain.options == identity.options)
 }
 
 /// Whether an installation made for `a` can stand for a request for `b`: it was
@@ -976,6 +992,14 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let mut bare = tv.clone();
     bare.install_path = None;
     let own_identity = identity_of(&bare);
+    // A request with options of its own (named, or set by a configuration) means
+    // exactly those; only a bare version can stand for a variant.
+    if own_identity
+        .as_ref()
+        .is_some_and(|identity| !is_bare(tv, identity))
+    {
+        return vec![];
+    }
     let own_request = own_identity.as_ref().map(request_of);
     // The request has installations of its own, or a selection: which one it uses
     // is for the selection to say (or the user, when that is ambiguous), so a
