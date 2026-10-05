@@ -1586,8 +1586,8 @@ pub fn select(installation: &str) -> Result<Installation> {
     let receipt = read_receipt(&dir).ok_or_else(|| eyre::eyre!("{name} has no receipt"))?;
     // A selection is resolved through the catalog that lists the installation.
     // The user's own catalog is rebuilt from receipts if it lost the record; a
-    // shared root's is read-only, so an installation it does not list cannot be
-    // selected.
+    // shared root's is read-only, so its installation's receipt stands in for
+    // the record, as it does when the selection is used.
     let lookup =
         || catalog.record_by_digest(&receipt.record.identity.backend, &receipt.record.digest);
     let record = match lookup() {
@@ -1596,11 +1596,15 @@ pub fn select(installation: &str) -> Result<Installation> {
             catalog.rebuild_from_receipts()?;
             lookup().ok_or_else(|| eyre::eyre!("{name} could not be added to the catalog"))?
         }
-        None => eyre::bail!(
-            "{} is not listed in the catalog of {}, so it cannot be selected",
-            name,
-            root.display()
-        ),
+        None => catalog
+            .find_by_receipt(&receipt.record.digest)
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "{} is not listed in the catalog of {}, so it cannot be selected",
+                    name,
+                    root.display()
+                )
+            })?,
     };
     let key = request_of(&record.identity);
     let shared = (!is_primary_root(&root)).then_some(root.as_path());
