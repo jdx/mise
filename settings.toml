@@ -1872,6 +1872,31 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[lockfile_auto_prune]
+default = true
+description = "Remove lockfile tools that are absent from the active configuration."
+docs = """
+By default, a full `mise lock` run removes entries for tools that are not
+declared by the active configuration. This keeps lockfiles in sync with one
+configuration and removes obsolete entries.
+
+Set this to `false` for a shared lockfile where different profiles
+intentionally configure different tools. The setting changes only top-level
+tool retention: configured tools still refresh, and their stale versions,
+option variants, and native dependency graphs are still removed.
+
+```toml
+[settings]
+lockfile_auto_prune = false
+```
+
+This applies to both `lockfile_mode = "merge"` and `lockfile_mode = "generate"`,
+including `mise lock --global`. Filtered commands such as `mise lock node`
+already retain tools outside their explicit filter.
+"""
+env = "MISE_LOCKFILE_AUTO_PRUNE"
+type = "Bool"
+
 [log_level]
 default = "info"
 description = "Show more/less output."

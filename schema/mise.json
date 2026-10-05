@@ -1433,6 +1433,11 @@
             "type": "string"
           }
         },
+        "lockfile_auto_prune": {
+          "default": true,
+          "description": "Remove lockfile tools that are absent from the active configuration.",
+          "type": "boolean"
+        },
         "log_level": {
           "default": "info",
           "description": "Show more/less output.",
