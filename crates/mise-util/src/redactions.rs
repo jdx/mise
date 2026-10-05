@@ -41,6 +41,11 @@ pub fn secret_patterns(value: &str) -> Vec<String> {
     {
         push(inner.to_string());
     }
+    // Rust's `{:?}` spelling (task argument trace logging): U+0001 is `\u{1}`.
+    let debug = format!("{value:?}");
+    if let Some(inner) = debug.strip_prefix('"').and_then(|d| d.strip_suffix('"')) {
+        push(inner.to_string());
+    }
     out
 }
 
@@ -203,6 +208,15 @@ mod tests {
         assert!(!p.contains(&"}".to_string()));
         let dashes = secret_patterns("-----\n-----\nxx");
         assert!(!dashes.contains(&"-----".to_string()));
+    }
+
+    #[test]
+    fn test_secret_patterns_cover_rust_debug_spelling() {
+        let secret = "ab\u{1}cd\"e";
+        let r = Redactor::new(secret_patterns(secret));
+        let rendered = format!("{secret:?}");
+        assert!(rendered.contains("\\u{1}"));
+        assert_eq!(r.redact(&format!("args={rendered}")), "args=\"[redacted]\"");
     }
 
     #[test]

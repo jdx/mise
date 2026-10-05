@@ -984,6 +984,17 @@ pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
         .unwrap_or_default()
 });
 
+/// The live process environment minus inherited secrets and their marker, for
+/// expanding `${VAR}` references in config-derived files: expanding against
+/// the raw environment would copy a secret's value into a new, unmarked name.
+pub fn vars_without_inherited_secrets() -> impl Iterator<Item = (String, String)> {
+    vars_safe().filter(|(k, _)| !is_inherited_secret_key(k, &INHERITED_SECRET_KEYS))
+}
+
+fn is_inherited_secret_key(name: &str, keys: &BTreeSet<String>) -> bool {
+    keys.iter().any(|m| env_key_eq(name, m)) || env_key_eq(name, SECRET_KEYS_MARKER)
+}
+
 /// Remove inherited secret keys and the marker from `env`, whatever spelling
 /// the environment uses for them.
 fn strip_inherited_secrets(env: &mut EnvMap, keys: &BTreeSet<String>) {
@@ -1420,6 +1431,15 @@ mod tests {
         let ci = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
         assert_eq!(parse_secret_keys("Path,__mise_x,Foo", ci), keys(&["Foo"]));
         assert_eq!(parse_secret_keys("Path", str::eq), keys(&["Path"]));
+    }
+
+    #[test]
+    fn test_inherited_secret_key_matching() {
+        let k = keys(&["FOO"]);
+        assert!(is_inherited_secret_key("FOO", &k));
+        assert!(is_inherited_secret_key(SECRET_KEYS_MARKER, &k));
+        assert!(!is_inherited_secret_key("BAR", &k));
+        assert!(!is_inherited_secret_key("X", &BTreeSet::new()));
     }
 
     #[test]
