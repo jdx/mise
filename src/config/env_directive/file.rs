@@ -260,7 +260,7 @@ impl EnvResults {
         let outer: Vec<(String, String)> = if expand {
             acc.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         } else {
-            crate::env::vars_safe().collect()
+            mise_util::env::vars_without_inherited_secrets().collect()
         };
         let mut env = EnvMap::new();
         for (k, v) in mise_dotenv::parse(&content, true, outer).wrap_err_with(errfn)? {

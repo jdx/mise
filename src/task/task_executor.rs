@@ -1439,7 +1439,12 @@ impl TaskExecutor {
         let root = task_cwd(task, config).await?;
         let sandbox = self.build_sandbox_for_task(task, config).await?;
         let filtered_env = if sandbox.is_active() {
-            sandbox.filter_env(resolved_env)
+            let mut filtered = sandbox.filter_env(resolved_env);
+            // filter_env reads allowed names back from mise's own process
+            // environment, which still holds inherited secrets. M3 must apply
+            // task grants after this point.
+            mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            filtered
         } else {
             resolved_env.clone()
         };
@@ -1613,8 +1618,16 @@ impl TaskExecutor {
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
         let sandbox = self.build_sandbox_for_task(task, &config).await?;
+        let sandbox_env;
         let env = if sandbox.is_active() {
-            &sandbox.filter_env(env)
+            let mut filtered = sandbox.filter_env(env);
+            // filter_env reads allowed names back from mise's own process
+            // environment, which still holds inherited secrets. `env_remove`
+            // cannot undo this because the runner sets `env` afterwards. M3
+            // must apply task grants after this point.
+            mise_util::env::strip_inherited_secrets_for_child(&mut filtered, &mut BTreeSet::new());
+            sandbox_env = filtered;
+            &sandbox_env
         } else {
             env
         };
@@ -2381,6 +2394,8 @@ impl TaskExecutor {
         {
             env.insert("__MISE_DIFF".into(), serialized);
         }
+
+        mise_util::env::strip_inherited_secrets_for_child(&mut env, &mut env_remove);
 
         Ok(PreparedTaskContext {
             toolset,
