@@ -174,7 +174,7 @@ only) in the task's environment so a nested mise knows not to pass them on. Keys
 files (`as_file = true`) are written to a 0700 directory with 0600 permissions, `KEY` is set to
 the path, and the files are deleted when the task ends.
 
-`{{ env.DEPLOY_KEY }}` in `run` cannot see a granted secret, because the secret is added after
+<span v-pre>`{{ env.DEPLOY_KEY }}`</span> in `run` cannot see a granted secret, because the secret is added after
 `run` is rendered. Read it from the environment instead (`"$DEPLOY_KEY"`). mise reports this
 before running anything.
 
@@ -223,26 +223,26 @@ so every config must be trusted explicitly.
 
 ### Troubleshooting
 
-| Message                                      | What to do                                                                                       |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `unknown secret X`                           | The key is not in fnox's profile. Check `mise secrets ls`, the spelling, and the profile.        |
-| `--secrets after the task name ...`          | Put mise flags before the task name: `mise run --secrets X deploy`.                              |
-| `X is a file secret` (`mise x`)              | `mise x` cannot give files. Use a task (`mise run`) or `fnox exec -- <command>`.                 |
-| `X cannot be injected`                       | fnox sets `env = false` for it. Read it with `fnox get X`, or set `env = "exec"` in `fnox.toml`. |
-| `"x y" is not a valid environment variable`  | Use names matching `[A-Za-z_][A-Za-z0-9_]*`.                                                     |
-| `secrets = true is not supported`            | List key names: `secrets = ["DEPLOY_KEY"]`.                                                      |
-| per-task source options                      | `secrets = { fnox = ... }` is not supported yet; list key names.                                 |
-| wildcards are not supported                  | List each key.                                                                                   |
-| `secrets is not allowed in [task_templates]` | Move `secrets` to each task.                                                                     |
-| comes from a remote source                   | Remote tasks cannot list secrets. Copy the task into your project.                               |
-| not project config                           | Global and system config cannot list secrets. Move the task into the project.                    |
-| started by a mise hook, watch_files, ...     | Run the task directly: `mise run <task>`.                                                        |
-| `X is both a secret and a mise env var`      | Keep one: move the default into `fnox.toml` or rename the mise variable.                         |
-| secret name `PATH` is reserved               | Names mise uses itself cannot be granted.                                                        |
-| its sandbox denies env vars                  | Add `allow_env = ["X"]` to the task or pass `--allow-env X`.                                     |
-| `fnox could not resolve X`                   | fnox's provider failed. Sign in, or give CI the provider's credentials. The message is fnox's.   |
-| `not retrying X`                             | fnox failed for it earlier in this run; fix the first error.                                     |
-| `{{ env.X }} in run cannot see the secret`   | Read `"$X"` from the environment instead.                                                        |
+| Message                                                       | What to do                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `unknown secret X`                                            | The key is not in fnox's profile. Check `mise secrets ls`, the spelling, and the profile.        |
+| `--secrets after the task name ...`                           | Put mise flags before the task name: `mise run --secrets X deploy`.                              |
+| `X is a file secret` (`mise x`)                               | `mise x` cannot give files. Use a task (`mise run`) or `fnox exec -- <command>`.                 |
+| `X cannot be injected`                                        | fnox sets `env = false` for it. Read it with `fnox get X`, or set `env = "exec"` in `fnox.toml`. |
+| `"x y" is not a valid environment variable`                   | Use names matching `[A-Za-z_][A-Za-z0-9_]*`.                                                     |
+| `secrets = true is not supported`                             | List key names: `secrets = ["DEPLOY_KEY"]`.                                                      |
+| per-task source options                                       | `secrets = { fnox = ... }` is not supported yet; list key names.                                 |
+| wildcards are not supported                                   | List each key.                                                                                   |
+| `secrets is not allowed in [task_templates]`                  | Move `secrets` to each task.                                                                     |
+| comes from a remote source                                    | Remote tasks cannot list secrets. Copy the task into your project.                               |
+| not project config                                            | Global and system config cannot list secrets. Move the task into the project.                    |
+| started by a mise hook, watch_files, ...                      | Run the task directly: `mise run <task>`.                                                        |
+| `X is both a secret and a mise env var`                       | Keep one: move the default into `fnox.toml` or rename the mise variable.                         |
+| secret name `PATH` is reserved                                | Names mise uses itself cannot be granted.                                                        |
+| its sandbox denies env vars                                   | Add `allow_env = ["X"]` to the task or pass `--allow-env X`.                                     |
+| `fnox could not resolve X`                                    | fnox's provider failed. Sign in, or give CI the provider's credentials. The message is fnox's.   |
+| `not retrying X`                                              | fnox failed for it earlier in this run; fix the first error.                                     |
+| <span v-pre>`{{ env.X }} in run cannot see the secret`</span> | Read `"$X"` from the environment instead.                                                        |
 
 ## Where the source is declared
 
