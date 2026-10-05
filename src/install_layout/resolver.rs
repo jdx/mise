@@ -542,8 +542,10 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
 /// its options are those the same version named with nothing else gets (from the
 /// tool's registry entry or backend alias, and from settings).
 fn is_bare(tv: &ToolVersion, identity: &InstallIdentity) -> bool {
+    // From the tool's name alone: options written inline (`tool[opt=value]`) are
+    // the request's own, and the plain request does not have them.
     let Ok(plain) = ToolRequest::new(
-        std::sync::Arc::new(tv.ba().clone()),
+        std::sync::Arc::new(crate::args::BackendArg::from(tv.ba().short.as_str())),
         &tv.version,
         crate::toolset::ToolSource::Argument,
     ) else {

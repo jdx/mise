@@ -118,6 +118,8 @@ assert "mise -C $work/more install"
 assert_fail "mise -C $work/env2 where tiny@1.0.0"
 # while the version named alone does find it
 assert "mise where tiny@1.0.0" "$(mise -C "$work/more" where tiny)"
+# options written on the command line are the version's own too
+assert_fail "mise where 'tiny[flavor=full]@1.0.0'"
 
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
