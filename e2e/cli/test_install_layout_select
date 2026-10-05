@@ -53,6 +53,9 @@ echo "=== with the selection lost and two candidates, mise does not guess ==="
 rm -rf "$installs/.mise/selections"
 assert_fail "mise install dummy@1.1.0" "matches several installations and none is selected"
 assert_fail "mise install dummy@1.1.0" "mise installs select"
+# nothing runs one of them in the meantime
+assert_fail "mise where dummy@1.1.0"
+assert_fail "mise x dummy@1.1.0 -- dummy" "matches several installations"
 # the locked project still has its pinned installation
 assert "mise -C locked where dummy" "$locked"
 assert "mise installs select $(basename "$unlocked")"

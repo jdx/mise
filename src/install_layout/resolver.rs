@@ -406,9 +406,20 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
             installed: true,
         });
     }
+    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
+    // Several installations answer and none is chosen: report a path that is
+    // never an installation, so nothing (`where`, `exec`, PATH) quietly runs one
+    // of them. Installing reports the choice to make.
+    if ambiguous {
+        return Some(Located {
+            dir: primary.meta_dir().join("ambiguous").join(&digest),
+            root: primary.root().to_path_buf(),
+            record: None,
+            installed: false,
+        });
+    }
     // Not installed. Report where a record says it was (a pruned payload
     // keeps its path), or where it would be allocated.
-    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
     let record = if unlocked {
         primary.lookup(&key)
     } else {
@@ -843,10 +854,11 @@ pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Op
     out
 }
 
-/// The installations of `tv`'s tool and version on this platform, whatever install
-/// options they were made with. A version named on the command line carries no
-/// options, so `mise where tool@1.0` has to find a copy made with the options a
-/// configuration file sets.
+/// The installations of `tv`'s tool and version on this platform made with other
+/// install options than `tv` carries. A version named on the command line carries
+/// no options, so `mise where tool@1.0` has to find a copy made with the options a
+/// configuration file sets. Installations of `tv`'s own request are not variants:
+/// which of those it uses is its selection's business, never a guess here.
 pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     if !enabled() {
         return vec![];
@@ -854,6 +866,9 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let Ok(b) = tv.backend() else {
         return vec![];
     };
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let own_request = identity_of(&bare).map(|identity| request_of(&identity));
     let backend = canonical_backend(&tv.ba().full());
     let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
     let mut out = vec![];
@@ -863,6 +878,9 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
             let dir = catalog.install_dir(&record);
             if record.identity.version == version
                 && record.identity.platform == platform
+                && own_request
+                    .as_ref()
+                    .is_none_or(|own| request_of(&record.identity) != *own)
                 && is_complete(&dir)
             {
                 out.push(dir);
