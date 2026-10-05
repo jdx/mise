@@ -120,20 +120,35 @@ impl InstallsMigrate {
     }
 
     /// Whether `tv` is one of the tools asked for: `None` when none were named.
-    /// A version names the installed versions that start with it, as for
-    /// `mise uninstall node@20`; `latest` names the newest installed one.
+    /// A version names the installed version it is, or else, as for
+    /// `mise uninstall node@20`, those it begins up to a separator (`20` names
+    /// `20.11.1`, not `200.1`); `latest` names the newest installed one.
     fn named(&self, tv: &ToolVersion) -> Option<bool> {
         if self.tool.is_empty() {
             return None;
         }
         Some(self.tool.iter().any(|ta| {
             ta.ba.short == tv.ba().short
-                && ta.version.as_deref().is_none_or(|v| match v {
-                    "latest" => tv.backend().is_ok_and(|b| {
-                        b.latest_installed_version(None).ok().flatten().as_deref()
-                            == Some(tv.version.as_str())
-                    }),
-                    v => v == tv.tv_pathname() || tv.version.starts_with(v),
+                && ta.version.as_deref().is_none_or(|v| {
+                    let Ok(backend) = tv.backend() else {
+                        return false;
+                    };
+                    if v == "latest" {
+                        return backend
+                            .latest_installed_version(None)
+                            .ok()
+                            .flatten()
+                            .as_deref()
+                            == Some(tv.version.as_str());
+                    }
+                    if v == tv.version || v == tv.tv_pathname() {
+                        return true;
+                    }
+                    let exact = backend.list_installed_versions().iter().any(|i| i == v);
+                    !exact
+                        && tv.version.strip_prefix(v).is_some_and(|rest| {
+                            rest.starts_with(|c: char| !c.is_ascii_alphanumeric())
+                        })
                 })
         }))
     }
