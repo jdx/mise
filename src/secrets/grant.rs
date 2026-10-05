@@ -449,8 +449,8 @@ fn osa_distance(a: &str, b: &str) -> usize {
     for (i, row) in d.iter_mut().enumerate() {
         row[0] = i;
     }
-    for j in 0..=b.len() {
-        d[0][j] = j;
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
     }
     for i in 1..=a.len() {
         for j in 1..=b.len() {
@@ -662,15 +662,17 @@ mod tests {
 
     #[test]
     fn grant_reports_bad_names() {
-        let mut t = Task::default();
-        t.name = "deploy".into();
-        t.secrets = Some(TaskSecrets(vec![
-            "OK".into(),
-            "deploy key".into(),
-            "AWS_*".into(),
-            "PATH".into(),
-            "__MISE_X".into(),
-        ]));
+        let t = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec![
+                "OK".into(),
+                "deploy key".into(),
+                "AWS_*".into(),
+                "PATH".into(),
+                "__MISE_X".into(),
+            ])),
+            ..Default::default()
+        };
         let (grant, problems) = grant_for_task(&t);
         assert_eq!(grant.keys.len(), 1);
         let kinds: Vec<_> = problems.iter().map(|p| p.kind).collect();

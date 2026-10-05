@@ -1,14 +1,16 @@
 ---
-description: "Use fnox as a project's secrets source and list its keys with mise secrets ls."
+description: "Use fnox as a project's secrets source: tasks receive only the secrets they list, and mise secrets ls shows what is available."
 ---
 
 # mise secrets with fnox
 
 <Badge type="warning" text="experimental" />
 
-[fnox](https://fnox.jdx.dev) can be the secrets source for a project. mise reads the list of
-keys fnox knows about and shows it with `mise secrets ls`. Values are never shown, and nothing
-receives secrets yet.
+[fnox](https://fnox.jdx.dev) can be the secrets source for a project. A task receives exactly the
+secrets it lists in `secrets = [...]`, as environment variables, and only while it runs. mise asks
+fnox for a value only when a task that lists it is about to run, keeps it in memory for that
+process only, and redacts it from the task's output. `mise secrets ls` shows which keys exist and
+which tasks list them; it never shows values.
 
 mise secrets is experimental. Enable it with:
 
@@ -35,15 +37,141 @@ mise secrets ls
 
 ```
 fnox · profile dev · ~/src/app (mise.toml) · fnox 1.39.0
-KEY                ENV    FILE  DESCRIPTION
-AWS_ACCESS_KEY_ID  -      no    (lease aws)
-DATABASE_URL       true   no    app database
-DEPLOY_KEY         exec   no
-GCP_SA_JSON        exec   yes
-SIGNING_KEY        false  no    release signing key
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+AWS_ACCESS_KEY_ID  -      no    run             (lease aws)
+DATABASE_URL       true   no    run     deploy  app database
+DEPLOY_KEY         exec   no    run     deploy
+GCP_SA_JSON        exec   yes   run
+SIGNING_KEY        false  no    -               release signing key
 ```
 
 The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or newer.
+
+## Granting secrets to tasks
+
+```toml [mise.toml]
+min_version = "2026.10.4"   # older mise rejects `secrets` on a task
+
+[secrets.fnox]
+profile = "prod"
+
+[tasks.build]
+run = "cargo build"                         # receives nothing; fnox never runs for it
+
+[tasks.deploy]
+depends = ["build"]
+secrets = ["DEPLOY_KEY", "DATABASE_URL"]    # only these keys, only this task
+run = './deploy.sh'                          # reads $DEPLOY_KEY
+```
+
+`mise run deploy` does the following:
+
+1. Validates every grant up front with one `fnox env --json --describe` call. Nothing runs if a
+   key is unknown or cannot be injected.
+2. Runs `build` with nothing.
+3. Makes one fnox call for the two keys.
+4. Starts `deploy` with them in its environment.
+5. Prints `[redacted]` wherever a value appears in the task's output.
+
+fnox is not run for a task without a grant, a task skipped because its sources are fresh, a
+declined confirmation, `mise run -n`, `mise env`, hook-env or a shim.
+
+The `secrets` field is also available in file task headers (`#MISE secrets=["DEPLOY_KEY"]`).
+`secrets = []` in a `[tasks.<name>]` block clears the list of a file task. `secrets` is not
+allowed in `[task_templates.*]` or `monorepo.task_defaults`: every grant is written on the task
+that receives it.
+
+### Who gets what
+
+| Process                                               | Receives the secret            |
+| ----------------------------------------------------- | ------------------------------ |
+| A task that lists the key                             | Yes                            |
+| Its dependencies and post-dependencies                | No, only their own lists       |
+| Tasks started by `run = [{ task = "..." }]`           | No, only their own lists       |
+| A nested `mise run` inside the task                   | Only tasks that list the key   |
+| Shims, `mise x` and tools the task calls              | Yes, they inherit the variable |
+| Hooks, `mise env`, hook-env, `mise activate`, daemons | No                             |
+
+Inherited values travel like any environment variable: a script that grants itself a key can
+pass it to every program it starts. List only what a task needs.
+
+### Where values go, and where they never go
+
+Values go only into the environment of the process mise starts for the task, after mise has
+rendered every template. They are added after `__MISE_DIFF` is computed and never go into
+`__MISE_DIFF` or `__MISE_SESSION`, the env cache, template contexts, hook-env, shims, `mise env`
+output, the task cache, or the command line of `sh -c`. mise sets `__MISE_SECRET_KEYS` (names
+only) in the task's environment so a nested mise knows not to pass them on. Keys fnox provides as
+files (`as_file = true`) are written to a 0700 directory with 0600 permissions, `KEY` is set to
+the path, and the files are deleted when the task ends.
+
+`{{ env.DEPLOY_KEY }}` in `run` cannot see a granted secret, because the secret is added after
+`run` is rendered. Read it from the environment instead (`"$DEPLOY_KEY"`). mise reports this
+before running anything.
+
+A key that mise also sets for the task (`[env]`, the task's `env`, a tool or a setting) is an
+error: tools started through shims recompute it and would replace the secret. A key the task's
+sandbox would drop is an error too; add it to `allow_env`.
+
+### Signing in, CI and the fnox daemon
+
+When mise runs in a terminal, fnox may prompt you to sign in (a password manager, for example).
+mise gives fnox the terminal and waits for other running tasks to finish first, as it does for an
+`interactive = true` task. fnox follows its own `[daemon]` setting and may start its daemon; mise
+never starts it.
+
+In CI, without a TTY, or when stdin is not a terminal, mise runs fnox with `--non-interactive
+--no-daemon`. fnox cannot prompt there, so sign in first (for example `op signin`) or give CI the
+provider's credentials.
+
+### Redaction, raw output and stdin
+
+A task that receives secrets always has its output redacted, so mise ignores `--raw` and the
+`raw` setting for it and does not connect stdin. Set `raw = true` or `interactive = true` on the
+task to hand it the terminal; its output is then not redacted. The one-time hint and the warning
+explain this when it comes up.
+
+### Artifact cache
+
+A task that receives secrets does not use the [task artifact cache](/tasks/task-configuration.html),
+because cached output could hold a secret. The plain `sources`/`outputs` freshness check still
+applies.
+
+### Launchers that refuse grants
+
+A task that lists secrets does not run when it was started by a mise hook, `watch_files`, a
+pitchfork daemon or `mise bootstrap`. Run it directly with `mise run`. Tasks from remote sources
+(`git::`, `oci::` or URL includes) and tasks defined in global or system config cannot list
+secrets either. A task file or a `[tasks]` entry that lists secrets also requires the config to
+be trusted, even though plain task definitions do not.
+
+### Trust
+
+`mise run` implicitly trusts the active config outside CI and `paranoid` mode, so cloning a
+repository and running a task in it runs that repository's tasks, including any that list
+secrets. On machines where AI agents or untrusted repositories are common, set `paranoid = true`
+so every config must be trusted explicitly.
+
+### Troubleshooting
+
+| Message                                      | What to do                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `unknown secret X`                           | The key is not in fnox's profile. Check `mise secrets ls`, the spelling, and the profile.        |
+| `X cannot be injected`                       | fnox sets `env = false` for it. Read it with `fnox get X`, or set `env = "exec"` in `fnox.toml`. |
+| `"x y" is not a valid environment variable`  | Use names matching `[A-Za-z_][A-Za-z0-9_]*`.                                                     |
+| `secrets = true is not supported`            | List key names: `secrets = ["DEPLOY_KEY"]`.                                                      |
+| per-task source options                      | `secrets = { fnox = ... }` is not supported yet; list key names.                                 |
+| wildcards are not supported                  | List each key.                                                                                   |
+| `secrets is not allowed in [task_templates]` | Move `secrets` to each task.                                                                     |
+| comes from a remote source                   | Remote tasks cannot list secrets. Copy the task into your project.                               |
+| not project config                           | Global and system config cannot list secrets. Move the task into the project.                    |
+| started by a mise hook, watch_files, ...     | Run the task directly: `mise run <task>`.                                                        |
+| `X is both a secret and a mise env var`      | Keep one: move the default into `fnox.toml` or rename the mise variable.                         |
+| secret name `PATH` is reserved               | Names mise uses itself cannot be granted.                                                        |
+| its sandbox denies env vars                  | Add `allow_env = ["X"]` to the task or pass `--allow-env X`.                                     |
+| `fnox could not resolve X`                   | fnox's provider failed. Sign in, or give CI the provider's credentials. The message is fnox's.   |
+| `not retrying X`                             | fnox failed for it earlier in this run; fix the first error.                                     |
+| `{{ env.X }} in run cannot see the secret`   | Read `"$X"` from the environment instead.                                                        |
 
 ## Where the source is declared
 
@@ -64,7 +192,12 @@ The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or new
 | KEY         | The name of the secret or lease key                                  |
 | ENV         | fnox's `env` setting: `true`, `exec`, `false`, or `-` for lease keys |
 | FILE        | `yes` if fnox provides the value as a file                           |
+| SCOPES      | `run` if a task can receive the key, `-` if fnox never injects it    |
+| TASKS       | Tasks whose `secrets` list names the key (and whose source is this)  |
 | DESCRIPTION | fnox's description, or `(lease <name>)`                              |
+
+Grant problems, such as a task listing a key fnox does not have, print to stderr as warnings
+with a suggestion; the exit code stays 0.
 
 `-J`/`--json` prints the same information as JSON:
 
@@ -87,21 +220,41 @@ The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or new
       "env": "exec",
       "as_file": false,
       "lease": null,
-      "description": null
+      "description": null,
+      "scopes": ["run"],
+      "tasks": [
+        {
+          "task": "deploy",
+          "via": "list",
+          "file": "/home/me/src/app/mise.toml"
+        }
+      ]
     }
   ],
   "dynamic_leases": [],
-  "ignored": []
+  "ignored": [],
+  "problems": []
 }
 ```
 
-`env` is `true`, `"exec"`, `false`, or `null` for lease keys. `profile` is the profile fnox used,
+`env` is `true`, `"exec"`, `false`, or `null` for lease keys. `scopes` is `["run"]` or `[]`.
+`problems` lists grants that name an unknown or non-injectable key, each with `task`, `key`,
+`kind` and an optional `suggestion`. `profile` is the profile fnox used,
 including `FNOX_PROFILE` or `default` when `mise.toml` sets none.
 
 mise looks for the fnox CLI in the project's tools first, then on `PATH`.
 
 ## Migrating from mise-env-fnox {#migrating}
 
-mise secrets does not pass values to tasks or commands yet, so keep `_.fnox-env` and the
-`mise-env-fnox` plugin in `mise.toml` until it does. `[secrets.fnox]` can sit beside them now to
-list keys with `mise secrets ls`. `mise doctor` flags the plugin as deprecated.
+`mise-env-fnox` and `_.fnox-env` put every fnox secret into mise's environment, where every
+task, hook, shim and `mise env` sees it. To move to mise secrets:
+
+1. Remove `_.fnox-env` and the `mise-env-fnox` plugin from `mise.toml`.
+2. Add `[secrets.fnox]` (and `profile`, if you used one).
+3. Add `secrets = [...]` to each task that needs a key, listing only that key. Read it from the
+   environment in the script (`$DEPLOY_KEY`).
+4. Check the result with `mise secrets ls` and `mise tasks validate`.
+
+Values in your shell and in `mise env` no longer appear, which is the point; if a tool you run
+outside `mise run` needs a secret, use `fnox exec -- <command>`. `mise doctor` flags the plugin as
+deprecated. Passing secrets to a one-off `mise x` command is not available yet.

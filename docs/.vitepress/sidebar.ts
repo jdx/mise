@@ -206,6 +206,7 @@ export const sidebar: SidebarItem[] = [
         link: "/environments/secrets/",
         collapsed: true,
         items: [
+          { text: "fnox (mise secrets)", link: "/environments/secrets/fnox" },
           { text: "sops", link: "/environments/secrets/sops" },
           { text: "age", link: "/environments/secrets/age" },
         ],

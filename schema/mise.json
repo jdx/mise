@@ -5582,6 +5582,22 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "secrets": {
+          "description": "[experimental] Secret keys this task receives when it starts, e.g. [\"DEPLOY_KEY\"]. Dependencies do not inherit them. See `mise secrets ls`.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              }
+            }
+          ]
         }
       },
       "type": "object"
@@ -5598,7 +5614,8 @@
             "interactive": false,
             "quiet": false,
             "raw": false,
-            "raw_args": false
+            "raw_args": false,
+            "secrets": false
           }
         }
       ],
@@ -5955,7 +5972,7 @@
       ]
     },
     "secrets": {
-      "description": "[experimental] Project-only sources for listing secret names and metadata with `mise secrets ls`. Tasks and commands do not receive secret values yet.",
+      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task that was granted them. Project config only.",
       "type": "object",
       "properties": {
         "fnox": {
