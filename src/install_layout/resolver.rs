@@ -390,8 +390,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
             // Nothing of the request's own: a bare version named on the command
             // line may still stand for a variant, after a legacy install (below).
             Unlocked::Nothing => {
-                try_variant = !sets_install_options(tv)
-                    && matches!(tv.request.source(), crate::toolset::ToolSource::Argument);
+                try_variant = matches!(tv.request.source(), crate::toolset::ToolSource::Argument);
             }
         }
     } else {
@@ -420,12 +419,12 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     if !ambiguous && let Some(legacy) = legacy_dir(tv, &identity) {
         return Some(legacy_located(legacy));
     }
-    // A version named on the command line without options means whatever is
-    // installed of it, as it did before this layout: a lone installation made
-    // with options a configuration set (`filter_bins`, `matching`) stands for
-    // it. With several, which is meant is not known. It is not cached: the cache
-    // is keyed by the request, and the same request from a configuration file
-    // does not stand for a variant.
+    // A version named on the command line means whatever is installed of it, as
+    // it did before this layout: a lone installation made with the request's
+    // options and more that a configuration set (`filter_bins`, `matching`) stands
+    // for it (see `extends`). With several, which is meant is not known. It is
+    // not cached: the cache is keyed by the request, and the same request from a
+    // configuration file does not stand for a variant.
     if try_variant && let [only] = variant_installations(tv.ba(), &identity).as_slice() {
         return Some(only.clone());
     }
@@ -538,20 +537,12 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
     }
 }
 
-/// Whether `tv`'s request sets options that change what is installed (named on
-/// the command line, or applied from a configuration). The options of a bare
-/// version's identity come from settings alone (a cargo registry, a pip index).
-fn sets_install_options(tv: &ToolVersion) -> bool {
-    tv.request.options().opts.keys().any(|key| {
-        !crate::toolset::EPHEMERAL_OPT_KEYS.contains(&key.as_str())
-            && !crate::backend::static_helpers::LISTING_ONLY_OPT_KEYS.contains(&key.as_str())
-    })
-}
-
-/// Whether a variant `a` was made with the settings a bare version's identity `b`
-/// records: every option of `b` (which a bare version gets only from settings) is
-/// one `a` has too.
-fn same_settings(a: &InstallIdentity, b: &InstallIdentity) -> bool {
+/// Whether an installation made for `a` can stand for a request for `b`: it was
+/// made with every install option `b` has (the request's own, its registry's
+/// defaults, the settings that take part), and more besides. A version named
+/// without options thus finds an installation a configuration made with some,
+/// and never one made with different values for the options it has.
+fn extends(a: &InstallIdentity, b: &InstallIdentity) -> bool {
     b.options
         .iter()
         .all(|(key, value)| a.options.get(key) == Some(value))
@@ -579,7 +570,7 @@ fn variant_installations(ba: &crate::args::BackendArg, identity: &InstallIdentit
             if record.identity.version == identity.version
                 && record.identity.platform == identity.platform
                 && same_graph(&record.identity, Some(identity))
-                && same_settings(&record.identity, identity)
+                && extends(&record.identity, identity)
                 && request_of(&record.identity) != own
                 && is_complete(&dir)
                 && belongs_to(ba, &record, &dir)
@@ -969,11 +960,12 @@ pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Op
     out
 }
 
-/// The installations of `tv`'s tool and version on this platform made with other
-/// install options than `tv` carries. A version named on the command line carries
-/// no options, so `mise where tool@1.0` has to find a copy made with the options a
-/// configuration file sets. Installations of `tv`'s own request are not variants:
-/// which of those it uses is its selection's business, never a guess here.
+/// The installations of `tv`'s tool and version on this platform made with the
+/// install options `tv` carries and more (see `extends`). A version named on the
+/// command line carries none of its own, so `mise where tool@1.0` has to find a
+/// copy made with the options a configuration file sets. Installations of `tv`'s
+/// own request are not variants: which of those it uses is its selection's
+/// business, never a guess here.
 pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     if !enabled() {
         return vec![];
@@ -985,11 +977,6 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     bare.install_path = None;
     let own_identity = identity_of(&bare);
     let own_request = own_identity.as_ref().map(request_of);
-    // A request with options of its own (named, or set by a configuration) means
-    // exactly those; only a bare version can stand for a variant.
-    if sets_install_options(tv) {
-        return vec![];
-    }
     // The request has installations of its own, or a selection: which one it uses
     // is for the selection to say (or the user, when that is ambiguous), so a
     // variant made with other options is no stand-in for it.
@@ -1010,7 +997,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
                 && same_graph(&record.identity, own_identity.as_ref())
                 && own_identity
                     .as_ref()
-                    .is_none_or(|own| same_settings(&record.identity, own))
+                    .is_none_or(|own| extends(&record.identity, own))
                 && own_request
                     .as_ref()
                     .is_none_or(|own| request_of(&record.identity) != *own)
