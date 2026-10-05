@@ -333,6 +333,7 @@ The layout works the same way on Windows, with these differences:
   Setting `MISE_INSTALLS_DIR` keeps installations in that directory, as on other
   platforms. `MISE_INSTALL_STORE_DIR` chooses where installations go, on any
   platform, without moving the links.
+
 - **Path length.** The installation's directory name has a bounded length: a label
   of at most 24 characters, a dash, and eight hash characters, longer only after a
   collision. It sits directly under the install store, whatever the version

@@ -69,7 +69,8 @@ This is where plugins may write downloaded assets such as tarballs during instal
 default after install/uninstall; set `always_keep_download` to keep them for debugging backend/plugin install behavior.
 This directory is not a supported download cache. Some backends may skip a download when the expected file already exists,
 but that behavior is backend-specific and not guaranteed. Cache `~/.local/share/mise/installs` instead if you want to
-avoid reinstalling tools in CI or offline workflows.
+avoid reinstalling tools in CI or offline workflows, together with the install store when it is a separate directory
+(`MISE_INSTALL_STORE_DIR`, or `%LOCALAPPDATA%\mise\i` on Windows with the identity [install layout](/dev-tools/install-layout.html)).
 
 ### `~/.local/share/mise/plugins`
 

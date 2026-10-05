@@ -1093,9 +1093,16 @@ pub(crate) fn link(tv: &ToolVersion, dir: &Path) -> Result<()> {
 /// their common parent when the store is a sibling of the installs root (Windows'
 /// `i` beside `installs`), else the installation's absolute path.
 fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
+    use path_absolutize::Absolutize;
+    // A relative store (`MISE_INSTALL_STORE_DIR=store`) would be read from the
+    // link's own directory, so a target that is not relative to it is absolute.
+    let absolute = || {
+        dir.absolutize()
+            .map_or_else(|_| dir.to_path_buf(), |p| p.into_owned())
+    };
     let name = dir.file_name().unwrap_or_default();
     let (Some(root), Some(store)) = (tool_dir.parent(), dir.parent()) else {
-        return dir.to_path_buf();
+        return absolute();
     };
     if same_path(root, store) {
         return Path::new("..").join(name);
@@ -1104,7 +1111,7 @@ fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
         (Some(a), Some(b), Some(store_name)) if same_path(a, b) => {
             Path::new("..").join("..").join(store_name).join(name)
         }
-        _ => dir.to_path_buf(),
+        _ => absolute(),
     }
 }
 
@@ -1393,8 +1400,7 @@ mod tests {
         let fx = Fixture::new();
         let version = fx.tool_dir.join("1.2.3");
         let alias = fx.tool_dir.join("1");
-        let target = Path::new("..").join(fx.install.file_name().unwrap());
-        file::make_dir_link(&target, &version).unwrap();
+        file::make_dir_link(&link_value(&fx.tool_dir, &fx.install), &version).unwrap();
         file::make_dir_link(Path::new("./1.2.3"), &alias).unwrap();
 
         assert!(is_compat_link_shape(&version));
@@ -1407,14 +1413,14 @@ mod tests {
         // installation, even though it resolves to one through the version link.
         assert!(!is_compat_link_shape(&alias));
         assert_eq!(link_target(&alias), None);
-        // A link into the same root that is not a receipt-bearing installation.
-        let stranger = dirs::INSTALLS.join(format!(
+        // A link into the store that is not a receipt-bearing installation.
+        let stranger = dirs::INSTALL_STORE.join(format!(
             "stranger-{}",
             fx.tool_dir.file_name().unwrap().to_string_lossy()
         ));
         std::fs::create_dir_all(&stranger).unwrap();
         let stray = fx.tool_dir.join("stray");
-        file::make_dir_link(&Path::new("..").join(stranger.file_name().unwrap()), &stray).unwrap();
+        file::make_dir_link(&link_value(&fx.tool_dir, &stranger), &stray).unwrap();
         assert_eq!(link_target(&stray), None);
         let _ = std::fs::remove_dir_all(&stranger);
     }
@@ -1423,11 +1429,18 @@ mod tests {
     fn unlinking_an_installation_removes_every_link_to_it_and_only_those() {
         let fx = Fixture::new();
         let other = Fixture::new();
-        let name = fx.install.file_name().unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &fx.tool_dir.join("1.2.3")).unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &other.tool_dir.join("1.2.3")).unwrap();
         file::make_dir_link(
-            &Path::new("..").join(other.install.file_name().unwrap()),
+            &link_value(&fx.tool_dir, &fx.install),
+            &fx.tool_dir.join("1.2.3"),
+        )
+        .unwrap();
+        file::make_dir_link(
+            &link_value(&other.tool_dir, &fx.install),
+            &other.tool_dir.join("1.2.3"),
+        )
+        .unwrap();
+        file::make_dir_link(
+            &link_value(&fx.tool_dir, &other.install),
             &fx.tool_dir.join("9.9.9"),
         )
         .unwrap();
@@ -1450,7 +1463,7 @@ mod tests {
     fn removal_is_refused_for_a_directory_mise_did_not_create() {
         let fx = Fixture::new();
         assert!(guard_removal(&fx.install).is_ok());
-        let stranger = dirs::INSTALLS.join(format!("stranger-{}", std::process::id()));
+        let stranger = dirs::INSTALL_STORE.join(format!("stranger-{}", std::process::id()));
         std::fs::create_dir_all(&stranger).unwrap();
         let err = guard_removal(&stranger).unwrap_err().to_string();
         assert!(err.contains("not an installation mise created"), "{err}");
@@ -1556,10 +1569,15 @@ mod tests {
             link_value(tool_dir, Path::new("/d/i/age-p4n6w2ra")),
             Path::new("../../i/age-p4n6w2ra")
         );
-        // A store somewhere else entirely is named absolutely.
+        // A store somewhere else entirely is named absolutely, even when it was
+        // configured as a relative path.
         assert_eq!(
             link_value(tool_dir, Path::new("/e/store/age-p4n6w2ra")),
             Path::new("/e/store/age-p4n6w2ra")
+        );
+        assert_eq!(
+            link_value(tool_dir, Path::new("store/age-p4n6w2ra")),
+            std::env::current_dir().unwrap().join("store/age-p4n6w2ra")
         );
     }
 
