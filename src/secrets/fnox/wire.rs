@@ -21,6 +21,9 @@ pub(super) struct DescribeDocument {
     pub(super) keys: Vec<WireKey>,
     #[serde(default)]
     pub(super) dynamic_leases: Vec<String>,
+    /// fnox's own decision about its daemon; absent from an older fnox
+    #[serde(default)]
+    pub(super) daemon_enabled: Option<bool>,
 }
 
 #[derive(Deserialize)]

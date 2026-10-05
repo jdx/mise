@@ -87,7 +87,7 @@ impl SecretsLs {
             ignored,
             tasks,
             problems,
-        } = secrets::inventory(&config).await?;
+        } = secrets::inventory(&config, !self.json).await?;
         let (Some(source), Some(catalog)) = (source, catalog) else {
             return self.print_no_source(&ignored);
         };
@@ -206,7 +206,7 @@ impl SecretsLs {
         if let Ok(Inventory {
             catalog: Some(catalog),
             ..
-        }) = secrets::inventory(&config).await
+        }) = secrets::inventory(&config, false).await
         {
             for (name, entry) in &catalog.entries {
                 if entry.injectable {

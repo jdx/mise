@@ -40,6 +40,9 @@ pub struct Catalog {
     pub profile: Vec<String>,
     pub dynamic_leases: Vec<String>,
     pub tool_version: String,
+    /// The source's own cache (fnox: its daemon) is enabled for this project and env; `None`
+    /// when the source did not say.
+    pub cache: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -77,7 +80,7 @@ pub(crate) trait SecretSource: Send + Sync + std::fmt::Debug {
     }
     /// One line for `mise secrets ls` about the source's cache, if it has one. Never starts
     /// anything.
-    async fn daemon_status(&self) -> Option<String> {
+    async fn daemon_status(&self, _catalog: &Catalog) -> Option<String> {
         None
     }
     /// Identifies the executable and environment this source was built with.

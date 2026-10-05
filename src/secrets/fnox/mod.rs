@@ -225,11 +225,12 @@ impl SecretSource for FnoxSource {
         keys: &KeySelection,
         catalog: &Catalog,
     ) -> std::result::Result<Option<Resolved>, ResolveError> {
-        self.cached_with(cx, keys, catalog, |call| call.run()).await
+        self.cached_with(cx, keys, catalog, daemon::DAEMON_TIMEOUT, |call| call.run())
+            .await
     }
 
-    async fn daemon_status(&self) -> Option<String> {
-        self.daemon_line().await
+    async fn daemon_status(&self, catalog: &Catalog) -> Option<String> {
+        self.daemon_line(catalog, daemon::DAEMON_TIMEOUT).await
     }
 
     async fn describe(&self) -> Result<Catalog> {
@@ -562,6 +563,7 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
         profile: doc.profile,
         dynamic_leases: doc.dynamic_leases,
         tool_version: doc.fnox_version,
+        cache: doc.daemon_enabled,
     }
 }
 
@@ -644,6 +646,23 @@ mod tests {
         let unknown = &c.entries[&SecretName::new("NEW_MODE").unwrap()];
         assert_eq!(unknown.mode, Some(InjectMode::Never));
         assert!(!unknown.injectable);
+    }
+
+    #[test]
+    fn describe_reports_fnoxs_daemon_decision() {
+        let with = |extra: &str| {
+            let doc = format!(
+                r#"{{"schema":1,"fnox_version":"1.40.0","profile":[],"keys":[],"dynamic_leases":[]{extra}}}"#
+            );
+            interpret(true, "exit status: 0", doc.as_bytes(), Path::new("/p"))
+                .ok()
+                .unwrap()
+                .cache
+        };
+        assert_eq!(with(r#","daemon_enabled":true"#), Some(true));
+        assert_eq!(with(r#","daemon_enabled":false"#), Some(false));
+        // an older fnox does not say
+        assert_eq!(with(""), None);
     }
 
     #[test]

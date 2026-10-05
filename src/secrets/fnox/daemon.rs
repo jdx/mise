@@ -4,13 +4,18 @@
 //! user's terminal, which resolves and stores, and the next run hits. Only an interactive run
 //! asks (CI and other non-interactive runs use the CLI with `--no-daemon`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use fnox_client::document::{EnvDocument, EnvScope, KeyRejection};
 use fnox_client::{CallError, Client, EnvOutcome, EnvRequest, RuntimeEnv, SocketKey};
 
 use super::{FnoxSource, resolved_from};
 use crate::secrets::source::{Catalog, KeySelection, ResolveError, Resolved, SourceCx};
+
+/// Above fnox-client's own 5s I/O timeout: a connect to a stopped daemon with a full backlog
+/// has none, and the broker holds the memo lock meanwhile.
+pub(super) const DAEMON_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Everything a daemon call needs, owned: `spawn_blocking` wants `'static`, and the source,
 /// the keys and the env are borrowed.
@@ -133,25 +138,34 @@ impl FnoxSource {
         }
     }
 
-    /// `call` is the blocking socket round trip; tests replace it.
+    /// `call` is the blocking socket round trip; tests replace it. Nothing is sent unless fnox
+    /// itself says it would use its daemon for this project and env (`catalog.cache`).
     pub(super) async fn cached_with(
         &self,
         cx: &SourceCx,
         keys: &KeySelection,
         catalog: &Catalog,
+        limit: Duration,
         call: impl FnOnce(DaemonCall) -> (EnvOutcome, PathBuf) + Send + 'static,
     ) -> Result<Option<Resolved>, ResolveError> {
-        if !cx.interactive {
+        if !cx.interactive || catalog.cache != Some(true) {
             return Ok(None);
         }
         let request = self.daemon_call(keys);
-        let (outcome, socket) = match tokio::task::spawn_blocking(move || call(request)).await {
-            Ok(done) => done,
-            Err(_) => {
-                debug!("secrets: fnox daemon call did not finish; using the fnox CLI");
-                return Ok(None);
-            }
-        };
+        let (outcome, socket) =
+            match tokio::time::timeout(limit, tokio::task::spawn_blocking(move || call(request)))
+                .await
+            {
+                Ok(Ok(done)) => done,
+                Ok(Err(_)) => {
+                    debug!("secrets: fnox daemon call did not finish; using the fnox CLI");
+                    return Ok(None);
+                }
+                Err(_) => {
+                    debug!("secrets: fnox daemon did not answer in time; using the fnox CLI");
+                    return Ok(None);
+                }
+            };
         match plan(outcome) {
             Plan::Hit(doc) => {
                 let resolved = resolved_from(*doc, keys, catalog);
@@ -169,7 +183,7 @@ impl FnoxSource {
                         "the fnox daemon speaks a different protocol than this mise; using the fnox CLI",
                         ""
                     ),
-                    Why::PeerRejected => warn!(
+                    Why::PeerRejected => warn_once!(
                         "fnox daemon socket at {} is not owned by you; using the fnox CLI",
                         crate::file::display_path(&socket)
                     ),
@@ -182,18 +196,45 @@ impl FnoxSource {
         }
     }
 
-    pub(super) async fn daemon_line(&self) -> Option<String> {
+    /// The `mise secrets ls` header line. Asks the daemon who it is only when fnox says the
+    /// daemon is enabled; never starts one.
+    pub(super) async fn daemon_line(&self, catalog: &Catalog, limit: Duration) -> Option<String> {
         if !fnox_client::platform_supported() {
             return None;
         }
+        match catalog.cache {
+            Some(false) => return Some("daemon: disabled".to_string()),
+            None => {
+                return Some(format!(
+                    "daemon: not used (fnox {} does not report it)",
+                    catalog.tool_version
+                ));
+            }
+            Some(true) => {}
+        }
         let call = self.daemon_call(&KeySelection::AllInScope);
-        let hello = tokio::task::spawn_blocking(move || call.client().hello())
-            .await
-            .ok()?;
-        Some(match hello {
-            Ok(info) => format!("daemon: running (protocol {})", info.protocol),
-            Err(_) => "daemon: not running".to_string(),
+        let probe = tokio::task::spawn_blocking(move || {
+            let client = call.client();
+            (client.hello(), client.socket_path().to_path_buf())
+        });
+        Some(match tokio::time::timeout(limit, probe).await {
+            Ok(Ok((hello, socket))) => status_line(hello, &socket),
+            Ok(Err(_)) => "daemon: not responding".to_string(),
+            Err(_) => "daemon: not responding".to_string(),
         })
+    }
+}
+
+/// Never includes an error's text: it can carry paths or wire content.
+fn status_line(hello: Result<fnox_client::HelloInfo, CallError>, socket: &Path) -> String {
+    match hello {
+        Ok(info) => format!("daemon: running (protocol {})", info.protocol),
+        Err(CallError::PeerRejected(_)) => format!(
+            "daemon: socket {} is not owned by you",
+            crate::file::display_path(socket)
+        ),
+        Err(e) if e.is_socket_missing() => "daemon: not running".to_string(),
+        Err(_) => "daemon: not responding".to_string(),
     }
 }
 
@@ -243,8 +284,15 @@ mod tests {
             profile: vec![],
             dynamic_leases: vec![],
             tool_version: "1".into(),
+            cache: Some(true),
         }
     }
+
+    fn catalog_cache(cache: Option<bool>) -> Catalog {
+        Catalog { cache, ..catalog() }
+    }
+
+    const LIMIT: Duration = Duration::from_secs(5);
 
     fn sel(keys: &[&str]) -> KeySelection {
         KeySelection::Keys(keys.iter().map(|k| SecretName::new(k).unwrap()).collect())
@@ -332,6 +380,7 @@ mod tests {
                 &SourceCx { interactive: false },
                 &sel(&["DATABASE_URL"]),
                 &catalog(),
+                LIMIT,
                 move |_| {
                     seen.fetch_add(1, Ordering::SeqCst);
                     (EnvOutcome::Absent, PathBuf::new())
@@ -342,17 +391,18 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
-    async fn cached(outcome: impl FnOnce() -> EnvOutcome + Send + 'static) -> Option<Resolved> {
+    async fn cached(
+        outcome: impl FnOnce() -> EnvOutcome + Send + 'static,
+    ) -> Result<Option<Resolved>, ResolveError> {
         source(&[])
             .cached_with(
                 &interactive(),
                 &sel(&["DATABASE_URL"]),
                 &catalog(),
+                LIMIT,
                 move |_| (outcome(), PathBuf::new()),
             )
             .await
-            .ok()
-            .flatten()
     }
 
     #[tokio::test]
@@ -364,6 +414,7 @@ mod tests {
             ]))
         })
         .await
+        .expect("ok")
         .expect("a hit is an answer");
         let set: Vec<_> = r.set.keys().map(|k| k.as_str()).collect();
         // SIGNING_KEY was not requested (G17)
@@ -385,7 +436,7 @@ mod tests {
             },
             || EnvOutcome::Unavailable(CallError::Oversize),
         ] {
-            assert!(cached(outcome).await.is_none());
+            assert!(matches!(cached(outcome).await, Ok(None)));
         }
     }
 
@@ -404,6 +455,7 @@ mod tests {
                 &interactive(),
                 &sel(&["DEPLOY_KYE"]),
                 &catalog(),
+                LIMIT,
                 move |_| (EnvOutcome::Rejected(rejection), PathBuf::new()),
             )
             .await
@@ -422,8 +474,109 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[tokio::test]
+    async fn nothing_is_sent_unless_fnox_says_the_daemon_is_enabled() {
+        for cache in [None, Some(false)] {
+            let called = Arc::new(AtomicUsize::new(0));
+            let seen = called.clone();
+            let out = source(&[])
+                .cached_with(
+                    &interactive(),
+                    &sel(&["DATABASE_URL"]),
+                    &catalog_cache(cache),
+                    LIMIT,
+                    move |_| {
+                        seen.fetch_add(1, Ordering::SeqCst);
+                        (EnvOutcome::Absent, PathBuf::new())
+                    },
+                )
+                .await;
+            assert!(matches!(out, Ok(None)), "{cache:?}");
+            assert_eq!(called.load(Ordering::SeqCst), 0, "{cache:?}");
+        }
+        let called = Arc::new(AtomicUsize::new(0));
+        let seen = called.clone();
+        let _ = source(&[])
+            .cached_with(
+                &interactive(),
+                &sel(&["DATABASE_URL"]),
+                &catalog_cache(Some(true)),
+                LIMIT,
+                move |_| {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    (EnvOutcome::Absent, PathBuf::new())
+                },
+            )
+            .await;
+        assert_eq!(called.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_never_answers_is_abandoned() {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let started = std::time::Instant::now();
+        let out = source(&[])
+            .cached_with(
+                &interactive(),
+                &sel(&["DATABASE_URL"]),
+                &catalog(),
+                Duration::from_millis(50),
+                move |_| {
+                    let _ = rx.recv();
+                    (EnvOutcome::Absent, PathBuf::new())
+                },
+            )
+            .await;
+        assert!(matches!(out, Ok(None)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        drop(tx);
+    }
+
+    #[test]
+    fn status_lines_name_the_failure_without_its_text() {
+        let socket = Path::new("/run/fnox/x.sock");
+        let peer = status_line(
+            Err(CallError::PeerRejected(std::io::Error::other("secret-x"))),
+            socket,
+        );
+        assert!(peer.contains("/run/fnox/x.sock"), "{peer}");
+        assert!(peer.contains("not owned"), "{peer}");
+        assert!(
+            !peer.contains("not running") && !peer.contains("secret-x"),
+            "{peer}"
+        );
+        let refused = CallError::SocketUnavailable {
+            path: socket.to_path_buf(),
+            source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
+        };
+        assert_eq!(status_line(Err(refused), socket), "daemon: not running");
+        assert_eq!(
+            status_line(Err(CallError::EmptyResponse), socket),
+            "daemon: not responding"
+        );
+    }
+
+    #[test]
+    fn the_socket_tests_run_where_fnox_has_a_daemon() {
+        assert_eq!(
+            fnox_client::platform_supported(),
+            cfg!(any(
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd"
+            ))
+        );
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd"
+    ))]
     mod socket {
+
         use super::*;
         use fnox_client::wire::Response;
         use std::io::{BufRead, BufReader, Write};
@@ -438,23 +591,27 @@ mod tests {
             requests: std::thread::JoinHandle<()>,
         }
 
-        fn daemon(reply: Option<Response>, serve: bool) -> Daemon {
-            let run = tempfile::tempdir().unwrap();
-            let xdg = run.path().join("run");
-            let source = source(&[("XDG_RUNTIME_DIR", xdg.to_str().unwrap())]);
+        fn bind(source: &FnoxSource) -> UnixListener {
             let socket = source
                 .daemon_call(&sel(&["DATABASE_URL"]))
                 .client()
                 .socket_path()
                 .to_path_buf();
+            std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+            std::fs::set_permissions(
+                socket.parent().unwrap(),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+            UnixListener::bind(&socket).unwrap()
+        }
+
+        fn daemon(reply: Option<Response>, serve: bool) -> Daemon {
+            let run = tempfile::tempdir().unwrap();
+            let xdg = run.path().join("run");
+            let source = source(&[("XDG_RUNTIME_DIR", xdg.to_str().unwrap())]);
             let requests = if serve {
-                std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
-                std::fs::set_permissions(
-                    socket.parent().unwrap(),
-                    std::fs::Permissions::from_mode(0o700),
-                )
-                .unwrap();
-                let listener = UnixListener::bind(&socket).unwrap();
+                let listener = bind(&source);
                 std::thread::spawn(move || {
                     let (stream, _) = listener.accept().unwrap();
                     let mut line = String::new();
@@ -474,17 +631,16 @@ mod tests {
             }
         }
 
-        async fn ask(d: &Daemon) -> Option<Resolved> {
+        async fn ask(d: &Daemon) -> Result<Option<Resolved>, ResolveError> {
             d.source
                 .cached_with(
                     &interactive(),
                     &sel(&["DATABASE_URL"]),
                     &catalog(),
+                    LIMIT,
                     |call| call.run(),
                 )
                 .await
-                .ok()
-                .flatten()
         }
 
         #[tokio::test]
@@ -495,7 +651,7 @@ mod tests {
                 }),
                 true,
             );
-            let r = ask(&d).await.expect("a hit");
+            let r = ask(&d).await.expect("ok").expect("a hit");
             d.requests.join().unwrap();
             assert_eq!(r.set.len(), 1);
             assert_eq!(
@@ -516,7 +672,7 @@ mod tests {
                 None,
             ] {
                 let d = daemon(reply, true);
-                assert!(ask(&d).await.is_none());
+                assert!(matches!(ask(&d).await, Ok(None)));
                 d.requests.join().unwrap();
             }
         }
@@ -532,7 +688,9 @@ mod tests {
             );
             let err = d
                 .source
-                .cached_with(&interactive(), &sel(&["X"]), &catalog(), |call| call.run())
+                .cached_with(&interactive(), &sel(&["X"]), &catalog(), LIMIT, |call| {
+                    call.run()
+                })
                 .await;
             d.requests.join().unwrap();
             assert!(matches!(err, Err(ResolveError::Invalid { .. })));
@@ -541,10 +699,13 @@ mod tests {
         #[tokio::test]
         async fn no_socket_spawns_nothing_and_creates_no_runtime_dir() {
             let d = daemon(None, false);
-            assert!(ask(&d).await.is_none());
+            assert!(matches!(ask(&d).await, Ok(None)));
             let xdg = d._run.path().join("run");
             assert!(!xdg.exists(), "{}", xdg.display());
-            assert_eq!(d.source.daemon_line().await.unwrap(), "daemon: not running");
+            assert_eq!(
+                d.source.daemon_line(&catalog(), LIMIT).await.unwrap(),
+                "daemon: not running"
+            );
         }
 
         #[tokio::test]
@@ -559,10 +720,38 @@ mod tests {
                 true,
             );
             assert_eq!(
-                d.source.daemon_line().await.unwrap(),
+                d.source.daemon_line(&catalog(), LIMIT).await.unwrap(),
                 "daemon: running (protocol 6)"
             );
             d.requests.join().unwrap();
+        }
+
+        #[tokio::test]
+        async fn a_disabled_daemon_is_never_contacted() {
+            let run = tempfile::tempdir().unwrap();
+            let xdg = run.path().join("run");
+            let source = source(&[("XDG_RUNTIME_DIR", xdg.to_str().unwrap())]);
+            let listener = bind(&source);
+            listener.set_nonblocking(true).unwrap();
+            let disabled = catalog_cache(Some(false));
+            assert_eq!(
+                source.daemon_line(&disabled, LIMIT).await.unwrap(),
+                "daemon: disabled"
+            );
+            let out = source
+                .cached_with(
+                    &interactive(),
+                    &sel(&["DATABASE_URL"]),
+                    &disabled,
+                    LIMIT,
+                    |call| call.run(),
+                )
+                .await;
+            assert!(matches!(out, Ok(None)));
+            assert!(
+                matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+                "the daemon saw a connection"
+            );
         }
     }
 }

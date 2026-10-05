@@ -3592,7 +3592,7 @@ dependencies = [
 [[package]]
 name = "fnox-client"
 version = "1.38.1"
-source = "git+https://github.com/jdx/fnox?branch=claude%2Ffnox-client#8090d64b9c7efa194cb319dfac75b7b9da6afdab"
+source = "git+https://github.com/jdx/fnox?branch=claude%2Ffnox-client#4979e6cc673cca9193f0a1aa8bbe30c696a7a20f"
 dependencies = [
  "blake3",
  "indexmap 2.14.2",

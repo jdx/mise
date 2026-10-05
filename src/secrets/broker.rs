@@ -1150,6 +1150,7 @@ mod tests {
             profile: vec![],
             dynamic_leases: vec![],
             tool_version: "1".into(),
+            cache: None,
         }
     }
 
