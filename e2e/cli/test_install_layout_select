@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Choosing installations under the identity install layout: `mise installs ls`
+# lists every installation, `mise installs select` chooses the one requests
+# without a lockfile use, and with nothing selected mise reuses an installation
+# only when exactly one answers the request.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+export MISE_LOCKFILE=1
+
+installs="$MISE_DATA_DIR/installs"
+detect_platform
+
+lock_dummy() { # <dir> <version> <checksum>
+  mkdir -p "$1"
+  echo "tools.dummy = \"$2\"" >"$1/mise.toml"
+  cat >"$1/mise.lock" <<EOF
+[[tools.dummy]]
+version = "$2"
+backend = "asdf:dummy"
+"platforms.$MISE_PLATFORM" = { checksum = "$3" }
+EOF
+}
+
+echo "=== an unlocked install and a locked one of the same version ==="
+assert "mise install dummy@1.1.0"
+unlocked="$(mise where dummy@1.1.0)"
+lock_dummy locked 1.1.0 sha256:aaaa
+assert "mise -C locked install"
+locked="$(mise -C locked where dummy)"
+[[ $locked != "$unlocked" ]] || fail "the pinned install reused $unlocked"
+
+echo "=== mise installs ls lists both, with what each is ==="
+assert_contains "mise installs ls dummy" "$(basename "$unlocked")"
+assert_contains "mise installs ls dummy" "$(basename "$locked")"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.selected) | .name'" "$(basename "$unlocked")"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.pinned) | .name'" "$(basename "$locked")"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.pinned) | .mode'" "resolved"
+assert "mise installs ls --json | jq length" "2"
+
+echo "=== select moves requests without a lockfile, and the version link ==="
+assert_contains "mise installs select $(basename "$locked")" "every project that asks for it without a lockfile"
+assert "mise where dummy@1.1.0" "$locked"
+assert "readlink '$installs/dummy/1.1.0'" "../$(basename "$locked")"
+assert "mise -C locked where dummy" "$locked"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.selected) | .name'" "$(basename "$locked")"
+# a path works as well as a name
+assert "mise installs select $unlocked"
+assert "mise where dummy@1.1.0" "$unlocked"
+assert "readlink '$installs/dummy/1.1.0'" "../$(basename "$unlocked")"
+assert_fail "mise installs select dummy-nothere1" "is not an installation"
+
+echo "=== with the selection lost and two candidates, mise does not guess ==="
+rm -rf "$installs/.mise/selections"
+assert_fail "mise install dummy@1.1.0" "matches several installations and none is selected"
+assert_fail "mise install dummy@1.1.0" "mise installs select"
+# the locked project still has its pinned installation
+assert "mise -C locked where dummy" "$locked"
+assert "mise installs select $(basename "$unlocked")"
+assert_contains "mise install dummy@1.1.0 2>&1" "already installed"
+assert "mise where dummy@1.1.0" "$unlocked"
+
+echo "=== a forced install is the other way out ==="
+rm -rf "$installs/.mise/selections"
+assert "mise install --force dummy@1.1.0"
+assert "mise where dummy@1.1.0" "$unlocked"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.selected) | .name'" "$(basename "$unlocked")"
+
+echo "=== with one candidate, it is reused and selected ==="
+assert "mise install dummy@2.0.0"
+only="$(mise where dummy@2.0.0)"
+rm -rf "$installs/.mise/selections"
+assert_contains "mise install dummy@2.0.0 2>&1" "already installed"
+assert "mise where dummy@2.0.0" "$only"
+assert "mise installs ls dummy --json | jq -r '.[] | select(.selected and .version == \"2.0.0\") | .name'" "$(basename "$only")"
+
+echo "=== an unlocked request adopts the one installation a lockfile made ==="
+lock_dummy pinned 1.0.0 sha256:bbbb
+assert "mise -C pinned install"
+pinned="$(mise -C pinned where dummy)"
+assert_contains "mise install dummy@1.0.0 2>&1" "already installed"
+assert "mise where dummy@1.0.0" "$pinned"
+assert "test \"\$(mise installs ls dummy --json | jq '[.[] | select(.version == \"1.0.0\")] | length')\" -eq 1"
+
+echo "=== a selection can name an installation in a read-only shared root ==="
+shared="$HOME/shared-installs"
+assert "MISE_INSTALLS_DIR='$shared' mise install tiny@3.1.0"
+shared_dir="$(MISE_INSTALLS_DIR="$shared" mise where tiny@3.1.0)"
+[[ $shared_dir == "$shared"/tiny-* ]] || fail "$shared_dir is not in the shared root"
+shared_state="$(find "$shared" -printf '%p %s %T@\n' | sort)"
+export MISE_SHARED_INSTALL_DIRS="$shared"
+assert "mise where tiny@3.1.0" "$shared_dir"
+assert_contains "mise install tiny@3.1.0 2>&1" "already installed"
+assert "mise installs ls tiny --json | jq -r '.[] | select(.selected) | .shared'" "true"
+# a forced install writes a copy into the user's own root and selects it
+assert "mise install --force tiny@3.1.0"
+own_dir="$(mise where tiny@3.1.0)"
+[[ $own_dir == "$installs"/tiny-* ]] || fail "$own_dir is not in the user's root"
+assert "test -f '$shared_dir/.mise-install.toml'"
+# the same identity has the same name in both roots: the name alone is ambiguous
+assert_fail "mise installs select $(basename "$shared_dir")" "pass its path"
+assert "mise installs select $shared_dir"
+assert "mise where tiny@3.1.0" "$shared_dir"
+# nothing was written into the shared root
+[[ "$(find "$shared" -printf '%p %s %T@\n' | sort)" == "$shared_state" ]] ||
+  fail "the shared root was written to"
+echo "=== a selected shared installation that is gone is not replaced silently ==="
+rm -rf "$shared_dir"
+assert_fail "mise install tiny@3.1.0" "no longer has it"
+assert "mise installs select $own_dir"
+assert "mise where tiny@3.1.0" "$own_dir"

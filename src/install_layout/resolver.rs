@@ -28,7 +28,7 @@ use crate::{dirs, env};
 /// Whether the identity layout is on: `install_layout = "identity"`, which is
 /// opt-in even with `experimental` on and requires it. (Later, `experimental` will
 /// include it.)
-pub(crate) fn enabled() -> bool {
+pub fn enabled() -> bool {
     let Ok(settings) = crate::config::Settings::try_get() else {
         return false;
     };
@@ -350,13 +350,40 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     }
     let identity = identity_of(tv)?;
     let digest = identity.digest().to_base32();
+    let unlocked = pin_of(&identity).is_none();
+    let mut ambiguous = false;
     for root in roots() {
         let cache_key = (root.clone(), digest.clone());
         if let Some(hit) = locate_cache().get(&cache_key) {
             return Some(hit.clone());
         }
         let catalog = Catalog::new(&root);
-        for record in candidates(&catalog, &identity) {
+        // A selection the user made of an installation in a read-only shared root
+        // is kept in their own catalog and names that root.
+        if unlocked
+            && let Some((other_root, other, record)) =
+                selected_in_other_root(&catalog, &identity.request_key())
+        {
+            let dir = other.install_dir(&record);
+            let installed = is_complete(&dir);
+            let located = Located {
+                dir,
+                root: other_root,
+                record: Some(record),
+                installed,
+            };
+            if installed {
+                locate_cache().insert(cache_key, located.clone());
+            }
+            // Gone with its root, it is reported missing: nothing else is
+            // chosen in its place without the user saying so.
+            return Some(located);
+        }
+        let Ok(records) = candidates(&catalog, &identity) else {
+            ambiguous = true;
+            break;
+        };
+        for record in records {
             let dir = catalog.install_dir(&record);
             let installed = is_complete(&dir);
             let located = Located {
@@ -372,7 +399,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
         }
     }
     // An install made before the identity layout, in place.
-    if let Some(legacy) = legacy_dir(tv, &identity) {
+    if !ambiguous && let Some(legacy) = legacy_dir(tv, &identity) {
         return Some(Located {
             root: legacy.parent().map(Path::to_path_buf).unwrap_or_default(),
             dir: legacy,
@@ -383,7 +410,9 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // Not installed. Report where a record says it was (a pruned payload
     // keeps its path), or where it would be allocated.
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
-    let record = candidates(&primary, &identity).into_iter().next();
+    let record = candidates(&primary, &identity)
+        .ok()
+        .and_then(|records| records.into_iter().next());
     let dir = match &record {
         Some(record) => primary.install_dir(record),
         None => primary.tentative_dir(&identity),
@@ -399,11 +428,17 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
 /// The catalog records that could satisfy `identity`, best first.
 ///
 /// An unlocked request is satisfied by the installation its selection points
-/// at, else the one allocated for its own key. A request pinning an artifact is
-/// satisfied by the installation allocated for exactly that pin, or by an
-/// unlocked installation whose acquired artifact is the pinned one: adopting it
-/// does not reinstall, and does not hash the installed files.
-fn candidates(catalog: &Catalog, identity: &InstallIdentity) -> Vec<IdentityRecord> {
+/// at, even after its payload was pruned (installing restores it). With nothing
+/// selected (yet, or any longer), it reuses the one complete installation that
+/// answers it; when several do, choosing would be a guess, and their records are
+/// the error. A request pinning an artifact is satisfied by the installation
+/// allocated for exactly that pin, or by an unlocked installation whose acquired
+/// artifact is the pinned one: adopting it does not reinstall, and does not hash
+/// the installed files.
+fn candidates(
+    catalog: &Catalog,
+    identity: &InstallIdentity,
+) -> std::result::Result<Vec<IdentityRecord>, Vec<IdentityRecord>> {
     let key = identity.request_key();
     let mut found: Vec<IdentityRecord> = vec![];
     let mut push = |record: Option<IdentityRecord>| {
@@ -434,22 +469,96 @@ fn candidates(catalog: &Catalog, identity: &InstallIdentity) -> Vec<IdentityReco
             push(catalog.selected_record(&key).filter(adoptable));
             push(catalog.lookup(&key).filter(adoptable));
         }
-        None => {
-            push(catalog.selected_record(&key));
-            push(catalog.lookup(&key));
-        }
+        None => match catalog.selected_record(&key) {
+            Some(selected) => push(Some(selected)),
+            None => {
+                let mut complete: Vec<_> = catalog
+                    .records_for_backend(&key.backend)
+                    .into_iter()
+                    .filter(|r| {
+                        same_request(&r.identity, &key) && is_complete(&catalog.install_dir(r))
+                    })
+                    .collect();
+                if complete.len() > 1 {
+                    return Err(complete);
+                }
+                push(complete.pop());
+                push(catalog.lookup(&key));
+            }
+        },
     }
-    found
+    Ok(found)
+}
+
+/// The installation a selection in `catalog` names in another installs root,
+/// with that root and its catalog.
+fn selected_in_other_root(
+    catalog: &Catalog,
+    key: &InstallIdentity,
+) -> Option<(PathBuf, Catalog, IdentityRecord)> {
+    let selection = catalog.selection(key)?;
+    let root = PathBuf::from(selection.root?);
+    let other = Catalog::new(&root);
+    let record = other.record_by_digest(&key.backend, &selection.selected)?;
+    Some((root, other, record))
+}
+
+/// The unlocked request an installation answers: its identity without a pin
+/// or a refresh generation. Its selection is recorded under this key.
+fn request_of(identity: &InstallIdentity) -> InstallIdentity {
+    let mut key = identity.request_key();
+    key.inputs.remove("generation");
+    key
+}
+
+/// The next refresh generation of the unlocked request `key`.
+fn next_generation(catalog: &Catalog, key: &InstallIdentity) -> u32 {
+    catalog
+        .records_for_backend(&key.backend)
+        .iter()
+        .filter(|r| same_request(&r.identity, key))
+        .map(|r| {
+            let named = r
+                .identity
+                .inputs
+                .get("generation")
+                .and_then(|g| g.parse().ok())
+                .unwrap_or(0);
+            r.provenance.generation.max(named)
+        })
+        .max()
+        .unwrap_or(0)
+        + 1
+}
+
+/// Why an unlocked request with no selection cannot just use an installation.
+fn ambiguity_error(tv: &ToolVersion, records: &[IdentityRecord]) -> eyre::Report {
+    let list = records
+        .iter()
+        .map(|r| {
+            let pinned = if r.provenance.pinned_by.is_empty() {
+                ""
+            } else {
+                " (a lockfile pins it)"
+            };
+            format!("  {}{pinned}", r.dir)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    eyre::eyre!(
+        "{} matches several installations and none is selected:\n{list}\n\
+         Choose one with `mise installs select <dir>`, or install a fresh one with \
+         `mise install --force {}@{}`",
+        tv.style(),
+        tv.ba().short,
+        tv.version
+    )
 }
 
 /// Whether `identity` answers the unlocked request `key`, whichever refresh
 /// generation of the request it belongs to.
 fn same_request(identity: &InstallIdentity, key: &InstallIdentity) -> bool {
-    let mut a = identity.request_key();
-    let mut b = key.request_key();
-    a.inputs.remove("generation");
-    b.inputs.remove("generation");
-    a == b
+    request_of(identity) == request_of(key)
 }
 
 /// A legacy `installs/<short>/<version>` directory that this request may use.
@@ -878,7 +987,30 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
         }
     }
 
-    if let Some(existing) = candidates(&catalog, &identity).into_iter().next() {
+    // The installation selected in another root is gone: say so rather than
+    // quietly installing a replacement and moving every project's selection to it.
+    if !locked
+        && !refresh
+        && let Some(selection) = catalog.selection(&key)
+        && let Some(root) = &selection.root
+    {
+        eyre::bail!(
+            "the installation selected for {} is in {root}, which no longer has it. Select \
+             another with `mise installs select <dir>`, or install a fresh one with \
+             `mise install --force {}@{}`",
+            tv.style(),
+            tv.ba().short,
+            tv.version
+        );
+    }
+    let existing = match candidates(&catalog, &identity) {
+        Ok(records) => records.into_iter().next(),
+        // A refresh is the explicit choice: it installs into the request's own
+        // directory and selects that.
+        Err(_) if refresh => catalog.lookup(&key),
+        Err(records) => return Err(ambiguity_error(tv, &records)),
+    };
+    if let Some(existing) = existing {
         let pinned_elsewhere = !existing.provenance.pinned_by.is_empty() && !locked;
         if !(refresh && pinned_elsewhere) {
             return Ok(Some(Allocated {
@@ -890,13 +1022,12 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
             }));
         }
         // Move the unlocked selection to a new generation.
+        let generation = next_generation(&catalog, &key);
         let mut next = key.clone();
-        next.inputs.insert(
-            "generation".into(),
-            (existing.provenance.generation + 1).to_string(),
-        );
+        next.inputs
+            .insert("generation".into(), generation.to_string());
         let mut record = catalog.allocate(&next)?;
-        record.provenance.generation = existing.provenance.generation + 1;
+        record.provenance.generation = generation;
         catalog.update_provenance(&next, record.provenance.clone())?;
         return Ok(Some(Allocated {
             read_only: false,
@@ -1037,14 +1168,23 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     let (true, Some(record)) = (located.installed, located.record) else {
         return Ok(());
     };
-    if !is_primary_root(&located.root) {
-        // A read-only shared installation: never written to.
-        return Ok(());
-    }
     let Some(identity) = identity_of(tv) else {
         return Ok(());
     };
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+    // An unlocked request that found its installation with nothing selected (one
+    // a lockfile, another spelling or a shared root made) remembers it, so the
+    // choice stays put when more installations of the request appear.
+    let key = identity.request_key();
+    if pin_of(&identity).is_none() && catalog.selection(&key).is_none() {
+        let shared = (!is_primary_root(&located.root)).then_some(located.root.as_path());
+        catalog.select(&key, &record, shared)?;
+        reset_cache();
+    }
+    if !is_primary_root(&located.root) {
+        // A read-only shared installation: never written to.
+        return Ok(());
+    }
     if let Some(pin) = pin_of(&identity)
         && !record.provenance.pinned_by.iter().any(|p| p == pin)
     {
@@ -1187,6 +1327,181 @@ pub fn link_target(slot: &Path) -> Option<PathBuf> {
     let parent = target.parent()?;
     let is_store = stores().iter().any(|s| same_path(s, parent));
     (is_store && target.join(RECEIPT_FILE).exists()).then_some(target)
+}
+
+/// One installation of the identity layout, as `mise installs` shows it.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Installation {
+    /// The directory name, `<label>-<hash>`.
+    pub name: String,
+    pub dir: PathBuf,
+    /// The canonical backend it was installed from.
+    pub backend: String,
+    pub version: String,
+    pub platform: String,
+    /// `fallback` (identified by its request) or `resolved` (a pinned artifact).
+    pub mode: String,
+    /// The install-affecting options it was made with.
+    pub options: BTreeMap<String, String>,
+    /// The spelling it was first requested as.
+    pub requested_as: Option<String>,
+    /// The checksum of the artifact it was installed from, when known.
+    pub checksum: Option<String>,
+    /// A lockfile adopted it: a refresh never replaces it in place.
+    pub pinned: bool,
+    /// Unlocked requests for its tool, version, platform and options use it.
+    pub selected: bool,
+    /// It is in a read-only shared installs directory.
+    pub shared: bool,
+}
+
+/// Every complete installation of the identity layout, in every installs root,
+/// ordered by name within each root.
+pub fn installations() -> Vec<Installation> {
+    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let mut out = vec![];
+    for root in roots() {
+        let catalog = Catalog::new(&root);
+        for name in file::dir_subdirs(catalog.store()).unwrap_or_default() {
+            if !has_hash_suffix(&name) {
+                continue;
+            }
+            if let Some(found) = describe(&primary, &catalog, &root, &name) {
+                out.push(found);
+            }
+        }
+    }
+    out
+}
+
+/// The installation named `name` in the store of `root`, if there is a complete one.
+fn describe(primary: &Catalog, catalog: &Catalog, root: &Path, name: &str) -> Option<Installation> {
+    let dir = catalog.store().join(name);
+    let receipt = read_receipt(&dir)?;
+    // The catalog's record carries provenance added after the receipt was written.
+    let record = catalog
+        .record_by_digest(&receipt.record.identity.backend, &receipt.record.digest)
+        .unwrap_or(receipt.record);
+    let shared = !is_primary_root(root);
+    let selected = primary
+        .selection(&request_of(&record.identity))
+        .is_some_and(|s| {
+            s.selected == record.digest
+                && match &s.root {
+                    Some(r) => shared && same_path(Path::new(r), root),
+                    None => !shared,
+                }
+        });
+    let identity = &record.identity;
+    Some(Installation {
+        name: name.to_string(),
+        dir,
+        backend: identity.backend.clone(),
+        version: identity.version.clone(),
+        platform: identity.platform.clone(),
+        mode: match identity.mode {
+            Mode::Resolved => "resolved",
+            Mode::Fallback => "fallback",
+        }
+        .to_string(),
+        options: identity.options.clone(),
+        requested_as: receipt.requested_as,
+        checksum: identity
+            .inputs
+            .get("artifact.checksum")
+            .or_else(|| record.provenance.artifacts.get("checksum"))
+            .cloned(),
+        pinned: !record.provenance.pinned_by.is_empty(),
+        selected,
+        shared,
+    })
+}
+
+/// Make the installation `name` (a directory name, or its path) the one that
+/// unlocked requests for its tool, version, platform and options use, in every
+/// project on this machine, and point the version links that named another
+/// installation of that request at it. Locked requests are not affected.
+pub fn select(installation: &str) -> Result<Installation> {
+    let path = Path::new(installation);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(installation)
+        .to_string();
+    // A path names its installs root; a bare name may be in several.
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let mut found: Vec<(PathBuf, Catalog)> = roots()
+        .into_iter()
+        .map(|root| {
+            let catalog = Catalog::new(&root);
+            (root, catalog)
+        })
+        .filter(|(root, catalog)| {
+            parent.is_none_or(|p| same_path(p, catalog.store()))
+                && describe(&primary, catalog, root, &name).is_some()
+        })
+        .collect();
+    if found.len() > 1 {
+        let paths = found
+            .iter()
+            .map(|(_, c)| format!("  {}", c.store().join(&name).display()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        eyre::bail!("{name} is in more than one installs directory; pass its path:\n{paths}");
+    }
+    let Some((root, catalog)) = found.pop() else {
+        eyre::bail!("{installation} is not an installation; `mise installs ls` lists them");
+    };
+    let dir = catalog.store().join(&name);
+    let receipt = read_receipt(&dir).ok_or_else(|| eyre::eyre!("{name} has no receipt"))?;
+    let record = catalog
+        .record_by_digest(&receipt.record.identity.backend, &receipt.record.digest)
+        .unwrap_or(receipt.record);
+    let key = request_of(&record.identity);
+    let shared = (!is_primary_root(&root)).then_some(root.as_path());
+    primary.select(&key, &record, shared)?;
+    if shared.is_none() {
+        retarget_links(&record, &dir, receipt.requested_as.as_deref());
+    }
+    reset_cache();
+    describe(&primary, &catalog, &root, &name)
+        .ok_or_else(|| eyre::eyre!("{name} is no longer installed"))
+}
+
+/// Point every version link in the primary root that names another installation
+/// of `record`'s request at `dir` instead, and give the tool it was requested as
+/// a link if it has none. A link can name only one variant; after a selection
+/// it should name the selected one.
+fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str>) {
+    let root: &Path = &dirs::INSTALLS;
+    let key = request_of(&record.identity);
+    let name = listing_name(record);
+    for tool in file::dir_subdirs(root).unwrap_or_default() {
+        if is_reserved_dir(root, &tool) {
+            continue;
+        }
+        let tool_dir = root.join(&tool);
+        let slot = tool_dir.join(&name);
+        let retarget = match link_target(&slot) {
+            Some(current) => {
+                !same_path(&current, dir)
+                    && read_receipt(&current)
+                        .is_some_and(|r| same_request(&r.record.identity, &key))
+            }
+            None => {
+                requested_as.is_some_and(|short| crate::backend::tool_directory_name(short) == tool)
+                    && std::fs::symlink_metadata(&slot).is_err()
+            }
+        };
+        if retarget && let Err(err) = file::make_dir_link(&link_value(&tool_dir, dir), &slot) {
+            warn!(
+                "could not link {} to {}: {err:#}",
+                slot.display(),
+                dir.display()
+            );
+        }
+    }
 }
 
 /// Adopt installations whose receipt is on disk but that the primary catalog does

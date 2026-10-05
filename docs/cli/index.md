@@ -65,6 +65,7 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise use`](/cli/use.html) — Install a tool and add it to configuration
 - [`mise install`](/cli/install.html) — Install a tool version
 - [`mise install-into`](/cli/install-into.html) — Install a tool version to a specific path
+- [`mise installs`](/cli/installs.html) — [experimental] Inspect and choose installations of the identity install layout
 - [`mise uninstall`](/cli/uninstall.html) — Remove installed tool versions
 - [`mise unuse`](/cli/unuse.html) — Remove tool requests from configuration and prune unused installations
 - [`mise upgrade`](/cli/upgrade.html) — Upgrade outdated tools
