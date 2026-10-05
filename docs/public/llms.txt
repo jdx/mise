@@ -34,7 +34,7 @@
 - [Packslip Verification and Policy](https://mise.jdx.dev/dev-tools/packslip-verification.html): mise uses Packslip's signed metadata to discover releases, verify publishers, and select compatible builds. This guide describes the discovery and policy rules behind the Packslip backend.
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): mise deps runs project dependency installers when tracked inputs change or outputs go missing. It compares source hashes with the last successful run, then invokes the configured package manager.
-- [Install Layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): By default, mise installs a tool into installs/<tool>/<version>. That path cannot say which backend produced the files, which platform build they are, or which install options were used.
+- [Install Layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): mise installs each tool into its own directory, installs/<label>-<hash>/, named by what was installed: the backend, version, platform, and the options that change what gets installed.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): A backend resolves a tool's versions, installs it, and supplies its executable paths and environment. The registry maps short names such as node and ripgrep to backends.
 - [Core tools](https://mise.jdx.dev/core-tools.html): Core tools have installation logic built into mise. They do not require a separately installed plugin.
 - [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
@@ -349,7 +349,7 @@
 - [mise implode](https://mise.jdx.dev/cli/implode.html): Remove the mise CLI and all related data
 - [mise install](https://mise.jdx.dev/cli/install.html): Install a tool version
 - [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
-- [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose installations of the identity install layout
+- [mise installs](https://mise.jdx.dev/cli/installs.html): Inspect and choose installations of the identity install layout
 - [mise installs ls](https://mise.jdx.dev/cli/installs/ls.html): List the installations of the identity install layout
 - [mise installs migrate](https://mise.jdx.dev/cli/installs/migrate.html): Reinstall legacy installations into the identity install layout
 - [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose the installation that requests without a lockfile use

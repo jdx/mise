@@ -1,40 +1,32 @@
 ---
-description: "The experimental install layout names each installation by what it is, so shorthands share installs and variants of one version coexist."
+description: "mise names each installation by what it is, so shorthands share installs and variants of one version coexist."
 ---
 
-# Install layout <Badge type="warning" text="experimental" />
+# Install layout
 
-By default, mise installs a tool into `installs/<tool>/<version>`. That path
-cannot say which backend produced the files, which platform build they are, or
-which install options were used. So `age` and `aqua:FiloSottile/age` are two
-separate downloads, and two variants of one version overwrite each other.
+mise installs each tool into its own directory, `installs/<label>-<hash>/`,
+named by what was installed: the backend, version, platform, and the options that
+change what gets installed. The familiar `installs/<tool>/<version>` path stays, as
+a link to that directory.
 
-The install layout gives each installation its own directory,
-`installs/<label>-<hash>/`, named by what was installed. The familiar
-`installs/<tool>/<version>` path stays, as a link to that directory.
+Before this layout, every tool went into `installs/<tool>/<version>`. That path
+could not say which backend produced the files, which platform build they are, or
+which install options were used. So `age` and `aqua:FiloSottile/age` were two
+separate downloads, and two variants of one version overwrote each other.
 
-::: warning Experimental
-The install layout is on whenever `experimental = true`. Set
-`install_layout = "legacy"` to keep the old layout with other experimental
-features on. Directory names, receipts, and the catalog format may
-change in any release while it is experimental. Files that
-tools generate while installing, such as virtual environments and shebangs,
-record the hashed path. Try it where reinstalling is cheap, and read
-[Downgrading and compatibility](#downgrading-and-compatibility) before relying
-on it.
+::: tip Opting out
+`install_layout = "legacy"` keeps installing into `installs/<tool>/<version>`. It is
+deprecated and will be removed. Files that tools generate while installing, such as
+virtual environments and shebangs, record the hashed path; read
+[Downgrading and compatibility](#downgrading-and-compatibility) before going back to
+an older mise.
 :::
 
 ## Quick start
 
-Turn on experimental features in `mise.toml`, or for every project with
-`mise settings set experimental=true` (or `MISE_EXPERIMENTAL=1`). The layout comes
-with them:
+Nothing needs to be set:
 
 ```toml [mise.toml]
-[settings]
-experimental = true
-# install_layout = "legacy"  # to keep installs/<tool>/<version>
-
 [tools]
 age = "1.2.1"
 ```
@@ -424,8 +416,8 @@ The layout works the same way on Windows, with these differences:
 
 ## Downgrading and compatibility
 
-To turn the layout off, set `install_layout = "legacy"` (or turn off
-`experimental`). mise then installs new
+To turn the layout off, set `install_layout = "legacy"` (deprecated). mise then
+installs new
 versions into `installs/<tool>/<version>` again and leaves hashed directories
 where they are. While it is off:
 

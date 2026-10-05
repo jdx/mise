@@ -743,7 +743,7 @@ Install a tool version
 Install a tool version to a specific path
 .TP
 \fBinstalls\fR
-[experimental] Inspect and choose installations of the identity install layout
+Inspect and choose installations of the identity install layout
 .TP
 \fBinstalls ls\fR
 List the installations of the identity install layout
@@ -6118,9 +6118,9 @@ mise install\-into node@20.0.0 ./mynode && ./mynode/bin/node \-v
 v20.0.0
 .RE
 .SH "MISE INSTALLS"
-[experimental] Inspect and choose installations of the identity install layout
+Inspect and choose installations of the identity install layout
 
-With `install_layout = "identity"`, each installation lives in its own
+Under the identity install layout (the default), each installation lives in its own
 `<label>\-<hash>` directory, and several installations of one version can
 exist side by side (different options, platforms, pinned artifacts, or a
 refreshed copy). These commands list them, choose which one requests

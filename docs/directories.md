@@ -84,18 +84,18 @@ ln -s ~/src/mise-my-tool ~/.local/share/mise/plugins/my-tool
 
 ### `~/.local/share/mise/installs`
 
-Stores installed tool versions. For example, `mise install node@24.0.0` installs into
-`installs/node/24.0.0` under the data directory. mise may also create version-prefix and alias
-symlinks that point at concrete installations. Use `mise where node` or `mise which node` to
-find the selected installation or executable, rather than constructing a path from an alias.
+Stores installed tool versions. Each installation gets its own directory named by
+what was installed (the [install layout](/dev-tools/install-layout.html)): for example,
+`mise install age@1.2.1` installs into `installs/age-hlencrst`, and `installs/age/1.2.1` is
+a link to it. mise may also create version-prefix and alias symlinks such as `installs/age/1`.
+Use `mise where age` or `mise which age` to find the selected installation or executable,
+rather than constructing a path from an alias.
 
-With the experimental [install layout](/dev-tools/install-layout.html)
-(on with `experimental = true` unless `install_layout = "legacy"`), new installations go into `installs/<label>-<hash>/`
-instead, such as `installs/age-hlencrst`, and `installs/age/1.2.1` becomes a link
-to that directory. The `installs/.mise/` directory holds the catalog that
-remembers each installation's directory and which installation an unlocked request
-selected. It is durable metadata, not a cache: keep it with the installs it
-describes. Installations made before you enabled the layout stay where they are.
+The `installs/.mise/` directory holds the catalog that remembers each installation's
+directory and which installation an unlocked request selected. It is durable metadata, not a
+cache: keep it with the installs it describes. Installations made by an older mise in
+`installs/<tool>/<version>` stay where they are; `mise installs migrate` moves them.
+`install_layout = "legacy"` (deprecated) keeps installing new versions there.
 
 On Windows the installations themselves go into `i` beside `installs`
 (`%LOCALAPPDATA%\mise\i\age-hlencrst`), a shorter path that leaves more room
