@@ -671,6 +671,17 @@ fn scrub_env(keys: &[String]) {
     }
 }
 
+/// Scrubs `keys` from mise's environment when dropped.
+#[cfg(all(windows, not(test)))]
+struct ScrubOnDrop<'a>(&'a [String]);
+
+#[cfg(all(windows, not(test)))]
+impl Drop for ScrubOnDrop<'_> {
+    fn drop(&mut self) {
+        scrub_env(self.0);
+    }
+}
+
 #[cfg(all(not(test), unix))]
 pub(crate) async fn exec_program<T, U>(
     program: T,
@@ -884,6 +895,10 @@ where
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
+    // Windows runs the command as a child and returns, so every return from here on, error or
+    // exit code, takes the granted values back out of mise's own environment. The child has
+    // already inherited them.
+    let _scrub = ScrubOnDrop(scrub_on_failure);
     let cwd = crate::dirs::CWD.clone().unwrap_or_default();
     let program = program.to_executable();
     // Reorder PATH for program resolution: mise-added paths first, then

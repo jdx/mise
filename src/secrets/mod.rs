@@ -176,6 +176,9 @@ pub async fn prepare_exec_secrets(
     let broker = SecretBroker::default();
     let ctx = crate::task::task_context_builder::TaskContextBuilder::new();
     let no_env_keys = Default::default();
+    // `base_env` is what mise computed for the command, so mise sets every key in it, even one
+    // whose value equals the shell's.
+    let mise_env_keys: std::collections::BTreeSet<String> = req.base_env.keys().cloned().collect();
     broker
         .prepare_exec(
             config,
@@ -187,6 +190,7 @@ pub async fn prepare_exec_secrets(
                 base_env: req.base_env,
                 task_env_keys: &no_env_keys,
                 mise_set_inherited: &no_env_keys,
+                mise_env_keys: &mise_env_keys,
                 sandbox: req.sandbox,
                 file_dir: None,
                 terminal: &ExecTerminal,

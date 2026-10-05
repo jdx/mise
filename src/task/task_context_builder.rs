@@ -17,6 +17,7 @@ type EnvResolutionResult = (
     Vec<(String, String)>,
     Option<IndexMap<String, String>>,
     BTreeSet<String>,
+    BTreeSet<String>,
 );
 
 /// Builds toolset and environment context for task execution
@@ -189,6 +190,7 @@ impl TaskContextBuilder {
         Vec<(String, String)>,
         Option<IndexMap<String, String>>,
         BTreeSet<String>,
+        BTreeSet<String>,
     )> {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
@@ -242,8 +244,8 @@ impl TaskContextBuilder {
         // Check using task_cf entries for compatibility with existing logic
         let task_cf_env_entries = task_cf.env_entries()?;
         if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
-            let (env, task_env, env_remove) = task.render_env(config, ts).await?;
-            return Ok((env, task_env, None, env_remove));
+            let (env, task_env, env_remove, mise_keys) = task.render_env(config, ts).await?;
+            return Ok((env, task_env, None, env_remove, mise_keys));
         }
 
         let config_path = canonicalize_path(task_cf.get_path());
@@ -268,7 +270,8 @@ impl TaskContextBuilder {
             }
         }
 
-        let (mut env, mut env_remove) = ts.full_env_with_removals(config).await?;
+        let (mut env, mut env_remove, mut mise_keys) =
+            ts.full_env_with_removals_and_keys(config).await?;
         let (tera_ctx, resolved_vars) = self
             .build_tera_context(task_cf, ts, config, task_config_files.as_ref())
             .await?;
@@ -296,6 +299,7 @@ impl TaskContextBuilder {
             )
             .await?;
         Self::apply_env_results(&mut env, &mut env_remove, &config_env_results);
+        mise_keys.extend(config_env_results.env.keys().cloned());
 
         // Register config-level redactions resolved through the task context
         if !config_env_results.redactions.is_empty() {
@@ -312,6 +316,7 @@ impl TaskContextBuilder {
             .await?;
 
         let task_env = self.extract_task_env(&task_env_results);
+        mise_keys.extend(task_env.iter().map(|(k, _)| k.clone()));
         Self::apply_env_results(&mut env, &mut env_remove, &task_env_results);
 
         // Register task-specific redactions with the global redactor
@@ -350,11 +355,12 @@ impl TaskContextBuilder {
                     task_env.clone(),
                     resolved_vars.clone(),
                     env_remove.clone(),
+                    mise_keys.clone(),
                 )
             });
         }
 
-        Ok((env, task_env, resolved_vars, env_remove))
+        Ok((env, task_env, resolved_vars, env_remove, mise_keys))
     }
 
     /// Check if standard env resolution should be used instead of special context

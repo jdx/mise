@@ -111,6 +111,8 @@ struct PreparedTaskContext {
     /// Inherited secret keys that mise's own config set for this task. M2's strip removes
     /// them from `env`, so G11 needs them recorded first.
     mise_set_inherited: BTreeSet<String>,
+    /// Every key mise itself sets for this task, whatever its value.
+    mise_env_keys: BTreeSet<String>,
 }
 
 /// Format a task path for a child process without leaking the mixture of `/` and `\` that
@@ -667,6 +669,7 @@ impl TaskExecutor {
             task_env,
             extra_vars,
             mise_set_inherited,
+            mise_env_keys,
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
@@ -878,6 +881,7 @@ impl TaskExecutor {
                         base_env: &env,
                         task_env_keys: &task_env_keys,
                         mise_set_inherited: &mise_set_inherited,
+                        mise_env_keys: &mise_env_keys,
                         sandbox: &sandbox,
                         file_dir: Some(&self.secrets_file_dir),
                         terminal: &terminal,
@@ -2576,16 +2580,15 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, mut env_remove) = if let Some(task_cf) = task_cf {
-            let (env, task_env, extra_vars, env_remove) = self
-                .context_builder
-                .resolve_task_env_with_config(config, task, task_cf, &toolset)
-                .await?;
-            (env, task_env, extra_vars, env_remove)
-        } else {
-            let (env, task_env, env_remove) = task.render_env(config, &toolset).await?;
-            (env, task_env, None, env_remove)
-        };
+        let (mut env, task_env, extra_vars, mut env_remove, mut mise_env_keys) =
+            if let Some(task_cf) = task_cf {
+                self.context_builder
+                    .resolve_task_env_with_config(config, task, task_cf, &toolset)
+                    .await?
+            } else {
+                let (env, task_env, env_remove, keys) = task.render_env(config, &toolset).await?;
+                (env, task_env, None, env_remove, keys)
+            };
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -2731,6 +2734,7 @@ impl TaskExecutor {
             );
         }
 
+        mise_env_keys.extend(nested_mise_diff_exclude_keys.iter().cloned());
         let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
         if let Ok(serialized) =
             EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
@@ -2754,6 +2758,7 @@ impl TaskExecutor {
             task_env,
             extra_vars,
             mise_set_inherited,
+            mise_env_keys,
         })
     }
 

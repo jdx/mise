@@ -86,6 +86,8 @@ pub(crate) struct SpawnRequest<'a> {
     /// inherited secret keys that mise's own env sets for this child; M2 strips them from
     /// `base_env`, so they are carried here
     pub(crate) mise_set_inherited: &'a BTreeSet<String>,
+    /// every key mise itself sets for this child, whatever its value
+    pub(crate) mise_env_keys: &'a BTreeSet<String>,
     pub(crate) sandbox: &'a SandboxConfig,
     /// `None` refuses `as_file` keys
     pub(crate) file_dir: Option<&'a Path>,
@@ -449,16 +451,19 @@ fn g15(subject: &str, earlier: &Earlier) -> eyre::Report {
     )))
 }
 
-/// G11: mise itself sets `key` for this child. A value that merely came from the shell
-/// (same as the pristine env) is allowed, and the secret wins.
+/// G11: mise itself sets `key` for this child. A key mise sets is a collision even when its
+/// value equals the shell's (mise's env may already be exported into the shell). A value that
+/// merely came from the shell, with mise setting nothing, is allowed, and the secret wins.
 fn collides(
     key: &str,
     task_env_keys: &BTreeSet<String>,
     mise_set_inherited: &BTreeSet<String>,
+    mise_env_keys: &BTreeSet<String>,
     base_env: &EnvMap,
     pristine: &EnvMap,
 ) -> bool {
     task_env_keys.iter().any(|t| env_key_eq(t, key))
+        || mise_env_keys.iter().any(|t| env_key_eq(t, key))
         || mise_set_inherited.iter().any(|t| env_key_eq(t, key))
         || get_eq(base_env, key).is_some_and(|v| get_eq(pristine, key) != Some(v))
 }
@@ -966,6 +971,7 @@ fn collides_for(req: &SpawnRequest<'_>, key: &str) -> bool {
         key,
         req.task_env_keys,
         req.mise_set_inherited,
+        req.mise_env_keys,
         req.base_env,
         &env::PRISTINE_ENV,
     )
@@ -1183,6 +1189,7 @@ mod tests {
         base: EnvMap,
         task_env: BTreeSet<String>,
         inherited: BTreeSet<String>,
+        mise_env: BTreeSet<String>,
         sandbox: SandboxConfig,
         ctx: TaskContextBuilder,
     }
@@ -1197,6 +1204,7 @@ mod tests {
                 base: EnvMap::new(),
                 task_env: BTreeSet::new(),
                 inherited: BTreeSet::new(),
+                mise_env: BTreeSet::new(),
                 sandbox: SandboxConfig::default(),
                 ctx: TaskContextBuilder::new(),
             }
@@ -1209,6 +1217,7 @@ mod tests {
                 base_env: &self.base,
                 task_env_keys: &self.task_env,
                 mise_set_inherited: &self.inherited,
+                mise_env_keys: &self.mise_env,
                 sandbox: &self.sandbox,
                 file_dir: None,
                 terminal: term,
@@ -1350,13 +1359,38 @@ mod tests {
             p.insert("CHANGED".into(), "old".into());
             p
         };
-        assert!(!collides("SHELL_SET", &none, &none, &base, &pristine));
-        assert!(collides("MISE_SET", &none, &none, &base, &pristine));
-        assert!(collides("CHANGED", &none, &none, &base, &pristine));
-        assert!(!collides("OTHER", &none, &none, &base, &pristine));
+        assert!(!collides(
+            "SHELL_SET",
+            &none,
+            &none,
+            &none,
+            &base,
+            &pristine
+        ));
+        assert!(collides("MISE_SET", &none, &none, &none, &base, &pristine));
+        assert!(collides("CHANGED", &none, &none, &none, &base, &pristine));
+        assert!(!collides("OTHER", &none, &none, &none, &base, &pristine));
         let own = BTreeSet::from(["OTHER".to_string()]);
-        assert!(collides("OTHER", &own, &none, &base, &pristine));
-        assert!(collides("OTHER", &none, &own, &base, &pristine));
+        let own_shell = BTreeSet::from(["SHELL_SET".to_string()]);
+        assert!(collides("OTHER", &own, &none, &none, &base, &pristine));
+        assert!(collides("OTHER", &none, &own, &none, &base, &pristine));
+        // mise sets it, to the very value the shell already has
+        assert!(!collides(
+            "SHELL_SET",
+            &none,
+            &none,
+            &none,
+            &base,
+            &pristine
+        ));
+        assert!(collides(
+            "SHELL_SET",
+            &none,
+            &none,
+            &own_shell,
+            &base,
+            &pristine
+        ));
     }
 
     #[tokio::test]
