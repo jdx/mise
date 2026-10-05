@@ -60,3 +60,7 @@ echo "=== a store inside the installs directory is ignored ==="
 assert "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise install dummy@2.0.0"
 assert_matches "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
 assert "test ! -e '$installs/dummy/store'"
+
+echo "=== the store written through the installs directory is still the store ==="
+beside="$(MISE_INSTALL_STORE_DIR="$installs/../i" mise where dummy@1.1.0)"
+assert "realpath '$beside'" "$(realpath "$dir_1")"
