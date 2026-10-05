@@ -95,11 +95,13 @@ The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or new
 }
 ```
 
-`env` is `true`, `"exec"`, `false`, or `null` for lease keys.
+`env` is `true`, `"exec"`, `false`, or `null` for lease keys. `profile` is the profile fnox used,
+including `FNOX_PROFILE` or `default` when `mise.toml` sets none.
 
 mise looks for the fnox CLI in the project's tools first, then on `PATH`.
 
 ## Migrating from mise-env-fnox {#migrating}
 
-Remove `_.fnox-env` and the `mise-env-fnox` plugin from `mise.toml`, then add `[secrets.fnox]`.
-`mise doctor` warns while the plugin is still configured.
+mise secrets does not pass values to tasks or commands yet, so keep `_.fnox-env` and the
+`mise-env-fnox` plugin in `mise.toml` until it does. `[secrets.fnox]` can sit beside them now to
+list keys with `mise secrets ls`. `mise doctor` flags the plugin as deprecated.
