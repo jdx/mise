@@ -24,10 +24,7 @@ pub(crate) const FNOX_ENV_MIN_VERSION: &str = "1.39.0";
 
 const MAX_STDOUT: u64 = 16 << 20;
 
-#[cfg(not(test))]
 const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-#[cfg(test)]
-const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Debug)]
 pub(crate) struct FnoxSource {
@@ -44,7 +41,9 @@ pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
     {
         return Some(bin);
     }
-    crate::backend::which_no_shims_spawnable("fnox")
+    // Absolute against mise's cwd: fnox runs from the source root, so a relative PATH hit
+    // would resolve somewhere else. Not canonicalized, so a multi-call binary keeps its name.
+    crate::backend::which_no_shims_spawnable("fnox").map(|p| std::path::absolute(&p).unwrap_or(p))
 }
 
 impl FnoxSource {
@@ -56,7 +55,7 @@ impl FnoxSource {
                 display_path(declared_in)
             );
         };
-        let root = std::fs::canonicalize(&selected.root).map_err(|e| {
+        let root = dunce::canonicalize(&selected.root).map_err(|e| {
             eyre::eyre!(
                 "mise secrets: cannot access {}: {e}",
                 display_path(&selected.root)
@@ -272,6 +271,11 @@ fn interpret(
     Ok(catalog(doc))
 }
 
+/// Names and descriptions come from fnox config and reach the terminal.
+fn strip_control(s: &str) -> String {
+    s.chars().filter(|c| !c.is_ascii_control()).collect()
+}
+
 fn catalog(doc: wire::DescribeDocument) -> Catalog {
     let mut entries = IndexMap::new();
     for key in doc.keys {
@@ -282,7 +286,7 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
         let (kind, mode) = if key.kind == "lease" {
             (
                 KeyKind::Lease {
-                    name: key.lease.unwrap_or_default(),
+                    name: strip_control(&key.lease.unwrap_or_default()),
                 },
                 None,
             )
@@ -301,9 +305,7 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
                 mode,
                 as_file: key.as_file,
                 injectable: key.injectable.exec,
-                description: key
-                    .description
-                    .map(|d| d.chars().filter(|c| !c.is_ascii_control()).collect()),
+                description: key.description.map(|d| strip_control(&d)),
             },
         );
     }
@@ -320,7 +322,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    const DOC: &str = r#"{"schema":1,"fnox_version":"1.38.0","profile":["dev"],"keys":[{"key":"DATABASE_URL","kind":"secret","env":true,"as_file":false,"description":"app\u0007 database\n","injectable":{"exec":true,"shell":true},"future":1},{"key":"SIGNING_KEY","kind":"secret","env":false,"as_file":false,"injectable":{"exec":false,"shell":false}},{"key":"AWS_ACCESS_KEY_ID","kind":"lease","lease":"aws","injectable":{"exec":true,"shell":false}},{"key":"NEW_MODE","kind":"secret","env":"later","injectable":{"exec":false}},{"key":"bad-name","kind":"secret","env":true}],"dynamic_leases":[]}"#;
+    const DOC: &str = r#"{"schema":1,"fnox_version":"1.38.0","profile":["dev"],"keys":[{"key":"DATABASE_URL","kind":"secret","env":true,"as_file":false,"description":"app\u0007 database\n","injectable":{"exec":true,"shell":true},"future":1},{"key":"SIGNING_KEY","kind":"secret","env":false,"as_file":false,"injectable":{"exec":false,"shell":false}},{"key":"AWS_ACCESS_KEY_ID","kind":"lease","lease":"aws\u0007x","injectable":{"exec":true,"shell":false}},{"key":"NEW_MODE","kind":"secret","env":"later","injectable":{"exec":false}},{"key":"bad-name","kind":"secret","env":true}],"dynamic_leases":[]}"#;
 
     fn source(profile: Option<&str>) -> FnoxSource {
         FnoxSource {
@@ -381,7 +383,12 @@ mod tests {
         let lease = &c.entries[&SecretName::new("AWS_ACCESS_KEY_ID").unwrap()];
         assert_eq!(lease.mode, None);
         assert!(lease.injectable);
-        assert_eq!(lease.kind, KeyKind::Lease { name: "aws".into() });
+        assert_eq!(
+            lease.kind,
+            KeyKind::Lease {
+                name: "awsx".into()
+            }
+        );
         assert_eq!(
             c.entries[&SecretName::new("SIGNING_KEY").unwrap()].mode,
             Some(InjectMode::Never)

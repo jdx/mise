@@ -99,7 +99,7 @@ The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or new
 
 mise looks for the fnox CLI in the project's tools first, then on `PATH`.
 
-## Migrating from mise-env-fnox
+## Migrating from mise-env-fnox {#migrating}
 
 Remove `_.fnox-env` and the `mise-env-fnox` plugin from `mise.toml`, then add `[secrets.fnox]`.
 `mise doctor` warns while the plugin is still configured.

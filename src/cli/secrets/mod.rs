@@ -5,7 +5,7 @@ mod ls;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     name = "secrets",
-    about = "[experimental] Show the secrets this project's secrets source can give tasks"
+    about = "[experimental] List the secret names this project's secrets source provides, without their values"
 )]
 pub(crate) struct Secrets {
     #[usage(subcommand)]

@@ -7,7 +7,7 @@ use crate::file::display_path;
 use crate::secrets::{self, InjectMode, Inventory, KeyKind};
 use crate::ui::table;
 
-/// List the secrets this project's secrets source can give tasks
+/// List the secret names this project's secrets source provides, without their values
 ///
 /// Shows names and metadata only; values are never shown. The source is declared in the
 /// project's `mise.toml` with `[secrets.fnox]`.

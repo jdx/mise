@@ -7,6 +7,7 @@ use eyre::{Result, bail};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::config::config_file::{ConfigFile, is_path_trusted};
+use crate::config::is_conf_d_folder_file;
 use crate::config::settings::SettingsExt;
 use crate::dirs;
 use crate::file::{self, display_path};
@@ -101,9 +102,24 @@ pub(crate) fn is_project_secrets_root(root: &Path, home: &Path) -> bool {
     !home.starts_with(&root)
 }
 
+/// `<dir>/[.config/]{mise,.mise}/conf.d/<folder>/mise*.toml` is discovered in `<dir>`.
+fn conf_d_discovery_dir(p: &Path) -> Option<PathBuf> {
+    let dir = p.parent()?.parent()?.parent()?.parent()?;
+    Some(if dir.file_name().is_some_and(|n| n == ".config") {
+        dir.parent()?.to_path_buf()
+    } else {
+        dir.to_path_buf()
+    })
+}
+
+fn is_project_path(path: &Path, root: Option<PathBuf>, home: &Path) -> bool {
+    root.is_some_and(|r| is_project_secrets_root(&r, home))
+        && (!is_conf_d_folder_file(path)
+            || conf_d_discovery_dir(path).is_some_and(|d| is_project_secrets_root(&d, home)))
+}
+
 fn is_project_file(cf: &dyn ConfigFile) -> bool {
-    cf.project_root()
-        .is_some_and(|r| is_project_secrets_root(&r, &dirs::HOME))
+    is_project_path(cf.get_path(), cf.project_root(), &dirs::HOME)
 }
 
 #[derive(Debug)]
@@ -356,6 +372,33 @@ mod tests {
             assert!(!is_project_secrets_root(&link, &home));
             assert!(!is_project_secrets_root(&home, &link));
         }
+    }
+
+    #[test]
+    fn home_level_files_are_not_project_files() {
+        use crate::config::config_file::mise_toml::MiseToml;
+        for rel in [".config/mise.toml", ".mise/config.toml", "mise/config.toml"] {
+            let cf = MiseToml::init(&dirs::HOME.join(rel));
+            assert_eq!(cf.project_root(), Some(dirs::HOME.to_path_buf()), "{rel}");
+            assert!(!is_project_file(&cf), "{rel}");
+        }
+        for rel in [
+            ".mise/conf.d/team/mise.toml",
+            "mise/conf.d/team/mise.toml",
+            ".config/mise/conf.d/team/mise.toml",
+        ] {
+            let path = dirs::HOME.join(rel);
+            assert!(is_conf_d_folder_file(&path), "{rel}");
+            let cf = MiseToml::init(&path);
+            assert!(!is_project_file(&cf), "{rel}");
+        }
+        let project = dirs::HOME.join("src/app/.mise/conf.d/team/mise.toml");
+        let cf = MiseToml::init(&project);
+        assert!(is_project_file(&cf));
+        assert_eq!(
+            conf_d_discovery_dir(&dirs::HOME.join(".config/mise/conf.d/team/mise.toml")),
+            Some(dirs::HOME.to_path_buf())
+        );
     }
 
     #[test]

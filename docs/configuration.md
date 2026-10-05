@@ -329,7 +329,7 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 
 See [environments](/environments/).
 
-### `[secrets.*]` - Secrets sources
+### `[secrets.*]` - Secrets sources {#secrets}
 
 <Badge type="warning" text="experimental" />
 
@@ -488,7 +488,7 @@ applies to every directory.
 Only a few common settings are shown here. See [Settings](/configuration/settings) for the full
 list and descriptions.
 
-`[secrets.*]` is ignored in global config; see [`[secrets.*]`](#secrets---secrets-sources).
+`[secrets.*]` is ignored in global config; see [`[secrets.*]`](#secrets).
 
 ```toml [~/.config/mise/config.toml]
 [tools]

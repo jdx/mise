@@ -875,10 +875,10 @@ Run tasks and their dependencies
 Search for available tools
 .TP
 \fBsecrets\fR
-[experimental] Show the secrets this project's secrets source can give tasks
+[experimental] List the secret names this project's secrets source provides, without their values
 .TP
 \fBsecrets ls\fR
-List the secrets this project's secrets source can give tasks
+List the secret names this project's secrets source provides, without their values
 .RS
 \fIAliases: \fRlist
 .RE
@@ -7870,7 +7870,7 @@ Search a tool
 esc clear filter • enter confirm
 .RE
 .SH "MISE SECRETS"
-[experimental] Show the secrets this project's secrets source can give tasks
+[experimental] List the secret names this project's secrets source provides, without their values
 .PP
 \fBUsage:\fR mise secrets [OPTIONS] [COMMAND]
 .PP
@@ -7886,7 +7886,7 @@ Don't show table header
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE SECRETS LS"
-List the secrets this project's secrets source can give tasks
+List the secret names this project's secrets source provides, without their values
 
 Shows names and metadata only; values are never shown. The source is declared in the
 project's `mise.toml` with `[secrets.fnox]`.

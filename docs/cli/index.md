@@ -141,6 +141,6 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise daemons`](/cli/daemons.html) — [experimental] Manage project daemons with pitchfork
 - [`mise dotfiles`](/cli/dotfiles.html) — Manage dotfiles from `[dotfiles]`
 - [`mise plugins`](/cli/plugins.html) — Manage plugins
-- [`mise secrets`](/cli/secrets.html) — [experimental] Show the secrets this project's secrets source can give tasks
+- [`mise secrets`](/cli/secrets.html) — [experimental] List the secret names this project's secrets source provides, without their values
 - [`mise test-tool`](/cli/test-tool.html) — Test that a tool installs and runs
 - [`mise token`](/cli/token.html) — Display git provider tokens mise will use
