@@ -36,6 +36,9 @@ fn is_valid_profile(s: &str) -> bool {
 
 fn unknown_field_hint(key: &str) -> Option<&'static str> {
     match key {
+        "run" | "tasks" | "keys" => {
+            Some("tasks receive the secrets they list: [tasks.NAME] secrets = [...]")
+        }
         "shell" => {
             Some("mise secrets are never exported to your shell; use `fnox activate` for that")
         }
@@ -239,10 +242,7 @@ mod tests {
         let e = parse("[secrets.fnox]\ntasks = [\"A\"]\n")
             .unwrap_err()
             .to_string();
-        assert!(
-            e.contains("unknown field `tasks`") && !e.contains('\n'),
-            "{e}"
-        );
+        assert!(e.contains("[tasks.NAME] secrets"), "{e}");
         let e = parse("[secrets.fnox]\nshell = true\n")
             .unwrap_err()
             .to_string();
