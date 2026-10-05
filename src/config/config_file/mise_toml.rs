@@ -3186,7 +3186,13 @@ fn is_safe_config_body(body: &str) -> bool {
         return false;
     }
     table.iter().all(|(key, value)| match key.as_str() {
-        "min_version" | "tasks" => true,
+        "min_version" => true,
+        // a task that lists secrets is only inert once the file is trusted
+        "tasks" => !value.as_table().is_some_and(|tasks| {
+            tasks
+                .values()
+                .any(|t| t.as_table().is_some_and(|t| t.contains_key("secrets")))
+        }),
         "tools" => value.as_table().is_some_and(|tools| {
             tools.iter().all(|(tool, version)| {
                 !tool.contains('[')
@@ -3251,6 +3257,18 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    #[test]
+    fn tasks_that_list_secrets_are_not_safe_config() {
+        assert!(is_safe_config_body("[tasks.x]\nrun = 'echo'\n"));
+        assert!(!is_safe_config_body(
+            "[tasks.x]\nrun = 'echo'\nsecrets = ['A']\n"
+        ));
+        assert!(!is_safe_config_body(
+            "tasks.x = { run = 'echo', secrets = [] }\n"
+        ));
+        assert!(is_safe_config_body("tasks.x = 'echo'\n"));
+    }
+
     use std::collections::BTreeSet;
     use std::sync::Arc;
 

@@ -6789,6 +6789,7 @@ async fn load_task_sources_from_configs(
                 .map(TaskFileArtifact::persistent)
                 .collect()
         };
+        let remote = is_remote_task_include(include).then(|| include.clone());
         for artifact in artifacts {
             let p = artifact.path;
             let mut loaded = load_tasks_includes(
@@ -6806,6 +6807,7 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
+                task.remote_include = remote.clone();
                 // Both task kinds are reachable only because some config's
                 // `task_config.includes` named this path, so both answer to that
                 // config's precedence when an inline block claims their name.
@@ -6851,7 +6853,9 @@ fn task_include_requires_trust(path: &Path) -> bool {
     };
     // literal delimiters, plus escaped ones (e.g. `{{`) that decode to
     // templates after TOML parsing and would render at load time
-    contains_template_syntax(&body) || crate::task::file_has_decoded_template(path, &body)
+    contains_template_syntax(&body)
+        || crate::task::file_has_decoded_template(path, &body)
+        || crate::task::file_declares_secrets(path, &body)
 }
 
 async fn load_task_file(

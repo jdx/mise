@@ -230,6 +230,22 @@ impl SandboxConfig {
         }
     }
 
+    /// Whether `filter_env` lets the variable `key` through: always without `deny_env`,
+    /// otherwise only the essential keys, `cache_env` and `allow_env`/`pass_through_env`
+    /// patterns.
+    pub fn keeps_env_key(&self, key: &str) -> bool {
+        if !self.effective_deny_env() {
+            return true;
+        }
+        DEFAULT_ENV_KEYS.contains(&key)
+            || self.cache_env.iter().any(|name| name == key)
+            || self
+                .allow_env
+                .iter()
+                .chain(&self.pass_through_env)
+                .any(|pattern| env_pattern_matches(pattern, key))
+    }
+
     /// Filter environment variables based on sandbox config.
     ///
     /// When deny_env is active, starts with the mise-computed env (tool paths etc.),
@@ -242,16 +258,9 @@ impl SandboxConfig {
         if !self.effective_deny_env() {
             return env.clone();
         }
-        let env_patterns = self.allow_env.iter().chain(&self.pass_through_env);
-        let env_matches = |k: &str| {
-            self.cache_env.iter().any(|name| name == k)
-                || env_patterns
-                    .clone()
-                    .any(|pattern| env_pattern_matches(pattern, k))
-        };
         let mut filtered: std::collections::BTreeMap<String, String> = env
             .iter()
-            .filter(|(k, _)| DEFAULT_ENV_KEYS.contains(&k.as_str()) || env_matches(k))
+            .filter(|(k, _)| self.keeps_env_key(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         // Pull in allowed vars from parent env that might not be in mise's env map.

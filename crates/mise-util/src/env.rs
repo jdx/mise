@@ -934,12 +934,12 @@ pub const SECRET_KEYS_MARKER: &str = "__MISE_SECRET_KEYS";
 /// Whether two environment variable names are the same variable: exact on
 /// Unix, case-insensitive on Windows.
 #[cfg(not(windows))]
-pub(crate) fn env_key_eq(a: &str, b: &str) -> bool {
+pub fn env_key_eq(a: &str, b: &str) -> bool {
     a == b
 }
 
 #[cfg(windows)]
-pub(crate) fn env_key_eq(a: &str, b: &str) -> bool {
+pub fn env_key_eq(a: &str, b: &str) -> bool {
     windows_env_key_eq(a, b)
 }
 

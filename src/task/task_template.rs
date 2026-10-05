@@ -6,7 +6,11 @@ use crate::task::{
     TaskToolValue, TaskWatchOptions,
 };
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::Error as _};
+
+fn reject_template_secrets<'de, D: Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(D::Error::custom(crate::secrets::G7_TEXT))
+}
 
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
@@ -26,6 +30,13 @@ pub struct TaskTemplate {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub daemons: Option<crate::task::TaskDaemons>,
+    /// Always an error: a template cannot list secrets (G7).
+    #[serde(
+        default,
+        rename = "secrets",
+        deserialize_with = "reject_template_secrets"
+    )]
+    pub(crate) _secrets: (),
     #[serde(default)]
     pub env: EnvList,
     #[serde(default, deserialize_with = "deserialize_vars")]
@@ -310,6 +321,15 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn templates_reject_secrets() {
+        let e = toml::from_str::<TaskTemplate>("secrets = [\"X\"]\nrun = \"x\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(crate::secrets::G7_TEXT), "{e}");
+        assert!(toml::from_str::<TaskTemplate>("run = \"x\"\n").is_ok());
+    }
 
     #[test]
     fn test_merge_template_run_override() {

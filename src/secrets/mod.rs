@@ -12,9 +12,11 @@ use crate::file::display_path;
 
 mod config;
 mod fnox;
+mod grant;
 mod name;
 mod source;
 
+pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 
