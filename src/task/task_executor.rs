@@ -639,7 +639,12 @@ impl TaskExecutor {
         }
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
-        let (grant, _) = crate::secrets::grant_for_task(task);
+        let (grant, grant_problems) = crate::secrets::grant_for_task(task);
+        // An unusable list leaves the grant empty, so this is the only place a subtask
+        // injected by `run = [{ task }]` hears about it. No fnox is started.
+        if !grant_problems.is_empty() {
+            return Err(crate::secrets::aggregate_error(&grant_problems));
+        }
         // A task that receives secrets is never cached as an artifact, so the plain
         // fresh-sources skip below still applies, and no value is resolved for a skipped task.
         let artifact_cache_enabled = self.task_cache.enabled()
@@ -1839,16 +1844,25 @@ impl TaskExecutor {
         // marker carries names only, so it survives `deny_env` too.
         let granted_env;
         let granted_env_remove;
-        let (env, env_remove) = if let Some(secrets) = secrets {
+        let (env, env_remove) = if secrets.is_some() || self.secrets_denied.is_some() {
             let mut e = env.clone();
             let mut r = env_remove.clone();
-            secrets.apply(&mut e, &mut r);
-            if has_values {
-                r.remove(mise_util::env::SECRET_KEYS_MARKER);
+            // a nested `mise run` keeps refusing grants, as it does under hooks
+            if let Some(denied) = self.secrets_denied {
                 e.insert(
-                    mise_util::env::SECRET_KEYS_MARKER.to_string(),
-                    secrets.marker_value(),
+                    crate::secrets::DENIED_MARKER.to_string(),
+                    denied.marker().to_string(),
                 );
+            }
+            if let Some(secrets) = secrets {
+                secrets.apply(&mut e, &mut r);
+                if has_values {
+                    r.remove(mise_util::env::SECRET_KEYS_MARKER);
+                    e.insert(
+                        mise_util::env::SECRET_KEYS_MARKER.to_string(),
+                        secrets.marker_value(),
+                    );
+                }
             }
             granted_env = e;
             granted_env_remove = r;

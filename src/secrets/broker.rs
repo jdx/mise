@@ -394,7 +394,16 @@ impl SecretBroker {
             }
             let task = grantee.task();
             // a config that does not parse, or is not trusted, fails on its own
-            let selected = self.select(config, ctx, task).await?;
+            let selected = match self.select(config, ctx, task).await? {
+                Ok(selected) => selected,
+                Err(no_source) => {
+                    source_errors
+                        .entry(no_source)
+                        .or_default()
+                        .push(task.name.clone());
+                    continue;
+                }
+            };
             match self.open_selected(config, ctx, task, selected).await {
                 Ok(memo) => match memo.catalog().await {
                     Ok(catalog) => {
@@ -435,18 +444,28 @@ impl SecretBroker {
         config: &Arc<Config>,
         ctx: &TaskContextBuilder,
         task: &Task,
-    ) -> Result<super::config::SelectedSource> {
+    ) -> Result<std::result::Result<super::config::SelectedSource, String>> {
         let selection = super::config::select_for_task(config, ctx, task).await?;
-        let Some(selected) = selection.source else {
-            bail!(
-                "{}",
-                super::no_source_message(
-                    &task.config_root.clone().unwrap_or_default(),
-                    &selection.ignored
-                )
-            );
-        };
-        Ok(selected)
+        Ok(selection.source.ok_or_else(|| {
+            super::no_source_message(
+                &task.config_root.clone().unwrap_or_default(),
+                &selection.ignored,
+            )
+        }))
+    }
+
+    /// The catalog and label of an already selected source, through the same memoized open
+    /// that `mise run` uses.
+    pub(crate) async fn catalog_for(
+        &self,
+        config: &Arc<Config>,
+        ctx: &TaskContextBuilder,
+        task: &Task,
+        selected: &super::config::SelectedSource,
+    ) -> Result<(Arc<Catalog>, String)> {
+        let memo = self.open(config, ctx, task, selected).await?;
+        let catalog = memo.catalog().await?;
+        Ok((catalog, memo.source.label()))
     }
 
     async fn open_selected(

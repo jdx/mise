@@ -116,10 +116,17 @@ impl TasksValidate {
                 issues.extend(additional_issues);
             }
         }
+        let secrets_cache = crate::secrets::TaskSecretsCache::default();
         for task in &tasks {
             issues.extend(
-                self.validate_task(task, &all_tasks, reference_tasks.as_deref(), &config)
-                    .await,
+                self.validate_task(
+                    task,
+                    &all_tasks,
+                    reference_tasks.as_deref(),
+                    &config,
+                    &secrets_cache,
+                )
+                .await,
             );
         }
 
@@ -242,6 +249,7 @@ impl TasksValidate {
         all_tasks: &BTreeMap<String, Task>,
         reference_tasks: Option<&BTreeMap<String, Task>>,
         config: &Arc<Config>,
+        secrets_cache: &crate::secrets::TaskSecretsCache,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
@@ -279,7 +287,7 @@ impl TasksValidate {
         issues.extend(self.validate_run_entries(task, all_tasks, reference_tasks));
 
         // 11. Validate secret grants
-        issues.extend(Self::validate_secret_references(task, config).await);
+        issues.extend(Self::validate_secret_references(task, config, secrets_cache).await);
 
         issues
     }
@@ -353,11 +361,15 @@ impl TasksValidate {
 
     /// The same static checks `mise run` makes on a task's `secrets`, plus the source catalog
     /// when the source may be used (not in safe mode, and every declaring file trusted).
-    async fn validate_secret_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
+    async fn validate_secret_references(
+        task: &Task,
+        config: &Arc<Config>,
+        cache: &crate::secrets::TaskSecretsCache,
+    ) -> Vec<ValidationIssue> {
         if task.secrets.as_ref().is_none_or(|s| s.names().is_empty()) {
             return vec![];
         }
-        let check = crate::secrets::check_task_secrets(config, task).await;
+        let check = crate::secrets::check_task_secrets(config, task, cache).await;
         let mut issues = vec![];
         for problem in check.problems {
             let rendered = problem.render();
