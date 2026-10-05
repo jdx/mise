@@ -426,7 +426,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // it. With several, which is meant is not known. It is not cached: the cache
     // is keyed by the request, and the same request from a configuration file
     // does not stand for a variant.
-    if try_variant && let [only] = variant_installations(&identity).as_slice() {
+    if try_variant && let [only] = variant_installations(tv.ba(), &identity).as_slice() {
         return Some(only.clone());
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
@@ -548,8 +548,9 @@ fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
 }
 
 /// The complete installations, in every root, of `identity`'s backend, version and
-/// platform made for another request (other install options).
-fn variant_installations(identity: &InstallIdentity) -> Vec<Located> {
+/// platform made for another request (other install options) of the tool `ba`;
+/// another tool aliasing the same backend (`oxfmt` and `oxlint`) has its own.
+fn variant_installations(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> Vec<Located> {
     let own = request_of(identity);
     let mut out = vec![];
     for root in roots() {
@@ -561,6 +562,7 @@ fn variant_installations(identity: &InstallIdentity) -> Vec<Located> {
                 && same_graph(&record.identity, Some(identity))
                 && request_of(&record.identity) != own
                 && is_complete(&dir)
+                && belongs_to(ba, &record, &dir)
             {
                 out.push(Located {
                     dir,
@@ -993,6 +995,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
                     .as_ref()
                     .is_none_or(|own| request_of(&record.identity) != *own)
                 && is_complete(&dir)
+                && belongs_to(tv.ba(), &record, &dir)
             {
                 out.push(dir);
             }

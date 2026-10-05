@@ -90,6 +90,20 @@ assert "mise -C $work/hooked install tiny@3.0.0"
 assert "test ! -e '$variant_dir/hooked'"
 assert "test -e \"\$(mise -C '$work/hooked' where tiny@3.0.0)/hooked\""
 
+echo "=== another tool aliasing the same backend never stands in ==="
+mkdir aliased
+cat >aliased/mise.toml <<EOF2
+[tool_alias]
+tinier = "$(mise tool tiny --backend)"
+
+[tools]
+tinier = { version = "2.1.0", flavor = "full" }
+EOF2
+assert "mise -C $work/aliased install"
+tinier_dir="$(mise -C "$work/aliased" where tinier)"
+[[ $tinier_dir == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$tinier_dir is not an identity installation"
+assert_fail "mise where tiny@2.1.0"
+
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
 cat >minimal/mise.toml <<'EOF2'
