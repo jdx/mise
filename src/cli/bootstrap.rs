@@ -2183,6 +2183,7 @@ impl Bootstrap {
             context_builder: Default::default(),
             executor: None,
             telemetry: None,
+            secrets_denied: Some(crate::secrets::SecretsDenied::Bootstrap),
             no_cache: Default::default(),
             task_cache: crate::task::TaskCacheMode::from_env()?,
             task_cache_explain: false,

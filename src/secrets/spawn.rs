@@ -146,6 +146,19 @@ impl SpawnSecrets {
         !self.names.is_empty()
     }
 
+    #[cfg(test)]
+    pub(crate) fn for_test(values: &[(&str, &str)]) -> Self {
+        Self::new(
+            values
+                .iter()
+                .map(|(k, v)| (k.to_string(), SecretValue::new(*v)))
+                .collect(),
+            TempSecretFiles::default(),
+            BTreeMap::new(),
+            BTreeSet::new(),
+        )
+    }
+
     pub(super) fn new(
         env: BTreeMap<String, SecretValue>,
         files: TempSecretFiles,

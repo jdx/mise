@@ -21,9 +21,7 @@ mod source;
 mod spawn;
 
 pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
-pub(crate) use grant::{
-    DENIED_MARKER, SecretGrant, aggregate_error, grant_for_task, static_problems, tera_env_refs,
-};
+pub(crate) use grant::{DENIED_MARKER, aggregate_error, grant_for_task, static_problems};
 pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};

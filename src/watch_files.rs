@@ -158,6 +158,10 @@ async fn execute_task(
     let mut env = ts.full_env(config).await?;
     env.insert("MISE_WATCH_FILES_MODIFIED".to_string(), modified_files_var);
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+    env.insert(
+        crate::secrets::DENIED_MARKER.to_string(),
+        "watch_files".to_string(),
+    );
     if let Some(cwd) = &*dirs::CWD {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),

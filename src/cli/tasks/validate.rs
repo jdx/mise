@@ -45,6 +45,7 @@ pub(super) struct TasksValidate {
 enum Severity {
     Error,
     Warning,
+    Info,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,6 +278,9 @@ impl TasksValidate {
         // 10. Validate run entries
         issues.extend(self.validate_run_entries(task, all_tasks, reference_tasks));
 
+        // 11. Validate secret grants
+        issues.extend(Self::validate_secret_references(task, config).await);
+
         issues
     }
 
@@ -345,6 +349,50 @@ impl TasksValidate {
         // Ordinary and root-local references retain their original lookup scope.
         extract_monorepo_path(&resolved_name).is_some_and(|path| !path.is_empty())
             && reference_tasks.is_some_and(exists)
+    }
+
+    /// The same static checks `mise run` makes on a task's `secrets`, plus the source catalog
+    /// when the source may be used (not in safe mode, and every declaring file trusted).
+    async fn validate_secret_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
+        if task.secrets.as_ref().is_none_or(|s| s.names().is_empty()) {
+            return vec![];
+        }
+        let check = crate::secrets::check_task_secrets(config, task).await;
+        let mut issues = vec![];
+        for problem in check.problems {
+            let rendered = problem.render();
+            let (message, details) = match rendered.split_once('\n') {
+                Some((first, rest)) => (first.to_string(), Some(rest.trim().to_string())),
+                None => (rendered, None),
+            };
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Error,
+                category: "secrets".to_string(),
+                message,
+                details,
+            });
+        }
+        if check.catalog_skipped {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Info,
+                category: "secrets".to_string(),
+                message: "secrets: catalog check skipped (safe mode or untrusted config)"
+                    .to_string(),
+                details: None,
+            });
+        }
+        if check.fnox_missing {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "secrets".to_string(),
+                message: "secrets: the fnox CLI was not found, so the task's secrets were not checked against it".to_string(),
+                details: Some("add it with: mise use fnox".to_string()),
+            });
+        }
+        issues
     }
 
     /// A `daemons` entry naming something no `[daemons]` section declares fails
@@ -859,6 +907,7 @@ impl TasksValidate {
                 let severity_icon = match issue.severity {
                     Severity::Error => console_style("✗").red().bold(),
                     Severity::Warning => console_style("⚠").yellow().bold(),
+                    Severity::Info => console_style("ℹ").cyan().bold(),
                 };
 
                 miseprintln!(

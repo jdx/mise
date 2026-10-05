@@ -795,6 +795,10 @@ async fn execute(
     // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
     // a shell that activates mise and re-triggers hooks)
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+    env.insert(
+        crate::secrets::DENIED_MARKER.to_string(),
+        "hook".to_string(),
+    );
 
     // On Windows, when the hook shell is cmd.exe, the rendered command must be
     // passed to cmd *verbatim*. Going through std/duct's MSVCRT-style quoting
@@ -892,6 +896,10 @@ async fn execute_task(
         env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
     }
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
+    env.insert(
+        crate::secrets::DENIED_MARKER.to_string(),
+        "hook".to_string(),
+    );
 
     cmd(mise_bin, task_hook_args(project_root, hook.hook, task_name))
         .stdout_to_stderr()

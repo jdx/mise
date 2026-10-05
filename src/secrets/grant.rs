@@ -106,10 +106,6 @@ impl SecretGrant {
         self.keys.is_empty()
     }
 
-    pub(crate) fn names(&self) -> Vec<SecretName> {
-        self.keys.keys().cloned().collect()
-    }
-
     pub(crate) fn granted_by(&self) -> String {
         let mut files: Vec<String> = self
             .keys
@@ -622,7 +618,7 @@ mod tests {
             "__MISE_X".into(),
         ]));
         let (grant, problems) = grant_for_task(&t);
-        assert_eq!(grant.names().len(), 1);
+        assert_eq!(grant.keys.len(), 1);
         let kinds: Vec<_> = problems.iter().map(|p| p.kind).collect();
         assert_eq!(
             kinds,
