@@ -3,7 +3,7 @@
 
 Knobs: FNOX_STUB_LOG (jsonl call log), FNOX_STUB_LEGACY=1 (no env command),
 FNOX_STUB_SCHEMA=<n>, FNOX_STUB_FAIL=<key> (resolution error),
-FNOX_STUB_MODE=garbage|extra.
+FNOX_STUB_MODE=garbage|extra|nul.
 '''
 import json
 import os
@@ -100,6 +100,8 @@ def main(argv):
             files[k] = SECRETS[k]['value']
         else:
             sets[k] = SECRETS[k]['value']
+    if mode == 'nul' and 'DEPLOY_KEY' in sets:
+        sets['DEPLOY_KEY'] = 'ab\u0000-s3cr3t-0001'
     if mode == 'extra':
         sets['EXTRA_KEY'] = 'extra-s3cr3t-0010'
         sets['SIGNING_KEY'] = SECRETS['SIGNING_KEY']['value']

@@ -171,7 +171,8 @@ impl MemoValues {
         match &self.all {
             // the whole document is here; a key it did not return is missing
             Some(Ok(())) => return Ok(None),
-            Some(Err(_)) if all => return Err(Earlier::All),
+            // an all-in-scope batch covered every key, so it failed for every request
+            Some(Err(_)) => return Err(Earlier::All),
             _ => {}
         }
         if all {
@@ -721,7 +722,8 @@ impl SecretBroker {
         if all {
             let catalog = memo.catalog().await?;
             let subject = req.grantee.subject();
-            let split = split_exec_all(&catalog, |key| skip_reason(&req, key));
+            let no_refs = BTreeSet::new();
+            let split = split_exec_all(&catalog, |key| skip_reason(&req, &no_refs, key));
             for (key, reason) in &split.skipped {
                 warn_skipped(subject, key.as_str(), *reason);
             }
@@ -738,11 +740,14 @@ impl SecretBroker {
                 return Ok(None);
             }
         }
+        let subject_text = req.grantee.subject().text();
         let req = SpawnRequest {
             grant: &grant,
             ..req
         };
-        self.grant_values(&memo, &req).await.map(Some)
+        let spawn = self.grant_values(&memo, &req).await?;
+        spawn.ensure_settable(&subject_text)?;
+        Ok(Some(spawn))
     }
 
     /// Everything after the source is known: catalog checks, sandbox and collision checks,
@@ -809,6 +814,11 @@ impl SecretBroker {
         let keys: BTreeSet<SecretName> = req.grant.exported_keys().cloned().collect();
         let all = req.grant.all.is_some();
         // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
+        let refs = req
+            .grantee
+            .task()
+            .map(super::grant::task_template_refs)
+            .unwrap_or_default();
         let mut skipped: BTreeSet<SecretName> = BTreeSet::new();
         if all {
             for (key, entry) in &catalog.entries {
@@ -818,7 +828,7 @@ impl SecretBroker {
                 {
                     continue;
                 }
-                if let Some(reason) = skip_reason(req, key.as_str()) {
+                if let Some(reason) = skip_reason(req, &refs, key.as_str()) {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
                 }
@@ -849,7 +859,7 @@ impl SecretBroker {
                     return false;
                 }
                 if !catalog.entries.contains_key(key)
-                    && let Some(reason) = skip_reason(req, key.as_str())
+                    && let Some(reason) = skip_reason(req, &refs, key.as_str())
                 {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
@@ -872,12 +882,7 @@ impl SecretBroker {
         for (key, value) in composites {
             env_values.insert(key.to_string(), value);
         }
-        let mut remove: BTreeSet<String> = v
-            .remove
-            .iter()
-            .filter(|k| !mise_util::env::is_reserved_secret_name(k))
-            .cloned()
-            .collect();
+        let mut remove = removable(&v.remove);
         drop(v);
         // never delete a key mise itself sets for this child, nor one this spawn sets
         remove.retain(|k| {
@@ -927,6 +932,18 @@ impl SecretBroker {
     }
 }
 
+/// The names from fnox's `remove` list that mise may delete from a child's environment: not
+/// reserved, and ones the OS can unset (`env::remove_var` panics on "", "A=B" or NUL).
+fn removable(names: &BTreeSet<String>) -> BTreeSet<String> {
+    names
+        .iter()
+        .filter(|k| {
+            !mise_util::env::is_reserved_secret_name(k) && !k.is_empty() && !k.contains(['=', '\0'])
+        })
+        .cloned()
+        .collect()
+}
+
 /// What `mise x --secrets-all` sends to fnox by name.
 struct ExecAll {
     keys: Vec<SecretName>,
@@ -962,6 +979,8 @@ fn split_exec_all(catalog: &Catalog, skip: impl Fn(&str) -> Option<Skip>) -> Exe
 /// Why `--secrets-all` leaves a key out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Skip {
+    /// the task's run or env reads it through a template, which renders before secrets exist
+    Template,
     Sandbox,
     MiseSets,
 }
@@ -977,8 +996,15 @@ fn collides_for(req: &SpawnRequest<'_>, key: &str) -> bool {
     )
 }
 
-fn skip_reason(req: &SpawnRequest<'_>, key: &str) -> Option<Skip> {
-    if !req.sandbox.keeps_env_key(key) {
+/// `template_refs` are the env names the grantee's templates read (a task's run and env).
+fn skip_reason(
+    req: &SpawnRequest<'_>,
+    template_refs: &BTreeSet<String>,
+    key: &str,
+) -> Option<Skip> {
+    if template_refs.contains(key) {
+        Some(Skip::Template)
+    } else if !req.sandbox.keeps_env_key(key) {
         Some(Skip::Sandbox)
     } else if collides_for(req, key) {
         Some(Skip::MiseSets)
@@ -989,15 +1015,23 @@ fn skip_reason(req: &SpawnRequest<'_>, key: &str) -> Option<Skip> {
 
 /// C4.
 fn warn_skipped(subject: Subject<'_>, key: &str, reason: Skip) {
+    warn!("{}", skipped_text(subject, key, reason));
+}
+
+fn skipped_text(subject: Subject<'_>, key: &str, reason: Skip) -> String {
     let why = match (reason, subject) {
-        (Skip::Sandbox, _) => "its sandbox denies env vars",
-        (Skip::MiseSets, Subject::Task(_)) => "mise sets it for this task",
-        (Skip::MiseSets, Subject::Exec) => "mise sets it for this command",
+        (Skip::Template, _) => {
+            format!("{{{{ env.{key} }}}} in its run or env cannot see the secret")
+        }
+        (Skip::Sandbox, Subject::Task(_)) => "its sandbox denies env vars".to_string(),
+        (Skip::Sandbox, Subject::Exec) => "the sandbox denies env vars".to_string(),
+        (Skip::MiseSets, Subject::Task(_)) => "mise sets it for this task".to_string(),
+        (Skip::MiseSets, Subject::Exec) => "mise sets it for this command".to_string(),
     };
-    warn!(
+    format!(
         "--secrets-all: not granting {key} to {}: {why}",
         subject.text()
-    );
+    )
 }
 
 /// C1 for `mise x`; a task always has a directory for its files.
@@ -1556,6 +1590,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn named_keys_after_a_failed_all_in_scope_call_are_g15() {
+        let (fake, memo) = fake(&["*"]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let one = with_all(Inputs::new("a", &[]));
+        let _ = broker
+            .grant_values(&memo, &one.req(&term, false))
+            .await
+            .unwrap_err();
+        let two = Inputs::new("b", &["B"]);
+        let err = broker
+            .grant_values(&memo, &two.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(
+                "task b: not retrying the secrets; fnox failed to resolve them earlier in this run (see above)"
+            ),
+            "{err}"
+        );
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_skips_keys_the_templates_read() {
+        let (_, memo) = fake(&[]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let mut inputs = with_all(Inputs::new("pay", &[]));
+        inputs.task.run = vec![crate::task::RunEntry::Script("echo {{ env.A }}".into())];
+        let spawn = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "B,C,DEPLOY_KEY,SHORT");
+    }
+
+    #[tokio::test]
     async fn all_in_scope_after_a_key_failure_is_g15() {
         let (fake, memo) = fake(&["B"]);
         let broker = SecretBroker::default();
@@ -1649,6 +1722,15 @@ mod tests {
     }
 
     #[test]
+    fn remove_drops_names_the_os_cannot_unset() {
+        let names = ["", "A=B", "SCRUB", "NUL\0X", "PATH"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(removable(&names), BTreeSet::from(["SCRUB".to_string()]));
+    }
+
+    #[test]
     fn exec_all_names_injectable_keys_and_splits_off_files_and_collisions() {
         let mut catalog = catalog();
         for (k, as_file, injectable) in [
@@ -1678,6 +1760,27 @@ mod tests {
             ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT"]
         );
         assert_eq!(split.files, ["GCP_SA_JSON"]);
+        let text = |s, k, r| skipped_text(s, k, r);
+        assert_eq!(
+            text(Subject::Exec, "A", Skip::MiseSets),
+            "--secrets-all: not granting A to mise x: mise sets it for this command"
+        );
+        assert_eq!(
+            text(Subject::Exec, "C", Skip::Sandbox),
+            "--secrets-all: not granting C to mise x: the sandbox denies env vars"
+        );
+        assert_eq!(
+            text(Subject::Task("pay"), "A", Skip::MiseSets),
+            "--secrets-all: not granting A to task pay: mise sets it for this task"
+        );
+        assert_eq!(
+            text(Subject::Task("pay"), "C", Skip::Sandbox),
+            "--secrets-all: not granting C to task pay: its sandbox denies env vars"
+        );
+        assert_eq!(
+            text(Subject::Task("pay"), "STRIPE_KEY", Skip::Template),
+            "--secrets-all: not granting STRIPE_KEY to task pay: {{ env.STRIPE_KEY }} in its run or env cannot see the secret"
+        );
         assert_eq!(
             split
                 .skipped
