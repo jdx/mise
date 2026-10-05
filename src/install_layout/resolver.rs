@@ -538,6 +538,15 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
     }
 }
 
+/// Whether `a` was built from the dependency graph (aube, uv) `b` names, or
+/// neither has one. A graph is not an option a configuration sets: an
+/// installation built from another one is not a variant of the request.
+fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
+    ["aube", "uv"]
+        .iter()
+        .all(|k| a.inputs.get(*k) == b.and_then(|b| b.inputs.get(*k)))
+}
+
 /// The complete installations, in every root, of `identity`'s backend, version and
 /// platform made for another request (other install options).
 fn variant_installations(identity: &InstallIdentity) -> Vec<Located> {
@@ -549,6 +558,7 @@ fn variant_installations(identity: &InstallIdentity) -> Vec<Located> {
             let dir = catalog.install_dir(&record);
             if record.identity.version == identity.version
                 && record.identity.platform == identity.platform
+                && same_graph(&record.identity, Some(identity))
                 && request_of(&record.identity) != own
                 && is_complete(&dir)
             {
@@ -951,7 +961,8 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     };
     let mut bare = tv.clone();
     bare.install_path = None;
-    let own_request = identity_of(&bare).map(|identity| request_of(&identity));
+    let own_identity = identity_of(&bare);
+    let own_request = own_identity.as_ref().map(request_of);
     // A request with options of its own (named, or set by a configuration) means
     // exactly those; only a bare version can stand for a variant.
     if own_request
@@ -977,6 +988,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
             let dir = catalog.install_dir(&record);
             if record.identity.version == version
                 && record.identity.platform == platform
+                && same_graph(&record.identity, own_identity.as_ref())
                 && own_request
                     .as_ref()
                     .is_none_or(|own| request_of(&record.identity) != *own)
