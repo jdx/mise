@@ -41,9 +41,10 @@ pub fn enabled() -> bool {
             );
             false
         }
+        Some(_) => true,
         // Unit tests run with `experimental` forced on for everything; they get
         // this layout only when they ask for it.
-        _ => settings.experimental && !mise_util::testing::in_tests(),
+        None => settings.experimental && !mise_util::testing::in_tests(),
     }
 }
 
