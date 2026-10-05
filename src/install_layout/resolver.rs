@@ -1398,9 +1398,25 @@ fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
 /// in whichever root that is, or else the first of the user's own.
 pub(crate) fn heal_links(ba: &crate::args::BackendArg) {
     let tool_dir = ba.installs_path();
+    let installs = installs_of(ba);
+    if installs
+        .iter()
+        .all(|(name, _)| std::fs::symlink_metadata(tool_dir.join(name)).is_ok())
+    {
+        return;
+    }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
+    // Under the catalog lock `mise installs select` moves links with, so a choice
+    // made meanwhile is not overwritten with an older one.
+    let _lock = match primary.lock() {
+        Ok(lock) => lock,
+        Err(err) => {
+            debug!("could not lock the installs catalog to repair links: {err:#}");
+            return;
+        }
+    };
     let mut missing: indexmap::IndexMap<String, (PathBuf, bool)> = indexmap::IndexMap::new();
-    for (name, dir) in installs_of(ba) {
+    for (name, dir) in installs {
         if std::fs::symlink_metadata(tool_dir.join(&name)).is_ok() {
             continue;
         }
