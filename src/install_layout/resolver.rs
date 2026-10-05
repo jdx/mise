@@ -570,8 +570,14 @@ pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf>
 /// directory in the installs root: another variant or version, if its receipt says
 /// it is an installation of `tv`'s backend. Used to explain what keeps a prune.
 pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
-    let dir = tv.install_path().parent()?.join(dir_name);
-    let receipt = read_receipt(&dir)?;
+    // Usually beside `tv`, but a lockfile can keep one in a shared root.
+    let receipt = tv
+        .install_path()
+        .parent()
+        .map(Path::to_path_buf)
+        .into_iter()
+        .chain(roots())
+        .find_map(|root| read_receipt(&root.join(dir_name)))?;
     let backend = canonical_backend(&tv.ba().full());
     (receipt.record.identity.backend == backend).then_some(receipt.record.identity.version)
 }
