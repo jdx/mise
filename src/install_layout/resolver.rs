@@ -42,18 +42,24 @@ pub fn enabled() -> bool {
             false
         }
         Some("identity") => true,
-        // A misspelling must not turn on a layout nobody asked for.
+        // Not a silent choice either way: an unknown value is reported and the
+        // setting is taken as unset.
         Some(other) => {
             warn_once!(
                 "install_layout = \"{other}\" is neither \"identity\" nor \"legacy\"; \
-                 installing into the legacy layout"
+                 using the default"
             );
-            false
+            default_enabled(&settings)
         }
-        // Unit tests run with `experimental` forced on for everything; they get
-        // this layout only when they ask for it.
-        None => settings.experimental && !mise_util::testing::in_tests(),
+        None => default_enabled(&settings),
     }
+}
+
+/// The layout with `install_layout` unset: on with experimental features. Unit
+/// tests run with `experimental` forced on for everything; they get this layout
+/// only when they ask for it.
+fn default_enabled(settings: &crate::config::Settings) -> bool {
+    settings.experimental && !mise_util::testing::in_tests()
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and
