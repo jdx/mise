@@ -3974,13 +3974,19 @@ pub trait Backend: Debug + Send + Sync {
             .await
             && !rolling_reinstall;
 
-        // An identity-layout installation found in a read-only shared root is used as
-        // it is; anything that would write (a forced or incompatible install) is
-        // allocated afresh in the primary root first, before it can touch the shared
-        // directory.
+        // An identity-layout installation found in a read-only shared root, or a
+        // variant standing in for a bare version, is used as it is; anything that
+        // would write (a forced or incompatible install, or a postinstall hook that
+        // runs even when nothing is installed) is allocated afresh in the primary
+        // root first, before it can touch that directory.
         let mut allocated = allocated;
+        let always_postinstall = tv
+            .request
+            .options()
+            .postinstall()
+            .is_some_and(|(_, always)| always);
         if allocated.as_ref().is_some_and(|a| a.read_only)
-            && (ctx.force || rolling_reinstall || !install_satisfied)
+            && (ctx.force || rolling_reinstall || !install_satisfied || always_postinstall)
         {
             let mut bare = tv.clone();
             bare.install_path = None;

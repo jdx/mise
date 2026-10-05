@@ -159,7 +159,10 @@ mise still writes the tool directory's `.mise.backend.toml` sidecar and
   [Finding an installation](#finding-an-installation-mise-where-and-mise-which)
   for when mise uses the installation directory instead.
 - **Tool options, backends, and the registry work as before.** Only where files
-  land and how installations are found changes.
+  land and how installations are found changes. `mise backends switch` installs
+  the new backend's installation of each switched version (it is a different
+  installation from the old backend's, which stays until it is pruned) and
+  points the version link at it.
 
 ## How identity is decided
 
@@ -450,12 +453,16 @@ tools that have more than one variant of a version.
   package-manager installs record the real installation path, which now contains
   the hash. They stay valid for that installation but are not portable to
   another one. Installing the same identity again lands in the same directory.
-- **A version named on the command line carries no options.** An installation
-  made with install options a configuration file sets (`symlink_bins`, a
-  `matching` pattern) is a different installation from the plain version, so
-  `mise where tool@1.0` finds it only because it is the lone variant, and other
-  commands treat the unadorned request as not installed. Run them where the
-  configuration applies, or let `mise install` make the plain variant.
+- **A version named on the command line carries only the options a
+  configuration gives it.** In a project, `mise where tool@1.0`, `mise x
+tool@1.0` and the other commands use the install options the configuration
+  sets for that tool (`symlink_bins`, a `matching` pattern). Outside one, a
+  version named without options uses the installation of that version when
+  there is only one, whatever options it was made with, as before this layout.
+  With several, `mise where` lists them and other commands treat the version as
+  not installed; name the options to pick one, as in
+  `mise where 'tool[matching=server]@1.0'`, or install the plain version with
+  `mise install --force tool@1.0`.
 - **A version link is not authority.** Hardcoded `installs/<tool>/<version>`
   paths see only the most recently installed variant.
 - **Directory names are less descriptive.** A label such as `berry` for yarn or

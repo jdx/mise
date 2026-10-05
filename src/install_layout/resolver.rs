@@ -353,6 +353,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     let key = identity.request_key();
     let unlocked = pin_of(&identity).is_none();
     let mut ambiguous = false;
+    let mut try_variant = false;
     if unlocked {
         let cache_key = (dirs::INSTALLS.to_path_buf(), digest.clone());
         if let Some(hit) = locate_cache().get(&cache_key) {
@@ -386,7 +387,12 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
                 return Some(located);
             }
             Unlocked::Ambiguous(_) => ambiguous = true,
-            Unlocked::Nothing => {}
+            // Nothing of the request's own: a bare version named on the command
+            // line may still stand for a variant, after a legacy install (below).
+            Unlocked::Nothing => {
+                try_variant = matches!(tv.request.source(), crate::toolset::ToolSource::Argument)
+                    && is_bare(tv, &identity);
+            }
         }
     } else {
         for root in roots() {
@@ -413,6 +419,15 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // An install made before the identity layout, in place.
     if !ambiguous && let Some(legacy) = legacy_dir(tv, &identity) {
         return Some(legacy_located(legacy));
+    }
+    // A version named on the command line means whatever is installed of it, as
+    // it did before this layout: a lone installation made with the request's
+    // options and more that a configuration set (`filter_bins`, `matching`) stands
+    // for it (see `extends`). With several, which is meant is not known. It is
+    // not cached: the cache is keyed by the request, and the same request from a
+    // configuration file does not stand for a variant.
+    if try_variant && let [only] = variant_choices(tv.ba(), &identity).as_slice() {
+        return Some(only.clone());
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
     // Several installations answer and none is chosen: report a path that is
@@ -499,12 +514,7 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
         let catalog = Catalog::new(&root);
         // A shared root's catalog cannot be rebuilt here; if it is gone, the
         // installations it listed still count, by their receipts.
-        let records = if is_primary_root(&root) {
-            catalog.records_for_backend(&key.backend)
-        } else {
-            catalog.records_or_receipts_for_backend(&key.backend)
-        };
-        for record in records {
+        for record in records_of(&catalog, &root, &key.backend) {
             let dir = catalog.install_dir(&record);
             if same_request(&record.identity, key) && is_complete(&dir) {
                 complete.push(Located {
@@ -521,6 +531,115 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
         1 => Unlocked::Found(complete.remove(0)),
         _ => Unlocked::Ambiguous(complete),
     }
+}
+
+/// Whether the request `identity` came from sets no install options of its own:
+/// its options are those the same version named with nothing else gets (from the
+/// tool's registry entry or backend alias, and from settings).
+fn is_bare(tv: &ToolVersion, identity: &InstallIdentity) -> bool {
+    // From the tool's name alone: options written inline (`tool[opt=value]`) are
+    // the request's own, and the plain request does not have them.
+    let Ok(plain) = ToolRequest::new(
+        std::sync::Arc::new(crate::args::BackendArg::from(tv.ba().short.as_str())),
+        &tv.version,
+        crate::toolset::ToolSource::Argument,
+    ) else {
+        return false;
+    };
+    identity_of(&ToolVersion::new(plain, tv.version.clone()))
+        .is_some_and(|plain| plain.options == identity.options)
+}
+
+/// Whether an installation made for `a` can stand for a request for `b`: it was
+/// made with every install option `b` has (the request's own, its registry's
+/// defaults, the settings that take part), and more besides. A version named
+/// without options thus finds an installation a configuration made with some,
+/// and never one made with different values for the options it has.
+fn extends(a: &InstallIdentity, b: &InstallIdentity) -> bool {
+    b.options
+        .iter()
+        .all(|(key, value)| a.options.get(key) == Some(value))
+}
+
+/// Whether `a` was built from the dependency graph (aube, uv) `b` names, or
+/// neither has one. A graph is not an option a configuration sets: an
+/// installation built from another one is not a variant of the request.
+fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
+    ["aube", "uv"]
+        .iter()
+        .all(|k| a.inputs.get(*k) == b.and_then(|b| b.inputs.get(*k)))
+}
+
+/// The installations a bare version could stand for, one for each set of options
+/// they were made with: copies of one option set (another root, an older refresh
+/// generation) are that set's own choice, its selection or its only copy. A set
+/// whose selected copy is gone stands for nothing; one whose copies are not
+/// settled lists them all, for the user to select.
+fn variant_choices(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> Vec<Located> {
+    let mut sets: Vec<(InstallIdentity, Vec<Located>)> = vec![];
+    for located in variant_installations(ba, identity) {
+        let Some(record) = &located.record else {
+            continue;
+        };
+        let key = request_of(&record.identity);
+        match sets.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, copies)) => copies.push(located),
+            None => sets.push((key, vec![located])),
+        }
+    }
+    sets.into_iter()
+        .flat_map(|(key, copies)| match unlocked_choice(&key) {
+            // The set's own choice, if it is one of this tool's copies.
+            Unlocked::Selected(located) | Unlocked::Found(located)
+                if located.installed && copies.iter().any(|c| c.dir == located.dir) =>
+            {
+                vec![located]
+            }
+            // Its selected copy is gone (pruned): no other copy is taken for it.
+            Unlocked::Selected(located) if !located.installed => vec![],
+            _ => copies,
+        })
+        .collect()
+}
+
+/// The records of `backend` in the catalog of `root`; for a shared root whose
+/// catalog is gone, its installations' receipts.
+fn records_of(catalog: &Catalog, root: &Path, backend: &str) -> Vec<IdentityRecord> {
+    if is_primary_root(root) {
+        catalog.records_for_backend(backend)
+    } else {
+        catalog.records_or_receipts_for_backend(backend)
+    }
+}
+
+/// The complete installations, in every root, of `identity`'s backend, version and
+/// platform made for another request (other install options) of the tool `ba`;
+/// another tool aliasing the same backend (`oxfmt` and `oxlint`) has its own.
+fn variant_installations(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> Vec<Located> {
+    let own = request_of(identity);
+    let mut out = vec![];
+    for root in roots() {
+        let catalog = Catalog::new(&root);
+        for record in records_of(&catalog, &root, &identity.backend) {
+            let dir = catalog.install_dir(&record);
+            if record.identity.version == identity.version
+                && record.identity.platform == identity.platform
+                && same_graph(&record.identity, Some(identity))
+                && extends(&record.identity, identity)
+                && request_of(&record.identity) != own
+                && is_complete(&dir)
+                && belongs_to(ba, &record, &dir)
+            {
+                out.push(Located {
+                    dir,
+                    root: root.clone(),
+                    record: Some(record),
+                    installed: true,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// The catalog records that could satisfy a request pinning an artifact, best
@@ -896,21 +1015,28 @@ pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Op
     out
 }
 
-/// The installations of `tv`'s tool and version on this platform made with other
-/// install options than `tv` carries. A version named on the command line carries
-/// no options, so `mise where tool@1.0` has to find a copy made with the options a
-/// configuration file sets. Installations of `tv`'s own request are not variants:
-/// which of those it uses is its selection's business, never a guess here.
+/// The installations of `tv`'s tool and version on this platform made with the
+/// install options `tv` carries and more (see `extends`). A version named on the
+/// command line carries none of its own, so `mise where tool@1.0` has to find a
+/// copy made with the options a configuration file sets. Installations of `tv`'s
+/// own request are not variants: which of those it uses is its selection's
+/// business, never a guess here.
 pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     if !enabled() {
         return vec![];
     }
-    let Ok(b) = tv.backend() else {
-        return vec![];
-    };
     let mut bare = tv.clone();
     bare.install_path = None;
-    let own_request = identity_of(&bare).map(|identity| request_of(&identity));
+    let own_identity = identity_of(&bare);
+    // A request with options of its own (named, or set by a configuration) means
+    // exactly those; only a bare version can stand for a variant.
+    if own_identity
+        .as_ref()
+        .is_some_and(|identity| !is_bare(tv, identity))
+    {
+        return vec![];
+    }
+    let own_request = own_identity.as_ref().map(request_of);
     // The request has installations of its own, or a selection: which one it uses
     // is for the selection to say (or the user, when that is ambiguous), so a
     // variant made with other options is no stand-in for it.
@@ -919,25 +1045,13 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     {
         return vec![];
     }
-    let backend = canonical_backend(&tv.ba().full());
-    let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
-    let mut out = vec![];
-    for root in roots() {
-        let catalog = Catalog::new(&root);
-        for record in catalog.records_for_backend(&backend) {
-            let dir = catalog.install_dir(&record);
-            if record.identity.version == version
-                && record.identity.platform == platform
-                && own_request
-                    .as_ref()
-                    .is_none_or(|own| request_of(&record.identity) != *own)
-                && is_complete(&dir)
-            {
-                out.push(dir);
-            }
-        }
-    }
-    out
+    let Some(own_identity) = own_identity else {
+        return vec![];
+    };
+    variant_choices(tv.ba(), &own_identity)
+        .into_iter()
+        .map(|located| located.dir)
+        .collect()
 }
 
 /// The path to put on PATH for an unlocked `tv`: the link users know
@@ -1022,8 +1136,9 @@ pub(crate) struct Allocated {
     /// An existing installation that already satisfies the request: nothing
     /// needs to be installed, only recorded.
     pub(crate) reused: bool,
-    /// The installation is in a read-only shared root: it may be used, never
-    /// written to. Installing means allocating again, in the primary root.
+    /// The installation is in a read-only shared root, or is a variant standing
+    /// in for a bare version: it may be used, never written to. Installing means
+    /// allocating again, for the request itself in the primary root.
     pub(crate) read_only: bool,
     /// The unlocked request this allocation answers; set when its selection
     /// should be (re)recorded on success. `None` for locked requests, which
@@ -1108,6 +1223,20 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
             // A legacy installation (or a `mise link`) is used, and refreshed, in
             // place; it is never moved into the identity layout.
             None => return Ok(None),
+            // A variant standing in for a bare version (see `locate`) is used where
+            // it is, never installed into or selected for that version: installing
+            // makes the bare request an installation of its own.
+            Some(record) if request_of(&record.identity) != request_of(&identity) => {
+                if !refresh {
+                    return Ok(Some(Allocated {
+                        read_only: true,
+                        dir: located.dir,
+                        reused: true,
+                        selects: None,
+                        record,
+                    }));
+                }
+            }
             // An installation that already satisfies the request, possibly in a
             // read-only shared root, is reused as it is.
             Some(record) if !refresh => {
@@ -1324,7 +1453,9 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
     // a lockfile, another spelling or a shared root made) remembers it, so the
     // choice stays put when more installations of the request appear.
     let key = identity.request_key();
-    if pin_of(&identity).is_none() {
+    // A variant standing in for a bare request named on the command line is not
+    // its selection.
+    if pin_of(&identity).is_none() && same_request(&record.identity, &key) {
         let shared = (!is_primary_root(&located.root)).then_some(located.root.as_path());
         if catalog.select_if_unset(&key, &record, shared)? {
             reset_cache();
