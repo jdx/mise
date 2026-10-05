@@ -104,8 +104,8 @@ impl InstallsMigrate {
             return Ok(());
         }
         let mut failed = vec![];
-        for (tv, _) in plan {
-            if let Err(err) = migrate(&tv).await {
+        for (tv, target) in plan {
+            if let Err(err) = migrate(&tv, &target).await {
                 error!("could not migrate {}: {err:#}", tv.style());
                 failed.push(tv.style());
             }
@@ -135,43 +135,83 @@ impl InstallsMigrate {
 }
 
 /// The name a legacy directory is moved aside to while it is migrated
-/// ([`ASIDE_SUFFIX`]), or once its migration has finished ([`MIGRATED_SUFFIX`]).
-/// Scans skip dot-prefixed entries, so it is invisible until put back or removed.
-fn aside_path(legacy: &Path, suffix: &str) -> PathBuf {
+/// (`.<version>.mise-migrating`, followed by `+<name>` when the migration makes
+/// the installation `<name>` rather than reusing one that existed), or once its
+/// migration has finished (`.<version>.mise-migrated`). Scans skip dot-prefixed
+/// entries, so it is invisible until put back or removed.
+fn aside_path(legacy: &Path, state: &str) -> PathBuf {
     let name = legacy
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    legacy.with_file_name(format!(".{name}{suffix}"))
+    legacy.with_file_name(format!(".{name}{MARKER}{state}"))
 }
 
-const ASIDE_SUFFIX: &str = ".mise-migrating";
-const MIGRATED_SUFFIX: &str = ".mise-migrated";
+const MARKER: &str = ".mise-migrat";
+const MIGRATING: &str = "ing";
+const MIGRATED: &str = "ed";
+
+/// What an entry a migration left in a tool directory says: the version, and
+/// whether its migration finished or, if not, the installation it was making.
+enum Leftover<'a> {
+    Migrating {
+        version: &'a str,
+        made: Option<&'a str>,
+    },
+    Migrated {
+        version: &'a str,
+    },
+}
+
+/// An entry an earlier migration of `legacy` left beside it, if there is one.
+fn leftover_of(legacy: &Path) -> Option<PathBuf> {
+    let version = legacy.file_name()?.to_str()?;
+    file::ls(legacy.parent()?)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|entry| {
+            entry.file_name().and_then(|n| n.to_str()).and_then(leftover).is_some_and(|l| {
+                matches!(l, Leftover::Migrating { version: v, .. } | Leftover::Migrated { version: v } if v == version)
+            })
+        })
+}
+
+fn leftover(name: &str) -> Option<Leftover<'_>> {
+    let (version, state) = name.strip_prefix('.')?.split_once(MARKER)?;
+    if state == MIGRATED {
+        return Some(Leftover::Migrated { version });
+    }
+    let made = state.strip_prefix(MIGRATING)?;
+    let made = match made.strip_prefix('+') {
+        Some(name) => Some(name),
+        None if made.is_empty() => None,
+        None => return None,
+    };
+    Some(Leftover::Migrating { version, made })
+}
 
 /// Finish or undo migrations an earlier run did not complete (it was
 /// interrupted). A directory marked migrated is removed: its replacement was
 /// installed, checked and linked. One still moved aside is put back unless a real
 /// directory took its place. The replacement's receipt and version link are not
 /// proof it finished, because an install writes them before its postinstall runs:
-/// the replacement is withdrawn and made again when the version is migrated.
+/// a replacement the migration was making is withdrawn, and made again when the
+/// version is migrated. One it reused had finished before and is left alone.
 fn recover_interrupted(dry_run: bool) -> Result<()> {
     let root: &Path = &dirs::INSTALLS;
     for tool in file::dir_subdirs(root).unwrap_or_default() {
         let tool_dir = root.join(&tool);
         for entry in file::ls(&tool_dir).unwrap_or_default() {
-            let Some(name) = entry
+            let Some(found) = entry
                 .file_name()
                 .and_then(|n| n.to_str())
-                .and_then(|n| n.strip_prefix('.'))
+                .and_then(leftover)
             else {
                 continue;
             };
-            let (version, finished) = if let Some(v) = name.strip_suffix(MIGRATED_SUFFIX) {
-                (v, true)
-            } else if let Some(v) = name.strip_suffix(ASIDE_SUFFIX) {
-                (v, false)
-            } else {
-                continue;
+            let (version, finished, made) = match found {
+                Leftover::Migrated { version } => (version, true, None),
+                Leftover::Migrating { version, made } => (version, false, made),
             };
             let legacy = tool_dir.join(version);
             // Free, or holding only the version link the interrupted install made.
@@ -204,6 +244,7 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                 );
             } else if free {
                 if let Some(dir) = resolver::link_target(&legacy)
+                    && made.is_some_and(|made| dir.file_name().is_some_and(|n| n == made))
                     && resolver::is_primary_install(&dir)
                 {
                     resolver::unpublish(&dir);
@@ -250,16 +291,28 @@ impl Drop for Aside<'_> {
 /// Reinstall one legacy installation into the identity layout. The old
 /// directory is moved aside first, so the install cannot find and reuse it,
 /// and is put back if the new installation does not complete.
-async fn migrate(tv: &ToolVersion) -> Result<()> {
+async fn migrate(tv: &ToolVersion, target: &Path) -> Result<()> {
     let legacy = tv.install_path();
-    let aside = aside_path(&legacy, ASIDE_SUFFIX);
-    if aside.exists() {
+    if let Some(earlier) = leftover_of(&legacy) {
         eyre::bail!(
             "{} is left over from an earlier migration; put it back at {} or remove it first",
-            display_path(&aside),
+            display_path(&earlier),
             display_path(&legacy)
         );
     }
+    // Whether this migration makes the installation it moves to, rather than
+    // reusing one that was already there: only one it makes is its own to
+    // withdraw. The name it moves the old directory to records which.
+    let made = (!resolver::is_complete(target))
+        .then(|| target.file_name().map(|n| n.to_string_lossy().to_string()))
+        .flatten();
+    let aside = aside_path(
+        &legacy,
+        &match &made {
+            Some(name) => format!("{MIGRATING}+{name}"),
+            None => MIGRATING.to_string(),
+        },
+    );
     // Nothing else installs, removes or links this version until the migration
     // is resolved: an install with the legacy layout would put a directory back
     // where the old one has to return. The reinstall below is locked by its own
@@ -290,7 +343,11 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
         match linked {
             Ok(()) => Ok(dir),
             Err(err) => {
-                if resolver::is_primary_install(&dir) {
+                if made
+                    .as_deref()
+                    .is_some_and(|made| dir.file_name().is_some_and(|n| n == made))
+                    && resolver::is_primary_install(&dir)
+                {
                     resolver::unpublish(&dir);
                 }
                 Err(err.wrap_err(format!(
@@ -306,7 +363,7 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
         Ok(dir) => {
             // Marked finished before it is removed, so an interruption from here
             // on is completed by the next run rather than undone.
-            let migrated = aside_path(&legacy, MIGRATED_SUFFIX);
+            let migrated = aside_path(&legacy, MIGRATED);
             let old = match file::rename(&aside, &migrated) {
                 Ok(()) => migrated,
                 Err(err) => {
@@ -348,10 +405,13 @@ async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
         tv.request.options(),
         tv.request.source().clone(),
     )?;
-    let opts = InstallOptions {
+    let mut opts = InstallOptions {
         reason: "installs migrate".to_string(),
         ..Default::default()
     };
+    // Exactly this version: a lockfile entry for the tool must not swap in the
+    // version it pins.
+    opts.resolve_options.use_locked_version = false;
     let installed = ts
         .install_all_versions(&mut config, vec![request.clone()], &opts)
         .await?;
