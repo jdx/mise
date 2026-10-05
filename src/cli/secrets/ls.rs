@@ -101,7 +101,7 @@ impl SecretsLs {
                     "kind": source.kind,
                     "root": source.root,
                     "declared_in": source.declared_in,
-                    "profile": source.profile,
+                    "profile": catalog.profile.join(","),
                     "tool": {
                         "path": source.tool_path,
                         "version": catalog.tool_version,

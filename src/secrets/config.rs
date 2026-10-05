@@ -36,12 +36,6 @@ fn is_valid_profile(s: &str) -> bool {
 
 fn unknown_field_hint(key: &str) -> Option<&'static str> {
     match key {
-        "exec" => {
-            Some("mise x gets secrets only when asked: mise x --secrets GH_TOKEN -- <command>")
-        }
-        "run" | "tasks" | "keys" => {
-            Some("tasks receive the secrets they list: [tasks.NAME] secrets = [...]")
-        }
         "shell" => {
             Some("mise secrets are never exported to your shell; use `fnox activate` for that")
         }
@@ -238,11 +232,17 @@ mod tests {
         let e = parse("[secrets.fnox]\nexec = [\"A\"]\n")
             .unwrap_err()
             .to_string();
-        assert!(e.contains("mise x --secrets GH_TOKEN"), "{e}");
+        assert!(
+            e.contains("unknown field `exec`") && !e.contains('\n'),
+            "{e}"
+        );
         let e = parse("[secrets.fnox]\ntasks = [\"A\"]\n")
             .unwrap_err()
             .to_string();
-        assert!(e.contains("[tasks.NAME] secrets"), "{e}");
+        assert!(
+            e.contains("unknown field `tasks`") && !e.contains('\n'),
+            "{e}"
+        );
         let e = parse("[secrets.fnox]\nshell = true\n")
             .unwrap_err()
             .to_string();
