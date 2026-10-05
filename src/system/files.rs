@@ -783,15 +783,11 @@ pub fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()>
         // An absent entry has no source and claims its target as a leaf, so
         // declaring the same path present elsewhere (or a file beneath it)
         // conflicts.
-        let source_unavailable = request.mode.has_source()
-            && (!request.source.exists()
-                || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
+        let source_unavailable = source_unavailable(request);
         let directory_walker = !source_unavailable
             && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
-        let unresolved_directory = source_unavailable
-            && (request.mode == FileMode::SymlinkEach
-                || request.mode == FileMode::Copy && group_tree(request));
+        let unresolved_directory = unresolved_directory(request);
         let request_leaves = if unresolved_directory {
             vec![]
         } else if directory_walker {
@@ -857,9 +853,37 @@ fn composed_file_footprint_conflict(
     eyre::eyre!(
         "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
         path.display(),
-        conflict_origin(first),
-        conflict_origin(second),
+        footprint_conflict_origin(first),
+        footprint_conflict_origin(second),
     )
+}
+
+/// Whether a declaration's source cannot be read yet: missing, or not a
+/// directory for `symlink-each`.
+fn source_unavailable(req: &FileRequest) -> bool {
+    req.mode.has_source()
+        && (!req.source.exists() || req.mode == FileMode::SymlinkEach && !req.source.is_dir())
+}
+
+/// Whether a declaration with an unavailable source still has a known
+/// directory shape, rather than reserving its target as a single leaf.
+fn unresolved_directory(req: &FileRequest) -> bool {
+    source_unavailable(req)
+        && (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && group_tree(req))
+}
+
+/// A missing source reserves its target as one leaf, which collides with
+/// any declaration nested under it. Nothing in the config shows that, so
+/// the diagnostic names the cause.
+fn footprint_conflict_origin(req: &FileRequest) -> String {
+    let origin = conflict_origin(req);
+    if source_unavailable(req) && !unresolved_directory(req) {
+        format!(
+            "{origin}\n    note: the source does not exist, so the whole target is reserved and nothing can be declared under it"
+        )
+    } else {
+        origin
+    }
 }
 
 /// Where a conflicting declaration came from, with its group if it has one.
@@ -7386,6 +7410,7 @@ source = "oldrc""#,
                 err.to_string()
                     .contains(&target.join("shared").to_string_lossy().to_string())
             );
+            assert!(!err.to_string().contains("note:"));
         }
         Ok(())
     }
@@ -7434,6 +7459,7 @@ source = "oldrc""#,
             err.to_string()
                 .contains(&target.to_string_lossy().to_string())
         );
+        assert!(err.to_string().contains("note: the source does not exist"));
         Ok(())
     }
 
