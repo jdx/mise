@@ -100,7 +100,7 @@ impl SecretsDenied {
     }
 }
 
-pub(crate) const DENIED_MARKER: &str = "__MISE_SECRETS_DENIED";
+pub const DENIED_MARKER: &str = "__MISE_SECRETS_DENIED";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GrantOrigin {
@@ -537,6 +537,7 @@ fn task_env_literals(task: &Task) -> Vec<(String, String)> {
         .0
         .iter()
         .chain(task.inherited_env.0.iter())
+        .chain(task.overlay_env.iter().map(|(d, _)| d))
         .filter_map(|d| match d {
             EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
             _ => None,
@@ -724,6 +725,30 @@ mod tests {
         let r =
             tera_env_refs("{{ env[\"B\"] }} {{ get_env(name='C') }} {% if env.KEY %}x{% endif %}");
         assert_eq!(r, BTreeSet::from(["B", "C", "KEY"].map(String::from)));
+    }
+
+    #[test]
+    fn overlay_env_templates_are_checked() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["SECRET".into()])),
+            overlay_env: vec![(
+                EnvDirective::Val(
+                    "TOKEN".into(),
+                    "{{ env.SECRET }}".into(),
+                    EnvDirectiveOptions::default(),
+                ),
+                PathBuf::from("/p/mise.toml"),
+            )],
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, None);
+        assert!(
+            problems.iter().any(|p| p.kind == ProblemKind::Template),
+            "{problems:?}"
+        );
     }
 
     #[test]

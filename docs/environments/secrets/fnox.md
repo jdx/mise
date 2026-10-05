@@ -139,7 +139,8 @@ applies.
 
 ### Launchers that refuse grants
 
-A task that lists secrets does not run when it was started by a mise hook, `watch_files`, a
+A task that lists secrets does not run when it was started by a mise hook (including a hook with
+`shell = ...`, which mise marks in your shell for the length of its script), `watch_files`, a
 pitchfork daemon or `mise bootstrap`. Run it directly with `mise run`. Tasks from remote sources
 (`git::`, `oci::` or URL includes) and tasks defined in global or system config cannot list
 secrets either. A task file or a `[tasks]` entry that lists secrets also requires the config to

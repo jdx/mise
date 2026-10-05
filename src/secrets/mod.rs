@@ -22,11 +22,11 @@ mod spawn;
 
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
+pub use grant::{DENIED_MARKER, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    DENIED_MARKER, aggregate_error, collision_problem, declared_env_keys, grant_for_task,
+    SecretGrant, aggregate_error, collision_problem, declared_env_keys, grant_for_task,
     sandbox_problem, static_problems,
 };
-pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub(crate) use spawn::SpawnSecrets;
@@ -200,6 +200,47 @@ pub struct TaskSecretsCheck {
 }
 
 /// Static checks always; the catalog check only when the source may be used.
+/// G13 and G11 as far as the task and the config decide them: its own sandbox settings and the
+/// `[env]` keys it declares. `mise run` flags (`--deny-env`, `--allow-env`) and the run's
+/// resolved environment can still change the result there.
+fn task_level_problems(
+    config: &Arc<Config>,
+    task: &crate::task::Task,
+    grant: &SecretGrant,
+) -> Vec<Problem> {
+    let task_sandbox = crate::sandbox::SandboxConfig {
+        deny_env: task.deny_all || task.deny_env,
+        allow_env: task.allow_env.clone(),
+        pass_through_env: task.pass_through_env.clone(),
+        cache_env: task
+            .cache
+            .iter()
+            .filter(|c| c.enabled)
+            .flat_map(|c| c.env.clone())
+            .collect(),
+        ..Default::default()
+    };
+    let sandbox = crate::sandbox::SandboxConfig::from_settings_and_cli(
+        &Settings::get().sandbox,
+        false,
+        task_sandbox,
+    );
+    let declared = declared_env_keys(task, config);
+    let mut problems = vec![];
+    for key in grant.keys.keys() {
+        if !sandbox.keeps_env_key(key.as_str()) {
+            problems.push(sandbox_problem(&task.name, key.as_str()));
+        }
+        if declared
+            .iter()
+            .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
+        {
+            problems.push(collision_problem(&task.name, key.as_str()));
+        }
+    }
+    problems
+}
+
 /// Shared by every `check_task_secrets` call of one `mise tasks validate`, so a source is
 /// opened and described once however many tasks list keys from it.
 #[derive(Default)]
@@ -223,6 +264,9 @@ pub async fn check_task_secrets(
     if grant.is_empty() {
         return check;
     }
+    check
+        .problems
+        .extend(task_level_problems(config, task, &grant));
     let ctx = &cache.ctx;
     let selection = match config::select_for_task_ungated(config, ctx, task).await {
         Ok(selection) => selection,
@@ -261,18 +305,11 @@ pub async fn check_task_secrets(
         check.catalog_skipped = true;
         return check;
     }
-    let ts = match config.get_toolset().await {
-        Ok(ts) => ts,
-        Err(_) => {
-            check.catalog_skipped = true;
-            return check;
-        }
-    };
-    if fnox::find_binary_in(config, ts).await.is_none() {
-        check.fnox_missing = true;
-        return check;
-    }
     match cache.broker.catalog_for(config, ctx, task, &selected).await {
+        // found through the task's own toolset, as `mise run` finds it
+        Err(err) if fnox::is_not_found_message(&format!("{err:#}")) => {
+            check.fnox_missing = true;
+        }
         Ok((catalog, label)) => {
             check
                 .problems

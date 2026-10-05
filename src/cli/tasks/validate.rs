@@ -359,8 +359,11 @@ impl TasksValidate {
             && reference_tasks.is_some_and(exists)
     }
 
-    /// The same static checks `mise run` makes on a task's `secrets`, plus the source catalog
-    /// when the source may be used (not in safe mode, and every declaring file trusted).
+    /// The checks `mise run` makes on a task's `secrets` that the task and config decide: the
+    /// static ones, a sandbox that would drop a key, an `[env]` key that collides with one,
+    /// and the source catalog when the source may be used (not in safe mode, every declaring
+    /// file trusted). `mise run` flags (`--deny-env`, `--allow-env`) can still change the
+    /// sandbox result there.
     async fn validate_secret_references(
         task: &Task,
         config: &Arc<Config>,

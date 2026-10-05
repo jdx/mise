@@ -621,8 +621,18 @@ async fn run_matched_hook(
                     out.push('\n');
                 }
             }
+            // The script runs in the user's own shell, so mark it there for its duration: a
+            // `mise run` inside it refuses task secrets like any other hook.
+            if let Some(shell) = shell {
+                out.push_str(&shell.set_env(crate::secrets::DENIED_MARKER, "hook"));
+                out.push('\n');
+            }
             out.push_str(script);
             out.push('\n');
+            if let Some(shell) = shell {
+                out.push_str(&shell.unset_env(crate::secrets::DENIED_MARKER));
+                out.push('\n');
+            }
             if let Err(err) = miseprint!("{out}") {
                 record_output_error(err);
             }
