@@ -141,10 +141,19 @@ fn is_unquoted_safe(value: &str) -> bool {
     if matches!(first, '\'' | '"' | '#' | '\n' | '\r') || is_horizontal_whitespace(first) {
         return false;
     }
-    if value
-        .chars()
-        .next_back()
-        .is_some_and(is_horizontal_whitespace)
+    // The parser trims trailing whitespace from an unquoted value unless a
+    // backslash escapes it (an odd run of backslashes before it), so only
+    // unescaped trailing whitespace needs quoting. Escapes the parser would
+    // decode (a backslash before a space or a tab) are rejected below.
+    if let Some((index, last)) = value.char_indices().next_back()
+        && is_horizontal_whitespace(last)
+        && value[..index]
+            .chars()
+            .rev()
+            .take_while(|character| *character == '\\')
+            .count()
+            % 2
+            == 0
     {
         return false;
     }
@@ -317,6 +326,19 @@ mod tests {
             "FIRST=one\nSECOND=\" two\""
         );
         assert_eq!(render(Vec::<(&str, &str)>::new()).unwrap(), "");
+    }
+
+    #[test]
+    fn escaped_trailing_whitespace_is_left_unquoted_when_it_round_trips() {
+        // A backslash keeps the parser from trimming the vertical tab after it, and
+        // the pair is kept as written.
+        let value = "a\\\u{b}";
+        assert_eq!(render_value(value).unwrap(), value);
+        assert_eq!(parse(&format!("VALUE={value}")).unwrap()["VALUE"], value);
+        // An unescaped one is trimmed, and a backslash before a space is decoded,
+        // so both are quoted.
+        assert_eq!(render_value("a\u{b}").unwrap(), "\"a\\v\"");
+        assert_eq!(render_value("a\\ ").unwrap(), "\"a\\\\ \"");
     }
 
     proptest! {
