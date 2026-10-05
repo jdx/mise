@@ -620,14 +620,11 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
 async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
     let mut config = Config::reset().await?;
     let mut ts = config.get_toolset().await?.clone();
-    // Named as on the command line, not by the configuration that asked for it:
-    // a project's `tool_config.locked` policy is for what its lockfile chooses,
-    // and this moves a version that is already installed.
     let request = ToolRequest::new_with_options(
         tv.request.ba().clone(),
         &tv.version,
         tv.request.options(),
-        crate::toolset::ToolSource::Argument,
+        tv.request.source().clone(),
     )?;
     let mut opts = InstallOptions {
         reason: "installs migrate".to_string(),
@@ -639,6 +636,9 @@ async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
     // moved, not one the lockfile chose.
     opts.resolve_options.use_locked_version = false;
     opts.locked = false;
+    // A project's `tool_config.locked` policy too, while its config file stays
+    // the request's source for hooks and templates.
+    opts.ignore_tool_config_locked = true;
     let installed = ts
         .install_all_versions(&mut config, vec![request.clone()], &opts)
         .await?;
