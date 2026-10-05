@@ -270,9 +270,18 @@ pub struct TaskSecretsCheck {
 }
 
 /// Static checks always; the catalog check only when the source may be used.
+/// Shared by every `check_task_secrets` call of one `mise tasks validate`, so a source is
+/// opened and described once however many tasks list keys from it.
+#[derive(Default)]
+pub struct TaskSecretsCache {
+    broker: SecretBroker,
+    ctx: crate::task::task_context_builder::TaskContextBuilder,
+}
+
 pub async fn check_task_secrets(
     config: &Arc<Config>,
     task: &crate::task::Task,
+    cache: &TaskSecretsCache,
 ) -> TaskSecretsCheck {
     let (grant, mut problems) = grant_for_task(task);
     problems.extend(static_problems(task, &grant, None));
@@ -284,9 +293,9 @@ pub async fn check_task_secrets(
     if grant.is_empty() {
         return check;
     }
-    let ctx = crate::task::task_context_builder::TaskContextBuilder::new();
-    let selected = match config::select_for_task_ungated(config, &ctx, task).await {
-        Ok(selection) => selection.source,
+    let ctx = &cache.ctx;
+    let selection = match config::select_for_task_ungated(config, ctx, task).await {
+        Ok(selection) => selection,
         Err(err) => {
             check.problems.push(Problem::new(
                 &task.name,
@@ -297,7 +306,7 @@ pub async fn check_task_secrets(
             return check;
         }
     };
-    let Some(selected) = selected else {
+    let Some(selected) = selection.source else {
         check.problems.push(Problem::new(
             &task.name,
             None,
@@ -305,7 +314,10 @@ pub async fn check_task_secrets(
             format!(
                 "task {}: {}",
                 task.name,
-                no_source_message(&task.config_root.clone().unwrap_or_default(), &[])
+                no_source_message(
+                    &task.config_root.clone().unwrap_or_default(),
+                    &selection.ignored
+                )
             ),
         ));
         return check;
@@ -330,23 +342,15 @@ pub async fn check_task_secrets(
         check.fnox_missing = true;
         return check;
     }
-    match fnox::FnoxSource::new(config, &selected, ts).await {
-        Ok(source) => match source.describe().await {
-            Ok(catalog) => {
-                check.problems.extend(grant::key_problems(
-                    Subject::Task(&task.name),
-                    &grant,
-                    &catalog,
-                    &source.label(),
-                ));
-            }
-            Err(err) => check.problems.push(Problem::new(
-                &task.name,
-                None,
-                ProblemKind::Source,
-                format!("task {}: {err:#}", task.name),
-            )),
-        },
+    match cache.broker.catalog_for(config, ctx, task, &selected).await {
+        Ok((catalog, label)) => {
+            check.problems.extend(grant::key_problems(
+                Subject::Task(&task.name),
+                &grant,
+                &catalog,
+                &label,
+            ));
+        }
         Err(err) => check.problems.push(Problem::new(
             &task.name,
             None,

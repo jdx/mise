@@ -70,6 +70,15 @@ pub enum SecretsDenied {
 }
 
 impl SecretsDenied {
+    pub(crate) fn marker(self) -> &'static str {
+        match self {
+            Self::Hook => "hook",
+            Self::WatchFiles => "watch_files",
+            Self::PitchforkDaemon => "pitchfork_daemon",
+            Self::Bootstrap => "bootstrap",
+        }
+    }
+
     pub(crate) fn launcher(self) -> &'static str {
         match self {
             Self::Hook => "a mise hook",
@@ -84,6 +93,8 @@ impl SecretsDenied {
         match value {
             "" => None,
             "watch_files" => Some(Self::WatchFiles),
+            "pitchfork_daemon" => Some(Self::PitchforkDaemon),
+            "bootstrap" => Some(Self::Bootstrap),
             _ => Some(Self::Hook),
         }
     }
@@ -746,12 +757,16 @@ fn task_env_literals(task: &Task) -> Vec<(String, String)> {
         .collect()
 }
 
-/// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical on
-/// purpose: a false positive only fails a grant that would be unusable anyway.
+/// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical, but
+/// aware of string literals: quoted text such as `"env.K"` is data and is not an env read.
 pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = s;
-    while let Some(start) = rest.find("{{").or_else(|| rest.find("{%")) {
+    while let Some(start) = [rest.find("{{"), rest.find("{%")]
+        .into_iter()
+        .flatten()
+        .min()
+    {
         let tag = &rest[start..];
         let close = if tag.starts_with("{{") { "}}" } else { "%}" };
         let end = tag.find(close).map(|e| e + 2).unwrap_or(tag.len());
@@ -765,58 +780,95 @@ fn is_ident(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+/// Reads a Tera string literal (no escapes) starting at the opening quote `chars[i]`.
+/// Returns the contents and the index after the closing quote.
+fn read_literal(chars: &[char], i: usize) -> (String, usize) {
+    let q = chars[i];
+    let mut j = i + 1;
+    while j < chars.len() && chars[j] != q {
+        j += 1;
+    }
+    let text = chars[i + 1..j.min(chars.len())].iter().collect();
+    (text, (j + 1).min(chars.len()))
+}
+
+fn is_quote(c: char) -> bool {
+    matches!(c, '"' | '\'' | '`')
+}
+
 fn scan_tag(tag: &str, out: &mut BTreeSet<String>) {
-    // env.NAME and env["NAME"] / env['NAME']
-    let bytes: Vec<char> = tag.chars().collect();
+    let chars: Vec<char> = tag.chars().collect();
+    let at = |i: usize, word: &str| {
+        word.chars()
+            .enumerate()
+            .all(|(k, w)| chars.get(i + k) == Some(&w))
+    };
     let mut i = 0;
-    while i + 3 <= bytes.len() {
-        let at_boundary = i == 0 || !is_ident(bytes[i - 1]);
-        if at_boundary && bytes[i..].starts_with(&['e', 'n', 'v']) {
-            let mut j = i + 3;
-            if j < bytes.len() && bytes[j] == '.' {
+    while i < chars.len() {
+        // text inside a string literal is data, not an env read
+        if is_quote(chars[i]) {
+            i = read_literal(&chars, i).1;
+            continue;
+        }
+        let boundary = i == 0 || !is_ident(chars[i - 1]);
+        if boundary && at(i, "env") {
+            let j = i + 3;
+            if chars.get(j) == Some(&'.') {
+                let s = j + 1;
+                let mut e = s;
+                while e < chars.len() && is_ident(chars[e]) {
+                    e += 1;
+                }
+                if e > s {
+                    out.insert(chars[s..e].iter().collect());
+                }
+                i = e;
+                continue;
+            }
+            if chars.get(j) == Some(&'[') && chars.get(j + 1).is_some_and(|c| is_quote(*c)) {
+                let (name, next) = read_literal(&chars, j + 1);
+                out.insert(name);
+                i = next;
+                continue;
+            }
+        }
+        if boundary && at(i, "get_env(") {
+            i = scan_get_env_args(&chars, i + "get_env(".len(), out);
+            continue;
+        }
+        i += 1;
+    }
+}
+
+/// `name="K"` among the arguments of a `get_env(` call; strings elsewhere are skipped.
+fn scan_get_env_args(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) -> usize {
+    while i < chars.len() && chars[i] != ')' {
+        if is_quote(chars[i]) {
+            i = read_literal(chars, i).1;
+            continue;
+        }
+        let boundary = i == 0 || !is_ident(chars[i - 1]);
+        if boundary && chars[i..].starts_with(&['n', 'a', 'm', 'e']) {
+            let mut j = i + 4;
+            while chars.get(j) == Some(&' ') {
                 j += 1;
-                let s = j;
-                while j < bytes.len() && is_ident(bytes[j]) {
+            }
+            if chars.get(j) == Some(&'=') {
+                j += 1;
+                while chars.get(j) == Some(&' ') {
                     j += 1;
                 }
-                if j > s {
-                    out.insert(bytes[s..j].iter().collect());
-                }
-            } else if j < bytes.len() && bytes[j] == '[' {
-                j += 1;
-                if j < bytes.len() && (bytes[j] == '"' || bytes[j] == '\'') {
-                    let q = bytes[j];
-                    j += 1;
-                    let s = j;
-                    while j < bytes.len() && bytes[j] != q {
-                        j += 1;
-                    }
-                    out.insert(bytes[s..j].iter().collect());
+                if chars.get(j).is_some_and(|c| is_quote(*c)) {
+                    let (name, next) = read_literal(chars, j);
+                    out.insert(name);
+                    i = next;
+                    continue;
                 }
             }
         }
         i += 1;
     }
-    // get_env(name="NAME")
-    let mut search = tag;
-    while let Some(p) = search.find("get_env(") {
-        let after = &search[p + "get_env(".len()..];
-        let end = after.find(')').unwrap_or(after.len());
-        let args = &after[..end];
-        if let Some(n) = args.find("name") {
-            let v = args[n + 4..].trim_start();
-            if let Some(v) = v.strip_prefix('=') {
-                let v = v.trim_start();
-                if let Some(q) = v.chars().next().filter(|c| *c == '"' || *c == '\'') {
-                    let inner = &v[1..];
-                    if let Some(e) = inner.find(q) {
-                        out.insert(inner[..e].to_string());
-                    }
-                }
-            }
-        }
-        search = after;
-    }
+    i
 }
 
 #[cfg(test)]
@@ -874,6 +926,26 @@ mod tests {
     }
 
     #[test]
+    fn quoted_text_is_not_an_env_read() {
+        for none in [
+            "{% set label = \"env.DEPLOY_KEY\" %} echo {{ label }}",
+            "{{ \"env.X\" }}",
+            "{{ 'get_env(name=\"Y\")' }}",
+        ] {
+            assert!(tera_env_refs(none).is_empty(), "{none}");
+        }
+        let r =
+            tera_env_refs("{{ env[\"B\"] }} {{ get_env(name='C') }} {% if env.KEY %}x{% endif %}");
+        assert_eq!(r, BTreeSet::from(["B", "C", "KEY"].map(String::from)));
+    }
+
+    #[test]
+    fn earliest_tag_is_scanned() {
+        let r = tera_env_refs("{% if env.KEY %}x{% endif %} {{ foo }}");
+        assert!(r.contains("KEY"), "{r:?}");
+    }
+
+    #[test]
     fn grant_reports_bad_names() {
         let t = Task {
             name: "deploy".into(),
@@ -917,6 +989,14 @@ mod tests {
             Some(SecretsDenied::WatchFiles)
         );
         assert_eq!(SecretsDenied::from_marker("zzz"), Some(SecretsDenied::Hook));
+        for d in [
+            SecretsDenied::Hook,
+            SecretsDenied::WatchFiles,
+            SecretsDenied::PitchforkDaemon,
+            SecretsDenied::Bootstrap,
+        ] {
+            assert_eq!(SecretsDenied::from_marker(d.marker()), Some(d));
+        }
     }
 
     fn named(name: &str, args: &[&str]) -> Task {
