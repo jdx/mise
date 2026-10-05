@@ -423,9 +423,10 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // A version named on the command line without options means whatever is
     // installed of it, as it did before this layout: a lone installation made
     // with options a configuration set (`filter_bins`, `matching`) stands for
-    // it. With several, which is meant is not known.
+    // it. With several, which is meant is not known. It is not cached: the cache
+    // is keyed by the request, and the same request from a configuration file
+    // does not stand for a variant.
     if try_variant && let [only] = variant_installations(&identity).as_slice() {
-        locate_cache().insert((dirs::INSTALLS.to_path_buf(), digest.clone()), only.clone());
         return Some(only.clone());
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
