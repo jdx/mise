@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-clickhouse",
+  "vfox:jdx/vfox-clickhouse",
   "asdf:mise-plugins/mise-clickhouse",
 ]
 bins = [

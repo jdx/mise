@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-asciidoctorj",
+  "vfox:jdx/vfox-asciidoctorj",
   "asdf:mise-plugins/mise-asciidoctorj",
 ]
 bins = ["asciidoctorj"]

@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-carthage",
+  "vfox:jdx/vfox-carthage",
   "asdf:mise-plugins/mise-carthage",
 ]
 description = "A simple, decentralized dependency manager for Cocoa"

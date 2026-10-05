@@ -1,7 +1,7 @@
 backends = [
   "aqua:Kitware/CMake",
   "asdf:mise-plugins/mise-cmake",
-  "vfox:mise-plugins/vfox-cmake",
+  "vfox:jdx/vfox-cmake",
 ]
 description = "CMake is a tool to manage building of source code. Originally, CMake was designed as a generator for various dialects of Makefile, today CMake generates modern buildsystems such as Ninja as well as project files for IDEs such as Visual Studio and Xcode"
 idiomatic_files = [

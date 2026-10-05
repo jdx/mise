@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-chromedriver",
+  "vfox:jdx/vfox-chromedriver",
   "asdf:mise-plugins/mise-chromedriver",
 ]
 bins = ["chromedriver"]
