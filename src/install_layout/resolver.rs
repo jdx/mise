@@ -1619,15 +1619,15 @@ pub fn select(installation: &str) -> Result<Installation> {
             catalog.rebuild_from_receipts()?;
             lookup().ok_or_else(|| eyre::eyre!("{name} could not be added to the catalog"))?
         }
-        None => catalog
-            .find_by_receipt(&receipt.record.digest)
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "{} is not listed in the catalog of {}, so it cannot be selected",
-                    name,
-                    root.display()
-                )
-            })?,
+        // The receipt of the very directory being selected.
+        None if receipt.record.dir == name && receipt.record.is_consistent() => {
+            receipt.record.clone()
+        }
+        None => eyre::bail!(
+            "{} is not listed in the catalog of {}, so it cannot be selected",
+            name,
+            root.display()
+        ),
     };
     let key = request_of(&record.identity);
     let shared = (!is_primary_root(&root)).then_some(root.as_path());
