@@ -353,6 +353,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     let key = identity.request_key();
     let unlocked = pin_of(&identity).is_none();
     let mut ambiguous = false;
+    let mut try_variant = false;
     if unlocked {
         let cache_key = (dirs::INSTALLS.to_path_buf(), digest.clone());
         if let Some(hit) = locate_cache().get(&cache_key) {
@@ -386,20 +387,12 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
                 return Some(located);
             }
             Unlocked::Ambiguous(_) => ambiguous = true,
-            // A version named on the command line without options means whatever
-            // is installed of it, as it did before this layout: a lone installation
-            // made with options a configuration set (`filter_bins`, `matching`)
-            // stands for it. With several, which is meant is not known.
-            Unlocked::Nothing
-                if identity.options.is_empty()
-                    && matches!(tv.request.source(), crate::toolset::ToolSource::Argument) =>
-            {
-                if let [only] = variant_installations(&identity).as_slice() {
-                    locate_cache().insert(cache_key, only.clone());
-                    return Some(only.clone());
-                }
+            // Nothing of the request's own: a bare version named on the command
+            // line may still stand for a variant, after a legacy install (below).
+            Unlocked::Nothing => {
+                try_variant = identity.options.is_empty()
+                    && matches!(tv.request.source(), crate::toolset::ToolSource::Argument);
             }
-            Unlocked::Nothing => {}
         }
     } else {
         for root in roots() {
@@ -426,6 +419,14 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // An install made before the identity layout, in place.
     if !ambiguous && let Some(legacy) = legacy_dir(tv, &identity) {
         return Some(legacy_located(legacy));
+    }
+    // A version named on the command line without options means whatever is
+    // installed of it, as it did before this layout: a lone installation made
+    // with options a configuration set (`filter_bins`, `matching`) stands for
+    // it. With several, which is meant is not known.
+    if try_variant && let [only] = variant_installations(&identity).as_slice() {
+        locate_cache().insert((dirs::INSTALLS.to_path_buf(), digest.clone()), only.clone());
+        return Some(only.clone());
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
     // Several installations answer and none is chosen: report a path that is
@@ -950,6 +951,14 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let mut bare = tv.clone();
     bare.install_path = None;
     let own_request = identity_of(&bare).map(|identity| request_of(&identity));
+    // A request with options of its own (named, or set by a configuration) means
+    // exactly those; only a bare version can stand for a variant.
+    if own_request
+        .as_ref()
+        .is_some_and(|own| !own.options.is_empty())
+    {
+        return vec![];
+    }
     // The request has installations of its own, or a selection: which one it uses
     // is for the selection to say (or the user, when that is ambiguous), so a
     // variant made with other options is no stand-in for it.

@@ -53,3 +53,18 @@ assert "test \"\$(mise installs ls dummy --json | jq '[.[] | select(.version == 
 plain_dir="$(mise where dummy@1.0.0)"
 [[ $plain_dir != "$solo_dir" ]] || fail "the bare version still resolves to the variant"
 assert "mise -C $work/solo where dummy" "$solo_dir"
+
+echo "=== a version named with options a configuration sets never stands in for another variant ==="
+mkdir minimal
+cat >minimal/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "1.1.0", flavor = "minimal" }
+EOF2
+assert "mise -C $work/minimal install"
+mkdir full
+cat >full/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "1.1.0", flavor = "full" }
+EOF2
+assert_fail "mise -C $work/full where dummy@1.1.0"
+assert_fail "mise -C $work/full where dummy 1.1.0"

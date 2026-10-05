@@ -468,9 +468,17 @@ impl BackendsSwitch {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
         for (lockfile, tv) in self.scoped_versions(&config).await? {
+            // The old backend's install may be in the user's root or in a shared
+            // or system one.
             let installed = tv.backend()?.is_version_installed(&config, &tv, false)
                 || (crate::install_layout::resolver::enabled()
-                    && tv.ba().installs_path().join(tv.tv_pathname()).exists());
+                    && std::iter::once(crate::dirs::INSTALLS.to_path_buf())
+                        .chain(crate::env::shared_install_dirs())
+                        .any(|root| {
+                            tv.ba().installs_path().file_name().is_some_and(|tool_dir| {
+                                root.join(tool_dir).join(tv.tv_pathname()).exists()
+                            })
+                        }));
             if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
                 || relocked_tools.contains(&(lockfile, tv.short().to_string())))
                 && installed

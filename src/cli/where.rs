@@ -42,27 +42,28 @@ impl Where {
         let config = Config::get().await?;
         // A version named on the command line carries no install options.
         let named_here = self.tool.tvr.is_some() || self.asdf_version.is_some();
-        let tvr = match self.tool.tvr {
-            // The options a configuration sets for the tool apply to a version named
-            // here too, as they do for `mise x tool@version`.
+        // The options a configuration sets for the tool apply to a version named
+        // here too (as `tool@version` or `tool version`), as they do for
+        // `mise x tool@version`.
+        let named = match (self.tool.tvr.clone(), &self.asdf_version) {
+            (Some(tvr), _) => Some(tvr),
+            (None, Some(version)) => self.tool.clone().with_version(version).tvr,
+            (None, None) => None,
+        };
+        let tvr = match named {
             Some(tvr) => crate::toolset::apply_config_options_to_runtime_arg(
                 config.get_tool_request_set().await?,
                 tvr,
             ),
-            None => match self.asdf_version {
-                Some(version) => self.tool.with_version(&version).tvr.unwrap(),
-                None => {
-                    let ts = ToolsetBuilder::new().build(&config).await?;
-                    match ts.versions.get(self.tool.ba.as_ref()) {
-                        Some(tvl) => {
-                            tvl.os_supported_requests().next().cloned().ok_or_else(|| {
-                                eyre::eyre!("{} does not have an active version", self.tool.ba)
-                            })?
-                        }
-                        None => self.tool.with_version("latest").tvr.unwrap(),
-                    }
+            None => {
+                let ts = ToolsetBuilder::new().build(&config).await?;
+                match ts.versions.get(self.tool.ba.as_ref()) {
+                    Some(tvl) => tvl.os_supported_requests().next().cloned().ok_or_else(|| {
+                        eyre::eyre!("{} does not have an active version", self.tool.ba)
+                    })?,
+                    None => self.tool.with_version("latest").tvr.unwrap(),
                 }
-            },
+            }
         };
 
         let tv = tvr.resolve(&config, &Default::default()).await?;
