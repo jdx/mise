@@ -1701,8 +1701,11 @@ impl Task {
             {
                 let refs = template::secret_refs(value)
                     .map_err(|_| eyre!("{}", template::mixed_message(&self.name, key)))?;
-                if template::literal_has_shell_expansion(value) {
-                    bail!("{}", template::shell_expansion_message(&self.name, key));
+                if template::dollar_before_ref(value) {
+                    bail!(
+                        "{}",
+                        template::dollar_before_ref_message(&self.name, key, value)
+                    );
                 }
                 late.push(crate::secrets::LateSecretEnv {
                     key: key.clone(),
@@ -6443,7 +6446,19 @@ echo "hello world"
     }
 
     #[test]
-    fn shell_expansion_with_secrets_fails_to_load() {
+    fn a_dollar_before_a_reference_fails_to_load() {
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val("A", "${{ secrets.B }}")]),
+            ..Default::default()
+        };
+        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("task m: env.A has ${{ secrets.B }}; drop the $"),
+            "{err}"
+        );
+        // other `$` syntax is a spawn-time problem that follows env_shell_expand
         let mut task = Task {
             name: "m".into(),
             env: crate::config::config_file::mise_toml::EnvList(vec![val(
@@ -6452,12 +6467,7 @@ echo "hello world"
             )]),
             ..Default::default()
         };
-        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("task m: env.A uses $VAR expansion together with {{ secrets.* }}"),
-            "{err}"
-        );
+        task.record_late_secret_env(Path::new("/p")).unwrap();
     }
 
     #[test]

@@ -235,6 +235,19 @@ pub(crate) fn literal_has_shell_expansion(s: &str) -> bool {
     })
 }
 
+/// Whether a `$` sits right before a reference, as in a GitHub Actions `${{ secrets.X }}`.
+pub(crate) fn dollar_before_ref(s: &str) -> bool {
+    s.contains("${{")
+}
+
+/// `${{ secrets.X }}`
+pub(crate) fn dollar_before_ref_message(task: &str, key: &str, s: &str) -> String {
+    let name = first_name(s);
+    format!(
+        "task {task}: env.{key} has ${{{{ secrets.{name} }}}}; drop the $ (mise uses {{{{ secrets.{name} }}}})"
+    )
+}
+
 /// K
 pub(crate) fn shell_expansion_message(task: &str, key: &str) -> String {
     format!(
@@ -579,6 +592,18 @@ mod tests {
         ] {
             assert!(!literal_has_shell_expansion(no), "{no}");
         }
+    }
+
+    #[test]
+    fn a_dollar_before_a_reference_is_detected() {
+        assert!(dollar_before_ref("${{ secrets.A }}"));
+        assert!(dollar_before_ref("x=${{secrets.A}}"));
+        assert!(!dollar_before_ref("$ {{ secrets.A }}"));
+        assert!(!dollar_before_ref("{{ secrets.A }}$"));
+        assert_eq!(
+            dollar_before_ref_message("t", "GH_TOKEN", "${{ secrets.A }}"),
+            "task t: env.GH_TOKEN has ${{ secrets.A }}; drop the $ (mise uses {{ secrets.A }})"
+        );
     }
 
     #[test]
