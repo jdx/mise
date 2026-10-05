@@ -291,6 +291,38 @@ impl Catalog {
         Ok(restored)
     }
 
+    /// The full digest the directory name `dir` is reserved for.
+    pub(crate) fn owner_of(&self, dir: &str) -> Option<String> {
+        std::fs::read_to_string(self.name_path(dir))
+            .ok()
+            .map(|owner| owner.trim().to_string())
+    }
+
+    /// Forget the selections that name the installation with `digest` in this
+    /// catalog's own root. Returns how many were removed.
+    pub(crate) fn remove_selections_of(&self, digest: &str) -> Result<usize> {
+        let dir = self.meta_dir().join("selections");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Ok(0);
+        };
+        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let mut removed = 0;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let Some(selection) = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|body| toml::from_str::<Selection>(&body).ok())
+            else {
+                continue;
+            };
+            if selection.selected == digest && selection.root.is_none() {
+                file::remove_file(&path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// Where an unlocked request's choice is remembered, if it was.
     pub(crate) fn selection(&self, key: &InstallIdentity) -> Option<Selection> {
         let body = std::fs::read_to_string(self.selection_path(key)).ok()?;

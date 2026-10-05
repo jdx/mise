@@ -181,3 +181,13 @@ EOF2
 assert "mise -C locked2 install"
 rm -rf "$installs/.mise/selections"
 assert_fail "mise where dummy@2.0.0"
+
+echo "=== after mise uninstall, the request chooses again ==="
+unset MISE_SHARED_INSTALL_DIRS
+assert "mise install tiny@2.1.0"
+gone="$(mise where tiny@2.1.0)"
+mkdir -p "$HOME/shared3/tiny"
+cp -a "$gone" "$HOME/shared3/tiny/2.1.0"
+assert "mise uninstall tiny@2.1.0"
+export MISE_SHARED_INSTALL_DIRS="$HOME/shared3"
+assert "mise where tiny@2.1.0" "$HOME/shared3/tiny/2.1.0"

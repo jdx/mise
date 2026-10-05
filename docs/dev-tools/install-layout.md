@@ -331,7 +331,9 @@ Both work on one installation directory at a time.
   the install store that has neither a receipt nor a reservation in the
   catalog. Removing one variant leaves the others in place.
 - Removing an installation keeps its catalog record, so installing the same
-  identity again lands in the same directory.
+  identity again lands in the same directory. `mise uninstall` also forgets the
+  selection that named it, so the requests it answered choose again; a pruned
+  installation keeps its selection and is restored in place.
 - `mise prune` keeps an installation while a tracked config needs it. An unlocked
   request needs the installation it selects. A tracked lockfile entry needs the
   installations of its backend and version, narrowed to the pinned artifact when

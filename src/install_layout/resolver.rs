@@ -1547,6 +1547,30 @@ pub fn select(installation: &str) -> Result<Installation> {
         .ok_or_else(|| eyre::eyre!("{name} is no longer installed"))
 }
 
+/// Forget the unlocked selections that name the installation `dir`, after
+/// `mise uninstall` removed it on purpose: the requests it answered choose
+/// again (another installation, or a legacy or shared copy). Prune keeps them,
+/// so a pruned selection is restored in place.
+pub fn forget_selections_of(dir: &Path) {
+    if !enabled() || !is_primary_install(dir) {
+        return;
+    }
+    let Some(name) = dir.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let Some(digest) = catalog.owner_of(name) else {
+        return;
+    };
+    if let Err(err) = catalog.remove_selections_of(&digest) {
+        debug!(
+            "could not forget the selections of {}: {err:#}",
+            dir.display()
+        );
+    }
+    reset_cache();
+}
+
 /// Point every version link in the primary root that names another installation
 /// of `record`'s request at `dir` (which may be in a shared root) instead, and
 /// give the tool it was requested as a link if it has none. A link can name only
