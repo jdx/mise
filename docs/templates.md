@@ -249,6 +249,10 @@ with information about the current environment:
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
 - `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
+- `secrets` – Not a general template variable. `{{ secrets.NAME }}` is allowed only in a
+  task's own `env` values <Badge type="warning" text="experimental" />: it is rendered when
+  the task starts, and the reference grants that key to the task. See
+  [Compose values](/environments/secrets/fnox.html#compose-values).
 - `cwd: PathBuf` – Points to the current working directory.
 - `config_root: PathBuf` – Points to the directory containing your `mise.toml` file; for a config such as `~/src/myproj/.config/mise.toml`, it points to `~/src/myproj`.
 - `config_source: String` – The config file the template itself is written in, as an absolute path. Unlike `config_root` this is the file, not the project it belongs to, and it is **not** resolved through symlinks — pipe it through `canonicalize` when you want the location of the real file. Available in `mise.toml`, `.tool-versions`, `[env]` directives and `[settings.age]`; task file templates and `.miserc.toml` only carry `config_root`.

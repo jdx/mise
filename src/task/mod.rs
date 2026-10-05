@@ -6237,6 +6237,84 @@ echo "hello world"
         assert!(Task::default().secrets_remote_source().is_none());
     }
 
+    fn late_task(env: &str) -> Task {
+        let body = format!("[tasks.m]\nrun = 'true'\n{env}\n");
+        let mut tasks: BTreeMap<String, Task> =
+            toml::from_str::<toml::Table>(&body).unwrap()["tasks"]
+                .clone()
+                .try_into()
+                .unwrap();
+        let mut task = tasks.remove("m").unwrap();
+        task.name = "m".into();
+        task.record_late_secret_env(Path::new("/p/mise.toml"))
+            .unwrap();
+        task
+    }
+
+    fn val(key: &str, value: &str) -> crate::config::env_directive::EnvDirective {
+        crate::config::env_directive::EnvDirective::Val(
+            key.into(),
+            value.into(),
+            Default::default(),
+        )
+    }
+
+    #[test]
+    fn env_references_extend_the_grant_and_are_deferred() {
+        let task = late_task(
+            "env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@{{secrets.HOST}}'\nenv.PLAIN = 'x'",
+        );
+        assert_eq!(task.late_secret_env.len(), 1);
+        assert_eq!(task.secret_names(), ["DB_PASSWORD", "HOST"]);
+        let (grant, problems) = crate::secrets::grant_for_task(&task);
+        assert!(problems.is_empty());
+        assert_eq!(grant.keys.len(), 2);
+        assert!(grant.exported_keys().next().is_none());
+        assert_eq!(
+            grant.granted_by(&crate::secrets::SecretName::new("HOST").unwrap()),
+            "{{ secrets.HOST }} in env.PGURL"
+        );
+        // the late directive is not resolved with the rest of the env
+        let keys: Vec<_> = task
+            .render_env_directives()
+            .into_iter()
+            .map(|(d, _)| format!("{d:?}"))
+            .collect();
+        assert_eq!(keys.len(), 1);
+        assert!(keys[0].contains("PLAIN") && !keys.join("").contains("secrets"));
+    }
+
+    #[test]
+    fn dependency_env_with_identical_text_is_not_late() {
+        let text = "{{ secrets.DB_PASSWORD }}";
+        let task = late_task(&format!("env.PGURL = '{text}'"));
+        // env that arrives later is never recorded, however it is spelled
+        let dep = task.with_dependency_env(&[val("PGURL", text)]);
+        assert_eq!(dep.late_secret_env.len(), 1);
+        let remaining = dep.render_env_directives();
+        assert_eq!(remaining.len(), 1, "the dependency's copy still resolves");
+        let inherited = task.derive_env(&[val("PGURL", text)]);
+        assert_eq!(inherited.render_env_directives().len(), 1);
+        // and a task with only dependency env records nothing
+        let plain = Task::default().with_dependency_env(&[val("PGURL", text)]);
+        assert!(plain.late_secret_env.is_empty());
+        assert_eq!(plain.render_env_directives().len(), 1);
+    }
+
+    #[test]
+    fn mixing_secrets_with_other_syntax_fails_to_load() {
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val(
+                "A",
+                "{{ secrets.B | upper }}",
+            )]),
+            ..Default::default()
+        };
+        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
+        assert!(err.to_string().contains("task m: env.A mixes"), "{err}");
+    }
+
     #[test]
     fn file_declares_secrets_parses_headers() {
         let sh = Path::new("/p/mise-tasks/ft");

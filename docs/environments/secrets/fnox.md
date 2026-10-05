@@ -132,6 +132,38 @@ mise x -- gh release list                   # nothing; fnox never runs
 - The flags need a `[secrets.fnox]` source in the project, are experimental, and are refused in
   safe mode.
 
+### Compose values {#compose-values}
+
+A task's own `env` values may reference a secret with `{{ secrets.NAME }}`. The reference is the
+grant: you do not also list the key in `secrets`.
+
+```toml
+[tasks.migrate]
+env.PGURL = "postgres://app:{{ secrets.DB_PASSWORD }}@db.internal/app"
+run = 'psql "$PGURL" -f schema.sql'
+```
+
+`PGURL` is composed just before the task starts and redacted in its output. `DB_PASSWORD` itself is
+not exported unless the task also lists it, and listing it as well is an error because both would
+claim the name.
+
+- Only literal text and `{{ secrets.NAME }}` (spaces inside the braces are optional) may appear in
+  such a value. Filters, other variables, `{{-`, `secrets["NAME"]` and `{% raw %}` are an error;
+  compose anything fancier in fnox or in the task's script.
+- Allowed only in a task's own `env` values (and a file task's `#MISE env=` header). Not in
+  `run` (it becomes `sh -c` arguments, which other local users can read through `ps`; read
+  `$NAME` instead), not in `[env]` or `[vars]`, and not in `depends`, their `env`, run-entry
+  `env`, `[task_templates]`, `task_defaults`, hooks or `[tools]`.
+- Env that reaches a task from a dependency or a run entry is never a grant, so it cannot
+  smuggle a reference in.
+- Other env values cannot read the composed variable with `{{ env.PGURL }}`; build them from
+  secrets directly.
+- The same rules apply as for listed keys: remote and non-project tasks cannot use references,
+  the sandbox must keep the variable, and mise must not already set it.
+
+`mise tasks info` shows the template, never a value, and `mise secrets ls` lists the task as
+`migrate (env.PGURL)`.
+
 ### Where values go, and where they never go
 
 Values go only into the environment of the process mise starts for the task, after mise has
