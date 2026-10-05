@@ -3,6 +3,7 @@ backends = [
   "asdf:crazy-matt/asdf-actionlint",
   "go:github.com/rhysd/actionlint/cmd/actionlint",
 ]
+deprecated = "jactionlint is an actively maintained fork of actionlint with upstream fixes merged. Run `mise use jactionlint` instead."
 description = ":octocat: Static checker for GitHub Actions workflow files"
 test = { cmd = "actionlint --version", expected = "{{version}}" }
 version_order = "semver"
