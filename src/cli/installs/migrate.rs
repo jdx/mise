@@ -121,8 +121,8 @@ impl InstallsMigrate {
 
     /// Whether `tv` is one of the tools asked for: `None` when none were named.
     /// A version names the installed version it is, or else, as for
-    /// `mise uninstall node@20`, those it begins up to a separator (`20` names
-    /// `20.11.1`, not `200.1`); `latest` names the newest installed one.
+    /// `mise uninstall node@20`, those it begins up to a `.`, `-` or `+` (`20`
+    /// names `20.11.1`, not `200.1`); `latest` names the newest installed one.
     fn named(&self, tv: &ToolVersion) -> Option<bool> {
         if self.tool.is_empty() {
             return None;
@@ -144,9 +144,10 @@ impl InstallsMigrate {
                     }
                     let exact = backend.list_installed_versions().iter().any(|i| i == v);
                     !exact
-                        && tv.version.strip_prefix(v).is_some_and(|rest| {
-                            rest.starts_with(|c: char| !c.is_ascii_alphanumeric())
-                        })
+                        && tv
+                            .version
+                            .strip_prefix(v)
+                            .is_some_and(|rest| rest.starts_with(['.', '-', '+']))
                 })
         }))
     }
