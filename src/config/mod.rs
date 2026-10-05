@@ -1638,8 +1638,11 @@ impl Config {
                         Ok(content) => {
                             // Keep the assignments that precede a syntax error, like a
                             // line-by-line loader would, and name the file cut short.
-                            let (items, err) =
-                                mise_dotenv::parse_partial(&content, true, mise_util::env::vars_without_inherited_secrets());
+                            let (items, err) = mise_dotenv::parse_partial(
+                                &content,
+                                true,
+                                mise_util::env::vars_without_inherited_secrets(),
+                            );
                             for (k, v) in items {
                                 env_results.env.insert(k, (v, env_file.clone()));
                             }
