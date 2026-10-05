@@ -162,103 +162,103 @@ url = "https://github.com/aubepkg/aube/releases/download/v2.6.1/aube-v2.6.1-x86_
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [[tools.cargo-binstall]]
-version = "1.24.0"
+version = "1.25.1"
 backend = "aqua:cargo-bins/cargo-binstall"
 specifiers = ["latest"]
 
 [tools.cargo-binstall."platforms.linux-arm64"]
-checksum = "sha256:fa5d4362758d13c38c6630260528c895b535e96afeed08ed7003caf722524ab9"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-aarch64-unknown-linux-gnu.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590639427"
+checksum = "sha256:0c209d4fecaf428358b1a798d35e2372c98a9a5513c541ba08450c2ba1b2bf69"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-aarch64-unknown-linux-gnu.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607778085"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-arm64-musl"]
-checksum = "sha256:c2c44aba65d402ac43ee821387c49246bc574bde65d3d7f0f7a9e666c5a69f7f"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-aarch64-unknown-linux-musl.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590639354"
+checksum = "sha256:87495c6a6e921e02dd9ccf4dc8cc0a9b3a8d7ae8a07681f7f99bbcf306f42fdd"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-aarch64-unknown-linux-musl.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777995"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64"]
-checksum = "sha256:ab139b59b86ce14baf9a8da0592dd4c73fdc8b8a7d74a9746881bd68d411f4d8"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638764"
+checksum = "sha256:7566158bf76a99974e081abe442978b8a3e5f4e834ee8247d847902b588b2133"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777440"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-baseline"]
-checksum = "sha256:ab139b59b86ce14baf9a8da0592dd4c73fdc8b8a7d74a9746881bd68d411f4d8"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638764"
+checksum = "sha256:7566158bf76a99974e081abe442978b8a3e5f4e834ee8247d847902b588b2133"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-unknown-linux-gnu.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777440"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-musl"]
-checksum = "sha256:7ffe1832c4bc3148d00f02d51c1d96c9cccdec76a0fa20e6e5692201d78bcc0b"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638693"
+checksum = "sha256:8e06c41af972f9922f28c6ae467e41ffa9b0688d563d0aabd0dcbd5244ab849b"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777371"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:7ffe1832c4bc3148d00f02d51c1d96c9cccdec76a0fa20e6e5692201d78bcc0b"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638693"
+checksum = "sha256:8e06c41af972f9922f28c6ae467e41ffa9b0688d563d0aabd0dcbd5244ab849b"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777371"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.macos-arm64"]
-checksum = "sha256:aa3ad3ba751c6fad85d83bf4aa7a114e4e04372de439a62cd7cad3c4025bdbbe"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-aarch64-apple-darwin.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590639619"
+checksum = "sha256:44fc93543677e08d9e591d7c72a0b0346049ff249816814335da864e588f0413"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-aarch64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607778292"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.windows-x64"]
-checksum = "sha256:d03e0b721aa770228210e6b65ed66d2c3fa9dbfb096160906ebd4b82e7bfa1fa"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638843"
+checksum = "sha256:8b8019ac54adbb5338e68c3cd6e37dc48a156747eb9174a9231089ce648c5df3"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777522"
 provenance = "github-attestations"
 
 [tools.cargo-binstall."platforms.windows-x64-baseline"]
-checksum = "sha256:d03e0b721aa770228210e6b65ed66d2c3fa9dbfb096160906ebd4b82e7bfa1fa"
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.24.0/cargo-binstall-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/590638843"
+checksum = "sha256:8b8019ac54adbb5338e68c3cd6e37dc48a156747eb9174a9231089ce648c5df3"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.1/cargo-binstall-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/607777522"
 provenance = "github-attestations"
 
 [[tools.cargo-insta]]
-version = "1.48.0"
+version = "1.49.0"
 backend = "aqua:mitsuhiko/insta"
 specifiers = ["latest"]
 
 [tools.cargo-insta."platforms.linux-x64"]
-checksum = "sha256:1c05a480a5a7f755f0ea15b2d8e2f71ad51b9c3a270d38ac72005c57ac0a1487"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757866"
+checksum = "sha256:18879f4e7280c2eb87bb1037ddb9d48af697511fb0d8113edfc39ab8bade4d4e"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606860016"
 
 [tools.cargo-insta."platforms.linux-x64-baseline"]
-checksum = "sha256:1c05a480a5a7f755f0ea15b2d8e2f71ad51b9c3a270d38ac72005c57ac0a1487"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757866"
+checksum = "sha256:18879f4e7280c2eb87bb1037ddb9d48af697511fb0d8113edfc39ab8bade4d4e"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606860016"
 
 [tools.cargo-insta."platforms.linux-x64-musl"]
-checksum = "sha256:703aa7d151ae59cac0bf8e7c2c27da4aca8070f3cb178f624ae10621ef77f5f5"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757872"
+checksum = "sha256:cc64ead688107cdf2577101e26b6323795c9850456b9c62846bab30ff6db23d8"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606860022"
 
 [tools.cargo-insta."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:703aa7d151ae59cac0bf8e7c2c27da4aca8070f3cb178f624ae10621ef77f5f5"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757872"
+checksum = "sha256:cc64ead688107cdf2577101e26b6323795c9850456b9c62846bab30ff6db23d8"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606860022"
 
 [tools.cargo-insta."platforms.macos-arm64"]
-checksum = "sha256:26f081f5bf62d1dc03aae9c4137188d66a2debe6bcaf2884f2153fcb6eda27cb"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-aarch64-apple-darwin.tar.xz"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757856"
+checksum = "sha256:e596702d36313dbbc2f168ca9db447a9e259e666cd9cae9ab94eb712ca1d89e5"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-aarch64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606859971"
 
 [tools.cargo-insta."platforms.windows-x64"]
-checksum = "sha256:7e23929588aaf5daff1e93bfc4addca7ccf55195444e84552b6588c9d864642e"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757862"
+checksum = "sha256:bf6374b054f596d75b5bb203010394a340cdb44d4150cd03560564fbc35d8156"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606859993"
 
 [tools.cargo-insta."platforms.windows-x64-baseline"]
-checksum = "sha256:7e23929588aaf5daff1e93bfc4addca7ccf55195444e84552b6588c9d864642e"
-url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757862"
+checksum = "sha256:bf6374b054f596d75b5bb203010394a340cdb44d4150cd03560564fbc35d8156"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.49.0/cargo-insta-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/606859993"
 
 [[tools."cargo:flamegraph"]]
 version = "0.6.14"
@@ -316,62 +316,62 @@ url = "https://github.com/jdx/communique/releases/download/v1.5.0/communique-x86
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [[tools.gh]]
-version = "2.101.0"
+version = "2.102.0"
 backend = "aqua:cli/cli"
 specifiers = ["latest"]
 
 [tools.gh."platforms.linux-arm64"]
-checksum = "sha256:b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857147"
+checksum = "sha256:7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854680"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-arm64-musl"]
-checksum = "sha256:b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857147"
+checksum = "sha256:7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854680"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
+checksum = "sha256:bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64-baseline"]
-checksum = "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
+checksum = "sha256:bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64-musl"]
-checksum = "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
+checksum = "sha256:bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857134"
+checksum = "sha256:bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [tools.gh."platforms.macos-arm64"]
-checksum = "sha256:e4303e39d8f07141c4bad4b99b01079f05029c59b27076e8fbc825c985ecdd8b"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_macOS_arm64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857200"
+checksum = "sha256:da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854720"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:bc6c814367b193cd8e713611d61e36013c0ef843b8f516458fe3eda039192794"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857681"
+checksum = "sha256:ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b86067f4"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854760"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64-baseline"]
-checksum = "sha256:bc6c814367b193cd8e713611d61e36013c0ef843b8f516458fe3eda039192794"
-url = "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857681"
+checksum = "sha256:ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b86067f4"
+url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854760"
 provenance = "github-attestations"
 
 [[tools.git-cliff]]
@@ -425,53 +425,53 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573487227"
 
 [[tools.hk]]
-version = "2.4.0"
+version = "2.5.0"
 backend = "packslip:github.com/jdx/hk"
 specifiers = ["latest"]
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:836235bd8aa06f25e7ff28591b32efb5297abe55366e912095636a49ffe4d363"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:c800091c414e1c8e8628137275d88c257bcfe0c35dd31d2762923a71dae7df7f"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:ad5c5a556e0a505d9a3441868217976bd4ae610e1364e93516993b9717d9ef28"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:1e839b96defad21b5118d9554f2146811a2ce8d8eef90b3da1d592834969b717"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:6efabe30aeabc4611a42ce6cf0fd46b9a19478e2cfd9acfd1bd93998736f3153"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:449b83c35ac3a460f80a4c9a41ad99430add8cf6caa6ceadc27e810feac3647d"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-baseline"]
-checksum = "sha256:6efabe30aeabc4611a42ce6cf0fd46b9a19478e2cfd9acfd1bd93998736f3153"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:449b83c35ac3a460f80a4c9a41ad99430add8cf6caa6ceadc27e810feac3647d"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:f34598671ca40be5c308324a60ef30b736dbbbf4259dfb511abd79009ee4de2a"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:55b349ed8ebbb9cc11e3ff7f741230035061e45621c0b2c87fffeeb37fadcfd0"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:f34598671ca40be5c308324a60ef30b736dbbbf4259dfb511abd79009ee4de2a"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:55b349ed8ebbb9cc11e3ff7f741230035061e45621c0b2c87fffeeb37fadcfd0"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:6e1c970b9de7ab4ee52c85869b2ea9cfe8769d25a0fe9536062e0ba62366ec59"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:fabbed3a44e72c601759fa81d56f3c9403ca466853bdf77e87cc69d986cb151a"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:028931e00fd670ad891a428bf44e14ac8e2726a8f72b7fae80b27b6502af2be3"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:9d3063f0eadb316415dc2aaea51608f436eb6ffe44e00c2e460294c66f269a54"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64-baseline"]
-checksum = "sha256:028931e00fd670ad891a428bf44e14ac8e2726a8f72b7fae80b27b6502af2be3"
-url = "https://github.com/jdx/hk/releases/download/v2.4.0/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:9d3063f0eadb316415dc2aaea51608f436eb6ffe44e00c2e460294c66f269a54"
+url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [[tools.jq]]
@@ -584,53 +584,53 @@ url = "https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua
 url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/513572668"
 
 [[tools.mr-boxington]]
-version = "1.21.1"
+version = "1.22.0"
 backend = "packslip:github.com/jdx/mr-boxington"
 specifiers = ["latest"]
 
 [tools.mr-boxington."platforms.linux-arm64"]
-checksum = "sha256:a783ff78192a3cd299cfbf2b4b8a8dc16b8142c7bb962e9e3a027b64085189b8"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:b7a23503d9efcb31941e1e68b78f8b33643a056f22d39cff745dab6f17edb652"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-arm64-musl"]
-checksum = "sha256:80fbd510a3e9cee763ad40cbadbfbf22fc54af02589fcfd8f0070d7058493553"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:ae4d66308c706ffbf912beb45b3166cf1cfda4d3efd23273262791235d0accf5"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64"]
-checksum = "sha256:1ecb4d55582a40a1227e8ca3450da054ea464e5ff976bb5762943fb1ce6f31da"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:eb3e8c74277dcc8314227ba2cd32ef00a9a362ec8a90cd06ef6580eb48a6b375"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
-checksum = "sha256:1ecb4d55582a40a1227e8ca3450da054ea464e5ff976bb5762943fb1ce6f31da"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:eb3e8c74277dcc8314227ba2cd32ef00a9a362ec8a90cd06ef6580eb48a6b375"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl"]
-checksum = "sha256:780ccb52aa3a95ac1b0ee0ecf5184561b1a4bdf1fe88180333dc0e11a92980f5"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:c375135e2a3916f58da1b47537b6a954159eeacd55523d9a618b42259bd89014"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:780ccb52aa3a95ac1b0ee0ecf5184561b1a4bdf1fe88180333dc0e11a92980f5"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:c375135e2a3916f58da1b47537b6a954159eeacd55523d9a618b42259bd89014"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.macos-arm64"]
-checksum = "sha256:99464a5bad96c3a472714faa4277aac22193ea9a385dd09892f5c1bbee9c56ba"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:e548b5758498cf822a180b6328597e6aded8fe9bb3046cd918399172ae30dde2"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64"]
-checksum = "sha256:44a48ef26aa6a6545a636b70d78ccef725338732df926f5df544ae9a1b3c599c"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:09500d06c0230b9cda1e051c5795b08804d93fbbcb41ba8e18c1f56454b80e00"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64-baseline"]
-checksum = "sha256:44a48ef26aa6a6545a636b70d78ccef725338732df926f5df544ae9a1b3c599c"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.21.1/mbx-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:09500d06c0230b9cda1e051c5795b08804d93fbbcb41ba8e18c1f56454b80e00"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.22.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [[tools.node]]
@@ -682,7 +682,7 @@ specifiers = ["latest"]
 
 [[tools."npm:markdownlint-cli"]]
 version = "0.49.1"
-aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:6fcd571b114deda5bf5e897bf5bb12f8b29f7d9395a13a77b70fbd4a3448b979" }
+aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:51f2635d765ee2d15aa7286fd82fe042b4ffa2089b8732e2ee676e8545da1cdc" }
 backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 
@@ -902,62 +902,62 @@ url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-w
 url_api = "https://api.github.com/repos/JohnnyMorganz/StyLua/releases/assets/421902292"
 
 [[tools.tak]]
-version = "0.0.13"
+version = "0.0.14"
 backend = "github:jdx/tak"
 specifiers = ["latest"]
 
 [tools.tak."platforms.linux-arm64"]
-checksum = "sha256:514c890ad2f34d5fbfa7e9327537a3d96a20ba863c9e45e74e210de13fa4b2aa"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586862992"
+checksum = "sha256:9f67ef4896e522743e312909fd090b725523e2fbf8e43bed9c5ef215f9dd09b9"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344419"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-arm64-musl"]
-checksum = "sha256:9cef94c166572cf501f6b92e729892c34727f1b24d94007a6e0eb1f3f685fbe2"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586862988"
+checksum = "sha256:b072ac2d71c89e2f934a3d3ea6506b07fcec8404add3e905374728ca865b7535"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344418"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64"]
-checksum = "sha256:98c156f4ded5b1be51b756efc50d33e90b1f22186754e7e96dfabca1e478e26a"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863028"
+checksum = "sha256:1822955f2a101508ddfb524aea64f924a01bf4f0f14660c5f94ab0f8275971e0"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344432"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-baseline"]
-checksum = "sha256:98c156f4ded5b1be51b756efc50d33e90b1f22186754e7e96dfabca1e478e26a"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863028"
+checksum = "sha256:1822955f2a101508ddfb524aea64f924a01bf4f0f14660c5f94ab0f8275971e0"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344432"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-musl"]
-checksum = "sha256:516c32450243cc443fbf8059d91a5972abe6188d3fa1ca930bcf68241e7f3881"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863029"
+checksum = "sha256:995c71f45c809136de9d44bec05f9c2763eee63673454e8249456f665c8ab339"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344433"
 provenance = "github-attestations"
 
 [tools.tak."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:516c32450243cc443fbf8059d91a5972abe6188d3fa1ca930bcf68241e7f3881"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863029"
+checksum = "sha256:995c71f45c809136de9d44bec05f9c2763eee63673454e8249456f665c8ab339"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344433"
 provenance = "github-attestations"
 
 [tools.tak."platforms.macos-arm64"]
-checksum = "sha256:8e4669ee3e122fefe465dfbf550a42fd7d92baa7d9f487d646162832efe1af3e"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586862991"
+checksum = "sha256:e68d308f3ecc6a2eba42d6a48768809a34898503196e0fb8bfb068592b57deba"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344420"
 provenance = "github-attestations"
 
 [tools.tak."platforms.windows-x64"]
-checksum = "sha256:9686180b604bf0507aceb860d357779ad3be462399b2eb4ee08d65d596a5c3af"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863027"
+checksum = "sha256:2dced8796b4028e637dac5c206c70a4c2589ab09d0b3ff4d73da9693e1a49b3f"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344430"
 provenance = "github-attestations"
 
 [tools.tak."platforms.windows-x64-baseline"]
-checksum = "sha256:9686180b604bf0507aceb860d357779ad3be462399b2eb4ee08d65d596a5c3af"
-url = "https://github.com/jdx/tak/releases/download/v0.0.13/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/586863027"
+checksum = "sha256:2dced8796b4028e637dac5c206c70a4c2589ab09d0b3ff4d73da9693e1a49b3f"
+url = "https://github.com/jdx/tak/releases/download/v0.0.14/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/605344430"
 provenance = "github-attestations"
 
 [[tools.taplo]]
