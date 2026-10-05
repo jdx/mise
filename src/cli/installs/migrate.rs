@@ -149,10 +149,9 @@ fn aside_path(legacy: &Path) -> PathBuf {
 ///
 /// The old directory is deleted only once the journal says the migration
 /// finished: its replacement installed (postinstall included), checked and
-/// linked. Until then, undoing it puts the old directory back and withdraws every
-/// installation of the version that the migration made, which is any not listed
-/// in `existing`. One that was complete before the migration started is never
-/// touched.
+/// linked. Until then, undoing it puts the old directory back and withdraws the
+/// installations the migration's install wrote into, which the journal names
+/// before anything is written to them. Nothing else is touched.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Journal {
     /// The tool's short name, for the version's lock.
@@ -162,8 +161,9 @@ struct Journal {
     /// The canonical backend and version of the replacement.
     backend: String,
     version: String,
-    /// The complete installations of that backend and version before it started.
-    existing: Vec<String>,
+    /// The installation directories of that backend and version the migration's
+    /// install was about to write into.
+    made: Vec<PathBuf>,
     finished: bool,
 }
 
@@ -185,17 +185,12 @@ impl Journal {
     fn start(tv: &ToolVersion) -> Result<Self> {
         let (backend, version) = resolver::identity_scope(tv)
             .ok_or_else(|| eyre::eyre!("the backend of {} cannot be loaded", tv.style()))?;
-        let existing = resolver::installations()
-            .into_iter()
-            .filter(|i| i.backend == backend && i.version == version)
-            .map(|i| i.name)
-            .collect();
         let journal = Self {
             tool: tv.ba().short.clone(),
             legacy: tv.install_path(),
             backend,
             version,
-            existing,
+            made: vec![],
             finished: false,
         };
         journal.write()?;
@@ -213,11 +208,17 @@ impl Journal {
         }
     }
 
-    /// Every journal, and the files in their place that cannot be read as one.
+    /// Every journal, and the files in their place that cannot be read as one
+    /// (with what an interrupted atomic write left behind).
     fn all() -> (Vec<Self>, Vec<PathBuf>) {
         let mut journals = vec![];
         let mut unreadable = vec![];
         for path in file::ls(&Self::dir()).unwrap_or_default() {
+            let name = path.file_name().map(|n| n.to_string_lossy().to_string());
+            if name.is_none_or(|n| n.starts_with('.') || !n.ends_with(".toml")) {
+                unreadable.push(path);
+                continue;
+            }
             match std::fs::read_to_string(&path)
                 .map_err(eyre::Report::from)
                 .and_then(|body| Ok(toml::from_str::<Self>(&body)?))
@@ -237,20 +238,14 @@ impl Journal {
     /// process is dropping) is not waited for; returns whether nothing was left.
     fn withdraw(&self, wait: bool) -> bool {
         let mut done = true;
-        let made = resolver::installations().into_iter().filter(|i| {
-            !i.shared
-                && i.backend == self.backend
-                && i.version == self.version
-                && !self.existing.contains(&i.name)
-        });
-        for installation in made {
+        for dir in self.made.iter().filter(|dir| dir.exists()) {
             let lock = if wait {
-                resolver::lock_install(&installation.dir, &|_| {})
+                resolver::lock_install(dir, &|_| {})
             } else {
-                resolver::try_lock_install(&installation.dir)
+                resolver::try_lock_install(dir)
             };
             match lock {
-                Ok(Some(_lock)) => resolver::unpublish(&installation.dir),
+                Ok(Some(_lock)) => resolver::unpublish(dir),
                 Ok(None) | Err(_) => done = false,
             }
         }
@@ -394,21 +389,31 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-/// Undoes a migration that stops before it is resolved (a panic, or the task
-/// being dropped).
-struct Undo<'a> {
-    journal: &'a Journal,
+/// The journal of the migration in progress, which its install's allocations
+/// are added to.
+type Shared = std::sync::Arc<std::sync::Mutex<Journal>>;
+
+fn snapshot(journal: &Shared) -> Journal {
+    journal.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Stops recording allocations, and undoes a migration that stops before it is
+/// resolved (a panic, or the task being dropped).
+struct Undo {
+    journal: Shared,
     armed: bool,
 }
 
-impl Drop for Undo<'_> {
+impl Drop for Undo {
     fn drop(&mut self) {
+        resolver::observe_allocations(None);
+        let journal = snapshot(&self.journal);
         if self.armed
-            && let Err(err) = self.journal.undo(false)
+            && let Err(err) = journal.undo(false)
         {
             warn!(
                 "could not put {} back: {err:#}",
-                display_path(&self.journal.legacy)
+                display_path(&journal.legacy)
             );
         }
     }
@@ -432,13 +437,31 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     // where the old one has to return. The reinstall below is locked by its own
     // installation directory, not by this version, so it does not wait on this.
     let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
-    let journal = Journal::start(tv)?;
+    let journal: Shared = std::sync::Arc::new(std::sync::Mutex::new(Journal::start(tv)?));
     if let Err(err) = file::rename(&legacy, &aside) {
-        journal.remove();
+        snapshot(&journal).remove();
         return Err(err);
     }
+    // Every directory the install is about to write into is in the journal
+    // before anything is written there.
+    let recorder = journal.clone();
+    resolver::observe_allocations(Some(Box::new(move |dir, backend, version| {
+        let mut journal = recorder.lock().unwrap_or_else(|e| e.into_inner());
+        if backend == journal.backend
+            && version == journal.version
+            && !journal.made.iter().any(|d| d == dir)
+        {
+            journal.made.push(dir.to_path_buf());
+            if let Err(err) = journal.write() {
+                warn!(
+                    "could not record {} in the migration journal: {err:#}",
+                    display_path(dir)
+                );
+            }
+        }
+    })));
     let mut guard = Undo {
-        journal: &journal,
+        journal: journal.clone(),
         armed: true,
     };
     // The old path must lead to the new installation before the old directory
@@ -468,6 +491,8 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             })
     });
     guard.armed = false;
+    drop(guard);
+    let journal = snapshot(&journal);
     match installed {
         Ok(dir) => {
             // From here the old directory goes, whatever stops this run.
