@@ -80,6 +80,16 @@ pub(crate) fn applies_to(tv: &ToolVersion) -> bool {
 /// resolution). On Windows case, separators and the `\\?\` verbatim prefix are
 /// ignored, which canonicalizing would add and the configured roots do not carry.
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    // A relative data directory (`MISE_DATA_DIR=data`) makes the configured roots
+    // relative while paths derived from a link are absolute: compare them
+    // from the same working directory.
+    use path_absolutize::Absolutize;
+    let absolute = |p: &Path| {
+        p.absolutize()
+            .map_or_else(|_| p.to_path_buf(), |p| p.into_owned())
+    };
+    let (a, b) = (absolute(a), absolute(b));
+    let (a, b) = (a.as_path(), b.as_path());
     if cfg!(windows) {
         windows_comparable(a) == windows_comparable(b)
     } else {
@@ -432,7 +442,7 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
         return vec![];
     }
     let backends = backends_of(ba);
-    let key = backends.join("\n");
+    let key = format!("{}|{:?}|{}", ba.short, ba.opts, backends.join("\n"));
     if let Some(hit) = INSTALLS_OF_CACHE.get(&key) {
         return hit.clone();
     }
@@ -444,7 +454,10 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
                 let dir = catalog.install_dir(&record);
                 // The receipt's presence is what marks an installation complete; its
                 // contents were validated when the record was written.
-                if dir.join(RECEIPT_FILE).is_file() && !out.iter().any(|(_, d)| *d == dir) {
+                if dir.join(RECEIPT_FILE).is_file()
+                    && !out.iter().any(|(_, d)| *d == dir)
+                    && belongs_to(ba, &record, &dir)
+                {
                     out.push((listing_name(&record), dir));
                 }
             }
@@ -452,6 +465,38 @@ pub fn installs_of(ba: &crate::args::BackendArg) -> Vec<(String, PathBuf)> {
     }
     INSTALLS_OF_CACHE.insert(key, out.clone());
     out
+}
+
+/// Whether an installation is one of `ba`'s own. Tools that share a backend can
+/// still be different installs of it (two `[tool_alias]` entries of one backend
+/// with different options), and each should see only its own. An installation
+/// is `ba`'s when its tool directory links it, when `ba`'s spelling requested it,
+/// or when `ba` would make the very same request (the shorthand and the explicit
+/// backend share one).
+fn belongs_to(ba: &crate::args::BackendArg, record: &IdentityRecord, dir: &Path) -> bool {
+    let name = listing_name(record);
+    if link_target(&ba.installs_path().join(&name)).is_some_and(|linked| same_path(&linked, dir)) {
+        return true;
+    }
+    if read_receipt(dir)
+        .and_then(|receipt| receipt.requested_as)
+        .is_some_and(|short| short == ba.short)
+    {
+        return true;
+    }
+    // Dependency-graph installs are told apart by their graph, not by options.
+    if record.identity.inputs.contains_key("aube") || record.identity.inputs.contains_key("uv") {
+        return true;
+    }
+    let Ok(request) = ToolRequest::new(
+        std::sync::Arc::new(ba.clone()),
+        &record.identity.version,
+        crate::toolset::ToolSource::Unknown,
+    ) else {
+        return true;
+    };
+    let tv = ToolVersion::new(request, record.identity.version.clone());
+    identity_of(&tv).is_none_or(|identity| same_request(&record.identity, &identity))
 }
 
 /// The installation a listed version name stands for: the one its link names,
@@ -993,6 +1038,11 @@ pub fn link_target(slot: &Path) -> Option<PathBuf> {
     (is_root && target.join(RECEIPT_FILE).exists()).then_some(target)
 }
 
+/// Whether `name` is the receipt file an installation directory holds.
+pub fn is_receipt_name(name: &std::ffi::OsStr) -> bool {
+    name == RECEIPT_FILE
+}
+
 /// Whether the entry `name` of an installs `root` is not a tool directory: the
 /// catalog (`.mise`, or any hidden entry) or an identity-layout installation,
 /// told apart by its reservation or its receipt rather than by how it is named.
@@ -1286,6 +1336,23 @@ mod tests {
         let mut other = key.clone();
         other.version = "1.7.2".into();
         assert!(!same_request(&other, &key));
+    }
+
+    #[test]
+    fn a_relative_root_is_the_same_place_as_its_absolute_spelling() {
+        let cwd = std::env::current_dir().unwrap();
+        assert!(same_path(
+            Path::new("reldata/installs"),
+            &cwd.join("reldata/installs")
+        ));
+        assert!(same_path(
+            Path::new("./reldata/../reldata/installs"),
+            &cwd.join("reldata/installs")
+        ));
+        assert!(!same_path(
+            Path::new("reldata/installs"),
+            &cwd.join("other/installs")
+        ));
     }
 
     #[test]

@@ -351,6 +351,12 @@ tools that have more than one variant of a version.
   package-manager installs record the real installation path, which now contains
   the hash. They stay valid for that installation but are not portable to
   another one. Installing the same identity again lands in the same directory.
+- **A version named on the command line carries no options.** An installation
+  made with install options a configuration file sets (`symlink_bins`, a
+  `matching` pattern) is a different installation from the plain version, so
+  `mise where tool@1.0` finds it only because it is the lone variant, and other
+  commands treat the unadorned request as not installed. Run them where the
+  configuration applies, or let `mise install` make the plain variant.
 - **A version link is not authority.** Hardcoded `installs/<tool>/<version>`
   paths see only the most recently installed variant.
 - **Directory names are less descriptive.** A label such as `berry` for yarn or
