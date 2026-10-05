@@ -1,5 +1,35 @@
 # Changelog
 
+## [2026.10.3](https://github.com/jdx/mise/compare/v2026.10.2..v2026.10.3) - 2026-10-05
+
+### 🚀 Features
+
+- **(bootstrap)** render templates in Compose projects by @jdx in [#13938](https://github.com/jdx/mise/pull/13938)
+- **(dotfiles)** add dotfile groups by @jdx in [#13945](https://github.com/jdx/mise/pull/13945)
+- **(task)** allow customizing confirm answer labels by @jdx in [#13944](https://github.com/jdx/mise/pull/13944)
+
+### 🐛 Bug Fixes
+
+- **(env)** resolve dotenv ${VAR} against the file's own values before ambient env by @jdx in [#13946](https://github.com/jdx/mise/pull/13946)
+- **(exec)** limit @latest resolution to the tools named on the command line by @jdx in [#13943](https://github.com/jdx/mise/pull/13943)
+- **(ruby)** expose depends tools to ruby-build by @seuros in [#13942](https://github.com/jdx/mise/pull/13942)
+
+### 📚 Documentation
+
+- show pinned packslip bootstraps for mise and Docker by @jdx in [#13935](https://github.com/jdx/mise/pull/13935)
+
+### 📦 Registry
+
+- add jactionlint ([github:jdx/jactionlint](https://github.com/jdx/jactionlint)) and deprecate actionlint by @jdx in [#13960](https://github.com/jdx/mise/pull/13960)
+
+### Chore
+
+- update pr-closer policy by @jdx in [e19e8cb](https://github.com/jdx/mise/commit/e19e8cbefdbc588852314e0bbd465ca9e381fb61)
+
+### Security
+
+- **(env)** stop copying secret values into shell state and the env cache by @jdx in [#13950](https://github.com/jdx/mise/pull/13950)
+
 ## [2026.10.2](https://github.com/jdx/mise/compare/v2026.10.1..v2026.10.2) - 2026-10-04
 
 ### 🚀 Features

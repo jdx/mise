@@ -36,13 +36,13 @@ function PLUGIN:PostInstall(ctx)
     -- Download the lein script
     print("Downloading lein script...")
     local resp, err = http.get({
-        url = "https://raw.githubusercontent.com/technomancy/leiningen/" .. version .. "/bin/lein",
+        url = "https://codeberg.org/leiningen/leiningen/raw/tag/" .. version .. "/bin/lein",
     })
 
     if err ~= nil then
         -- Try stable branch as fallback
         resp, err = http.get({
-            url = "https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein",
+            url = "https://codeberg.org/leiningen/leiningen/raw/branch/stable/bin/lein",
         })
         if err ~= nil then
             error("Failed to download lein script: " .. err)
