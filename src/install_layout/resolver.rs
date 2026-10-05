@@ -1070,8 +1070,9 @@ pub(crate) struct Allocated {
     /// An existing installation that already satisfies the request: nothing
     /// needs to be installed, only recorded.
     pub(crate) reused: bool,
-    /// The installation is in a read-only shared root: it may be used, never
-    /// written to. Installing means allocating again, in the primary root.
+    /// The installation is in a read-only shared root, or is a variant standing
+    /// in for a bare version: it may be used, never written to. Installing means
+    /// allocating again, for the request itself in the primary root.
     pub(crate) read_only: bool,
     /// The unlocked request this allocation answers; set when its selection
     /// should be (re)recorded on success. `None` for locked requests, which
@@ -1156,6 +1157,20 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
             // A legacy installation (or a `mise link`) is used, and refreshed, in
             // place; it is never moved into the identity layout.
             None => return Ok(None),
+            // A variant standing in for a bare version (see `locate`) is used where
+            // it is, never installed into or selected for that version: installing
+            // makes the bare request an installation of its own.
+            Some(record) if request_of(&record.identity) != request_of(&identity) => {
+                if !refresh {
+                    return Ok(Some(Allocated {
+                        read_only: true,
+                        dir: located.dir,
+                        reused: true,
+                        selects: None,
+                        record,
+                    }));
+                }
+            }
             // An installation that already satisfies the request, possibly in a
             // read-only shared root, is reused as it is.
             Some(record) if !refresh => {

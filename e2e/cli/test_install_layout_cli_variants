@@ -54,6 +54,26 @@ plain_dir="$(mise where dummy@1.0.0)"
 [[ $plain_dir != "$solo_dir" ]] || fail "the bare version still resolves to the variant"
 assert "mise -C $work/solo where dummy" "$solo_dir"
 
+echo "=== a lone variant that has to be installed again is not installed over for the bare version ==="
+mkdir solo2
+cat >solo2/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.1.0", flavor = "full" }
+EOF2
+assert "mise -C $work/solo2 install"
+solo2_dir="$(mise -C "$work/solo2" where tiny)"
+assert "mise where tiny@3.1.0" "$solo2_dir"
+# as if a refresh of the variant had been interrupted
+mkdir -p "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")"
+touch "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")/incomplete"
+assert "mise install tiny@3.1.0"
+bare_dir="$(mise where tiny@3.1.0)"
+[[ $bare_dir != "$solo2_dir" ]] || fail "the bare version was installed into the variant"
+# the variant is still the project's, once its own refresh is done
+rm "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")/incomplete"
+assert "mise -C $work/solo2 where tiny" "$solo2_dir"
+assert "mise installs ls tiny --json | jq -r '.[] | select(.selected and .version == \"3.1.0\") | .dir' | sort | tr '\n' ' '" "$(printf '%s\n' "$bare_dir" "$solo2_dir" | sort | tr '\n' ' ')"
+
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
 cat >minimal/mise.toml <<'EOF2'
