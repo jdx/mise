@@ -138,6 +138,42 @@ impl TaskContextBuilder {
         }
     }
 
+    /// The config hierarchy of a monorepo task's own directory, or `None` when the task runs
+    /// in the current project. This is what task `[env]` is resolved from, and where the
+    /// task's secrets source is selected.
+    pub(crate) async fn task_config_files(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+    ) -> Result<Option<crate::config::ConfigMap>> {
+        let is_monorepo_task = task_cf.project_root() != config.project_root;
+        let task_runs_in_cwd = task
+            .dir(config)
+            .await?
+            .and_then(|dir| config.project_root.as_ref().map(|pr| dir == *pr))
+            .unwrap_or(false);
+        if !is_monorepo_task || task_runs_in_cwd {
+            return Ok(None);
+        }
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+
+        trace!(
+            "Loading config hierarchy for monorepo task {} from {}",
+            task.name,
+            task_dir.display()
+        );
+
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        trace!("Found {} config files in hierarchy", config_paths.len());
+
+        Ok(Some(
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?,
+        ))
+    }
+
     /// Resolve environment variables for a task using its config file context
     /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
     /// Returns (env, task_env, resolved_vars) where resolved_vars contains vars from the
@@ -166,22 +202,7 @@ impl TaskContextBuilder {
 
         // Load task config files for monorepo tasks (reused for both vars and env resolution)
         let task_config_files = if is_monorepo_task && !task_runs_in_cwd {
-            let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
-
-            trace!(
-                "Loading config hierarchy for monorepo task {} from {}",
-                task.name,
-                task_dir.display()
-            );
-
-            let (config_paths, idiomatic_filenames) =
-                crate::config::load_config_hierarchy_from_dir(task_dir).await?;
-            trace!("Found {} config files in hierarchy", config_paths.len());
-
-            Some(
-                crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
-                    .await?,
-            )
+            self.task_config_files(config, task, task_cf).await?
         } else {
             None
         };

@@ -182,6 +182,19 @@ pub struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
+/// Set when a `redact` entry from config or task env registered a non-empty value.
+static CONFIG_REDACTIONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// See `Config::add_secret_redactions`.
+pub(crate) fn add_secret_redactions(values: impl IntoIterator<Item = String>) {
+    let mut r = _REDACTOR.lock().unwrap();
+    *r = r.with_additional(values);
+}
+
+/// Whether any configured (not secret-grant) redaction exists in this process.
+pub(crate) fn has_config_redactions() -> bool {
+    CONFIG_REDACTIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
 const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
 const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
@@ -1818,6 +1831,10 @@ impl Config {
     /// Append-only for the same reason as `add_redactions_excluding`: removing a
     /// value could expose a different key that happens to share it.
     pub(crate) fn add_redactions(&self, values: impl IntoIterator<Item = String>) {
+        let values: Vec<String> = values.into_iter().collect();
+        if values.iter().any(|v| !v.is_empty()) {
+            CONFIG_REDACTIONS.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let mut r = _REDACTOR.lock().unwrap();
         *r = r.with_additional(values);
     }
@@ -1832,13 +1849,19 @@ impl Config {
         // Redactions are intentionally append-only. An exclusion prevents this key from
         // contributing its value, but removing an already registered value could expose a
         // different secret key (or concurrent task) that uses the same value.
-        let new_redactions = redactions.into_iter().flat_map(|pattern| {
-            let matcher = Wildcard::new(vec![pattern]);
-            env.iter()
-                .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
-                .map(|(_, v)| v.clone())
-                .collect::<Vec<_>>()
-        });
+        let new_redactions: Vec<String> = redactions
+            .into_iter()
+            .flat_map(|pattern| {
+                let matcher = Wildcard::new(vec![pattern]);
+                env.iter()
+                    .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
+                    .map(|(_, v)| v.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if new_redactions.iter().any(|v| !v.is_empty()) {
+            CONFIG_REDACTIONS.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         *r = r.with_additional(new_redactions);
     }
 

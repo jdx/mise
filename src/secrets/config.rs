@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use std::sync::Arc;
+
 use eyre::{Result, bail};
 
 use crate::config::Config;
@@ -11,6 +13,8 @@ use crate::config::is_conf_d_folder_file;
 use crate::config::settings::SettingsExt;
 use crate::dirs;
 use crate::file::{self, display_path};
+use crate::task::Task;
+use crate::task::task_context_builder::TaskContextBuilder;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SecretsToml {
@@ -167,10 +171,11 @@ pub(crate) fn select(
     Ok(SourceSelection { source, ignored })
 }
 
-fn config_inputs(config: &Config) -> Vec<(PathBuf, Option<PathBuf>, Option<toml::Value>)> {
-    config
-        .config_files
-        .iter()
+fn config_inputs<'a>(
+    files: impl IntoIterator<Item = (&'a PathBuf, &'a Arc<dyn ConfigFile>)>,
+) -> Vec<(PathBuf, Option<PathBuf>, Option<toml::Value>)> {
+    files
+        .into_iter()
         .map(|(path, cf)| {
             let value = cf.secrets_config();
             let root = (value.is_some() && is_project_file(cf.as_ref())).then(|| cf.config_root());
@@ -179,11 +184,8 @@ fn config_inputs(config: &Config) -> Vec<(PathBuf, Option<PathBuf>, Option<toml:
         .collect()
 }
 
-/// Every caller inherits the gate: safe mode refuses, and every declaring file must be
-/// trusted.
-pub(crate) fn select_for_cwd(config: &Config) -> Result<SourceSelection> {
-    Settings::ensure_not_safe("mise secrets")?;
-    let selection = select(&config_inputs(config))?;
+/// Safe mode refuses, and every declaring file must be trusted.
+fn gate(selection: SourceSelection) -> Result<SourceSelection> {
     if let Some(source) = &selection.source {
         for file in &source.declared_in {
             if !is_path_trusted(file) {
@@ -198,9 +200,43 @@ pub(crate) fn select_for_cwd(config: &Config) -> Result<SourceSelection> {
     Ok(selection)
 }
 
+/// Every caller inherits the gate.
+pub(crate) fn select_for_cwd(config: &Config) -> Result<SourceSelection> {
+    Settings::ensure_not_safe("mise secrets")?;
+    gate(select(&config_inputs(config.config_files.iter()))?)
+}
+
+/// The same files the task's `[env]` is read from: the task's own hierarchy for a monorepo
+/// task, the current project's files otherwise. No safe-mode or trust gate.
+pub(crate) async fn select_for_task_ungated(
+    config: &Arc<Config>,
+    ctx_builder: &TaskContextBuilder,
+    task: &Task,
+) -> Result<SourceSelection> {
+    let hierarchy = match task.cf(config) {
+        Some(task_cf) if task.cf.is_some() => {
+            ctx_builder.task_config_files(config, task, task_cf).await?
+        }
+        _ => None,
+    };
+    match &hierarchy {
+        Some(files) => select(&config_inputs(files.iter())),
+        None => select(&config_inputs(config.config_files.iter())),
+    }
+}
+
+pub(crate) async fn select_for_task(
+    config: &Arc<Config>,
+    ctx_builder: &TaskContextBuilder,
+    task: &Task,
+) -> Result<SourceSelection> {
+    Settings::ensure_not_safe("mise secrets")?;
+    gate(select_for_task_ungated(config, ctx_builder, task).await?)
+}
+
 /// For `mise doctor` only: no gate, and parse errors are the caller's to report.
 pub(crate) fn select_for_cwd_ungated(config: &Config) -> Result<SourceSelection> {
-    select(&config_inputs(config))
+    select(&config_inputs(config.config_files.iter()))
 }
 
 #[cfg(test)]

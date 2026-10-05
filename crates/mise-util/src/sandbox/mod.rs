@@ -401,6 +401,43 @@ pub async fn macos_generate_profile(config: &SandboxConfig, program: &std::path:
 
 #[cfg(test)]
 mod tests {
+    use super::SandboxConfig;
+
+    #[test]
+    fn keeps_env_key_matches_filter_env() {
+        let open = SandboxConfig::default();
+        assert!(open.keeps_env_key("ANYTHING"));
+        let deny = SandboxConfig {
+            deny_env: true,
+            ..Default::default()
+        };
+        assert!(deny.keeps_env_key("PATH"));
+        assert!(!deny.keeps_env_key("DEPLOY_KEY"));
+        let allow = SandboxConfig {
+            allow_env: vec!["DEPLOY_*".into()],
+            pass_through_env: vec!["TOKEN".into()],
+            cache_env: vec!["CACHED".into()],
+            ..Default::default()
+        };
+        assert!(allow.keeps_env_key("DEPLOY_KEY"));
+        assert!(allow.keeps_env_key("TOKEN"));
+        assert!(allow.keeps_env_key("CACHED"));
+        assert!(!allow.keeps_env_key("OTHER"));
+        let env = std::collections::BTreeMap::from([
+            ("DEPLOY_KEY".to_string(), "1".to_string()),
+            ("OTHER".to_string(), "2".to_string()),
+            ("PATH".to_string(), "3".to_string()),
+        ]);
+        let filtered = allow.filter_env(&env);
+        for key in env.keys() {
+            assert_eq!(
+                filtered.contains_key(key),
+                allow.keeps_env_key(key),
+                "{key}"
+            );
+        }
+    }
+
     use super::*;
     use mise_settings::SettingsSandbox;
     use std::collections::BTreeMap;

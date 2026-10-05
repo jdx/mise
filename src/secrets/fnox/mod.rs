@@ -8,13 +8,17 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use tokio::io::AsyncReadExt;
 
-use super::SecretName;
 use super::config::SelectedSource;
-use super::source::{Catalog, CatalogEntry, InjectMode, KeyKind, SecretSource, SourceId};
+use super::source::{
+    Catalog, CatalogEntry, InjectMode, KeyKind, KeySelection, ResolveError, Resolved, SecretSource,
+    SourceCx, SourceId,
+};
+use super::{SecretName, SecretValue};
 use crate::config::Config;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::{self, display_path};
+use crate::toolset::Toolset;
 
 mod wire;
 
@@ -36,20 +40,36 @@ pub(crate) struct FnoxSource {
 
 /// The project's own `[tools] fnox`, then PATH without mise shims.
 pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
-    if let Ok(ts) = config.get_toolset().await
-        && let Some(bin) = ts.which_bin_spawnable(config, "fnox").await
-    {
+    match config.get_toolset().await {
+        Ok(ts) => find_binary_in(config, ts).await,
+        Err(_) => find_binary_on_path(),
+    }
+}
+
+/// Like `find_binary`, for a toolset other than the current project's (a monorepo task's).
+pub(crate) async fn find_binary_in(config: &Arc<Config>, ts: &Toolset) -> Option<PathBuf> {
+    if let Some(bin) = ts.which_bin_spawnable(config, "fnox").await {
         return Some(bin);
     }
+    find_binary_on_path()
+}
+
+fn find_binary_on_path() -> Option<PathBuf> {
     // Absolute against mise's cwd: fnox runs from the source root, so a relative PATH hit
     // would resolve somewhere else. Not canonicalized, so a multi-call binary keeps its name.
     crate::backend::which_no_shims_spawnable("fnox").map(|p| std::path::absolute(&p).unwrap_or(p))
 }
 
 impl FnoxSource {
-    pub(crate) async fn new(config: &Arc<Config>, selected: &SelectedSource) -> Result<Self> {
+    /// `ts` is the toolset of whoever the source is for: the current project's, or a
+    /// monorepo task's own, so the subproject's fnox is the one that runs.
+    pub(crate) async fn new(
+        config: &Arc<Config>,
+        selected: &SelectedSource,
+        ts: &Toolset,
+    ) -> Result<Self> {
         let declared_in = &selected.declared_in[0];
-        let Some(bin) = find_binary(config).await else {
+        let Some(bin) = find_binary_in(config, ts).await else {
             bail!(
                 "mise secrets: fnox not found\n  [secrets.fnox] in {} needs the fnox CLI. Add it to the project: mise use fnox\n  mise looks in the project's tools first, then on PATH.",
                 display_path(declared_in)
@@ -61,11 +81,7 @@ impl FnoxSource {
                 display_path(&selected.root)
             )
         })?;
-        let (tool_env, removals) = config
-            .get_toolset()
-            .await?
-            .env_with_path_and_removals(config)
-            .await?;
+        let (tool_env, removals) = ts.env_with_path_and_removals(config).await?;
         Ok(Self {
             id: SourceId {
                 kind: "fnox",
@@ -81,29 +97,50 @@ impl FnoxSource {
         &self.bin
     }
 
-    fn argv(&self, rest: &[&str]) -> Vec<String> {
+    /// Global flags go before `env`. A call that may prompt omits `--non-interactive` and
+    /// `--no-daemon`, so fnox follows its own `[daemon]` setting.
+    fn argv(&self, rest: &[&str], interactive: bool) -> Vec<String> {
         let mut argv = vec![];
         if let Some(profile) = &self.id.profile {
             argv.push("-P".to_string());
             argv.push(profile.clone());
         }
-        argv.push("--non-interactive".to_string());
-        argv.push("--no-daemon".to_string());
+        if !interactive {
+            argv.push("--non-interactive".to_string());
+            argv.push("--no-daemon".to_string());
+        }
         argv.extend(rest.iter().map(|s| s.to_string()));
         argv
     }
 
     fn describe_argv(&self) -> Vec<String> {
-        self.argv(&["env", "--json", "--describe"])
+        self.argv(&["env", "--json", "--describe"], false)
+    }
+
+    fn resolve_argv(&self, keys: &KeySelection, interactive: bool) -> Vec<String> {
+        let list = keys
+            .keys()
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        self.argv(
+            &["env", "--json", "--for", "exec", "--keys", &list],
+            interactive,
+        )
     }
 
     fn command(&self, args: &[String]) -> tokio::process::Command {
+        self.command_with_stdin(args, Stdio::null())
+    }
+
+    fn command_with_stdin(&self, args: &[String], stdin: Stdio) -> tokio::process::Command {
         let mut cmd = tokio::process::Command::new(&self.bin);
         cmd.args(args)
             .env_clear()
             .envs(&self.env)
             .current_dir(&self.id.root)
-            .stdin(Stdio::null())
+            .stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
@@ -148,6 +185,26 @@ impl SecretSource for FnoxSource {
             .map(|p| format!(" (profile {p})"))
             .unwrap_or_default();
         format!("fnox{profile} in {}", display_path(&self.id.root))
+    }
+
+    fn build_fingerprint(&self) -> String {
+        format!(
+            "{}\0{}",
+            self.bin.display(),
+            self.env
+                .get(&*env::PATH_KEY)
+                .map(String::as_str)
+                .unwrap_or("")
+        )
+    }
+
+    async fn resolve(
+        &self,
+        cx: &SourceCx,
+        keys: &KeySelection,
+        catalog: &Catalog,
+    ) -> std::result::Result<Resolved, ResolveError> {
+        self.run_resolve(cx, keys, catalog).await
     }
 
     async fn describe(&self) -> Result<Catalog> {
@@ -197,6 +254,154 @@ impl SecretSource for FnoxSource {
             ),
         }
     }
+}
+
+impl FnoxSource {
+    async fn run_resolve(
+        &self,
+        cx: &SourceCx,
+        keys: &KeySelection,
+        catalog: &Catalog,
+    ) -> std::result::Result<Resolved, ResolveError> {
+        let other = |m: String| ResolveError::Other(m);
+        let args = self.resolve_argv(keys, cx.interactive);
+        // Interactive: fnox gets the terminal's stdin to prompt on, and no timeout (a person
+        // is answering). Otherwise stdin is null. Never `DESCRIBE_TIMEOUT`.
+        let stdin = if cx.interactive {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        };
+        let mut child = self.command_with_stdin(&args, stdin).spawn().map_err(|e| {
+            other(format!(
+                "mise secrets: could not run fnox ({}): {e}",
+                display_path(&self.bin)
+            ))
+        })?;
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let mut buf = vec![];
+        let read = (&mut stdout)
+            .take(MAX_STDOUT + 1)
+            .read_to_end(&mut buf)
+            .await;
+        if let Err(e) = read {
+            let _ = child.kill().await;
+            return Err(other(format!(
+                "mise secrets: reading fnox output failed: {e}"
+            )));
+        }
+        if buf.len() as u64 > MAX_STDOUT {
+            let _ = child.kill().await;
+            return Err(other(format!(
+                "mise secrets: fnox env --json printed output mise could not parse (over {MAX_STDOUT} bytes; too large). The output is not shown because it can contain secret values."
+            )));
+        }
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| other(format!("mise secrets: waiting for fnox failed: {e}")))?;
+        match interpret_resolve(
+            status.success(),
+            &status.to_string(),
+            &buf,
+            keys.keys(),
+            catalog,
+            &self.id.root,
+        ) {
+            Ok(resolved) => Ok(resolved),
+            Err(ResolveFailure::Error(e)) => Err(e),
+            Err(ResolveFailure::NoJson(status)) => Err(other(format!(
+                "mise secrets: fnox {} ({}) exited with {status} and no JSON result from `fnox env --json`; its error output is above\n  If this fnox predates `fnox env`, mise secrets needs fnox {FNOX_ENV_MIN_VERSION} or newer: mise use fnox@latest",
+                self.version().await,
+                display_path(&self.bin),
+            ))),
+        }
+    }
+}
+
+enum ResolveFailure {
+    Error(ResolveError),
+    NoJson(String),
+}
+
+fn interpret_resolve(
+    success: bool,
+    status: &str,
+    buf: &[u8],
+    requested: &std::collections::BTreeSet<SecretName>,
+    catalog: &Catalog,
+    root: &Path,
+) -> std::result::Result<Resolved, ResolveFailure> {
+    use ResolveFailure::{Error, NoJson};
+    let other = |f: Failure| match f {
+        Failure::Message(m) => Error(ResolveError::Other(m)),
+        Failure::NoJson(s) => NoJson(s),
+    };
+    if !success {
+        let doc: wire::ErrorDocument = match serde_json::from_slice(buf) {
+            Ok(doc) => doc,
+            Err(_) => return Err(NoJson(status.to_string())),
+        };
+        let e = doc.error;
+        let message = mise_util::redactions::redact_global(&e.message);
+        return Err(Error(match e.kind.as_str() {
+            "invalid_keys" => ResolveError::Invalid {
+                unknown: e.unknown,
+                suggestions: e.suggestions,
+                not_injectable: e.not_injectable.into_iter().map(|n| n.key).collect(),
+            },
+            "resolution" => ResolveError::Resolution(message),
+            "config" => ResolveError::Other(format!(
+                "mise secrets: fnox could not load its config in {}: {message}",
+                display_path(root)
+            )),
+            kind => ResolveError::Other(format!(
+                "mise secrets: fnox env failed ({kind}) in {}: {message}",
+                display_path(root)
+            )),
+        }));
+    }
+    let head: wire::Head = serde_json::from_slice(buf).map_err(|e| other(unparsable(buf, &e)))?;
+    if head.schema != 1 {
+        return Err(Error(ResolveError::Other(format!(
+            "mise secrets: fnox {} sent env schema {}; this mise understands schema 1. Upgrade mise (mise self-update) or pin an older fnox.",
+            head.fnox_version.as_deref().unwrap_or("(unknown version)"),
+            head.schema
+        ))));
+    }
+    let doc: wire::EnvDocument =
+        serde_json::from_slice(buf).map_err(|e| other(unparsable(buf, &e)))?;
+    let mut out = Resolved::default();
+    let accept = |into_files: bool, key: String, value: String, out: &mut Resolved| {
+        let Some(name) = SecretName::new(&key).filter(|n| requested.contains(n)) else {
+            out.unrequested.insert(key);
+            return;
+        };
+        if catalog.entries.get(&name).is_some_and(|e| !e.injectable) {
+            out.not_injectable.insert(name);
+            return;
+        }
+        let value = SecretValue::new(value);
+        if into_files {
+            out.files.insert(name, value);
+        } else {
+            out.set.insert(name, value);
+        }
+    };
+    for (key, value) in doc.set {
+        accept(false, key, value, &mut out);
+    }
+    for (key, value) in doc.files {
+        accept(true, key, value, &mut out);
+    }
+    out.remove = doc.remove.into_iter().collect();
+    out.missing = doc
+        .missing
+        .iter()
+        .filter_map(|k| SecretName::new(k))
+        .filter(|n| requested.contains(n))
+        .collect();
+    Ok(out)
 }
 
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
@@ -485,6 +690,123 @@ mod tests {
             .unwrap(),
         );
         assert!(!m.contains("s3cr3t"), "{m}");
+    }
+
+    fn sel(keys: &[&str]) -> KeySelection {
+        KeySelection::Keys(keys.iter().map(|k| SecretName::new(k).unwrap()).collect())
+    }
+
+    #[test]
+    fn resolve_argv_is_sorted_and_flags_depend_on_interactivity() {
+        let s = source(Some("prod"));
+        assert_eq!(
+            s.resolve_argv(&sel(&["PEM_KEY", "DEPLOY_KEY", "DATABASE_URL"]), false),
+            [
+                "-P",
+                "prod",
+                "--non-interactive",
+                "--no-daemon",
+                "env",
+                "--json",
+                "--for",
+                "exec",
+                "--keys",
+                "DATABASE_URL,DEPLOY_KEY,PEM_KEY"
+            ]
+        );
+        assert_eq!(
+            source(None).resolve_argv(&sel(&["A"]), true),
+            ["env", "--json", "--for", "exec", "--keys", "A"]
+        );
+    }
+
+    fn resolved(doc: &str, requested: &[&str]) -> Resolved {
+        let requested = requested
+            .iter()
+            .map(|k| SecretName::new(k).unwrap())
+            .collect();
+        match interpret_resolve(
+            true,
+            "exit status: 0",
+            doc.as_bytes(),
+            &requested,
+            &catalog_with_signing(),
+            Path::new("/p"),
+        ) {
+            Ok(r) => r,
+            Err(_) => panic!("resolve failed"),
+        }
+    }
+
+    fn catalog_with_signing() -> Catalog {
+        interpret(true, "exit status: 0", DOC.as_bytes(), Path::new("/p"))
+            .ok()
+            .unwrap()
+    }
+
+    #[test]
+    fn unrequested_keys_are_dropped_g17_and_non_injectable_g19() {
+        let r = resolved(
+            r#"{"schema":1,"set":{"DATABASE_URL":"v1","EXTRA":"v2","SIGNING_KEY":"v3"},"files":{"OTHER":"v4"},"remove":["X"],"missing":["DATABASE_URL"]}"#,
+            &["DATABASE_URL", "SIGNING_KEY"],
+        );
+        assert_eq!(
+            r.set.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
+            ["DATABASE_URL"]
+        );
+        assert_eq!(
+            r.unrequested,
+            BTreeSet::from(["EXTRA".to_string(), "OTHER".to_string()])
+        );
+        assert_eq!(
+            r.not_injectable
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>(),
+            ["SIGNING_KEY"]
+        );
+        assert!(r.files.is_empty());
+        assert_eq!(r.remove, BTreeSet::from(["X".to_string()]));
+        assert!(!format!("{r:?}").contains("v1"));
+    }
+
+    #[test]
+    fn resolve_error_documents() {
+        let requested = BTreeSet::new();
+        let catalog = catalog_with_signing();
+        let err = |doc: &str| match interpret_resolve(
+            false,
+            "exit status: 1",
+            doc.as_bytes(),
+            &requested,
+            &catalog,
+            Path::new("/p"),
+        ) {
+            Err(ResolveFailure::Error(e)) => e,
+            _ => panic!("expected an error document"),
+        };
+        match err(
+            r#"{"schema":1,"error":{"kind":"invalid_keys","message":"m","unknown":["A"],"suggestions":{"A":["B"]},"not_injectable":[{"key":"S","env":false}]}}"#,
+        ) {
+            ResolveError::Invalid {
+                unknown,
+                suggestions,
+                not_injectable,
+            } => {
+                assert_eq!(unknown, ["A"]);
+                assert_eq!(suggestions["A"], ["B"]);
+                assert_eq!(not_injectable, ["S"]);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            err(r#"{"schema":1,"error":{"kind":"resolution","message":"nope"}}"#),
+            ResolveError::Resolution(m) if m == "nope"
+        ));
+        assert!(matches!(
+            err(r#"{"schema":1,"error":{"kind":"config","message":"bad"}}"#),
+            ResolveError::Other(m) if m.contains("could not load its config")
+        ));
     }
 
     #[test]

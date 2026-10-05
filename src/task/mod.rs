@@ -2690,9 +2690,6 @@ impl Task {
         config.config_files.get(&self.config_source)
     }
 
-    /// Check if this task is a remote task (loaded from git:// or http:// URL)
-    /// Remote tasks should not use monorepo config file context because they need
-    /// access to tools from the full config hierarchy, not just the local config file
     /// The remote source this task was loaded from, for the secrets rule. Unlike
     /// `is_remote()` this also covers `git::` and `oci::` includes, which otherwise look local.
     pub(crate) fn secrets_remote_source(&self) -> Option<&str> {
@@ -2701,6 +2698,9 @@ impl Task {
             .or(self.remote_include.as_deref())
     }
 
+    /// Check if this task is a remote task (loaded from git:// or http:// URL)
+    /// Remote tasks should not use monorepo config file context because they need
+    /// access to tools from the full config hierarchy, not just the local config file
     pub(crate) fn is_remote(&self) -> bool {
         // Check the stored remote file source (set before file is replaced with local path)
         if let Some(source) = &self.remote_file_source {

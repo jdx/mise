@@ -369,6 +369,107 @@ pub(crate) fn static_problems(
     problems
 }
 
+/// G1 and G2 for a grant, against what the source describes.
+pub(crate) fn key_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    catalog: &super::Catalog,
+    source_label: &str,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    for key in grant.keys.keys() {
+        match catalog.entries.get(key) {
+            None => {
+                let suggestion = suggest(key.as_str(), catalog.entries.keys().map(|k| k.as_str()));
+                let mut hint = format!("{source_label} has no secret named {key}.");
+                if let Some(s) = &suggestion {
+                    hint.push_str(&format!(" Did you mean {s}?"));
+                }
+                problems.push(
+                    Problem::new(
+                        &task.name,
+                        Some(key.as_str()),
+                        ProblemKind::Unknown,
+                        format!("task {}: unknown secret {key}", task.name),
+                    )
+                    .detail(hint)
+                    .detail(format!(
+                        "Granted by: secrets = [...] in {}",
+                        grant.granted_by()
+                    ))
+                    .detail("See the available keys with `mise secrets ls`.")
+                    .suggestion(suggestion),
+                );
+            }
+            Some(entry) if !entry.injectable => {
+                problems.push(
+                    Problem::new(
+                        &task.name,
+                        Some(key.as_str()),
+                        ProblemKind::NotInjectable,
+                        format!("task {}: {key} cannot be injected", task.name),
+                    )
+                    .detail(format!(
+                        "fnox config sets env = false for {key}, so fnox never hands it to processes. Read it with `fnox get {key}` in your script, or set env = \"exec\" for it in fnox.toml if processes should receive it."
+                    )),
+                );
+            }
+            Some(_) => {}
+        }
+    }
+    problems
+}
+
+/// A close name: transposition-aware edit distance of at most 2, else a fuzzy match.
+pub(crate) fn suggest<'a>(typo: &str, names: impl Iterator<Item = &'a str>) -> Option<String> {
+    use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
+    let names: Vec<&str> = names.collect();
+    let typo_lc = typo.to_lowercase();
+    let near = names
+        .iter()
+        .map(|n| (osa_distance(&typo_lc, &n.to_lowercase()), *n))
+        .filter(|(d, _)| *d <= 2)
+        .min_by_key(|(d, _)| *d);
+    if let Some((_, n)) = near {
+        return Some(n.to_string());
+    }
+    let mut matcher = FuzzyMatcher::default();
+    let pattern = FuzzyPattern::new(&typo_lc);
+    names
+        .iter()
+        .filter_map(|n| {
+            matcher
+                .score_pattern(&n.to_lowercase(), &pattern)
+                .map(|score| (score, *n))
+        })
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, n)| n.to_string())
+}
+
+fn osa_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for j in 0..=b.len() {
+        d[0][j] = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
+}
+
 fn task_env_literals(task: &Task) -> Vec<(String, String)> {
     use crate::config::env_directive::EnvDirective;
     task.env

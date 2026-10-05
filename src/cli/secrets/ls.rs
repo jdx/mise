@@ -4,7 +4,7 @@ use tabled::Tabled;
 
 use crate::config::{Config, Settings, settings::SettingsExt};
 use crate::file::display_path;
-use crate::secrets::{self, InjectMode, Inventory, KeyKind};
+use crate::secrets::{self, InjectMode, Inventory, InventoryTask, KeyKind, Problem};
 use crate::ui::table;
 
 /// List the secret names this project's secrets source provides, without their values
@@ -16,9 +16,10 @@ use crate::ui::table;
     visible_alias = "list",
     example(
         r###"mise secrets ls
-KEY                ENV    FILE  DESCRIPTION
-DATABASE_URL       true   no    app database
-DEPLOY_KEY         exec   no"###
+KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
+DATABASE_URL       true   no    run     deploy  app database
+DEPLOY_KEY         exec   no    run     deploy
+SIGNING_KEY        false  no    -               release signing key"###
     ),
     verbatim_doc_comment
 )]
@@ -40,6 +41,10 @@ struct Row {
     env: String,
     #[tabled(rename = "FILE")]
     file: String,
+    #[tabled(rename = "SCOPES")]
+    scopes: String,
+    #[tabled(rename = "TASKS")]
+    tasks: String,
     #[tabled(rename = "DESCRIPTION")]
     description: String,
 }
@@ -71,6 +76,8 @@ impl SecretsLs {
             source,
             catalog,
             ignored,
+            tasks,
+            problems,
         } = secrets::inventory(&config).await?;
         let (Some(source), Some(catalog)) = (source, catalog) else {
             return self.print_no_source(&ignored);
@@ -93,6 +100,10 @@ impl SecretsLs {
                             KeyKind::Secret => Value::Null,
                         },
                         "description": e.description,
+                        "scopes": scopes_json(e.injectable),
+                        "tasks": tasks_for(&tasks, name.as_str())
+                            .map(|t| json!({"task": t.task, "via": "list", "file": t.file}))
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -110,6 +121,7 @@ impl SecretsLs {
                 "keys": keys,
                 "dynamic_leases": catalog.dynamic_leases,
                 "ignored": ignored,
+                "problems": problems.iter().map(problem_json).collect::<Vec<_>>(),
             });
             miseprintln!("{}", serde_json::to_string_pretty(&doc)?);
             return Ok(());
@@ -130,7 +142,10 @@ impl SecretsLs {
             catalog.tool_version
         );
         for file in &ignored {
-            eprintln!("{}", ignored_line(file));
+            eprintln!("{}", secrets::ignored_line(file));
+        }
+        for problem in &problems {
+            eprintln!("warning: {}", problem.render());
         }
         let rows = catalog
             .entries
@@ -139,6 +154,11 @@ impl SecretsLs {
                 key: name.to_string(),
                 env: env_text(e.mode).to_string(),
                 file: if e.as_file { "yes" } else { "no" }.to_string(),
+                scopes: if e.injectable { "run" } else { "-" }.to_string(),
+                tasks: tasks_for(&tasks, name.as_str())
+                    .map(|t| t.task.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 description: match (&e.description, &e.kind) {
                     (Some(d), _) => d.clone(),
                     (None, KeyKind::Lease { name }) => format!("(lease {name})"),
@@ -158,24 +178,37 @@ impl SecretsLs {
                 "keys": [],
                 "dynamic_leases": [],
                 "ignored": ignored,
+                "problems": [],
             });
             miseprintln!("{}", serde_json::to_string_pretty(&doc)?);
             return Ok(());
         }
         eprintln!(
-            "no secrets source is configured for {}; add [secrets.fnox] to the project's mise.toml (https://mise.jdx.dev/environments/secrets/fnox.html)",
-            display_path(std::env::current_dir().unwrap_or_default())
+            "{}",
+            secrets::no_source_message(&std::env::current_dir().unwrap_or_default(), ignored)
         );
-        for file in ignored {
-            eprintln!("{}", ignored_line(file));
-        }
         Ok(())
     }
 }
 
-fn ignored_line(file: &std::path::Path) -> String {
-    format!(
-        "  [secrets.fnox] in {} is ignored: secrets sources are allowed only in project config (not global or system config, or files in or above your home directory).",
-        display_path(file)
-    )
+fn scopes_json(injectable: bool) -> Vec<&'static str> {
+    if injectable { vec!["run"] } else { vec![] }
+}
+
+fn tasks_for<'a>(
+    tasks: &'a [InventoryTask],
+    key: &'a str,
+) -> impl Iterator<Item = &'a InventoryTask> {
+    tasks
+        .iter()
+        .filter(move |t| t.keys.iter().any(|k| k == key))
+}
+
+fn problem_json(p: &Problem) -> Value {
+    json!({
+        "task": p.task,
+        "key": p.key,
+        "kind": p.kind.as_str(),
+        "suggestion": p.suggestion,
+    })
 }
