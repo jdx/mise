@@ -136,6 +136,9 @@ assert "mise -C $work/sharedvar install --force"
 own_copy="$(mise -C "$work/sharedvar" where tiny)"
 [[ $own_copy == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$own_copy is not in the user's root"
 assert "mise where tiny@1.0.1" "$own_copy"
+# with the selected copy gone, the other copy is not taken in its place
+rm -rf "$own_copy"
+assert_fail "mise where tiny@1.0.1"
 unset MISE_SHARED_INSTALL_DIRS
 
 echo "=== a version named with options a configuration sets never stands in for another variant ==="

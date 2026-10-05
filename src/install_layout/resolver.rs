@@ -573,7 +573,8 @@ fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
 /// The installations a bare version could stand for, one for each set of options
 /// they were made with: copies of one option set (another root, an older refresh
 /// generation) are that set's own choice, its selection or its only copy. A set
-/// whose copies are not settled lists them all, for the user to select.
+/// whose selected copy is gone stands for nothing; one whose copies are not
+/// settled lists them all, for the user to select.
 fn variant_choices(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> Vec<Located> {
     let mut sets: Vec<(InstallIdentity, Vec<Located>)> = vec![];
     for located in variant_installations(ba, identity) {
@@ -587,19 +588,16 @@ fn variant_choices(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> 
         }
     }
     sets.into_iter()
-        .flat_map(|(key, copies)| {
-            if copies.len() == 1 {
-                return copies;
-            }
+        .flat_map(|(key, copies)| match unlocked_choice(&key) {
             // The set's own choice, if it is one of this tool's copies.
-            match unlocked_choice(&key) {
-                Unlocked::Selected(located) | Unlocked::Found(located)
-                    if located.installed && copies.iter().any(|c| c.dir == located.dir) =>
-                {
-                    vec![located]
-                }
-                _ => copies,
+            Unlocked::Selected(located) | Unlocked::Found(located)
+                if located.installed && copies.iter().any(|c| c.dir == located.dir) =>
+            {
+                vec![located]
             }
+            // Its selected copy is gone (pruned): no other copy is taken for it.
+            Unlocked::Selected(located) if !located.installed => vec![],
+            _ => copies,
         })
         .collect()
 }
