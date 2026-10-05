@@ -3155,9 +3155,15 @@ impl Task {
         &self,
         config: &Arc<Config>,
         ts: &Toolset,
-    ) -> Result<(EnvMap, Vec<(String, String)>, BTreeSet<String>)> {
+    ) -> Result<(
+        EnvMap,
+        Vec<(String, String)>,
+        BTreeSet<String>,
+        BTreeSet<String>,
+    )> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-        let (mut env, mut env_remove) = ts.full_env_with_removals(config).await?;
+        let (mut env, mut env_remove, mut mise_keys) =
+            ts.full_env_with_removals_and_keys(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
@@ -3213,6 +3219,7 @@ impl Task {
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         for (key, _) in task_env.clone() {
             env_remove.remove(&key);
+            mise_keys.insert(key);
         }
         // Apply the resolved environment variables
         env.extend(task_env.clone());
@@ -3234,7 +3241,7 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect(), env_remove))
+        Ok((env, task_env.collect(), env_remove, mise_keys))
     }
 }
 
@@ -5358,7 +5365,7 @@ echo "Hello $USR"
         let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
             .await
             .unwrap();
-        let (env, task_env, _) = task.render_env(&config, ts).await.unwrap();
+        let (env, task_env, _, _) = task.render_env(&config, ts).await.unwrap();
 
         assert_eq!(task_env, vec![("USR".to_string(), "World!".to_string())]);
         assert_eq!(env.get("USR"), Some(&"World!".to_string()));
