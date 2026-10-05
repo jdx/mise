@@ -449,7 +449,7 @@ fn keep_aside(aside: &Path) -> Result<PathBuf> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    let base = name.trim_end_matches(".mise-migrating");
+    let base = name.strip_suffix(".mise-migrating").unwrap_or(&name);
     let mut kept = aside.with_file_name(format!("{base}.mise-kept"));
     let mut n = 1;
     while std::fs::symlink_metadata(&kept).is_ok() {
@@ -620,11 +620,14 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
 async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
     let mut config = Config::reset().await?;
     let mut ts = config.get_toolset().await?.clone();
+    // Named as on the command line, not by the configuration that asked for it:
+    // a project's `tool_config.locked` policy is for what its lockfile chooses,
+    // and this moves a version that is already installed.
     let request = ToolRequest::new_with_options(
         tv.request.ba().clone(),
         &tv.version,
         tv.request.options(),
-        tv.request.source().clone(),
+        crate::toolset::ToolSource::Argument,
     )?;
     let mut opts = InstallOptions {
         reason: "installs migrate".to_string(),
