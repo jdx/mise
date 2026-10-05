@@ -162,11 +162,24 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             let finished = resolver::link_target(&legacy).is_some();
             let free = std::fs::symlink_metadata(&legacy).is_err();
             if dry_run {
-                miseprintln!(
-                    "would {} {}, left by an interrupted migration",
-                    if finished { "remove" } else { "restore" },
-                    display_path(&entry)
-                );
+                let action = if finished {
+                    format!(
+                        "would remove {}, left by an interrupted migration",
+                        display_path(&entry)
+                    )
+                } else if free {
+                    format!(
+                        "would restore {} from an interrupted migration, then migrate it",
+                        display_path(&legacy)
+                    )
+                } else {
+                    format!(
+                        "would keep {}, left by an interrupted migration: {} is in use",
+                        display_path(&entry),
+                        display_path(&legacy)
+                    )
+                };
+                miseprintln!("{action}");
             } else if finished {
                 file::remove_all(&entry)?;
                 info!(
@@ -256,8 +269,10 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             ))
         }
     });
-    guard.armed = false;
+    // The guard stays armed until the lock for the final step is held, so a
+    // failure to take it still puts the directory back.
     let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
+    guard.armed = false;
     match installed {
         Ok(dir) => {
             if let Err(err) = file::remove_all(&aside) {
@@ -298,9 +313,15 @@ async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
         reason: "installs migrate".to_string(),
         ..Default::default()
     };
-    ts.install_all_versions(&mut config, vec![request.clone()], &opts)
+    let installed = ts
+        .install_all_versions(&mut config, vec![request.clone()], &opts)
         .await?;
-    let installed = ToolVersion::new(request, tv.version.clone());
+    // The install may have given the request the options the configuration sets
+    // for the tool; what it installed is the version it reports back.
+    let installed = installed
+        .into_iter()
+        .find(|t| t.ba().short == tv.ba().short && t.version == tv.version)
+        .unwrap_or_else(|| ToolVersion::new(request, tv.version.clone()));
     resolver::installation_of(&installed).ok_or_else(|| {
         eyre::eyre!(
             "{} did not install into the identity layout",
