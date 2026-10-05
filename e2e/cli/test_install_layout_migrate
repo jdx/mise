@@ -53,3 +53,13 @@ assert_matches "mise where tiny@3.1.0" "^$installs/tiny-[a-z2-7]{8}\$"
 assert_contains "mise x tiny@3.1.0 -- rtx-tiny" "3.1.0"
 assert_contains "mise installs migrate" "no legacy installations to migrate"
 assert "mise installs ls --json | jq length" "3"
+
+echo "=== an interrupted migration is finished or undone on the next run ==="
+assert "MISE_INSTALL_LAYOUT=legacy MISE_EXPERIMENTAL=0 mise install dummy@2.0.0"
+assert "test -d '$installs/dummy/2.0.0' && test ! -L '$installs/dummy/2.0.0'"
+# as if a run stopped right after moving the directory aside
+mv "$installs/dummy/2.0.0" "$installs/dummy/.2.0.0.mise-migrating"
+assert_contains "mise installs migrate --dry-run 2>&1" "would restore"
+assert_contains "mise installs migrate dummy@2.0.0 2>&1" "restored"
+assert "test -L '$installs/dummy/2.0.0'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"

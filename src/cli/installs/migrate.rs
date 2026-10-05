@@ -1,12 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
 use crate::args::ToolArg;
 use crate::config::Config;
+use crate::dirs;
 use crate::file::{self, display_path};
 use crate::install_layout::resolver;
-use crate::toolset::{InstallOptions, ToolVersion};
+use crate::toolset::{InstallOptions, ToolRequest, ToolVersion, install_state};
 
 /// Reinstall legacy installations into the identity install layout
 ///
@@ -49,6 +50,7 @@ pub(super) struct InstallsMigrate {
 
 impl InstallsMigrate {
     pub(super) async fn run(self) -> Result<()> {
+        recover_interrupted(self.dry_run)?;
         let config = Config::get().await?;
         let ts = config.get_toolset().await?.clone();
         let mut plan = vec![];
@@ -111,16 +113,97 @@ impl InstallsMigrate {
     }
 }
 
+/// The name a legacy directory is moved aside to while it is migrated. Scans
+/// skip dot-prefixed entries, so it is invisible until put back or removed.
+fn aside_path(legacy: &Path) -> PathBuf {
+    let name = legacy
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    legacy.with_file_name(format!(".{name}{ASIDE_SUFFIX}"))
+}
+
+const ASIDE_SUFFIX: &str = ".mise-migrating";
+
+/// Finish or undo migrations an earlier run did not complete (it was
+/// interrupted): a directory still moved aside is put back when nothing took
+/// its place, and removed when its version link leads to a complete
+/// installation.
+fn recover_interrupted(dry_run: bool) -> Result<()> {
+    let root: &Path = &dirs::INSTALLS;
+    for tool in file::dir_subdirs(root).unwrap_or_default() {
+        let tool_dir = root.join(&tool);
+        for entry in file::ls(&tool_dir).unwrap_or_default() {
+            let Some(version) = entry
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix('.'))
+                .and_then(|n| n.strip_suffix(ASIDE_SUFFIX))
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            let legacy = tool_dir.join(&version);
+            let finished = resolver::link_target(&legacy).is_some();
+            let free = std::fs::symlink_metadata(&legacy).is_err();
+            if dry_run {
+                miseprintln!(
+                    "would {} {}, left by an interrupted migration",
+                    if finished { "remove" } else { "restore" },
+                    display_path(&entry)
+                );
+            } else if finished {
+                file::remove_all(&entry)?;
+                info!(
+                    "removed {}, left by an interrupted migration",
+                    display_path(&entry)
+                );
+            } else if free {
+                file::rename(&entry, &legacy)?;
+                info!(
+                    "restored {} from an interrupted migration",
+                    display_path(&legacy)
+                );
+            } else {
+                warn!(
+                    "{} was left by an interrupted migration; {} is in use, so it is kept",
+                    display_path(&entry),
+                    display_path(&legacy)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Puts a moved-aside legacy directory back if the migration stops before it
+/// is resolved (a panic, or the task being dropped).
+struct Aside<'a> {
+    legacy: &'a Path,
+    aside: &'a Path,
+    armed: bool,
+}
+
+impl Drop for Aside<'_> {
+    fn drop(&mut self) {
+        if self.armed
+            && let Err(err) = restore(self.legacy, self.aside)
+        {
+            warn!(
+                "could not put {} back at {}: {err:#}",
+                display_path(self.aside),
+                display_path(self.legacy)
+            );
+        }
+    }
+}
+
 /// Reinstall one legacy installation into the identity layout. The old
 /// directory is moved aside first, so the install cannot find and reuse it,
 /// and is put back if the new installation does not complete.
 async fn migrate(tv: &ToolVersion) -> Result<()> {
     let legacy = tv.install_path();
-    let name = legacy
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let aside = legacy.with_file_name(format!(".{name}.mise-migrating"));
+    let aside = aside_path(&legacy);
     if aside.exists() {
         eyre::bail!(
             "{} is left over from an earlier migration; put it back at {} or remove it first",
@@ -128,9 +211,17 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             display_path(&legacy)
         );
     }
-    file::rename(&legacy, &aside)?;
-    // `reinstall` reloads the configuration and install state, which then see
-    // the version as not installed.
+    // Nothing else installs or removes this version while its directory moves.
+    // (The install below takes the same lock itself.)
+    {
+        let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
+        file::rename(&legacy, &aside)?;
+    }
+    let mut guard = Aside {
+        legacy: &legacy,
+        aside: &aside,
+        armed: true,
+    };
     // The old path must lead to the new installation before the old directory
     // goes: where the version link could not be made (Windows without junction
     // support), the legacy directory is put back.
@@ -147,6 +238,8 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             ))
         }
     });
+    guard.armed = false;
+    let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
     match installed {
         Ok(dir) => {
             if let Err(err) = file::remove_all(&aside) {
@@ -161,27 +254,39 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
         }
         Err(err) => {
             restore(&legacy, &aside)?;
-            Config::reset().await?;
+            drop(_lock);
+            // The failed install rebuilt the tool's runtime aliases without the
+            // version; rebuild them with it back in place.
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            crate::runtime_symlinks::rebuild_for_toolset(&config, ts).await?;
             Err(err)
         }
     }
 }
 
-async fn reinstall(tv: &ToolVersion) -> Result<std::path::PathBuf> {
+/// Install exactly the legacy installation's version (not what its request,
+/// such as `latest`, resolves to today) and return where it went.
+async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
     let mut config = Config::reset().await?;
     let mut ts = config.get_toolset().await?.clone();
-    let mut request = tv.clone();
-    request.install_path = None;
+    let request = ToolRequest::new_with_options(
+        tv.request.ba().clone(),
+        &tv.version,
+        tv.request.options(),
+        tv.request.source().clone(),
+    )?;
     let opts = InstallOptions {
         reason: "installs migrate".to_string(),
         ..Default::default()
     };
-    ts.install_all_versions(&mut config, vec![request.request.clone()], &opts)
+    ts.install_all_versions(&mut config, vec![request.clone()], &opts)
         .await?;
-    resolver::installation_of(&request).ok_or_else(|| {
+    let installed = ToolVersion::new(request, tv.version.clone());
+    resolver::installation_of(&installed).ok_or_else(|| {
         eyre::eyre!(
             "{} did not install into the identity layout",
-            request.style()
+            installed.style()
         )
     })
 }
