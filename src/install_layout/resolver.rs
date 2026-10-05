@@ -133,7 +133,13 @@ pub(crate) fn governs(tv: &ToolVersion) -> bool {
 /// written to by an install.
 fn roots() -> Vec<PathBuf> {
     let mut roots = vec![dirs::INSTALLS.to_path_buf()];
-    roots.extend(env::shared_install_dirs());
+    // A shared directory can be configured as the user's own installs directory
+    // (or twice); each root is searched once.
+    for dir in env::shared_install_dirs() {
+        if !roots.iter().any(|root| same_path(root, &dir)) {
+            roots.push(dir);
+        }
+    }
     roots
 }
 
