@@ -19,6 +19,9 @@ echo "=== a dry run lists what would move and changes nothing ==="
 assert_contains "mise installs migrate --dry-run" "would migrate dummy@1.1.0"
 assert_contains "mise installs migrate --dry-run" "would migrate tiny@3.1.0"
 assert "test ! -L '$installs/dummy/1.1.0' && test -f '$installs/dummy/1.1.0/marker'"
+# a version names the installed versions it matches, as it does for uninstall
+assert_contains "mise installs migrate --dry-run dummy@1.1" "would migrate dummy@1.1.0"
+assert_not_contains "mise installs migrate --dry-run dummy@1.1" "dummy@1.0.0"
 
 echo "=== one version moves; the version link takes its place ==="
 assert_contains "mise installs migrate dummy@1.1.0" "migrated dummy@1.1.0"

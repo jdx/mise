@@ -120,16 +120,21 @@ impl InstallsMigrate {
     }
 
     /// Whether `tv` is one of the tools asked for: `None` when none were named.
+    /// A version names the installed versions it matches, as `mise uninstall
+    /// node@20` does.
     fn named(&self, tv: &ToolVersion) -> Option<bool> {
         if self.tool.is_empty() {
             return None;
         }
         Some(self.tool.iter().any(|ta| {
             ta.ba.short == tv.ba().short
-                && ta
-                    .version
-                    .as_deref()
-                    .is_none_or(|v| v == tv.version || v == tv.tv_pathname())
+                && ta.version.as_deref().is_none_or(|v| {
+                    v == tv.version
+                        || v == tv.tv_pathname()
+                        || tv.backend().is_ok_and(|b| {
+                            b.list_installed_versions_matching(v).contains(&tv.version)
+                        })
+                })
         }))
     }
 }
