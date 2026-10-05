@@ -5,7 +5,7 @@
 //! (without writing anything), allocates one when installing, and keeps the
 //! compatibility links, receipt and unlocked selection in step.
 //!
-//! The layout is gated behind `experimental`. With it off nothing here is
+//! The layout is the default; with `install_layout = "legacy"` nothing here is
 //! consulted and every path is the legacy `installs/<short>/<version>`.
 //! Legacy installations stay where they are and keep working: a version that
 //! exists in the legacy location and has no identity-layout counterpart is used
