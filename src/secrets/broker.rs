@@ -9,7 +9,8 @@ use eyre::{Result, bail, eyre};
 use tokio::sync::{Mutex, OnceCell};
 
 use super::grant::{
-    Problem, ProblemKind, SecretGrant, SecretsDenied, grant_for_task, key_problems, static_problems,
+    Problem, ProblemKind, SecretGrant, SecretsDenied, collision_problem, grant_for_task,
+    key_problems, sandbox_problem, static_problems,
 };
 use super::source::{
     Catalog, KeySelection, ResolveError, Resolved, SecretSource, SourceCx, SourceId,
@@ -290,10 +291,23 @@ fn resolve_error(
     (text.clone(), eyre!("{text}"))
 }
 
+/// G15. A distinct type so the executor can print it: it is always a consequence of an
+/// earlier failure, which the run reports as the only cause, so it would otherwise be silent.
+#[derive(Debug)]
+pub(crate) struct NotRetrying(String);
+
+impl std::fmt::Display for NotRetrying {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for NotRetrying {}
+
 fn g15(label: &str, key: &SecretName) -> eyre::Report {
-    eyre!(
+    eyre::Report::new(NotRetrying(format!(
         "task {label}: not retrying {key}; fnox failed to resolve it earlier in this run (see above)"
-    )
+    )))
 }
 
 /// G11: mise itself sets `key` for this child. A value that merely came from the shell
@@ -370,7 +384,7 @@ impl SecretBroker {
         config: &Arc<Config>,
         ctx: &TaskContextBuilder,
         items: &[(Grantee<'_>, SecretGrant)],
-    ) -> Vec<Problem> {
+    ) -> Result<Vec<Problem>> {
         let mut problems = vec![];
         // source-level failures are reported once, with every task they affect
         let mut source_errors: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -379,7 +393,9 @@ impl SecretBroker {
                 continue;
             }
             let task = grantee.task();
-            match self.memo_for_task(config, ctx, task).await {
+            // a config that does not parse, or is not trusted, fails on its own
+            let selected = self.select(config, ctx, task).await?;
+            match self.open_selected(config, ctx, task, selected).await {
                 Ok(memo) => match memo.catalog().await {
                     Ok(catalog) => {
                         problems.extend(key_problems(task, grant, &catalog, &memo.source.label()))
@@ -411,7 +427,36 @@ impl SecretBroker {
                 ),
             ));
         }
-        problems
+        Ok(problems)
+    }
+
+    async fn select(
+        &self,
+        config: &Arc<Config>,
+        ctx: &TaskContextBuilder,
+        task: &Task,
+    ) -> Result<super::config::SelectedSource> {
+        let selection = super::config::select_for_task(config, ctx, task).await?;
+        let Some(selected) = selection.source else {
+            bail!(
+                "{}",
+                super::no_source_message(
+                    &task.config_root.clone().unwrap_or_default(),
+                    &selection.ignored
+                )
+            );
+        };
+        Ok(selected)
+    }
+
+    async fn open_selected(
+        &self,
+        config: &Arc<Config>,
+        ctx: &TaskContextBuilder,
+        task: &Task,
+        selected: super::config::SelectedSource,
+    ) -> Result<Arc<SourceMemo>> {
+        self.open(config, ctx, task, &selected).await
     }
 
     async fn memo_for_task(
@@ -490,14 +535,7 @@ impl SecretBroker {
         // the sandbox decides before anything is resolved
         for key in req.grant.keys.keys() {
             if !req.sandbox.keeps_env_key(key.as_str()) {
-                problems.push(Problem::new(
-                    &label,
-                    Some(key.as_str()),
-                    ProblemKind::Sandbox,
-                    format!(
-                        "task {label} is granted {key}, but its sandbox denies env vars; add allow_env = [\"{key}\"] to the task or pass --allow-env {key}"
-                    ),
-                ));
+                problems.push(sandbox_problem(&label, key.as_str()));
             }
         }
         // a value inherited from the shell is allowed (the secret wins); a value mise itself
@@ -512,20 +550,7 @@ impl SecretBroker {
                 &env::PRISTINE_ENV,
             );
             if from_mise {
-                problems.push(
-                    Problem::new(
-                        &label,
-                        Some(k),
-                        ProblemKind::Collision,
-                        format!("task {label}: {k} is both a secret and a mise env var"),
-                    )
-                    .detail(format!(
-                        "mise sets {k} for this task ([env], the task's env, a tool, or a setting). Tools the task starts through mise shims recompute it and would replace the secret."
-                    ))
-                    .detail(format!(
-                        "Keep one: move the default into fnox.toml ({k} = {{ ..., default = \"...\" }}) or rename the mise variable."
-                    )),
-                );
+                problems.push(collision_problem(&label, k));
             }
         }
         if !problems.is_empty() {

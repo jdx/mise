@@ -466,6 +466,60 @@ fn osa_distance(a: &str, b: &str) -> usize {
     d[a.len()][b.len()]
 }
 
+/// G13: the task's sandbox would drop the granted key.
+pub(crate) fn sandbox_problem(label: &str, key: &str) -> Problem {
+    Problem::new(
+        label,
+        Some(key),
+        ProblemKind::Sandbox,
+        format!(
+            "task {label} is granted {key}, but its sandbox denies env vars; add allow_env = [\"{key}\"] to the task or pass --allow-env {key}"
+        ),
+    )
+}
+
+/// G11: mise itself sets the granted key for this task.
+pub(crate) fn collision_problem(label: &str, key: &str) -> Problem {
+    Problem::new(
+        label,
+        Some(key),
+        ProblemKind::Collision,
+        format!("task {label}: {key} is both a secret and a mise env var"),
+    )
+    .detail(format!(
+        "mise sets {key} for this task ([env], the task's env, a tool, or a setting). Tools the task starts through mise shims recompute it and would replace the secret."
+    ))
+    .detail(format!(
+        "Keep one: move the default into fnox.toml ({key} = {{ ..., default = \"...\" }}) or rename the mise variable."
+    ))
+}
+
+/// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. The spawn
+/// repeats the exact check against the real environment.
+pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> BTreeSet<String> {
+    use crate::config::env_directive::EnvDirective;
+    let directives = task
+        .env
+        .0
+        .iter()
+        .chain(task.inherited_env.0.iter())
+        .chain(task.overlay_env.iter().map(|(d, _)| d))
+        .cloned()
+        .chain(
+            config
+                .config_files
+                .values()
+                .filter_map(|cf| cf.env_entries().ok())
+                .flatten(),
+        );
+    directives
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, ..) | EnvDirective::Default(k, ..) => Some(k),
+            _ => None,
+        })
+        .collect()
+}
+
 fn task_env_literals(task: &Task) -> Vec<(String, String)> {
     use crate::config::env_directive::EnvDirective;
     task.env

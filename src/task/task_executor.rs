@@ -132,11 +132,11 @@ pub(super) fn task_env_path(path: &Path) -> String {
     }
 }
 
-/// Whether output must go through the redactor: a configured `redact` entry, a value this
-/// task was granted, or secrets a parent mise handed down (M2 seeds the redactor with them,
-/// so a nested run keeps redacting).
-fn needs_redaction(config_redactions: bool, has_values: bool, inherited_secrets: bool) -> bool {
-    config_redactions || has_values || inherited_secrets
+/// Whether output must go through the redactor: a configured `redact` entry, or a value this
+/// task was granted. A task without a grant holds no inherited secret (M2 strips them), so a
+/// nested run keeps stdin and the terminal.
+fn needs_redaction(config_redactions: bool, has_values: bool) -> bool {
+    config_redactions || has_values
 }
 
 /// Raw output cannot be forced on a task that receives secret values: it needs the task's
@@ -883,7 +883,16 @@ impl TaskExecutor {
                         interactive: crate::secrets::is_interactive(),
                     },
                 )
-                .await?
+                .await
+                .inspect_err(|err| {
+                    if err.downcast_ref::<crate::secrets::NotRetrying>().is_some() {
+                        self.eprint(
+                            task,
+                            &prefix,
+                            &format!("{} {err}", crate::ui::style::ered("ERROR")),
+                        );
+                    }
+                })?
         };
         let exec_ctx = TaskExecContext {
             task,
@@ -1776,11 +1785,7 @@ impl TaskExecutor {
         // Granted values were registered with the redactor when they were resolved.
         let redactions = config.redactions();
         let has_values = secrets.is_some_and(SpawnSecrets::has_values);
-        let needs_redaction = needs_redaction(
-            crate::config::has_config_redactions(),
-            has_values,
-            !mise_util::env::INHERITED_SECRET_KEYS.is_empty(),
-        );
+        let needs_redaction = needs_redaction(crate::config::has_config_redactions(), has_values);
         let wants_raw = self.raw(Some(task));
         let raw = task_raw(
             has_values,
@@ -2312,6 +2317,22 @@ impl TaskExecutor {
                         | crate::secrets::ProblemKind::Denied
                 )
             });
+            if !grant.is_empty() && !self.dry_run {
+                // the sandbox and a plainly declared env var decide before anything runs
+                let sandbox = self.build_sandbox_for_task(task, config).await?;
+                let declared = crate::secrets::declared_env_keys(task, config);
+                for key in grant.keys.keys() {
+                    if !sandbox.keeps_env_key(key.as_str()) {
+                        found.push(crate::secrets::sandbox_problem(&task.name, key.as_str()));
+                    }
+                    if declared
+                        .iter()
+                        .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
+                    {
+                        found.push(crate::secrets::collision_problem(&task.name, key.as_str()));
+                    }
+                }
+            }
             problems.extend(found);
             if !grant.is_empty() {
                 items.push((task, grant));
@@ -2332,7 +2353,7 @@ impl TaskExecutor {
             problems.extend(
                 self.secrets
                     .preflight(config, &self.context_builder, &items)
-                    .await,
+                    .await?,
             );
         }
         if problems.is_empty() {
@@ -2949,16 +2970,13 @@ mod tests {
 
     #[test]
     fn needs_redaction_truth_table() {
-        // (configured redactions, granted values, inherited secrets)
-        for (cfg, values, inherited, want) in [
-            (false, false, false, false),
-            (true, false, false, true),
-            (false, true, false, true),
-            // a nested run keeps redacting what its parent handed down
-            (false, false, true, true),
-            (true, true, true, true),
+        for (cfg, values, want) in [
+            (false, false, false),
+            (true, false, true),
+            (false, true, true),
+            (true, true, true),
         ] {
-            assert_eq!(needs_redaction(cfg, values, inherited), want);
+            assert_eq!(needs_redaction(cfg, values), want);
         }
     }
 
