@@ -79,6 +79,8 @@ pub(super) enum Why {
     Absent,
     /// the daemon speaks another protocol
     VersionMismatch,
+    /// the daemon accepted the connection but did not answer in time
+    TimedOut,
     /// the socket is not owned by the current user
     PeerRejected,
     Unavailable(&'static str),
@@ -93,6 +95,15 @@ pub(super) fn plan(outcome: EnvOutcome) -> Plan {
         EnvOutcome::Absent => Plan::Cli(Why::Absent),
         EnvOutcome::VersionMismatch { .. } => Plan::Cli(Why::VersionMismatch),
         EnvOutcome::Unavailable(CallError::PeerRejected(_)) => Plan::Cli(Why::PeerRejected),
+        // how a socket read or write timeout surfaces
+        EnvOutcome::Unavailable(CallError::Io(e))
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ) =>
+        {
+            Plan::Cli(Why::TimedOut)
+        }
         EnvOutcome::Unavailable(e) => Plan::Cli(Why::Unavailable(error_kind(&e))),
         // `EnvOutcome` is non-exhaustive
         _ => Plan::Cli(Why::Unavailable("other")),
@@ -148,24 +159,23 @@ impl FnoxSource {
         limit: Duration,
         call: impl FnOnce(DaemonCall) -> (EnvOutcome, PathBuf) + Send + 'static,
     ) -> Result<Option<Resolved>, ResolveError> {
-        if !cx.interactive || catalog.cache != Some(true) {
+        if !cx.interactive || catalog.cache != Some(true) || self.daemon_is_stuck() {
             return Ok(None);
         }
         let request = self.daemon_call(keys);
-        let (outcome, socket) =
-            match tokio::time::timeout(limit, tokio::task::spawn_blocking(move || call(request)))
-                .await
-            {
-                Ok(Ok(done)) => done,
-                Ok(Err(_)) => {
-                    debug!("secrets: fnox daemon call did not finish; using the fnox CLI");
-                    return Ok(None);
-                }
-                Err(_) => {
-                    debug!("secrets: fnox daemon did not answer in time; using the fnox CLI");
-                    return Ok(None);
-                }
-            };
+        let (outcome, socket) = match off_runtime(limit, move || call(request)).await {
+            Ok(done) => done,
+            Err(Stuck::Elapsed) => {
+                debug!("secrets: fnox daemon did not answer in time; using the fnox CLI");
+                self.mark_daemon_stuck();
+                return Ok(None);
+            }
+            Err(Stuck::Died) => {
+                debug!("secrets: fnox daemon call did not finish; using the fnox CLI");
+                self.mark_daemon_stuck();
+                return Ok(None);
+            }
+        };
         match plan(outcome) {
             Plan::Hit(doc) => {
                 let resolved = resolved_from(*doc, keys, catalog);
@@ -187,6 +197,10 @@ impl FnoxSource {
                         "fnox daemon socket at {} is not owned by you; using the fnox CLI",
                         crate::file::display_path(&socket)
                     ),
+                    Why::TimedOut => {
+                        debug!("secrets: fnox daemon timed out; using the fnox CLI");
+                        self.mark_daemon_stuck();
+                    }
                     other => {
                         debug!("secrets: fnox daemon not used ({other:?}); using the fnox CLI")
                     }
@@ -213,15 +227,42 @@ impl FnoxSource {
             Some(true) => {}
         }
         let call = self.daemon_call(&KeySelection::AllInScope);
-        let probe = tokio::task::spawn_blocking(move || {
+        let probe = off_runtime(limit, move || {
             let client = call.client();
             (client.hello(), client.socket_path().to_path_buf())
-        });
-        Some(match tokio::time::timeout(limit, probe).await {
-            Ok(Ok((hello, socket))) => status_line(hello, &socket),
-            Ok(Err(_)) => "daemon: not responding".to_string(),
+        })
+        .await;
+        Some(match probe {
+            Ok((hello, socket)) => status_line(hello, &socket),
             Err(_) => "daemon: not responding".to_string(),
         })
+    }
+}
+
+enum Stuck {
+    Elapsed,
+    Died,
+}
+
+/// Runs a blocking socket call on its own thread, for at most `limit`. Not `spawn_blocking`: a
+/// connect to a wedged daemon cannot be cancelled, and tokio's runtime waits for its blocking
+/// tasks when it drops, so an abandoned call would delay mise's exit. A detached thread ends
+/// with the process.
+async fn off_runtime<T: Send + 'static>(
+    limit: Duration,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, Stuck> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("fnox-daemon".into())
+        .spawn(move || {
+            let _ = tx.send(f());
+        })
+        .map_err(|_| Stuck::Died)?;
+    match tokio::time::timeout(limit, rx).await {
+        Ok(Ok(done)) => Ok(done),
+        Ok(Err(_)) => Err(Stuck::Died),
+        Err(_) => Err(Stuck::Elapsed),
     }
 }
 
@@ -258,6 +299,7 @@ mod tests {
                 profile: Some("dev".to_string()),
             },
             bin: PathBuf::from("/bin/fnox"),
+            daemon_stuck: std::sync::atomic::AtomicBool::new(false),
             env: env
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -530,6 +572,91 @@ mod tests {
         assert!(matches!(out, Ok(None)));
         assert!(started.elapsed() < Duration::from_secs(1));
         drop(tx);
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_daemon_is_skipped_for_the_rest_of_the_run() {
+        let s = source(&[]);
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let out = s
+            .cached_with(
+                &interactive(),
+                &sel(&["DATABASE_URL"]),
+                &catalog(),
+                Duration::from_millis(50),
+                move |_| {
+                    let _ = rx.recv();
+                    (EnvOutcome::Absent, PathBuf::new())
+                },
+            )
+            .await;
+        assert!(matches!(out, Ok(None)));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let out = s
+            .cached_with(
+                &interactive(),
+                &sel(&["DATABASE_URL"]),
+                &catalog(),
+                LIMIT,
+                move |_| {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    (EnvOutcome::Absent, PathBuf::new())
+                },
+            )
+            .await;
+        assert!(matches!(out, Ok(None)));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(s.daemon_is_stuck());
+        drop(tx);
+    }
+
+    #[tokio::test]
+    async fn only_a_timeout_marks_the_daemon_stuck() {
+        let marks = |outcome: fn() -> EnvOutcome| async move {
+            let s = source(&[]);
+            let out = s
+                .cached_with(
+                    &interactive(),
+                    &sel(&["DATABASE_URL"]),
+                    &catalog(),
+                    LIMIT,
+                    move |_| (outcome(), PathBuf::new()),
+                )
+                .await;
+            assert!(matches!(out, Ok(None)));
+            s.daemon_is_stuck()
+        };
+        assert!(
+            marks(
+                || EnvOutcome::Unavailable(CallError::Io(std::io::Error::from(
+                    std::io::ErrorKind::TimedOut
+                )))
+            )
+            .await
+        );
+        assert!(
+            marks(
+                || EnvOutcome::Unavailable(CallError::Io(std::io::Error::from(
+                    std::io::ErrorKind::WouldBlock
+                )))
+            )
+            .await
+        );
+        for outcome in [
+            (|| EnvOutcome::Miss { keys: vec![] }) as fn() -> EnvOutcome,
+            || EnvOutcome::Disabled,
+            || EnvOutcome::Absent,
+            || EnvOutcome::VersionMismatch {
+                min: None,
+                max: None,
+            },
+            || EnvOutcome::Unavailable(CallError::EmptyResponse),
+            || EnvOutcome::Unavailable(CallError::PeerRejected(std::io::Error::other("x"))),
+            || EnvOutcome::Unavailable(CallError::Io(std::io::Error::other("x"))),
+        ] {
+            assert!(!marks(outcome).await);
+        }
     }
 
     #[test]

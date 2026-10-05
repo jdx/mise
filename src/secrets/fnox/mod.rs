@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use eyre::{Result, bail};
 use indexmap::IndexMap;
@@ -37,6 +38,9 @@ pub(crate) struct FnoxSource {
     bin: PathBuf,
     /// Built once and reused for every fnox call.
     env: EnvMap,
+    /// The daemon did not answer in time. Set once, then the run skips the daemon: the fnox
+    /// CLI would otherwise try the same wedged socket, with no timeout of its own.
+    daemon_stuck: AtomicBool,
 }
 
 /// The project's own `[tools] fnox`, then PATH without mise shims.
@@ -91,6 +95,7 @@ impl FnoxSource {
             },
             bin,
             env: source_env(env::PRISTINE_ENV.clone(), tool_env, &removals),
+            daemon_stuck: AtomicBool::new(false),
         })
     }
 
@@ -106,12 +111,28 @@ impl FnoxSource {
         }
     }
 
-    /// Global flags go before `env`. A call that may prompt omits `--non-interactive` and
-    /// `--no-daemon`, so fnox follows its own `[daemon]` setting.
+    pub(super) fn daemon_is_stuck(&self) -> bool {
+        self.daemon_stuck.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn mark_daemon_stuck(&self) {
+        if !self.daemon_stuck.swap(true, Ordering::SeqCst) {
+            debug!("secrets: fnox daemon is not answering; skipping it for the rest of this run");
+        }
+    }
+
+    /// Global flags go before `env`. A call that may prompt omits `--non-interactive`, and
+    /// `--no-daemon` too, so fnox follows its own `[daemon]` setting, unless the daemon is
+    /// known to be stuck.
     fn argv(&self, rest: &[&str], interactive: bool) -> Vec<String> {
         let mut argv = self.cli_flags().to_args();
         if !interactive {
             argv.push("--non-interactive".to_string());
+        }
+        if !interactive || self.daemon_is_stuck() {
+            if interactive {
+                debug!("secrets: running fnox with --no-daemon because its daemon is stuck");
+            }
             argv.push("--no-daemon".to_string());
         }
         argv.extend(rest.iter().map(|s| s.to_string()));
@@ -583,6 +604,7 @@ mod tests {
             },
             bin: PathBuf::from("/bin/fnox"),
             env: EnvMap::new(),
+            daemon_stuck: AtomicBool::new(false),
         }
     }
 
@@ -646,6 +668,18 @@ mod tests {
         let unknown = &c.entries[&SecretName::new("NEW_MODE").unwrap()];
         assert_eq!(unknown.mode, Some(InjectMode::Never));
         assert!(!unknown.injectable);
+    }
+
+    #[test]
+    fn a_stuck_daemon_adds_no_daemon_but_not_non_interactive() {
+        let s = source(None);
+        let fresh = s.resolve_argv(&sel(&["A"]), true);
+        assert!(!fresh.contains(&"--no-daemon".to_string()));
+        assert!(!fresh.contains(&"--non-interactive".to_string()));
+        s.mark_daemon_stuck();
+        let stuck = s.resolve_argv(&sel(&["A"]), true);
+        assert!(stuck.contains(&"--no-daemon".to_string()));
+        assert!(!stuck.contains(&"--non-interactive".to_string()));
     }
 
     #[test]
