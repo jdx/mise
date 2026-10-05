@@ -138,6 +138,20 @@ impl SpawnSecrets {
         self.names.iter().cloned().collect::<Vec<_>>().join(",")
     }
 
+    /// `mise x` writes the values into its own environment before `exec`, and the standard
+    /// library panics, naming the value, on one that contains NUL. Rejects that first, naming
+    /// keys only.
+    pub(crate) fn ensure_settable(&self, who: &str) -> Result<()> {
+        for (key, value) in &self.env {
+            if value.expose().contains('\0') {
+                eyre::bail!(
+                    "{who}: {key} contains a NUL byte, which an environment variable cannot hold"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// The marker for a process that keeps its inherited environment (`mise x`): this
     /// spawn's names plus the keys that were already marked, sorted and comma-joined.
     pub fn marker_value_with_inherited(&self) -> String {
@@ -222,6 +236,22 @@ mod tests {
         assert!(rm.contains("GONE") && !rm.contains("A"));
         assert_eq!(s.marker_value(), "A,B");
         assert!(s.has_values());
+    }
+
+    #[test]
+    fn nul_values_are_rejected_without_echoing_them() {
+        let bad = SpawnSecrets::for_test(&[("DEPLOY_KEY", "ab\0-s3cr3t-0001")]);
+        let err = bad.ensure_settable("mise x").unwrap_err().to_string();
+        assert!(
+            err.contains("mise x: DEPLOY_KEY contains a NUL byte"),
+            "{err}"
+        );
+        assert!(!err.contains("s3cr3t") && !err.contains("-0001"), "{err}");
+        assert!(
+            SpawnSecrets::for_test(&[("DEPLOY_KEY", "fine-s3cr3t")])
+                .ensure_settable("mise x")
+                .is_ok()
+        );
     }
 
     #[test]

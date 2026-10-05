@@ -428,8 +428,8 @@ impl Exec {
         sandbox.resolve_paths();
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
-        // runs. The values are added after `__MISE_DIFF` was computed, so they are in no
-        // cache or diff, and before the sandbox filter, which G13 already checked they pass.
+        // runs. This sees the unfiltered env, which G11 compares against; G13 and the
+        // `--secrets-all` skip already guarantee the granted keys pass the sandbox filter.
         let secrets = crate::secrets::prepare_exec_secrets(
             &config,
             crate::secrets::ExecSecretsRequest {
@@ -440,17 +440,18 @@ impl Exec {
             },
         )
         .await?;
-        if let Some(secrets) = &secrets {
-            secrets.apply(&mut env, &mut env_remove);
-        }
 
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
         }
-        // `mise x` keeps its inherited environment, so the marker names what this command
-        // was handed and what it already held.
+        // The grants go in after the sandbox filter: under deny-env it copies allow_env names
+        // back in from mise's own environment, which would undo a key fnox asked to remove.
+        // The values are also added after `__MISE_DIFF` was computed, so they are in no cache
+        // or diff. `mise x` keeps its inherited environment, so the marker names what this
+        // command was handed and what it already held.
         let mut scrub_on_failure: Vec<String> = vec![];
         if let Some(secrets) = &secrets {
+            secrets.apply(&mut env, &mut env_remove);
             env.insert(
                 mise_util::env::SECRET_KEYS_MARKER.to_string(),
                 secrets.marker_value_with_inherited(),

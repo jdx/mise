@@ -548,14 +548,7 @@ pub(crate) fn static_problems(
         );
     }
     let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
-    let mut refs = BTreeSet::new();
-    for script in task.run_script_strings() {
-        refs.extend(tera_env_refs(&script));
-    }
-    for (_, value) in task_env_literals(task) {
-        refs.extend(tera_env_refs(&value));
-    }
-    for key in refs {
+    for key in task_template_refs(task) {
         if granted.contains(key.as_str()) {
             problems.push(
                 Problem::new(
@@ -742,6 +735,19 @@ pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> 
             _ => None,
         })
         .collect()
+}
+
+/// Env names the task's `run` scripts and `env` values read through a template. Those render
+/// before secrets exist, so a granted key among them would render without its value.
+pub(crate) fn task_template_refs(task: &Task) -> BTreeSet<String> {
+    let mut refs = BTreeSet::new();
+    for script in task.run_script_strings() {
+        refs.extend(tera_env_refs(&script));
+    }
+    for (_, value) in task_env_literals(task) {
+        refs.extend(tera_env_refs(&value));
+    }
+    refs
 }
 
 fn task_env_literals(task: &Task) -> Vec<(String, String)> {
@@ -1125,6 +1131,27 @@ mod tests {
             static_problems(&task, &all, Some(SecretsDenied::Hook))
                 .iter()
                 .any(|p| p.kind == ProblemKind::Denied)
+        );
+    }
+
+    #[test]
+    fn template_refs_cover_run_and_env_literals() {
+        use crate::config::env_directive::EnvDirective;
+        let mut task = Task {
+            name: "pay".into(),
+            run: vec![crate::task::RunEntry::Script(
+                "echo {{ env.STRIPE_KEY }} {{ get_env(name='B') }}".into(),
+            )],
+            ..Default::default()
+        };
+        task.env.0.push(EnvDirective::Val(
+            "X".into(),
+            "{{ env[\"C\"] }}".into(),
+            Default::default(),
+        ));
+        assert_eq!(
+            task_template_refs(&task),
+            BTreeSet::from(["STRIPE_KEY", "B", "C"].map(String::from))
         );
     }
 }
