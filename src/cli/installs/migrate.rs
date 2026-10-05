@@ -450,8 +450,10 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
         // is in a shared root) was reused without a version link here.
         resolver::ensure_version_link(tv, &dir)
             .and_then(|()| {
-                let target = resolver::link_target(&legacy);
-                if target.is_some_and(|t| t.canonicalize().ok() == dir.canonicalize().ok()) {
+                let leads_to_dir = resolver::link_target(&legacy).is_some_and(
+                    |t| matches!((t.canonicalize(), dir.canonicalize()), (Ok(a), Ok(b)) if a == b),
+                );
+                if leads_to_dir {
                     Ok(dir.clone())
                 } else {
                     Err(eyre::eyre!("the version link names another installation"))
