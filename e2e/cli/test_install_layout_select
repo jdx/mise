@@ -113,3 +113,28 @@ assert_fail "mise install tiny@3.1.0" "no longer has it"
 assert_fail "mise x tiny@3.1.0 -- rtx-tiny" "no longer has it"
 assert "mise installs select $own_dir"
 assert "mise where tiny@3.1.0" "$own_dir"
+
+echo "=== one installation in each root and nothing selected is still a guess ==="
+shared2="$HOME/shared-installs-2"
+assert "MISE_INSTALLS_DIR='$shared2' mise install tiny@3.0.0"
+export MISE_SHARED_INSTALL_DIRS="$shared2"
+assert "mise install --force tiny@3.0.0"
+mine="$(mise where tiny@3.0.0)"
+[[ $mine == "$installs"/tiny-* ]] || fail "$mine is not in the user's root"
+rm -rf "$installs/.mise/selections"
+assert_fail "mise install tiny@3.0.0" "matches several installations and none is selected"
+assert "mise installs select $mine"
+assert "mise where tiny@3.0.0" "$mine"
+
+echo "=== a pruned selection is restored in place, not replaced by the shared copy ==="
+# what prune leaves behind: the payload is gone, its catalog record and the
+# selection stay
+rm -rf "$mine"
+assert "test -d '$shared2/$(basename "$mine")'"
+assert "mise install tiny@3.0.0"
+assert "mise where tiny@3.0.0" "$mine"
+assert "test -f '$mine/.mise-install.toml'"
+
+echo "=== selecting a shared installation moves the user's version link to it ==="
+assert "mise installs select $shared2/$(basename "$mine")"
+assert "readlink '$installs/tiny/3.0.0'" "$shared2/$(basename "$mine")"
