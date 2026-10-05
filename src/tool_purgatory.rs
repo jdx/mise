@@ -266,6 +266,12 @@ pub async fn auto_prune() -> Result<()> {
             // longer find its install directory. Retry that cleanup directly
             // from the receipt before allowing reconciliation to clear it.
             install_state_changed = true;
+            // An identity-layout installation's tool directory is not known once
+            // its tool is no longer listed; its version links are found by the
+            // installation they name instead.
+            if layout_install && installs_dir.is_none() {
+                crate::install_layout::resolver::unlink_installation(install_path);
+            }
             match remove_missing_links(&installs_dir) {
                 Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
                 Err(err) => {

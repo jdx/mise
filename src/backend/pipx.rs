@@ -708,14 +708,27 @@ impl Backend for PIPXBackend {
     /// `pypi.uvx = false` turns uv off for every package, exactly as a per-package
     /// `uvx = false` does, and uv and pipx lay an environment out differently. Both
     /// spellings land on the same `uvx` key so they name the same install.
+    ///
+    /// `pypi.registry_url` is the index packages are installed from (see
+    /// [`Self::get_index_url`]), where the same name and version can be different
+    /// code, so another index makes another installation.
     fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
         let mut options = super::static_helpers::request_identity_options(self, tv);
-        if Settings::get().pypi.uvx == Some(false) {
+        let settings = Settings::get();
+        if settings.pypi.uvx == Some(false) {
             options.insert("uvx".to_string(), "false".to_string());
+        }
+        if let Some(registry) = &settings.pypi.registry_url
+            && registry != DEFAULT_REGISTRY_URL
+        {
+            options.insert("pypi.registry".to_string(), registry.clone());
         }
         options
     }
 }
+
+/// The `pypi.registry_url` default: PyPI itself.
+const DEFAULT_REGISTRY_URL: &str = "https://pypi.org/pypi/{}/json";
 
 /// Returns install-time-only option keys for PIPX backend.
 pub(crate) fn install_time_option_keys() -> Vec<String> {
@@ -2037,6 +2050,34 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
         // A package option cannot turn uv back on while the setting has it off.
         assert_eq!(identity(Some(false), &[("uvx", "true")]), pipx_only);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_install_identity_options_include_the_index() {
+        use crate::backend::static_helpers::test_identity_options;
+        use crate::config::settings::SettingsPartial;
+        use crate::config::{Settings, SettingsExt};
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let backend = PIPXBackend::from_arg("pipx:black".into());
+        let identity = |registry: Option<&str>| {
+            let mut partial = SettingsPartial::empty();
+            partial.pypi.registry_url = registry.map(str::to_string);
+            Settings::reset(Some(partial));
+            test_identity_options(&backend, "24.3.0", &[])
+        };
+
+        let default = identity(None);
+        assert!(default.is_empty(), "{default:?}");
+        // Packages are installed from this index: another one is other code.
+        let internal = identity(Some("https://pypi.internal.example/simple/{}/"));
+        assert_ne!(internal, default);
+        assert_ne!(
+            internal,
+            identity(Some("https://pypi.other.example/simple/{}/"))
+        );
         Settings::reset(None);
     }
 
