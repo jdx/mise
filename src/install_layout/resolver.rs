@@ -514,12 +514,7 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
         let catalog = Catalog::new(&root);
         // A shared root's catalog cannot be rebuilt here; if it is gone, the
         // installations it listed still count, by their receipts.
-        let records = if is_primary_root(&root) {
-            catalog.records_for_backend(&key.backend)
-        } else {
-            catalog.records_or_receipts_for_backend(&key.backend)
-        };
-        for record in records {
+        for record in records_of(&catalog, &root, &key.backend) {
             let dir = catalog.install_dir(&record);
             if same_request(&record.identity, key) && is_complete(&dir) {
                 complete.push(Located {
@@ -575,6 +570,16 @@ fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
         .all(|k| a.inputs.get(*k) == b.and_then(|b| b.inputs.get(*k)))
 }
 
+/// The records of `backend` in the catalog of `root`; for a shared root whose
+/// catalog is gone, its installations' receipts.
+fn records_of(catalog: &Catalog, root: &Path, backend: &str) -> Vec<IdentityRecord> {
+    if is_primary_root(root) {
+        catalog.records_for_backend(backend)
+    } else {
+        catalog.records_or_receipts_for_backend(backend)
+    }
+}
+
 /// The complete installations, in every root, of `identity`'s backend, version and
 /// platform made for another request (other install options) of the tool `ba`;
 /// another tool aliasing the same backend (`oxfmt` and `oxlint`) has its own.
@@ -583,7 +588,7 @@ fn variant_installations(ba: &crate::args::BackendArg, identity: &InstallIdentit
     let mut out = vec![];
     for root in roots() {
         let catalog = Catalog::new(&root);
-        for record in catalog.records_for_backend(&identity.backend) {
+        for record in records_of(&catalog, &root, &identity.backend) {
             let dir = catalog.install_dir(&record);
             if record.identity.version == identity.version
                 && record.identity.platform == identity.platform
@@ -1016,7 +1021,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let mut out = vec![];
     for root in roots() {
         let catalog = Catalog::new(&root);
-        for record in catalog.records_for_backend(&backend) {
+        for record in records_of(&catalog, &root, &backend) {
             let dir = catalog.install_dir(&record);
             if record.identity.version == version
                 && record.identity.platform == platform

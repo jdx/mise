@@ -121,6 +121,16 @@ assert "mise where tiny@1.0.0" "$(mise -C "$work/more" where tiny)"
 # options written on the command line are the version's own too
 assert_fail "mise where 'tiny[flavor=full]@1.0.0'"
 
+echo "=== a lone variant in a shared root whose catalog is gone still stands in ==="
+mkdir sharedvar
+cat >sharedvar/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.1", flavor = "full" }
+EOF2
+assert "MISE_INSTALLS_DIR='$HOME/shared-variants' mise -C $work/sharedvar install"
+mv "$HOME/shared-variants/.mise" "$HOME/shared-variants/.mise.lost"
+assert_matches "MISE_SHARED_INSTALL_DIRS='$HOME/shared-variants' mise where tiny@1.0.1" "^$HOME/shared-variants/tiny-"
+
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
 cat >minimal/mise.toml <<'EOF2'
