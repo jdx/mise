@@ -591,9 +591,13 @@ fn variant_choices(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> 
             if copies.len() == 1 {
                 return copies;
             }
+            // The set's own choice, if it is one of this tool's copies.
             match unlocked_choice(&key) {
-                Unlocked::Selected(located) if located.installed => vec![located],
-                Unlocked::Found(located) => vec![located],
+                Unlocked::Selected(located) | Unlocked::Found(located)
+                    if located.installed && copies.iter().any(|c| c.dir == located.dir) =>
+                {
+                    vec![located]
+                }
                 _ => copies,
             }
         })
