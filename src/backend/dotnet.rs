@@ -50,6 +50,10 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
     }
