@@ -3931,6 +3931,58 @@ v20.0.0
 """# help="install node@20.0.0 into ./mynode"
     complete path type=dir
 }
+cmd installs help="[experimental] Inspect and choose installations of the identity install layout" effect=read {
+    long_help #"""
+[experimental] Inspect and choose installations of the identity install layout
+
+With `install_layout = "identity"`, each installation lives in its own
+`<label>-<hash>` directory, and several installations of one version can
+exist side by side (different options, platforms, pinned artifacts, or a
+refreshed copy). These commands list them and choose which one requests
+without a lockfile use.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the installations of the identity install layout" effect=read {
+        alias list
+        long_help #"""
+List the installations of the identity install layout
+
+Every installation is listed separately, so variants of one version (made
+with different options, or pinned to different artifacts by lockfiles) can
+be told apart. The status column says which installation requests without
+a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
+live in a read-only shared installs directory (`shared`).
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --no-header help="Don't display headers"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL]…" help="Only show the installations of these tools" required=#false var=#true
+        example "mise installs ls" help="Every installation in the identity layout"
+        example "mise installs ls node --json" help="The installations of node, as JSON"
+    }
+    cmd select help="Choose the installation that requests without a lockfile use" effect=write {
+        long_help #"""
+Choose the installation that requests without a lockfile use
+
+Several installations can answer the same request: a refresh that could not
+replace a lockfile's installation in place, or installations made for
+different lockfiles. Requests without a lockfile entry use the one selected
+for their tool, version, platform and options, and when none is selected and
+several match, mise stops and asks for this command.
+
+The selection is shared by every project on this machine that makes the same
+request without a lockfile. Projects whose lockfile pins an artifact keep the
+installation of that artifact. The version link (`installs/<tool>/<version>`)
+is pointed at the selected installation.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <INSTALLATION> help="The installation to select: its directory name, or its path"
+        example #"""
+mise installs ls jq
+mise installs select jq-hm3qa4vb
+"""# help="Find jq's installations, then choose one"
+    }
+}
 cmd latest help="Resolve the latest matching version request for a tool" effect=read {
     long_help #"""
 Resolve the latest matching version request for a tool

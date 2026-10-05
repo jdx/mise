@@ -273,6 +273,54 @@ one project does not retarget what another project's unlocked request selects.
 Unlocked selections are local to your machine. To carry a particular choice to
 other machines or teammates, commit a lockfile.
 
+## Choosing an installation: `mise installs`
+
+Several installations can answer one unlocked request: a forced refresh that
+could not replace a lockfile's installation in place, or installations that
+lockfiles in other projects made. `mise installs ls` lists every installation
+and says which one each request uses:
+
+```sh
+mise installs ls jq
+# Installation  Tool  Version  Platform   Status
+# jq-hm3qa4vb   jq    1.7.1    linux-x64  selected
+# jq-ezjqmxa4   jq    1.7.1    linux-x64  pinned
+```
+
+`selected` is the installation requests without a lockfile use, `pinned` means a
+lockfile adopted it, and `shared` means it is in a read-only shared installs
+directory. Add `--json` for the full identity, including options and the
+artifact checksum.
+
+`mise installs select` makes another installation the selected one, and points
+the version link (`installs/jq/1.7.1`) at it:
+
+```sh
+mise installs select jq-ezjqmxa4
+```
+
+The selection applies to every project on the machine that asks for the same
+tool, version, platform and options without a lockfile. Projects whose lockfile
+pins an artifact keep that artifact's installation. To select an installation in
+a shared installs directory, pass its path; the selection is kept in your own
+installs directory, and nothing is written to the shared one.
+
+**When nothing is selected.** The first unlocked install of a request selects
+the installation it made. If the selection is lost (the catalog was rebuilt from
+receipts, for example), or the request was only ever installed by lockfiles,
+mise looks at the installations that answer it. With exactly one, mise uses and
+selects it. With several, mise stops instead of guessing, and lists them:
+
+```text
+mise ERROR jq@1.7.1 matches several installations and none is selected:
+  jq-hm3qa4vb
+  jq-ezjqmxa4 (a lockfile pins it)
+Choose one with `mise installs select <dir>`, or install a fresh one with `mise install --force jq@1.7.1`
+```
+
+If the selected installation has since been pruned, installing restores it in
+the same directory rather than choosing another one.
+
 ## Pruning and uninstalling
 
 Both work on one installation directory at a time.
@@ -283,7 +331,9 @@ Both work on one installation directory at a time.
   the install store that has neither a receipt nor a reservation in the
   catalog. Removing one variant leaves the others in place.
 - Removing an installation keeps its catalog record, so installing the same
-  identity again lands in the same directory.
+  identity again lands in the same directory. `mise uninstall` also forgets the
+  selection that named it, so the requests it answered choose again; a pruned
+  installation keeps its selection and is restored in place.
 - `mise prune` keeps an installation while a tracked config needs it. An unlocked
   request needs the installation it selects. A tracked lockfile entry needs the
   installations of its backend and version, narrowed to the pinned artifact when

@@ -112,9 +112,14 @@ impl Catalog {
         (record.digest == digest && record.identity.backend == backend).then_some(record)
     }
 
-    /// The installation an unlocked request's selection points at.
+    /// The installation an unlocked request's selection points at, when it is
+    /// one of this catalog's. A selection naming another root's installation is
+    /// not answered from here, even if this catalog has the same identity.
     pub(crate) fn selected_record(&self, key: &InstallIdentity) -> Option<IdentityRecord> {
         let selection = self.selection(key)?;
+        if selection.root.is_some() {
+            return None;
+        }
         self.record_by_digest(&key.backend, &selection.selected)
     }
 
@@ -235,7 +240,7 @@ impl Catalog {
         identity: &InstallIdentity,
         provenance: Provenance,
     ) -> Result<()> {
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         let Some(mut record) = self.lookup(identity) else {
             return Ok(());
         };
@@ -253,9 +258,44 @@ impl Catalog {
     /// Adopt installations that exist on disk with a receipt but are missing
     /// from the catalog (it was lost or never written), so the catalog can be
     /// rebuilt from receipts alone. Returns the records it restored.
+    /// The installation in this catalog's store whose receipt records `digest`:
+    /// what is left to go on when the catalog lost its record and cannot be
+    /// rebuilt, as in a read-only shared root. It reads every receipt.
+    pub(crate) fn find_by_receipt(&self, digest: &str) -> Option<IdentityRecord> {
+        self.receipt_records()
+            .find(|record| record.digest == digest)
+    }
+
+    /// [`Catalog::records_for_backend`] for a catalog that cannot be rebuilt (a
+    /// read-only shared root): when it has lost its records entirely, the
+    /// installations' receipts stand in for them. Reads every receipt in that
+    /// case only.
+    pub(crate) fn records_or_receipts_for_backend(&self, backend: &str) -> Vec<IdentityRecord> {
+        if self.meta_dir().join("identities").is_dir() {
+            return self.records_for_backend(backend);
+        }
+        let mut records: Vec<_> = self
+            .receipt_records()
+            .filter(|record| record.identity.backend == backend)
+            .collect();
+        records.sort_by(|a, b| a.dir.cmp(&b.dir));
+        records
+    }
+
+    /// The records the receipts in the store carry, for directories they name.
+    fn receipt_records(&self) -> impl Iterator<Item = IdentityRecord> + '_ {
+        file::dir_subdirs(&self.store)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|dir| !dir.starts_with('.'))
+            .filter_map(|dir| read_receipt(&self.store.join(&dir)).map(|r| (dir, r.record)))
+            .filter(|(dir, record)| record.dir == *dir && record.is_consistent())
+            .map(|(_, record)| record)
+    }
+
     pub(crate) fn rebuild_from_receipts(&self) -> Result<Vec<IdentityRecord>> {
         let mut restored = vec![];
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         for dir in file::dir_subdirs(&self.store).unwrap_or_default() {
             if dir.starts_with('.') {
                 continue;
@@ -286,6 +326,40 @@ impl Catalog {
         Ok(restored)
     }
 
+    /// The full digest the directory name `dir` is reserved for.
+    pub(crate) fn owner_of(&self, dir: &str) -> Option<String> {
+        std::fs::read_to_string(self.name_path(dir))
+            .ok()
+            .map(|owner| owner.trim().to_string())
+    }
+
+    /// Forget the selections that name the installation with `digest` in this
+    /// catalog's own root. Returns how many were removed.
+    pub(crate) fn remove_selections_of(&self, digest: &str) -> Result<usize> {
+        // Under the lock selections are written with, so a choice made meanwhile
+        // is never the one removed.
+        let _lock = self.lock()?;
+        let dir = self.meta_dir().join("selections");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Ok(0);
+        };
+        let mut removed = 0;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let Some(selection) = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|body| toml::from_str::<Selection>(&body).ok())
+            else {
+                continue;
+            };
+            if selection.selected == digest && selection.root.is_none() {
+                file::remove_file(&path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// Where an unlocked request's choice is remembered, if it was.
     pub(crate) fn selection(&self, key: &InstallIdentity) -> Option<Selection> {
         let body = std::fs::read_to_string(self.selection_path(key)).ok()?;
@@ -298,6 +372,39 @@ impl Catalog {
     /// Only an unlocked install or an explicit refresh calls this. A locked
     /// install reuses an installation without touching the selection.
     pub(crate) fn select(
+        &self,
+        key: &InstallIdentity,
+        selected: &IdentityRecord,
+        root: Option<&Path>,
+    ) -> Result<()> {
+        let _lock = self.lock()?;
+        self.write_selection(key, selected, root)
+    }
+
+    /// [`Catalog::select`], unless `key` already has a selection. Returns whether
+    /// it wrote one.
+    pub(crate) fn select_if_unset(
+        &self,
+        key: &InstallIdentity,
+        selected: &IdentityRecord,
+        root: Option<&Path>,
+    ) -> Result<bool> {
+        let _lock = self.lock()?;
+        if self.selection(key).is_some() {
+            return Ok(false);
+        }
+        self.write_selection(key, selected, root)?;
+        Ok(true)
+    }
+
+    /// Hold the catalog lock, under which allocations and selections are written,
+    /// for a change that has to stay in step with a selection (its version links).
+    pub(crate) fn lock(&self) -> Result<fslock::LockFile> {
+        LockFile::at(&self.meta_dir().join("alloc.lock")).lock()
+    }
+
+    /// [`Catalog::select`] for a caller already holding [`Catalog::lock`].
+    pub(crate) fn write_selection(
         &self,
         key: &InstallIdentity,
         selected: &IdentityRecord,

@@ -742,6 +742,18 @@ Install a tool version
 \fBinstall\-into\fR
 Install a tool version to a specific path
 .TP
+\fBinstalls\fR
+[experimental] Inspect and choose installations of the identity install layout
+.TP
+\fBinstalls ls\fR
+List the installations of the identity install layout
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBinstalls select\fR
+Choose the installation that requests without a lockfile use
+.TP
 \fBlatest\fR
 Resolve the latest matching version request for a tool
 .TP
@@ -6101,6 +6113,96 @@ install node@20.0.0 into ./mynode
 .RS 4
 mise install\-into node@20.0.0 ./mynode && ./mynode/bin/node \-v
 v20.0.0
+.RE
+.SH "MISE INSTALLS"
+[experimental] Inspect and choose installations of the identity install layout
+
+With `install_layout = "identity"`, each installation lives in its own
+`<label>\-<hash>` directory, and several installations of one version can
+exist side by side (different options, platforms, pinned artifacts, or a
+refreshed copy). These commands list them and choose which one requests
+without a lockfile use.
+.PP
+\fBUsage:\fR mise installs [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE INSTALLS LS"
+List the installations of the identity install layout
+
+Every installation is listed separately, so variants of one version (made
+with different options, or pinned to different artifacts by lockfiles) can
+be told apart. The status column says which installation requests without
+a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
+live in a read\-only shared installs directory (`shared`).
+.PP
+\fBUsage:\fR mise installs ls [OPTIONS] [<TOOL>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't display headers
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL>\fR
+Only show the installations of these tools
+\fBExamples:\fR
+.PP
+Every installation in the identity layout
+.PP
+.RS 4
+mise installs ls
+.RE
+.PP
+The installations of node, as JSON
+.PP
+.RS 4
+mise installs ls node \-\-json
+.RE
+.SH "MISE INSTALLS SELECT"
+Choose the installation that requests without a lockfile use
+
+Several installations can answer the same request: a refresh that could not
+replace a lockfile's installation in place, or installations made for
+different lockfiles. Requests without a lockfile entry use the one selected
+for their tool, version, platform and options, and when none is selected and
+several match, mise stops and asks for this command.
+
+The selection is shared by every project on this machine that makes the same
+request without a lockfile. Projects whose lockfile pins an artifact keep the
+installation of that artifact. The version link (`installs/<tool>/<version>`)
+is pointed at the selected installation.
+.PP
+\fBUsage:\fR mise installs select [OPTIONS] <INSTALLATION>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<INSTALLATION>\fR
+The installation to select: its directory name, or its path
+\fBExamples:\fR
+.PP
+Find jq's installations, then choose one
+.PP
+.RS 4
+mise installs ls jq
+mise installs select jq\-hm3qa4vb
 .RE
 .SH "MISE LATEST"
 Resolve the latest matching version request for a tool

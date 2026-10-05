@@ -697,6 +697,17 @@ export const commands: { [key: string]: Command } = {
   "install-into": {
     hide: false,
   },
+  installs: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+      select: {
+        hide: false,
+      },
+    },
+  },
   latest: {
     hide: false,
   },
