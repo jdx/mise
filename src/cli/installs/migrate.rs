@@ -51,21 +51,27 @@ pub(super) struct InstallsMigrate {
 impl InstallsMigrate {
     pub(super) async fn run(self) -> Result<()> {
         // One migration at a time: another run must not finish or undo a
-        // directory this one has moved aside and is still reinstalling.
-        let _migrating = if self.dry_run {
-            None
+        // directory this one has moved aside and is still reinstalling. A dry
+        // run does not wait for one, and does not report what it has moved aside
+        // as interrupted.
+        let lock = crate::lock_file::LockFile::at(
+            &dirs::INSTALLS
+                .join(".mise")
+                .join("locks")
+                .join("migrate.lock"),
+        );
+        let migrating = if self.dry_run {
+            lock.try_lock()?
         } else {
-            Some(
-                crate::lock_file::LockFile::at(
-                    &dirs::INSTALLS
-                        .join(".mise")
-                        .join("locks")
-                        .join("migrate.lock"),
-                )
-                .lock()?,
-            )
+            Some(lock.lock()?)
         };
-        recover_interrupted(self.dry_run)?;
+        if migrating.is_some() {
+            recover_interrupted(self.dry_run)?;
+        } else {
+            miseprintln!(
+                "another `mise installs migrate` is running; what it has moved aside is not listed"
+            );
+        }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?.clone();
         let mut plan = vec![];
@@ -197,7 +203,9 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                     display_path(&entry)
                 );
             } else if free {
-                if let Some(dir) = resolver::link_target(&legacy) {
+                if let Some(dir) = resolver::link_target(&legacy)
+                    && resolver::is_primary_install(&dir)
+                {
                     resolver::unpublish(&dir);
                 }
                 restore(&legacy, &entry)?;
@@ -265,21 +273,32 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     };
     // The old path must lead to the new installation before the old directory
     // goes: where the version link could not be made (Windows without junction
-    // support), the legacy directory is put back.
+    // support), the legacy directory is put back and the new installation is
+    // withdrawn, so the version resolves to the directory that was kept. (Its
+    // directory stays reserved, and installing the version again reuses it.)
     let installed = reinstall(tv).await.and_then(|dir| {
         // An installation that already existed (another spelling made it, or it
         // is in a shared root) was reused without a version link here.
-        resolver::ensure_version_link(tv, &dir)?;
-        let linked = resolver::link_target(&legacy)
-            .is_some_and(|target| target.canonicalize().ok() == dir.canonicalize().ok());
-        if linked {
-            Ok(dir)
-        } else {
-            Err(eyre::eyre!(
-                "installed {}, but could not link {} to it",
-                display_path(&dir),
-                display_path(&legacy)
-            ))
+        let linked = resolver::ensure_version_link(tv, &dir).and_then(|()| {
+            let target = resolver::link_target(&legacy);
+            if target.is_some_and(|t| t.canonicalize().ok() == dir.canonicalize().ok()) {
+                Ok(())
+            } else {
+                Err(eyre::eyre!("the version link names another installation"))
+            }
+        });
+        match linked {
+            Ok(()) => Ok(dir),
+            Err(err) => {
+                if resolver::is_primary_install(&dir) {
+                    resolver::unpublish(&dir);
+                }
+                Err(err.wrap_err(format!(
+                    "installed {}, but could not link {} to it",
+                    display_path(&dir),
+                    display_path(&legacy)
+                )))
+            }
         }
     });
     guard.armed = false;

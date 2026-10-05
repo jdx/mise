@@ -137,7 +137,7 @@ pub(crate) fn is_primary_store(path: &Path) -> bool {
 
 /// Whether `path` is an installation in the primary root's store, the only place
 /// mise installs into.
-pub(crate) fn is_primary_install(path: &Path) -> bool {
+pub fn is_primary_install(path: &Path) -> bool {
     path.parent().is_some_and(is_primary_store)
 }
 
