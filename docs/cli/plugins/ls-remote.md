@@ -15,7 +15,7 @@ List all available remote plugins
 These are the shorthand names from the registry: <https://github.com/jdx/mise/blob/main/registry/>
 
 ## Flags
-- **`-u --urls`** — Show the git url for each plugin, e.g. <https://github.com/mise-plugins/mise-poetry.git>
+- **`-u --urls`** — Show the plugin source for each registry shorthand, e.g. `vfox:jdx/vfox-poetry`
 - **`--only-names`** — Only show the name of each plugin, without the "*" marking installed plugins
 - **`-h --help`** — Print help
 
