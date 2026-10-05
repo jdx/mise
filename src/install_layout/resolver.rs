@@ -1604,8 +1604,12 @@ pub fn select(installation: &str) -> Result<Installation> {
     };
     let key = request_of(&record.identity);
     let shared = (!is_primary_root(&root)).then_some(root.as_path());
-    primary.select(&key, &record, shared)?;
+    // The version links follow the selection under the same lock, so two
+    // selections made at once cannot leave the links on the other one.
+    let lock = primary.lock()?;
+    primary.write_selection(&key, &record, shared)?;
     retarget_links(&record, &dir, receipt.requested_as.as_deref());
+    drop(lock);
     reset_cache();
     describe(&primary, &catalog, &root, &name)
         .ok_or_else(|| eyre::eyre!("{name} is no longer installed"))

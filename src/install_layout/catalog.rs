@@ -240,7 +240,7 @@ impl Catalog {
         identity: &InstallIdentity,
         provenance: Provenance,
     ) -> Result<()> {
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         let Some(mut record) = self.lookup(identity) else {
             return Ok(());
         };
@@ -275,7 +275,7 @@ impl Catalog {
 
     pub(crate) fn rebuild_from_receipts(&self) -> Result<Vec<IdentityRecord>> {
         let mut restored = vec![];
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         for dir in file::dir_subdirs(&self.store).unwrap_or_default() {
             if dir.starts_with('.') {
                 continue;
@@ -318,7 +318,7 @@ impl Catalog {
     pub(crate) fn remove_selections_of(&self, digest: &str) -> Result<usize> {
         // Under the lock selections are written with, so a choice made meanwhile
         // is never the one removed.
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         let dir = self.meta_dir().join("selections");
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return Ok(0);
@@ -357,7 +357,7 @@ impl Catalog {
         selected: &IdentityRecord,
         root: Option<&Path>,
     ) -> Result<()> {
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         self.write_selection(key, selected, root)
     }
 
@@ -369,7 +369,7 @@ impl Catalog {
         selected: &IdentityRecord,
         root: Option<&Path>,
     ) -> Result<bool> {
-        let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
+        let _lock = self.lock()?;
         if self.selection(key).is_some() {
             return Ok(false);
         }
@@ -377,7 +377,14 @@ impl Catalog {
         Ok(true)
     }
 
-    fn write_selection(
+    /// Hold the catalog lock, under which allocations and selections are written,
+    /// for a change that has to stay in step with a selection (its version links).
+    pub(crate) fn lock(&self) -> Result<fslock::LockFile> {
+        LockFile::at(&self.meta_dir().join("alloc.lock")).lock()
+    }
+
+    /// [`Catalog::select`] for a caller already holding [`Catalog::lock`].
+    pub(crate) fn write_selection(
         &self,
         key: &InstallIdentity,
         selected: &IdentityRecord,
