@@ -168,9 +168,10 @@ impl SecretGrant {
         self.keys.is_empty() && self.all.is_none() && self.late.is_empty()
     }
 
-    /// Whether the grant hands `key` to the process under its own name. A key that only an
-    /// env value references is read, not exported, and `--secrets-all` does not change that:
-    /// it exports what the source injects, not what a task only reads.
+    /// Whether the grant itself hands `key` over under its own name. A key that only an env
+    /// value references is not exported by the grant, so it never meets the listed-key checks;
+    /// under `--secrets-all` it is still handed over by the `all` path in `grant_values`, after
+    /// the C4 skips.
     pub(crate) fn exports(&self, key: &SecretName) -> bool {
         self.keys
             .get(key)
@@ -722,31 +723,59 @@ pub(crate) fn static_problems(
             ));
         }
     }
-    // the same, through a shell-style `$KEY` or `${KEY}` that `env_shell_expand` expands
-    if !grant.late.is_empty()
-        && crate::config::Settings::try_get().is_ok_and(|s| s.env_shell_expand)
-    {
-        for (name, value) in env_texts.iter().filter(|(_, v)| v.contains('$')) {
-            for late in &grant.late {
-                let key = &late.key;
-                if name == key {
-                    continue;
-                }
-                let sentinel = format!("\u{1}{key}\u{1}");
-                let vars = BTreeMap::from([(key.clone(), sentinel.clone())]);
-                let expanded =
-                    crate::config::env_directive::shell_expand_env(value, &vars, &mut vec![]);
-                if expanded.contains(&sentinel) {
-                    problems.push(Problem::new(
-                        &task.name,
-                        Some(key),
-                        ProblemKind::Template,
-                        format!(
-                            "task {}: env.{name} uses ${key}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
-                            task.name
-                        ),
-                    ));
-                }
+    problems.extend(shell_expansion_problems(
+        task,
+        grant,
+        &env_texts,
+        crate::config::Settings::try_get().is_ok_and(|s| s.env_shell_expand),
+    ));
+    problems
+}
+
+/// What `env_shell_expand` means for a task with composed values. With it on, mise expands
+/// `$NAME` in other env values, so a read of a composed key (T5) is detected through the
+/// expander, and the literal text of a composed value may not hold `$` syntax, because mise
+/// does not expand after substituting a secret. With it off a `$` is literal.
+fn shell_expansion_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    env_texts: &[(String, String)],
+    expand: bool,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    if !expand || grant.late.is_empty() {
+        return problems;
+    }
+    for late in &grant.late {
+        if super::template::literal_has_shell_expansion(&late.template) {
+            problems.push(Problem::new(
+                &task.name,
+                Some(&late.key),
+                ProblemKind::Template,
+                super::template::shell_expansion_message(&task.name, &late.key),
+            ));
+        }
+    }
+    for (name, value) in env_texts.iter().filter(|(_, v)| v.contains('$')) {
+        for late in &grant.late {
+            let key = &late.key;
+            if name == key {
+                continue;
+            }
+            let sentinel = format!("\u{1}{key}\u{1}");
+            let vars = BTreeMap::from([(key.clone(), sentinel.clone())]);
+            let expanded =
+                crate::config::env_directive::shell_expand_env(value, &vars, &mut vec![]);
+            if expanded.contains(&sentinel) {
+                problems.push(Problem::new(
+                    &task.name,
+                    Some(key),
+                    ProblemKind::Template,
+                    format!(
+                        "task {}: env.{name} uses ${key}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
+                        task.name
+                    ),
+                ));
             }
         }
     }
@@ -1272,6 +1301,22 @@ mod tests {
         );
         // unrelated reads are fine
         assert!(t5(&composed(vec![val("X", "{{ env.HOME }}")])).is_empty());
+    }
+
+    #[test]
+    fn dollar_syntax_in_a_composed_value_follows_env_shell_expand() {
+        let task = composed(vec![]);
+        let mut task = task;
+        task.env.0[0] = val("PGURL", "postgres://{{ secrets.A }}@h?x=$user");
+        task.late_secret_env.clear();
+        task.record_late_secret_env(std::path::Path::new("/p/mise.toml"))
+            .unwrap();
+        let (grant, _) = grant_for_task(&task);
+        let texts = task.non_late_env_texts();
+        let on = shell_expansion_problems(&task, &grant, &texts, true);
+        assert_eq!(on.len(), 1, "{on:?}");
+        assert!(on[0].render().contains("uses $VAR expansion together with"));
+        assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
     }
 
     #[test]

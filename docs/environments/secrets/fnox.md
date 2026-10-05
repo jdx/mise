@@ -160,8 +160,10 @@ of failing.
   optional) may appear in such a value. Filters, other variables, <span v-pre>`{{-`</span>,
   `secrets["NAME"]` and `{% raw %}` are an error; compose anything fancier in fnox or in the
   task's script.
-- `$VAR` expansion is not available in such a value: a `$` next to a reference is an error
-  (`$$`, `${...}` and `$NAME`), because mise does not expand after substituting a secret.
+- When `env_shell_expand` is on (the default), `$NAME`, `${...}` and `$$` anywhere in the literal
+  text of such a value are an error, because mise does not shell-expand a value it composes from
+  secrets. A `$` right before a reference, <span v-pre>`${{ secrets.X }}`</span>, is always an
+  error.
 - A secret that fnox delivers as a file (`as_file = true`) cannot be composed into a value.
 - Allowed only in a task's own `env` values (and a file task's `#MISE env=` header). Not in
   `run` (it becomes `sh -c` arguments, which other local users can read through `ps`; read
@@ -169,9 +171,11 @@ of failing.
   `env`, `[task_templates]`, `task_defaults`, hooks or `[tools]`.
 - A composed value takes part in the usual env precedence. It overrides a parent task's env
   (through a run entry), a template's or a lower config block's value, and defaults. A
-  dependency's env, a higher block's value, or `env.NAME = false` replaces it, and then nothing
-  is fetched. Env that reaches a task from a dependency or a run entry is never a grant, so it
-  cannot smuggle a reference in. `[env]`, tools and settings must not set the same name.
+  dependency's or run entry's env replaces a value from the task's own definition, but a value
+  from a `[tasks.<name>]` block layered over the task still wins, as plain values do. A higher
+  block's value or `env.NAME = false` replaces it, and then nothing is fetched. Env that reaches
+  a task from a dependency or a run entry is never a grant, so it cannot smuggle a reference in.
+  `[env]`, tools and settings must not set the same name.
 - Other env values cannot read the composed variable, with <span v-pre>`{{ env.PGURL }}`</span> or
   `$PGURL`; build them from secrets directly.
 - The same rules apply as for listed keys: remote and non-project tasks cannot use references,

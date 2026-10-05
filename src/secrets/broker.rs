@@ -364,6 +364,29 @@ fn register_redactions<'a>(values: impl Iterator<Item = (&'a SecretName, &'a Sec
     crate::config::add_secret_redactions(patterns);
 }
 
+/// E: the references of composed values that fnox delivers as files. Needs the catalog only,
+/// so the preflight reports it before any task runs.
+pub(super) fn late_file_problems(
+    subject: Subject<'_>,
+    grant: &SecretGrant,
+    catalog: &Catalog,
+) -> Vec<Problem> {
+    let mut problems = vec![];
+    for late in &grant.late {
+        for name in &late.refs {
+            if catalog.entries.get(name).is_some_and(|e| e.as_file) {
+                problems.push(Problem::new(
+                    &subject.label(),
+                    Some(name.as_str()),
+                    ProblemKind::Template,
+                    file_composed_text(&subject.text(), &late.key, name),
+                ));
+            }
+        }
+    }
+    problems
+}
+
 /// E: a file secret cannot be composed into an env value. Value-free.
 fn file_composed_text(who: &str, var: &str, name: &SecretName) -> String {
     format!(
@@ -614,12 +637,15 @@ impl SecretBroker {
             };
             match self.open_selected(config, ctx, task, selected).await {
                 Ok(memo) => match memo.catalog().await {
-                    Ok(catalog) => problems.extend(key_problems(
-                        grantee.subject(),
-                        grant,
-                        &catalog,
-                        &memo.source.label(),
-                    )),
+                    Ok(catalog) => {
+                        problems.extend(key_problems(
+                            grantee.subject(),
+                            grant,
+                            &catalog,
+                            &memo.source.label(),
+                        ));
+                        problems.extend(late_file_problems(grantee.subject(), grant, &catalog));
+                    }
                     Err(e) => source_errors
                         .entry(format!("{e:#}"))
                         .or_default()
@@ -828,18 +854,7 @@ impl SecretBroker {
                 problems.push(file_problem(subject, key.as_str()));
             }
         }
-        for late in &req.grant.late {
-            for name in &late.refs {
-                if catalog.entries.get(name).is_some_and(|e| e.as_file) {
-                    problems.push(Problem::new(
-                        &subject.label(),
-                        Some(name.as_str()),
-                        ProblemKind::Template,
-                        file_composed_text(&who, &late.key, name),
-                    ));
-                }
-            }
-        }
+        problems.extend(late_file_problems(subject, req.grant, &catalog));
         // the sandbox decides before anything is resolved. A composite is exported under its
         // own name, so that name is the one checked.
         for key in req
@@ -1640,6 +1655,20 @@ mod tests {
             spawn.env["PGURL"].expose(),
             "p://B-value-s3cr3t@C-value-s3cr3t"
         );
+    }
+
+    #[test]
+    fn all_skips_a_name_the_task_builds_itself() {
+        let (_, _memo) = fake(&[]);
+        let mut inputs = composed_inputs("p://{{ secrets.B }}@h");
+        inputs.grant.all = Some(GrantOrigin::CliAll);
+        let term = terminal();
+        let req = inputs.req(&term, false);
+        assert!(matches!(
+            skip_reason(&req, &BTreeSet::new(), "PGURL"),
+            Some(Skip::MiseSets)
+        ));
+        assert!(skip_reason(&req, &BTreeSet::new(), "B").is_none());
     }
 
     #[tokio::test]
