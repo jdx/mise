@@ -7,7 +7,7 @@ use crate::env_diff::EnvMap;
 use crate::toolset::{ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,6 +24,34 @@ const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.to
 /// answer it would get. A daemon may bind `::1` instead of `127.0.0.1`, and an
 /// IPv6-only listener does not conflict on the other family, so both are tried.
 /// A host without IPv6 loopback cannot have anything listening there.
+/// Names a nested mise withholds from pitchfork: the secrets it inherited and
+/// the marker that names them.
+fn inherited_secret_env_names() -> Vec<&'static str> {
+    if mise_util::env::INHERITED_SECRET_KEYS.is_empty() {
+        return vec![];
+    }
+    mise_util::env::INHERITED_SECRET_KEYS
+        .iter()
+        .map(String::as_str)
+        .chain([mise_util::env::SECRET_KEYS_MARKER])
+        .collect()
+}
+
+/// Keep a nested mise from starting a pitchfork supervisor, and so every later
+/// daemon and probe, with the parent's secrets.
+fn strip_inherited_secrets(command: &mut Command, keys: &BTreeSet<String>) {
+    if keys.is_empty() {
+        return;
+    }
+    for k in keys
+        .iter()
+        .map(String::as_str)
+        .chain([mise_util::env::SECRET_KEYS_MARKER])
+    {
+        command.env_remove(k);
+    }
+}
+
 fn port_is_taken(port: u16) -> bool {
     std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).is_err()
         || std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port))
@@ -484,6 +512,7 @@ impl Runtime {
             .env_remove("PITCHFORK_CONFIG")
             .current_dir(root)
             .kill_on_drop(true);
+        strip_inherited_secrets(&mut command, &mise_util::env::INHERITED_SECRET_KEYS);
         Ok(tokio::time::timeout(Duration::from_secs(15), command.output()).await??)
     }
 
@@ -881,6 +910,9 @@ impl Runtime {
             .env_remove("PITCHFORK_CONFIG")
             .current_dir(root)
             .raw(true);
+        for k in inherited_secret_env_names() {
+            runner = runner.env_remove(k);
+        }
         runner.with_pass_signals();
         match runner.execute_async().await {
             Err(err) => match crate::errors::ProcessError::get_exit_status(&err) {
@@ -1314,6 +1346,18 @@ mod tests {
     /// A failing pitchfork has already explained itself on the terminal, so the
     /// error mise raises is only the status it exits with. A signal has no
     /// status to hand on and stays an ordinary error.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn inherited_secrets_are_removed_from_the_pitchfork_command() {
+        let mut command = Command::new("/usr/bin/env");
+        command.env("FOO", "secret").env("KEEP", "x");
+        strip_inherited_secrets(&mut command, &BTreeSet::from(["FOO".to_string()]));
+        let out = command.output().await.unwrap();
+        let out = String::from_utf8_lossy(&out.stdout);
+        assert!(!out.lines().any(|l| l.starts_with("FOO=")));
+        assert!(out.lines().any(|l| l == "KEEP=x"));
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn a_failing_pitchfork_exits_quietly_with_its_status() {

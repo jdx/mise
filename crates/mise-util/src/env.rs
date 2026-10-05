@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use log::LevelFilter;
 use mise_settings::Settings;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 pub use std::env::*;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -923,7 +923,75 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
         PATH_KEY.to_string(),
         join_paths(path).unwrap().to_string_lossy().to_string(),
     );
+    strip_inherited_secrets(&mut env, &INHERITED_SECRET_KEYS);
     env
+}
+
+/// Names-only marker a parent mise sets in the environment of a child that was
+/// granted secrets: a comma-separated list of variable names, never values.
+pub const SECRET_KEYS_MARKER: &str = "__MISE_SECRET_KEYS";
+
+/// Names that are never treated as secrets, even when listed in the marker: the
+/// always-kept sandbox keys and mise's own `__MISE_*` state.
+pub fn is_reserved_secret_name(name: &str) -> bool {
+    matches!(
+        name,
+        "PATH" | "HOME" | "USER" | "SHELL" | "TERM" | "COLORTERM" | "LANG"
+    ) || name.starts_with("__MISE_")
+}
+
+/// Whether `name` is a plain environment variable name: `[A-Za-z_][A-Za-z0-9_]*`.
+pub fn is_valid_secret_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn parse_secret_keys(marker: &str) -> BTreeSet<String> {
+    marker
+        .split(',')
+        .map(str::trim)
+        .filter(|k| is_valid_secret_name(k) && !is_reserved_secret_name(k))
+        .map(String::from)
+        .collect()
+}
+
+/// Variables a parent mise marked as secrets in this process's environment.
+///
+/// A forged marker can only add redaction, turn caches off, or hide those keys
+/// from templates and nested tasks; it never grants anything.
+pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
+    var(SECRET_KEYS_MARKER)
+        .map(|v| parse_secret_keys(&v))
+        .unwrap_or_default()
+});
+
+/// Remove inherited secret keys and the marker from `env`.
+fn strip_inherited_secrets(env: &mut EnvMap, keys: &BTreeSet<String>) {
+    for k in keys {
+        env.remove(k);
+    }
+    env.remove(SECRET_KEYS_MARKER);
+}
+
+/// Keep inherited secrets out of a child mise starts. `CmdLineRunner` inherits
+/// mise's process environment, so `env_remove` is what actually withholds them.
+pub fn strip_inherited_secrets_for_child(env: &mut EnvMap, env_remove: &mut BTreeSet<String>) {
+    strip_secrets_for_child(env, env_remove, &INHERITED_SECRET_KEYS);
+}
+
+fn strip_secrets_for_child(
+    env: &mut EnvMap,
+    env_remove: &mut BTreeSet<String>,
+    keys: &BTreeSet<String>,
+) {
+    if keys.is_empty() {
+        return;
+    }
+    for k in keys.iter().map(String::as_str).chain([SECRET_KEYS_MARKER]) {
+        env.remove(k);
+        env_remove.insert(k.to_string());
+    }
 }
 
 /// Reverse values that are still in the state mise recorded, while preserving
@@ -1307,6 +1375,46 @@ mod launcher_args_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keys(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn test_secret_marker_parsing_ignores_invalid_and_reserved_names() {
+        assert_eq!(
+            parse_secret_keys("A, B,bad name,PATH,__MISE_X,HOME"),
+            keys(&["A", "B"])
+        );
+        assert!(parse_secret_keys("").is_empty());
+        assert!(parse_secret_keys("1A,a-b").is_empty());
+    }
+
+    #[test]
+    fn test_strip_inherited_secrets_removes_keys_and_marker() {
+        let mut env: EnvMap = [
+            ("FOO", "secret"),
+            ("KEEP", "x"),
+            (SECRET_KEYS_MARKER, "FOO"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .into();
+        strip_inherited_secrets(&mut env, &keys(&["FOO"]));
+        assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+    }
+
+    #[test]
+    fn test_strip_secrets_for_child_fills_env_remove() {
+        let mut env: EnvMap = [("FOO", "secret"), ("KEEP", "x")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        let mut env_remove = BTreeSet::new();
+        strip_secrets_for_child(&mut env, &mut env_remove, &BTreeSet::new());
+        assert!(env_remove.is_empty() && env.contains_key("FOO"));
+        strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]));
+        assert_eq!(env_remove, keys(&["FOO", SECRET_KEYS_MARKER]));
+        assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+    }
 
     #[cfg(unix)]
     #[test]

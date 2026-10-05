@@ -2382,6 +2382,8 @@ impl TaskExecutor {
             env.insert("__MISE_DIFF".into(), serialized);
         }
 
+        mise_util::env::strip_inherited_secrets_for_child(&mut env, &mut env_remove);
+
         Ok(PreparedTaskContext {
             toolset,
             env,
