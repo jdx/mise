@@ -166,11 +166,12 @@ pub fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathBuf]) ->
 }
 
 /// Whether `name` has the shape of an identity-layout installation directory,
-/// `<label>-<8 base32 characters>`.
+/// `<label>-<hash>`: 8 base32 characters, more after a name collision, and at
+/// most a whole digest (as the install layout's own check).
 fn is_installation_name(name: &str) -> bool {
     name.rsplit_once('-').is_some_and(|(label, hash)| {
         !label.is_empty()
-            && hash.len() == 8
+            && (8..=52).contains(&hash.len())
             && hash
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || (b'2'..=b'7').contains(&b))
@@ -329,6 +330,8 @@ mod tests {
         assert!(!is_installation_name("shims"));
         assert!(!is_installation_name("node-K7M3Q2VD"));
         assert!(!is_installation_name("node-k7m3q2v"));
+        // lengthened after a collision
+        assert!(is_installation_name("node-k7m3q2vdab"));
         assert!(!is_installation_name("-k7m3q2vd"));
     }
 }
