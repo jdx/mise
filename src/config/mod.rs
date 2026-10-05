@@ -1744,6 +1744,8 @@ impl Config {
         Ok(self
             .config_files
             .values()
+            // Idiomatic watches invalidate the environment; they are not executable hooks.
+            .filter(|cf| !matches!(cf.source(), ToolSource::IdiomaticVersionFile(_)))
             .map(|cf| Ok((cf.project_root(), cf.watch_files()?)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
