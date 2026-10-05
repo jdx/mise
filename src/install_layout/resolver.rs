@@ -117,6 +117,42 @@ pub(crate) fn is_primary_root(path: &Path) -> bool {
     same_path(path, &dirs::INSTALLS)
 }
 
+/// The directory that holds the installations of the installs root `root`: the
+/// install store ([`dirs::INSTALL_STORE`]) for the primary root, the root itself
+/// for a shared one. Version links, runtime aliases and the catalog always stay in
+/// the root. The store is the root itself unless it was moved, which Windows does
+/// by default to shorten the real paths of installations.
+pub(crate) fn store_of(root: &Path) -> PathBuf {
+    if is_primary_root(root) {
+        dirs::INSTALL_STORE.to_path_buf()
+    } else {
+        root.to_path_buf()
+    }
+}
+
+/// Whether `path` is the directory that holds the primary root's installations.
+pub(crate) fn is_primary_store(path: &Path) -> bool {
+    same_path(path, &dirs::INSTALL_STORE)
+}
+
+/// Whether `path` is an installation in the primary root's store, the only place
+/// mise installs into.
+pub(crate) fn is_primary_install(path: &Path) -> bool {
+    path.parent().is_some_and(is_primary_store)
+}
+
+/// The installs root whose installations live in `store`.
+fn root_of_store(store: &Path) -> Option<PathBuf> {
+    roots()
+        .into_iter()
+        .find(|root| same_path(&store_of(root), store))
+}
+
+/// The directories that hold installations, primary first.
+fn stores() -> Vec<PathBuf> {
+    roots().iter().map(|root| store_of(root)).collect()
+}
+
 /// Whether the identity layout governs `tv`, either because it will choose where
 /// `tv` installs or because an install already chose (the install path is set to a
 /// directory of the layout).
@@ -570,14 +606,9 @@ pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf>
 /// directory in the installs root: another variant or version, if its receipt says
 /// it is an installation of `tv`'s backend. Used to explain what keeps a prune.
 pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
-    // Usually beside `tv`, but a lockfile can keep one in a shared root.
-    let receipt = tv
-        .install_path()
-        .parent()
-        .map(Path::to_path_buf)
+    let receipt = stores()
         .into_iter()
-        .chain(roots())
-        .find_map(|root| read_receipt(&root.join(dir_name)))?;
+        .find_map(|store| read_receipt(&store.join(dir_name)))?;
     let backend = canonical_backend(&tv.ba().full());
     (receipt.record.identity.backend == backend).then_some(receipt.record.identity.version)
 }
@@ -587,14 +618,14 @@ pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
 /// Anything else (a legacy `<tool>/<version>` dir, an explicit path) is not this
 /// function's business.
 pub(crate) fn guard_removal(path: &Path) -> Result<()> {
-    // Any direct child of a root, whatever it is named: a tool directory is not
-    // an installation either.
-    let (Some(name), Some(root)) = (path.file_name(), path.parent()) else {
+    // Any direct child of an install store, whatever it is named: a tool
+    // directory beside the installations is not one either.
+    let (Some(name), Some(store)) = (path.file_name(), path.parent()) else {
         return Ok(());
     };
-    if !roots().iter().any(|r| same_path(r, root)) {
+    let Some(root) = root_of_store(store) else {
         return Ok(());
-    }
+    };
     if read_receipt(path).is_some() || root.join(".mise").join("names").join(name).exists() {
         return Ok(());
     }
@@ -609,9 +640,10 @@ pub(crate) fn guard_removal(path: &Path) -> Result<()> {
 /// `aqua:FiloSottile/age` each have their own). Best effort: a link left behind
 /// dangles and is collected by the next rebuild.
 pub(crate) fn unlink_installation(dir: &Path) {
-    let (Some(name), Some(root)) = (dir.file_name(), dir.parent()) else {
+    let (Some(name), Some(root)) = (dir.file_name(), dir.parent().and_then(root_of_store)) else {
         return;
     };
+    let root = root.as_path();
     for tool in file::dir_subdirs(root).unwrap_or_default() {
         if is_reserved_dir(root, &tool) {
             continue;
@@ -640,7 +672,7 @@ pub(crate) fn purge_installs(ba: &crate::args::BackendArg) -> Result<()> {
         return Ok(());
     }
     for (_, dir) in installs_of(ba) {
-        if dir.parent().is_some_and(is_primary_root) {
+        if is_primary_install(&dir) {
             file::remove_all(&dir)?;
         }
     }
@@ -714,7 +746,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
 /// at only one variant of a version, so it is not trusted blindly.
 pub(crate) fn runtime_dir(tv: &ToolVersion) -> PathBuf {
     let install = tv.install_path();
-    if !install.parent().is_some_and(is_primary_root) {
+    if !is_primary_install(&install) {
         return install;
     }
     let name = tv.runtime_pathname().unwrap_or_else(|| tv.tv_pathname());
@@ -733,18 +765,24 @@ pub(crate) fn lock_install(
     dir: &Path,
     on_wait: &dyn Fn(Option<u32>),
 ) -> Result<Option<fslock::LockFile>> {
-    let (Some(name), Some(root)) = (dir_name_of(dir), dir.parent()) else {
+    let Some(name) = dir_name_of(dir) else {
         return Ok(None);
     };
     // A shared root is read-only: a satisfied install there is used without a lock,
     // and nothing is ever installed into it.
-    if !is_primary_root(root) {
+    if !is_primary_install(dir) {
         return Ok(None);
     }
-    let path = root
-        .join(".mise")
-        .join("locks")
-        .join(format!("{name}.lock"));
+    // Kept beside the installation, in its store: installs directories that share
+    // a store (MISE_INSTALL_STORE_DIR) then share the lock too. With the store
+    // in the installs directory this is the catalog's own lock directory.
+    let store = store_of(&dirs::INSTALLS);
+    let locks = if same_path(&store, &dirs::INSTALLS) {
+        store.join(".mise").join("locks")
+    } else {
+        store.join(".mise-locks")
+    };
+    let path = locks.join(format!("{name}.lock"));
     Ok(Some(
         crate::lock_file::LockFile::at(&path)
             .with_pid()
@@ -1036,7 +1074,7 @@ pub(crate) fn link(tv: &ToolVersion, dir: &Path) -> Result<()> {
         }
     }
     file::create_dir_all(&tool_dir)?;
-    let target = Path::new("..").join(dir.file_name().unwrap_or_default());
+    let target = link_value(&tool_dir, dir);
     if file::resolve_symlink(&slot)?.is_some_and(|current| same_link_target(&slot, &current, dir)) {
         return Ok(());
     }
@@ -1054,6 +1092,48 @@ pub(crate) fn link(tv: &ToolVersion, dir: &Path) -> Result<()> {
         return Err(err);
     }
     Ok(())
+}
+
+/// What a version link in `tool_dir` stores to name the installation `dir`:
+/// `../<name>` when installations sit beside the tool directories, a path through
+/// their common parent when the store is a sibling of the installs root (Windows'
+/// `i` beside `installs`), else the installation's absolute path.
+fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
+    use path_absolutize::Absolutize;
+    // A relative store (`MISE_INSTALL_STORE_DIR=store`) would be read from the
+    // link's own directory, so a target that is not relative to it is absolute.
+    let absolute = || {
+        dir.absolutize()
+            .map_or_else(|_| dir.to_path_buf(), |p| p.into_owned())
+    };
+    let name = dir.file_name().unwrap_or_default();
+    let (Some(root), Some(store)) = (tool_dir.parent(), dir.parent()) else {
+        return absolute();
+    };
+    if same_path(root, store) {
+        return Path::new("..").join(name);
+    }
+    // The sibling form `../../<store>/<name>` has to be right both ways it is
+    // read: lexically, by mise, which recognizes a version link by its target's
+    // directory being the configured store; and physically, by everything that
+    // follows the link, where `..` through a symlinked installs directory leaves
+    // the symlink's target. So the configured directories must be siblings, and
+    // so must the physical ones, under the same store name. Anything else gets
+    // an absolute target.
+    let (Ok(physical_root), Ok(physical_store)) = (root.canonicalize(), store.canonicalize())
+    else {
+        return absolute();
+    };
+    let siblings = matches!(
+        (root.parent(), store.parent()),
+        (Some(a), Some(b)) if same_path(a, b)
+    ) && physical_root.parent().is_some()
+        && physical_root.parent() == physical_store.parent()
+        && physical_store.file_name() == store.file_name();
+    match store.file_name() {
+        Some(store_name) if siblings => Path::new("..").join("..").join(store_name).join(name),
+        _ => absolute(),
+    }
 }
 
 fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
@@ -1075,18 +1155,15 @@ fn same_link_target(slot: &Path, current: &Path, dir: &Path) -> bool {
 pub(crate) fn heal_links(ba: &crate::args::BackendArg) {
     let tool_dir = ba.installs_path();
     for (name, dir) in installs_of(ba) {
-        if dir.parent().is_none_or(|p| !is_primary_root(p)) {
+        if !is_primary_install(&dir) {
             continue;
         }
         let slot = tool_dir.join(&name);
         if std::fs::symlink_metadata(&slot).is_ok() {
             continue;
         }
-        let Some(dir_name) = dir.file_name() else {
-            continue;
-        };
         if let Err(err) = file::create_dir_all(tool_dir)
-            .and_then(|()| file::make_dir_link(&Path::new("..").join(dir_name), &slot))
+            .and_then(|()| file::make_dir_link(&link_value(tool_dir, &dir), &slot))
         {
             debug!("could not link {}: {err:#}", slot.display());
         }
@@ -1094,7 +1171,7 @@ pub(crate) fn heal_links(ba: &crate::args::BackendArg) {
 }
 
 /// The installation directory a compatibility link names, if `slot` is one: a
-/// link whose target is a direct child of an installs root holding a receipt.
+/// link whose target is a direct child of an install store holding a receipt.
 pub fn link_target(slot: &Path) -> Option<PathBuf> {
     let target = file::resolve_symlink(slot).ok().flatten()?;
     let target = if target.is_absolute() {
@@ -1108,8 +1185,31 @@ pub fn link_target(slot: &Path) -> Option<PathBuf> {
     use path_absolutize::Absolutize;
     let target = target.absolutize().ok()?.into_owned();
     let parent = target.parent()?;
-    let is_root = roots().iter().any(|r| same_path(r, parent));
-    (is_root && target.join(RECEIPT_FILE).exists()).then_some(target)
+    let is_store = stores().iter().any(|s| same_path(s, parent));
+    (is_store && target.join(RECEIPT_FILE).exists()).then_some(target)
+}
+
+/// Adopt installations whose receipt is on disk but that the primary catalog does
+/// not know (it was lost, or a mise that predates it made them), so the catalog can
+/// always be rebuilt from receipts alone. `root_entries` are the names in the
+/// primary installs root, already read by the caller; a separate store is read here.
+pub(crate) fn adopt_unrecorded_installs(root_entries: &std::collections::BTreeSet<String>) {
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let store_entries;
+    let entries = if same_path(catalog.store(), catalog.root()) {
+        root_entries
+    } else {
+        store_entries = file::dir_subdirs(catalog.store()).unwrap_or_default();
+        &store_entries
+    };
+    let unrecorded = entries.iter().any(|name| {
+        has_hash_suffix(name)
+            && catalog.store().join(name).join(RECEIPT_FILE).exists()
+            && !catalog.is_reserved(name)
+    });
+    if unrecorded && let Err(err) = catalog.rebuild_from_receipts() {
+        warn!("failed to rebuild the install catalog from receipts: {err:#}");
+    }
 }
 
 /// Whether `name` is the receipt file an installation directory holds.
@@ -1135,8 +1235,8 @@ pub(crate) fn is_dir_link(path: &Path) -> bool {
 }
 
 /// Whether `path` is shaped like a compatibility link: a link to a direct child
-/// of the installs root that contains it (`../<name>-<hash>`). It says nothing
-/// about whether that installation is still there.
+/// of the store of the installs root that contains it (`../<name>-<hash>`). It
+/// says nothing about whether that installation is still there.
 pub(crate) fn is_compat_link_shape(path: &Path) -> bool {
     let Some(target) = file::resolve_symlink(path).ok().flatten() else {
         return false;
@@ -1156,8 +1256,10 @@ pub(crate) fn is_compat_link_shape(path: &Path) -> bool {
     let (Some(target), Some(tool_dir)) = (clean(&target), path.parent().and_then(clean)) else {
         return false;
     };
-    target.parent() == tool_dir.parent()
-        && target.parent().is_some()
+    let (Some(store), Some(root)) = (target.parent(), tool_dir.parent()) else {
+        return false;
+    };
+    same_path(store, &store_of(root))
         && target
             .file_name()
             .and_then(|n| n.to_str())
@@ -1178,7 +1280,7 @@ pub(crate) fn has_hash_suffix(name: &str) -> bool {
 }
 
 /// Whether `path` is an installation directory of the identity layout (a
-/// direct child of an installs root) rather than a legacy `<tool>/<version>`.
+/// direct child of an install store) rather than a legacy `<tool>/<version>`.
 pub fn dir_name_of(path: &Path) -> Option<String> {
     // The name is checked first: it costs nothing, and listing the installs roots
     // reads settings and the disk on every call, which hot paths make often.
@@ -1187,7 +1289,7 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
         return None;
     }
     let parent = path.parent()?;
-    roots()
+    stores()
         .iter()
         .any(|r| same_path(r, parent))
         .then(|| name.to_string())
@@ -1319,8 +1421,7 @@ mod tests {
         let fx = Fixture::new();
         let version = fx.tool_dir.join("1.2.3");
         let alias = fx.tool_dir.join("1");
-        let target = Path::new("..").join(fx.install.file_name().unwrap());
-        file::make_dir_link(&target, &version).unwrap();
+        file::make_dir_link(&link_value(&fx.tool_dir, &fx.install), &version).unwrap();
         file::make_dir_link(Path::new("./1.2.3"), &alias).unwrap();
 
         assert!(is_compat_link_shape(&version));
@@ -1333,14 +1434,14 @@ mod tests {
         // installation, even though it resolves to one through the version link.
         assert!(!is_compat_link_shape(&alias));
         assert_eq!(link_target(&alias), None);
-        // A link into the same root that is not a receipt-bearing installation.
-        let stranger = dirs::INSTALLS.join(format!(
+        // A link into the store that is not a receipt-bearing installation.
+        let stranger = dirs::INSTALL_STORE.join(format!(
             "stranger-{}",
             fx.tool_dir.file_name().unwrap().to_string_lossy()
         ));
         std::fs::create_dir_all(&stranger).unwrap();
         let stray = fx.tool_dir.join("stray");
-        file::make_dir_link(&Path::new("..").join(stranger.file_name().unwrap()), &stray).unwrap();
+        file::make_dir_link(&link_value(&fx.tool_dir, &stranger), &stray).unwrap();
         assert_eq!(link_target(&stray), None);
         let _ = std::fs::remove_dir_all(&stranger);
     }
@@ -1349,11 +1450,18 @@ mod tests {
     fn unlinking_an_installation_removes_every_link_to_it_and_only_those() {
         let fx = Fixture::new();
         let other = Fixture::new();
-        let name = fx.install.file_name().unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &fx.tool_dir.join("1.2.3")).unwrap();
-        file::make_dir_link(&Path::new("..").join(name), &other.tool_dir.join("1.2.3")).unwrap();
         file::make_dir_link(
-            &Path::new("..").join(other.install.file_name().unwrap()),
+            &link_value(&fx.tool_dir, &fx.install),
+            &fx.tool_dir.join("1.2.3"),
+        )
+        .unwrap();
+        file::make_dir_link(
+            &link_value(&other.tool_dir, &fx.install),
+            &other.tool_dir.join("1.2.3"),
+        )
+        .unwrap();
+        file::make_dir_link(
+            &link_value(&fx.tool_dir, &other.install),
             &fx.tool_dir.join("9.9.9"),
         )
         .unwrap();
@@ -1376,7 +1484,7 @@ mod tests {
     fn removal_is_refused_for_a_directory_mise_did_not_create() {
         let fx = Fixture::new();
         assert!(guard_removal(&fx.install).is_ok());
-        let stranger = dirs::INSTALLS.join(format!("stranger-{}", std::process::id()));
+        let stranger = dirs::INSTALL_STORE.join(format!("stranger-{}", std::process::id()));
         std::fs::create_dir_all(&stranger).unwrap();
         let err = guard_removal(&stranger).unwrap_err().to_string();
         assert!(err.contains("not an installation mise created"), "{err}");
@@ -1468,6 +1576,66 @@ mod tests {
             "github:owner/repo"
         );
         assert_eq!(canonical_backend("pipx:black"), "pypi:black");
+    }
+
+    #[test]
+    fn a_version_link_reaches_the_store_relatively_when_it_can() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let tool_dir = base.join("data/installs/age");
+        for dir in ["data/installs/age", "data/i", "elsewhere/store"] {
+            std::fs::create_dir_all(base.join(dir)).unwrap();
+        }
+        assert_eq!(
+            link_value(&tool_dir, &base.join("data/installs/age-p4n6w2ra")),
+            Path::new("..").join("age-p4n6w2ra")
+        );
+        // Windows' default: the store is `i` beside `installs`.
+        assert_eq!(
+            link_value(&tool_dir, &base.join("data/i/age-p4n6w2ra")),
+            Path::new("..").join("..").join("i").join("age-p4n6w2ra")
+        );
+        // A store somewhere else entirely is named absolutely, even when it was
+        // configured as a relative path.
+        assert_eq!(
+            link_value(&tool_dir, &base.join("elsewhere/store/age-p4n6w2ra")),
+            base.join("elsewhere/store/age-p4n6w2ra")
+        );
+        assert_eq!(
+            link_value(&tool_dir, Path::new("store/age-p4n6w2ra")),
+            std::env::current_dir().unwrap().join("store/age-p4n6w2ra")
+        );
+        // Through a symlinked installs directory, `../..` would leave the
+        // symlink's target, so the link is absolute.
+        #[cfg(unix)]
+        {
+            std::fs::create_dir_all(base.join("real/installs/age")).unwrap();
+            std::fs::create_dir_all(base.join("linked")).unwrap();
+            std::os::unix::fs::symlink(base.join("real/installs"), base.join("linked/installs"))
+                .unwrap();
+            std::fs::create_dir_all(base.join("linked/i")).unwrap();
+            assert_eq!(
+                link_value(
+                    &base.join("linked/installs/age"),
+                    &base.join("linked/i/age-p4n6w2ra")
+                ),
+                base.join("linked/i/age-p4n6w2ra")
+            );
+            // A store that is a symlink to the real sibling, under another name,
+            // is named absolutely: a relative link through the physical name
+            // would not be recognized as pointing into the configured store.
+            std::fs::create_dir_all(base.join("links")).unwrap();
+            std::os::unix::fs::symlink(base.join("data/i"), base.join("links/alias")).unwrap();
+            assert_eq!(
+                link_value(&tool_dir, &base.join("links/alias/age-p4n6w2ra")),
+                base.join("links/alias/age-p4n6w2ra")
+            );
+            std::os::unix::fs::symlink(base.join("data/i"), base.join("data/alias")).unwrap();
+            assert_eq!(
+                link_value(&tool_dir, &base.join("data/alias/age-p4n6w2ra")),
+                base.join("data/alias/age-p4n6w2ra")
+            );
+        }
     }
 
     #[test]

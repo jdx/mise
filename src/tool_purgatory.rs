@@ -212,13 +212,10 @@ pub async fn auto_prune() -> Result<()> {
     for (key, entry) in due {
         let install_path = &entry.install_path;
         let display = &entry.display;
-        // An identity-layout installation is a direct child of the installs root; the
+        // An identity-layout installation is a direct child of the install store; the
         // directory holding its version links is its tool's own directory, known only
         // while the tool is still listed.
-        let layout_install = crate::install_layout::resolver::dir_name_of(install_path).is_some()
-            && install_path
-                .parent()
-                .is_some_and(crate::install_layout::resolver::is_primary_root);
+        let layout_install = crate::install_layout::resolver::is_primary_install(install_path);
         let installs_dir: Option<PathBuf> = if layout_install {
             prunable_by_path
                 .get(install_path)

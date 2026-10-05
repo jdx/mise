@@ -1334,9 +1334,15 @@ fn is_mise_managed_symlink_target(target: &Path) -> bool {
     debug_assert!(target.is_absolute(), "caller filters relative targets");
     let target = normalize_path_components(target);
 
-    [*dirs::DATA, *dirs::CACHE, *dirs::DOWNLOADS, *dirs::INSTALLS]
-        .into_iter()
-        .any(|root| target.starts_with(normalize_path_components(root)))
+    [
+        *dirs::DATA,
+        *dirs::CACHE,
+        *dirs::DOWNLOADS,
+        *dirs::INSTALLS,
+        *dirs::INSTALL_STORE,
+    ]
+    .into_iter()
+    .any(|root| target.starts_with(normalize_path_components(root)))
         || env::shared_install_dirs()
             .iter()
             .any(|root| target.starts_with(normalize_path_components(root)))

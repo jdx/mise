@@ -291,12 +291,9 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
     // A re-resolved ToolVersion does not retain the transient destination flags
     // used by install-into/system/shared installs. Never cross from a discovered
     // shared/system install into a fuzzy alias in the primary user install root.
-    // Under the identity layout the install is a hashed directory in the installs
-    // root and the runtime path is a link in the tool's own directory.
-    let hashed_alias = crate::install_layout::resolver::dir_name_of(&install_path).is_some()
-        && install_path
-            .parent()
-            .is_some_and(crate::install_layout::resolver::is_primary_root)
+    // Under the identity layout the install is a hashed directory in the install
+    // store and the runtime path is a link in the tool's own directory.
+    let hashed_alias = crate::install_layout::resolver::is_primary_install(&install_path)
         && runtime_path.parent() == Some(tv.ba().installs_path());
     if install_path.parent() != runtime_path.parent() && !hashed_alias {
         return path;
@@ -3093,11 +3090,13 @@ pub trait Backend: Debug + Send + Sync {
             // Canonicalize to resolve any ".." components before checking.
             // If target doesn't exist (canonicalize fails), don't skip - treat as needing install
             let target = canonicalize_cached(&target)?;
-            // Canonicalize INSTALLS too for consistent comparison (handles symlinked data dirs)
-            let installs =
-                canonicalize_cached(&dirs::INSTALLS).unwrap_or(dirs::INSTALLS.to_path_buf());
-            if target.starts_with(&installs) {
-                return Some(path);
+            // Canonicalize INSTALLS too for consistent comparison (handles symlinked data
+            // dirs), and the install store, where a version link points.
+            for own in [*dirs::INSTALLS, *dirs::INSTALL_STORE] {
+                let own = canonicalize_cached(own).unwrap_or(own.to_path_buf());
+                if target.starts_with(&own) {
+                    return Some(path);
+                }
             }
             // Also check shared install directories
             for shared_dir in env::shared_install_dirs() {
@@ -4151,7 +4150,9 @@ pub trait Backend: Debug + Send + Sync {
         // so a failure withdraws it again instead of leaving a receipt behind.
         let bookkeeping = (|| -> eyre::Result<()> {
             let mut update_install_state = false;
-            if install_path.starts_with(*dirs::INSTALLS) {
+            if install_path.starts_with(*dirs::INSTALLS)
+                || crate::install_layout::resolver::is_primary_install(&install_path)
+            {
                 install_state::write_backend_meta(self.ba())?;
                 update_install_state = true;
             } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {

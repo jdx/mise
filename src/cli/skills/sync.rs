@@ -74,7 +74,12 @@ impl SkillsSync {
             }
             return Ok(());
         }
-        let report = crate::packslip::sync_skills(&dir, &skills, &dirs::INSTALLS, prune)?;
+        let report = crate::packslip::sync_skills(
+            &dir,
+            &skills,
+            &[*dirs::INSTALLS, *dirs::INSTALL_STORE],
+            prune,
+        )?;
         for name in &report.linked {
             let skill = skills.iter().find(|s| &s.name == name);
             miseprintln!(

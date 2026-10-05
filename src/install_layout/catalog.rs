@@ -37,16 +37,34 @@ const BUCKET_CHARS: usize = 13;
 #[derive(Clone, Debug)]
 pub(crate) struct Catalog {
     root: PathBuf,
+    /// Where the installations it assigns live; usually `root` itself.
+    store: PathBuf,
 }
 
 impl Catalog {
     /// A catalog for the installs root `root` (for example `~/.local/share/mise/installs`).
     pub(crate) fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        let root = root.into();
+        let store = super::resolver::store_of(&root);
+        Self { root, store }
+    }
+
+    /// A catalog for `root` whose installations live in `store`.
+    #[cfg(test)]
+    pub(crate) fn with_store(root: impl Into<PathBuf>, store: impl Into<PathBuf>) -> Self {
+        Self {
+            root: root.into(),
+            store: store.into(),
+        }
     }
 
     pub(crate) fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The directory holding this catalog's installations.
+    pub(crate) fn store(&self) -> &Path {
+        &self.store
     }
 
     pub(crate) fn meta_dir(&self) -> PathBuf {
@@ -78,7 +96,7 @@ impl Catalog {
 
     /// The directory of an installation this catalog assigned.
     pub(crate) fn install_dir(&self, record: &IdentityRecord) -> PathBuf {
-        self.root.join(&record.dir)
+        self.store.join(&record.dir)
     }
 
     /// The record for `identity`, if one was ever allocated.
@@ -104,7 +122,7 @@ impl Catalog {
     /// Used to report where an install that does not exist yet would go.
     pub(crate) fn tentative_dir(&self, identity: &InstallIdentity) -> PathBuf {
         let digest = identity.digest().to_base32();
-        self.root.join(format!(
+        self.store.join(format!(
             "{}-{}",
             label_for(&identity.backend),
             &digest[..SHORT_CHARS]
@@ -183,13 +201,18 @@ impl Catalog {
             // Unreadable reservation: do not guess.
             Err(_) => return false,
         }
-        match std::fs::symlink_metadata(self.root.join(dir)) {
+        match std::fs::symlink_metadata(self.store.join(dir)) {
             Err(_) => true,
             // Occupied: only ours if its receipt says so (a catalog that was
             // lost but whose installations survived).
-            Ok(_) => read_receipt(&self.root.join(dir))
+            Ok(_) => read_receipt(&self.store.join(dir))
                 .is_some_and(|receipt| receipt.record.digest == digest),
         }
+    }
+
+    /// Whether the directory name `dir` is reserved for some identity.
+    pub(crate) fn is_reserved(&self, dir: &str) -> bool {
+        self.name_path(dir).exists()
     }
 
     fn reservation_holds(&self, record: &IdentityRecord) -> bool {
@@ -233,11 +256,11 @@ impl Catalog {
     pub(crate) fn rebuild_from_receipts(&self) -> Result<Vec<IdentityRecord>> {
         let mut restored = vec![];
         let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
-        for dir in file::dir_subdirs(&self.root).unwrap_or_default() {
+        for dir in file::dir_subdirs(&self.store).unwrap_or_default() {
             if dir.starts_with('.') {
                 continue;
             }
-            let Some(receipt) = read_receipt(&self.root.join(&dir)) else {
+            let Some(receipt) = read_receipt(&self.store.join(&dir)) else {
                 continue;
             };
             let record = receipt.record;
@@ -510,6 +533,45 @@ mod tests {
             Some("sha256:a")
         );
         assert_eq!(provenance.generation, 2);
+    }
+
+    #[test]
+    fn a_separate_store_holds_the_installations_and_the_root_keeps_the_catalog() {
+        let tmp = tempfile::tempdir().unwrap();
+        let catalog = Catalog::with_store(tmp.path().join("installs"), tmp.path().join("i"));
+        let id = identity("core:node", "20.0.0");
+        let digest = id.digest().to_base32();
+        // A squatter in the store blocks the first choice; one in the root does not.
+        let first_choice = format!("node-{}", &digest[..8]);
+        std::fs::create_dir_all(catalog.store().join(&first_choice)).unwrap();
+        std::fs::create_dir_all(catalog.root().join(format!("node-{}", &digest[..10]))).unwrap();
+        let record = catalog.allocate(&id).unwrap();
+        assert_eq!(record.dir, format!("node-{}", &digest[..10]));
+        let dir = catalog.install_dir(&record);
+        assert_eq!(dir, tmp.path().join("i").join(&record.dir));
+        assert!(catalog.meta_dir().starts_with(catalog.root()));
+        assert_eq!(
+            catalog
+                .tentative_dir(&identity("core:node", "21.0.0"))
+                .parent(),
+            Some(catalog.store())
+        );
+
+        // Receipts are found in the store when the catalog is rebuilt.
+        std::fs::create_dir_all(&dir).unwrap();
+        write_receipt(
+            &dir,
+            &Receipt {
+                record: record.clone(),
+                requested_as: None,
+                mise_version: None,
+            },
+        )
+        .unwrap();
+        std::fs::remove_dir_all(catalog.meta_dir()).unwrap();
+        assert_eq!(catalog.rebuild_from_receipts().unwrap().len(), 1);
+        assert_eq!(catalog.lookup(&id).unwrap().dir, record.dir);
+        assert!(catalog.is_reserved(&record.dir));
     }
 
     #[test]
