@@ -3923,6 +3923,11 @@ pub trait Backend: Debug + Send + Sync {
             crate::install_layout::resolver::allocate(&tv, ctx.force || rolling_reinstall)?;
         if let Some(allocated) = &allocated {
             tv.install_path = Some(allocated.dir.clone());
+        } else if let Some(legacy) = crate::install_layout::resolver::legacy_in_place(&tv) {
+            // A legacy install is refreshed where it is. Its path is fixed now: a
+            // forced reinstall removes it first, and the path would otherwise
+            // resolve to a hashed directory that nothing records.
+            tv.install_path = Some(legacy);
         }
 
         #[cfg(unix)]

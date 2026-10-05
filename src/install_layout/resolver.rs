@@ -784,6 +784,23 @@ pub(crate) struct Allocated {
     pub(crate) selects: Option<InstallIdentity>,
 }
 
+/// The installation made before the identity layout, in the user's own installs
+/// root, that `tv` uses in place, if there is one. Installing `tv` again
+/// refreshes it there, so the install's path must stay on it even after a forced
+/// reinstall has removed it.
+pub(crate) fn legacy_in_place(tv: &ToolVersion) -> Option<PathBuf> {
+    if !applies_to(tv) {
+        return None;
+    }
+    let located = locate(tv)?;
+    let in_own_root = located
+        .dir
+        .parent()
+        .and_then(Path::parent)
+        .is_some_and(is_primary_root);
+    (located.installed && located.record.is_none() && in_own_root).then_some(located.dir)
+}
+
 /// Choose (and reserve) the directory an install of `tv` goes into.
 ///
 /// `refresh` is an explicit reinstall or update. An unlocked installation that
