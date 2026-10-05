@@ -195,3 +195,16 @@ cp -a "$gone" "$HOME/shared3/tiny/2.1.0"
 assert "mise uninstall tiny@2.1.0"
 export MISE_SHARED_INSTALL_DIRS="$HOME/shared3"
 assert "mise where tiny@2.1.0" "$HOME/shared3/tiny/2.1.0"
+
+echo "=== a pruned selection does not hide an install made before this layout ==="
+unset MISE_SHARED_INSTALL_DIRS
+assert "mise install tiny@2.0.0"
+pruned="$(mise where tiny@2.0.0)"
+assert "mise installs ls tiny --json | jq -r '.[] | select(.selected and .version == \"2.0.0\") | .name'" "$(basename "$pruned")"
+assert "mise prune --yes tiny"
+assert "test ! -e '$pruned'"
+# a real directory at the version's path is what PATH runs, so it is what mise uses
+mkdir -p "$installs/tiny/2.0.0/bin"
+assert "mise where tiny@2.0.0" "$installs/tiny/2.0.0"
+assert_contains "mise install tiny@2.0.0 2>&1" "already installed"
+assert "test ! -e '$pruned'"

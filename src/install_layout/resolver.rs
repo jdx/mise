@@ -361,10 +361,23 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
         match unlocked_choice(&key) {
             // A selection is answered by what it names alone: if that was pruned
             // (installing restores it) or its root is gone, nothing else is chosen
-            // in its place without the user saying so.
+            // in its place without the user saying so. The exception is an install
+            // made before this layout at the version's path in the user's own
+            // root: that path is what PATH runs, and installing the selection
+            // could not put its link there.
             Unlocked::Selected(located) => {
                 if located.installed {
                     locate_cache().insert(cache_key, located.clone());
+                    return Some(located);
+                }
+                if is_primary_root(&located.root)
+                    && let Some(legacy) = legacy_dir(tv, &identity)
+                    && legacy
+                        .parent()
+                        .and_then(Path::parent)
+                        .is_some_and(is_primary_root)
+                {
+                    return Some(legacy_located(legacy));
                 }
                 return Some(located);
             }
@@ -399,12 +412,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     }
     // An install made before the identity layout, in place.
     if !ambiguous && let Some(legacy) = legacy_dir(tv, &identity) {
-        return Some(Located {
-            root: legacy.parent().map(Path::to_path_buf).unwrap_or_default(),
-            dir: legacy,
-            record: None,
-            installed: true,
-        });
+        return Some(legacy_located(legacy));
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
     // Several installations answer and none is chosen: report a path that is
@@ -598,6 +606,16 @@ fn ambiguity_error(tv: &ToolVersion, installations: &[Located]) -> eyre::Report 
 /// generation of the request it belongs to.
 fn same_request(identity: &InstallIdentity, key: &InstallIdentity) -> bool {
     request_of(identity) == request_of(key)
+}
+
+/// What [`locate`] reports for a legacy installation at `legacy`.
+fn legacy_located(legacy: PathBuf) -> Located {
+    Located {
+        root: legacy.parent().map(Path::to_path_buf).unwrap_or_default(),
+        dir: legacy,
+        record: None,
+        installed: true,
+    }
 }
 
 /// A legacy `installs/<short>/<version>` directory that this request may use.
