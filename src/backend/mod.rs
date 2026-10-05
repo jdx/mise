@@ -4054,6 +4054,9 @@ pub trait Backend: Debug + Send + Sync {
             && self.is_version_installed(&ctx.config, &tv, true)
             && self.repair_install(&ctx, &tv).await?
         {
+            // The installation is complete as it stands; make sure its version link and
+            // any lockfile pin are recorded.
+            crate::install_layout::resolver::note_satisfied(&tv);
             self.finish_install_changes(&ctx, &tv).await?;
             self.verify_repaired_install(&ctx, &tv).await?;
             install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());

@@ -1107,7 +1107,13 @@ fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
     // so a later failure (a target too long for the reparse buffer) leaves a
     // plain directory that would pass for an installed version. Remove only what
     // this call created, and only if it is still an empty plain directory.
-    if result.is_err() && !existed && junction::get_target(link).is_err() {
+    // `AlreadyExists` means `create_dir` itself failed because something else holds the
+    // name (another process won the race), so there is nothing of ours to remove.
+    if let Err(err) = &result
+        && err.kind() != std::io::ErrorKind::AlreadyExists
+        && !existed
+        && junction::get_target(link).is_err()
+    {
         let _ = fs::remove_dir(link);
     }
     result
@@ -1182,8 +1188,12 @@ pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
     let target = resolve_relative_link_target(link, target.to_path_buf());
     let target = target.absolutize()?.into_owned();
     if fs::symlink_metadata(link).is_err() {
-        make_symlink(&target, link)?;
-        return Ok(());
+        match make_symlink(&target, link) {
+            Ok(_) => return Ok(()),
+            // Something else made the slot in the meantime: replace it below.
+            Err(_) if fs::symlink_metadata(link).is_ok() => {}
+            Err(err) => return Err(err),
+        }
     }
     // Replacing a link: build the new one beside it first, so a failure to
     // create it leaves the working link in place instead of an empty slot.
@@ -1200,8 +1210,8 @@ pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
         .flatten()
         .map(|old| resolve_relative_link_target(link, old));
     let swapped = remove_dir_link(link).and_then(|()| {
-        fs::rename(&tmp, link)
-            .wrap_err_with(|| format!("failed to move {} to {}", tmp.display(), link.display()))
+        // `rename` retries the transient locks antivirus and the OS put on a fresh entry.
+        rename(&tmp, link)
     });
     if swapped.is_err() {
         let _ = remove_symlink_or_junction(&tmp);

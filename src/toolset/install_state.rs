@@ -928,8 +928,7 @@ pub(crate) fn legacy_backend_matches(root: &Path, short: &str, backend: &str) ->
     let Some(full) = recorded else {
         return true;
     };
-    let name = crate::args::split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
-    crate::backend::canonical_backend_full(name) == backend
+    crate::install_layout::resolver::canonical_backend(&full) == backend
 }
 
 pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {

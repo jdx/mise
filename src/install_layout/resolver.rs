@@ -141,6 +141,13 @@ fn digest_of_string(s: &str) -> String {
     Digest::of(s.as_bytes()).to_base32()
 }
 
+/// The canonical full backend identifier for the layout: pipx folded into pypi, no
+/// options, and no credentials (a plugin repository URL can carry `user:token@`).
+pub(crate) fn canonical_backend(full: &str) -> String {
+    let name = crate::args::split_bracketed_opts(full).map_or(full, |(name, _)| name);
+    redact_credentials(&crate::backend::canonical_backend_full(name))
+}
+
 /// The identity `tv` answers.
 ///
 /// * `backend` is the canonical full identifier, so `age` and
@@ -192,7 +199,7 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     }
     Some(InstallIdentity {
         mode,
-        backend: crate::backend::canonical_backend_full(&tv.ba().full_without_opts()).into_owned(),
+        backend: canonical_backend(&tv.ba().full()),
         version: tv.logical_pathname(),
         platform,
         options,
@@ -406,13 +413,10 @@ fn legacy_dir(tv: &ToolVersion, identity: &InstallIdentity) -> Option<PathBuf> {
 /// tool that moved between backends (or splits versions across them) still lists
 /// the versions installed from each.
 fn backends_of(ba: &crate::args::BackendArg) -> Vec<String> {
-    let mut out =
-        vec![crate::backend::canonical_backend_full(&ba.full_without_opts()).into_owned()];
+    let mut out = vec![canonical_backend(&ba.full())];
     if let Some(tool) = ba.registry_tool() {
         for backend in tool.backends {
-            let name = crate::args::split_bracketed_opts(backend.full)
-                .map_or(backend.full, |(name, _)| name);
-            let name = crate::backend::canonical_backend_full(name).into_owned();
+            let name = canonical_backend(backend.full);
             if !out.contains(&name) {
                 out.push(name);
             }
@@ -531,7 +535,7 @@ pub fn physical_dir(ba: &crate::args::BackendArg, name: &str) -> Option<PathBuf>
 pub fn sibling_version(tv: &ToolVersion, dir_name: &str) -> Option<String> {
     let dir = tv.install_path().parent()?.join(dir_name);
     let receipt = read_receipt(&dir)?;
-    let backend = crate::backend::canonical_backend_full(&tv.ba().full_without_opts()).into_owned();
+    let backend = canonical_backend(&tv.ba().full());
     (receipt.record.identity.backend == backend).then_some(receipt.record.identity.version)
 }
 
@@ -631,7 +635,7 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let Ok(b) = tv.backend() else {
         return vec![];
     };
-    let backend = crate::backend::canonical_backend_full(&tv.ba().full_without_opts()).into_owned();
+    let backend = canonical_backend(&tv.ba().full());
     let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
     let mut out = vec![];
     for root in roots() {
@@ -1353,6 +1357,19 @@ mod tests {
             Path::new("reldata/installs"),
             &cwd.join("other/installs")
         ));
+    }
+
+    #[test]
+    fn the_backend_of_the_identity_carries_no_credentials_or_options() {
+        assert_eq!(
+            canonical_backend("asdf:https://user:tok@git.example.com/org/plugin.git"),
+            "asdf:https://git.example.com/org/plugin.git"
+        );
+        assert_eq!(
+            canonical_backend("github:owner/repo[matching=x]"),
+            "github:owner/repo"
+        );
+        assert_eq!(canonical_backend("pipx:black"), "pypi:black");
     }
 
     #[test]

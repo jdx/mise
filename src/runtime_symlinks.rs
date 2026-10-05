@@ -167,8 +167,8 @@ fn rebuild_symlinks_in_dir(
             if cfg!(windows) {
                 warn!(
                     "could not create {} -> {}: {err:#}. The tool works through mise, but \
-                     external programs cannot use this path. Enable Developer Mode or run \
-                     `mise where` for the real install path.",
+                     external programs cannot use this path; run `mise where` for the real \
+                     install path.",
                     from.display(),
                     to.display()
                 );
