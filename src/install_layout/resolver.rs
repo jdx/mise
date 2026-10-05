@@ -873,6 +873,14 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     let mut bare = tv.clone();
     bare.install_path = None;
     let own_request = identity_of(&bare).map(|identity| request_of(&identity));
+    // The request has installations of its own, or a selection: which one it uses
+    // is for the selection to say (or the user, when that is ambiguous), so a
+    // variant made with other options is no stand-in for it.
+    if let Some(own) = &own_request
+        && !matches!(unlocked_choice(own), Unlocked::Nothing)
+    {
+        return vec![];
+    }
     let backend = canonical_backend(&tv.ba().full());
     let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
     let mut out = vec![];
@@ -1564,17 +1572,23 @@ fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str
     }
     for tool_dir in tool_dirs {
         let slot = tool_dir.join(&name);
+        let requested = requested_dir.as_ref() == Some(&tool_dir);
         let retarget = match link_target(&slot) {
+            // In the tool's own directory the link follows the selection from any
+            // installation of the version (another variant included); in other
+            // tool directories (an alias with other options) only from another
+            // installation of the same request.
             Some(current) => {
                 !same_path(&current, dir)
-                    && read_receipt(&current)
-                        .is_some_and(|r| same_request(&r.record.identity, &key))
+                    && (requested
+                        || read_receipt(&current)
+                            .is_some_and(|r| same_request(&r.record.identity, &key)))
             }
             // An empty slot, or a version link whose installation is gone, in the
             // directory of the tool it was requested as. Anything else there (a
             // legacy installation, a `mise link`) is left alone.
             None => {
-                requested_dir.as_ref() == Some(&tool_dir)
+                requested
                     && (std::fs::symlink_metadata(&slot).is_err() || is_compat_link_shape(&slot))
             }
         };
