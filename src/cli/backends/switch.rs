@@ -467,7 +467,14 @@ impl BackendsSwitch {
     ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
+        // Read once, and only if some switched version has no version path.
+        let mut installations = None;
         for (lockfile, tv) in self.scoped_versions(&config).await? {
+            if !switched.contains(&(tv.short().to_string(), tv.version.clone()))
+                && !relocked_tools.contains(&(lockfile, tv.short().to_string()))
+            {
+                continue;
+            }
             // The old backend's install may be in the user's root or in a shared
             // or system one, and may have no version link (Windows without
             // junctions), so its receipt is looked for too.
@@ -481,16 +488,14 @@ impl BackendsSwitch {
                                 .file_name()
                                 .is_some_and(|tool_dir| has_version_path(&root.join(tool_dir), &tv))
                         })
-                        || crate::install_layout::resolver::installations()
+                        || installations
+                            .get_or_insert_with(crate::install_layout::resolver::installations)
                             .iter()
                             .any(|i| {
                                 i.version == tv.version
                                     && i.requested_as.as_deref() == Some(tv.short())
                             })));
-            if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
-                || relocked_tools.contains(&(lockfile, tv.short().to_string())))
-                && installed
-            {
+            if installed {
                 requests.push(tv.request);
             }
         }
