@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A registry shorthand and the explicit backend it resolves to are one
+# installation under the identity install layout (jdx/mise#13678): whichever
+# spelling asked first made it, the other finds it instead of downloading and
+# installing a second copy. Each spelling keeps its own version links, and
+# removing the installation through either spelling removes the links of both.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+
+assert "mise install tiny@3.1.0"
+dir="$(mise where tiny@3.1.0)"
+name="$(basename "$dir")"
+assert_matches "mise where tiny@3.1.0" "^$installs/tiny-[a-z2-7]{8}\$"
+
+echo "=== the explicit backend finds the installation the shorthand made ==="
+assert_contains "mise install vfox:tiny@3.1.0 2>&1" "already installed"
+assert "mise where vfox:tiny@3.1.0" "$dir"
+assert "test \"\$(ls -d '$installs'/tiny-* | wc -l)\" -eq 1"
+assert_contains "cat '$dir/.mise-install.toml'" 'backend = "vfox:tiny"'
+
+echo "=== each spelling keeps its own version links ==="
+assert "readlink '$installs/tiny/3.1.0'" "../$name"
+assert "readlink '$installs/vfox-tiny/3.1.0'" "../$name"
+assert "readlink '$installs/tiny/latest'" "./3.1.0"
+assert "readlink '$installs/vfox-tiny/latest'" "./3.1.0"
+assert_contains "mise x vfox:tiny@3.1.0 -- rtx-tiny" "3.1.0"
+assert_contains "mise x tiny@3.1.0 -- rtx-tiny" "3.1.0"
+
+echo "=== removing it through the other spelling removes every link ==="
+assert "mise uninstall vfox:tiny@3.1.0"
+assert "test ! -e '$dir'"
+assert "test ! -L '$installs/tiny/3.1.0' && test ! -e '$installs/tiny/3.1.0'"
+assert "test ! -L '$installs/tiny/latest' && test ! -L '$installs/tiny/3'"
+assert "test ! -L '$installs/vfox-tiny/3.1.0' && test ! -e '$installs/vfox-tiny/3.1.0'"
+assert_empty "find -L '$installs' -maxdepth 2 -type l"
+assert_empty "mise ls --installed tiny"
+
+echo "=== the other order: explicit backend first, then the shorthand ==="
+assert "mise install vfox:tiny@3.1.0"
+assert "mise where vfox:tiny@3.1.0" "$dir"
+assert_contains "mise install tiny@3.1.0 2>&1" "already installed"
+assert "mise where tiny@3.1.0" "$dir"
+assert "test \"\$(ls -d '$installs'/tiny-* | wc -l)\" -eq 1"
+assert "readlink '$installs/tiny/3.1.0'" "../$name"
+assert "readlink '$installs/vfox-tiny/3.1.0'" "../$name"

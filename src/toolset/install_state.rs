@@ -22,6 +22,16 @@ fn normalize_version_for_sort(v: &str) -> &str {
         .unwrap_or(v)
 }
 
+/// Order installed version names the way install state lists them (ascending).
+/// Everything that merges versions from another source goes through this, so a
+/// listing keeps one ordering rule.
+pub(crate) fn sort_versions(versions: &mut [String]) {
+    versions.sort_by_cached_key(|v| {
+        let normalized = normalize_version_for_sort(v);
+        (Versioning::new(normalized), v.to_string())
+    });
+}
+
 type InstallStatePlugins = BTreeMap<String, PluginType>;
 type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
@@ -260,9 +270,29 @@ fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
             continue;
         }
         let file_type = entry.file_type()?;
-        if file_type.is_symlink() {
+        if file_type.is_symlink()
+            || (cfg!(windows) && crate::install_layout::resolver::is_dir_link(&entry.path()))
+        {
             let path = entry.path();
             if runtime_symlinks::is_runtime_symlink(&path) {
+                continue;
+            }
+            // A compatibility link names an installation elsewhere in the installs
+            // root. It is a version only while that installation is complete, and
+            // its incomplete marker is keyed by the installation, not the link.
+            if let Some(install) = crate::install_layout::resolver::link_target(&path) {
+                let key = install
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| name.clone());
+                if !incomplete_marker(tool_dir_name, &key).exists() {
+                    versions.push(name);
+                }
+                continue;
+            }
+            // A compatibility link whose installation is gone (pruned, or removed
+            // by hand) is stale, not a broken `mise link`.
+            if crate::install_layout::resolver::is_compat_link_shape(&path) {
                 continue;
             }
             // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its
@@ -281,10 +311,7 @@ fn scan_versions(dir: &Path, tool_dir_name: &str) -> Result<Vec<String>> {
         }
         versions.push(name);
     }
-    versions.sort_by_cached_key(|v| {
-        let normalized = normalize_version_for_sort(v);
-        (Versioning::new(normalized), v.to_string())
-    });
+    sort_versions(&mut versions);
     Ok(versions)
 }
 
@@ -426,10 +453,7 @@ fn merge_shared_tool(
             tool.versions.push(v);
         }
     }
-    tool.versions.sort_by_cached_key(|v| {
-        let normalized = normalize_version_for_sort(v);
-        (Versioning::new(normalized), v.to_string())
-    });
+    sort_versions(&mut tool.versions);
     if tool.full.is_none() {
         tool.full = full;
     }
@@ -461,7 +485,32 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         // legacy entries.
         let mut updated_manifest: Option<Manifest> = None;
         let mut tools = BTreeMap::new();
+        // Installations whose receipt is on disk but that the catalog does not know
+        // (it was lost, or a mise that predates it made them) are adopted, so the
+        // catalog can always be rebuilt from receipts alone.
+        if subdirs.iter().any(|name| {
+            crate::install_layout::resolver::has_hash_suffix(name)
+                && dirs::INSTALLS
+                    .join(name)
+                    .join(crate::install_layout::record::RECEIPT_FILE)
+                    .exists()
+                && !dirs::INSTALLS
+                    .join(".mise")
+                    .join("names")
+                    .join(name)
+                    .exists()
+        }) && let Err(err) =
+            crate::install_layout::catalog::Catalog::new(dirs::INSTALLS.to_path_buf())
+                .rebuild_from_receipts()
+        {
+            warn!("failed to rebuild the install catalog from receipts: {err:#}");
+        }
         for dir_name in subdirs {
+            // `.mise` holds the install catalog, and an identity-layout installation
+            // is not a tool directory.
+            if crate::install_layout::resolver::is_reserved_dir(&dirs::INSTALLS, &dir_name) {
+                continue;
+            }
             let dir = dirs::INSTALLS.join(&dir_name);
             let Some((tool, migrate)) = scan_tool_dir(&dir_name, &dir, manifest.as_ref())
                 .wrap_err_with(|| format!("failed to scan {}", display_path(&dir)))?
@@ -501,6 +550,9 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
                 }
             };
             for dir_name in shared_subdirs {
+                if crate::install_layout::resolver::is_reserved_dir(&shared_dir, &dir_name) {
+                    continue;
+                }
                 let dir = shared_dir.join(&dir_name);
                 merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
             }
@@ -824,8 +876,69 @@ pub(crate) fn list_versions(short: &str) -> Vec<String> {
     with_tool(short, |tool| tool.versions.clone()).unwrap_or_default()
 }
 
+/// The installed versions of `ba`: its tool directory's versions plus the
+/// identity-layout installations of the same tool.
+///
+/// Identity-layout installs are shared between the spellings of a tool (`age`,
+/// `aqua:FiloSottile/age`), so a version installed through one is listed for the
+/// others before they have a version link of their own. The result keeps the
+/// ordering rule everything here lists by.
+pub(crate) fn list_versions_for(ba: &BackendArg) -> Vec<String> {
+    let mut versions = list_versions(&ba.short);
+    let layout = crate::install_layout::resolver::installs_of(ba);
+    if layout.is_empty() {
+        return versions;
+    }
+    for (name, _) in layout {
+        if !versions.contains(&name) {
+            versions.push(name);
+        }
+    }
+    sort_versions(&mut versions);
+    versions
+}
+
+/// Whether the legacy tool directory `<root>/<tool dir of short>` may be used for
+/// `backend` (a canonical full backend identifier, no options).
+///
+/// Legacy metadata records one backend per tool directory. When it records a
+/// different backend the directory holds another backend's payload and is not
+/// claimed (the registry moved the tool, or a version-split tool changed backend):
+/// the version is installed afresh instead of being reinterpreted. A directory
+/// with no recorded backend at all is, as it always was, the tool directory of its
+/// short.
+pub(crate) fn legacy_backend_matches(root: &Path, short: &str, backend: &str) -> bool {
+    let manifest = if root == &**dirs::INSTALLS {
+        root_manifest()
+    } else {
+        shared_manifest(root)
+    };
+    let dir_name = crate::backend::tool_directory_name(short);
+    let sidecar = read_tool_manifest_from(&tool_manifest_path(root, short));
+    let recorded = sidecar
+        .as_ref()
+        .or_else(|| manifest.get(&dir_name))
+        .and_then(|mt| mt.full.clone())
+        .or_else(|| {
+            (root == &**dirs::INSTALLS)
+                .then(|| read_legacy_backend_meta(short))
+                .flatten()
+                .and_then(|(_, full, _)| full)
+        });
+    let Some(full) = recorded else {
+        return true;
+    };
+    crate::install_layout::resolver::canonical_backend(&full) == backend
+}
+
 pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
-    let tool_dir = install_path.parent().map(Path::to_path_buf);
+    // An identity-layout install sits in the installs root itself; the tool's own
+    // directory (where its version links live) is what state tracks.
+    let tool_dir = if crate::install_layout::resolver::dir_name_of(install_path).is_some() {
+        Some(ba.installs_path().to_path_buf())
+    } else {
+        install_path.parent().map(Path::to_path_buf)
+    };
     let full = ba.full_without_opts();
     let explicit_backend = ba.has_explicit_backend();
     let opts = persistent_opts(ba);

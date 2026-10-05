@@ -1622,6 +1622,30 @@ hide = true
 optional = true
 type = "String"
 
+[install_layout]
+default_docs = "legacy"
+description = "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`)."
+docs = """
+Set to `identity` to install into `installs/<label>-<hash>/` directories named by the
+installation's identity (backend, version, platform, and install-affecting options), with
+`installs/<tool>/<version>` kept as a link to the installation. Shorthands such as `age` and
+`aqua:FiloSottile/age` then share one install, and variants of one version that differ in an
+install-affecting option coexist. Existing installs stay where they are and keep working.
+
+This is opt-in even with `experimental = true`, which it also requires. See
+[Install layout](/dev-tools/install-layout.html) for what changes and what does not.
+
+```toml
+[settings]
+experimental = true
+install_layout = "identity"
+```
+"""
+enum = ["legacy", "identity"]
+env = "MISE_INSTALL_LAYOUT"
+optional = true
+type = "String"
+
 [java.shorthand_vendor]
 default = "openjdk"
 description = "Shorthand for Java. Used when installing Java without a vendor prefix."

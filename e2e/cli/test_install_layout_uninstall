@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Removing installs under the identity install layout (jdx/mise#13678).
+# Uninstall and prune remove the installation directory together with the
+# compatibility link and runtime aliases that point at it, never leave a
+# dangling link behind, and keep the catalog record so that installing the same
+# thing again lands on the same path. A link is never mistaken for its target.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+
+assert "mise install dummy@1.0.0 dummy@1.1.0 dummy@2.0.0"
+dir_10="$(mise where dummy@1.0.0)"
+dir_11="$(mise where dummy@1.1.0)"
+dir_20="$(mise where dummy@2.0.0)"
+name_10="$(basename "$dir_10")"
+name_11="$(basename "$dir_11")"
+name_20="$(basename "$dir_20")"
+digest_11="$(sed -n 's/^digest = "\(.*\)"$/\1/p' "$dir_11/.mise-install.toml")"
+[[ $digest_11 =~ ^[a-z2-7]{52}$ ]] || fail "not a 52 char base32 digest: '$digest_11'"
+assert "readlink '$installs/dummy/1'" "./1.1.0"
+assert "readlink '$installs/dummy/1.0'" "./1.0.0"
+assert "readlink '$installs/dummy/1.1'" "./1.1.0"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+
+echo "=== a dry run removes nothing ==="
+assert_contains "mise uninstall dummy@1.1.0 --dry-run 2>&1" "dummy@1.1.0"
+assert "test -f '$dir_11/.mise-install.toml'"
+assert "readlink '$installs/dummy/1.1.0'" "../$name_11"
+assert "readlink '$installs/dummy/1'" "./1.1.0"
+
+echo "=== uninstall removes the installation, its link and the aliases that named it ==="
+assert "mise uninstall dummy@1.1.0"
+assert "test ! -e '$dir_11'"
+assert "test ! -L '$installs/dummy/1.1.0' && test ! -e '$installs/dummy/1.1.0'"
+assert "test ! -L '$installs/dummy/1.1' && test ! -e '$installs/dummy/1.1'"
+# the alias for the major version now names what is left of it
+assert "readlink '$installs/dummy/1'" "./1.0.0"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+# nothing else was touched
+assert "test -f '$dir_10/.mise-install.toml'"
+assert "test -f '$dir_20/.mise-install.toml'"
+assert "readlink '$installs/dummy/1.0.0'" "../$name_10"
+assert "readlink '$installs/dummy/2.0.0'" "../$name_20"
+assert "readlink '$installs/dummy/1.0'" "./1.0.0"
+assert "readlink '$installs/dummy/2'" "./2.0.0"
+# no link under the tool directory is left dangling
+assert_empty "find -L '$installs/dummy' -maxdepth 1 -type l"
+assert_not_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "2.0.0"
+assert_contains "$dir_10/bin/dummy" "This is Dummy 1.0.0!"
+assert_contains "$installs/dummy/2.0.0/bin/dummy" "This is Dummy 2.0.0!"
+
+echo "=== the catalog keeps its record of what was removed ==="
+assert "ls '$installs'/.mise/identities/*/$digest_11.toml"
+assert_contains "cat '$installs'/.mise/identities/*/$digest_11.toml" "dir = \"$name_11\""
+assert "test -f '$installs/.mise/names/$name_11'"
+assert_contains "cat '$installs/.mise/names/$name_11'" "$digest_11"
+
+echo "=== reinstalling lands on the same path ==="
+assert "mise install dummy@1.1.0"
+assert "mise where dummy@1.1.0" "$dir_11"
+assert "test -f '$dir_11/.mise-install.toml'"
+assert "readlink '$installs/dummy/1.1.0'" "../$name_11"
+assert "readlink '$installs/dummy/1.1'" "./1.1.0"
+assert "readlink '$installs/dummy/1'" "./1.1.0"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 3"
+assert_contains "$installs/dummy/1.1.0/bin/dummy" "This is Dummy 1.1.0!"
+
+echo "=== prune removes what no tracked config needs, with its links ==="
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+assert "mise install"
+cd "$(mktemp -d)" || exit 1
+dry_run="$(mise prune --dry-run --tools 2>&1)"
+assert_contains_text "$dry_run" "$name_10"
+assert_contains_text "$dry_run" "$name_11"
+assert_not_contains_text "$dry_run" "$name_20"
+assert "test -d '$dir_10' && test -d '$dir_11'"
+assert "readlink '$installs/dummy/1.1.0'" "../$name_11"
+assert "MISE_YES=1 mise prune --tools"
+assert "test ! -e '$dir_10'"
+assert "test ! -e '$dir_11'"
+assert "test -f '$dir_20/.mise-install.toml'"
+assert "test ! -L '$installs/dummy/1.0.0' && test ! -e '$installs/dummy/1.0.0'"
+assert "test ! -L '$installs/dummy/1.1.0' && test ! -e '$installs/dummy/1.1.0'"
+assert "test ! -L '$installs/dummy/1' && test ! -e '$installs/dummy/1'"
+assert "test ! -L '$installs/dummy/1.0' && test ! -e '$installs/dummy/1.0'"
+assert "test ! -L '$installs/dummy/1.1' && test ! -e '$installs/dummy/1.1'"
+assert "readlink '$installs/dummy/2.0.0'" "../$name_20"
+assert "readlink '$installs/dummy/2'" "./2.0.0"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+assert_empty "find -L '$installs/dummy' -maxdepth 1 -type l"
+assert_succeed "mise prune --dry-run-code --tools"
+# pruned payloads keep their catalog records and reserved names
+assert "test -f '$installs/.mise/names/$name_10'"
+assert "test -f '$installs/.mise/names/$name_11'"
+assert "ls '$installs'/.mise/identities/*/$digest_11.toml"
+assert "mise install dummy@1.0.0"
+assert "mise where dummy@1.0.0" "$dir_10"
+
+echo "=== uninstalling every version leaves no installation and no dangling link ==="
+cd "$HOME/workdir" || exit 1
+rm mise.toml
+assert "mise uninstall --all dummy"
+assert_fail "ls -d '$installs'/dummy-*"
+assert_empty "find '$installs' -maxdepth 1 -name 'dummy-*'"
+assert_empty "find -L '$installs' -maxdepth 2 -type l"
+assert_empty "mise ls --installed dummy"
+assert "test -f '$installs/.mise/names/$name_20'"
+assert "mise install dummy@2.0.0"
+assert "mise where dummy@2.0.0" "$dir_20"
+
+echo "=== uninstall removes a link it does not own, never what the link points at ==="
+# a hand-made version link into a directory that is not an installation
+mkdir -p "$installs/precious"
+echo "keep me" >"$installs/precious/data"
+ln -s ../precious "$installs/dummy/9.9.9"
+mise uninstall dummy@9.9.9 2>&1 || true
+assert "cat '$installs/precious/data'" "keep me"
+# and a hashed-looking directory with no receipt is not an installation either
+mkdir -p "$installs/dummy-notmise"
+echo "keep me too" >"$installs/dummy-notmise/data"
+ln -s ../dummy-notmise "$installs/dummy/8.8.8"
+mise uninstall dummy@8.8.8 2>&1 || true
+assert "cat '$installs/dummy-notmise/data'" "keep me too"
+assert "test -f '$dir_20/.mise-install.toml'"

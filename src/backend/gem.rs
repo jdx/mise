@@ -562,6 +562,12 @@ fn get_gem_executables(install_path: &Path) -> eyre::Result<Vec<std::path::PathB
 /// We create a symlink to the mise-managed Ruby (using minor version) so
 /// the fallback works correctly.
 fn create_ruby_symlink(install_path: &Path) -> eyre::Result<()> {
+    create_ruby_symlink_in(&env::MISE_INSTALLS_DIR, install_path)
+}
+
+#[cfg(unix)]
+/// [`create_ruby_symlink`] for the installs root `installs_dir`.
+fn create_ruby_symlink_in(installs_dir: &Path, install_path: &Path) -> eyre::Result<()> {
     let libexec_bin = install_path.join("libexec/bin");
     let ruby_symlink = libexec_bin.join("ruby");
 
@@ -592,15 +598,16 @@ fn create_ruby_symlink(install_path: &Path) -> eyre::Result<()> {
     if ruby_path.is_empty() {
         return Ok(());
     }
+    let ruby_path = mise_ruby_path(installs_dir, ruby_path);
 
     // Only create symlink for mise-managed Ruby
     // For system Ruby, the shebang is #!/usr/bin/env ruby, which we can't symlink to
-    if !is_mise_ruby_path(ruby_path) {
+    if !is_mise_ruby_path(installs_dir, &ruby_path) {
         return Ok(());
     }
 
     // Create symlink to the ruby executable
-    file::make_symlink(Path::new(ruby_path), &ruby_symlink)?;
+    file::make_symlink(Path::new(&ruby_path), &ruby_symlink)?;
     Ok(())
 }
 
@@ -614,6 +621,12 @@ fn create_ruby_symlink(install_path: &Path) -> eyre::Result<()> {
 /// Handles both regular Ruby scripts and RubyGems polyglot scripts which have
 /// `#!/bin/sh` on line 1 but the actual Ruby shebang after `=end`.
 fn rewrite_gem_shebangs(install_path: &Path) -> eyre::Result<()> {
+    rewrite_gem_shebangs_in(&env::MISE_INSTALLS_DIR, install_path)
+}
+
+#[cfg(unix)]
+/// [`rewrite_gem_shebangs`] for the installs root `installs_dir`.
+fn rewrite_gem_shebangs_in(installs_dir: &Path, install_path: &Path) -> eyre::Result<()> {
     let executables = get_gem_executables(install_path)?;
 
     for exec_path in executables {
@@ -634,12 +647,12 @@ fn rewrite_gem_shebangs(install_path: &Path) -> eyre::Result<()> {
         // Extract the Ruby path and any arguments from the shebang
         let shebang_content = shebang_line.trim_start_matches("#!");
         let mut parts = shebang_content.split_whitespace();
-        let ruby_path = parts.next().unwrap_or("");
+        let ruby_path = mise_ruby_path(installs_dir, parts.next().unwrap_or(""));
         let shebang_args: Vec<&str> = parts.collect();
 
-        let new_shebang = if is_mise_ruby_path(ruby_path) {
+        let new_shebang = if is_mise_ruby_path(installs_dir, &ruby_path) {
             // Mise-managed Ruby: use minor version symlink, preserving any arguments
-            match to_minor_version_shebang(ruby_path) {
+            match to_minor_version_shebang(installs_dir, &ruby_path) {
                 Some(path) => {
                     if shebang_args.is_empty() {
                         format!("#!{path}")
@@ -700,17 +713,28 @@ fn find_ruby_shebang<'a>(lines: &'a [&'a str]) -> Option<(usize, &'a str)> {
 }
 
 #[cfg(unix)]
+/// `ruby_path` as the installs tree names it. A ruby that RubyGems recorded by its
+/// identity-layout directory (`installs/ruby-<hash>/bin/ruby`) is named through its version
+/// link (`installs/ruby/3.1.0/bin/ruby`) instead, which is what the minor version link below
+/// is built on. Any other path comes back unchanged.
+fn mise_ruby_path(installs_dir: &Path, ruby_path: &str) -> String {
+    crate::backend::static_helpers::tool_link_path(installs_dir, Path::new(ruby_path), "ruby")
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|| ruby_path.to_string())
+}
+
+#[cfg(unix)]
 /// Checks if a Ruby path is within mise's installs directory.
-fn is_mise_ruby_path(ruby_path: &str) -> bool {
-    let ruby_installs = env::MISE_INSTALLS_DIR.join("ruby");
+fn is_mise_ruby_path(installs_dir: &Path, ruby_path: &str) -> bool {
+    let ruby_installs = installs_dir.join("ruby");
     Path::new(ruby_path).starts_with(&ruby_installs)
 }
 
 #[cfg(unix)]
 /// Converts a full version Ruby shebang to use the minor version symlink.
 /// e.g., `/home/user/.mise/installs/ruby/3.1.0/bin/ruby` → `/home/user/.mise/installs/ruby/3.1/bin/ruby`
-fn to_minor_version_shebang(ruby_path: &str) -> Option<String> {
-    let ruby_installs = env::MISE_INSTALLS_DIR.join("ruby");
+fn to_minor_version_shebang(installs_dir: &Path, ruby_path: &str) -> Option<String> {
+    let ruby_installs = installs_dir.join("ruby");
     let ruby_installs_str = ruby_installs.to_string_lossy();
 
     // Check if path matches pattern: {installs}/ruby/{version}/bin/ruby
@@ -1104,6 +1128,91 @@ mod tests {
                 .remote_version_listing_tool_option_keys()
                 .contains(&"source"),
             "a version list from one registry must not answer for another"
+        );
+    }
+
+    /// A gem install whose one executable has `shebang` as its first line.
+    #[cfg(unix)]
+    fn gem_install_with_shebang(install: &Path, shebang: &str) -> std::path::PathBuf {
+        let exe = install.join("libexec/bin/rubocop");
+        file::create_dir_all(exe.parent().unwrap()).unwrap();
+        file::write(&exe, format!("{shebang}\nputs 'hi'\n")).unwrap();
+        file::make_executable(&exe).unwrap();
+        exe
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_gem_shebangs_follow_the_minor_version_link_in_both_layouts() {
+        use crate::backend::static_helpers::{test_identity_install, test_link_install};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let hashed = test_identity_install(&installs, "core:ruby", "3.3.0", "ruby-aaaaaaaa");
+        file::write(hashed.join("bin/ruby"), "").unwrap();
+        test_link_install(&installs, "ruby", "3.3.0", "ruby-aaaaaaaa");
+        let legacy = installs.join("ruby/3.2.4");
+        file::create_dir_all(legacy.join("bin")).unwrap();
+        file::write(legacy.join("bin/ruby"), "").unwrap();
+
+        let cases = [
+            // Identity layout, recorded by the hashed directory.
+            (
+                format!("#!{}", hashed.join("bin/ruby").display()),
+                format!("#!{}", installs.join("ruby/3.3/bin/ruby").display()),
+            ),
+            // Identity layout, recorded by the version link, with an interpreter argument.
+            (
+                format!("#!{} -w", installs.join("ruby/3.3.0/bin/ruby").display()),
+                format!("#!{} -w", installs.join("ruby/3.3/bin/ruby").display()),
+            ),
+            // Legacy layout.
+            (
+                format!("#!{}", legacy.join("bin/ruby").display()),
+                format!("#!{}", installs.join("ruby/3.2/bin/ruby").display()),
+            ),
+            // A system ruby goes through env.
+            (
+                "#!/usr/bin/ruby".to_string(),
+                "#!/usr/bin/env ruby".to_string(),
+            ),
+        ];
+        for (shebang, expected) in cases {
+            let install = tmp.path().join("gem");
+            let exe = gem_install_with_shebang(&install, &shebang);
+            rewrite_gem_shebangs_in(&installs, &install).unwrap();
+            let rewritten = file::read_to_string(&exe).unwrap();
+            assert_eq!(
+                rewritten.lines().next(),
+                Some(expected.as_str()),
+                "{shebang}"
+            );
+            file::remove_all(&install).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_gem_polyglot_fallback_links_the_identity_layout_ruby() {
+        use crate::backend::static_helpers::{test_identity_install, test_link_install};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let hashed = test_identity_install(&installs, "core:ruby", "3.3.0", "ruby-aaaaaaaa");
+        file::write(hashed.join("bin/ruby"), "").unwrap();
+        test_link_install(&installs, "ruby", "3.3.0", "ruby-aaaaaaaa");
+
+        let install = tmp.path().join("gem");
+        gem_install_with_shebang(
+            &install,
+            &format!("#!{}", hashed.join("bin/ruby").display()),
+        );
+        create_ruby_symlink_in(&installs, &install).unwrap();
+
+        // The fallback ruby is reached through the version link, not the hashed directory.
+        assert_eq!(
+            file::resolve_symlink(&install.join("libexec/bin/ruby")).unwrap(),
+            Some(installs.join("ruby/3.3.0/bin/ruby"))
         );
     }
 

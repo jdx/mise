@@ -1639,7 +1639,11 @@ fn empty_install_error(tv: &ToolVersion) -> String {
 
 fn install_dir_is_empty(path: &Path) -> bool {
     match std::fs::read_dir(path) {
-        Ok(mut entries) => entries.next().is_none(),
+        // An identity-layout installation always holds its receipt; a directory with
+        // nothing but that has lost its payload.
+        Ok(mut entries) => entries.all(|entry| {
+            entry.is_ok_and(|e| crate::install_layout::resolver::is_receipt_name(&e.file_name()))
+        }),
         // Unreadable, and missing, are not the same as empty. Say nothing.
         Err(_) => false,
     }

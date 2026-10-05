@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Tool aliases of one backend with different options are different installations
+# of the same version, and each alias sees only its own (jdx/mise#13678).
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+installs="$MISE_DATA_DIR/installs"
+
+cat >mise.toml <<'TOML'
+[tool_alias]
+dum-a = "vfox:tiny"
+dum-b = "vfox:tiny"
+
+[tools.dum-a]
+version = "3.1.0"
+flavor = "a"
+
+[tools.dum-b]
+version = "3.1.0"
+flavor = "b"
+TOML
+
+assert "mise install"
+dir_a="$(mise where dum-a)"
+dir_b="$(mise where dum-b)"
+[[ $dir_a != "$dir_b" ]] || fail "the two aliases share the installation $dir_a"
+assert_matches "mise where dum-a" "^$installs/tiny-[a-z2-7]{8}\$"
+assert_matches "mise where dum-b" "^$installs/tiny-[a-z2-7]{8}\$"
+
+# each alias links its own installation
+assert "readlink '$installs/dum-a/3.1.0'" "../$(basename "$dir_a")"
+assert "readlink '$installs/dum-b/3.1.0'" "../$(basename "$dir_b")"
+
+# and lists only that one: one row per alias, no directory marker needed
+assert_not_contains "mise ls dum-a" "["
+assert_not_contains "mise ls dum-b" "["
+assert "mise ls --json dum-a | jq -r '.[0].install_path'" "$dir_a"
+assert "mise ls --json dum-b | jq -r '.[0].install_path'" "$dir_b"
+
+# uninstalling the aliases removes one installation each
+assert "mise uninstall dum-a dum-b"
+assert "test ! -e '$dir_a'"
+assert "test ! -e '$dir_b'"

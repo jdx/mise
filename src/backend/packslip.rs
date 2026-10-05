@@ -1783,6 +1783,12 @@ impl Backend for PackslipBackend {
         ]
     }
 
+    /// `list_identity_prefix` only changes who may have signed the release index.
+    /// Installing a concrete version never reads it.
+    fn identity_ignored_options(&self) -> &'static [&'static str] {
+        &["list_identity_prefix"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         self.policy_versions(&opts).await
@@ -2371,7 +2377,7 @@ mod tests {
             "original binary"
         );
         assert!(
-            !install_state::incomplete_file_path(&ba, &tv.tv_pathname()).exists(),
+            !install_state::incomplete_file_path(&ba, &tv.state_key()).exists(),
             "the generic marker is cleared after the payload succeeds"
         );
         assert!(crate::packslip::skills_incomplete_path(&install_path).is_file());
@@ -2457,6 +2463,38 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
             panic!("expected keyless policy");
         };
         assert_eq!(&list, bundle);
+    }
+
+    #[test]
+    fn identity_options_ignore_the_release_index_signer() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = PackslipBackend::from_arg(BackendArg::from("packslip:packslip.dev/tool"));
+        let identity = |options: &[(&str, &str)]| {
+            test_identity_options(
+                &backend,
+                "1.0.0",
+                &[
+                    &[("issuer", "https://token.actions.githubusercontent.com")],
+                    options,
+                ]
+                .concat(),
+            )
+        };
+        let base = identity(&[]);
+        assert_eq!(
+            identity(&[(
+                "list_identity_prefix",
+                "https://github.com/jdx/packslip/.github/workflows/packslip-releases.yml@"
+            )]),
+            base
+        );
+        for (key, value) in [("variant", "gpu"), ("trust", "vendor")] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
     }
 
     #[test]

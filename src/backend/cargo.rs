@@ -352,6 +352,16 @@ impl Backend for CargoBackend {
         let opts = request.options();
         Ok(CargoOptions::new(&opts).lockfile_options(target))
     }
+
+    /// `cargo.registry_name` makes `cargo install` take the crate from another registry,
+    /// where the same name and version can be different code.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = super::static_helpers::request_identity_options(self, tv);
+        if let Some(registry) = &Settings::get().cargo.registry_name {
+            options.insert("cargo.registry".to_string(), registry.clone());
+        }
+        options
+    }
 }
 
 /// Returns install-time-only option keys for Cargo backend.
@@ -602,6 +612,33 @@ mod tests {
         let mut tv = ToolVersion::new(request, "1.0.0".to_string());
         tv.install_path = Some(install_path.to_path_buf());
         tv
+    }
+
+    #[test]
+    fn test_install_identity_options_include_the_registry() {
+        use crate::backend::static_helpers::test_identity_options;
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+        let identity = |registry: Option<&str>, options: &[(&str, &str)]| {
+            let mut partial = SettingsPartial::empty();
+            partial.cargo.registry_name = registry.map(str::to_string);
+            Settings::reset(Some(partial));
+            test_identity_options(&backend, "1.0.0", options)
+        };
+
+        let default = identity(None, &[]);
+        assert!(default.is_empty(), "{default:?}");
+        assert_ne!(identity(Some("internal"), &[]), default);
+        assert_ne!(
+            identity(Some("internal"), &[]),
+            identity(Some("other"), &[])
+        );
+        assert_ne!(identity(None, &[("features", "tls")]), default);
+        Settings::reset(None);
     }
 
     #[tokio::test]

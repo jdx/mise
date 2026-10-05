@@ -41,6 +41,8 @@ const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
 const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
+/// The identity option naming the package manager, when it is not the embedded aube.
+const NPM_PACKAGE_MANAGER_IDENTITY_KEY: &str = "npm.package_manager";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 const PNPM_GLOBAL_DIR_ENV_VERSION: &str = "12.0.0";
 
@@ -542,6 +544,23 @@ impl Backend for NPMBackend {
     ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
         Ok(NpmOptions::new(&opts).lockfile_options())
+    }
+
+    /// The package manager decides how the package tree is laid out under the install
+    /// directory (`node_modules` plus linked bins for the embedded aube, a global prefix
+    /// for npm, bun and pnpm), so installs made with different ones are different installs
+    /// of one version. The embedded aube is the default and adds nothing, which keeps its
+    /// identity free of this setting.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = super::static_helpers::request_identity_options(self, tv);
+        let package_manager = Self::resolved_package_manager();
+        if package_manager != NpmPackageManager::Aube {
+            options.insert(
+                NPM_PACKAGE_MANAGER_IDENTITY_KEY.to_string(),
+                package_manager.to_string(),
+            );
+        }
+        options
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -1302,6 +1321,11 @@ impl NPMBackend {
         _config: &Arc<Config>,
         _ts: Option<&Toolset>,
     ) -> NpmPackageManager {
+        Self::resolved_package_manager()
+    }
+
+    /// The package manager an install runs, from the settings alone.
+    fn resolved_package_manager() -> NpmPackageManager {
         let settings = Settings::get();
         match settings.npm.package_manager {
             // aube is embedded, so `auto` normally resolves to it — no need to
@@ -3315,6 +3339,60 @@ pkg@1.2.0 '1.2.0'
             crate::semver::semver_is_at_least("11.15.9", NPM_ALLOW_SCRIPTS_VERSION),
             Some(false)
         );
+    }
+
+    #[test]
+    fn test_install_identity_options_follow_the_package_manager() {
+        use crate::backend::static_helpers::test_identity_options;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _settings = crate::test::SettingsGuard::lock();
+        let backend = create_npm_backend("react-devtools");
+        let identity = |configure: &dyn Fn(&mut SettingsPartial)| {
+            let mut partial = SettingsPartial::empty();
+            configure(&mut partial);
+            Settings::reset(Some(partial));
+            test_identity_options(&backend, "1.0.0", &[])
+        };
+
+        // The embedded aube is the default, however it is spelled.
+        let default = identity(&|_| {});
+        assert!(default.is_empty(), "{default:?}");
+        assert_eq!(
+            identity(&|s| s.npm.package_manager = Some(NpmPackageManager::Aube)),
+            default
+        );
+
+        // `shell_out` moves the default package manager to the npm CLI, which an
+        // explicit `npm` does as well.
+        let npm = identity(&|s| s.npm.shell_out = Some(true));
+        assert_eq!(
+            npm.get(NPM_PACKAGE_MANAGER_IDENTITY_KEY)
+                .map(String::as_str),
+            Some("npm")
+        );
+        assert_eq!(
+            identity(&|s| s.npm.package_manager = Some(NpmPackageManager::Npm)),
+            npm
+        );
+
+        let bun = identity(&|s| s.npm.package_manager = Some(NpmPackageManager::Bun));
+        assert_eq!(
+            bun.get(NPM_PACKAGE_MANAGER_IDENTITY_KEY)
+                .map(String::as_str),
+            Some("bun")
+        );
+        let aube_cli = identity(&|s| s.npm.package_manager = Some(NpmPackageManager::AubeCli));
+        assert_eq!(
+            aube_cli
+                .get(NPM_PACKAGE_MANAGER_IDENTITY_KEY)
+                .map(String::as_str),
+            Some("aube_cli")
+        );
+        assert_ne!(bun, npm);
+        assert_ne!(aube_cli, default);
+        Settings::reset(None);
     }
 
     #[test]

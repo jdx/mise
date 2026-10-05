@@ -1351,6 +1351,11 @@
           "type": "string",
           "deprecated": true
         },
+        "install_layout": {
+          "description": "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`).",
+          "type": "string",
+          "enum": ["legacy", "identity"]
+        },
         "java": {
           "type": "object",
           "unevaluatedProperties": false,
