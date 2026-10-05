@@ -365,7 +365,10 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             display_path(legacy)
         );
     }
-    // Old directories moved aside by a run whose journal is gone.
+    // Old directories moved aside by a run whose journal is gone (or could not
+    // be read). Without it nothing says whether that run finished, so one is put
+    // back only where nothing took its place; a version link there may be the
+    // finished migration's, and both are kept for the user to decide.
     let root: &Path = &dirs::INSTALLS;
     for tool in file::dir_subdirs(root).unwrap_or_default() {
         let tool_dir = root.join(&tool);
@@ -382,8 +385,7 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             if Journal::path_for(&legacy).exists() {
                 continue;
             }
-            let free = std::fs::symlink_metadata(&legacy).is_err()
-                || file::is_symlink_or_junction(&legacy);
+            let free = std::fs::symlink_metadata(&legacy).is_err();
             if dry_run {
                 if free {
                     miseprintln!(
@@ -399,9 +401,11 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                 );
             } else {
                 warn!(
-                    "{} was left by an interrupted migration; {} is in use, so it is kept",
+                    "{} was left by a migration whose record is gone; {} is in use, so it \
+                     is kept: remove it if {} works",
                     display_path(&entry),
-                    display_path(&legacy)
+                    display_path(&legacy),
+                    version
                 );
             }
         }
@@ -572,8 +576,11 @@ async fn reinstall(tv: &ToolVersion) -> Result<PathBuf> {
         ..Default::default()
     };
     // Exactly this version: a lockfile entry for the tool must not swap in the
-    // version it pins.
+    // version it pins. Locked mode, which requires a lockfile URL for every
+    // install, does not apply either: this is a version already installed,
+    // moved, not one the lockfile chose.
     opts.resolve_options.use_locked_version = false;
+    opts.locked = false;
     let installed = ts
         .install_all_versions(&mut config, vec![request.clone()], &opts)
         .await?;

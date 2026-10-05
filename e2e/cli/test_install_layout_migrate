@@ -123,6 +123,14 @@ assert "mise install dummy@2.0.0"
 echo "not a journal [" >"$installs/.mise/migrations/dummy@2.0.0.toml"
 assert_contains "mise installs migrate 2>&1" "cannot be read"
 assert_empty "ls '$installs/.mise/migrations'"
+# ...and an old directory left beside the version link, which may be a finished
+# migration's, is kept rather than put back over it
+echo "not a journal [" >"$installs/.mise/migrations/dummy@2.0.0.toml"
+mkdir "$installs/dummy/.2.0.0.mise-migrating"
+assert_contains "mise installs migrate 2>&1" "is kept"
+assert "test -L '$installs/dummy/2.0.0'"
+assert "test -d '$installs/dummy/.2.0.0.mise-migrating'"
+rm -rf "$installs/dummy/.2.0.0.mise-migrating"
 
 echo "=== a legacy version with an installation already in the new layout keeps its path ==="
 assert "MISE_INSTALL_LAYOUT=legacy MISE_EXPERIMENTAL=0 mise install tiny@3.0.0"
