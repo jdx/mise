@@ -19,11 +19,6 @@ use tokio::process::Command;
 /// repeated there.
 const PIN_A_PORT: &str = "declare the daemon again in a gitignored mise.local.toml with a fixed `port = <n>`, or with `port = { auto = true, base = <n> }` to move its range. That declaration replaces the whole daemon, so repeat its other keys.";
 
-/// Whether something already listens on this loopback port, on either family.
-/// Binding is what a daemon would do next, so a failure to bind is the same
-/// answer it would get. A daemon may bind `::1` instead of `127.0.0.1`, and an
-/// IPv6-only listener does not conflict on the other family, so both are tried.
-/// A host without IPv6 loopback cannot have anything listening there.
 /// Names a nested mise withholds from pitchfork: the secrets it inherited and
 /// the marker that names them.
 fn inherited_secret_env_names() -> Vec<&'static str> {
@@ -52,6 +47,11 @@ fn strip_inherited_secrets(command: &mut Command, keys: &BTreeSet<String>) {
     }
 }
 
+/// Whether something already listens on this loopback port, on either family.
+/// Binding is what a daemon would do next, so a failure to bind is the same
+/// answer it would get. A daemon may bind `::1` instead of `127.0.0.1`, and an
+/// IPv6-only listener does not conflict on the other family, so both are tried.
+/// A host without IPv6 loopback cannot have anything listening there.
 fn port_is_taken(port: u16) -> bool {
     std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).is_err()
         || std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port))
@@ -1343,9 +1343,6 @@ mod tests {
         );
     }
 
-    /// A failing pitchfork has already explained itself on the terminal, so the
-    /// error mise raises is only the status it exits with. A signal has no
-    /// status to hand on and stays an ordinary error.
     #[cfg(unix)]
     #[tokio::test]
     async fn inherited_secrets_are_removed_from_the_pitchfork_command() {
@@ -1358,6 +1355,9 @@ mod tests {
         assert!(out.lines().any(|l| l == "KEEP=x"));
     }
 
+    /// A failing pitchfork has already explained itself on the terminal, so the
+    /// error mise raises is only the status it exits with. A signal has no
+    /// status to hand on and stays an ordinary error.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_failing_pitchfork_exits_quietly_with_its_status() {
