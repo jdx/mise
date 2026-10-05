@@ -874,6 +874,15 @@ Run tasks and their dependencies
 \fBsearch\fR
 Search for available tools
 .TP
+\fBsecrets\fR
+[experimental] Show the secrets this project's secrets source can give tasks
+.TP
+\fBsecrets ls\fR
+List the secrets this project's secrets source can give tasks
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
 \fBself\-update\fR
 Update mise itself
 .TP
@@ -7859,6 +7868,50 @@ Search a tool
   gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 /jq
 esc clear filter • enter confirm
+.RE
+.SH "MISE SECRETS"
+[experimental] Show the secrets this project's secrets source can give tasks
+.PP
+\fBUsage:\fR mise secrets [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SECRETS LS"
+List the secrets this project's secrets source can give tasks
+
+Shows names and metadata only; values are never shown. The source is declared in the
+project's `mise.toml` with `[secrets.fnox]`.
+.PP
+\fBUsage:\fR mise secrets ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise secrets ls
+KEY                ENV    FILE  DESCRIPTION
+DATABASE_URL       true   no    app database
+DEPLOY_KEY         exec   no
 .RE
 .SH "MISE SELF-UPDATE"
 Update mise itself

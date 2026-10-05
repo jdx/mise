@@ -518,6 +518,8 @@ impl Doctor {
         }
         info::section("backends", render_backends())?;
         info::section("plugins", render_plugins())?;
+        self.warnings
+            .extend(crate::secrets::doctor_warnings(config).await);
 
         for backend in backend::list() {
             if let Some(plugin) = backend.plugin()

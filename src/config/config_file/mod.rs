@@ -245,6 +245,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
+    fn secrets_config(&self) -> Option<::toml::Value> {
+        None
+    }
+
     fn dotfiles_config(&self) -> Option<crate::system::DotfilesTomlConfig> {
         None
     }

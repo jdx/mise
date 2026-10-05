@@ -271,6 +271,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("registry", Read),
     ("reshim", Write),
     ("search", Read),
+    ("secrets", Read),
+    ("secrets ls", Read),
     ("self-update", Write),
     ("set", Write),
     // Bare `mise settings` lists, but `mise settings foo bar` and

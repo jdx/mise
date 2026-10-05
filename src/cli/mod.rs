@@ -91,6 +91,7 @@ mod render_help;
 mod reshim;
 pub(crate) mod run;
 mod search;
+mod secrets;
 #[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
 pub(crate) mod self_update;
 mod set;
@@ -370,6 +371,7 @@ pub(crate) enum Commands {
     Reshim(reshim::Reshim),
     Run(Box<run::Run>),
     Search(search::Search),
+    Secrets(secrets::Secrets),
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
     Settings(settings::Settings),
@@ -534,6 +536,7 @@ impl Commands {
             Self::Reshim(cmd) => Box::pin(cmd.run()),
             Self::Run(cmd) => Box::pin((*cmd).run()),
             Self::Search(cmd) => Box::pin(cmd.run()),
+            Self::Secrets(cmd) => Box::pin(cmd.run()),
             Self::SelfUpdate(cmd) => Box::pin(cmd.run()),
             Self::Set(cmd) => Box::pin(cmd.run()),
             Self::Settings(cmd) => Box::pin(cmd.run()),
