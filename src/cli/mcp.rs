@@ -169,6 +169,8 @@ impl MiseServer {
         &self,
         Parameters(RunTaskParams { task, args }): Parameters<RunTaskParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
+        validate_task_name(&task)?;
+
         let exe = std::env::current_exe().map_err(|e| ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
             message: Cow::Owned(format!("Failed to get current exe: {e}")),
@@ -525,9 +527,45 @@ impl Mcp {
     }
 }
 
+/// `task` is handed to `mise run` as an argument, so a leading dash would be
+/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task.
+fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
+    let message = if task.is_empty() {
+        "invalid task name '': a task name is required".to_string()
+    } else if task.starts_with('-') {
+        format!("invalid task name '{task}': task names cannot start with '-'")
+    } else {
+        return Ok(());
+    };
+    Err(ErrorData {
+        code: ErrorCode::INVALID_PARAMS,
+        message: message.into(),
+        data: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_task_name_rejects_flags_and_empty() {
+        for task in ["", "-x", "--secrets-all", "--cd=/tmp", "--raw"] {
+            let err = validate_task_name(task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+        }
+        assert_eq!(
+            validate_task_name("--raw").unwrap_err().message,
+            "invalid task name '--raw': task names cannot start with '-'"
+        );
+    }
+
+    #[test]
+    fn validate_task_name_accepts_task_names() {
+        for task in ["build", "//sub:build", "lint:fix", "a-b", "test:e2e"] {
+            validate_task_name(task).unwrap_or_else(|_| panic!("{task:?} should be accepted"));
+        }
+    }
 
     /// The text of every command row `list_commands` returns.
     async fn commands(include_hidden: bool) -> Vec<Value> {
