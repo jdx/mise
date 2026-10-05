@@ -93,7 +93,7 @@ mod tests {
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
-        assert_str_eq!(shorthands["aapt2"][0], "vfox:mise-plugins/vfox-aapt2");
+        assert_str_eq!(shorthands["aapt2"][0], "vfox:jdx/vfox-aapt2");
         assert_str_eq!(shorthands["scala"][0], "vfox:mise-plugins/vfox-scala");
         assert_str_eq!(shorthands["groovy"][0], "vfox:jdx/vfox-groovy");
         assert_str_eq!(shorthands["mongodb"][0], "vfox:jdx/vfox-mongod");
