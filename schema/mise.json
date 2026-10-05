@@ -1421,6 +1421,11 @@
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
+        "lockfile_auto_prune": {
+          "default": true,
+          "description": "Remove lockfile tools that are absent from the active configuration.",
+          "type": "boolean"
+        },
         "lockfile_mode": {
           "description": "Choose incremental merging or complete lockfile generation.",
           "type": "string",
@@ -1432,11 +1437,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "lockfile_auto_prune": {
-          "default": true,
-          "description": "Remove lockfile tools that are absent from the active configuration.",
-          "type": "boolean"
         },
         "log_level": {
           "default": "info",
