@@ -1240,7 +1240,7 @@ fn check_restored_artifact(
 /// Withdraw an installation [`finish`] published: remove its receipt (so it is
 /// incomplete again) and the version links that name it. The catalog record and
 /// the directory name stay, so a retry lands in the same place.
-pub(crate) fn unpublish(dir: &Path) {
+pub fn unpublish(dir: &Path) {
     if let Err(err) = file::remove_file(dir.join(RECEIPT_FILE)) {
         debug!("could not remove the receipt of {}: {err:#}", dir.display());
     }

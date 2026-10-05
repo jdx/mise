@@ -128,39 +128,49 @@ impl InstallsMigrate {
     }
 }
 
-/// The name a legacy directory is moved aside to while it is migrated. Scans
-/// skip dot-prefixed entries, so it is invisible until put back or removed.
-fn aside_path(legacy: &Path) -> PathBuf {
+/// The name a legacy directory is moved aside to while it is migrated
+/// ([`ASIDE_SUFFIX`]), or once its migration has finished ([`MIGRATED_SUFFIX`]).
+/// Scans skip dot-prefixed entries, so it is invisible until put back or removed.
+fn aside_path(legacy: &Path, suffix: &str) -> PathBuf {
     let name = legacy
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    legacy.with_file_name(format!(".{name}{ASIDE_SUFFIX}"))
+    legacy.with_file_name(format!(".{name}{suffix}"))
 }
 
 const ASIDE_SUFFIX: &str = ".mise-migrating";
+const MIGRATED_SUFFIX: &str = ".mise-migrated";
 
 /// Finish or undo migrations an earlier run did not complete (it was
-/// interrupted): a directory still moved aside is put back when nothing took
-/// its place, and removed when its version link leads to a complete
-/// installation.
+/// interrupted). A directory marked migrated is removed: its replacement was
+/// installed, checked and linked. One still moved aside is put back unless a real
+/// directory took its place. The replacement's receipt and version link are not
+/// proof it finished, because an install writes them before its postinstall runs:
+/// the replacement is withdrawn and made again when the version is migrated.
 fn recover_interrupted(dry_run: bool) -> Result<()> {
     let root: &Path = &dirs::INSTALLS;
     for tool in file::dir_subdirs(root).unwrap_or_default() {
         let tool_dir = root.join(&tool);
         for entry in file::ls(&tool_dir).unwrap_or_default() {
-            let Some(version) = entry
+            let Some(name) = entry
                 .file_name()
                 .and_then(|n| n.to_str())
                 .and_then(|n| n.strip_prefix('.'))
-                .and_then(|n| n.strip_suffix(ASIDE_SUFFIX))
-                .map(str::to_string)
             else {
                 continue;
             };
-            let legacy = tool_dir.join(&version);
-            let finished = resolver::link_target(&legacy).is_some();
-            let free = std::fs::symlink_metadata(&legacy).is_err();
+            let (version, finished) = if let Some(v) = name.strip_suffix(MIGRATED_SUFFIX) {
+                (v, true)
+            } else if let Some(v) = name.strip_suffix(ASIDE_SUFFIX) {
+                (v, false)
+            } else {
+                continue;
+            };
+            let legacy = tool_dir.join(version);
+            // Free, or holding only the version link the interrupted install made.
+            let free = std::fs::symlink_metadata(&legacy).is_err()
+                || file::is_symlink_or_junction(&legacy);
             if dry_run {
                 let action = if finished {
                     format!(
@@ -187,7 +197,10 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                     display_path(&entry)
                 );
             } else if free {
-                file::rename(&entry, &legacy)?;
+                if let Some(dir) = resolver::link_target(&legacy) {
+                    resolver::unpublish(&dir);
+                }
+                restore(&legacy, &entry)?;
                 info!(
                     "restored {} from an interrupted migration",
                     display_path(&legacy)
@@ -231,7 +244,7 @@ impl Drop for Aside<'_> {
 /// and is put back if the new installation does not complete.
 async fn migrate(tv: &ToolVersion) -> Result<()> {
     let legacy = tv.install_path();
-    let aside = aside_path(&legacy);
+    let aside = aside_path(&legacy, ASIDE_SUFFIX);
     if aside.exists() {
         eyre::bail!(
             "{} is left over from an earlier migration; put it back at {} or remove it first",
@@ -239,12 +252,12 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             display_path(&legacy)
         );
     }
-    // Nothing else installs or removes this version while its directory moves.
-    // (The install below takes the same lock itself.)
-    {
-        let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
-        file::rename(&legacy, &aside)?;
-    }
+    // Nothing else installs, removes or links this version until the migration
+    // is resolved: an install with the legacy layout would put a directory back
+    // where the old one has to return. The reinstall below is locked by its own
+    // installation directory, not by this version, so it does not wait on this.
+    let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
+    file::rename(&legacy, &aside)?;
     let mut guard = Aside {
         legacy: &legacy,
         aside: &aside,
@@ -269,17 +282,24 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             ))
         }
     });
-    // The guard stays armed until the lock for the final step is held, so a
-    // failure to take it still puts the directory back.
-    let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
     guard.armed = false;
     match installed {
         Ok(dir) => {
-            if let Err(err) = file::remove_all(&aside) {
+            // Marked finished before it is removed, so an interruption from here
+            // on is completed by the next run rather than undone.
+            let migrated = aside_path(&legacy, MIGRATED_SUFFIX);
+            let old = match file::rename(&aside, &migrated) {
+                Ok(()) => migrated,
+                Err(err) => {
+                    debug!("could not mark {} migrated: {err:#}", display_path(&aside));
+                    aside.clone()
+                }
+            };
+            if let Err(err) = file::remove_all(&old) {
                 warn!(
                     "migrated {}, but could not remove the old directory {}: {err:#}",
                     tv.style(),
-                    display_path(&aside)
+                    display_path(&old)
                 );
             }
             miseprintln!("migrated {} to {}", tv.style(), display_path(&dir));

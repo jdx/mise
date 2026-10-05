@@ -31,7 +31,7 @@ assert_contains "$installs/dummy/1.1.0/bin/dummy" "This is Dummy 1.1.0!"
 # the runtime alias made for the legacy install still resolves, through the link
 assert "readlink '$installs/dummy/1.1'" "./1.1.0"
 assert_contains "$installs/dummy/1.1/bin/dummy" "This is Dummy 1.1.0!"
-assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrat*'"
 # the version that was not named is still legacy
 assert "test -d '$installs/dummy/1.0.0' && test ! -L '$installs/dummy/1.0.0'"
 
@@ -42,7 +42,7 @@ echo kept >"$installs/dummy/other-dummy/marker"
 assert_fail "mise installs migrate dummy@other-dummy"
 assert "test -d '$installs/dummy/other-dummy' && test ! -L '$installs/dummy/other-dummy'"
 assert_contains "cat '$installs/dummy/other-dummy/marker'" "kept"
-assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrat*'"
 rm -rf "$installs/dummy/other-dummy"
 
 echo "=== with no arguments, every remaining legacy installation moves ==="
@@ -62,7 +62,26 @@ mv "$installs/dummy/2.0.0" "$installs/dummy/.2.0.0.mise-migrating"
 assert_contains "mise installs migrate --dry-run 2>&1" "then migrate it"
 assert_contains "mise installs migrate dummy@2.0.0 2>&1" "restored"
 assert "test -L '$installs/dummy/2.0.0'"
-assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrating'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrat*'"
+# as if a run stopped after the reinstall wrote its receipt and version link,
+# but before it finished: neither proves the postinstall ran
+assert "mise uninstall dummy@2.0.0"
+assert "MISE_INSTALL_LAYOUT=legacy MISE_EXPERIMENTAL=0 mise install dummy@2.0.0"
+echo old >"$installs/dummy/2.0.0/marker"
+mv "$installs/dummy/2.0.0" "$installs/dummy/.2.0.0.mise-migrating"
+assert "mise install dummy@2.0.0"
+assert "test -L '$installs/dummy/2.0.0'"
+assert_contains "mise installs migrate --dry-run 2>&1" "installs/dummy/2.0.0 from an interrupted migration, then migrate it"
+assert_contains "mise installs migrate dummy@2.0.0 2>&1" "restored"
+assert "test -f '$(mise where dummy@2.0.0)/.mise-install.toml'"
+assert "test ! -e '$installs/dummy/2.0.0/marker'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrat*'"
+# as if a run stopped after marking the migration finished, before removing the
+# old directory
+mkdir "$installs/dummy/.2.0.0.mise-migrated"
+assert_contains "mise installs migrate 2>&1" "removed"
+assert "test -L '$installs/dummy/2.0.0'"
+assert_empty "find '$installs/dummy' -maxdepth 1 -name '.*mise-migrat*'"
 
 echo "=== a legacy version with an installation already in the new layout keeps its path ==="
 assert "MISE_INSTALL_LAYOUT=legacy MISE_EXPERIMENTAL=0 mise install tiny@3.0.0"
