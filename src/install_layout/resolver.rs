@@ -1544,11 +1544,21 @@ fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str
     let root: &Path = &dirs::INSTALLS;
     let key = request_of(&record.identity);
     let name = listing_name(record);
-    for tool in file::dir_subdirs(root).unwrap_or_default() {
-        if is_reserved_dir(root, &tool) {
-            continue;
-        }
-        let tool_dir = root.join(&tool);
+    let requested_dir =
+        requested_as.map(|short| root.join(crate::backend::tool_directory_name(short)));
+    let mut tool_dirs: Vec<PathBuf> = file::dir_subdirs(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|tool| !is_reserved_dir(root, tool))
+        .map(|tool| root.join(tool))
+        .collect();
+    // The tool it was requested as gets its link even when its directory is gone.
+    if let Some(dir) = &requested_dir
+        && !tool_dirs.contains(dir)
+    {
+        tool_dirs.push(dir.clone());
+    }
+    for tool_dir in tool_dirs {
         let slot = tool_dir.join(&name);
         let retarget = match link_target(&slot) {
             Some(current) => {
@@ -1556,12 +1566,20 @@ fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str
                     && read_receipt(&current)
                         .is_some_and(|r| same_request(&r.record.identity, &key))
             }
+            // An empty slot, or a version link whose installation is gone, in the
+            // directory of the tool it was requested as. Anything else there (a
+            // legacy installation, a `mise link`) is left alone.
             None => {
-                requested_as.is_some_and(|short| crate::backend::tool_directory_name(short) == tool)
-                    && std::fs::symlink_metadata(&slot).is_err()
+                requested_dir.as_ref() == Some(&tool_dir)
+                    && (std::fs::symlink_metadata(&slot).is_err() || is_compat_link_shape(&slot))
             }
         };
-        if retarget && let Err(err) = file::make_dir_link(&link_value(&tool_dir, dir), &slot) {
+        if !retarget {
+            continue;
+        }
+        if let Err(err) = file::create_dir_all(&tool_dir)
+            .and_then(|()| file::make_dir_link(&link_value(&tool_dir, dir), &slot))
+        {
             warn!(
                 "could not link {} to {}: {err:#}",
                 slot.display(),
@@ -1641,7 +1659,9 @@ pub(crate) fn is_compat_link_shape(path: &Path) -> bool {
     let (Some(store), Some(root)) = (target.parent(), tool_dir.parent()) else {
         return false;
     };
-    same_path(store, &store_of(root))
+    // Its own root's store, or (for a selection of a shared installation) the
+    // store of another root.
+    (same_path(store, &store_of(root)) || stores().iter().any(|s| same_path(store, s)))
         && target
             .file_name()
             .and_then(|n| n.to_str())
