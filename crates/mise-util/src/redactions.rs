@@ -22,7 +22,8 @@ pub struct Redactions(pub IndexSet<String>);
 ///
 /// This is more efficient than iterating through patterns and calling `str::replace()`
 /// for each one, especially when there are many patterns. Aho-Corasick finds all
-/// matches in a single pass through the text - O(n + z) vs O(n * m).
+/// matches in a single pass through the text - O(n + z) vs O(n * m). When patterns
+/// overlap, the longest pattern wins at each position.
 #[derive(Clone)]
 pub struct Redactor {
     patterns: Arc<IndexSet<String>>,
@@ -46,7 +47,11 @@ impl Redactor {
             None
         } else {
             // Build the Aho-Corasick automaton - O(m) where m is total pattern length
-            AhoCorasick::new(patterns.iter()).ok().map(Arc::new)
+            AhoCorasick::builder()
+                .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+                .build(patterns.iter())
+                .ok()
+                .map(Arc::new)
         };
         Self {
             patterns: Arc::new(patterns),
@@ -84,8 +89,10 @@ impl Redactor {
             None if self.patterns.is_empty() => input.to_string(),
             None => {
                 // Fallback to naive approach if automaton failed to build
+                let mut sorted: Vec<&String> = self.patterns.iter().collect();
+                sorted.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
                 let mut result = input.to_string();
-                for pattern in self.patterns.iter() {
+                for pattern in sorted {
                     result = result.replace(pattern, "[redacted]");
                 }
                 result
@@ -140,6 +147,41 @@ mod tests {
 
         assert_eq!(r1.redact("secret password"), "[redacted] password");
         assert_eq!(r2.redact("secret password"), "[redacted] [redacted]");
+    }
+
+    fn redactor(patterns: &[&str]) -> Redactor {
+        Redactor::new(patterns.iter().map(|p| p.to_string()))
+    }
+
+    #[test]
+    fn test_longest_match_wins() {
+        for patterns in [["xxabcSECRETPART", "abc"], ["abc", "xxabcSECRETPART"]] {
+            let r = redactor(&patterns);
+            assert_eq!(r.redact("token=xxabcSECRETPART"), "token=[redacted]");
+            assert_eq!(r.redact("abc alone"), "[redacted] alone");
+        }
+    }
+
+    #[test]
+    fn test_longest_match_prefix_pair() {
+        let r = redactor(&["secret", "secret-long"]);
+        assert_eq!(r.redact("secret-long secret"), "[redacted] [redacted]");
+    }
+
+    #[test]
+    fn test_value_lines_and_json_escaped_form() {
+        let v = "aaaaaaaaaa\nshort";
+        let r = redactor(&[v, "aaaaaaaaaa", "short", "aaaaaaaaaa\\nshort"]);
+        assert_eq!(
+            r.redact(r#"{"k":"aaaaaaaaaa\nshort"}"#),
+            r#"{"k":"[redacted]"}"#
+        );
+    }
+
+    #[test]
+    fn test_with_additional_keeps_longest_wins() {
+        let r = redactor(&["abc"]).with_additional(["xxabcSECRETPART".to_string()]);
+        assert_eq!(r.redact("token=xxabcSECRETPART"), "token=[redacted]");
     }
 
     #[test]
