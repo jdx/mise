@@ -131,7 +131,22 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     file::rename(&legacy, &aside)?;
     // `reinstall` reloads the configuration and install state, which then see
     // the version as not installed.
-    let installed = reinstall(tv).await;
+    // The old path must lead to the new installation before the old directory
+    // goes: where the version link could not be made (Windows without junction
+    // support), the legacy directory is put back.
+    let installed = reinstall(tv).await.and_then(|dir| {
+        let linked = resolver::link_target(&legacy)
+            .is_some_and(|target| target.canonicalize().ok() == dir.canonicalize().ok());
+        if linked {
+            Ok(dir)
+        } else {
+            Err(eyre::eyre!(
+                "installed {}, but could not link {} to it",
+                display_path(&dir),
+                display_path(&legacy)
+            ))
+        }
+    });
     match installed {
         Ok(dir) => {
             if let Err(err) = file::remove_all(&aside) {
