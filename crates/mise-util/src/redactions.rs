@@ -212,6 +212,14 @@ mod tests {
     }
 
     #[test]
+    fn test_inherited_values_that_overlap_leave_no_residue() {
+        let keys: BTreeSet<String> = ["A", "B"].map(String::from).into();
+        let get = |k: &str| Some(if k == "A" { "a" } else { "abcdef" }.to_string());
+        let r = Redactor::new(inherited_secret_patterns(&keys, &get));
+        assert!(!r.redact("x abcdef y").contains("bcdef"));
+    }
+
+    #[test]
     fn test_inherited_secret_patterns_use_injected_getter() {
         let keys: BTreeSet<String> = ["A", "B"].map(String::from).into();
         let get = |k: &str| (k == "A").then(|| "value-a".to_string());

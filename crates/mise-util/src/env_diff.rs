@@ -257,7 +257,7 @@ impl EnvDiff {
             old: self
                 .old
                 .iter()
-                .filter(|(k, _)| !exclude.contains(k.as_str()))
+                .filter(|(k, _)| !exclude.iter().any(|e| crate::env::env_key_eq(k, e)))
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect(),
             new: self
@@ -586,6 +586,20 @@ mod tests {
         assert!(!back.old.contains_key("SECRET"));
         assert_eq!(back.old.get("OTHER").map(String::as_str), Some("kept"));
         assert!(back.new.contains_key("SECRET"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_serialize_excluding_ignores_key_case_on_windows() {
+        let diff = EnvDiff {
+            v: ENV_STATE_VERSION,
+            old: [("Secret".into(), "inherited-s3cr3t".into())].into(),
+            new: IndexMap::new(),
+            path: vec![],
+        };
+        let exclude: BTreeSet<String> = ["SECRET".to_string()].into();
+        let back = EnvDiff::deserialize(&diff.serialize_excluding(&exclude).unwrap()).unwrap();
+        assert!(back.old.is_empty());
     }
 
     #[test]

@@ -931,13 +931,31 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
 /// granted secrets: a comma-separated list of variable names, never values.
 pub const SECRET_KEYS_MARKER: &str = "__MISE_SECRET_KEYS";
 
+/// Whether two environment variable names are the same variable: exact on
+/// Unix, case-insensitive on Windows.
+#[cfg(not(windows))]
+pub(crate) fn env_key_eq(a: &str, b: &str) -> bool {
+    a == b
+}
+
+#[cfg(windows)]
+pub(crate) fn env_key_eq(a: &str, b: &str) -> bool {
+    windows_env_key_eq(a, b)
+}
+
 /// Names that are never treated as secrets, even when listed in the marker: the
 /// always-kept sandbox keys and mise's own `__MISE_*` state.
 pub fn is_reserved_secret_name(name: &str) -> bool {
-    matches!(
-        name,
-        "PATH" | "HOME" | "USER" | "SHELL" | "TERM" | "COLORTERM" | "LANG"
-    ) || name.starts_with("__MISE_")
+    reserved_secret_name(name, env_key_eq)
+}
+
+fn reserved_secret_name(name: &str, eq: fn(&str, &str) -> bool) -> bool {
+    const RESERVED: [&str; 7] = ["PATH", "HOME", "USER", "SHELL", "TERM", "COLORTERM", "LANG"];
+    const PREFIX: &str = "__MISE_";
+    RESERVED.iter().any(|r| eq(name, r))
+        || name
+            .get(..PREFIX.len())
+            .is_some_and(|head| eq(head, PREFIX))
 }
 
 /// Whether `name` is a plain environment variable name: `[A-Za-z_][A-Za-z0-9_]*`.
@@ -947,11 +965,11 @@ pub fn is_valid_secret_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-fn parse_secret_keys(marker: &str) -> BTreeSet<String> {
+fn parse_secret_keys(marker: &str, eq: fn(&str, &str) -> bool) -> BTreeSet<String> {
     marker
         .split(',')
         .map(str::trim)
-        .filter(|k| is_valid_secret_name(k) && !is_reserved_secret_name(k))
+        .filter(|k| is_valid_secret_name(k) && !reserved_secret_name(k, eq))
         .map(String::from)
         .collect()
 }
@@ -962,36 +980,46 @@ fn parse_secret_keys(marker: &str) -> BTreeSet<String> {
 /// from templates and nested tasks; it never grants anything.
 pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
     var(SECRET_KEYS_MARKER)
-        .map(|v| parse_secret_keys(&v))
+        .map(|v| parse_secret_keys(&v, env_key_eq))
         .unwrap_or_default()
 });
 
-/// Remove inherited secret keys and the marker from `env`.
+/// Remove inherited secret keys and the marker from `env`, whatever spelling
+/// the environment uses for them.
 fn strip_inherited_secrets(env: &mut EnvMap, keys: &BTreeSet<String>) {
-    for k in keys {
-        env.remove(k);
-    }
-    env.remove(SECRET_KEYS_MARKER);
+    strip_matching(env, keys, env_key_eq);
+}
+
+fn strip_matching(env: &mut EnvMap, keys: &BTreeSet<String>, eq: fn(&str, &str) -> bool) {
+    env.retain(|k, _| !keys.iter().any(|m| eq(k, m)) && !eq(k, SECRET_KEYS_MARKER));
 }
 
 /// Keep inherited secrets out of a child mise starts. `CmdLineRunner` inherits
 /// mise's process environment, so `env_remove` is what actually withholds them.
 pub fn strip_inherited_secrets_for_child(env: &mut EnvMap, env_remove: &mut BTreeSet<String>) {
-    strip_secrets_for_child(env, env_remove, &INHERITED_SECRET_KEYS);
+    strip_secrets_for_child(env, env_remove, &INHERITED_SECRET_KEYS, env_key_eq);
 }
 
 fn strip_secrets_for_child(
     env: &mut EnvMap,
     env_remove: &mut BTreeSet<String>,
     keys: &BTreeSet<String>,
+    eq: fn(&str, &str) -> bool,
 ) {
     if keys.is_empty() {
         return;
     }
+    // The marker's spelling may differ from the environment's, so withhold both.
     for k in keys.iter().map(String::as_str).chain([SECRET_KEYS_MARKER]) {
-        env.remove(k);
         env_remove.insert(k.to_string());
     }
+    env_remove.extend(
+        env.keys()
+            .filter(|k| keys.iter().any(|m| eq(k, m)) || eq(k, SECRET_KEYS_MARKER))
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    strip_matching(env, keys, eq);
 }
 
 /// Reverse values that are still in the state mise recorded, while preserving
@@ -1383,11 +1411,15 @@ mod tests {
     #[test]
     fn test_secret_marker_parsing_ignores_invalid_and_reserved_names() {
         assert_eq!(
-            parse_secret_keys("A, B,bad name,PATH,__MISE_X,HOME"),
+            parse_secret_keys("A, B,bad name,PATH,__MISE_X,HOME", str::eq),
             keys(&["A", "B"])
         );
-        assert!(parse_secret_keys("").is_empty());
-        assert!(parse_secret_keys("1A,a-b").is_empty());
+        assert!(parse_secret_keys("", str::eq).is_empty());
+        assert!(parse_secret_keys("1A,a-b", str::eq).is_empty());
+        // case-insensitive platforms: `Path` and `__mise_x` are still reserved
+        let ci = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+        assert_eq!(parse_secret_keys("Path,__mise_x,Foo", ci), keys(&["Foo"]));
+        assert_eq!(parse_secret_keys("Path", str::eq), keys(&["Path"]));
     }
 
     #[test]
@@ -1401,6 +1433,15 @@ mod tests {
         .into();
         strip_inherited_secrets(&mut env, &keys(&["FOO"]));
         assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+        let mut mixed: EnvMap = [("Foo", "s"), ("KEEP", "x"), ("__mise_secret_keys", "FOO")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        strip_matching(&mut mixed, &keys(&["FOO"]), str::eq);
+        assert_eq!(mixed.len(), 3);
+        strip_matching(&mut mixed, &keys(&["FOO"]), |a, b| {
+            a.eq_ignore_ascii_case(b)
+        });
+        assert_eq!(mixed.keys().collect::<Vec<_>>(), vec!["KEEP"]);
     }
 
     #[test]
@@ -1409,10 +1450,35 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .into();
         let mut env_remove = BTreeSet::new();
-        strip_secrets_for_child(&mut env, &mut env_remove, &BTreeSet::new());
+        strip_secrets_for_child(&mut env, &mut env_remove, &BTreeSet::new(), str::eq);
         assert!(env_remove.is_empty() && env.contains_key("FOO"));
-        strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]));
+        strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]), str::eq);
         assert_eq!(env_remove, keys(&["FOO", SECRET_KEYS_MARKER]));
+        assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+        // the env's own spelling is withheld too
+        let mut env: EnvMap = [("Foo", "s"), ("KEEP", "x")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        let mut env_remove = BTreeSet::new();
+        strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]), |a, b| {
+            a.eq_ignore_ascii_case(b)
+        });
+        assert!(env_remove.contains("Foo") && env_remove.contains("FOO"));
+        assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_secret_keys_are_case_insensitive_on_windows() {
+        assert!(is_reserved_secret_name("Path"));
+        assert!(is_reserved_secret_name("__mise_x"));
+        assert!(!is_reserved_secret_name("Foo"));
+        let mut env: EnvMap = [("Foo", "s"), ("KEEP", "x")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        let mut env_remove = BTreeSet::new();
+        strip_secrets_for_child(&mut env, &mut env_remove, &keys(&["FOO"]), env_key_eq);
+        assert!(env_remove.contains("Foo"));
         assert_eq!(env.keys().collect::<Vec<_>>(), vec!["KEEP"]);
     }
 
