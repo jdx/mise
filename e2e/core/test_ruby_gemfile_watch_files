@@ -21,6 +21,7 @@ check_gemfile_watch() (
   unset __MISE_SESSION __MISE_DIFF
   mkdir -p "case-$2-${reference//\//-}"
   cd "case-$2-${reference//\//-}"
+  export MISE_STATE_DIR="$PWD/state"
   mkdir -p versions
   printf 'ruby file: "%s"\n' "$reference" >Gemfile
   if [[ $reference == .tool-versions ]]; then
