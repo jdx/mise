@@ -27,8 +27,9 @@ pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
 pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    DENIED_MARKER, SecretGrant, Subject, aggregate_error, declared_env_keys, denied_from_env,
-    effective_grant, grant_for_task, sandbox_and_collision_problems, static_problems,
+    DENIED_MARKER, SecretGrant, Subject, age_read_problems, aggregate_error, declared_env_keys,
+    denied_from_env, effective_grant, grant_for_task, sandbox_and_collision_problems,
+    static_problems,
 };
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
@@ -333,6 +334,7 @@ pub async fn check_task_secrets(
 ) -> TaskSecretsCheck {
     let (grant, mut problems) = grant_for_task(task);
     problems.extend(static_problems(task, &grant, None));
+    problems.extend(grant::age_read_problems(task, &grant).await);
     let mut check = TaskSecretsCheck {
         problems,
         catalog_skipped: false,
@@ -393,6 +395,11 @@ pub async fn check_task_secrets(
                 &grant,
                 &catalog,
                 &label,
+            ));
+            check.problems.extend(broker::late_file_problems(
+                Subject::Task(&task.name),
+                &grant,
+                &catalog,
             ));
         }
         Err(err) => check.problems.push(Problem::new(

@@ -173,7 +173,10 @@ of failing.
   a task from a dependency or a run entry is never a grant, so it cannot smuggle a reference in.
   `[env]`, tools and settings must not set the same name.
 - Other env values cannot read the composed variable, with <span v-pre>`{{ env.PGURL }}`</span> or
-  `$PGURL`; build them from secrets directly.
+  `$PGURL`; build them from secrets directly. mise checks the env values, defaults and path
+  directives in the config, and also the values it decrypts (age). What a directive only reads
+  while it renders, such as the contents of a `_.file` dotenv file or a `_.source` script, is not
+  checked and sees the value from before the secret.
 - The same rules apply as for listed keys: remote and non-project tasks cannot use references,
   and the sandbox must keep the variable.
 

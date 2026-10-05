@@ -708,6 +708,9 @@ impl SecretBroker {
         };
         let (_, mut problems) = grant_for_task(task);
         problems.extend(static_problems(task, req.grant, req.denied));
+        if problems.is_empty() {
+            problems.extend(super::grant::age_read_problems(task, req.grant).await);
+        }
         if !problems.is_empty() {
             bail!(
                 "{}",

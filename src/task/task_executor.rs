@@ -2331,6 +2331,11 @@ impl TaskExecutor {
                 &grant,
                 self.secrets_denied,
             ));
+            // plaintext an age value decrypts to can read a composed key; found before fnox
+            // is asked anything
+            let age = crate::secrets::age_read_problems(task, &grant).await;
+            privilege_problem |= !age.is_empty();
+            found.extend(age);
             privilege_problem |= found.iter().any(|p| {
                 matches!(
                     p.kind,
