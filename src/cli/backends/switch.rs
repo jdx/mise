@@ -492,7 +492,7 @@ impl BackendsSwitch {
                             .get_or_insert_with(crate::install_layout::resolver::installations)
                             .iter()
                             .any(|i| {
-                                i.version == tv.version
+                                i.version == layout_version(&tv)
                                     && i.requested_as.as_deref() == Some(tv.short())
                             })));
             if installed {
@@ -583,15 +583,24 @@ impl Snapshot {
     }
 }
 
+/// `tv`'s version as installations and version paths name it (`ref-main` for
+/// `ref:main`).
+fn layout_version(tv: &ToolVersion) -> String {
+    crate::install_layout::resolver::identity_scope(tv)
+        .map(|(_, version)| version)
+        .unwrap_or_else(|| tv.version.replace([':', '/'], "-"))
+}
+
 /// Whether the tool directory `tool_dir` has a version path for `tv`'s version,
 /// as the backend before the switch named it. That is `tv`'s own path name, or
 /// the version with the private dependency-graph suffix an aube or uv install
 /// adds (`1.0.0~aube~…`), which only one of the two backends may carry.
 fn has_version_path(tool_dir: &Path, tv: &ToolVersion) -> bool {
-    if tool_dir.join(tv.tv_pathname()).exists() || tool_dir.join(&tv.version).exists() {
+    let version = layout_version(tv);
+    if tool_dir.join(tv.tv_pathname()).exists() || tool_dir.join(&version).exists() {
         return true;
     }
-    let suffixed = format!("{}~", tv.version);
+    let suffixed = format!("{version}~");
     std::fs::read_dir(tool_dir).is_ok_and(|entries| {
         entries.flatten().any(|entry| {
             entry
