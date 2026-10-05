@@ -507,6 +507,14 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     // where the old one has to return. The reinstall below is locked by its own
     // installation directory, not by this version, so it does not wait on this.
     let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
+    // The plan was made before the lock: something (`mise link`, an install) may
+    // have taken the version's place since.
+    if !resolver::is_legacy_install(&legacy) {
+        eyre::bail!(
+            "{} is no longer a legacy installation; it was left alone",
+            display_path(&legacy)
+        );
+    }
     let journal: Shared = std::sync::Arc::new(std::sync::Mutex::new(Journal::start(tv)?));
     if let Err(err) = file::rename(&legacy, &aside) {
         snapshot(&journal).remove();
