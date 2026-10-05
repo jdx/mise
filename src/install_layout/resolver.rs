@@ -796,10 +796,14 @@ pub(crate) fn unlink_installation(dir: &Path) {
             if !is_dir_link(&entry) || !is_compat_link_shape(&entry) {
                 continue;
             }
+            // The whole target is compared, not its name: a link to the same
+            // identity in another root's store has the same name.
             let names_it = file::resolve_symlink(&entry)
                 .ok()
                 .flatten()
-                .is_some_and(|target| target.file_name() == Some(name));
+                .is_some_and(|target| {
+                    target.file_name() == Some(name) && same_path(&tool_dir.join(&target), dir)
+                });
             if names_it && let Err(err) = file::remove_dir_link(&entry) {
                 debug!("could not remove version link {}: {err:#}", entry.display());
             }

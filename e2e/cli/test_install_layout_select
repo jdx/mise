@@ -147,6 +147,12 @@ rm -rf "$installs/tiny"
 assert "mise installs select $shared2/$(basename "$mine")"
 assert "readlink '$installs/tiny/3.0.0'" "$shared2/$(basename "$mine")"
 
+echo "=== removing the user's own copy keeps the version link to the shared one ==="
+assert "mise prune --yes tiny"
+assert "test ! -e '$mine'"
+assert "readlink '$installs/tiny/3.0.0'" "$shared2/$(basename "$mine")"
+
 echo "=== a shared root that is also the user's own is one root ==="
 export MISE_SHARED_INSTALL_DIRS="$installs:$shared2"
+assert "mise install --force tiny@3.0.0"
 assert "mise installs ls tiny --json | jq '[.[] | select(.version == \"3.0.0\")] | length'" "2"
