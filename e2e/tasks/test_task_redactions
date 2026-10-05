@@ -119,3 +119,14 @@ run = "echo secret: $TASK_SECRET"
 env._.file = {path = ".env.json", redact = true}
 TOML
 assert "mise run a" "secret: [redacted]"
+
+# Overlapping values: the longest match wins
+cat <<'TOML' >mise.toml
+redactions = ["SHORT", "LONG"]
+[env]
+SHORT = "abc"
+LONG = "xxabcSECRETPART"
+[tasks.a]
+run = 'echo "long:$LONG"'
+TOML
+assert "mise run a" "long:[redacted]"
