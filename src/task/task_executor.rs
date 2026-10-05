@@ -2343,45 +2343,9 @@ impl TaskExecutor {
                 // the sandbox and a plainly declared env var decide before anything runs
                 let sandbox = self.build_sandbox_for_task(task, config).await?;
                 let declared = crate::secrets::declared_env_keys(task, config);
-                // a key that only an env value references is read, not exported; a value an
-                // env var is built from is exported under that var's name
-                for key in grant.exported_keys() {
-                    if !sandbox.keeps_env_key(key.as_str()) {
-                        found.push(crate::secrets::sandbox_problem(
-                            crate::secrets::Subject::Task(&task.name),
-                            key.as_str(),
-                        ));
-                    }
-                }
-                for late in &grant.late {
-                    if !sandbox.keeps_env_key(&late.key) {
-                        found.push(crate::secrets::sandbox_problem(
-                            crate::secrets::Subject::Task(&task.name),
-                            &late.key,
-                        ));
-                    }
-                }
-                // a key the config or the task's other env also sets, or one that is both
-                // exported and built, collides; the spawn repeats the exact check
-                let is_declared =
-                    |key: &str| declared.iter().any(|d| mise_util::env::env_key_eq(d, key));
-                let mut colliding: BTreeSet<&str> = BTreeSet::new();
-                for key in grant.exported_keys().map(|k| k.as_str()) {
-                    if grant.is_late_key(key) || is_declared(key) {
-                        colliding.insert(key);
-                    }
-                }
-                for late in &grant.late {
-                    if is_declared(&late.key) {
-                        colliding.insert(&late.key);
-                    }
-                }
-                for key in colliding {
-                    found.push(crate::secrets::collision_problem(
-                        crate::secrets::Subject::Task(&task.name),
-                        key,
-                    ));
-                }
+                found.extend(crate::secrets::sandbox_and_collision_problems(
+                    task, &grant, &sandbox, &declared,
+                ));
             }
             problems.extend(found);
             if !grant.is_empty() {

@@ -64,6 +64,8 @@ impl<'de> serde::Deserialize<'de> for TaskSecrets {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SecretsDenied {
     Hook,
+    /// A hook that runs in the user's own shell (`shell = ...`).
+    ShellHook,
     WatchFiles,
     PitchforkDaemon,
     Bootstrap,
@@ -73,6 +75,7 @@ impl SecretsDenied {
     pub(crate) fn marker(self) -> &'static str {
         match self {
             Self::Hook => "hook",
+            Self::ShellHook => "shell_hook",
             Self::WatchFiles => "watch_files",
             Self::PitchforkDaemon => "pitchfork_daemon",
             Self::Bootstrap => "bootstrap",
@@ -82,6 +85,7 @@ impl SecretsDenied {
     pub(crate) fn launcher(self) -> &'static str {
         match self {
             Self::Hook => "a mise hook",
+            Self::ShellHook => "a mise shell hook",
             Self::WatchFiles => "watch_files",
             Self::PitchforkDaemon => "a pitchfork daemon",
             Self::Bootstrap => "mise bootstrap",
@@ -92,6 +96,7 @@ impl SecretsDenied {
     pub(crate) fn from_marker(value: &str) -> Option<Self> {
         match value {
             "" => None,
+            "shell_hook" => Some(Self::ShellHook),
             "watch_files" => Some(Self::WatchFiles),
             "pitchfork_daemon" => Some(Self::PitchforkDaemon),
             "bootstrap" => Some(Self::Bootstrap),
@@ -674,6 +679,15 @@ pub(crate) fn static_problems(
                 task.name
             )),
         );
+        if denied == SecretsDenied::ShellHook
+            && let Some(p) = problems.last_mut()
+        {
+            // only a shell hook can leave a stale mark: it returned early or was interrupted
+            p.detail.push(
+                "If no hook is running, an interrupted shell hook left __MISE_SECRETS_DENIED set in this shell; open a new shell or unset it."
+                    .to_string(),
+            );
+        }
     }
     // a key that the task exports under its own name is not in the environment when a
     // template is rendered
@@ -922,6 +936,44 @@ pub(crate) fn collision_problem(subject: Subject<'_>, key: &str) -> Problem {
     ))
 }
 
+/// G13 and G11 from what is known before anything runs: the sandbox, and the env names the
+/// config and the task's other env declare. A key a composed value builds is exported under
+/// its own name, so it is checked like an exported one; the spawn repeats the exact check.
+pub(crate) fn sandbox_and_collision_problems(
+    task: &Task,
+    grant: &SecretGrant,
+    sandbox: &crate::sandbox::SandboxConfig,
+    declared: &BTreeSet<String>,
+) -> Vec<Problem> {
+    let subject = Subject::Task(&task.name);
+    let mut problems = vec![];
+    for key in grant
+        .exported_keys()
+        .map(|k| k.as_str())
+        .chain(grant.late.iter().map(|l| l.key.as_str()))
+    {
+        if !sandbox.keeps_env_key(key) {
+            problems.push(sandbox_problem(subject, key));
+        }
+    }
+    let is_declared = |key: &str| declared.iter().any(|d| mise_util::env::env_key_eq(d, key));
+    let mut colliding: BTreeSet<&str> = BTreeSet::new();
+    for key in grant.exported_keys().map(|k| k.as_str()) {
+        if grant.is_late_key(key) || is_declared(key) {
+            colliding.insert(key);
+        }
+    }
+    for late in &grant.late {
+        if is_declared(&late.key) {
+            colliding.insert(&late.key);
+        }
+    }
+    for key in colliding {
+        problems.push(collision_problem(subject, key));
+    }
+    problems
+}
+
 /// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. The spawn
 /// repeats the exact check against the real environment.
 pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> BTreeSet<String> {
@@ -1144,6 +1196,30 @@ mod tests {
     }
 
     #[test]
+    fn overlay_env_templates_are_checked() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["SECRET".into()])),
+            overlay_env: vec![(
+                EnvDirective::Val(
+                    "TOKEN".into(),
+                    "{{ env.SECRET }}".into(),
+                    EnvDirectiveOptions::default(),
+                ),
+                PathBuf::from("/p/mise.toml"),
+            )],
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, None);
+        assert!(
+            problems.iter().any(|p| p.kind == ProblemKind::Template),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
     fn get_env_arguments_are_scanned() {
         let r = tera_env_refs("{{ get_env(name='OTHER', default=env.DEPLOY_KEY) }}");
         assert_eq!(r, BTreeSet::from(["OTHER", "DEPLOY_KEY"].map(String::from)));
@@ -1190,6 +1266,30 @@ mod tests {
     }
 
     #[test]
+    fn shell_hook_refusal_carries_the_stale_mark_hint() {
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["A".into()])),
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, Some(SecretsDenied::ShellHook));
+        let text = problems
+            .iter()
+            .find(|p| p.kind == ProblemKind::Denied)
+            .map(|p| p.render())
+            .unwrap();
+        assert!(text.contains("started by a mise shell hook"), "{text}");
+        assert!(text.contains("left __MISE_SECRETS_DENIED set"), "{text}");
+        let plain = static_problems(&task, &grant, Some(SecretsDenied::Hook));
+        assert!(
+            !plain
+                .iter()
+                .any(|p| p.render().contains("left __MISE_SECRETS_DENIED")),
+        );
+    }
+
+    #[test]
     fn denied_marker_fails_closed() {
         assert_eq!(SecretsDenied::from_marker(""), None);
         assert_eq!(
@@ -1203,6 +1303,7 @@ mod tests {
         assert_eq!(SecretsDenied::from_marker("zzz"), Some(SecretsDenied::Hook));
         for d in [
             SecretsDenied::Hook,
+            SecretsDenied::ShellHook,
             SecretsDenied::WatchFiles,
             SecretsDenied::PitchforkDaemon,
             SecretsDenied::Bootstrap,
