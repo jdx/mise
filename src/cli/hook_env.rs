@@ -53,11 +53,6 @@ impl HookEnv {
             self.shell,
             &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
         )?;
-        // A shell hook that skipped its trailing unset (`return`, `set -e`) leaves the hook
-        // marker in the live shell. The next prompt clears it; until then secrets stay refused.
-        if std::env::var(crate::secrets::DENIED_MARKER).is_ok_and(|v| v == "hook") {
-            miseprint!("{}\n", shell.unset_env(crate::secrets::DENIED_MARKER))?;
-        }
         // Entering a directory is not an explicit action, so an untrusted config is
         // skipped (with a warning) rather than blocking the configs that are trusted.
         crate::config::skip_untrusted_configs();

@@ -64,6 +64,8 @@ impl<'de> serde::Deserialize<'de> for TaskSecrets {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SecretsDenied {
     Hook,
+    /// A hook that runs in the user's own shell (`shell = ...`).
+    ShellHook,
     WatchFiles,
     PitchforkDaemon,
     Bootstrap,
@@ -73,6 +75,7 @@ impl SecretsDenied {
     pub(crate) fn marker(self) -> &'static str {
         match self {
             Self::Hook => "hook",
+            Self::ShellHook => "shell_hook",
             Self::WatchFiles => "watch_files",
             Self::PitchforkDaemon => "pitchfork_daemon",
             Self::Bootstrap => "bootstrap",
@@ -82,6 +85,7 @@ impl SecretsDenied {
     pub(crate) fn launcher(self) -> &'static str {
         match self {
             Self::Hook => "a mise hook",
+            Self::ShellHook => "a mise shell hook",
             Self::WatchFiles => "watch_files",
             Self::PitchforkDaemon => "a pitchfork daemon",
             Self::Bootstrap => "mise bootstrap",
@@ -92,6 +96,7 @@ impl SecretsDenied {
     pub(crate) fn from_marker(value: &str) -> Option<Self> {
         match value {
             "" => None,
+            "shell_hook" => Some(Self::ShellHook),
             "watch_files" => Some(Self::WatchFiles),
             "pitchfork_daemon" => Some(Self::PitchforkDaemon),
             "bootstrap" => Some(Self::Bootstrap),
@@ -100,7 +105,7 @@ impl SecretsDenied {
     }
 }
 
-pub const DENIED_MARKER: &str = "__MISE_SECRETS_DENIED";
+pub(crate) const DENIED_MARKER: &str = "__MISE_SECRETS_DENIED";
 
 /// `__MISE_SECRETS_DENIED` first (an unknown value fails closed), then the pitchfork daemon
 /// marker.
@@ -546,6 +551,15 @@ pub(crate) fn static_problems(
                 task.name
             )),
         );
+        if denied == SecretsDenied::ShellHook
+            && let Some(p) = problems.last_mut()
+        {
+            // only a shell hook can leave a stale mark: it returned early or was interrupted
+            p.detail.push(
+                "If no hook is running, an interrupted shell hook left __MISE_SECRETS_DENIED set in this shell; open a new shell or unset it."
+                    .to_string(),
+            );
+        }
     }
     let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
     for key in task_template_refs(task) {
@@ -1017,6 +1031,30 @@ mod tests {
     }
 
     #[test]
+    fn shell_hook_refusal_carries_the_stale_mark_hint() {
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["A".into()])),
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, Some(SecretsDenied::ShellHook));
+        let text = problems
+            .iter()
+            .find(|p| p.kind == ProblemKind::Denied)
+            .map(|p| p.render())
+            .unwrap();
+        assert!(text.contains("started by a mise shell hook"), "{text}");
+        assert!(text.contains("left __MISE_SECRETS_DENIED set"), "{text}");
+        let plain = static_problems(&task, &grant, Some(SecretsDenied::Hook));
+        assert!(
+            !plain
+                .iter()
+                .any(|p| p.render().contains("left __MISE_SECRETS_DENIED")),
+        );
+    }
+
+    #[test]
     fn denied_marker_fails_closed() {
         assert_eq!(SecretsDenied::from_marker(""), None);
         assert_eq!(
@@ -1030,6 +1068,7 @@ mod tests {
         assert_eq!(SecretsDenied::from_marker("zzz"), Some(SecretsDenied::Hook));
         for d in [
             SecretsDenied::Hook,
+            SecretsDenied::ShellHook,
             SecretsDenied::WatchFiles,
             SecretsDenied::PitchforkDaemon,
             SecretsDenied::Bootstrap,

@@ -24,13 +24,11 @@ mod spawn;
 
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
-pub use grant::{
-    CliSecretGrant, DENIED_MARKER, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets,
-};
 pub(crate) use grant::{
-    SecretGrant, Subject, aggregate_error, collision_problem, declared_env_keys, denied_from_env,
-    effective_grant, grant_for_task, sandbox_problem, static_problems,
+    DENIED_MARKER, SecretGrant, Subject, aggregate_error, collision_problem, declared_env_keys,
+    denied_from_env, effective_grant, grant_for_task, sandbox_problem, static_problems,
 };
+pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub use spawn::SpawnSecrets;
