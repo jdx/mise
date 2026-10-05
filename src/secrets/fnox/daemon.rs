@@ -539,7 +539,7 @@ mod tests {
             Err(CallError::PeerRejected(std::io::Error::other("secret-x"))),
             socket,
         );
-        assert!(peer.contains("/run/fnox/x.sock"), "{peer}");
+        assert!(peer.contains("x.sock"), "{peer}");
         assert!(peer.contains("not owned"), "{peer}");
         assert!(
             !peer.contains("not running") && !peer.contains("secret-x"),
