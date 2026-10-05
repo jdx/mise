@@ -3957,10 +3957,13 @@ pub trait Backend: Debug + Send + Sync {
             })?;
         // Another mise may be installing this exact version. Say so while we
         // wait on it: a row that sits in "resolving" for a minute looks hung.
-        let _state_lock =
-            install_state::lock_tool_version_with_notice(tv.ba(), &state_version, &|pid| {
+        let mut _state_lock = Some(install_state::lock_tool_version_with_notice(
+            tv.ba(),
+            &state_version,
+            &|pid| {
                 ctx.pr.set_message(install_lock_wait_message(pid));
-            })?;
+            },
+        )?);
 
         let mut install_satisfied = self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
@@ -3981,12 +3984,22 @@ pub trait Backend: Debug + Send + Sync {
             tv.install_path = allocated.as_ref().map(|a| a.dir.clone());
             install_satisfied = false;
             // The destination is now the primary directory: lock that one before
-            // anything is changed in it. (A shared root is never locked.)
+            // anything is changed in it. Locks are always taken installation first,
+            // then the tool's state, so the state lock is released and retaken
+            // for the new destination. (A shared root is never locked.)
+            _state_lock = None;
             _identity_lock = None;
             _identity_lock =
                 crate::install_layout::resolver::lock_install(&tv.install_path(), &|pid| {
                     ctx.pr.set_message(install_lock_wait_message(pid));
                 })?;
+            _state_lock = Some(install_state::lock_tool_version_with_notice(
+                tv.ba(),
+                &tv.state_key(),
+                &|pid| {
+                    ctx.pr.set_message(install_lock_wait_message(pid));
+                },
+            )?);
         }
 
         // If the install path resolved to a shared dir (but wasn't explicitly set via

@@ -646,18 +646,6 @@ impl Backend for UnifiedGitBackend {
         &["api_url", "version_prefix"]
     }
 
-    /// `slsa_signer_identity` and `slsa_signer_issuer` name who is expected to have
-    /// signed a provenance file. They gate whether the install is accepted, never what
-    /// gets installed.
-    ///
-    /// `api_url` and `version_prefix` are not listed even though they also steer version
-    /// listing: both are read again at install time to find the release (a different
-    /// `version_prefix` can name a different tag of the same repository, and a different
-    /// `api_url` is a different server), so they select what is installed.
-    fn identity_ignored_options(&self) -> &'static [&'static str] {
-        &["slsa_signer_identity", "slsa_signer_issuer"]
-    }
-
     /// The registry baseline is read straight off the registry entry, not
     /// reconstructed from the effective options' provenance.
     ///
@@ -3470,14 +3458,15 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
-    fn test_identity_options_ignore_signer_but_keep_release_selection() {
+    fn test_identity_options_keep_the_signer_and_the_release_selection() {
         use crate::backend::static_helpers::test_identity_options;
         let backend = create_test_backend();
         let identity = |options: &[(&str, &str)]| test_identity_options(&backend, "1.0.0", options);
         let base = identity(&[]);
 
-        // Who is expected to have signed a provenance file never changes the bytes.
-        assert_eq!(
+        // An install verified against one signer is not the install a request with
+        // another signer requirement asked for, so the signer is part of the identity.
+        assert_ne!(
             identity(&[
                 (
                     "slsa_signer_identity",

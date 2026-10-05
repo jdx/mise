@@ -708,8 +708,9 @@ impl Backend for AquaBackend {
     /// `vars.foo = "1"` and `vars = { foo = "1" }` three different installs of one thing.
     ///
     /// `slsa_signer_identity` and `slsa_signer_issuer` name who is expected to have signed a
-    /// provenance file. They gate whether an install is accepted, never what gets installed,
-    /// so they stay out of the identity. `symlink_bins` changes the install directory.
+    /// provenance file. An install verified against one signer is not what a request with
+    /// another signer requirement asked for, so they are part of the identity.
+    /// `symlink_bins` changes the install directory.
     fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
         let request_options = tv.request.options();
         let options = AquaOptions::new(&request_options);
@@ -719,6 +720,10 @@ impl Backend for AquaBackend {
         }
         if options.symlink_bins() {
             result.insert("symlink_bins".to_string(), "true".to_string());
+        }
+        if let Ok(Some((identity, issuer))) = options.slsa_signer() {
+            result.insert("slsa_signer_identity".to_string(), identity.to_string());
+            result.insert("slsa_signer_issuer".to_string(), issuer.to_string());
         }
         result
     }
@@ -4828,7 +4833,7 @@ packages:
     }
 
     #[test]
-    fn test_identity_options_ignore_signers_and_var_spelling() {
+    fn test_identity_options_keep_signers_and_unify_var_spelling() {
         let backend = AquaBackend::from_arg(BackendArg::new(
             "osv-scanner".to_string(),
             Some("aqua:google/osv-scanner".to_string()),
@@ -4847,8 +4852,8 @@ packages:
         let base = identity("");
         assert!(base.is_empty(), "{base:?}");
 
-        // Signers gate acceptance, they do not change the files.
-        assert_eq!(
+        // A different signer requirement is a different request.
+        assert_ne!(
             identity(
                 r#"
 slsa_signer_identity = "https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0"
