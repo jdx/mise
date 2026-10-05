@@ -74,6 +74,22 @@ rm "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")/incomplete"
 assert "mise -C $work/solo2 where tiny" "$solo2_dir"
 assert "mise installs ls tiny --json | jq -r '.[] | select(.selected and .version == \"3.1.0\") | .dir' | sort | tr '\n' ' '" "$(printf '%s\n' "$bare_dir" "$solo2_dir" | sort | tr '\n' ' ')"
 
+echo "=== a postinstall hook that always runs never runs in a variant standing in ==="
+mkdir variant hooked
+cat >variant/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.0.0", flavor = "full" }
+EOF2
+assert "mise -C $work/variant install"
+variant_dir="$(mise -C "$work/variant" where tiny)"
+cat >hooked/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.0.0", postinstall = { run = "touch \"$MISE_TOOL_INSTALL_PATH/hooked\"", when = "always" } }
+EOF2
+assert "mise -C $work/hooked install tiny@3.0.0"
+assert "test ! -e '$variant_dir/hooked'"
+assert "test -e \"\$(mise -C '$work/hooked' where tiny@3.0.0)/hooked\""
+
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
 cat >minimal/mise.toml <<'EOF2'
