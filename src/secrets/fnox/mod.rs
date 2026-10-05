@@ -28,6 +28,13 @@ mod wire;
 // TODO: confirm once the fnox release containing jdx/fnox#936 is cut
 pub(crate) const FNOX_ENV_MIN_VERSION: &str = "1.39.0";
 
+const NOT_FOUND_PREFIX: &str = "mise secrets: fnox not found";
+
+/// Whether an error message is the "fnox CLI not found" one.
+pub(crate) fn is_not_found_message(message: &str) -> bool {
+    message.contains(NOT_FOUND_PREFIX)
+}
+
 const MAX_STDOUT: u64 = 16 << 20;
 
 const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -76,7 +83,7 @@ impl FnoxSource {
         let declared_in = &selected.declared_in[0];
         let Some(bin) = find_binary_in(config, ts).await else {
             bail!(
-                "mise secrets: fnox not found\n  [secrets.fnox] in {} needs the fnox CLI. Add it to the project: mise use fnox\n  mise looks in the project's tools first, then on PATH.",
+                "{NOT_FOUND_PREFIX}\n  [secrets.fnox] in {} needs the fnox CLI. Add it to the project: mise use fnox\n  mise looks in the project's tools first, then on PATH.",
                 display_path(declared_in)
             );
         };

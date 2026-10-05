@@ -242,7 +242,10 @@ pub(crate) fn dollar_before_ref(s: &str) -> bool {
 
 /// `${{ secrets.X }}`
 pub(crate) fn dollar_before_ref_message(task: &str, key: &str, s: &str) -> String {
-    let name = first_name(s);
+    // the reference that follows the `$`, not the first one in the value
+    let name = s
+        .find("${{")
+        .map_or_else(|| first_name(s), |i| first_name(&s[i + 1..]));
     format!(
         "task {task}: env.{key} has ${{{{ secrets.{name} }}}}; drop the $ (mise uses {{{{ secrets.{name} }}}})"
     )
@@ -603,6 +606,10 @@ mod tests {
         assert_eq!(
             dollar_before_ref_message("t", "GH_TOKEN", "${{ secrets.A }}"),
             "task t: env.GH_TOKEN has ${{ secrets.A }}; drop the $ (mise uses {{ secrets.A }})"
+        );
+        assert_eq!(
+            dollar_before_ref_message("t", "K", "{{ secrets.A }}-${{ secrets.B }}"),
+            "task t: env.K has ${{ secrets.B }}; drop the $ (mise uses {{ secrets.B }})"
         );
     }
 
