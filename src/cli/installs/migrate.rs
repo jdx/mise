@@ -345,20 +345,28 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
             journal.remove();
             continue;
         }
-        if !free && aside.exists() {
-            warn!(
-                "{} was left by an interrupted migration; {} is in use, so it is kept",
-                display_path(&aside),
-                display_path(legacy)
-            );
-            continue;
-        }
         let version = legacy
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let ba = crate::args::BackendArg::from(journal.tool.as_str());
         let _lock = install_state::lock_tool_version(&ba, &version)?;
+        if !free && aside.exists() {
+            // Something else put a directory where the old one has to return (an
+            // install with the legacy layout). It stays; the old one is kept
+            // under another name, so nothing blocks migrating the version again.
+            journal.withdraw(true);
+            let kept = keep_aside(&aside)?;
+            journal.remove();
+            warn!(
+                "{} took the place of the directory an interrupted migration moved aside; \
+                 that one is kept at {}: remove it if {} works",
+                display_path(legacy),
+                display_path(&kept),
+                version
+            );
+            continue;
+        }
         journal.undo(true)?;
         info!(
             "restored {} from an interrupted migration",
@@ -392,6 +400,12 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                         "would restore {} from an interrupted migration, then migrate it",
                         display_path(&legacy)
                     );
+                } else {
+                    miseprintln!(
+                        "would keep {}, left by a migration whose record is gone, under \
+                         another name",
+                        display_path(&entry)
+                    );
                 }
             } else if free {
                 restore(&legacy, &entry)?;
@@ -400,17 +414,36 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                     display_path(&legacy)
                 );
             } else {
+                let kept = keep_aside(&entry)?;
                 warn!(
-                    "{} was left by a migration whose record is gone; {} is in use, so it \
-                     is kept: remove it if {} works",
-                    display_path(&entry),
+                    "a migration whose record is gone left an old directory beside {}; it is \
+                     kept at {}: remove it if {} works",
                     display_path(&legacy),
+                    display_path(&kept),
                     version
                 );
             }
         }
     }
     Ok(())
+}
+
+/// Rename an old directory that cannot be put back to a name no later
+/// migration reads as its own, and return it.
+fn keep_aside(aside: &Path) -> Result<PathBuf> {
+    let name = aside
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let base = name.trim_end_matches(".mise-migrating");
+    let mut kept = aside.with_file_name(format!("{base}.mise-kept"));
+    let mut n = 1;
+    while std::fs::symlink_metadata(&kept).is_ok() {
+        n += 1;
+        kept = aside.with_file_name(format!("{base}.mise-kept-{n}"));
+    }
+    file::rename(aside, &kept)?;
+    Ok(kept)
 }
 
 /// The journal of the migration in progress, which its install's allocations
