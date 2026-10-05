@@ -1701,6 +1701,9 @@ impl Task {
             {
                 let refs = template::secret_refs(value)
                     .map_err(|_| eyre!("{}", template::mixed_message(&self.name, key)))?;
+                if template::literal_has_shell_expansion(value) {
+                    bail!("{}", template::shell_expansion_message(&self.name, key));
+                }
                 late.push(crate::secrets::LateSecretEnv {
                     key: key.clone(),
                     template: value.clone(),
@@ -1715,69 +1718,143 @@ impl Task {
         Ok(())
     }
 
-    /// Env directives in resolution order, without the values rendered at spawn. A directive
-    /// is left out when it is one the loader recorded (same key and text, matched once each
-    /// and only among the task's own env or among the overlay's), so identical text that came
-    /// in through dependency or run-entry env is still resolved, and fails as an undefined
-    /// Tera variable.
+    /// Env directives in resolution order, without the values rendered at spawn. See
+    /// [`Self::plan_late_env`].
     pub(crate) fn render_env_directives(&self) -> Vec<(EnvDirective, PathBuf)> {
-        let mut own = self.late_matcher(false);
-        let mut overlay = self.late_matcher(true);
-        let mut directives: Vec<(EnvDirective, PathBuf)> = self
-            .inherited_env
-            .0
-            .iter()
-            .map(|d| (d.clone(), self.config_source.clone()))
-            .collect();
-        directives.extend(
-            self.env
-                .0
-                .iter()
-                .filter(|d| !own(d))
-                .map(|d| (d.clone(), self.config_source.clone())),
-        );
-        directives.extend(
-            self.overlay_env
-                .iter()
-                .filter(|(d, _)| !overlay(d))
-                .cloned(),
-        );
-        directives
+        self.plan_late_env().0
     }
 
-    fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> bool + use<'_> {
-        let mut remaining: Vec<(&str, &str)> = self
+    /// The recorded `{{ secrets.X }}` values that still apply: the ones no later directive
+    /// for the same key overrides.
+    pub(crate) fn live_late_secret_env(&self) -> Vec<&crate::secrets::LateSecretEnv> {
+        self.plan_late_env().1
+    }
+
+    /// Resolves env precedence for values rendered at spawn. Directives are applied in the
+    /// order the env resolves in: inherited env, the task's own env (template entries first,
+    /// dependency env last), then the overlay's. A recorded value is matched by key and text,
+    /// once each, within the task's own env or within the overlay's, so identical text that
+    /// arrived through dependency or run-entry env is not recorded and still fails as an
+    /// undefined Tera variable.
+    ///
+    /// A recorded value is a writer like `Val`, `Age` and `Rm`. If it is the last writer for
+    /// its key, every earlier directive for the key is dropped, and so is every `default` and
+    /// `required`, which it satisfies. If a later writer follows, that directive stays and the
+    /// recorded value is dropped from the live set: it is never granted, rendered or fetched.
+    /// Directives that do not name their key (`_.file`, `_.source`, ...) are left alone.
+    pub(crate) fn plan_late_env(
+        &self,
+    ) -> (
+        Vec<(EnvDirective, PathBuf)>,
+        Vec<&crate::secrets::LateSecretEnv>,
+    ) {
+        use mise_util::env::env_key_eq;
+        let mut own = self.late_matcher(false);
+        let mut overlay = self.late_matcher(true);
+        let mut items: Vec<(&EnvDirective, PathBuf, Option<usize>)> = vec![];
+        for d in &self.inherited_env.0 {
+            items.push((d, self.config_source.clone(), None));
+        }
+        for d in &self.env.0 {
+            items.push((d, self.config_source.clone(), own(d)));
+        }
+        for (d, source) in &self.overlay_env {
+            items.push((d, source.clone(), overlay(d)));
+        }
+        fn writes(d: &EnvDirective) -> Option<&str> {
+            match d {
+                EnvDirective::Val(k, ..) | EnvDirective::Rm(k, _) => Some(k.as_str()),
+                EnvDirective::Age { key, .. } => Some(key.as_str()),
+                _ => None,
+            }
+        }
+        let late_key = |i: usize| self.late_secret_env[i].key.as_str();
+        // a recorded value is live when no later item writes its key
+        let live_at: Vec<Option<usize>> = items
+            .iter()
+            .enumerate()
+            .map(|(at, (_, _, late))| {
+                let i = (*late)?;
+                let key = late_key(i);
+                let overridden = items[at + 1..].iter().any(|(d, _, l)| {
+                    l.map_or_else(
+                        || writes(d).is_some_and(|k| env_key_eq(k, key)),
+                        |j| env_key_eq(late_key(j), key),
+                    )
+                });
+                (!overridden).then_some(i)
+            })
+            .collect();
+        let live_keys: Vec<&str> = live_at.iter().flatten().map(|i| late_key(*i)).collect();
+        let mut directives = vec![];
+        for (at, (d, source, late)) in items.iter().enumerate() {
+            if late.is_some() {
+                continue;
+            }
+            let covered = |key: &str| live_keys.iter().any(|k| env_key_eq(k, key));
+            let drop = match d {
+                EnvDirective::Default(k, ..) | EnvDirective::Required(k, _) => covered(k),
+                other => writes(other).is_some_and(|k| {
+                    // a live composite later in the list takes the key over
+                    live_at[at + 1..]
+                        .iter()
+                        .flatten()
+                        .any(|i| env_key_eq(late_key(*i), k))
+                }),
+            };
+            if !drop {
+                directives.push(((*d).clone(), source.clone()));
+            }
+        }
+        let live = live_at
+            .into_iter()
+            .flatten()
+            .map(|i| &self.late_secret_env[i])
+            .collect();
+        (directives, live)
+    }
+
+    fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
+        let mut remaining: Vec<(usize, &str, &str)> = self
             .late_secret_env
             .iter()
-            .filter(|l| l.overlay == overlay)
-            .map(|l| (l.key.as_str(), l.template.as_str()))
+            .enumerate()
+            .filter(|(_, l)| l.overlay == overlay)
+            .map(|(i, l)| (i, l.key.as_str(), l.template.as_str()))
             .collect();
         move |directive| {
             let EnvDirective::Val(key, value, _) = directive else {
-                return false;
+                return None;
             };
-            match remaining
+            let at = remaining
                 .iter()
-                .position(|(k, v)| *k == key.as_str() && *v == value.as_str())
-            {
-                Some(i) => {
-                    remaining.remove(i);
-                    true
-                }
-                None => false,
-            }
+                .position(|(_, k, v)| *k == key.as_str() && *v == value.as_str())?;
+            Some(remaining.remove(at).0)
         }
     }
 
-    /// Plain `KEY=value` pairs of the task's own env, without the values rendered at spawn.
+    /// Plain `KEY=value` pairs of the task's env, without the values rendered at spawn.
     pub(crate) fn plain_env_vals(&self) -> Vec<(String, String)> {
-        let mut own = self.late_matcher(false);
-        self.inherited_env
-            .0
-            .iter()
-            .chain(self.env.0.iter().filter(|d| !own(d)))
-            .filter_map(|d| match d {
-                EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+        self.render_env_directives()
+            .into_iter()
+            .filter_map(|(d, _)| match d {
+                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every text in the task's env that could read another env var through a template:
+    /// values and defaults under their key, and path-like directives under `_.file`,
+    /// `_.path` and `_.source`.
+    pub(crate) fn non_late_env_texts(&self) -> Vec<(String, String)> {
+        self.render_env_directives()
+            .into_iter()
+            .filter_map(|(d, _)| match d {
+                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
+                EnvDirective::File(p, _) => Some(("_.file".to_string(), p)),
+                EnvDirective::Path(p, _) => Some(("_.path".to_string(), p)),
+                EnvDirective::Source(p, _) => Some(("_.source".to_string(), p)),
                 _ => None,
             })
             .collect()
@@ -1790,7 +1867,7 @@ impl Task {
             .as_ref()
             .map(|s| s.names().to_vec())
             .unwrap_or_default();
-        for late in &self.late_secret_env {
+        for late in self.live_late_secret_env() {
             for name in &late.refs {
                 if !names.iter().any(|n| n == name.as_str()) {
                     names.push(name.to_string());
@@ -6300,12 +6377,87 @@ echo "hello world"
         assert_eq!(dep.late_secret_env.len(), 1);
         let remaining = dep.render_env_directives();
         assert_eq!(remaining.len(), 1, "the dependency's copy still resolves");
+        assert!(crate::secrets::grant_for_task(&dep).0.late.is_empty());
+        // inherited env comes first, so the task's own composite overrides it
         let inherited = task.derive_env(&[val("PGURL", text)]);
-        assert_eq!(inherited.render_env_directives().len(), 1);
+        assert!(inherited.render_env_directives().is_empty());
+        assert_eq!(crate::secrets::grant_for_task(&inherited).0.late.len(), 1);
         // and a task with only dependency env records nothing
         let plain = Task::default().with_dependency_env(&[val("PGURL", text)]);
         assert!(plain.late_secret_env.is_empty());
         assert_eq!(plain.render_env_directives().len(), 1);
+    }
+
+    #[test]
+    fn a_composed_value_follows_env_precedence() {
+        use crate::config::config_file::mise_toml::EnvList;
+        use crate::config::env_directive::EnvDirective;
+        let composite = "env.PGURL = 'postgres://{{ secrets.DB_PASSWORD }}@h'";
+        let plain = |directive: EnvDirective| Task {
+            name: "m".into(),
+            env: EnvList(vec![directive]),
+            ..Default::default()
+        };
+        let check = |task: &Task, directives: usize, late: usize| {
+            assert_eq!(task.render_env_directives().len(), directives, "{task:?}");
+            assert_eq!(
+                crate::secrets::grant_for_task(task).0.late.len(),
+                late,
+                "{task:?}"
+            );
+        };
+        let base = late_task(composite);
+        // a parent's env is inherited first, so the composite overrides it
+        check(&base.derive_env(&[val("PGURL", "sqlite://parent")]), 0, 1);
+        // a dependency's env is appended after the task's own, so it wins
+        let dep = base.with_dependency_env(&[val("PGURL", "sqlite://test")]);
+        check(&dep, 1, 0);
+        // a plain base, then an overlay composite
+        let mut overlaid = plain(val("PGURL", "sqlite://base"));
+        overlaid.merge_toml_overlay(late_task(composite));
+        check(&overlaid, 0, 1);
+        // a composite base, then an overlay plain value
+        let mut overlaid = base.clone();
+        overlaid.merge_toml_overlay(plain(val("PGURL", "sqlite://over")));
+        check(&overlaid, 1, 0);
+        // then an overlay that unsets the key: nothing is fetched
+        let mut unset = base.clone();
+        unset.merge_toml_overlay(plain(EnvDirective::Rm("PGURL".into(), Default::default())));
+        check(&unset, 1, 0);
+        let (grant, _) = crate::secrets::grant_for_task(&unset);
+        assert!(grant.keys.is_empty());
+        // an overlay default is satisfied by the composite
+        let mut defaulted = base.clone();
+        defaulted.merge_toml_overlay(plain(EnvDirective::Default(
+            "PGURL".into(),
+            "x".into(),
+            Default::default(),
+        )));
+        check(&defaulted, 0, 1);
+        // a template's env goes ahead of the task's own
+        let template: crate::task::TaskTemplate =
+            toml::from_str("env.PGURL = 'postgres://localhost/dev'").unwrap();
+        let mut extended = base.clone();
+        extended.merge_extended_template(&template);
+        check(&extended, 0, 1);
+    }
+
+    #[test]
+    fn shell_expansion_with_secrets_fails_to_load() {
+        let mut task = Task {
+            name: "m".into(),
+            env: crate::config::config_file::mise_toml::EnvList(vec![val(
+                "A",
+                "p://$USER:{{ secrets.B }}@h",
+            )]),
+            ..Default::default()
+        };
+        let err = task.record_late_secret_env(Path::new("/p")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("task m: env.A uses $VAR expansion together with {{ secrets.* }}"),
+            "{err}"
+        );
     }
 
     #[test]

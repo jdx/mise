@@ -212,6 +212,36 @@ pub(crate) fn render(s: &str, values: &BTreeMap<SecretName, SecretValue>) -> Opt
     Some(out)
 }
 
+/// Whether the literal text around the references holds shell expansion syntax: a `$` followed
+/// by `$`, `{` or a letter or underscore. Other env values get `$VAR` expansion, but a value
+/// built at spawn cannot, because expanding after substitution would expand a `$` inside a
+/// secret. Reference spans are skipped. Call it on a value that already passed [`secret_refs`].
+pub(crate) fn literal_has_shell_expansion(s: &str) -> bool {
+    let mut literal = String::new();
+    let mut rest = s;
+    while let Some(start) = next_open(rest) {
+        literal.push_str(&rest[..start]);
+        literal.push('\u{0}');
+        let tag = &rest[start..];
+        match simple_ref(tag) {
+            Some((_, len)) => rest = &tag[len..],
+            None => rest = &tag[2..],
+        }
+    }
+    literal.push_str(rest);
+    let chars: Vec<char> = literal.chars().collect();
+    chars.windows(2).any(|w| {
+        w[0] == '$' && (w[1] == '$' || w[1] == '{' || w[1].is_ascii_alphabetic() || w[1] == '_')
+    })
+}
+
+/// K
+pub(crate) fn shell_expansion_message(task: &str, key: &str) -> String {
+    format!(
+        "task {task}: env.{key} uses $VAR expansion together with {{{{ secrets.* }}}}; values that use secrets are not shell-expanded. Compose the value in fnox (default = \"...${{DB_PASSWORD}}...\") or in the task's script."
+    )
+}
+
 /// The first reference's name for a message, or `NAME`.
 fn first_name(s: &str) -> String {
     lexical_refs(s)
@@ -529,6 +559,26 @@ mod tests {
         }
         // raw ends where it says it does
         assert!(has_secret_ref("{% raw %}x{% endraw %}{{ secrets.A }}"));
+    }
+
+    #[test]
+    fn shell_expansion_syntax_in_the_literal_text() {
+        for yes in [
+            "postgres://$U:{{ secrets.A }}@h",
+            "a${B}{{ secrets.A }}",
+            "a$${{ secrets.A }}",
+            "{{ secrets.A }}$_x",
+        ] {
+            assert!(literal_has_shell_expansion(yes), "{yes}");
+        }
+        for no in [
+            "cost 5$ {{ secrets.A }}",
+            "{{ secrets.A }}",
+            "{{ secrets.A }}$",
+            "a$1{{ secrets.A }}",
+        ] {
+            assert!(!literal_has_shell_expansion(no), "{no}");
+        }
     }
 
     #[test]

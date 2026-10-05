@@ -2352,15 +2352,6 @@ impl TaskExecutor {
                             key.as_str(),
                         ));
                     }
-                    if declared
-                        .iter()
-                        .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
-                    {
-                        found.push(crate::secrets::collision_problem(
-                            crate::secrets::Subject::Task(&task.name),
-                            key.as_str(),
-                        ));
-                    }
                 }
                 for late in &grant.late {
                     if !sandbox.keeps_env_key(&late.key) {
@@ -2369,6 +2360,27 @@ impl TaskExecutor {
                             &late.key,
                         ));
                     }
+                }
+                // a key the config or the task's other env also sets, or one that is both
+                // exported and built, collides; the spawn repeats the exact check
+                let is_declared =
+                    |key: &str| declared.iter().any(|d| mise_util::env::env_key_eq(d, key));
+                let mut colliding: BTreeSet<&str> = BTreeSet::new();
+                for key in grant.exported_keys().map(|k| k.as_str()) {
+                    if grant.is_late_key(key) || is_declared(key) {
+                        colliding.insert(key);
+                    }
+                }
+                for late in &grant.late {
+                    if is_declared(&late.key) {
+                        colliding.insert(&late.key);
+                    }
+                }
+                for key in colliding {
+                    found.push(crate::secrets::collision_problem(
+                        crate::secrets::Subject::Task(&task.name),
+                        key,
+                    ));
                 }
             }
             problems.extend(found);
