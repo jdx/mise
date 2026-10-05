@@ -20,7 +20,8 @@ mod name;
 mod source;
 mod spawn;
 
-pub(crate) use broker::{Grantee, NotRetrying, SecretBroker, SpawnRequest, TerminalAccess};
+pub use broker::is_resolve_failure;
+pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
 pub(crate) use grant::{
     DENIED_MARKER, aggregate_error, collision_problem, declared_env_keys, grant_for_task,
     sandbox_problem, static_problems,

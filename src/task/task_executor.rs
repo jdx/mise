@@ -889,14 +889,19 @@ impl TaskExecutor {
                     },
                 )
                 .await
-                .inspect_err(|err| {
-                    if err.downcast_ref::<crate::secrets::NotRetrying>().is_some() {
+                .map_err(|err| {
+                    // after Ctrl-C fnox died with the rest of the group; say nothing about it
+                    if let Err(interrupted) = Self::check_interruption(allow_during_interruption) {
+                        return interrupted;
+                    }
+                    if crate::secrets::is_resolve_failure(&err) {
                         self.eprint(
                             task,
                             &prefix,
                             &format!("{} {err}", crate::ui::style::ered("ERROR")),
                         );
                     }
+                    err
                 })?
         };
         let exec_ctx = TaskExecContext {

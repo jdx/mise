@@ -1283,7 +1283,12 @@ impl Run {
                         && Error::is_killed_by_signal(err);
                     was_stopping
                 };
-                if !interrupted && !was_stopping && (panicked || status.is_none()) {
+                // the executor already printed a secrets resolve failure itself
+                if !interrupted
+                    && !was_stopping
+                    && (panicked || status.is_none())
+                    && !crate::secrets::is_resolve_failure(err)
+                {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));

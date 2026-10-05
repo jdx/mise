@@ -187,15 +187,17 @@ impl SecretSource for FnoxSource {
         format!("fnox{profile} in {}", display_path(&self.id.root))
     }
 
+    /// The binary and the whole source env, hashed: the env can carry credentials.
     fn build_fingerprint(&self) -> String {
-        format!(
-            "{}\0{}",
-            self.bin.display(),
-            self.env
-                .get(&*env::PATH_KEY)
-                .map(String::as_str)
-                .unwrap_or("")
-        )
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(self.bin.to_string_lossy().as_bytes());
+        for (key, value) in &self.env {
+            hasher.update(b"\0");
+            hasher.update(key.as_bytes());
+            hasher.update(b"=");
+            hasher.update(value.as_bytes());
+        }
+        hasher.finalize().to_hex().to_string()
     }
 
     async fn resolve(
@@ -807,6 +809,26 @@ mod tests {
             err(r#"{"schema":1,"error":{"kind":"config","message":"bad"}}"#),
             ResolveError::Other(m) if m.contains("could not load its config")
         ));
+    }
+
+    #[test]
+    fn fingerprint_covers_the_whole_env_without_embedding_it() {
+        let with = |key: &str, value: &str| {
+            let mut s = source(None);
+            s.env.insert("PATH".into(), "/bin".into());
+            s.env.insert(key.into(), value.into());
+            s
+        };
+        let a = with("AWS_PROFILE", "staging-s3cr3t");
+        assert_eq!(
+            a.build_fingerprint(),
+            with("AWS_PROFILE", "staging-s3cr3t").build_fingerprint()
+        );
+        assert_ne!(
+            a.build_fingerprint(),
+            with("AWS_PROFILE", "prod-s3cr3t").build_fingerprint()
+        );
+        assert!(!a.build_fingerprint().contains("s3cr3t"));
     }
 
     #[test]

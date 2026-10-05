@@ -620,7 +620,10 @@ fn scan_tag(tag: &str, out: &mut BTreeSet<String>) {
             }
         }
         if boundary && at(i, "get_env(") {
-            i = scan_get_env_args(&chars, i + "get_env(".len(), out);
+            // the key, then the main loop goes on through the other arguments, which are
+            // expressions of their own (`default=env.K`)
+            i += "get_env(".len();
+            scan_get_env_name(&chars, i, out);
             continue;
         }
         i += 1;
@@ -628,7 +631,7 @@ fn scan_tag(tag: &str, out: &mut BTreeSet<String>) {
 }
 
 /// `name="K"` among the arguments of a `get_env(` call; strings elsewhere are skipped.
-fn scan_get_env_args(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) -> usize {
+fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
     while i < chars.len() && chars[i] != ')' {
         if is_quote(chars[i]) {
             i = read_literal(chars, i).1;
@@ -646,16 +649,13 @@ fn scan_get_env_args(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) -
                     j += 1;
                 }
                 if chars.get(j).is_some_and(|c| is_quote(*c)) {
-                    let (name, next) = read_literal(chars, j);
-                    out.insert(name);
-                    i = next;
-                    continue;
+                    out.insert(read_literal(chars, j).0);
+                    return;
                 }
             }
         }
         i += 1;
     }
-    i
 }
 
 #[cfg(test)]
@@ -724,6 +724,14 @@ mod tests {
         let r =
             tera_env_refs("{{ env[\"B\"] }} {{ get_env(name='C') }} {% if env.KEY %}x{% endif %}");
         assert_eq!(r, BTreeSet::from(["B", "C", "KEY"].map(String::from)));
+    }
+
+    #[test]
+    fn get_env_arguments_are_scanned() {
+        let r = tera_env_refs("{{ get_env(name='OTHER', default=env.DEPLOY_KEY) }}");
+        assert_eq!(r, BTreeSet::from(["OTHER", "DEPLOY_KEY"].map(String::from)));
+        let r = tera_env_refs("{{ get_env(name=\"X\", default=\"env.Y\") }}");
+        assert_eq!(r, BTreeSet::from(["X".to_string()]));
     }
 
     #[test]
