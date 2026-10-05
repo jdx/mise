@@ -24,11 +24,11 @@ mod spawn;
 
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
+pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
     DENIED_MARKER, SecretGrant, Subject, aggregate_error, collision_problem, declared_env_keys,
     denied_from_env, effective_grant, grant_for_task, sandbox_problem, static_problems,
 };
-pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub use spawn::SpawnSecrets;
@@ -302,13 +302,13 @@ fn task_level_problems(
     let mut problems = vec![];
     for key in grant.keys.keys() {
         if !sandbox.keeps_env_key(key.as_str()) {
-            problems.push(sandbox_problem(&task.name, key.as_str()));
+            problems.push(sandbox_problem(Subject::Task(&task.name), key.as_str()));
         }
         if declared
             .iter()
             .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
         {
-            problems.push(collision_problem(&task.name, key.as_str()));
+            problems.push(collision_problem(Subject::Task(&task.name), key.as_str()));
         }
     }
     problems
