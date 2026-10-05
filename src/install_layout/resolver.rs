@@ -418,10 +418,11 @@ fn same_request(identity: &InstallIdentity, key: &InstallIdentity) -> bool {
 
 /// A legacy `installs/<short>/<version>` directory that this request may use.
 ///
-/// Legacy metadata records one backend per tool directory. It is only trusted
-/// when that backend is the one the request resolves to; ambiguous or missing
-/// metadata is not evidence of compatibility, so the version is then installed
-/// afresh in the new layout instead of reinterpreting another backend's payload.
+/// Legacy metadata records one backend per tool directory. A recorded backend
+/// is only trusted when it is the one the request resolves to; otherwise the
+/// version is installed afresh in the new layout instead of reinterpreting
+/// another backend's payload. A tool directory with no recorded backend at all
+/// (made before mise recorded one) is, as it always was, its short name's own.
 fn legacy_dir(tv: &ToolVersion, identity: &InstallIdentity) -> Option<PathBuf> {
     let name = tv.tv_pathname();
     for root in roots() {
