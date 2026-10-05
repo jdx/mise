@@ -108,6 +108,10 @@ assert "mise where tiny@3.1.0" "$shared_dir"
 # nothing was written into the shared root
 [[ "$(find "$shared" -printf '%p %s %T@\n' | sort)" == "$shared_state" ]] ||
   fail "the shared root was written to"
+# a shared catalog that lost its record still has the installation's receipt
+mv "$shared/.mise/identities" "$shared/.mise/identities.lost"
+assert "mise where tiny@3.1.0" "$shared_dir"
+mv "$shared/.mise/identities.lost" "$shared/.mise/identities"
 echo "=== a selected shared installation that is gone is not replaced silently ==="
 rm -rf "$shared_dir"
 assert_fail "mise install tiny@3.1.0" "no longer has it"

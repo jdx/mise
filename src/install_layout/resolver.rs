@@ -469,7 +469,15 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
             .map(PathBuf::from)
             .unwrap_or_else(|| primary.root().to_path_buf());
         let catalog = Catalog::new(&root);
-        let record = catalog.record_by_digest(&key.backend, &selection.selected);
+        // A shared root's catalog cannot be rebuilt here; the installation's own
+        // receipt still says what it is.
+        let record = catalog
+            .record_by_digest(&key.backend, &selection.selected)
+            .or_else(|| {
+                (!is_primary_root(&root))
+                    .then(|| catalog.find_by_receipt(&selection.selected))
+                    .flatten()
+            });
         // A selection in the user's own catalog whose record is gone is treated
         // as no selection; one naming another root is not given up on silently.
         if record.is_some() || !is_primary_root(&root) {

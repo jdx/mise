@@ -258,6 +258,21 @@ impl Catalog {
     /// Adopt installations that exist on disk with a receipt but are missing
     /// from the catalog (it was lost or never written), so the catalog can be
     /// rebuilt from receipts alone. Returns the records it restored.
+    /// The installation in this catalog's store whose receipt records `digest`:
+    /// what is left to go on when the catalog lost its record and cannot be
+    /// rebuilt, as in a read-only shared root. It reads every receipt.
+    pub(crate) fn find_by_receipt(&self, digest: &str) -> Option<IdentityRecord> {
+        file::dir_subdirs(&self.store)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|dir| !dir.starts_with('.'))
+            .filter_map(|dir| read_receipt(&self.store.join(&dir)).map(|r| (dir, r.record)))
+            .find(|(dir, record)| {
+                record.digest == digest && record.dir == *dir && record.is_consistent()
+            })
+            .map(|(_, record)| record)
+    }
+
     pub(crate) fn rebuild_from_receipts(&self) -> Result<Vec<IdentityRecord>> {
         let mut restored = vec![];
         let _lock = LockFile::at(&self.meta_dir().join("alloc.lock")).lock()?;
