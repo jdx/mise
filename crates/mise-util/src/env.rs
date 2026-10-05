@@ -178,13 +178,16 @@ pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
 /// because the real installation path is what counts against `MAX_PATH`. Version
 /// links and the catalog stay in the installs directory either way.
 pub static MISE_INSTALL_STORE_DIR: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_INSTALL_STORE_DIR").unwrap_or_else(|| {
-        if cfg!(windows) && var_path("MISE_INSTALLS_DIR").is_none() {
-            MISE_DATA_DIR.join("i")
-        } else {
-            MISE_INSTALLS_DIR.clone()
-        }
-    })
+    let installs = &*MISE_INSTALLS_DIR;
+    match var_path("MISE_INSTALL_STORE_DIR") {
+        // Inside the installs directory the store would sit in a tool's
+        // directory, where listing and prune take it for a version of that tool;
+        // such a setting is ignored.
+        Some(store) if store != *installs && store.starts_with(installs) => installs.clone(),
+        Some(store) => store,
+        None if cfg!(windows) && var_path("MISE_INSTALLS_DIR").is_none() => MISE_DATA_DIR.join("i"),
+        None => installs.clone(),
+    }
 });
 
 pub static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =

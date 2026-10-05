@@ -102,7 +102,7 @@ On Windows the installations themselves go into `i` beside `installs`
 under the 260-character limit. The links, runtime aliases and catalog stay in
 `installs`. Set `MISE_INSTALL_STORE_DIR` to choose where installations go on any
 platform; it defaults to the installs directory, and on Windows to `i` unless
-`MISE_INSTALLS_DIR` is set.
+`MISE_INSTALLS_DIR` is set. A directory inside the installs directory is ignored.
 
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 

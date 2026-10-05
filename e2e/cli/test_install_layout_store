@@ -55,3 +55,8 @@ assert "test ! -L '$installs/dummy/1.1.0'"
 echo "=== a reinstall lands in the same directory ==="
 assert "mise install dummy@1.1.0"
 assert "mise where dummy@1.1.0" "$dir_1"
+
+echo "=== a store inside the installs directory is ignored ==="
+assert "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise install dummy@2.0.0"
+assert_matches "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test ! -e '$installs/dummy/store'"
