@@ -642,15 +642,23 @@ pub(crate) fn purge_installs(ba: &crate::args::BackendArg) -> Result<()> {
     Ok(())
 }
 
-/// The complete installations of canonical `backend` at logical `version`, and
-/// the checksum each was acquired or pinned with. Prune uses it to keep what a
+/// The complete installations of canonical `backend` at `version`, and the
+/// checksum each was acquired or pinned with. Prune uses it to keep what a
 /// lockfile entry names.
+///
+/// A lockfile writes a version as requested (`ref:main`) and an identity records
+/// its path name (`ref-main`), so both are compared the way a version directory
+/// is named.
 pub(crate) fn installs_matching(backend: &str, version: &str) -> Vec<(String, Option<String>)> {
+    let pathname = |v: &str| v.replace([':', '/'], "-");
+    let version = pathname(version);
     let mut out = vec![];
     for root in roots() {
         let catalog = Catalog::new(&root);
         for record in catalog.records_for_backend(backend) {
-            if record.identity.version != version || !is_complete(&catalog.install_dir(&record)) {
+            if pathname(&record.identity.version) != version
+                || !is_complete(&catalog.install_dir(&record))
+            {
                 continue;
             }
             let checksum = record
@@ -849,8 +857,9 @@ pub(crate) fn allocate(tv: &ToolVersion, refresh: bool) -> Result<Option<Allocat
 
 /// Record a finished (or reused) installation: write its receipt, point the
 /// compatibility link for the requesting tool at it, and remember the unlocked
-/// selection. The receipt goes in last; its presence is what marks the
-/// installation complete.
+/// selection. The receipt is what marks the installation complete. It goes in
+/// before the link, so nothing that finds the link takes it for a stale one; when
+/// a later step fails, the caller withdraws the installation with [`unpublish`].
 ///
 /// `adopt_new_artifact` is an explicit refresh (`--force`, a rolling update). Without
 /// it, an installation restored under a recorded identity must be made from the

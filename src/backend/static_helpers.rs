@@ -1656,10 +1656,19 @@ pub(crate) fn request_identity_options<B: crate::backend::Backend + ?Sized>(
 }
 
 /// Whether `key` is a platform-scoped option: the `platforms` / `platform` tables or a
-/// flat `platform_<os>_<arch>_<name>` key.
+/// flat `platforms_<os>_<arch>_<name>` / `platform_<os>_<arch>_<name>` key.
 fn is_platform_scoped_option(key: &str) -> bool {
-    key == "platforms" || key == "platform" || key.starts_with("platform_")
+    PLATFORM_PREFIXES.iter().any(|prefix| {
+        key == *prefix
+            || key
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.starts_with('_'))
+    })
 }
+
+/// The spellings of the platform-scoped options, in the order the option lookups
+/// ([`lookup_platform_value_for_aliases`]) prefer them.
+const PLATFORM_PREFIXES: [&str; 2] = ["platforms", "platform"];
 
 /// The platform-scoped options that apply to the current platform, under one stable
 /// spelling (`platforms.current.<name>`) whichever of the accepted spellings (nested
@@ -1680,7 +1689,7 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
     };
     for (os, arch) in &aliases {
         let platform = format!("{os}-{arch}");
-        for table_key in ["platforms", "platform"] {
+        for table_key in PLATFORM_PREFIXES {
             if let Some(toml::Value::Table(table)) = opts.opts.get(table_key)
                 && let Some(entry) = table.get(&platform)
             {
@@ -1694,10 +1703,12 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
                 }
             }
         }
-        let flat = format!("platform_{os}_{arch}_");
-        for (key, value) in &opts.opts {
-            if let Some(name) = key.strip_prefix(&flat) {
-                push(name, text(value));
+        for prefix in PLATFORM_PREFIXES {
+            let flat = format!("{prefix}_{os}_{arch}_");
+            for (key, value) in &opts.opts {
+                if let Some(name) = key.strip_prefix(&flat) {
+                    push(name, text(value));
+                }
             }
         }
     }
@@ -1851,6 +1862,23 @@ mod tests {
             ],
         );
         assert_eq!(options, request_identity_options(&backend, &other));
+        // The plural flat spelling, which the option lookups accept too, is the same
+        // option: it names the same identity, and another platform's is left out.
+        let plural = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[
+                (
+                    format!("platforms_{os}_{arch}_url").as_str(),
+                    "https://example.com/here.tgz",
+                ),
+                (
+                    "platforms_plan9_mips_url",
+                    "https://example.com/elsewhere.tgz",
+                ),
+            ],
+        );
+        assert_eq!(options, request_identity_options(&backend, &plural));
     }
 
     #[test]

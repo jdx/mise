@@ -4129,15 +4129,18 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let install_path = tv.install_path();
-        // Identity layout: the receipt (written last, it marks the install
-        // complete), the version link for the requesting tool and the unlocked
-        // selection.
-        if let Some(allocated) = &allocated {
-            crate::install_layout::resolver::finish(
+        // Identity layout: the receipt (it marks the install complete), the version
+        // link for the requesting tool and the unlocked selection. A failure after
+        // the receipt is written withdraws the install, as below.
+        if let Some(allocated) = &allocated
+            && let Err(err) = crate::install_layout::resolver::finish(
                 &tv,
                 allocated,
                 ctx.force || rolling_reinstall,
-            )?;
+            )
+        {
+            crate::install_layout::resolver::unpublish(&install_path);
+            return Err(err);
         }
         // Everything below that can fail runs with the install already published,
         // so a failure withdraws it again instead of leaving a receipt behind.
