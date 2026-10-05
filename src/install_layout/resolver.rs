@@ -448,7 +448,7 @@ enum Unlocked {
     Found(Located),
     /// Nothing is selected, and several complete installations answer it:
     /// choosing one would be a guess.
-    Ambiguous(Vec<IdentityRecord>),
+    Ambiguous(Vec<Located>),
     /// Nothing is selected or installed.
     Nothing,
 }
@@ -496,7 +496,7 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
     match complete.len() {
         0 => Unlocked::Nothing,
         1 => Unlocked::Found(complete.remove(0)),
-        _ => Unlocked::Ambiguous(complete.into_iter().filter_map(|l| l.record).collect()),
+        _ => Unlocked::Ambiguous(complete),
     }
 }
 
@@ -566,16 +566,21 @@ fn next_generation(catalog: &Catalog, key: &InstallIdentity) -> u32 {
 }
 
 /// Why an unlocked request with no selection cannot just use an installation.
-fn ambiguity_error(tv: &ToolVersion, records: &[IdentityRecord]) -> eyre::Report {
-    let list = records
+fn ambiguity_error(tv: &ToolVersion, installations: &[Located]) -> eyre::Report {
+    // Full paths: the same identity has the same name in each root that has it.
+    let list = installations
         .iter()
-        .map(|r| {
-            let pinned = if r.provenance.pinned_by.is_empty() {
-                ""
-            } else {
+        .map(|l| {
+            let pinned = if l
+                .record
+                .as_ref()
+                .is_some_and(|r| !r.provenance.pinned_by.is_empty())
+            {
                 " (a lockfile pins it)"
+            } else {
+                ""
             };
-            format!("  {}{pinned}", r.dir)
+            format!("  {}{pinned}", file::display_path(&l.dir))
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1246,11 +1251,10 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
         catalog.select(&key, &record, shared)?;
         reset_cache();
     }
-    if !is_primary_root(&located.root) {
-        // A read-only shared installation: never written to.
-        return Ok(());
-    }
-    if let Some(pin) = pin_of(&identity)
+    // A pin is recorded in the catalog that lists the installation, and a shared
+    // root's is never written to. The version link is the user's own.
+    if is_primary_root(&located.root)
+        && let Some(pin) = pin_of(&identity)
         && !record.provenance.pinned_by.iter().any(|p| p == pin)
     {
         let mut provenance = record.provenance.clone();
@@ -1437,6 +1441,15 @@ pub fn installations() -> Vec<Installation> {
         }
     }
     out
+}
+
+/// Whether the installation `i` is one of `ba`'s, judged from its receipt (so an
+/// installation the catalog lost, or one in a shared root, still counts).
+pub fn installation_belongs_to(ba: &crate::args::BackendArg, i: &Installation) -> bool {
+    if !backends_of(ba).contains(&i.backend) {
+        return false;
+    }
+    read_receipt(&i.dir).is_some_and(|receipt| belongs_to(ba, &receipt.record, &i.dir))
 }
 
 /// The installation named `name` in the store of `root`, if there is a complete one.

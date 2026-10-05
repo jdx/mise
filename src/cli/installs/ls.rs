@@ -1,6 +1,3 @@
-use std::collections::BTreeSet;
-use std::path::PathBuf;
-
 use comfy_table::Cell;
 use eyre::Result;
 
@@ -47,13 +44,11 @@ impl InstallsLs {
     pub(super) async fn run(self) -> Result<()> {
         let mut installations = resolver::installations();
         if !self.tool.is_empty() {
-            let wanted: BTreeSet<PathBuf> = self
-                .tool
-                .iter()
-                .flat_map(resolver::installs_of)
-                .map(|(_, dir)| dir)
-                .collect();
-            installations.retain(|i| wanted.contains(&i.dir));
+            installations.retain(|i| {
+                self.tool
+                    .iter()
+                    .any(|ba| resolver::installation_belongs_to(ba, i))
+            });
         }
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&installations)?);

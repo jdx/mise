@@ -94,6 +94,8 @@ export MISE_SHARED_INSTALL_DIRS="$shared"
 assert "mise where tiny@3.1.0" "$shared_dir"
 assert_contains "mise install tiny@3.1.0 2>&1" "already installed"
 assert "mise installs ls tiny --json | jq -r '.[] | select(.selected) | .shared'" "true"
+# adopting it makes the user's own version link to it
+assert "readlink '$installs/tiny/3.1.0'" "$shared_dir"
 # a forced install writes a copy into the user's own root and selects it
 assert "mise install --force tiny@3.1.0"
 own_dir="$(mise where tiny@3.1.0)"
@@ -126,6 +128,8 @@ mine="$(mise where tiny@3.0.0)"
 [[ $mine == "$installs"/tiny-* ]] || fail "$mine is not in the user's root"
 rm -rf "$installs/.mise/selections"
 assert_fail "mise install tiny@3.0.0" "matches several installations and none is selected"
+# both copies have the same name, so each is listed by its path
+assert_fail "mise install tiny@3.0.0" "shared-installs-2/tiny-"
 assert "mise installs select $mine"
 assert "mise where tiny@3.0.0" "$mine"
 
