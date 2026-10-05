@@ -340,7 +340,11 @@ mise installs migrate node python@3.12.1
 ```
 
 The old directory is moved aside while its replacement installs, and put back
-if the install fails. Run it while nothing is using the tools being moved.
+if the install fails. Each migration is recorded in `installs/.mise/migrations/`
+before anything moves, so if a run is interrupted, the next
+`mise installs migrate` either removes the old directory (the replacement had
+finished) or puts it back and withdraws the unfinished replacement. Run it while
+nothing is using the tools being moved.
 Versions whose recorded backend is not the one their tool resolves to now are
 left alone (mise is not using them; `mise uninstall` them if nothing needs
 them), as are tools that keep the legacy layout (`http:`, `rust`, `dotnet`).

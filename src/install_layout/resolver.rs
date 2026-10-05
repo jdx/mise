@@ -137,7 +137,7 @@ pub(crate) fn is_primary_store(path: &Path) -> bool {
 
 /// Whether `path` is an installation in the primary root's store, the only place
 /// mise installs into.
-pub fn is_primary_install(path: &Path) -> bool {
+pub(crate) fn is_primary_install(path: &Path) -> bool {
     path.parent().is_some_and(is_primary_store)
 }
 
@@ -334,7 +334,7 @@ pub(crate) fn reset_cache() {
 /// A complete installation: the directory exists and its receipt is intact.
 /// The receipt is written last, so its absence means the install was
 /// interrupted or has not finished.
-pub fn is_complete(dir: &Path) -> bool {
+pub(crate) fn is_complete(dir: &Path) -> bool {
     dir.is_dir() && read_receipt(dir).is_some()
 }
 
@@ -961,17 +961,31 @@ pub(crate) fn runtime_dir(tv: &ToolVersion) -> PathBuf {
 /// its tool. The per-tool install lock is keyed by the tool's own cache directory,
 /// which `age` and `aqua:FiloSottile/age` do not share, while the installation
 /// they share has exactly one directory.
-pub(crate) fn lock_install(
-    dir: &Path,
-    on_wait: &dyn Fn(Option<u32>),
-) -> Result<Option<fslock::LockFile>> {
-    let Some(name) = dir_name_of(dir) else {
+pub fn lock_install(dir: &Path, on_wait: &dyn Fn(Option<u32>)) -> Result<Option<fslock::LockFile>> {
+    let Some(path) = install_lock_path(dir) else {
         return Ok(None);
     };
+    Ok(Some(
+        crate::lock_file::LockFile::at(&path)
+            .with_pid()
+            .lock_with_notice(on_wait)?,
+    ))
+}
+
+/// [`lock_install`] without waiting: `None` when it is held, or `dir` takes no lock.
+pub fn try_lock_install(dir: &Path) -> Result<Option<fslock::LockFile>> {
+    match install_lock_path(dir) {
+        Some(path) => crate::lock_file::LockFile::at(&path).with_pid().try_lock(),
+        None => Ok(None),
+    }
+}
+
+fn install_lock_path(dir: &Path) -> Option<PathBuf> {
+    let name = dir_name_of(dir)?;
     // A shared root is read-only: a satisfied install there is used without a lock,
     // and nothing is ever installed into it.
     if !is_primary_install(dir) {
-        return Ok(None);
+        return None;
     }
     // Kept beside the installation, in its store: installs directories that share
     // a store (MISE_INSTALL_STORE_DIR) then share the lock too. With the store
@@ -982,12 +996,7 @@ pub(crate) fn lock_install(
     } else {
         store.join(".mise-locks")
     };
-    let path = locks.join(format!("{name}.lock"));
-    Ok(Some(
-        crate::lock_file::LockFile::at(&path)
-            .with_pid()
-            .lock_with_notice(on_wait)?,
-    ))
+    Some(locks.join(format!("{name}.lock")))
 }
 
 /// Whether the version slot `path` holds something this layout did not put there:
@@ -1736,6 +1745,15 @@ pub fn is_legacy_install(dir: &Path) -> bool {
     in_primary_tool_dir
         && !is_dir_link(dir)
         && std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+}
+
+/// The canonical backend and version an installation of `tv` records, whatever
+/// options it is made with.
+pub fn identity_scope(tv: &ToolVersion) -> Option<(String, String)> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let identity = identity_of(&bare)?;
+    Some((identity.backend, identity.version))
 }
 
 /// Where reinstalling `tv`'s legacy installation into this layout would put it,

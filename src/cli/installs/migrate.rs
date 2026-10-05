@@ -104,8 +104,8 @@ impl InstallsMigrate {
             return Ok(());
         }
         let mut failed = vec![];
-        for (tv, target) in plan {
-            if let Err(err) = migrate(&tv, &target).await {
+        for (tv, _) in plan {
+            if let Err(err) = migrate(&tv).await {
                 error!("could not migrate {}: {err:#}", tv.style());
                 failed.push(tv.style());
             }
@@ -134,176 +134,220 @@ impl InstallsMigrate {
     }
 }
 
-/// The name a legacy directory is moved aside to while it is migrated
-/// (`.<version>.mise-migrating`, followed by `+<name>` when the migration makes
-/// the installation `<name>` rather than reusing one that existed), or once its
-/// migration has finished (`.<version>.mise-migrated`). Scans skip dot-prefixed
-/// entries, so it is invisible until put back or removed.
-fn aside_path(legacy: &Path, state: &str) -> PathBuf {
+/// Where a legacy directory waits while it is migrated: beside the version link
+/// that replaces it, under a dot name that scans skip.
+fn aside_path(legacy: &Path) -> PathBuf {
     let name = legacy
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    legacy.with_file_name(format!(".{name}{MARKER}{state}"))
+    legacy.with_file_name(format!(".{name}.mise-migrating"))
 }
 
-const MARKER: &str = ".mise-migrat";
-const MIGRATING: &str = "ing";
-const MIGRATED: &str = "ed";
-
-/// What an entry a migration left in a tool directory says: the version, and
-/// whether its migration finished or, if not, the installation it was making.
-enum Leftover<'a> {
-    Migrating {
-        version: &'a str,
-        made: Option<&'a str>,
-    },
-    Migrated {
-        version: &'a str,
-    },
+/// What a migration records before it touches anything, so that an interrupted
+/// one is finished or undone exactly.
+///
+/// The old directory is deleted only once the journal says the migration
+/// finished: its replacement installed (postinstall included), checked and
+/// linked. Until then, undoing it puts the old directory back and withdraws every
+/// installation of the version that the migration made, which is any not listed
+/// in `existing`. One that was complete before the migration started is never
+/// touched.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Journal {
+    /// The tool's short name, for the version's lock.
+    tool: String,
+    /// The legacy directory, `installs/<tool>/<version>`.
+    legacy: PathBuf,
+    /// The canonical backend and version of the replacement.
+    backend: String,
+    version: String,
+    /// The complete installations of that backend and version before it started.
+    existing: Vec<String>,
+    finished: bool,
 }
 
-/// An entry an earlier migration of `legacy` left beside it, if there is one.
-fn leftover_of(legacy: &Path) -> Option<PathBuf> {
-    let version = legacy.file_name()?.to_str()?;
-    file::ls(legacy.parent()?)
-        .unwrap_or_default()
-        .into_iter()
-        .find(|entry| {
-            entry.file_name().and_then(|n| n.to_str()).and_then(leftover).is_some_and(|l| {
-                matches!(l, Leftover::Migrating { version: v, .. } | Leftover::Migrated { version: v } if v == version)
-            })
-        })
-}
-
-fn leftover(name: &str) -> Option<Leftover<'_>> {
-    let (version, state) = name.strip_prefix('.')?.split_once(MARKER)?;
-    if state == MIGRATED {
-        return Some(Leftover::Migrated { version });
+impl Journal {
+    fn dir() -> PathBuf {
+        dirs::INSTALLS.join(".mise").join("migrations")
     }
-    let made = state.strip_prefix(MIGRATING)?;
-    let made = match made.strip_prefix('+') {
-        Some(name) => Some(name),
-        None if made.is_empty() => None,
-        None => return None,
-    };
-    Some(Leftover::Migrating { version, made })
+
+    fn path_for(legacy: &Path) -> PathBuf {
+        let part = |p: Option<&std::ffi::OsStr>| {
+            p.map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        };
+        let tool = part(legacy.parent().and_then(Path::file_name));
+        let version = part(legacy.file_name());
+        Self::dir().join(format!("{tool}@{version}.toml"))
+    }
+
+    fn start(tv: &ToolVersion) -> Result<Self> {
+        let (backend, version) = resolver::identity_scope(tv)
+            .ok_or_else(|| eyre::eyre!("the backend of {} cannot be loaded", tv.style()))?;
+        let existing = resolver::installations()
+            .into_iter()
+            .filter(|i| i.backend == backend && i.version == version)
+            .map(|i| i.name)
+            .collect();
+        let journal = Self {
+            tool: tv.ba().short.clone(),
+            legacy: tv.install_path(),
+            backend,
+            version,
+            existing,
+            finished: false,
+        };
+        journal.write()?;
+        Ok(journal)
+    }
+
+    fn write(&self) -> Result<()> {
+        file::create_dir_all(Self::dir())?;
+        file::write(Self::path_for(&self.legacy), toml::to_string(self)?)
+    }
+
+    fn remove(&self) {
+        if let Err(err) = file::remove_file(Self::path_for(&self.legacy)) {
+            debug!("could not remove the migration journal: {err:#}");
+        }
+    }
+
+    fn all() -> Vec<Self> {
+        file::ls(&Self::dir())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|path| {
+                let body = std::fs::read_to_string(&path).ok()?;
+                toml::from_str(&body)
+                    .inspect_err(|err| debug!("ignoring {}: {err}", display_path(&path)))
+                    .ok()
+            })
+            .collect()
+    }
+
+    /// Withdraw the installations of the version the migration made, each under
+    /// its install lock. Without `wait` a lock that is held (by an install this
+    /// process is dropping) is not waited for; returns whether nothing was left.
+    fn withdraw(&self, wait: bool) -> bool {
+        let mut done = true;
+        let made = resolver::installations().into_iter().filter(|i| {
+            !i.shared
+                && i.backend == self.backend
+                && i.version == self.version
+                && !self.existing.contains(&i.name)
+        });
+        for installation in made {
+            let lock = if wait {
+                resolver::lock_install(&installation.dir, &|_| {})
+            } else {
+                resolver::try_lock_install(&installation.dir)
+            };
+            match lock {
+                Ok(Some(_lock)) => resolver::unpublish(&installation.dir),
+                Ok(None) | Err(_) => done = false,
+            }
+        }
+        done
+    }
+
+    /// Put the old directory back and withdraw what the migration made. The
+    /// journal stays until both are done, so the next run finishes the job.
+    fn undo(&self, wait: bool) -> Result<()> {
+        let complete = self.withdraw(wait);
+        let aside = aside_path(&self.legacy);
+        if aside.exists() {
+            restore(&self.legacy, &aside)?;
+        }
+        if complete {
+            self.remove();
+        }
+        Ok(())
+    }
 }
 
 /// Finish or undo migrations an earlier run did not complete (it was
-/// interrupted). A directory marked migrated is removed: its replacement was
-/// installed, checked and linked. One still moved aside is put back unless a real
-/// directory took its place. The replacement's receipt and version link are not
-/// proof it finished, because an install writes them before its postinstall runs:
-/// a replacement the migration was making is withdrawn, and made again when the
-/// version is migrated. One it reused had finished before and is left alone.
+/// interrupted). A finished one only had its old directory left to remove. An
+/// unfinished one is undone, unless a real directory took the old one's place:
+/// a replacement's receipt and version link are no proof it finished, since an
+/// install writes them before its postinstall runs.
 fn recover_interrupted(dry_run: bool) -> Result<()> {
-    let root: &Path = &dirs::INSTALLS;
-    for tool in file::dir_subdirs(root).unwrap_or_default() {
-        let tool_dir = root.join(&tool);
-        let entries = file::ls(&tool_dir).unwrap_or_default();
-        let names: Vec<String> = entries
-            .iter()
-            .filter_map(|e| e.file_name()?.to_str().map(str::to_string))
-            .collect();
-        // A directory still moved aside first: a finished mark beside it (a file,
-        // left where the directory could not be renamed) is what tells it apart,
-        // so the mark goes only after it.
-        let mut found: Vec<(PathBuf, Leftover<'_>)> = entries
-            .iter()
-            .zip(&names)
-            .filter_map(|(entry, name)| Some((entry.clone(), leftover(name)?)))
-            .collect();
-        found.sort_by_key(|(_, l)| matches!(l, Leftover::Migrated { .. }));
-        for (entry, found) in found {
-            let (version, finished, made) = match found {
-                Leftover::Migrated { version } => {
-                    // A mark whose directory could not be removed stays with it.
-                    let pending = file::ls(&tool_dir).unwrap_or_default().iter().any(|e| {
-                        e.file_name().and_then(|n| n.to_str()).and_then(leftover).is_some_and(
-                            |l| matches!(l, Leftover::Migrating { version: v, .. } if v == version),
-                        )
-                    });
-                    if pending {
-                        continue;
-                    }
-                    (version, true, None)
-                }
-                Leftover::Migrating { version, made } => {
-                    let marked = aside_path(&tool_dir.join(version), MIGRATED).is_file();
-                    (version, marked, made)
-                }
+    for journal in Journal::all() {
+        let legacy = &journal.legacy;
+        let aside = aside_path(legacy);
+        // Free, or holding only the version link the interrupted install made.
+        let free =
+            std::fs::symlink_metadata(legacy).is_err() || file::is_symlink_or_junction(legacy);
+        if dry_run {
+            let action = if journal.finished {
+                format!(
+                    "would remove {}, left by an interrupted migration",
+                    display_path(&aside)
+                )
+            } else if free {
+                format!(
+                    "would restore {} from an interrupted migration, then migrate it",
+                    display_path(legacy)
+                )
+            } else {
+                format!(
+                    "would keep {}, left by an interrupted migration: {} is in use",
+                    display_path(&aside),
+                    display_path(legacy)
+                )
             };
-            let legacy = tool_dir.join(version);
-            // Free, or holding only the version link the interrupted install made.
-            let free = std::fs::symlink_metadata(&legacy).is_err()
-                || file::is_symlink_or_junction(&legacy);
-            if dry_run {
-                let action = if finished {
-                    format!(
-                        "would remove {}, left by an interrupted migration",
-                        display_path(&entry)
-                    )
-                } else if free {
-                    format!(
-                        "would restore {} from an interrupted migration, then migrate it",
-                        display_path(&legacy)
-                    )
-                } else {
-                    format!(
-                        "would keep {}, left by an interrupted migration: {} is in use",
-                        display_path(&entry),
-                        display_path(&legacy)
-                    )
-                };
-                miseprintln!("{action}");
-            } else if finished {
-                file::remove_all(&entry)?;
+            miseprintln!("{action}");
+            continue;
+        }
+        if journal.finished {
+            if aside.exists() {
+                file::remove_all(&aside)?;
                 info!(
                     "removed {}, left by an interrupted migration",
-                    display_path(&entry)
-                );
-            } else if free {
-                if let Some(dir) = resolver::link_target(&legacy)
-                    && made.is_some_and(|made| dir.file_name().is_some_and(|n| n == made))
-                    && resolver::is_primary_install(&dir)
-                {
-                    resolver::unpublish(&dir);
-                }
-                restore(&legacy, &entry)?;
-                info!(
-                    "restored {} from an interrupted migration",
-                    display_path(&legacy)
-                );
-            } else {
-                warn!(
-                    "{} was left by an interrupted migration; {} is in use, so it is kept",
-                    display_path(&entry),
-                    display_path(&legacy)
+                    display_path(&aside)
                 );
             }
+            journal.remove();
+            continue;
         }
+        if !free && aside.exists() {
+            warn!(
+                "{} was left by an interrupted migration; {} is in use, so it is kept",
+                display_path(&aside),
+                display_path(legacy)
+            );
+            continue;
+        }
+        let version = legacy
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ba = crate::args::BackendArg::from(journal.tool.as_str());
+        let _lock = install_state::lock_tool_version(&ba, &version)?;
+        journal.undo(true)?;
+        info!(
+            "restored {} from an interrupted migration",
+            display_path(legacy)
+        );
     }
     Ok(())
 }
 
-/// Puts a moved-aside legacy directory back if the migration stops before it
-/// is resolved (a panic, or the task being dropped).
-struct Aside<'a> {
-    legacy: &'a Path,
-    aside: &'a Path,
+/// Undoes a migration that stops before it is resolved (a panic, or the task
+/// being dropped).
+struct Undo<'a> {
+    journal: &'a Journal,
     armed: bool,
 }
 
-impl Drop for Aside<'_> {
+impl Drop for Undo<'_> {
     fn drop(&mut self) {
         if self.armed
-            && let Err(err) = restore(self.legacy, self.aside)
+            && let Err(err) = self.journal.undo(false)
         {
             warn!(
-                "could not put {} back at {}: {err:#}",
-                display_path(self.aside),
-                display_path(self.legacy)
+                "could not put {} back: {err:#}",
+                display_path(&self.journal.legacy)
             );
         }
     }
@@ -312,107 +356,77 @@ impl Drop for Aside<'_> {
 /// Reinstall one legacy installation into the identity layout. The old
 /// directory is moved aside first, so the install cannot find and reuse it,
 /// and is put back if the new installation does not complete.
-async fn migrate(tv: &ToolVersion, target: &Path) -> Result<()> {
+async fn migrate(tv: &ToolVersion) -> Result<()> {
     let legacy = tv.install_path();
-    if let Some(earlier) = leftover_of(&legacy) {
+    let aside = aside_path(&legacy);
+    if aside.exists() || Journal::path_for(&legacy).exists() {
         eyre::bail!(
-            "{} is left over from an earlier migration; put it back at {} or remove it first",
-            display_path(&earlier),
+            "an earlier migration of {} did not finish; run `mise installs migrate` again \
+             to finish or undo it",
             display_path(&legacy)
         );
     }
-    // Whether this migration makes the installation it moves to, rather than
-    // reusing one that was already there: only one it makes is its own to
-    // withdraw. The name it moves the old directory to records which.
-    let made = (!resolver::is_complete(target))
-        .then(|| target.file_name().map(|n| n.to_string_lossy().to_string()))
-        .flatten();
-    let aside = aside_path(
-        &legacy,
-        &match &made {
-            Some(name) => format!("{MIGRATING}+{name}"),
-            None => MIGRATING.to_string(),
-        },
-    );
     // Nothing else installs, removes or links this version until the migration
     // is resolved: an install with the legacy layout would put a directory back
     // where the old one has to return. The reinstall below is locked by its own
     // installation directory, not by this version, so it does not wait on this.
     let _lock = install_state::lock_tool_version(tv.ba(), &tv.tv_pathname())?;
-    file::rename(&legacy, &aside)?;
-    let mut guard = Aside {
-        legacy: &legacy,
-        aside: &aside,
+    let journal = Journal::start(tv)?;
+    if let Err(err) = file::rename(&legacy, &aside) {
+        journal.remove();
+        return Err(err);
+    }
+    let mut guard = Undo {
+        journal: &journal,
         armed: true,
     };
     // The old path must lead to the new installation before the old directory
     // goes: where the version link could not be made (Windows without junction
-    // support), the legacy directory is put back and the new installation is
-    // withdrawn, so the version resolves to the directory that was kept. (Its
-    // directory stays reserved, and installing the version again reuses it.)
+    // support), the migration is undone, so the version resolves to the old
+    // directory again.
     let installed = reinstall(tv).await.and_then(|dir| {
         // An installation that already existed (another spelling made it, or it
         // is in a shared root) was reused without a version link here.
-        let linked = resolver::ensure_version_link(tv, &dir).and_then(|()| {
-            let target = resolver::link_target(&legacy);
-            if target.is_some_and(|t| t.canonicalize().ok() == dir.canonicalize().ok()) {
-                Ok(())
-            } else {
-                Err(eyre::eyre!("the version link names another installation"))
-            }
-        });
-        match linked {
-            Ok(()) => Ok(dir),
-            Err(err) => {
-                if made
-                    .as_deref()
-                    .is_some_and(|made| dir.file_name().is_some_and(|n| n == made))
-                    && resolver::is_primary_install(&dir)
-                {
-                    resolver::unpublish(&dir);
+        resolver::ensure_version_link(tv, &dir)
+            .and_then(|()| {
+                let target = resolver::link_target(&legacy);
+                if target.is_some_and(|t| t.canonicalize().ok() == dir.canonicalize().ok()) {
+                    Ok(dir.clone())
+                } else {
+                    Err(eyre::eyre!("the version link names another installation"))
                 }
-                Err(err.wrap_err(format!(
+            })
+            .map_err(|err| {
+                err.wrap_err(format!(
                     "installed {}, but could not link {} to it",
                     display_path(&dir),
                     display_path(&legacy)
-                )))
-            }
-        }
+                ))
+            })
     });
     guard.armed = false;
     match installed {
         Ok(dir) => {
-            // Marked finished before it is removed, so an interruption, or a
-            // failure to remove it, is completed by the next run rather than
-            // undone. Renaming the directory is the mark; where it cannot be
-            // renamed, a file of that name beside it is.
-            let migrated = aside_path(&legacy, MIGRATED);
-            let old = match file::rename(&aside, &migrated) {
-                Ok(()) => migrated.clone(),
-                Err(err) => {
-                    debug!("could not rename {}: {err:#}", display_path(&aside));
-                    if let Err(err) = file::write(&migrated, "") {
-                        warn!("could not mark {} migrated: {err:#}", display_path(&aside));
-                    }
-                    aside.clone()
-                }
-            };
-            match file::remove_all(&old) {
-                Ok(()) if old != migrated => {
-                    let _ = file::remove_file(&migrated);
-                }
-                Ok(()) => {}
+            // From here the old directory goes, whatever stops this run.
+            let mut finished = journal.clone();
+            finished.finished = true;
+            if let Err(err) = finished.write() {
+                journal.undo(true)?;
+                return Err(err.wrap_err("could not record the migration as finished"));
+            }
+            match file::remove_all(&aside) {
+                Ok(()) => finished.remove(),
                 Err(err) => warn!(
                     "migrated {}, but could not remove the old directory {}: {err:#}",
                     tv.style(),
-                    display_path(&old)
+                    display_path(&aside)
                 ),
             }
             miseprintln!("migrated {} to {}", tv.style(), display_path(&dir));
             Ok(())
         }
         Err(err) => {
-            restore(&legacy, &aside)?;
+            journal.undo(true)?;
             drop(_lock);
             // The failed install rebuilt the tool's runtime aliases without the
             // version; rebuild them with it back in place.
