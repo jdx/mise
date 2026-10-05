@@ -767,6 +767,19 @@ impl MiseToml {
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
             task.config_root = project_root.clone();
+            task.record_late_secret_env(path)?;
+        }
+        // `{{ secrets.X }}` is allowed only in a task's own env values. Checked on the decoded
+        // document, so an escaped delimiter is caught too; a body that cannot name `secrets`
+        // (no such word, no escape that could spell it) is not parsed a second time.
+        if crate::secrets::may_name_secrets(body)
+            && let Ok(table) = toml::from_str::<toml::Table>(body)
+        {
+            crate::secrets::check_toml_locations(
+                crate::secrets::TomlShape::MiseToml,
+                &table,
+                path,
+            )?;
         }
         // trace!("{}", rf.dump()?);
         Ok(rf)

@@ -4,7 +4,9 @@ use tabled::Tabled;
 
 use crate::config::{Config, Settings, settings::SettingsExt};
 use crate::file::display_path;
-use crate::secrets::{self, InjectMode, Inventory, InventoryTask, KeyKind, Problem};
+use crate::secrets::{
+    self, InjectMode, Inventory, InventoryTask, InventoryUse, KeyKind, Problem, UseVia,
+};
 use crate::ui::table;
 
 /// List the secret names this project's secrets source provides, without their values
@@ -109,7 +111,10 @@ impl SecretsLs {
                         "description": e.description,
                         "scopes": scopes_json(e.injectable, e.as_file),
                         "tasks": tasks_for(&tasks, name.as_str())
-                            .map(|t| json!({"task": t.task, "via": "list", "file": t.file}))
+                            .map(|(t, u)| match &u.via {
+                                UseVia::List => json!({"task": t.task, "via": "list", "file": t.file}),
+                                UseVia::Template { var } => json!({"task": t.task, "via": "template", "var": var, "file": t.file}),
+                            })
                             .collect::<Vec<_>>(),
                     })
                 })
@@ -166,7 +171,10 @@ impl SecretsLs {
                     scopes => scopes.join(", "),
                 },
                 tasks: tasks_for(&tasks, name.as_str())
-                    .map(|t| t.task.clone())
+                    .map(|(t, u)| match &u.via {
+                        UseVia::List => t.task.clone(),
+                        UseVia::Template { var } => format!("{} (env.{var})", t.task),
+                    })
                     .collect::<Vec<_>>()
                     .join(", "),
                 description: match (&e.description, &e.kind) {
@@ -237,10 +245,13 @@ fn scopes_json(injectable: bool, as_file: bool) -> Vec<&'static str> {
 fn tasks_for<'a>(
     tasks: &'a [InventoryTask],
     key: &'a str,
-) -> impl Iterator<Item = &'a InventoryTask> {
-    tasks
-        .iter()
-        .filter(move |t| t.keys.iter().any(|k| k == key))
+) -> impl Iterator<Item = (&'a InventoryTask, &'a InventoryUse)> {
+    tasks.iter().flat_map(move |t| {
+        t.uses
+            .iter()
+            .filter(move |u| u.key == key)
+            .map(move |u| (t, u))
+    })
 }
 
 fn problem_json(p: &Problem) -> Value {

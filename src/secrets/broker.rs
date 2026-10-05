@@ -315,6 +315,42 @@ fn register_redactions<'a>(values: impl Iterator<Item = (&'a SecretName, &'a Sec
     crate::config::add_secret_redactions(patterns);
 }
 
+/// Renders the task's env values that use `{{ secrets.X }}` from the resolved values, and
+/// registers each composite with the redactor before it is returned. The values are in
+/// `values` only for the caller to read; the composites are returned in order, so a later
+/// overlay entry for the same name wins.
+fn render_late(
+    grant: &SecretGrant,
+    values: &MemoValues,
+    who: &str,
+) -> Result<Vec<(SecretName, SecretValue)>> {
+    let mut out = vec![];
+    for late in &grant.late {
+        let mut found = BTreeMap::new();
+        for name in &late.refs {
+            let Some(value) = values.set.get(name).or_else(|| values.files.get(name)) else {
+                bail!(
+                    "{who}: env.{}: {{{{ secrets.{name} }}}} resolved to no value",
+                    late.key
+                );
+            };
+            found.insert(name.clone(), value.clone());
+        }
+        let Some(text) = super::template::render(&late.template, &found) else {
+            bail!("{who}: env.{} could not be rendered from secrets", late.key);
+        };
+        let key = SecretName::new(&late.key).ok_or_else(|| {
+            eyre!(
+                "{who}: env.{} is not a valid environment variable name",
+                late.key
+            )
+        })?;
+        out.push((key, SecretValue::new(text)));
+    }
+    register_redactions(out.iter().map(|(k, v)| (k, v)));
+    Ok(out)
+}
+
 fn list(keys: &[SecretName]) -> String {
     keys.iter()
         .map(|k| k.as_str())
@@ -705,7 +741,8 @@ impl SecretBroker {
         let who = subject.text();
         let catalog = memo.catalog().await?;
         let mut problems = key_problems(subject, req.grant, &catalog, &memo.source.label());
-        for key in req.grant.keys.keys() {
+        // a key that only an env value references is read, never exported or written to a file
+        for key in req.grant.exported_keys() {
             if let Some(entry) = catalog.entries.get(key)
                 && entry.as_file
                 && req.file_dir.is_none()
@@ -713,18 +750,34 @@ impl SecretBroker {
                 problems.push(file_problem(subject, key.as_str()));
             }
         }
-        // the sandbox decides before anything is resolved
-        for key in req.grant.keys.keys() {
-            if !req.sandbox.keeps_env_key(key.as_str()) {
-                problems.push(sandbox_problem(subject, key.as_str()));
+        // the sandbox decides before anything is resolved. A composite is exported under its
+        // own name, so that name is the one checked.
+        for key in req
+            .grant
+            .exported_keys()
+            .map(|k| k.as_str())
+            .chain(req.grant.late.iter().map(|l| l.key.as_str()))
+        {
+            if !req.sandbox.keeps_env_key(key) {
+                problems.push(sandbox_problem(subject, key));
             }
         }
         // a value inherited from the shell is allowed (the secret wins); a value mise itself
-        // sets is not
-        for key in req.grant.keys.keys() {
-            if collides_for(req, key.as_str()) {
-                problems.push(collision_problem(subject, key.as_str()));
+        // sets is not. The same goes for a key an env value builds, and a key cannot be both
+        // exported and built.
+        let mut colliding: BTreeSet<&str> = BTreeSet::new();
+        for key in req.grant.exported_keys().map(|k| k.as_str()) {
+            if req.grant.is_late_key(key) || collides_for(req, key) {
+                colliding.insert(key);
             }
+        }
+        for late in &req.grant.late {
+            if collides_for(req, &late.key) {
+                colliding.insert(&late.key);
+            }
+        }
+        for key in colliding {
+            problems.push(collision_problem(subject, key));
         }
         if !problems.is_empty() {
             bail!(
@@ -736,7 +789,9 @@ impl SecretBroker {
                     .join("\n")
             );
         }
-        let keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
+        // every key to resolve, and the ones that are handed over under their own names
+        let resolve_keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
+        let keys: BTreeSet<SecretName> = req.grant.exported_keys().cloned().collect();
         let all = req.grant.all.is_some();
         // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
         let mut skipped: BTreeSet<SecretName> = BTreeSet::new();
@@ -754,7 +809,7 @@ impl SecretBroker {
                 }
             }
         }
-        self.ensure_resolved(memo, &catalog, &keys, all, req, &who)
+        self.ensure_resolved(memo, &catalog, &resolve_keys, all, req, &who)
             .await?;
 
         let v = memo.values.lock().await;
@@ -797,6 +852,10 @@ impl SecretBroker {
                     file_values.insert(key.clone(), value.clone());
                 }
             }
+        }
+        let composites = render_late(req.grant, &v, &who)?;
+        for (key, value) in composites {
+            env_values.insert(key.to_string(), value);
         }
         let mut remove: BTreeSet<String> = v
             .remove

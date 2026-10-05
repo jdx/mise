@@ -2334,7 +2334,9 @@ impl TaskExecutor {
                 // the sandbox and a plainly declared env var decide before anything runs
                 let sandbox = self.build_sandbox_for_task(task, config).await?;
                 let declared = crate::secrets::declared_env_keys(task, config);
-                for key in grant.keys.keys() {
+                // a key that only an env value references is read, not exported; a value an
+                // env var is built from is exported under that var's name
+                for key in grant.exported_keys() {
                     if !sandbox.keeps_env_key(key.as_str()) {
                         found.push(crate::secrets::sandbox_problem(
                             crate::secrets::Subject::Task(&task.name),
@@ -2348,6 +2350,14 @@ impl TaskExecutor {
                         found.push(crate::secrets::collision_problem(
                             crate::secrets::Subject::Task(&task.name),
                             key.as_str(),
+                        ));
+                    }
+                }
+                for late in &grant.late {
+                    if !sandbox.keeps_env_key(&late.key) {
+                        found.push(crate::secrets::sandbox_problem(
+                            crate::secrets::Subject::Task(&task.name),
+                            &late.key,
                         ));
                     }
                 }

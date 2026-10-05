@@ -709,6 +709,12 @@ pub struct Task {
     /// The `git::` or `oci::` include this task was loaded through, if any.
     #[serde(skip)]
     pub(crate) remote_include: Option<String>,
+    /// The task's own env values that use `{{ secrets.X }}`, recorded when the config is
+    /// loaded. They are not rendered with the rest of the env: the executor renders them just
+    /// before spawn. Env that arrives later (dependency and run-entry env) is never recorded,
+    /// so it cannot become a grant.
+    #[serde(skip)]
+    pub(crate) late_secret_env: Vec<crate::secrets::LateSecretEnv>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1590,6 +1596,10 @@ impl Task {
         task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
         task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
+        if let toml::Value::Table(table) = &info {
+            crate::secrets::check_toml_locations(crate::secrets::TomlShape::Header, table, path)?;
+        }
+        task.record_late_secret_env(path)?;
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
@@ -1676,6 +1686,118 @@ impl Task {
             tests::capture_parsed_fields(fields);
         }
         Ok(task)
+    }
+
+    /// Records the task's own `env` values that use `{{ secrets.X }}`. Called where a task is
+    /// loaded, before anything is appended to its env, so only the task's own directives are
+    /// recorded. A value that mixes a reference with other template syntax is an error (T3).
+    pub(crate) fn record_late_secret_env(&mut self, file: &Path) -> Result<()> {
+        use crate::secrets::template;
+        self.late_secret_env.retain(|l| l.overlay);
+        let mut late = vec![];
+        for directive in &self.env.0 {
+            if let EnvDirective::Val(key, value, _) = directive
+                && template::has_secret_ref(value)
+            {
+                let refs = template::secret_refs(value)
+                    .map_err(|_| eyre!("{}", template::mixed_message(&self.name, key)))?;
+                late.push(crate::secrets::LateSecretEnv {
+                    key: key.clone(),
+                    template: value.clone(),
+                    refs,
+                    file: file.to_path_buf(),
+                    overlay: false,
+                });
+            }
+        }
+        late.extend(std::mem::take(&mut self.late_secret_env));
+        self.late_secret_env = late;
+        Ok(())
+    }
+
+    /// Env directives in resolution order, without the values rendered at spawn. A directive
+    /// is left out when it is one the loader recorded (same key and text, matched once each
+    /// and only among the task's own env or among the overlay's), so identical text that came
+    /// in through dependency or run-entry env is still resolved, and fails as an undefined
+    /// Tera variable.
+    pub(crate) fn render_env_directives(&self) -> Vec<(EnvDirective, PathBuf)> {
+        let mut own = self.late_matcher(false);
+        let mut overlay = self.late_matcher(true);
+        let mut directives: Vec<(EnvDirective, PathBuf)> = self
+            .inherited_env
+            .0
+            .iter()
+            .map(|d| (d.clone(), self.config_source.clone()))
+            .collect();
+        directives.extend(
+            self.env
+                .0
+                .iter()
+                .filter(|d| !own(d))
+                .map(|d| (d.clone(), self.config_source.clone())),
+        );
+        directives.extend(
+            self.overlay_env
+                .iter()
+                .filter(|(d, _)| !overlay(d))
+                .cloned(),
+        );
+        directives
+    }
+
+    fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> bool + use<'_> {
+        let mut remaining: Vec<(&str, &str)> = self
+            .late_secret_env
+            .iter()
+            .filter(|l| l.overlay == overlay)
+            .map(|l| (l.key.as_str(), l.template.as_str()))
+            .collect();
+        move |directive| {
+            let EnvDirective::Val(key, value, _) = directive else {
+                return false;
+            };
+            match remaining
+                .iter()
+                .position(|(k, v)| *k == key.as_str() && *v == value.as_str())
+            {
+                Some(i) => {
+                    remaining.remove(i);
+                    true
+                }
+                None => false,
+            }
+        }
+    }
+
+    /// Plain `KEY=value` pairs of the task's own env, without the values rendered at spawn.
+    pub(crate) fn plain_env_vals(&self) -> Vec<(String, String)> {
+        let mut own = self.late_matcher(false);
+        self.inherited_env
+            .0
+            .iter()
+            .chain(self.env.0.iter().filter(|d| !own(d)))
+            .filter_map(|d| match d {
+                EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The keys the task asks for: `secrets = [...]`, then the ones its env values name.
+    pub fn secret_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .secrets
+            .as_ref()
+            .map(|s| s.names().to_vec())
+            .unwrap_or_default();
+        for late in &self.late_secret_env {
+            for name in &late.refs {
+                if !names.iter().any(|n| n == name.as_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+        names
     }
 
     /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
@@ -2770,6 +2892,15 @@ impl Task {
             .extend(other.env.0.into_iter().map(|d| (d, overlay_src.clone())));
         self.overlay_vars
             .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
+        // Only `other`'s own env moved to `overlay_env` above, so only its recorded values
+        // follow it.
+        self.late_secret_env.extend(
+            other
+                .late_secret_env
+                .into_iter()
+                .filter(|l| !l.overlay)
+                .map(|l| crate::secrets::LateSecretEnv { overlay: true, ..l }),
+        );
         // Keep the *_raw (pre-render) snapshots in sync with the live deps
         // so `render_runtime_templates_with_usage` re-renders the merged set rather
         // than silently dropping overlay deps. Prefer the overlay's raw
@@ -3165,17 +3296,12 @@ impl Task {
         // Convert task env directives to (EnvDirective, PathBuf) pairs
         // Use the config file path as source for proper path resolution
         // Include inherited_env first (so task's own env can override it)
-        let mut env_directives: Vec<_> = self
-            .inherited_env
-            .0
-            .iter()
-            .chain(self.env.0.iter())
-            .map(|directive| (directive.clone(), self.config_source.clone()))
-            .collect();
         // Append overlay entries last so TOML-block env overrides file task env
         // on key collision; each carries its own source path so directives like
         // `_.file = ".env"` resolve relative to the overlay's config file.
-        env_directives.extend(self.overlay_env.iter().cloned());
+        // Values that use `{{ secrets.X }}` are left out: they are rendered just before
+        // spawn, so they never reach the env map, the Tera context or any cache.
+        let env_directives = self.render_env_directives();
 
         // Resolve environment directives using the same system as global env
         let env_results = EnvResults::resolve(
@@ -3610,6 +3736,7 @@ impl Default for Task {
             daemons: None,
             secrets: None,
             remote_include: None,
+            late_secret_env: vec![],
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),

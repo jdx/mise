@@ -21,6 +21,7 @@ mod grant;
 mod name;
 mod source;
 mod spawn;
+pub(crate) mod template;
 
 pub(crate) use broker::{
     Grantee, NotRetrying, Pending, SecretBroker, SpawnRequest, TerminalAccess,
@@ -33,6 +34,7 @@ pub(crate) use grant::{
 pub use name::SecretName;
 pub use source::{Catalog, CatalogEntry, InjectMode, KeyKind};
 pub use spawn::SpawnSecrets;
+pub(crate) use template::{LateSecretEnv, TomlShape, check_toml_locations, may_name_secrets};
 
 use source::SecretSource;
 
@@ -74,11 +76,26 @@ pub struct SourceInfo {
     pub tool_path: PathBuf,
 }
 
-/// A task that lists secrets from this source.
+/// A task that asks for secrets from this source.
 pub struct InventoryTask {
     pub task: String,
-    pub keys: Vec<String>,
+    pub uses: Vec<InventoryUse>,
     pub file: PathBuf,
+}
+
+/// One key a task asks for, and how.
+pub struct InventoryUse {
+    pub key: String,
+    /// `secrets = [...]`, or `{{ secrets.KEY }}` in an env value
+    pub via: UseVia,
+}
+
+pub enum UseVia {
+    List,
+    /// the env var whose value references the key
+    Template {
+        var: String,
+    },
 }
 
 pub struct Inventory {
@@ -253,7 +270,7 @@ async fn inventory_tasks(
         ));
         tasks.push(InventoryTask {
             task: task.name.clone(),
-            keys: grant.keys.keys().map(|k| k.to_string()).collect(),
+            uses: grant.inventory_uses(),
             file: task.config_source.clone(),
         });
     }

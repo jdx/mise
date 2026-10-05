@@ -122,16 +122,24 @@ pub(crate) enum GrantOrigin {
     CliFlag,
     /// `--secrets-all` on the command line
     CliAll,
+    /// `{{ secrets.X }}` in the value of the task's own `env.<var>`
+    Template { var: String, file: PathBuf },
 }
 
 impl GrantOrigin {
     /// A grant the task's own config wrote, which is the only kind the G8/G9 rules police.
     fn is_self(&self) -> bool {
-        matches!(self, Self::TaskList { .. })
+        matches!(self, Self::TaskList { .. } | Self::Template { .. })
     }
 
-    fn describe(&self) -> String {
+    /// Whether the grant exports the key itself. A reference in an env value only reads it.
+    fn exports(&self) -> bool {
+        !matches!(self, Self::Template { .. })
+    }
+
+    fn describe(&self, key: &SecretName) -> String {
         match self {
+            Self::Template { var, .. } => format!("{{{{ secrets.{key} }}}} in env.{var}"),
             Self::TaskList { file } => format!(
                 "secrets = [...] in {}",
                 file.file_name()
@@ -150,11 +158,61 @@ pub(crate) struct SecretGrant {
     /// Every key the source can inject (`--secrets-all`). The keys are only known once the
     /// source is described, so they are not listed in `keys`.
     pub(crate) all: Option<GrantOrigin>,
+    /// The task's own env values that use `{{ secrets.X }}`. Each is rendered once its
+    /// references are resolved and exported as `key`. Their references are in `keys`.
+    pub(crate) late: Vec<super::LateSecretEnv>,
 }
 
 impl SecretGrant {
     pub(crate) fn is_empty(&self) -> bool {
-        self.keys.is_empty() && self.all.is_none()
+        self.keys.is_empty() && self.all.is_none() && self.late.is_empty()
+    }
+
+    /// Whether the grant hands `key` to the process under its own name. A key that only an
+    /// env value references is read, not exported.
+    pub(crate) fn exports(&self, key: &SecretName) -> bool {
+        self.all.is_some()
+            || self
+                .keys
+                .get(key)
+                .is_some_and(|origins| origins.iter().any(GrantOrigin::exports))
+    }
+
+    /// The keys handed over under their own names.
+    pub(crate) fn exported_keys(&self) -> impl Iterator<Item = &SecretName> {
+        self.keys.keys().filter(|k| self.exports(k))
+    }
+
+    /// Every key the task names, once per way it names it (`mise secrets ls`).
+    pub(crate) fn inventory_uses(&self) -> Vec<super::InventoryUse> {
+        let mut uses = vec![];
+        for (key, origins) in &self.keys {
+            let mut list = false;
+            for origin in origins {
+                match origin {
+                    GrantOrigin::Template { var, .. } => uses.push(super::InventoryUse {
+                        key: key.to_string(),
+                        via: super::UseVia::Template { var: var.clone() },
+                    }),
+                    _ if !list => {
+                        list = true;
+                        uses.push(super::InventoryUse {
+                            key: key.to_string(),
+                            via: super::UseVia::List,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+        uses
+    }
+
+    /// Whether `key` is built from secrets by one of the task's env values.
+    pub(crate) fn is_late_key(&self, key: &str) -> bool {
+        self.late
+            .iter()
+            .any(|l| mise_util::env::env_key_eq(&l.key, key))
     }
 
     /// Whether the task's own config grants anything. A command-line grant is the person
@@ -174,6 +232,11 @@ impl SecretGrant {
             }
         }
         self.all = other.all.or(self.all);
+        for late in other.late {
+            if !self.late.contains(&late) {
+                self.late.push(late);
+            }
+        }
         self
     }
 
@@ -184,7 +247,7 @@ impl SecretGrant {
             .get(key)
             .into_iter()
             .flatten()
-            .map(GrantOrigin::describe)
+            .map(|o| o.describe(key))
             .collect();
         by.sort();
         by.dedup();
@@ -337,32 +400,81 @@ pub(crate) fn validate_name(raw: &str) -> std::result::Result<SecretName, NameEr
     Ok(name)
 }
 
-/// G3, G6 and the grant of the valid names. Invalid names are reported, not granted.
+/// G3, G6 and the grant of the valid names. Invalid names are reported, not granted. The
+/// task's `{{ secrets.X }}` env values add their references: the reference is the grant.
 pub(crate) fn grant_for_task(task: &Task) -> (SecretGrant, Vec<Problem>) {
     let mut grant = SecretGrant::default();
     let mut problems = vec![];
-    let Some(list) = &task.secrets else {
-        return (grant, problems);
-    };
     let file = task.config_source.clone();
-    for raw in list.names() {
-        let name = match validate_name(raw) {
-            Ok(name) => name,
-            Err(e) => {
+    if let Some(list) = &task.secrets {
+        for raw in list.names() {
+            let name = match validate_name(raw) {
+                Ok(name) => name,
+                Err(e) => {
+                    problems.push(Problem::new(
+                        &task.name,
+                        Some(raw),
+                        e.kind(),
+                        format!("task {}: {}", task.name, e.text(raw, "secrets")),
+                    ));
+                    continue;
+                }
+            };
+            let origins = grant.keys.entry(name).or_default();
+            let origin = GrantOrigin::TaskList { file: file.clone() };
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+    }
+    for late in &task.late_secret_env {
+        // the exported name must survive the marker M2 reads back in a nested mise
+        let key_problem = match validate_name(&late.key) {
+            Ok(_) => None,
+            Err(NameError::Reserved) => Some((
+                ProblemKind::Reserved,
+                super::template::reserved_key_message(&task.name, &late.key),
+            )),
+            Err(_) => Some((
+                ProblemKind::InvalidName,
+                super::template::invalid_key_message(&task.name, &late.key),
+            )),
+        };
+        if let Some((kind, text)) = key_problem {
+            problems.push(Problem::new(&task.name, Some(&late.key), kind, text));
+            continue;
+        }
+        let mut usable = true;
+        for name in &late.refs {
+            if let Err(e) = validate_name(name.as_str()) {
+                usable = false;
                 problems.push(Problem::new(
                     &task.name,
-                    Some(raw),
+                    Some(name.as_str()),
                     e.kind(),
-                    format!("task {}: {}", task.name, e.text(raw, "secrets")),
+                    format!(
+                        "task {}: env.{}: {}",
+                        task.name,
+                        late.key,
+                        e.text(name.as_str(), "{{ secrets.* }}")
+                    ),
                 ));
-                continue;
             }
-        };
-        let origins = grant.keys.entry(name).or_default();
-        let origin = GrantOrigin::TaskList { file: file.clone() };
-        if !origins.contains(&origin) {
-            origins.push(origin);
         }
+        if !usable {
+            continue;
+        }
+        for name in &late.refs {
+            let origins = grant.keys.entry(name.clone()).or_default();
+            let origin = GrantOrigin::Template {
+                var: late.key.clone(),
+                file: late.file.clone(),
+            };
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+        grant.late.push(late.clone());
     }
     (grant, problems)
 }
@@ -415,6 +527,7 @@ impl CliSecretGrant {
                 .map(|k| (k.clone(), vec![GrantOrigin::CliFlag]))
                 .collect(),
             all: self.all.then_some(GrantOrigin::CliAll),
+            late: vec![],
         })
     }
 }
@@ -496,13 +609,24 @@ pub(crate) fn static_problems(
     // Only a task's own `secrets = [...]` is held to where the task is defined. A person who
     // names the task and its secrets on the command line is the one granting.
     let own = grant.has_self_grant();
+    // what the task's own config does to ask: list keys, or name them in env values
+    let asks = if grant
+        .keys
+        .values()
+        .flatten()
+        .any(|o| matches!(o, GrantOrigin::TaskList { .. }))
+    {
+        "list secrets"
+    } else {
+        "use {{ secrets.* }}"
+    };
     if own && let Some(source) = task.secrets_remote_source() {
         problems.push(Problem::new(
             &task.name,
             None,
             ProblemKind::Remote,
             format!(
-                "task {} comes from a remote source ({source}) and cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
+                "task {} comes from a remote source ({source}) and cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name, task.name
             ),
         ));
@@ -517,7 +641,7 @@ pub(crate) fn static_problems(
             None,
             ProblemKind::NotProject,
             format!(
-                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot list secrets; grant for one run with mise run --secrets-all {} or --secrets KEY",
+                "task {} is defined in {}, which is not project config (global or system config, or a file in or above your home directory), so it cannot {asks}; grant for one run with mise run --secrets-all {} or --secrets KEY",
                 task.name,
                 crate::file::display_path(&task.config_source),
                 task.name
@@ -534,7 +658,11 @@ pub(crate) fn static_problems(
                     "task {} {}, but it was started by {}",
                     task.name,
                     if own {
-                        "lists secrets"
+                        if asks == "list secrets" {
+                            "lists secrets"
+                        } else {
+                            "uses {{ secrets.* }}"
+                        }
                     } else {
                         "was granted secrets on the command line"
                     },
@@ -547,16 +675,24 @@ pub(crate) fn static_problems(
             )),
         );
     }
-    let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
-    let mut refs = BTreeSet::new();
+    // a key that the task exports under its own name is not in the environment when a
+    // template is rendered
+    let granted: BTreeSet<&str> = grant.exported_keys().map(|k| k.as_str()).collect();
+    let mut run_refs = BTreeSet::new();
     for script in task.run_script_strings() {
-        refs.extend(tera_env_refs(&script));
+        run_refs.extend(tera_env_refs(&script));
     }
-    for (_, value) in task_env_literals(task) {
-        refs.extend(tera_env_refs(&value));
-    }
+    let env_refs: Vec<(String, BTreeSet<String>)> = task
+        .plain_env_vals()
+        .into_iter()
+        .map(|(name, value)| (name, tera_env_refs(&value)))
+        .collect();
+    let mut refs = run_refs.clone();
+    refs.extend(env_refs.iter().flat_map(|(_, r)| r.iter().cloned()));
     for key in refs {
-        if granted.contains(key.as_str()) {
+        // a key built from secrets is read from env only through T5 below
+        let late = grant.is_late_key(&key) && run_refs.contains(&key);
+        if granted.contains(key.as_str()) || late {
             problems.push(
                 Problem::new(
                     &task.name,
@@ -573,6 +709,20 @@ pub(crate) fn static_problems(
                         + "\"",
                 ),
             );
+        }
+    }
+    // T5: an env value reads a key that is built from secrets when the task starts
+    for (name, keys) in &env_refs {
+        for key in keys.iter().filter(|k| grant.is_late_key(k)) {
+            problems.push(Problem::new(
+                &task.name,
+                Some(key),
+                ProblemKind::Template,
+                format!(
+                    "task {}: env.{name} uses {{{{ env.{key} }}}}, but {key} is rendered from secrets when the task starts; build {name} from secrets directly",
+                    task.name
+                ),
+            ));
         }
     }
     problems
@@ -739,19 +889,6 @@ pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> 
     directives
         .filter_map(|d| match d {
             EnvDirective::Val(k, ..) | EnvDirective::Default(k, ..) => Some(k),
-            _ => None,
-        })
-        .collect()
-}
-
-fn task_env_literals(task: &Task) -> Vec<(String, String)> {
-    use crate::config::env_directive::EnvDirective;
-    task.env
-        .0
-        .iter()
-        .chain(task.inherited_env.0.iter())
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
             _ => None,
         })
         .collect()
@@ -1084,6 +1221,7 @@ mod tests {
                 }],
             )]),
             all: None,
+            late: vec![],
         };
         assert!(
             static_problems(&task, &own, None)
@@ -1093,11 +1231,13 @@ mod tests {
         let cli = SecretGrant {
             keys: BTreeMap::from([(a.clone(), vec![GrantOrigin::CliFlag])]),
             all: None,
+            late: vec![],
         };
         assert!(static_problems(&task, &cli, None).is_empty());
         let all = SecretGrant {
             keys: BTreeMap::new(),
             all: Some(GrantOrigin::CliAll),
+            late: vec![],
         };
         assert!(!all.is_empty());
         assert!(static_problems(&task, &all, None).is_empty());

@@ -6891,11 +6891,17 @@ async fn load_task_file(
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
+    if crate::secrets::may_name_secrets(&raw)
+        && let Ok(table) = toml::from_str::<toml::Table>(&raw)
+    {
+        crate::secrets::check_toml_locations(crate::secrets::TomlShape::TaskInclude, &table, path)?;
+    }
     let mut tasks = toml::from_str::<Tasks>(&raw)
         .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
         .0;
     for (name, task) in &mut tasks {
         task.name = name.clone();
+        task.record_late_secret_env(path)?;
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
         task.is_toml_include = true;

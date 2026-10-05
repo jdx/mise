@@ -366,7 +366,7 @@ impl TasksValidate {
         config: &Arc<Config>,
         cache: &crate::secrets::TaskSecretsCache,
     ) -> Vec<ValidationIssue> {
-        if task.secrets.as_ref().is_none_or(|s| s.names().is_empty()) {
+        if task.secret_names().is_empty() {
             return vec![];
         }
         let check = crate::secrets::check_task_secrets(config, task, cache).await;
