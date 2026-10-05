@@ -171,8 +171,7 @@ impl MemoValues {
         match &self.all {
             // the whole document is here; a key it did not return is missing
             Some(Ok(())) => return Ok(None),
-            // an all-in-scope batch covered every key, so it failed for every request
-            Some(Err(_)) => return Err(Earlier::All),
+            Some(Err(_)) if all => return Err(Earlier::All),
             _ => {}
         }
         if all {
@@ -191,6 +190,11 @@ impl MemoValues {
             }
             if self.failed.contains_key(key) {
                 return Err(Earlier::Key(key.clone()));
+            }
+            // the failed all-in-scope batch covered every key, so a key that is not already
+            // here would need a new call, which is not made; keys already here stay usable
+            if matches!(self.all, Some(Err(_))) {
+                return Err(Earlier::All);
             }
             pending.push(key.clone());
         }
@@ -679,7 +683,9 @@ impl SecretBroker {
             );
         }
         let memo = self.memo_for_task(config, req.ctx_builder, task).await?;
-        self.grant_values(&memo, &req).await.map(Some)
+        let spawn = self.grant_values(&memo, &req).await?;
+        spawn.ensure_settable(&req.grantee.subject().text())?;
+        Ok(Some(spawn))
     }
 
     /// `mise x --secrets` and `--secrets-all`. The source is the current project's, chosen
@@ -1612,6 +1618,39 @@ mod tests {
             "{err}"
         );
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn keys_resolved_before_a_failed_all_in_scope_call_stay_usable() {
+        let (fake, memo) = fake(&["*"]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let first = Inputs::new("dep", &["B"]);
+        broker
+            .grant_values(&memo, &first.req(&term, false))
+            .await
+            .unwrap();
+        let all = with_all(Inputs::new("a", &[]));
+        let _ = broker
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap_err();
+        // B is already memoized: no call, no error
+        let again = Inputs::new("later", &["B"]);
+        let spawn = broker
+            .grant_values(&memo, &again.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "B");
+        // C would need a new call
+        let other = Inputs::new("other", &["C"]);
+        let err = broker
+            .grant_values(&memo, &other.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not retrying the secrets"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
