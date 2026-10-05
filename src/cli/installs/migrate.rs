@@ -134,12 +134,10 @@ impl InstallsMigrate {
                         return false;
                     };
                     if v == "latest" {
-                        return backend
-                            .latest_installed_version(None)
-                            .ok()
-                            .flatten()
-                            .as_deref()
-                            == Some(tv.version.as_str());
+                        // An installed version's name on disk (`ref-main`), or its
+                        // version (`ref:main`).
+                        let latest = backend.latest_installed_version(None).ok().flatten();
+                        return latest.is_some_and(|l| l == tv.version || l == tv.tv_pathname());
                     }
                     if v == tv.version || v == tv.tv_pathname() {
                         return true;
@@ -417,6 +415,12 @@ fn recover_interrupted(dry_run: bool) -> Result<()> {
                     );
                 }
             } else if free {
+                // Under the version's lock, as a migration moves it.
+                let ba = crate::args::BackendArg::from(tool.as_str());
+                let _lock = install_state::lock_tool_version(&ba, version)?;
+                if std::fs::symlink_metadata(&legacy).is_ok() {
+                    continue;
+                }
                 restore(&legacy, &entry)?;
                 info!(
                     "restored {} from an interrupted migration",
