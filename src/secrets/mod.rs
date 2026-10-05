@@ -73,6 +73,8 @@ pub struct SourceInfo {
     pub declared_in: Vec<PathBuf>,
     pub profile: Option<String>,
     pub tool_path: PathBuf,
+    /// The source's cache, when it has one (`daemon: running (protocol 6)`)
+    pub daemon: Option<String>,
 }
 
 /// A task that asks for secrets from this source.
@@ -220,6 +222,7 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
     let catalog = source.describe().await?;
     let id = source.id();
     let (tasks, problems) = inventory_tasks(config, id, &catalog, &source.label()).await;
+    let daemon = source.daemon_status().await;
     Ok(Inventory {
         source: Some(SourceInfo {
             kind: id.kind,
@@ -227,6 +230,7 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
             declared_in: selected.declared_in,
             profile: id.profile.clone(),
             tool_path: source.tool_path().to_path_buf(),
+            daemon,
         }),
         catalog: Some(Arc::new(catalog)),
         ignored: selection.ignored,

@@ -20,6 +20,7 @@ use crate::env_diff::EnvMap;
 use crate::file::{self, display_path};
 use crate::toolset::Toolset;
 
+mod daemon;
 mod wire;
 
 /// Message text only: never compare versions (versions are not necessarily semver).
@@ -97,14 +98,18 @@ impl FnoxSource {
         &self.bin
     }
 
+    /// The flags that pick fnox's daemon. The socket key and the CLI argv both come from this.
+    fn cli_flags(&self) -> fnox_client::CliFlags {
+        fnox_client::CliFlags {
+            profile: self.id.profile.clone().into_iter().collect(),
+            ..Default::default()
+        }
+    }
+
     /// Global flags go before `env`. A call that may prompt omits `--non-interactive` and
     /// `--no-daemon`, so fnox follows its own `[daemon]` setting.
     fn argv(&self, rest: &[&str], interactive: bool) -> Vec<String> {
-        let mut argv = vec![];
-        if let Some(profile) = &self.id.profile {
-            argv.push("-P".to_string());
-            argv.push(profile.clone());
-        }
+        let mut argv = self.cli_flags().to_args();
         if !interactive {
             argv.push("--non-interactive".to_string());
             argv.push("--no-daemon".to_string());
@@ -212,6 +217,19 @@ impl SecretSource for FnoxSource {
         catalog: &Catalog,
     ) -> std::result::Result<Resolved, ResolveError> {
         self.run_resolve(cx, keys, catalog).await
+    }
+
+    async fn resolve_cached(
+        &self,
+        cx: &SourceCx,
+        keys: &KeySelection,
+        catalog: &Catalog,
+    ) -> std::result::Result<Option<Resolved>, ResolveError> {
+        self.cached_with(cx, keys, catalog, |call| call.run()).await
+    }
+
+    async fn daemon_status(&self) -> Option<String> {
+        self.daemon_line().await
     }
 
     async fn describe(&self) -> Result<Catalog> {
@@ -376,14 +394,25 @@ fn interpret_resolve(
             head.schema
         ))));
     }
-    let doc: wire::EnvDocument =
+    let doc: fnox_client::document::EnvDocument =
         serde_json::from_slice(buf).map_err(|e| other(unparsable(buf, &e)))?;
-    let requested = selection.keys();
-    let all = matches!(selection, KeySelection::AllInScope);
+    Ok(resolved_from(doc, selection, catalog))
+}
+
+/// What a resolve document contributes, whether it came from the CLI or the daemon: only the
+/// requested keys (G17), never a key the catalog marks not injectable (G19).
+fn resolved_from(
+    doc: fnox_client::document::EnvDocument,
+    selection: &KeySelection,
+    catalog: &Catalog,
+) -> Resolved {
+    let requested = selection.names();
+    let all = requested.is_none();
     let mut out = Resolved::default();
     let accept = |into_files: bool, key: String, value: String, out: &mut Resolved| {
         // an all-in-scope document is filtered against the catalog afterwards
-        let Some(name) = SecretName::new(&key).filter(|n| all || requested.contains(n)) else {
+        let Some(name) = SecretName::new(&key).filter(|n| requested.is_none_or(|r| r.contains(n)))
+        else {
             out.unrequested.insert(key);
             return;
         };
@@ -399,23 +428,23 @@ fn interpret_resolve(
         }
     };
     for (key, value) in doc.set {
-        accept(false, key, value, &mut out);
+        accept(false, key, value.into_inner(), &mut out);
     }
     for (key, value) in doc.files {
-        accept(true, key, value, &mut out);
+        accept(true, key, value.into_inner(), &mut out);
     }
     out.remove = doc.remove.into_iter().collect();
     out.missing = doc
         .missing
         .iter()
         .filter_map(|k| SecretName::new(k))
-        .filter(|n| all || requested.contains(n))
+        .filter(|n| requested.is_none_or(|r| r.contains(n)))
         .collect();
     out.leases = doc.leases.into_iter().collect();
     if all {
         out = out.filter_for_all(catalog);
     }
-    Ok(out)
+    out
 }
 
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
@@ -734,11 +763,24 @@ mod tests {
         );
     }
 
+    /// A complete schema-1 document: `fields` override the empty defaults.
+    fn env_doc(fields: serde_json::Value) -> String {
+        let mut doc = serde_json::json!({
+            "schema": 1, "fnox_version": "1.40.0", "scope": "exec", "profile": ["default"],
+            "set": {}, "files": {}, "remove": [], "missing": [], "leases": []
+        });
+        doc.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        doc.to_string()
+    }
+
     fn resolved(doc: &str, requested: &[&str]) -> Resolved {
         resolved_for(doc, &sel(requested), &catalog_with_signing())
     }
 
     fn resolved_for(doc: &str, selection: &KeySelection, catalog: &Catalog) -> Resolved {
+        let doc = env_doc(serde_json::from_str(doc).unwrap());
         match interpret_resolve(
             true,
             "exit status: 0",
@@ -761,7 +803,7 @@ mod tests {
     #[test]
     fn unrequested_keys_are_dropped_g17_and_non_injectable_g19() {
         let r = resolved(
-            r#"{"schema":1,"set":{"DATABASE_URL":"v1","EXTRA":"v2","SIGNING_KEY":"v3"},"files":{"OTHER":"v4"},"remove":["X"],"missing":["DATABASE_URL"]}"#,
+            r#"{"set":{"DATABASE_URL":"v1","EXTRA":"v2","SIGNING_KEY":"v3"},"files":{"OTHER":"v4"},"remove":["X"],"missing":["DATABASE_URL"]}"#,
             &["DATABASE_URL", "SIGNING_KEY"],
         );
         assert_eq!(
@@ -809,7 +851,7 @@ mod tests {
 
     #[test]
     fn all_in_scope_documents_are_filtered_against_the_catalog() {
-        let doc = r#"{"schema":1,"set":{"DATABASE_URL":"v1","SIGNING_KEY":"v2","EXTRA_KEY":"v3","AWS_ACCESS_KEY_ID":"v4"},"files":{"OTHER_FILE":"v5"},"remove":[],"missing":["GONE"],"leases":["aws"]}"#;
+        let doc = r#"{"set":{"DATABASE_URL":"v1","SIGNING_KEY":"v2","EXTRA_KEY":"v3","AWS_ACCESS_KEY_ID":"v4"},"files":{"OTHER_FILE":"v5"},"remove":[],"missing":["GONE"],"leases":["aws"]}"#;
         let r = resolved_for(doc, &KeySelection::AllInScope, &catalog_with_signing());
         let set: Vec<_> = r.set.keys().map(|k| k.as_str()).collect();
         assert_eq!(set, ["AWS_ACCESS_KEY_ID", "DATABASE_URL"]);
@@ -832,12 +874,11 @@ mod tests {
         // a key the catalog does not list is allowed only when a dynamic lease ran
         let mut catalog = catalog_with_signing();
         catalog.dynamic_leases = vec!["build_token".into()];
-        let doc =
-            r#"{"schema":1,"set":{"EXTRA_KEY":"v3","SIGNING_KEY":"v2"},"leases":["build_token"]}"#;
+        let doc = r#"{"set":{"EXTRA_KEY":"v3","SIGNING_KEY":"v2"},"leases":["build_token"]}"#;
         let r = resolved_for(doc, &KeySelection::AllInScope, &catalog);
         let set: Vec<_> = r.set.keys().map(|k| k.as_str()).collect();
         assert_eq!(set, ["EXTRA_KEY"]);
-        let doc = r#"{"schema":1,"set":{"EXTRA_KEY":"v3"},"leases":["other"]}"#;
+        let doc = r#"{"set":{"EXTRA_KEY":"v3"},"leases":["other"]}"#;
         assert!(
             resolved_for(doc, &KeySelection::AllInScope, &catalog)
                 .set

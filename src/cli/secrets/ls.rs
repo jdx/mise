@@ -144,8 +144,13 @@ impl SecretsLs {
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
+        let daemon = source
+            .daemon
+            .as_ref()
+            .map(|d| format!(" · {d}"))
+            .unwrap_or_default();
         eprintln!(
-            "{} · profile {} · {} ({}) · {} {}",
+            "{} · profile {} · {} ({}) · {} {}{daemon}",
             source.kind,
             catalog.profile.join(","),
             display_path(&source.root),

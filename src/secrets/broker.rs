@@ -51,6 +51,7 @@ impl Grantee<'_> {
 }
 
 /// What an interactive fnox call is about to ask for.
+#[derive(Clone)]
 pub(crate) enum Pending {
     Keys(Vec<SecretName>),
     /// no key named: everything the source injects
@@ -58,6 +59,13 @@ pub(crate) enum Pending {
 }
 
 impl Pending {
+    fn selection(&self) -> KeySelection {
+        match self {
+            Self::Keys(keys) => KeySelection::Keys(keys.iter().cloned().collect()),
+            Self::All => KeySelection::AllInScope,
+        }
+    }
+
     /// For "asking fnox for ...".
     pub(crate) fn describe(&self) -> String {
         match self {
@@ -209,15 +217,49 @@ impl MemoValues {
         interactive: bool,
         subject: &str,
     ) -> Result<()> {
-        let selection = match &what {
-            Pending::Keys(keys) => KeySelection::Keys(keys.iter().cloned().collect()),
-            Pending::All => KeySelection::AllInScope,
-        };
-        match memo
+        let selection = what.selection();
+        let result = memo
             .source
             .resolve(&SourceCx { interactive }, &selection, catalog)
+            .await;
+        self.apply(result, memo, catalog, what, interactive, subject)
+    }
+
+    /// Asks the source's cache, without a terminal or a process, for what is pending. `true`
+    /// when it answered (a rejection counts: it is the same answer the CLI would give), and
+    /// `false` when the caller has to resolve. Never waits on a person, so the caller may hold
+    /// the memo lock.
+    async fn resolve_cached(
+        &mut self,
+        memo: &SourceMemo,
+        catalog: &Catalog,
+        what: &Pending,
+        subject: &str,
+    ) -> Result<bool> {
+        let selection = what.selection();
+        let result = match memo
+            .source
+            .resolve_cached(&SourceCx { interactive: true }, &selection, catalog)
             .await
         {
+            Ok(None) => return Ok(false),
+            Ok(Some(resolved)) => Ok(resolved),
+            Err(err) => Err(err),
+        };
+        self.apply(result, memo, catalog, what.clone(), true, subject)?;
+        Ok(true)
+    }
+
+    fn apply(
+        &mut self,
+        result: std::result::Result<Resolved, ResolveError>,
+        memo: &SourceMemo,
+        catalog: &Catalog,
+        what: Pending,
+        interactive: bool,
+        subject: &str,
+    ) -> Result<()> {
+        match result {
             Ok(resolved) => {
                 match what {
                     Pending::Keys(keys) => self.accept(resolved, &keys, subject),
@@ -926,6 +968,11 @@ impl SecretBroker {
             if !req.interactive {
                 return v.resolve(memo, catalog, missing, false, who).await;
             }
+            // a cache answers without a terminal or a process, so it is asked before the
+            // terminal is taken; it never waits on a person, so the memo lock is fine
+            if v.resolve_cached(memo, catalog, &missing, who).await? {
+                return Ok(());
+            }
             pending = missing;
         }
         let _terminal = req.terminal.acquire(&pending).await;
@@ -1071,6 +1118,9 @@ mod tests {
         asked: StdMutex<Vec<Vec<String>>>,
         fail: BTreeSet<String>,
         fingerprint: String,
+        /// answers `resolve_cached` for named keys
+        cached: bool,
+        cached_calls: AtomicUsize,
     }
 
     fn catalog() -> Catalog {
@@ -1117,6 +1167,23 @@ mod tests {
         fn build_fingerprint(&self) -> String {
             self.fingerprint.clone()
         }
+        async fn resolve_cached(
+            &self,
+            _cx: &SourceCx,
+            keys: &KeySelection,
+            _catalog: &Catalog,
+        ) -> std::result::Result<Option<Resolved>, ResolveError> {
+            self.cached_calls.fetch_add(1, Ordering::SeqCst);
+            let Some(named) = keys.names().filter(|_| self.cached) else {
+                return Ok(None);
+            };
+            let mut out = Resolved::default();
+            for k in named {
+                out.set
+                    .insert(k.clone(), SecretValue::new(format!("{k}-cached-s3cr3t")));
+            }
+            Ok(Some(out))
+        }
         async fn resolve(
             &self,
             _cx: &SourceCx,
@@ -1125,15 +1192,16 @@ mod tests {
         ) -> std::result::Result<Resolved, ResolveError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             tokio::task::yield_now().await;
+            let named = keys.names().cloned().unwrap_or_default();
             self.asked
                 .lock()
                 .unwrap()
-                .push(keys.keys().iter().map(|k| k.to_string()).collect());
+                .push(named.iter().map(|k| k.to_string()).collect());
             let all = matches!(keys, KeySelection::AllInScope);
             if all && self.fail.contains("*") {
                 return Err(ResolveError::Resolution("not signed in".into()));
             }
-            if keys.keys().iter().any(|k| self.fail.contains(k.as_str())) {
+            if named.iter().any(|k| self.fail.contains(k.as_str())) {
                 return Err(ResolveError::Resolution("not signed in".into()));
             }
             let mut out = Resolved::default();
@@ -1152,7 +1220,7 @@ mod tests {
                 .map(|k| SecretName::new(k).unwrap())
                 .collect()
             } else {
-                keys.keys().into_iter().collect()
+                named.iter().cloned().collect()
             };
             for k in asked {
                 let value = match k.as_str() {
@@ -1517,6 +1585,66 @@ mod tests {
             assert!(!out.contains(leaked), "{leaked}: {out}");
         }
         assert!(!format!("{spawn:?}").contains("s3cr3t"));
+    }
+
+    #[tokio::test]
+    async fn a_cache_hit_needs_no_terminal_and_no_cli_call() {
+        let broker = SecretBroker::default();
+        let f = Arc::new(Fake {
+            id: Some(SourceId {
+                kind: "fake",
+                root: PathBuf::from("/p"),
+                profile: None,
+            }),
+            cached: true,
+            ..Default::default()
+        });
+        let memo = SourceMemo::new(f.clone());
+        let term = terminal();
+        let one = Inputs::new("one", &["A"]);
+        let spawn = broker
+            .grant_values(&memo, &one.req(&term, true))
+            .await
+            .unwrap();
+        assert_eq!(term.acquired.load(Ordering::SeqCst), 0);
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(f.cached_calls.load(Ordering::SeqCst), 1);
+        assert!(format!("{spawn:?}").contains('A'));
+        // memoized: the cache is not asked again
+        broker
+            .grant_values(&memo, &one.req(&term, true))
+            .await
+            .unwrap();
+        assert_eq!(f.cached_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_cache_miss_falls_through_to_the_terminal_and_the_cli() {
+        let broker = SecretBroker::default();
+        let (f, memo) = fake(&[]);
+        let term = terminal();
+        let one = Inputs::new("one", &["A"]);
+        broker
+            .grant_values(&memo, &one.req(&term, true))
+            .await
+            .unwrap();
+        assert_eq!(f.cached_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(term.acquired.load(Ordering::SeqCst), 1);
+        assert_eq!(f.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn non_interactive_runs_never_ask_the_cache() {
+        let broker = SecretBroker::default();
+        let (f, memo) = fake(&[]);
+        let term = terminal();
+        let one = Inputs::new("one", &["A"]);
+        broker
+            .grant_values(&memo, &one.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(f.cached_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(f.calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
