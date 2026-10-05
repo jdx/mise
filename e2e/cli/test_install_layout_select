@@ -136,6 +136,10 @@ rm -rf "$installs/.mise/selections"
 assert_fail "mise install tiny@3.0.0" "matches several installations and none is selected"
 # both copies have the same name, so each is listed by its path
 assert_fail "mise install tiny@3.0.0" "shared-installs-2/tiny-"
+# the shared copy still counts when its catalog is gone
+mv "$shared2/.mise" "$shared2/.mise.lost"
+assert_fail "mise install tiny@3.0.0" "matches several installations and none is selected"
+mv "$shared2/.mise.lost" "$shared2/.mise"
 assert "mise installs select $mine"
 assert "mise where tiny@3.0.0" "$mine"
 

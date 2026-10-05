@@ -497,7 +497,14 @@ fn unlocked_choice(key: &InstallIdentity) -> Unlocked {
     let mut complete: Vec<Located> = vec![];
     for root in roots() {
         let catalog = Catalog::new(&root);
-        for record in catalog.records_for_backend(&key.backend) {
+        // A shared root's catalog cannot be rebuilt here; if it is gone, the
+        // installations it listed still count, by their receipts.
+        let records = if is_primary_root(&root) {
+            catalog.records_for_backend(&key.backend)
+        } else {
+            catalog.records_or_receipts_for_backend(&key.backend)
+        };
+        for record in records {
             let dir = catalog.install_dir(&record);
             if same_request(&record.identity, key) && is_complete(&dir) {
                 complete.push(Located {

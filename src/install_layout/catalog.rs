@@ -262,14 +262,34 @@ impl Catalog {
     /// what is left to go on when the catalog lost its record and cannot be
     /// rebuilt, as in a read-only shared root. It reads every receipt.
     pub(crate) fn find_by_receipt(&self, digest: &str) -> Option<IdentityRecord> {
+        self.receipt_records()
+            .find(|record| record.digest == digest)
+    }
+
+    /// [`Catalog::records_for_backend`] for a catalog that cannot be rebuilt (a
+    /// read-only shared root): when it has lost its records entirely, the
+    /// installations' receipts stand in for them. Reads every receipt in that
+    /// case only.
+    pub(crate) fn records_or_receipts_for_backend(&self, backend: &str) -> Vec<IdentityRecord> {
+        if self.meta_dir().join("identities").is_dir() {
+            return self.records_for_backend(backend);
+        }
+        let mut records: Vec<_> = self
+            .receipt_records()
+            .filter(|record| record.identity.backend == backend)
+            .collect();
+        records.sort_by(|a, b| a.dir.cmp(&b.dir));
+        records
+    }
+
+    /// The records the receipts in the store carry, for directories they name.
+    fn receipt_records(&self) -> impl Iterator<Item = IdentityRecord> + '_ {
         file::dir_subdirs(&self.store)
             .unwrap_or_default()
             .into_iter()
             .filter(|dir| !dir.starts_with('.'))
             .filter_map(|dir| read_receipt(&self.store.join(&dir)).map(|r| (dir, r.record)))
-            .find(|(dir, record)| {
-                record.digest == digest && record.dir == *dir && record.is_consistent()
-            })
+            .filter(|(dir, record)| record.dir == *dir && record.is_consistent())
             .map(|(_, record)| record)
     }
 
