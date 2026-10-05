@@ -1687,10 +1687,12 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
             out.push((key, value));
         }
     };
+    // The order the option lookups use: per platform alias, per spelling, the
+    // nested table before the flat keys.
     for (os, arch) in &aliases {
         let platform = format!("{os}-{arch}");
-        for table_key in PLATFORM_PREFIXES {
-            if let Some(toml::Value::Table(table)) = opts.opts.get(table_key)
+        for prefix in PLATFORM_PREFIXES {
+            if let Some(toml::Value::Table(table)) = opts.opts.get(prefix)
                 && let Some(entry) = table.get(&platform)
             {
                 match entry {
@@ -1702,8 +1704,6 @@ fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> 
                     other => push("", text(other)),
                 }
             }
-        }
-        for prefix in PLATFORM_PREFIXES {
             let flat = format!("{prefix}_{os}_{arch}_");
             for (key, value) in &opts.opts {
                 if let Some(name) = key.strip_prefix(&flat) {
@@ -1879,6 +1879,41 @@ mod tests {
             ],
         );
         assert_eq!(options, request_identity_options(&backend, &plural));
+        // Where spellings disagree, the identity records the value the download
+        // uses: `platforms_…` before `platform.…`, as the option lookups order them.
+        let mut both = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[(
+                format!("platforms_{os}_{arch}_url").as_str(),
+                "https://example.com/plural.tgz",
+            )],
+        );
+        let mut nested = toml::Table::new();
+        nested.insert(
+            format!("{os}-{arch}"),
+            toml::Value::Table(toml::Table::from_iter([(
+                "url".to_string(),
+                toml::Value::String("https://example.com/singular.tgz".into()),
+            )])),
+        );
+        let mut request_options = both.request.options();
+        request_options
+            .opts
+            .insert("platform".into(), toml::Value::Table(nested));
+        both.request = crate::toolset::ToolRequest::new_with_options(
+            both.request.ba().clone(),
+            "1.0.0",
+            request_options,
+            crate::toolset::ToolSource::Argument,
+        )
+        .unwrap();
+        assert_eq!(
+            request_identity_options(&backend, &both)
+                .get("platforms.current.url")
+                .map(String::as_str),
+            Some("https://example.com/plural.tgz")
+        );
     }
 
     #[test]
