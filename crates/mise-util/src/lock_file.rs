@@ -60,7 +60,7 @@ impl LockFile {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        let mut lock = fslock::LockFile::open(&self.path)?;
+        let mut lock = fslock::LockFile::open(&*openable(&self.path))?;
         if !lock.try_lock()? {
             if let Some(f) = &self.on_locked {
                 f(&self.path)
@@ -76,7 +76,7 @@ impl LockFile {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        let mut lock = fslock::LockFile::open(&self.path)?;
+        let mut lock = fslock::LockFile::open(&*openable(&self.path))?;
         if lock.try_lock()? {
             self.record_holder_pid();
             Ok(Some(lock))
@@ -122,6 +122,47 @@ impl LockFile {
     }
 }
 
+/// The path to hand fslock. fslock opens the file with `CreateFileW` on the path
+/// exactly as given, without the extended-length prefix `std::fs` adds for
+/// itself, so a lock file past `MAX_PATH` (a long `MISE_DATA_DIR` holding the
+/// installs catalog) failed as a bare `os error 3` for a directory `std::fs`
+/// had just created. Short paths are passed through untouched.
+#[cfg(windows)]
+fn openable(path: &Path) -> std::borrow::Cow<'_, Path> {
+    use std::borrow::Cow;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+
+    // The directory limit (`MAX_PATH` less room for an 8.3 name), which is
+    // also below the file limit.
+    if path.as_os_str().encode_wide().count() < crate::file::MAX_PATH - 12 {
+        return Cow::Borrowed(path);
+    }
+    // A verbatim path is taken literally, so it has to be absolute and
+    // normalized first: no `/`, `.` or `..`.
+    let Ok(absolute) = std::path::absolute(path) else {
+        return Cow::Borrowed(path);
+    };
+    let Some(text) = absolute.to_str() else {
+        return Cow::Borrowed(path);
+    };
+    let verbatim = match absolute.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::Disk(_) => format!(r"\\?\{text}"),
+            Prefix::UNC(..) => format!(r"\\?\UNC\{}", &text[2..]),
+            // already verbatim, or a device path
+            _ => return Cow::Borrowed(path),
+        },
+        _ => return Cow::Borrowed(path),
+    };
+    Cow::Owned(PathBuf::from(verbatim))
+}
+
+#[cfg(not(windows))]
+fn openable(path: &Path) -> std::borrow::Cow<'_, Path> {
+    std::borrow::Cow::Borrowed(path)
+}
+
 pub fn get(path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {
     let lock = if force {
         None
@@ -157,6 +198,39 @@ mod tests {
         assert!(LockFile::at(&path).try_lock().unwrap().is_none());
         drop(direct);
         assert!(LockFile::at(&path).try_lock().unwrap().is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_lock_file_past_max_path_can_be_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut dir = temp.path().to_path_buf();
+        while dir.as_os_str().len() < 300 {
+            dir = dir.join("d".repeat(40));
+        }
+        let path = dir.join("alloc.lock");
+        let held = LockFile::at(&path).try_lock().unwrap();
+        assert!(held.is_some());
+        assert!(LockFile::at(&path).try_lock().unwrap().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_a_long_path_is_made_verbatim() {
+        let short = Path::new(r"C:\data\installs\.mise\alloc.lock");
+        assert_eq!(&*openable(short), short);
+
+        let tail = "d".repeat(260);
+        let disk = PathBuf::from(format!(r"C:\data\{tail}\alloc.lock"));
+        assert_eq!(
+            openable(&disk).to_str().unwrap(),
+            format!(r"\\?\C:\data\{tail}\alloc.lock")
+        );
+        let unc = PathBuf::from(format!(r"\\server\share\{tail}\alloc.lock"));
+        assert_eq!(
+            openable(&unc).to_str().unwrap(),
+            format!(r"\\?\UNC\server\share\{tail}\alloc.lock")
+        );
     }
 
     #[cfg(unix)]

@@ -1,6 +1,11 @@
 Describe 'uninstall runtime symlink cleanup' {
 
     BeforeAll {
+        # A data directory of its own, so the installs directory is known: `mise where` names the
+        # installation, which the install layout keeps outside it.
+        $script:SavedDataDir = $env:MISE_DATA_DIR
+        $env:MISE_DATA_DIR = Join-Path $TestDrive 'uninstall-symlink-data'
+        $script:yqDir = Join-Path $env:MISE_DATA_DIR 'installs\yq'
         $cfg = ".\mise.local.toml"
 
         $content = @"
@@ -10,12 +15,12 @@ yq = "4.45.4"
         $content | Out-File $cfg
 
         mise install yq@4.44.3 yq@4.45.4
-        # derive the installs dir from a real install so any MISE_DATA_DIR works
-        $script:yqDir = Split-Path -Parent (mise where yq@4.45.4)
     }
 
     AfterAll {
         Remove-Item $cfg -ErrorAction Ignore
+        if ($null -ne $script:SavedDataDir) { $env:MISE_DATA_DIR = $script:SavedDataDir }
+        else { Remove-Item Env:\MISE_DATA_DIR -ErrorAction SilentlyContinue }
     }
 
     # https://github.com/jdx/mise/discussions/5260 - on Windows, version
