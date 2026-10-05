@@ -333,7 +333,8 @@ See [environments](/environments/).
 
 <Badge type="warning" text="experimental" />
 
-Names where mise gets secrets for tasks, such as `[secrets.fnox]`. Only project config can
+Project-only sources for listing secret names and metadata with `mise secrets ls`, such as
+`[secrets.fnox]`. Tasks and commands do not receive secret values yet. Only project config can
 declare a source. See [mise secrets with fnox](/environments/secrets/fnox.html).
 
 ### `[vars]` - Configuration Variables

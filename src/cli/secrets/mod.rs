@@ -26,9 +26,13 @@ enum Commands {
 }
 
 impl Commands {
-    pub(crate) async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self, json: bool, no_header: bool) -> Result<()> {
         match self {
-            Self::Ls(cmd) => cmd.run().await,
+            Self::Ls(mut cmd) => {
+                cmd.json |= json;
+                cmd.no_header |= no_header;
+                cmd.run().await
+            }
         }
     }
 }
@@ -36,10 +40,10 @@ impl Commands {
 impl Secrets {
     pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::SecretsLs {
-            json: self.json,
-            no_header: self.no_header,
+            json: false,
+            no_header: false,
         }));
 
-        cmd.run().await
+        cmd.run(self.json, self.no_header).await
     }
 }

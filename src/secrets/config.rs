@@ -343,7 +343,10 @@ mod tests {
         std::fs::create_dir_all(&project).unwrap();
         assert!(!is_project_secrets_root(&home, &home));
         assert!(!is_project_secrets_root(t.path(), &home));
-        assert!(!is_project_secrets_root(Path::new("/"), &home));
+        assert!(!is_project_secrets_root(
+            home.ancestors().last().unwrap(),
+            &home
+        ));
         assert!(is_project_secrets_root(&project, &home));
         assert!(is_project_secrets_root(Path::new("/elsewhere/app"), &home));
         #[cfg(unix)]

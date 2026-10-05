@@ -1,3 +1,7 @@
+---
+description: "Use fnox as a project's secrets source and list its keys with mise secrets ls."
+---
+
 # mise secrets with fnox
 
 <Badge type="warning" text="experimental" />

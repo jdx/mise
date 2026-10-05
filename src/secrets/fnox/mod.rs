@@ -24,6 +24,11 @@ pub(crate) const FNOX_ENV_MIN_VERSION: &str = "1.39.0";
 
 const MAX_STDOUT: u64 = 16 << 20;
 
+#[cfg(not(test))]
+const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+#[cfg(test)]
+const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
 #[derive(Debug)]
 pub(crate) struct FnoxSource {
     id: SourceId,
@@ -51,7 +56,12 @@ impl FnoxSource {
                 display_path(declared_in)
             );
         };
-        let root = std::fs::canonicalize(&selected.root).unwrap_or_else(|_| selected.root.clone());
+        let root = std::fs::canonicalize(&selected.root).map_err(|e| {
+            eyre::eyre!(
+                "mise secrets: cannot access {}: {e}",
+                display_path(&selected.root)
+            )
+        })?;
         let (tool_env, removals) = config
             .get_toolset()
             .await?
@@ -151,23 +161,38 @@ impl SecretSource for FnoxSource {
         })?;
         let mut stdout = child.stdout.take().expect("stdout is piped");
         let mut buf = vec![];
-        (&mut stdout)
-            .take(MAX_STDOUT + 1)
-            .read_to_end(&mut buf)
-            .await?;
-        let too_big = buf.len() as u64 > MAX_STDOUT;
-        if too_big {
-            let _ = child.kill().await;
+        let run = async {
+            (&mut stdout)
+                .take(MAX_STDOUT + 1)
+                .read_to_end(&mut buf)
+                .await?;
+            if buf.len() as u64 > MAX_STDOUT {
+                let _ = child.kill().await;
+                return Ok(None);
+            }
+            Ok::<_, eyre::Report>(Some(child.wait().await?))
+        };
+        let status = match tokio::time::timeout(DESCRIBE_TIMEOUT, run).await {
+            Ok(res) => res?,
+            Err(_) => {
+                let _ = child.kill().await;
+                bail!(
+                    "mise secrets: fnox env --json --describe did not finish within {}s in {}; its error output, if any, is above",
+                    DESCRIBE_TIMEOUT.as_secs(),
+                    display_path(&self.id.root)
+                );
+            }
+        };
+        let Some(status) = status else {
             bail!(
                 "mise secrets: fnox env --json printed output mise could not parse (over {MAX_STDOUT} bytes; too large). The output is not shown because it can contain secret values."
             );
-        }
-        let status = child.wait().await?;
-        match interpret(status.success(), &buf, &self.id.root) {
+        };
+        match interpret(status.success(), &status.to_string(), &buf, &self.id.root) {
             Ok(catalog) => Ok(catalog),
             Err(Failure::Message(msg)) => bail!("{msg}"),
-            Err(Failure::Legacy) => bail!(
-                "mise secrets: fnox {} ({}) cannot run `fnox env --json`\n  mise secrets needs fnox {FNOX_ENV_MIN_VERSION} or newer: mise use fnox@latest",
+            Err(Failure::NoJson(status)) => bail!(
+                "mise secrets: fnox {} ({}) exited with {status} and no JSON result from `fnox env --json`; its error output is above\n  If this fnox predates `fnox env`, mise secrets needs fnox {FNOX_ENV_MIN_VERSION} or newer: mise use fnox@latest",
                 self.version().await,
                 display_path(&self.bin),
             ),
@@ -194,8 +219,8 @@ fn source_env(
 }
 
 enum Failure {
-    /// Not a JSON document at all: an fnox without `env`.
-    Legacy,
+    /// Failed without a JSON document: a crash, or an fnox without `env`. Carries the exit status.
+    NoJson(String),
     Message(String),
 }
 
@@ -211,7 +236,12 @@ fn unparsable(buf: &[u8], e: &serde_json::Error) -> Failure {
     ))
 }
 
-fn interpret(success: bool, buf: &[u8], root: &Path) -> std::result::Result<Catalog, Failure> {
+fn interpret(
+    success: bool,
+    status: &str,
+    buf: &[u8],
+    root: &Path,
+) -> std::result::Result<Catalog, Failure> {
     if !success {
         return match serde_json::from_slice::<wire::ErrorDocument>(buf) {
             Ok(doc) => {
@@ -226,7 +256,7 @@ fn interpret(success: bool, buf: &[u8], root: &Path) -> std::result::Result<Cata
                     )
                 }))
             }
-            Err(_) => Err(Failure::Legacy),
+            Err(_) => Err(Failure::NoJson(status.to_string())),
         };
     }
     let head: wire::Head = serde_json::from_slice(buf).map_err(|e| unparsable(buf, &e))?;
@@ -307,7 +337,7 @@ mod tests {
     fn message(f: Failure) -> String {
         match f {
             Failure::Message(m) => m,
-            Failure::Legacy => "legacy".into(),
+            Failure::NoJson(s) => format!("nojson {s}"),
         }
     }
 
@@ -339,7 +369,7 @@ mod tests {
 
     #[test]
     fn parses_schema_1() {
-        let c = interpret(true, DOC.as_bytes(), Path::new("/p"))
+        let c = interpret(true, "exit status: 0", DOC.as_bytes(), Path::new("/p"))
             .ok()
             .unwrap();
         assert_eq!(c.tool_version, "1.38.0");
@@ -366,6 +396,7 @@ mod tests {
         let m = message(
             interpret(
                 true,
+                "exit status: 0",
                 br#"{"schema":2,"fnox_version":"9.0.0"}"#,
                 Path::new("/p"),
             )
@@ -380,6 +411,7 @@ mod tests {
         let m = message(
             interpret(
                 false,
+                "exit status: 1",
                 br#"{"schema":1,"error":{"kind":"config","message":"bad toml"}}"#,
                 Path::new("/p"),
             )
@@ -387,12 +419,16 @@ mod tests {
             .unwrap(),
         );
         assert!(
-            m.starts_with("mise secrets: fnox could not load its config in /p: bad toml"),
+            m.starts_with(&format!(
+                "mise secrets: fnox could not load its config in {}: bad toml",
+                display_path(Path::new("/p"))
+            )),
             "{m}"
         );
         let m = message(
             interpret(
                 false,
+                "exit status: 1",
                 br#"{"schema":1,"error":{"kind":"resolution","message":"nope"}}"#,
                 Path::new("/p"),
             )
@@ -400,33 +436,46 @@ mod tests {
             .unwrap(),
         );
         assert!(
-            m.contains("fnox env failed (resolution) in /p: nope"),
+            m.contains(&format!(
+                "fnox env failed (resolution) in {}: nope",
+                display_path(Path::new("/p"))
+            )),
             "{m}"
         );
     }
 
     #[test]
-    fn non_json_failure_is_legacy() {
+    fn non_json_failure_carries_the_exit_status() {
         assert!(matches!(
             interpret(
                 false,
+                "exit status: 1",
                 b"error: unrecognized subcommand env\n",
                 Path::new("/p")
             ),
-            Err(Failure::Legacy)
+            Err(Failure::NoJson(s)) if s == "exit status: 1"
         ));
     }
 
     #[test]
     fn unparsable_output_never_echoes_input() {
         let bad = br#"{"schema":"s3cr3t-value"}"#;
-        let m = message(interpret(true, bad, Path::new("/p")).err().unwrap());
+        let m = message(
+            interpret(true, "exit status: 0", bad, Path::new("/p"))
+                .err()
+                .unwrap(),
+        );
         assert!(!m.contains("s3cr3t"), "{m}");
         assert!(m.contains("could not parse"), "{m}");
         let m = message(
-            interpret(true, br#"{"schema":1,"keys":"s3cr3t"}"#, Path::new("/p"))
-                .err()
-                .unwrap(),
+            interpret(
+                true,
+                "exit status: 0",
+                br#"{"schema":1,"keys":"s3cr3t"}"#,
+                Path::new("/p"),
+            )
+            .err()
+            .unwrap(),
         );
         assert!(!m.contains("s3cr3t"), "{m}");
     }
