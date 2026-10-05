@@ -90,7 +90,7 @@ symlinks that point at concrete installations. Use `mise where node` or `mise wh
 find the selected installation or executable, rather than constructing a path from an alias.
 
 With the experimental [install layout](/dev-tools/install-layout.html)
-(`install_layout = "identity"`, which also needs `experimental = true`), new installations go into `installs/<label>-<hash>/`
+(on with `experimental = true` unless `install_layout = "legacy"`), new installations go into `installs/<label>-<hash>/`
 instead, such as `installs/age-hlencrst`, and `installs/age/1.2.1` becomes a link
 to that directory. The `installs/.mise/` directory holds the catalog that
 remembers each installation's directory and which installation an unlocked request

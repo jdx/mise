@@ -25,24 +25,26 @@ use crate::file;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{dirs, env};
 
-/// Whether the identity layout is on: `install_layout = "identity"`, which is
-/// opt-in even with `experimental` on and requires it. (Later, `experimental` will
-/// include it.)
+/// Whether the identity layout is on: `install_layout = "identity"`, or
+/// `experimental = true` with `install_layout` unset. `install_layout = "legacy"`
+/// turns it off, experimental or not. It needs `experimental` either way.
 pub fn enabled() -> bool {
     let Ok(settings) = crate::config::Settings::try_get() else {
         return false;
     };
-    if settings.install_layout.as_deref() != Some("identity") {
-        return false;
+    match settings.install_layout.as_deref() {
+        Some("legacy") => false,
+        Some(_) if !settings.experimental => {
+            warn_once!(
+                "[experimental] install_layout = \"identity\" requires experimental = true; \
+                 installing into the legacy layout"
+            );
+            false
+        }
+        // Unit tests run with `experimental` forced on for everything; they get
+        // this layout only when they ask for it.
+        _ => settings.experimental && !mise_util::testing::in_tests(),
     }
-    if !settings.experimental {
-        warn_once!(
-            "[experimental] install_layout = \"identity\" requires experimental = true; \
-             installing into the legacy layout"
-        );
-        return false;
-    }
-    true
 }
 
 /// Backends whose installs are not a plain directory mise owns, so a receipt and

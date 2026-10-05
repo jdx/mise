@@ -29,7 +29,11 @@ assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock" 'mise-lock-ma
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
 first_path=$(mise where pipx:mise-lock-cli)
 assert "mise where pipx:mise-lock-cli" "$first_path"
-assert_contains_text "$first_path" 'pipx-mise-lock-cli/1.0.0~uv~'
+# The installation is keyed by its dependency graph: the version path naming it
+# carries the graph digest.
+graph_paths=("$MISE_DATA_DIR"/installs/pipx-mise-lock-cli/1.0.0~uv~*)
+assert "echo ${#graph_paths[@]}" "1"
+assert "realpath '${graph_paths[0]}'" "$(realpath "$first_path")"
 # The universal graph contains the older-Python branch but does not install it on 3.12.
 assert_fail "'$first_path/.mise-uv/.venv/bin/python' -I -c \"import importlib.metadata; importlib.metadata.version('mise-lock-marker')\""
 assert_fail 'MISE_DISABLE_BACKENDS=pipx mise install pypi:disabled-test@1.0.0' 'disabled by disable_backends'
@@ -168,7 +172,7 @@ assert_fail 'mise lock --bump pipx:mise-lock-cli' 'dependency locking does not s
 args_output=$(mise install pipx:mise-lock-cli 2>&1)
 assert_contains_text "$args_output" 'dependency graph skipped because uvx_args or pipx_args are configured'
 args_path=$(mise where pipx:mise-lock-cli)
-assert_not_contains "echo '$args_path'" '~uv~'
+assert "realpath '$MISE_DATA_DIR/installs/pipx-mise-lock-cli/1.0.0'" "$(realpath "$args_path")"
 assert_contains 'mise install pipx:mise-lock-cli 2>&1' 'already installed'
 assert_fail 'mise lock --bump pipx:mise-lock-cli' 'dependency locking does not support'
 
@@ -188,7 +192,7 @@ source_output=$(mise install 2>&1)
 assert_contains_text "$source_output" 'dependency graph unavailable; installing with version-only resolution'
 assert_contains "mise x -- source-cli" 'source-built'
 source_path=$(mise where pipx:mise-source-cli)
-assert_not_contains "echo '$source_path'" '~uv~'
+assert "realpath '$MISE_DATA_DIR/installs/pipx-mise-source-cli/1.0.0'" "$(realpath "$source_path")"
 assert_contains 'mise install 2>&1' 'already installed'
 assert "mise where pipx:mise-source-cli" "$source_path"
 assert_fail 'mise lock --bump pipx:mise-source-cli' 'no usable wheels'
@@ -257,7 +261,9 @@ PY_SPELLING
 mise lock
 mise install pypi:mise-lock-cli
 preferred_path=$(mise where pypi:mise-lock-cli)
-assert_contains_text "$preferred_path" 'pypi-mise-lock-cli/'
+preferred_paths=("$MISE_DATA_DIR"/installs/pypi-mise-lock-cli/1.0.0~uv~*)
+assert "echo ${#preferred_paths[@]}" "1"
+assert "realpath '${preferred_paths[0]}'" "$(realpath "$preferred_path")"
 assert_succeed "test '$preferred_path' != '$first_path'"
 assert_contains "cat mise.lock" 'tools."pypi:mise-lock-cli"'
 assert_not_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'

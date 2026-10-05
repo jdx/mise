@@ -113,7 +113,7 @@ if ! MISE_DEBUG=1 mise install >"$AUBE_DEBUG_LOG" 2>&1; then
 fi
 # Installed via the embedded package manager (node_modules layout), not a
 # shelled-out `aube add --global`.
-tiny_install_dir="$MISE_DATA_DIR/installs/npm-tiny"
+tiny_install_dir="$(mise where npm:tiny)"
 assert_succeed "test -d '$tiny_install_dir'"
 assert_succeed "find '$tiny_install_dir' -type d -name node_modules -print -quit | grep -q ."
 # aube_args is not forwarded to any CLI; mise warns that it is ignored.

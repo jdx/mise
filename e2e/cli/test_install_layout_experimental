@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The identity install layout is on with experimental features unless
+# install_layout = "legacy" opts out; without experimental it stays off.
+installs="$MISE_DATA_DIR/installs"
+
+echo "=== experimental on, nothing set: the identity layout ==="
+export MISE_EXPERIMENTAL=1
+assert "mise install dummy@1.0.0"
+assert_matches "mise where dummy@1.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test -L '$installs/dummy/1.0.0'"
+
+echo "=== install_layout = legacy opts out ==="
+assert "MISE_INSTALL_LAYOUT=legacy mise install dummy@1.1.0"
+assert "MISE_INSTALL_LAYOUT=legacy mise where dummy@1.1.0" "$installs/dummy/1.1.0"
+assert "test -d '$installs/dummy/1.1.0' && test ! -L '$installs/dummy/1.1.0'"
+
+echo "=== experimental off: the legacy layout, even when asked for identity ==="
+export MISE_EXPERIMENTAL=0
+assert "mise install dummy@2.0.0"
+assert "test -d '$installs/dummy/2.0.0' && test ! -L '$installs/dummy/2.0.0'"
+assert_contains "MISE_INSTALL_LAYOUT=identity mise where dummy@2.0.0 2>&1" "requires experimental = true"

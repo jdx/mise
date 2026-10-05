@@ -25,7 +25,7 @@ EOF
 
 assert_succeed "mise install"
 
-pkg_dir="$(find "$MISE_DATA_DIR/installs/npm-node-pty/1.0.0" -type d -name node-pty | head -1)"
+pkg_dir="$(find "$(mise where npm:node-pty)" -type d -name node-pty | head -1)"
 assert_succeed "test -n \"$pkg_dir\""
 assert_succeed "test -d \"$pkg_dir\""
 binding="$(find "$pkg_dir" -path '*/build/Release/*.node' | head -1)"

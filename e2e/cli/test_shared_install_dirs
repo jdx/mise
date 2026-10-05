@@ -18,11 +18,12 @@ echo "2.0.0"
 SCRIPT
 chmod +x "$shared_dir/tiny/2.0.0/bin/tiny"
 
-# Write a manifest for the shared directory
-cat >"$shared_dir/.mise-installs.toml" <<'TOML'
+# Write a manifest for the shared directory. It records the backend tiny
+# resolves to: an installation recorded under another backend is not used for it.
+cat >"$shared_dir/.mise-installs.toml" <<TOML
 [tiny]
 short = "tiny"
-full = "asdf:tiny"
+full = "$(mise tool tiny --backend)"
 explicit_backend = true
 TOML
 

@@ -46,6 +46,8 @@ EOF
   assert "mise where github:getsops/sops@3.12.1"
 
   # locked_verify_provenance opts back in to verifying against the current signer.
+  # The options changed above, so on the identity layout that is another installation.
+  SOPS_INSTALL=$(mise where github:getsops/sops@3.12.1)
   rm -rf "$SOPS_INSTALL"
   assert_fail_contains "MISE_LOCKED_VERIFY_PROVENANCE=1 mise install --locked 2>&1" "no expected signer"
   cat <<EOF >mise.toml
