@@ -47,8 +47,10 @@ SIGNING_KEY        false  no    -                  release signing key
 ```
 
 The header goes to stderr and the table to stdout. mise needs fnox 1.39.0 or newer. The header ends
-with `daemon: running (protocol N)` or `daemon: not running`, from asking fnox's daemon who it is
-(see [Caching with the fnox daemon](#caching-with-the-fnox-daemon)); that check never starts one.
+with the state of fnox's daemon (see [Caching with the fnox daemon](#caching-with-the-fnox-daemon)):
+`daemon: running (protocol N)`, `daemon: not running`, `daemon: disabled`, `daemon: not responding`,
+`daemon: socket <path> is not owned by you`, or `daemon: not used (...)` for an fnox too old to
+report it. Only an enabled daemon is asked, and that never starts one.
 
 ## Granting secrets to tasks
 
@@ -198,7 +200,8 @@ provider's credentials.
 ### Caching with the fnox daemon
 
 When fnox's daemon is running and has your values cached, mise reads them straight from the
-daemon's socket, with no fnox process:
+daemon's socket. A hit skips the resolving `fnox env --json` call: no provider calls and no
+prompt. mise still runs `fnox env --json --describe` once per run to check the grants.
 
 ```toml
 # fnox.toml
@@ -208,14 +211,14 @@ root = true
 enabled = true
 ```
 
-| fnox says | mise does |
-| --- | --- |
-| `[daemon] enabled = true` in the project's fnox config, a daemon is running, and every key is cached | One socket round trip. Debug output (`MISE_DEBUG=1`) shows `secrets: fnox daemon hit`. |
-| A key is not cached, or needs a lease | Runs `fnox env --json` on your terminal. fnox resolves, prompts if it must, and stores the values in the daemon, so the next run hits. |
-| `[daemon] enabled = false`, or `FNOX_DAEMON=0` | Runs the fnox CLI. The daemon is never contacted. |
-| No daemon is running | Runs the fnox CLI. If your fnox config enables the daemon, fnox may start it; mise never runs `fnox daemon start`. |
-| The daemon speaks another protocol, or its socket is not owned by you | Runs the fnox CLI. |
-| CI, no TTY, or stdin is not a terminal | Runs `fnox env --json --non-interactive --no-daemon`. CI never touches the daemon. |
+| fnox says                                                                                            | mise does                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[daemon] enabled = true` in the project's fnox config, a daemon is running, and every key is cached | One socket round trip instead of a resolving fnox call. Debug output (`MISE_DEBUG=1`) shows `secrets: fnox daemon hit`.                                                                                             |
+| A key is not cached, or needs a lease                                                                | Runs `fnox env --json` on your terminal. fnox resolves, prompts if it must, and stores the values in the daemon, so the next run hits.                                                                              |
+| `[daemon] enabled = false`, or `FNOX_DAEMON=0`                                                       | Runs the fnox CLI and never contacts the daemon. mise reads fnox's own decision from `fnox env --json --describe`, so an fnox too old to report it also means CLI only.                                             |
+| No daemon is running                                                                                 | Runs the fnox CLI. If your fnox config enables the daemon, fnox may start it; mise never runs `fnox daemon start`.                                                                                                  |
+| The daemon speaks another protocol, or its socket is not owned by you                                | Runs the fnox CLI.                                                                                                                                                                                                  |
+| CI, no TTY, or stdin is not a terminal                                                               | Runs `fnox env --json --non-interactive --no-daemon`. CI never resolves through the daemon. Only the `mise secrets ls` table asks a running daemon for its protocol, and only when fnox reports the daemon enabled. |
 
 Optional keys that resolve to nothing, and keys that need a lease, always go through the CLI.
 Windows has no fnox daemon, so mise always uses the CLI there. fnox protocol 6 moved the daemon's
