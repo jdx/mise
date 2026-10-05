@@ -1421,6 +1421,40 @@ mod tests {
     }
 
     #[test]
+    fn a_venv_path_reading_a_composed_key_is_t5() {
+        use crate::config::env_directive::EnvDirective;
+        let venv = |path: &str| EnvDirective::PythonVenv {
+            path: path.into(),
+            create: false,
+            python: None,
+            uv_create_args: None,
+            python_create_args: None,
+            options: Default::default(),
+        };
+        let mut task = composed(vec![venv("{{ env.PGURL }}/venv")]);
+        let found = t5(&task);
+        assert!(
+            found
+                .iter()
+                .any(|m| m.contains("env._.python.venv uses {{ env.PGURL }}")),
+            "{found:?}"
+        );
+        task = composed(vec![venv("$PGURL/venv")]);
+        let (grant, _) = grant_for_task(&task);
+        let texts = task.non_late_env_texts();
+        let on = shell_expansion_problems(&task, &grant, &texts, true);
+        assert!(
+            on.iter()
+                .any(|p| p.render().contains("env._.python.venv uses $PGURL")),
+            "{on:?}"
+        );
+        assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+        // a path that reads nothing composed is fine
+        let task = composed(vec![venv("{{ env.HOME }}/venv")]);
+        assert!(t5(&task).is_empty());
+    }
+
+    #[test]
     fn shell_reads_of_a_composed_key_are_t5_unless_escaped() {
         // env_shell_expand is on by default
         let found = t5(&composed(vec![val("X", "$PGURL?s")]));

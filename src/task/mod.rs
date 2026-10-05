@@ -1858,6 +1858,7 @@ impl Task {
                 EnvDirective::File(p, _) => Some(("_.file".to_string(), p)),
                 EnvDirective::Path(p, _) => Some(("_.path".to_string(), p)),
                 EnvDirective::Source(p, _) => Some(("_.source".to_string(), p)),
+                EnvDirective::PythonVenv { path, .. } => Some(("_.python.venv".to_string(), path)),
                 _ => None,
             })
             .collect()
