@@ -378,28 +378,33 @@ fn resolve_error(
         }
         ResolveError::Other(message) => format!("{subject}: {message}"),
     };
-    (text.clone(), eyre!("{text}"))
+    (text.clone(), eyre::Report::new(ResolveFailed(text)))
 }
 
-/// G15. A distinct type so the executor can print it: it is always a consequence of an
-/// earlier failure, which the run reports as the only cause, so it would otherwise be silent.
+/// G14 and G15. The executor prints these itself, so `mise run` never reprints them: a later
+/// task's G15 is a consequence of an earlier failure and would otherwise be silent, while
+/// the earlier G14 may itself have been dropped as collateral.
 #[derive(Debug)]
-pub(crate) struct NotRetrying(String);
+pub(crate) struct ResolveFailed(String);
 
-impl std::fmt::Display for NotRetrying {
+pub fn is_resolve_failure(err: &eyre::Report) -> bool {
+    err.downcast_ref::<ResolveFailed>().is_some()
+}
+
+impl std::fmt::Display for ResolveFailed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-impl std::error::Error for NotRetrying {}
+impl std::error::Error for ResolveFailed {}
 
 fn g15(subject: &str, earlier: &Earlier) -> eyre::Report {
     let what = match earlier {
         Earlier::Key(key) => key.to_string(),
         Earlier::All => "the secrets".to_string(),
     };
-    eyre::Report::new(NotRetrying(format!(
+    eyre::Report::new(ResolveFailed(format!(
         "{subject}: not retrying {what}; fnox failed to resolve {} earlier in this run (see above)",
         match earlier {
             Earlier::Key(_) => "it",
@@ -467,12 +472,17 @@ impl SecretBroker {
             .await
             .clone()
             .map_err(|m| eyre!("{m}"))?;
+        Ok(self.memo_for(opened))
+    }
+
+    /// One memo per (id, build fingerprint): sources built from different envs must not
+    /// share resolved values.
+    fn memo_for(&self, opened: Arc<dyn SecretSource>) -> Arc<SourceMemo> {
         let memo_key = (opened.id().clone(), opened.build_fingerprint());
-        Ok(self
-            .sources
+        self.sources
             .entry(memo_key)
             .or_insert_with(|| SourceMemo::new(opened))
-            .clone())
+            .clone()
     }
 
     /// Checks every grant against the source it would use, describing each distinct source
@@ -805,11 +815,13 @@ impl SecretBroker {
             .cloned()
             .collect();
         drop(v);
+        // never delete a key mise itself sets for this child, nor one this spawn sets
         remove.retain(|k| {
             !keys.iter().any(|set| env_key_eq(set.as_str(), k))
                 && !env_values.keys().any(|set| env_key_eq(set, k))
                 && !file_values.keys().any(|set| env_key_eq(set.as_str(), k))
                 && !skipped.iter().any(|set| env_key_eq(set.as_str(), k))
+                && !collides_for(req, k)
         });
         let (files, file_env) = match (file_values.is_empty(), req.file_dir) {
             (true, _) => (TempSecretFiles::default(), BTreeMap::new()),
@@ -953,6 +965,7 @@ mod tests {
         calls: AtomicUsize,
         asked: StdMutex<Vec<Vec<String>>>,
         fail: BTreeSet<String>,
+        fingerprint: String,
     }
 
     fn catalog() -> Catalog {
@@ -997,7 +1010,7 @@ mod tests {
             Ok(catalog())
         }
         fn build_fingerprint(&self) -> String {
-            String::new()
+            self.fingerprint.clone()
         }
         async fn resolve(
             &self,
@@ -1182,18 +1195,86 @@ mod tests {
         let err = broker
             .grant_values(&memo, &one.req(&term, false))
             .await
-            .unwrap_err()
-            .to_string();
+            .unwrap_err();
+        assert!(crate::secrets::is_resolve_failure(&err));
+        let err = err.to_string();
         assert!(err.contains("fnox could not resolve B"), "{err}");
         assert!(err.contains("without a terminal"), "{err}");
         let two = Inputs::new("e2", &["B"]);
         let err = broker
             .grant_values(&memo, &two.req(&term, false))
             .await
-            .unwrap_err()
-            .to_string();
+            .unwrap_err();
+        assert!(crate::secrets::is_resolve_failure(&err));
+        let err = err.to_string();
         assert!(err.contains("task e2: not retrying B"), "{err}");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        let mut c = Inputs::new("c", &["A"]);
+        c.base.insert("A".into(), "from-mise".into());
+        let err = broker
+            .grant_values(&memo, &c.req(&term, false))
+            .await
+            .unwrap_err();
+        assert!(!crate::secrets::is_resolve_failure(&err));
+    }
+
+    #[tokio::test]
+    async fn sources_with_different_envs_get_different_memos() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let mk = |fp: &str| {
+            Arc::new(Fake {
+                id: Some(SourceId {
+                    kind: "fake",
+                    root: PathBuf::from("/p"),
+                    profile: None,
+                }),
+                fingerprint: fp.into(),
+                ..Default::default()
+            })
+        };
+        let (staging, prod, staging2) = (mk("staging"), mk("prod"), mk("staging"));
+        let m1 = broker.memo_for(staging.clone());
+        let m2 = broker.memo_for(prod.clone());
+        let m3 = broker.memo_for(staging2.clone());
+        assert!(!Arc::ptr_eq(&m1, &m2));
+        assert!(Arc::ptr_eq(&m1, &m3));
+        let inputs = Inputs::new("t", &["A"]);
+        for memo in [&m1, &m2, &m3] {
+            broker
+                .grant_values(memo, &inputs.req(&term, false))
+                .await
+                .unwrap();
+        }
+        assert_eq!(staging.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(prod.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(staging2.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn remove_never_names_a_key_mise_sets() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake(&[]);
+        let mut inputs = Inputs::new("t", &["B"]);
+        inputs.task_env.insert("SCRUB".into());
+        inputs.base.insert("SCRUB".into(), "task-value".into());
+        let spawn = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn.remove.is_empty() || !spawn.remove.contains("SCRUB"));
+        let mut env = inputs.base.clone();
+        let mut env_remove = BTreeSet::new();
+        spawn.apply(&mut env, &mut env_remove);
+        assert_eq!(env.get("SCRUB").map(String::as_str), Some("task-value"));
+        // a key mise does not set is still scrubbed
+        let other = Inputs::new("u", &["B"]);
+        let spawn = broker
+            .grant_values(&memo, &other.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn.remove.contains("SCRUB"));
     }
 
     #[test]

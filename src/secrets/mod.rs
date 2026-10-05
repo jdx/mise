@@ -22,9 +22,8 @@ mod name;
 mod source;
 mod spawn;
 
-pub(crate) use broker::{
-    Grantee, NotRetrying, Pending, SecretBroker, SpawnRequest, TerminalAccess,
-};
+pub use broker::is_resolve_failure;
+pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
 pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
     DENIED_MARKER, SecretGrant, Subject, aggregate_error, collision_problem, declared_env_keys,
