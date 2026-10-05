@@ -50,6 +50,21 @@ pub(super) struct InstallsMigrate {
 
 impl InstallsMigrate {
     pub(super) async fn run(self) -> Result<()> {
+        // One migration at a time: another run must not finish or undo a
+        // directory this one has moved aside and is still reinstalling.
+        let _migrating = if self.dry_run {
+            None
+        } else {
+            Some(
+                crate::lock_file::LockFile::at(
+                    &dirs::INSTALLS
+                        .join(".mise")
+                        .join("locks")
+                        .join("migrate.lock"),
+                )
+                .lock()?,
+            )
+        };
         recover_interrupted(self.dry_run)?;
         let config = Config::get().await?;
         let ts = config.get_toolset().await?.clone();
@@ -226,6 +241,9 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
     // goes: where the version link could not be made (Windows without junction
     // support), the legacy directory is put back.
     let installed = reinstall(tv).await.and_then(|dir| {
+        // An installation that already existed (another spelling made it, or it
+        // is in a shared root) was reused without a version link here.
+        resolver::ensure_version_link(tv, &dir)?;
         let linked = resolver::link_target(&legacy)
             .is_some_and(|target| target.canonicalize().ok() == dir.canonicalize().ok());
         if linked {
@@ -297,6 +315,12 @@ fn restore(legacy: &Path, aside: &Path) -> Result<()> {
     if file::is_symlink_or_junction(legacy) {
         file::remove_dir_link(legacy)?;
     }
-    file::rename(aside, legacy)?;
-    Ok(())
+    // Something else installed a real directory there meanwhile (a mise using
+    // the legacy layout): keep both rather than overwrite either.
+    file::rename(aside, legacy).map_err(|err| {
+        eyre::eyre!(
+            "{err:#}; the old installation is kept at {}",
+            display_path(aside)
+        )
+    })
 }

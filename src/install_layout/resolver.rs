@@ -1773,6 +1773,13 @@ pub fn migration_target(tv: &ToolVersion) -> std::result::Result<PathBuf, String
     }
 }
 
+/// Make sure `installs/<tool>/<version>` links to the installation `dir` (which
+/// may be in a shared root), as [`link`] does after an install. An installation
+/// that was reused rather than installed may not have made one.
+pub fn ensure_version_link(tv: &ToolVersion, dir: &Path) -> Result<()> {
+    link(tv, dir)
+}
+
 /// The complete installation of this layout that `tv`'s request resolves to,
 /// ignoring any path `tv` already carries.
 pub fn installation_of(tv: &ToolVersion) -> Option<PathBuf> {
