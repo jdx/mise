@@ -1107,18 +1107,25 @@ fn link_value(tool_dir: &Path, dir: &Path) -> PathBuf {
     if same_path(root, store) {
         return Path::new("..").join(name);
     }
-    // `..` from the tool directory is taken physically: through a symlinked
-    // installs directory it leaves the symlink's target, not the data directory
-    // that holds the store. The sibling form is only used when the physical
-    // directories are siblings, and names the store by its physical name (the
-    // configured one may be a symlink with another name).
-    let (Ok(root), Ok(store)) = (root.canonicalize(), store.canonicalize()) else {
+    // The sibling form `../../<store>/<name>` has to be right both ways it is
+    // read: lexically, by mise, which recognizes a version link by its target's
+    // directory being the configured store; and physically, by everything that
+    // follows the link, where `..` through a symlinked installs directory leaves
+    // the symlink's target. So the configured directories must be siblings, and
+    // so must the physical ones, under the same store name. Anything else gets
+    // an absolute target.
+    let (Ok(physical_root), Ok(physical_store)) = (root.canonicalize(), store.canonicalize())
+    else {
         return absolute();
     };
-    match (root.parent(), store.parent(), store.file_name()) {
-        (Some(a), Some(b), Some(store_name)) if a == b => {
-            Path::new("..").join("..").join(store_name).join(name)
-        }
+    let siblings = matches!(
+        (root.parent(), store.parent()),
+        (Some(a), Some(b)) if same_path(a, b)
+    ) && physical_root.parent().is_some()
+        && physical_root.parent() == physical_store.parent()
+        && physical_store.file_name() == store.file_name();
+    match store.file_name() {
+        Some(store_name) if siblings => Path::new("..").join("..").join(store_name).join(name),
         _ => absolute(),
     }
 }
@@ -1608,13 +1615,19 @@ mod tests {
                 ),
                 base.join("linked/i/age-p4n6w2ra")
             );
-            // A store reached through a symlink with another name is named by
-            // the directory it really is.
+            // A store that is a symlink to the real sibling, under another name,
+            // is named absolutely: a relative link through the physical name
+            // would not be recognized as pointing into the configured store.
             std::fs::create_dir_all(base.join("links")).unwrap();
             std::os::unix::fs::symlink(base.join("data/i"), base.join("links/alias")).unwrap();
             assert_eq!(
                 link_value(&tool_dir, &base.join("links/alias/age-p4n6w2ra")),
-                Path::new("..").join("..").join("i").join("age-p4n6w2ra")
+                base.join("links/alias/age-p4n6w2ra")
+            );
+            std::os::unix::fs::symlink(base.join("data/i"), base.join("data/alias")).unwrap();
+            assert_eq!(
+                link_value(&tool_dir, &base.join("data/alias/age-p4n6w2ra")),
+                base.join("data/alias/age-p4n6w2ra")
             );
         }
     }
