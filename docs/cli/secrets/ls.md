@@ -25,9 +25,9 @@ project's `mise.toml` with `[secrets.fnox]`.
 ```
 mise secrets ls
 KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
-DATABASE_URL       true   no    run     deploy  app database
-DEPLOY_KEY         exec   no    run     deploy
-SIGNING_KEY        false  no    -               release signing key
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    -                 release signing key
 ```
 
 <!-- generated reference navigation -->

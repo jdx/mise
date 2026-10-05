@@ -9,8 +9,8 @@ use eyre::{Result, bail, eyre};
 use tokio::sync::{Mutex, OnceCell};
 
 use super::grant::{
-    Problem, ProblemKind, SecretGrant, SecretsDenied, collision_problem, grant_for_task,
-    key_problems, sandbox_problem, static_problems,
+    GrantOrigin, Problem, ProblemKind, SecretGrant, SecretsDenied, Subject, collision_problem,
+    exec_grant, grant_for_task, key_problems, sandbox_problem, static_problems,
 };
 use super::source::{
     Catalog, KeySelection, ResolveError, Resolved, SecretSource, SourceCx, SourceId,
@@ -30,16 +30,40 @@ use mise_util::env::env_key_eq;
 
 pub(crate) enum Grantee<'a> {
     Task(&'a Task),
+    /// `mise x`
+    Exec,
 }
 
 impl Grantee<'_> {
-    fn task(&self) -> &Task {
-        let Self::Task(task) = self;
-        task
+    fn task(&self) -> Option<&Task> {
+        match self {
+            Self::Task(task) => Some(task),
+            Self::Exec => None,
+        }
     }
 
-    fn label(&self) -> &str {
-        &self.task().name
+    fn subject(&self) -> Subject<'_> {
+        match self {
+            Self::Task(task) => Subject::Task(&task.name),
+            Self::Exec => Subject::Exec,
+        }
+    }
+}
+
+/// What an interactive fnox call is about to ask for.
+pub(crate) enum Pending {
+    Keys(Vec<SecretName>),
+    /// no key named: everything the source injects
+    All,
+}
+
+impl Pending {
+    /// For "asking fnox for ...".
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Self::Keys(keys) => list(keys),
+            Self::All => "all secrets".to_string(),
+        }
     }
 }
 
@@ -48,7 +72,7 @@ impl Grantee<'_> {
 pub(crate) trait TerminalAccess: Send + Sync {
     async fn acquire(
         &self,
-        keys: &[SecretName],
+        pending: &Pending,
     ) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>>;
 }
 
@@ -94,6 +118,15 @@ struct MemoValues {
     remove: BTreeSet<String>,
     missing: BTreeSet<SecretName>,
     failed: BTreeMap<SecretName, Arc<str>>,
+    /// The one `AllInScope` call for this source: `Ok` once its filtered document is in the
+    /// maps above, `Err` with the reason it failed. Nothing is asked again after either.
+    all: Option<std::result::Result<(), Arc<str>>>,
+}
+
+/// Why a request cannot be answered without trying again (G15).
+enum Earlier {
+    Key(SecretName),
+    All,
 }
 
 #[derive(Default)]
@@ -127,11 +160,24 @@ impl SourceMemo {
 }
 
 impl MemoValues {
-    /// Keys still to resolve, or the first key that failed earlier in this process.
-    fn missing_for(
+    /// What still has to be asked of the source, or the earlier failure that rules it out.
+    fn pending_for(
         &self,
         keys: &BTreeSet<SecretName>,
-    ) -> std::result::Result<Vec<SecretName>, SecretName> {
+        all: bool,
+    ) -> std::result::Result<Option<Pending>, Earlier> {
+        match &self.all {
+            // the whole document is here; a key it did not return is missing
+            Some(Ok(())) => return Ok(None),
+            Some(Err(_)) if all => return Err(Earlier::All),
+            _ => {}
+        }
+        if all {
+            if let Some(key) = self.failed.keys().next() {
+                return Err(Earlier::Key(key.clone()));
+            }
+            return Ok(Some(Pending::All));
+        }
         let mut pending = vec![];
         for key in keys {
             if self.set.contains_key(key)
@@ -141,48 +187,63 @@ impl MemoValues {
                 continue;
             }
             if self.failed.contains_key(key) {
-                return Err(key.clone());
+                return Err(Earlier::Key(key.clone()));
             }
             pending.push(key.clone());
         }
-        Ok(pending)
+        Ok((!pending.is_empty()).then_some(Pending::Keys(pending)))
     }
 
     async fn resolve(
         &mut self,
         memo: &SourceMemo,
         catalog: &Catalog,
-        keys: Vec<SecretName>,
+        what: Pending,
         interactive: bool,
-        label: &str,
+        subject: &str,
     ) -> Result<()> {
-        let selection = KeySelection::Keys(keys.iter().cloned().collect());
+        let selection = match &what {
+            Pending::Keys(keys) => KeySelection::Keys(keys.iter().cloned().collect()),
+            Pending::All => KeySelection::AllInScope,
+        };
         match memo
             .source
             .resolve(&SourceCx { interactive }, &selection, catalog)
             .await
         {
             Ok(resolved) => {
-                self.accept(resolved, &keys, label);
+                match what {
+                    Pending::Keys(keys) => self.accept(resolved, &keys, subject),
+                    Pending::All => {
+                        self.accept_all(resolved.filter_for_all(catalog), subject);
+                        self.all = Some(Ok(()));
+                    }
+                }
                 Ok(())
             }
             Err(err) => {
-                let (message, error) = resolve_error(&err, &keys, memo, interactive, label);
+                let (message, error) = resolve_error(&err, &what, memo, interactive, subject);
                 let message: Arc<str> = Arc::from(message);
-                for key in &keys {
-                    self.failed.insert(key.clone(), message.clone());
+                match what {
+                    Pending::Keys(keys) => {
+                        for key in keys {
+                            self.failed.insert(key, message.clone());
+                        }
+                    }
+                    Pending::All => self.all = Some(Err(message)),
                 }
                 Err(error)
             }
         }
     }
 
-    fn accept(&mut self, resolved: Resolved, keys: &[SecretName], label: &str) {
+    fn accept(&mut self, resolved: Resolved, keys: &[SecretName], subject: &str) {
         let Resolved {
             set,
             files,
             remove,
             missing,
+            leases: _,
             unrequested,
             not_injectable,
         } = resolved;
@@ -194,7 +255,7 @@ impl MemoValues {
         }
         for key in &not_injectable {
             warn!(
-                "fnox returned {key}, which its config marks as not injectable; it was not passed to task {label}"
+                "fnox returned {key}, which its config marks as not injectable; it was not passed to {subject}"
             );
         }
         register_redactions(set.iter().chain(files.iter()));
@@ -207,6 +268,35 @@ impl MemoValues {
                 self.missing.insert(key.clone());
             }
         }
+    }
+
+    /// The document of an `AllInScope` call, already filtered against the catalog.
+    fn accept_all(&mut self, resolved: Resolved, subject: &str) {
+        let Resolved {
+            set,
+            files,
+            remove,
+            missing,
+            leases: _,
+            unrequested,
+            not_injectable,
+        } = resolved;
+        if !unrequested.is_empty() {
+            warn!(
+                "fnox returned keys its describe output does not list ({}); they were ignored",
+                unrequested.iter().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        for key in &not_injectable {
+            warn!(
+                "fnox returned {key}, which its config marks as not injectable; it was not passed to {subject}"
+            );
+        }
+        register_redactions(set.iter().chain(files.iter()));
+        self.set.extend(set);
+        self.files.extend(files);
+        self.remove.extend(remove);
+        self.missing.extend(missing);
     }
 }
 
@@ -235,10 +325,10 @@ fn list(keys: &[SecretName]) -> String {
 /// The user-facing error for a failed resolve, and the text to remember for G15.
 fn resolve_error(
     err: &ResolveError,
-    keys: &[SecretName],
+    what: &Pending,
     memo: &SourceMemo,
     interactive: bool,
-    label: &str,
+    subject: &str,
 ) -> (String, eyre::Report) {
     let source_label = memo.source.label();
     let text = match err {
@@ -253,17 +343,17 @@ fn resolve_error(
                 if let Some(s) = suggestions.get(key).and_then(|s| s.first()) {
                     hint.push_str(&format!(" Did you mean {s}?"));
                 }
-                lines.push(format!("task {label}: unknown secret {key}\n  {hint}"));
+                lines.push(format!("{subject}: unknown secret {key}\n  {hint}"));
             }
             for key in not_injectable {
                 lines.push(format!(
-                    "task {label}: {key} cannot be injected\n  fnox config sets env = false for {key}, so fnox never hands it to processes."
+                    "{subject}: {key} cannot be injected\n  fnox config sets env = false for {key}, so fnox never hands it to processes."
                 ));
             }
             if lines.is_empty() {
                 lines.push(format!(
-                    "task {label}: fnox rejected the requested keys ({})",
-                    list(keys)
+                    "{subject}: fnox rejected the request for {}",
+                    what.describe()
                 ));
             }
             lines.push("See the available keys with `mise secrets ls`.".to_string());
@@ -278,15 +368,15 @@ fn resolve_error(
                 .map(|p| format!(" (profile {p})"))
                 .unwrap_or_default();
             let mut text = format!(
-                "task {label}: fnox could not resolve {}{profile}\n  {message}",
-                list(keys)
+                "{subject}: fnox could not resolve {}{profile}\n  {message}",
+                what.describe()
             );
             if !interactive {
                 text.push_str("\n  mise ran fnox without a terminal (CI or no TTY), so fnox could not prompt you to sign in. Sign in first (for example op signin) or give the provider's credentials to CI.");
             }
             text
         }
-        ResolveError::Other(message) => format!("task {label}: {message}"),
+        ResolveError::Other(message) => format!("{subject}: {message}"),
     };
     (text.clone(), eyre!("{text}"))
 }
@@ -304,9 +394,17 @@ impl std::fmt::Display for NotRetrying {
 
 impl std::error::Error for NotRetrying {}
 
-fn g15(label: &str, key: &SecretName) -> eyre::Report {
+fn g15(subject: &str, earlier: &Earlier) -> eyre::Report {
+    let what = match earlier {
+        Earlier::Key(key) => key.to_string(),
+        Earlier::All => "the secrets".to_string(),
+    };
     eyre::Report::new(NotRetrying(format!(
-        "task {label}: not retrying {key}; fnox failed to resolve it earlier in this run (see above)"
+        "{subject}: not retrying {what}; fnox failed to resolve {} earlier in this run (see above)",
+        match earlier {
+            Earlier::Key(_) => "it",
+            Earlier::All => "them",
+        }
     )))
 }
 
@@ -392,14 +490,19 @@ impl SecretBroker {
             if grant.is_empty() {
                 continue;
             }
-            let task = grantee.task();
+            let Some(task) = grantee.task() else {
+                continue;
+            };
             // a config that does not parse, or is not trusted, fails on its own
             let selected = self.select(config, ctx, task).await?;
             match self.open_selected(config, ctx, task, selected).await {
                 Ok(memo) => match memo.catalog().await {
-                    Ok(catalog) => {
-                        problems.extend(key_problems(task, grant, &catalog, &memo.source.label()))
-                    }
+                    Ok(catalog) => problems.extend(key_problems(
+                        grantee.subject(),
+                        grant,
+                        &catalog,
+                        &memo.source.label(),
+                    )),
                     Err(e) => source_errors
                         .entry(format!("{e:#}"))
                         .or_default()
@@ -489,7 +592,9 @@ impl SecretBroker {
         }
         Settings::get().ensure_experimental("mise secrets")?;
         Settings::ensure_not_safe("mise secrets")?;
-        let task = req.grantee.task();
+        let Some(task) = req.grantee.task() else {
+            bail!("prepare_spawn is for tasks; use prepare_exec");
+        };
         let (_, mut problems) = grant_for_task(task);
         problems.extend(static_problems(task, req.grant, req.denied));
         if !problems.is_empty() {
@@ -506,6 +611,70 @@ impl SecretBroker {
         self.grant_values(&memo, &req).await.map(Some)
     }
 
+    /// `mise x --secrets` and `--secrets-all`. The source is the current project's, chosen
+    /// the way `mise secrets ls` chooses it. `Ok(None)` when nothing is left to grant (for
+    /// example every injectable key is a file secret).
+    pub(crate) async fn prepare_exec(
+        &self,
+        config: &Arc<Config>,
+        keys: &[String],
+        all: bool,
+        req: SpawnRequest<'_>,
+    ) -> Result<Option<SpawnSecrets>> {
+        let mut grant = exec_grant(keys)?;
+        if grant.is_empty() && !all {
+            return Ok(None);
+        }
+        if let Some(denied) = req.denied {
+            bail!(
+                "mise x --secrets: it was started by {}; mise secrets are not available there in this version",
+                denied.launcher()
+            );
+        }
+        let selection = super::config::select_for_cwd(config)?;
+        let Some(selected) = selection.source else {
+            let mut msg = "mise x --secrets needs a secrets source; add [secrets.fnox] to the project's mise.toml (https://mise.jdx.dev/environments/secrets/fnox.html)".to_string();
+            for file in &selection.ignored {
+                msg.push('\n');
+                msg.push_str(&super::ignored_line(file));
+            }
+            bail!("{msg}");
+        };
+        let ts = config.get_toolset().await?;
+        let opened = super::open_source(config, &selected, ts).await?;
+        let memo_key = (opened.id().clone(), opened.build_fingerprint());
+        let memo = self
+            .sources
+            .entry(memo_key)
+            .or_insert_with(|| SourceMemo::new(opened))
+            .clone();
+        if all {
+            let catalog = memo.catalog().await?;
+            let subject = req.grantee.subject();
+            let split = split_exec_all(&catalog, |key| skip_reason(&req, key));
+            for (key, reason) in &split.skipped {
+                warn_skipped(subject, key.as_str(), *reason);
+            }
+            if !split.files.is_empty() {
+                warn!(
+                    "mise x --secrets-all: skipping file secrets {}",
+                    split.files.join(", ")
+                );
+            }
+            for key in split.keys {
+                grant.keys.insert(key, vec![GrantOrigin::CliAll]);
+            }
+            if grant.is_empty() {
+                return Ok(None);
+            }
+        }
+        let req = SpawnRequest {
+            grant: &grant,
+            ..req
+        };
+        self.grant_values(&memo, &req).await.map(Some)
+    }
+
     /// Everything after the source is known: catalog checks, sandbox and collision checks,
     /// resolution, files, `remove`.
     pub(crate) async fn grant_values(
@@ -513,44 +682,29 @@ impl SecretBroker {
         memo: &Arc<SourceMemo>,
         req: &SpawnRequest<'_>,
     ) -> Result<SpawnSecrets> {
-        let label = req.grantee.label().to_string();
-        let task = req.grantee.task();
+        let subject = req.grantee.subject();
+        let who = subject.text();
         let catalog = memo.catalog().await?;
-        let mut problems = key_problems(task, req.grant, &catalog, &memo.source.label());
+        let mut problems = key_problems(subject, req.grant, &catalog, &memo.source.label());
         for key in req.grant.keys.keys() {
             if let Some(entry) = catalog.entries.get(key)
                 && entry.as_file
                 && req.file_dir.is_none()
             {
-                problems.push(Problem::new(
-                    &label,
-                    Some(key.as_str()),
-                    ProblemKind::Source,
-                    format!(
-                        "task {label}: {key} is delivered as a file (as_file = true), which is not supported here"
-                    ),
-                ));
+                problems.push(file_problem(subject, key.as_str()));
             }
         }
         // the sandbox decides before anything is resolved
         for key in req.grant.keys.keys() {
             if !req.sandbox.keeps_env_key(key.as_str()) {
-                problems.push(sandbox_problem(&label, key.as_str()));
+                problems.push(sandbox_problem(subject, key.as_str()));
             }
         }
         // a value inherited from the shell is allowed (the secret wins); a value mise itself
         // sets is not
         for key in req.grant.keys.keys() {
-            let k = key.as_str();
-            let from_mise = collides(
-                k,
-                req.task_env_keys,
-                req.mise_set_inherited,
-                req.base_env,
-                &env::PRISTINE_ENV,
-            );
-            if from_mise {
-                problems.push(collision_problem(&label, k));
+            if collides_for(req, key.as_str()) {
+                problems.push(collision_problem(subject, key.as_str()));
             }
         }
         if !problems.is_empty() {
@@ -564,7 +718,24 @@ impl SecretBroker {
             );
         }
         let keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
-        self.ensure_resolved(memo, &catalog, &keys, req, &label)
+        let all = req.grant.all.is_some();
+        // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
+        let mut skipped: BTreeSet<SecretName> = BTreeSet::new();
+        if all {
+            for (key, entry) in &catalog.entries {
+                if keys.contains(key)
+                    || !entry.injectable
+                    || mise_util::env::is_reserved_secret_name(key.as_str())
+                {
+                    continue;
+                }
+                if let Some(reason) = skip_reason(req, key.as_str()) {
+                    warn_skipped(subject, key.as_str(), reason);
+                    skipped.insert(key.clone());
+                }
+            }
+        }
+        self.ensure_resolved(memo, &catalog, &keys, all, req, &who)
             .await?;
 
         let v = memo.values.lock().await;
@@ -576,7 +747,36 @@ impl SecretBroker {
             } else if let Some(value) = v.files.get(key) {
                 file_values.insert(key.clone(), value.clone());
             } else {
-                debug!("{key} resolved to nothing; leaving it unset for task {label}");
+                debug!("{key} resolved to nothing; leaving it unset for {who}");
+            }
+        }
+        if all {
+            // Keys a dynamic lease produced are not in the catalog, so they are checked now.
+            let mut consider = |key: &SecretName| -> bool {
+                if keys.contains(key) || mise_util::env::is_reserved_secret_name(key.as_str()) {
+                    return false;
+                }
+                if skipped.contains(key) {
+                    return false;
+                }
+                if !catalog.entries.contains_key(key)
+                    && let Some(reason) = skip_reason(req, key.as_str())
+                {
+                    warn_skipped(subject, key.as_str(), reason);
+                    skipped.insert(key.clone());
+                    return false;
+                }
+                true
+            };
+            for (key, value) in &v.set {
+                if consider(key) {
+                    env_values.insert(key.to_string(), value.clone());
+                }
+            }
+            for (key, value) in &v.files {
+                if consider(key) && req.file_dir.is_some() {
+                    file_values.insert(key.clone(), value.clone());
+                }
             }
         }
         let mut remove: BTreeSet<String> = v
@@ -589,11 +789,13 @@ impl SecretBroker {
         remove.retain(|k| {
             !keys.iter().any(|set| env_key_eq(set.as_str(), k))
                 && !env_values.keys().any(|set| env_key_eq(set, k))
+                && !file_values.keys().any(|set| env_key_eq(set.as_str(), k))
+                && !skipped.iter().any(|set| env_key_eq(set.as_str(), k))
         });
         let (files, file_env) = match (file_values.is_empty(), req.file_dir) {
             (true, _) => (TempSecretFiles::default(), BTreeMap::new()),
             (false, Some(dir)) => TempSecretFiles::create(dir, &file_values)?,
-            (false, None) => bail!("task {label}: secret files are not supported here"),
+            (false, None) => bail!("{who}: secret files are not supported here"),
         };
         Ok(SpawnSecrets::new(env_values, files, file_env, remove))
     }
@@ -605,30 +807,115 @@ impl SecretBroker {
         memo: &Arc<SourceMemo>,
         catalog: &Catalog,
         keys: &BTreeSet<SecretName>,
+        all: bool,
         req: &SpawnRequest<'_>,
-        label: &str,
+        who: &str,
     ) -> Result<()> {
         let pending;
         {
             let mut v = memo.values.lock().await;
-            let missing = v.missing_for(keys).map_err(|k| g15(label, &k))?;
-            if missing.is_empty() {
+            let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
                 return Ok(());
-            }
+            };
             if !req.interactive {
-                return v.resolve(memo, catalog, missing, false, label).await;
+                return v.resolve(memo, catalog, missing, false, who).await;
             }
             pending = missing;
         }
         let _terminal = req.terminal.acquire(&pending).await;
         let _pause = MultiProgressReport::try_get().map(|r| r.pause_progress());
         let mut v = memo.values.lock().await;
-        let missing = v.missing_for(keys).map_err(|k| g15(label, &k))?;
-        if missing.is_empty() {
+        let Some(missing) = v.pending_for(keys, all).map_err(|e| g15(who, &e))? else {
             return Ok(());
-        }
-        v.resolve(memo, catalog, missing, true, label).await
+        };
+        v.resolve(memo, catalog, missing, true, who).await
     }
+}
+
+/// What `mise x --secrets-all` sends to fnox by name.
+struct ExecAll {
+    keys: Vec<SecretName>,
+    /// file secrets, which `mise x` cannot clean up after `exec` (C2)
+    files: Vec<String>,
+    /// keys that mise sets itself or whose sandbox drops them (C4)
+    skipped: Vec<(SecretName, Skip)>,
+}
+
+/// Every injectable key except files, minus the keys `skip` rules out. It names the keys,
+/// so it never includes keys only a dynamic lease would produce.
+fn split_exec_all(catalog: &Catalog, skip: impl Fn(&str) -> Option<Skip>) -> ExecAll {
+    let mut out = ExecAll {
+        keys: vec![],
+        files: vec![],
+        skipped: vec![],
+    };
+    for (key, entry) in &catalog.entries {
+        if !entry.injectable || mise_util::env::is_reserved_secret_name(key.as_str()) {
+            continue;
+        }
+        if entry.as_file {
+            out.files.push(key.to_string());
+        } else if let Some(reason) = skip(key.as_str()) {
+            out.skipped.push((key.clone(), reason));
+        } else {
+            out.keys.push(key.clone());
+        }
+    }
+    out
+}
+
+/// Why `--secrets-all` leaves a key out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Skip {
+    Sandbox,
+    MiseSets,
+}
+
+fn collides_for(req: &SpawnRequest<'_>, key: &str) -> bool {
+    collides(
+        key,
+        req.task_env_keys,
+        req.mise_set_inherited,
+        req.base_env,
+        &env::PRISTINE_ENV,
+    )
+}
+
+fn skip_reason(req: &SpawnRequest<'_>, key: &str) -> Option<Skip> {
+    if !req.sandbox.keeps_env_key(key) {
+        Some(Skip::Sandbox)
+    } else if collides_for(req, key) {
+        Some(Skip::MiseSets)
+    } else {
+        None
+    }
+}
+
+/// C4.
+fn warn_skipped(subject: Subject<'_>, key: &str, reason: Skip) {
+    let why = match (reason, subject) {
+        (Skip::Sandbox, _) => "its sandbox denies env vars",
+        (Skip::MiseSets, Subject::Task(_)) => "mise sets it for this task",
+        (Skip::MiseSets, Subject::Exec) => "mise sets it for this command",
+    };
+    warn!(
+        "--secrets-all: not granting {key} to {}: {why}",
+        subject.text()
+    );
+}
+
+/// C1 for `mise x`; a task always has a directory for its files.
+fn file_problem(subject: Subject<'_>, key: &str) -> Problem {
+    let text = match subject {
+        Subject::Exec => format!(
+            "mise x: {key} is a file secret (as_file = true), which mise x cannot delete after it hands the process over. Use a task (mise run) or `fnox exec -- <command>`."
+        ),
+        Subject::Task(_) => format!(
+            "{}: {key} is delivered as a file (as_file = true), which is not supported here",
+            subject.text()
+        ),
+    };
+    Problem::new(&subject.label(), Some(key), ProblemKind::Source, text)
 }
 
 #[cfg(test)]
@@ -651,14 +938,22 @@ mod tests {
 
     fn catalog() -> Catalog {
         let mut entries = IndexMap::new();
-        for k in ["A", "B", "C", "DEPLOY_KEY", "PATH_LIKE", "SHORT"] {
+        for k in [
+            "A",
+            "B",
+            "C",
+            "DEPLOY_KEY",
+            "PATH_LIKE",
+            "SHORT",
+            "HIDDEN_KEY",
+        ] {
             entries.insert(
                 SecretName::new(k).unwrap(),
                 CatalogEntry {
                     kind: KeyKind::Secret,
                     mode: None,
                     as_file: false,
-                    injectable: true,
+                    injectable: k != "HIDDEN_KEY",
                     description: None,
                 },
             );
@@ -697,11 +992,32 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(keys.keys().iter().map(|k| k.to_string()).collect());
+            let all = matches!(keys, KeySelection::AllInScope);
+            if all && self.fail.contains("*") {
+                return Err(ResolveError::Resolution("not signed in".into()));
+            }
             if keys.keys().iter().any(|k| self.fail.contains(k.as_str())) {
                 return Err(ResolveError::Resolution("not signed in".into()));
             }
             let mut out = Resolved::default();
-            for k in keys.keys() {
+            let asked: Vec<SecretName> = if all {
+                // everything the catalog lists, plus what a stale or mis-scoped source adds
+                [
+                    "A",
+                    "B",
+                    "C",
+                    "DEPLOY_KEY",
+                    "SHORT",
+                    "HIDDEN_KEY",
+                    "EXTRA_KEY",
+                ]
+                .iter()
+                .map(|k| SecretName::new(k).unwrap())
+                .collect()
+            } else {
+                keys.keys().into_iter().collect()
+            };
+            for k in asked {
                 let value = match k.as_str() {
                     "SHORT" => "ab".to_string(),
                     "DEPLOY_KEY" => "line-one-s3cr3t\nline-two-s3cr3t \"q\"".to_string(),
@@ -738,7 +1054,7 @@ mod tests {
     impl TerminalAccess for Terminal {
         async fn acquire(
             &self,
-            _keys: &[SecretName],
+            _pending: &Pending,
         ) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
             self.acquired.fetch_add(1, Ordering::SeqCst);
             if let Some(memo) = self.memo.lock().unwrap().as_ref()
@@ -989,6 +1305,197 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(term.acquired.load(Ordering::SeqCst), 1);
+    }
+
+    fn with_all(mut inputs: Inputs) -> Inputs {
+        inputs.grant.all = Some(GrantOrigin::CliAll);
+        inputs
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_asks_once_without_keys_and_filters_the_document() {
+        let (fake, memo) = fake(&[]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let one = with_all(Inputs::new("a", &[]));
+        let two = with_all(Inputs::new("b", &[]));
+        let (req1, req2) = (one.req(&term, false), two.req(&term, false));
+        let (r1, r2) = tokio::join!(
+            broker.grant_values(&memo, &req1),
+            broker.grant_values(&memo, &req2)
+        );
+        let (s1, s2) = (r1.unwrap(), r2.unwrap());
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        assert!(fake.asked.lock().unwrap()[0].is_empty());
+        // HIDDEN_KEY is not injectable and EXTRA_KEY is not in the catalog: neither comes back
+        assert_eq!(s1.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
+        assert_eq!(s2.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
+        // later requests for named keys are answered from the memo, with no call
+        let three = Inputs::new("c", &["B", "C"]);
+        let s3 = broker
+            .grant_values(&memo, &three.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(s3.marker_value(), "B,C");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_failure_is_not_retried() {
+        let (fake, memo) = fake(&["*"]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let one = with_all(Inputs::new("a", &[]));
+        let err = broker
+            .grant_values(&memo, &one.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("fnox could not resolve all secrets"), "{err}");
+        let two = with_all(Inputs::new("b", &[]));
+        let err = broker
+            .grant_values(&memo, &two.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("task b: not retrying the secrets"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_after_a_key_failure_is_g15() {
+        let (fake, memo) = fake(&["B"]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let one = Inputs::new("one", &["B"]);
+        let _ = broker
+            .grant_values(&memo, &one.req(&term, false))
+            .await
+            .unwrap_err();
+        let two = with_all(Inputs::new("two", &[]));
+        let err = broker
+            .grant_values(&memo, &two.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("task two: not retrying B"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_skips_keys_mise_sets_or_the_sandbox_drops() {
+        let (_, memo) = fake(&[]);
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let mut inputs = with_all(Inputs::new("deploy", &[]));
+        inputs.base.insert("A".into(), "from-mise".into());
+        inputs.task_env.insert("C".into());
+        let spawn = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "B,DEPLOY_KEY,SHORT");
+        // the skipped keys are never taken out of the child's environment either
+        assert!(!spawn.remove.contains("A"));
+
+        let mut inputs = with_all(Inputs::new("deploy", &[]));
+        inputs.sandbox.deny_env = true;
+        inputs.sandbox.allow_env = vec!["SHORT".into()];
+        let spawn = broker
+            .grant_values(&memo, &inputs.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "SHORT");
+    }
+
+    #[tokio::test]
+    async fn exec_messages_name_mise_x() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake(&[]);
+        let inputs = Inputs::new("ignored", &["A", "NOPE"]);
+        let mut req = inputs.req(&term, false);
+        req.grantee = Grantee::Exec;
+        let err = broker
+            .grant_values(&memo, &req)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("mise x: unknown secret NOPE"), "{err}");
+
+        let mut inputs = Inputs::new("ignored", &["A"]);
+        inputs.base.insert("A".into(), "from-mise".into());
+        inputs.sandbox.deny_env = true;
+        let mut req = inputs.req(&term, false);
+        req.grantee = Grantee::Exec;
+        let err = broker
+            .grant_values(&memo, &req)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(
+                "mise x is granted A, but its sandbox denies env vars; pass --allow-env A"
+            ),
+            "{err}"
+        );
+        assert!(!err.contains("add allow_env"), "{err}");
+        inputs.sandbox.deny_env = false;
+        let mut req = inputs.req(&term, false);
+        req.grantee = Grantee::Exec;
+        let err = broker
+            .grant_values(&memo, &req)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("mise x: A is both a secret and a mise env var"),
+            "{err}"
+        );
+        assert!(err.contains("for this command"), "{err}");
+    }
+
+    #[test]
+    fn exec_all_names_injectable_keys_and_splits_off_files_and_collisions() {
+        let mut catalog = catalog();
+        for (k, as_file, injectable) in [
+            ("GCP_SA_JSON", true, true),
+            ("SIGNING_KEY", false, false),
+            ("PATH", false, true),
+        ] {
+            catalog.entries.insert(
+                SecretName::new(k).unwrap(),
+                CatalogEntry {
+                    kind: KeyKind::Secret,
+                    mode: None,
+                    as_file,
+                    injectable,
+                    description: None,
+                },
+            );
+        }
+        let split = split_exec_all(&catalog, |k| match k {
+            "A" => Some(Skip::MiseSets),
+            "C" => Some(Skip::Sandbox),
+            _ => None,
+        });
+        let names = |v: &[SecretName]| v.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            names(&split.keys),
+            ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT"]
+        );
+        assert_eq!(split.files, ["GCP_SA_JSON"]);
+        assert_eq!(
+            split
+                .skipped
+                .iter()
+                .map(|(k, r)| (k.to_string(), *r))
+                .collect::<Vec<_>>(),
+            [
+                ("A".to_string(), Skip::MiseSets),
+                ("C".to_string(), Skip::Sandbox)
+            ]
+        );
     }
 
     #[test]

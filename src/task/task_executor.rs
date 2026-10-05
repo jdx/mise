@@ -71,6 +71,8 @@ pub struct TaskRunContext<'a> {
     pub allow_during_interruption: bool,
     /// Context of this task's live OpenTelemetry span, when trace export is on.
     pub otel_span_cx: Option<opentelemetry::trace::SpanContext>,
+    /// A task another task's run entry started. It never receives a command-line grant.
+    pub injected: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -162,17 +164,12 @@ struct TaskTerminal<'a> {
 impl crate::secrets::TerminalAccess for TaskTerminal<'_> {
     async fn acquire(
         &self,
-        keys: &[crate::secrets::SecretName],
+        pending: &crate::secrets::Pending,
     ) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
-        let names = keys
-            .iter()
-            .map(|k| k.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
         self.executor.eprint(
             self.task,
             self.prefix,
-            &format!("secrets: asking fnox for {names}"),
+            &format!("secrets: asking fnox for {}", pending.describe()),
         );
         if self.holds_write {
             return None;
@@ -381,6 +378,8 @@ pub struct TaskExecutorConfig {
     pub secrets_file_dir: PathBuf,
     /// Set by launchers that start tasks without a person asking for them.
     pub secrets_denied: Option<SecretsDenied>,
+    /// `mise run --secrets` and `--secrets-all`: what the tasks named on the command line get.
+    pub cli_secrets: Option<crate::secrets::CliSecretGrant>,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -408,6 +407,7 @@ pub struct TaskExecutor {
     secrets: Arc<SecretBroker>,
     secrets_file_dir: PathBuf,
     secrets_denied: Option<SecretsDenied>,
+    cli_secrets: Option<crate::secrets::CliSecretGrant>,
     /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
     pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
@@ -466,6 +466,7 @@ impl TaskExecutor {
             secrets: Arc::new(SecretBroker::default()),
             secrets_file_dir: config.secrets_file_dir,
             secrets_denied: Self::secrets_denied_from(config.secrets_denied),
+            cli_secrets: config.cli_secrets,
             output_forwarder: None,
         }
     }
@@ -473,14 +474,7 @@ impl TaskExecutor {
     /// `__MISE_SECRETS_DENIED` first (an unknown value fails closed), then the pitchfork
     /// daemon marker, then what the launcher said.
     fn secrets_denied_from(configured: Option<SecretsDenied>) -> Option<SecretsDenied> {
-        std::env::var(crate::secrets::DENIED_MARKER)
-            .ok()
-            .and_then(|v| SecretsDenied::from_marker(&v))
-            .or_else(|| {
-                mise_util::env::var_is_true(crate::daemons::DAEMON_TASK_MARKER)
-                    .then_some(SecretsDenied::PitchforkDaemon)
-            })
-            .or(configured)
+        crate::secrets::denied_from_env().or(configured)
     }
 
     pub fn is_stopping(&self) -> bool {
@@ -627,6 +621,7 @@ impl TaskExecutor {
             permit,
             allow_during_interruption,
             otel_span_cx,
+            injected,
         } = ctx;
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -639,7 +634,10 @@ impl TaskExecutor {
         }
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
-        let (grant, _) = crate::secrets::grant_for_task(task);
+        // The task's own grant plus what the command line gave it. Every decision below uses
+        // this one grant, so a task that only the command line granted behaves like one that
+        // listed the keys itself.
+        let (grant, _) = crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), injected);
         // A task that receives secrets is never cached as an artifact, so the plain
         // fresh-sources skip below still applies, and no value is resolved for a skipped task.
         let artifact_cache_enabled = self.task_cache.enabled()
@@ -843,12 +841,11 @@ impl TaskExecutor {
         let spawn_secrets = if grant.is_empty() {
             None
         } else if self.dry_run {
-            let names = grant
-                .keys
-                .keys()
-                .map(|k| k.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let mut names = grant.keys.keys().map(|k| k.as_str()).collect::<Vec<_>>();
+            if grant.all.is_some() {
+                names.push("all injectable secrets");
+            }
+            let names = names.join(", ");
             self.eprint(
                 task,
                 &prefix,
@@ -2303,7 +2300,8 @@ impl TaskExecutor {
         let mut problems = vec![];
         let mut privilege_problem = false;
         for task in tasks {
-            let (grant, mut found) = crate::secrets::grant_for_task(task);
+            let (grant, mut found) =
+                crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), false);
             found.extend(crate::secrets::static_problems(
                 task,
                 &grant,
@@ -2323,13 +2321,19 @@ impl TaskExecutor {
                 let declared = crate::secrets::declared_env_keys(task, config);
                 for key in grant.keys.keys() {
                     if !sandbox.keeps_env_key(key.as_str()) {
-                        found.push(crate::secrets::sandbox_problem(&task.name, key.as_str()));
+                        found.push(crate::secrets::sandbox_problem(
+                            crate::secrets::Subject::Task(&task.name),
+                            key.as_str(),
+                        ));
                     }
                     if declared
                         .iter()
                         .any(|d| mise_util::env::env_key_eq(d, key.as_str()))
                     {
-                        found.push(crate::secrets::collision_problem(&task.name, key.as_str()));
+                        found.push(crate::secrets::collision_problem(
+                            crate::secrets::Subject::Task(&task.name),
+                            key.as_str(),
+                        ));
                     }
                 }
             }

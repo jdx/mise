@@ -112,7 +112,7 @@ pub struct Deps {
 }
 
 /// Extract a hashable key from a task, including env vars set via dependencies
-pub(super) fn task_key(task: &Task) -> TaskKey {
+pub(crate) fn task_key(task: &Task) -> TaskKey {
     (
         task.name.clone(),
         task.args.clone(),

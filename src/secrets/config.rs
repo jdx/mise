@@ -43,6 +43,9 @@ fn unknown_field_hint(key: &str) -> Option<&'static str> {
         "run" | "tasks" | "keys" => {
             Some("tasks receive the secrets they list: [tasks.NAME] secrets = [...]")
         }
+        "exec" => {
+            Some("mise x gets secrets only when asked: mise x --secrets GH_TOKEN -- <command>")
+        }
         "shell" => {
             Some("mise secrets are never exported to your shell; use `fnox activate` for that")
         }
@@ -272,7 +275,8 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            e.contains("unknown field `exec`") && !e.contains('\n'),
+            e.contains("unknown field `exec`")
+                && e.contains("mise x --secrets GH_TOKEN -- <command>"),
             "{e}"
         );
         let e = parse("[secrets.fnox]\ntasks = [\"A\"]\n")

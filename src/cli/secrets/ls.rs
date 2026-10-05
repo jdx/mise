@@ -17,9 +17,9 @@ use crate::ui::table;
     example(
         r###"mise secrets ls
 KEY                ENV    FILE  SCOPES  TASKS   DESCRIPTION
-DATABASE_URL       true   no    run     deploy  app database
-DEPLOY_KEY         exec   no    run     deploy
-SIGNING_KEY        false  no    -               release signing key"###
+DATABASE_URL       true   no    run, exec  deploy  app database
+GCP_SA_JSON        exec   yes   run               service account
+SIGNING_KEY        false  no    -                 release signing key"###
     ),
     verbatim_doc_comment
 )]
@@ -31,6 +31,10 @@ pub(super) struct SecretsLs {
     /// Don't show table header
     #[usage(long)]
     pub no_header: bool,
+
+    /// Render completions: the injectable key names, one per line
+    #[usage(long, hide = true)]
+    pub complete: bool,
 }
 
 #[derive(Tabled)]
@@ -69,6 +73,9 @@ fn env_text(mode: Option<InjectMode>) -> &'static str {
 
 impl SecretsLs {
     pub(super) async fn run(self) -> Result<()> {
+        if self.complete {
+            return self.complete().await;
+        }
         Settings::get().ensure_experimental("mise secrets")?;
         Settings::ensure_not_safe("mise secrets")?;
         let config = Config::get().await?;
@@ -100,7 +107,7 @@ impl SecretsLs {
                             KeyKind::Secret => Value::Null,
                         },
                         "description": e.description,
-                        "scopes": scopes_json(e.injectable),
+                        "scopes": scopes_json(e.injectable, e.as_file),
                         "tasks": tasks_for(&tasks, name.as_str())
                             .map(|t| json!({"task": t.task, "via": "list", "file": t.file}))
                             .collect::<Vec<_>>(),
@@ -154,7 +161,10 @@ impl SecretsLs {
                 key: name.to_string(),
                 env: env_text(e.mode).to_string(),
                 file: if e.as_file { "yes" } else { "no" }.to_string(),
-                scopes: if e.injectable { "run" } else { "-" }.to_string(),
+                scopes: match scopes_json(e.injectable, e.as_file) {
+                    scopes if scopes.is_empty() => "-".to_string(),
+                    scopes => scopes.join(", "),
+                },
                 tasks: tasks_for(&tasks, name.as_str())
                     .map(|t| t.task.clone())
                     .collect::<Vec<_>>()
@@ -168,6 +178,29 @@ impl SecretsLs {
             .collect::<Vec<_>>();
         let mut table = tabled::Table::new(rows);
         table::print(&mut table, self.no_header)?;
+        Ok(())
+    }
+
+    /// Key names for `mise run --secrets <TAB>` and `mise x --secrets <TAB>`. Silent when
+    /// there is nothing to offer: a completion must never print an error.
+    async fn complete(&self) -> Result<()> {
+        if !Settings::get().experimental || Settings::safe_mode() {
+            return Ok(());
+        }
+        let Ok(config) = Config::get().await else {
+            return Ok(());
+        };
+        if let Ok(Inventory {
+            catalog: Some(catalog),
+            ..
+        }) = secrets::inventory(&config).await
+        {
+            for (name, entry) in &catalog.entries {
+                if entry.injectable {
+                    miseprintln!("{name}");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -191,8 +224,14 @@ impl SecretsLs {
     }
 }
 
-fn scopes_json(injectable: bool) -> Vec<&'static str> {
-    if injectable { vec!["run"] } else { vec![] }
+/// Where a key can be handed to a process: tasks (`mise run`) and `mise x`, except that
+/// `mise x` cannot clean up a file secret after it hands the process over.
+fn scopes_json(injectable: bool, as_file: bool) -> Vec<&'static str> {
+    match (injectable, as_file) {
+        (false, _) => vec![],
+        (true, true) => vec!["run"],
+        (true, false) => vec!["run", "exec"],
+    }
 }
 
 fn tasks_for<'a>(

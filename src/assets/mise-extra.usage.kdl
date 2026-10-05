@@ -90,6 +90,7 @@ complete "task" run="mise tasks ls --complete" descriptions=#true
 complete "tool" run="mise search --complete {{words[CURRENT]}}" descriptions=#true
 complete "env_var" run=#"mise set --complete | awk '{print $1"="}'"#
 complete "env_key" run="mise set --complete"
+complete "secret" run="mise secrets ls --complete"
 complete "backend" run="mise backends"
 complete "bin_name" run="mise which --complete"
 

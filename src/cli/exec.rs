@@ -44,6 +44,10 @@ mise x node@20 -- node ./app.js"###,
         help = r###"Specify command as a string:"###
     ),
     example(
+        r###"mise x --secrets GH_TOKEN -- gh release list"###,
+        help = "Give the command the GH_TOKEN secret from the project's secrets source. Without a flag it gets none."
+    ),
+    example(
         r###"mise x -C /path/to/project node@20 -- node ./app.js"###,
         help = r###"Run a command in a different directory:"###
     )
@@ -120,6 +124,14 @@ pub(crate) struct Exec {
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     pub raw: bool,
+
+    /// Give the command these secrets (comma-separated); by default it gets none
+    #[usage(long, value_name = "SECRET", delimiter = ',', verbatim_doc_comment)]
+    pub secrets: Vec<String>,
+
+    /// Give the command every secret the project can inject, except file secrets
+    #[usage(long, conflicts = "secrets", verbatim_doc_comment)]
+    pub secrets_all: bool,
 }
 
 impl Exec {
@@ -415,8 +427,35 @@ impl Exec {
         );
         sandbox.resolve_paths();
 
+        // Only when asked: `mise x` hands the command nothing by default, and fnox never
+        // runs. The values are added after `__MISE_DIFF` was computed, so they are in no
+        // cache or diff, and before the sandbox filter, which G13 already checked they pass.
+        let secrets = crate::secrets::prepare_exec_secrets(
+            &config,
+            crate::secrets::ExecSecretsRequest {
+                keys: &self.secrets,
+                all: self.secrets_all,
+                base_env: &env,
+                sandbox: &sandbox,
+            },
+        )
+        .await?;
+        if let Some(secrets) = &secrets {
+            secrets.apply(&mut env, &mut env_remove);
+        }
+
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
+        }
+        // `mise x` keeps its inherited environment, so the marker names what this command
+        // was handed and what it already held.
+        let mut scrub_on_failure: Vec<String> = vec![];
+        if let Some(secrets) = &secrets {
+            env.insert(
+                mise_util::env::SECRET_KEYS_MARKER.to_string(),
+                secrets.marker_value_with_inherited(),
+            );
+            scrub_on_failure = secrets.scrub_keys();
         }
 
         // After sandbox filtering, so a variable the sandbox removed is not put back.
@@ -433,6 +472,9 @@ impl Exec {
                 .collect_vec();
             for (i, (k, v)) in reapplied.into_iter().enumerate() {
                 let tmp = format!("__MISE_FISH_ENV_{i}");
+                if secrets.is_some() {
+                    scrub_on_failure.push(tmp.clone());
+                }
                 cmd.push(format!(
                     "set -gx {} \"${tmp}\"; set -e {tmp}",
                     shell_escape::escape(k.as_str().into()),
@@ -465,7 +507,16 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
-        exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
+        exec_program(
+            program,
+            args,
+            env,
+            env_remove,
+            &sandbox,
+            self.c.is_some(),
+            &scrub_on_failure,
+        )
+        .await
     }
 }
 
@@ -611,6 +662,15 @@ async fn warn_if_command_falls_back(
     Ok(uncovered)
 }
 
+/// Removes `keys` from mise's own environment. `exec_program` writes the whole child
+/// environment into the process before it execs, and mise keeps running when that fails
+/// (it builds a toolset for the error hint, which can spawn processes).
+fn scrub_env(keys: &[String]) {
+    for key in keys {
+        env::remove_var(key);
+    }
+}
+
 #[cfg(all(not(test), unix))]
 pub(crate) async fn exec_program<T, U>(
     program: T,
@@ -619,6 +679,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     _shell_body_mode: bool,
+    scrub_on_failure: &[String],
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -716,6 +777,7 @@ where
                     // actionable `which_shim`-style error rather than the opaque
                     // `cannot find binary path` (discussion #11183).
                     None if is_shim_dispatch => {
+                        scrub_env(scrub_on_failure);
                         return Err(crate::shims::err_shim_not_found(&program_name).await);
                     }
                     None => {
@@ -726,9 +788,13 @@ where
                 }
             }
             Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
+                scrub_env(scrub_on_failure);
                 return Err(crate::shims::err_shim_not_found(&program_name).await);
             }
-            Err(err) if is_shim_dispatch => return Err(err.into()),
+            Err(err) if is_shim_dispatch => {
+                scrub_env(scrub_on_failure);
+                return Err(err.into());
+            }
             Err(_) => {
                 // Fall back to original if resolution fails
                 resolution_failed = true;
@@ -737,6 +803,7 @@ where
         }
     };
     if crate::file::is_active_mise_shim(std::path::Path::new(&program)) {
+        scrub_env(scrub_on_failure);
         return Err(eyre::eyre!(
             "recursive shim invocation detected: {}",
             program.to_string_lossy()
@@ -748,15 +815,26 @@ where
         .iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str).await? {
+    let sandboxed = match sandbox.apply(&program.to_string_lossy(), &args_str).await {
+        Ok(sandboxed) => sandboxed,
+        Err(err) => {
+            scrub_env(scrub_on_failure);
+            return Err(err);
+        }
+    };
+    if let Some(sandboxed) = sandboxed {
         // macOS: exec through sandbox-exec
         let err = exec::Command::new(&sandboxed.program)
             .args(&sandboxed.args)
             .exec();
+        // mise keeps running after a failed exec, so the secrets must not stay in its
+        // environment for whatever it spawns next.
+        scrub_env(scrub_on_failure);
         bail!("{} {err}", sandboxed.program);
     }
 
     let err = exec::Command::new(program.clone()).args(&args).exec();
+    scrub_env(scrub_on_failure);
     let mut msg = format!("{:?} {err}", program.to_string_lossy());
     // The bin never resolved on PATH. If an installed-but-unconfigured tool
     // would have provided it, say so instead of leaving the user with a bare
@@ -790,6 +868,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     shell_body_mode: bool,
+    scrub_on_failure: &[String],
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -868,12 +947,18 @@ where
             candidates.find(|candidate| !crate::file::is_active_mise_shim(candidate))
         }
         Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
+            scrub_env(scrub_on_failure);
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
         Err(which::Error::CannotFindBinaryPath) => {
+            // `err_cannot_find_binary_path` builds a toolset and can spawn processes
+            scrub_env(scrub_on_failure);
             return Err(err_cannot_find_binary_path(&program_name).await);
         }
-        Err(err) => return Err(err.into()),
+        Err(err) => {
+            scrub_env(scrub_on_failure);
+            return Err(err.into());
+        }
     };
     let program = match resolved {
         Some(program) => program,
@@ -881,9 +966,13 @@ where
         // `which_shim`-style error instead of the opaque `cannot find binary
         // path` (discussion #11183).
         None if is_shim_dispatch => {
+            scrub_env(scrub_on_failure);
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
-        None => return Err(err_cannot_find_binary_path(&program_name).await),
+        None => {
+            scrub_env(scrub_on_failure);
+            return Err(err_cannot_find_binary_path(&program_name).await);
+        }
     };
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     if is_shim_dispatch {
@@ -968,6 +1057,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     _sandbox: &SandboxConfig,
     _shell_body_mode: bool,
+    _scrub_on_failure: &[String],
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -1031,5 +1121,31 @@ fn parse_command(
             shell.into(),
             vec![env::SHELL_COMMAND_FLAG.into(), c.clone().unwrap()],
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrub_removes_the_listed_vars_from_the_process_env() {
+        let keys = vec![
+            "__MISE_TEST_SCRUB_SECRET".to_string(),
+            "__MISE_TEST_SCRUB_FISH_0".to_string(),
+        ];
+        for key in &keys {
+            env::set_var(key, "s3cr3t");
+        }
+        env::set_var("__MISE_TEST_SCRUB_KEEP", "kept");
+        scrub_env(&keys);
+        for key in &keys {
+            assert!(std::env::var_os(key).is_none(), "{key} survived the scrub");
+        }
+        assert_eq!(
+            std::env::var("__MISE_TEST_SCRUB_KEEP").as_deref(),
+            Ok("kept")
+        );
+        scrub_env(&[]);
     }
 }

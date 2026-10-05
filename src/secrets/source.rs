@@ -75,12 +75,18 @@ pub(crate) struct SourceCx {
 
 pub(crate) enum KeySelection {
     Keys(BTreeSet<SecretName>),
+    /// Everything the source injects, asked for without naming keys, so keys that only exist
+    /// once a dynamic lease runs come back too. Files are allowed.
+    AllInScope,
 }
 
 impl KeySelection {
-    pub(crate) fn keys(&self) -> &BTreeSet<SecretName> {
-        let Self::Keys(keys) = self;
-        keys
+    /// The keys asked for by name; empty for `AllInScope`.
+    pub(crate) fn keys(&self) -> BTreeSet<SecretName> {
+        match self {
+            Self::Keys(keys) => keys.clone(),
+            Self::AllInScope => BTreeSet::new(),
+        }
     }
 }
 
@@ -91,10 +97,45 @@ pub(crate) struct Resolved {
     pub(crate) files: BTreeMap<SecretName, SecretValue>,
     pub(crate) remove: BTreeSet<String>,
     pub(crate) missing: BTreeSet<SecretName>,
+    /// Leases the source ran for this document.
+    pub(crate) leases: BTreeSet<String>,
     /// Keys the source returned that were not requested (G17); dropped.
     pub(crate) unrequested: BTreeSet<String>,
     /// Requested keys the source returned although it marks them not injectable (G19); dropped.
     pub(crate) not_injectable: BTreeSet<SecretName>,
+}
+
+impl Resolved {
+    /// What an `AllInScope` document may contribute, whoever produced it: never a key the
+    /// catalog marks not injectable (G19), and a key the catalog does not list only when a
+    /// dynamic lease the catalog knows ran, since that lease is what produced it.
+    pub(crate) fn filter_for_all(mut self, catalog: &Catalog) -> Self {
+        let lease_ran = self
+            .leases
+            .iter()
+            .any(|lease| catalog.dynamic_leases.contains(lease));
+        let mut unlisted = BTreeSet::new();
+        let mut hidden = BTreeSet::new();
+        let mut keep = |map: &mut BTreeMap<SecretName, SecretValue>| {
+            map.retain(|name, _| match catalog.entries.get(name) {
+                Some(entry) if !entry.injectable => {
+                    hidden.insert(name.clone());
+                    false
+                }
+                Some(_) => true,
+                None if lease_ran => true,
+                None => {
+                    unlisted.insert(name.to_string());
+                    false
+                }
+            });
+        };
+        keep(&mut self.set);
+        keep(&mut self.files);
+        self.not_injectable.extend(hidden);
+        self.unrequested.extend(unlisted);
+        self
+    }
 }
 
 impl std::fmt::Debug for Resolved {
