@@ -29,8 +29,12 @@ enum Commands {
 impl Installs {
     pub(crate) async fn run(self) -> Result<()> {
         if !crate::install_layout::resolver::enabled() {
+            // A setting that cannot be loaded says why itself.
+            let settings = crate::config::Settings::try_get()?;
             bail!(
-                "the identity install layout is off; remove `install_layout = \"legacy\"` to use it"
+                "the identity install layout is off (install_layout = {:?}); remove that setting \
+                 to use it",
+                settings.install_layout.as_deref().unwrap_or_default()
             );
         }
         match self
