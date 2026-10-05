@@ -426,14 +426,28 @@ async fn migrate(tv: &ToolVersion) -> Result<()> {
             Ok(())
         }
         Err(err) => {
-            journal.undo(true)?;
+            let undone = journal.undo(true);
             drop(_lock);
             // The failed install rebuilt the tool's runtime aliases without the
             // version; rebuild them with it back in place.
-            let config = Config::reset().await?;
-            let ts = config.get_toolset().await?;
-            crate::runtime_symlinks::rebuild_for_toolset(&config, ts).await?;
-            Err(err)
+            let rebuilt = async {
+                let config = Config::reset().await?;
+                let ts = config.get_toolset().await?;
+                crate::runtime_symlinks::rebuild_for_toolset(&config, ts).await
+            };
+            if let Err(rebuild_err) = rebuilt.await {
+                warn!(
+                    "could not rebuild the runtime links of {}: {rebuild_err:#}",
+                    tv.style()
+                );
+            }
+            match undone {
+                Ok(()) => Err(err),
+                // The next run finishes undoing it, from the journal.
+                Err(undo_err) => Err(err.wrap_err(format!(
+                    "the old directory could not be put back yet: {undo_err:#}"
+                ))),
+            }
         }
     }
 }
