@@ -426,7 +426,7 @@ pub(crate) fn locate(tv: &ToolVersion) -> Option<Located> {
     // for it (see `extends`). With several, which is meant is not known. It is
     // not cached: the cache is keyed by the request, and the same request from a
     // configuration file does not stand for a variant.
-    if try_variant && let [only] = variant_installations(tv.ba(), &identity).as_slice() {
+    if try_variant && let [only] = variant_choices(tv.ba(), &identity).as_slice() {
         return Some(only.clone());
     }
     let primary = Catalog::new(dirs::INSTALLS.to_path_buf());
@@ -568,6 +568,36 @@ fn same_graph(a: &InstallIdentity, b: Option<&InstallIdentity>) -> bool {
     ["aube", "uv"]
         .iter()
         .all(|k| a.inputs.get(*k) == b.and_then(|b| b.inputs.get(*k)))
+}
+
+/// The installations a bare version could stand for, one for each set of options
+/// they were made with: copies of one option set (another root, an older refresh
+/// generation) are that set's own choice, its selection or its only copy. A set
+/// whose copies are not settled lists them all, for the user to select.
+fn variant_choices(ba: &crate::args::BackendArg, identity: &InstallIdentity) -> Vec<Located> {
+    let mut sets: Vec<(InstallIdentity, Vec<Located>)> = vec![];
+    for located in variant_installations(ba, identity) {
+        let Some(record) = &located.record else {
+            continue;
+        };
+        let key = request_of(&record.identity);
+        match sets.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, copies)) => copies.push(located),
+            None => sets.push((key, vec![located])),
+        }
+    }
+    sets.into_iter()
+        .flat_map(|(key, copies)| {
+            if copies.len() == 1 {
+                return copies;
+            }
+            match unlocked_choice(&key) {
+                Unlocked::Selected(located) if located.installed => vec![located],
+                Unlocked::Found(located) => vec![located],
+                _ => copies,
+            }
+        })
+        .collect()
 }
 
 /// The records of `backend` in the catalog of `root`; for a shared root whose
@@ -993,9 +1023,6 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     if !enabled() {
         return vec![];
     }
-    let Ok(b) = tv.backend() else {
-        return vec![];
-    };
     let mut bare = tv.clone();
     bare.install_path = None;
     let own_identity = identity_of(&bare);
@@ -1016,30 +1043,13 @@ pub fn variants_of(tv: &ToolVersion) -> Vec<PathBuf> {
     {
         return vec![];
     }
-    let backend = canonical_backend(&tv.ba().full());
-    let (version, platform) = (tv.logical_pathname(), b.get_platform_key());
-    let mut out = vec![];
-    for root in roots() {
-        let catalog = Catalog::new(&root);
-        for record in records_of(&catalog, &root, &backend) {
-            let dir = catalog.install_dir(&record);
-            if record.identity.version == version
-                && record.identity.platform == platform
-                && same_graph(&record.identity, own_identity.as_ref())
-                && own_identity
-                    .as_ref()
-                    .is_none_or(|own| extends(&record.identity, own))
-                && own_request
-                    .as_ref()
-                    .is_none_or(|own| request_of(&record.identity) != *own)
-                && is_complete(&dir)
-                && belongs_to(tv.ba(), &record, &dir)
-            {
-                out.push(dir);
-            }
-        }
-    }
-    out
+    let Some(own_identity) = own_identity else {
+        return vec![];
+    };
+    variant_choices(tv.ba(), &own_identity)
+        .into_iter()
+        .map(|located| located.dir)
+        .collect()
 }
 
 /// The path to put on PATH for an unlocked `tv`: the link users know

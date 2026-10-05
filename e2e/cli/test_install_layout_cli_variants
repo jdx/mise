@@ -130,6 +130,13 @@ EOF2
 assert "MISE_INSTALLS_DIR='$HOME/shared-variants' mise -C $work/sharedvar install"
 mv "$HOME/shared-variants/.mise" "$HOME/shared-variants/.mise.lost"
 assert_matches "MISE_SHARED_INSTALL_DIRS='$HOME/shared-variants' mise where tiny@1.0.1" "^$HOME/shared-variants/tiny-"
+# a second copy made with the same options is the same variant: its selection says which
+export MISE_SHARED_INSTALL_DIRS="$HOME/shared-variants"
+assert "mise -C $work/sharedvar install --force"
+own_copy="$(mise -C "$work/sharedvar" where tiny)"
+[[ $own_copy == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$own_copy is not in the user's root"
+assert "mise where tiny@1.0.1" "$own_copy"
+unset MISE_SHARED_INSTALL_DIRS
 
 echo "=== a version named with options a configuration sets never stands in for another variant ==="
 mkdir minimal
