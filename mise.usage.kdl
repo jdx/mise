@@ -4717,7 +4717,7 @@ These are hidden by default
 """# conflicts=--all
     flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
         alias "--url" hide=#true
     }
@@ -4820,7 +4820,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 """#
         flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
             alias "--url" hide=#true
         }

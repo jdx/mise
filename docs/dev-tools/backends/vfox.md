@@ -79,7 +79,7 @@ Replace `PLUGIN_NAME` and `HTTPS_ZIP_URL` with the plugin name and archive URL.
 # Install a plugin from a zip file over HTTPS
 mise plugins install PLUGIN_NAME HTTPS_ZIP_URL
 # Example: Installing a plugin from a zip file
-mise plugins install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
+mise plugins install vfox-cmake https://github.com/jdx/vfox-cmake/archive/refs/heads/main.zip
 ```
 
 ### Install from a signed packslip
@@ -112,7 +112,7 @@ its root and contain no links, special files, Git metadata, or unsafe paths. Mis
 uses the packslip backend's signature, digest, signer, and release policy checks.
 It verifies and stages replacements before removing the previous plugin.
 
-The [bfs publisher example](https://github.com/mise-plugins/vfox-bfs/releases/tag/v0.1.0)
+The [bfs publisher example](https://github.com/jdx/vfox-bfs/releases/tag/v0.1.0)
 demonstrates the format, verified on Linux and macOS. Normal bfs usage continues
 to use its embedded plugin without downloading a plugin release. Packslip is an
 explicit source option; existing registry defaults, Git and ZIP sources remain
