@@ -773,10 +773,16 @@ pub(crate) fn lock_install(
     if !is_primary_install(dir) {
         return Ok(None);
     }
-    let path = dirs::INSTALLS
-        .join(".mise")
-        .join("locks")
-        .join(format!("{name}.lock"));
+    // Kept beside the installation, in its store: installs directories that share
+    // a store (MISE_INSTALL_STORE_DIR) then share the lock too. With the store
+    // in the installs directory this is the catalog's own lock directory.
+    let store = store_of(&dirs::INSTALLS);
+    let locks = if same_path(&store, &dirs::INSTALLS) {
+        store.join(".mise").join("locks")
+    } else {
+        store.join(".mise-locks")
+    };
+    let path = locks.join(format!("{name}.lock"));
     Ok(Some(
         crate::lock_file::LockFile::at(&path)
             .with_pid()
