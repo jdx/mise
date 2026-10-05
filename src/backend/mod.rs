@@ -4044,12 +4044,17 @@ pub trait Backend: Debug + Send + Sync {
             }
             return Ok(tv);
         }
-
         // The scheduler has released this tool only after its in-batch dependencies
         // succeeded. Validate configured dependencies before replacing the target or
         // creating any of its install directories, then reuse the stored context in
         // backend and tool-level hooks.
         ctx.dependency_context(&tv.request).await?;
+
+        // From here the install writes into its directory: repairing it in place
+        // or installing it afresh.
+        if let Some(allocated) = &allocated {
+            crate::install_layout::resolver::note_writing(allocated)?;
+        }
 
         // Repair in place before anything below removes the working install.
         if !ctx.force

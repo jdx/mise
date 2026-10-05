@@ -703,6 +703,9 @@ export const commands: { [key: string]: Command } = {
       ls: {
         hide: false,
       },
+      migrate: {
+        hide: false,
+      },
       select: {
         hide: false,
       },

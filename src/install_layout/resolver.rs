@@ -334,7 +334,7 @@ pub(crate) fn reset_cache() {
 /// A complete installation: the directory exists and its receipt is intact.
 /// The receipt is written last, so its absence means the install was
 /// interrupted or has not finished.
-pub(crate) fn is_complete(dir: &Path) -> bool {
+pub fn is_complete(dir: &Path) -> bool {
     dir.is_dir() && read_receipt(dir).is_some()
 }
 
@@ -961,17 +961,31 @@ pub(crate) fn runtime_dir(tv: &ToolVersion) -> PathBuf {
 /// its tool. The per-tool install lock is keyed by the tool's own cache directory,
 /// which `age` and `aqua:FiloSottile/age` do not share, while the installation
 /// they share has exactly one directory.
-pub(crate) fn lock_install(
-    dir: &Path,
-    on_wait: &dyn Fn(Option<u32>),
-) -> Result<Option<fslock::LockFile>> {
-    let Some(name) = dir_name_of(dir) else {
+pub fn lock_install(dir: &Path, on_wait: &dyn Fn(Option<u32>)) -> Result<Option<fslock::LockFile>> {
+    let Some(path) = install_lock_path(dir) else {
         return Ok(None);
     };
+    Ok(Some(
+        crate::lock_file::LockFile::at(&path)
+            .with_pid()
+            .lock_with_notice(on_wait)?,
+    ))
+}
+
+/// [`lock_install`] without waiting: `None` when it is held, or `dir` takes no lock.
+pub fn try_lock_install(dir: &Path) -> Result<Option<fslock::LockFile>> {
+    match install_lock_path(dir) {
+        Some(path) => crate::lock_file::LockFile::at(&path).with_pid().try_lock(),
+        None => Ok(None),
+    }
+}
+
+fn install_lock_path(dir: &Path) -> Option<PathBuf> {
+    let name = dir_name_of(dir)?;
     // A shared root is read-only: a satisfied install there is used without a lock,
     // and nothing is ever installed into it.
     if !is_primary_install(dir) {
-        return Ok(None);
+        return None;
     }
     // Kept beside the installation, in its store: installs directories that share
     // a store (MISE_INSTALL_STORE_DIR) then share the lock too. With the store
@@ -982,12 +996,7 @@ pub(crate) fn lock_install(
     } else {
         store.join(".mise-locks")
     };
-    let path = locks.join(format!("{name}.lock"));
-    Ok(Some(
-        crate::lock_file::LockFile::at(&path)
-            .with_pid()
-            .lock_with_notice(on_wait)?,
-    ))
+    Some(locks.join(format!("{name}.lock")))
 }
 
 /// Whether the version slot `path` holds something this layout did not put there:
@@ -1037,6 +1046,42 @@ pub(crate) fn legacy_in_place(tv: &ToolVersion) -> Option<PathBuf> {
         .and_then(Path::parent)
         .is_some_and(is_primary_root);
     (located.installed && located.record.is_none() && in_own_root).then_some(located.dir)
+}
+
+/// What a command watching the installs it runs is told about each one: the
+/// directory an install is about to write into, its canonical backend and its
+/// version. An error stops that install before it writes anything.
+pub type WriteObserver = Box<dyn Fn(&Path, &str, &str) -> Result<()> + Send>;
+
+static WRITE_OBSERVER: std::sync::Mutex<Option<WriteObserver>> = std::sync::Mutex::new(None);
+
+/// Have `observer` told about every installation directory an install in this
+/// process is about to write into, once it holds that directory's lock and has
+/// found it has to write; `None` stops it. `mise installs migrate` records
+/// them, so that undoing an interrupted migration withdraws exactly what it
+/// made.
+pub fn observe_writes(observer: Option<WriteObserver>) {
+    *WRITE_OBSERVER.lock().unwrap_or_else(|e| e.into_inner()) = observer;
+}
+
+/// Tell the observer (see [`observe_writes`]) that an install is about to write
+/// into `allocated`.
+pub(crate) fn note_writing(allocated: &Allocated) -> Result<()> {
+    if allocated.read_only {
+        return Ok(());
+    }
+    match WRITE_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        Some(observer) => observer(
+            &allocated.dir,
+            &allocated.record.identity.backend,
+            &allocated.record.identity.version,
+        ),
+        None => Ok(()),
+    }
 }
 
 /// Choose (and reserve) the directory an install of `tv` goes into.
@@ -1240,7 +1285,7 @@ fn check_restored_artifact(
 /// Withdraw an installation [`finish`] published: remove its receipt (so it is
 /// incomplete again) and the version links that name it. The catalog record and
 /// the directory name stay, so a retry lands in the same place.
-pub(crate) fn unpublish(dir: &Path) {
+pub fn unpublish(dir: &Path) {
     if let Err(err) = file::remove_file(dir.join(RECEIPT_FILE)) {
         debug!("could not remove the receipt of {}: {err:#}", dir.display());
     }
@@ -1724,6 +1769,80 @@ fn retarget_links(record: &IdentityRecord, dir: &Path, requested_as: Option<&str
             );
         }
     }
+}
+
+/// Whether `dir` is a legacy installation in the primary installs root: a real
+/// directory at `installs/<tool>/<version>`, not a link of any kind.
+pub fn is_legacy_install(dir: &Path) -> bool {
+    let in_primary_tool_dir = dir
+        .parent()
+        .and_then(Path::parent)
+        .is_some_and(is_primary_root);
+    in_primary_tool_dir
+        && !is_dir_link(dir)
+        && std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+}
+
+/// The canonical backend and version an installation of `tv` records, whatever
+/// options it is made with.
+pub fn identity_scope(tv: &ToolVersion) -> Option<(String, String)> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let identity = identity_of(&bare)?;
+    Some((identity.backend, identity.version))
+}
+
+/// Where reinstalling `tv`'s legacy installation into this layout would put it,
+/// or why it would not be moved: the layout does not cover it, or the backend
+/// recorded for the legacy directory is not the one the request resolves to now
+/// (so it is not what the request means, and installing would not replace it).
+pub fn migration_target(tv: &ToolVersion) -> std::result::Result<PathBuf, String> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    if !applies_to(&bare) {
+        return Err("it keeps the legacy layout".into());
+    }
+    let identity = identity_of(&bare).ok_or("its backend cannot be loaded")?;
+    if !crate::toolset::install_state::legacy_backend_matches(
+        &dirs::INSTALLS,
+        &tv.ba().short,
+        &identity.backend,
+    ) {
+        return Err(format!(
+            "it was installed from another backend than {} now resolves to ({}); \
+             uninstall it if nothing uses it",
+            tv.ba().short,
+            identity.backend
+        ));
+    }
+    match locate(&bare) {
+        Some(located) if located.record.is_some() => Ok(located.dir),
+        _ => {
+            let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+            Ok(match catalog.lookup(&identity) {
+                Some(record) => catalog.install_dir(&record),
+                None => catalog.tentative_dir(&identity),
+            })
+        }
+    }
+}
+
+/// Make sure `installs/<tool>/<version>` links to the installation `dir` (which
+/// may be in a shared root), as [`link`] does after an install. An installation
+/// that was reused rather than installed may not have made one.
+pub fn ensure_version_link(tv: &ToolVersion, dir: &Path) -> Result<()> {
+    link(tv, dir)
+}
+
+/// The complete installation of this layout that `tv`'s request resolves to,
+/// ignoring any path `tv` already carries.
+pub fn installation_of(tv: &ToolVersion) -> Option<PathBuf> {
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    reset_cache();
+    locate(&bare)
+        .filter(|located| located.installed && located.record.is_some())
+        .map(|located| located.dir)
 }
 
 /// Adopt installations whose receipt is on disk but that the primary catalog does

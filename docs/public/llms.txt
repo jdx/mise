@@ -351,6 +351,7 @@
 - [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
 - [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose installations of the identity install layout
 - [mise installs ls](https://mise.jdx.dev/cli/installs/ls.html): List the installations of the identity install layout
+- [mise installs migrate](https://mise.jdx.dev/cli/installs/migrate.html): Reinstall legacy installations into the identity install layout
 - [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose the installation that requests without a lockfile use
 - [mise latest](https://mise.jdx.dev/cli/latest.html): Resolve the latest matching version request for a tool
 - [mise link](https://mise.jdx.dev/cli/link.html): Symlink a tool version into mise

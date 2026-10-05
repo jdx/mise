@@ -146,12 +146,14 @@ mise still writes the tool directory's `.mise.backend.toml` sidecar and
   and package-manager installs. mise keeps using a legacy installation in place
   when the backend recorded for it matches the request. Otherwise it installs
   the version again in the new layout instead of reinterpreting another
-  backend's files.
+  backend's files. To move them yourself, see
+  [Moving legacy installations](#moving-legacy-installations).
 - **Both layouts can share one installs directory.** mise tells hashed
   directories from tool directories by their receipts and reservations, not by
   their names.
-- **mise does not reclaim legacy installations.** Nothing in this layout removes
-  or relocates a legacy directory because a hashed counterpart exists.
+- **mise does not reclaim legacy installations on its own.** Nothing removes or
+  relocates a legacy directory because a hashed counterpart exists, and `prune`
+  treats legacy installations as before. Only `mise installs migrate` moves them.
 - **PATH for an unlocked request still uses `installs/<tool>/<alias>`.** With
   `node = "20"`, activation puts `installs/node/20/bin` on `PATH`, as before. See
   [Finding an installation](#finding-an-installation-mise-where-and-mise-which)
@@ -320,6 +322,32 @@ Choose one with `mise installs select <dir>`, or install a fresh one with `mise 
 
 If the selected installation has since been pruned, installing restores it in
 the same directory rather than choosing another one.
+
+## Moving legacy installations
+
+`mise installs migrate` moves installations made before the layout was turned
+on into it. It does not copy files: it reinstalls each version from its backend
+into its own `<label>-<hash>` directory, so paths the tool records about itself
+are written for the new location. Then it removes the old
+`installs/<tool>/<version>` directory and puts the version link in its place,
+so a path that pointed into the old directory, such as a virtual environment's
+interpreter, still resolves.
+
+```sh
+mise installs migrate --dry-run   # list what would move
+mise installs migrate             # move every legacy installation
+mise installs migrate node python@3.12.1
+```
+
+The old directory is moved aside while its replacement installs, and put back
+if the install fails. Each migration is recorded in `installs/.mise/migrations/`
+before anything moves, so if a run is interrupted, the next
+`mise installs migrate` either removes the old directory (the replacement had
+finished) or puts it back and withdraws the unfinished replacement. Run it while
+nothing is using the tools being moved.
+Versions whose recorded backend is not the one their tool resolves to now are
+left alone (mise is not using them; `mise uninstall` them if nothing needs
+them), as are tools that keep the legacy layout (`http:`, `rust`, `dotnet`).
 
 ## Pruning and uninstalling
 

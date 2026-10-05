@@ -14,8 +14,9 @@ description: "[experimental] Inspect and choose installations of the identity in
 With `install_layout = "identity"`, each installation lives in its own
 `<label>-<hash>` directory, and several installations of one version can
 exist side by side (different options, platforms, pinned artifacts, or a
-refreshed copy). These commands list them and choose which one requests
-without a lockfile use.
+refreshed copy). These commands list them, choose which one requests
+without a lockfile use, and move installations made before the layout
+was turned on into it.
 
 ## Flags
 - **`-h --help`** — Print help
@@ -23,6 +24,7 @@ without a lockfile use.
 ## Subcommands
 
 - [`mise installs ls [-J --json] [--no-header] [TOOL]…`](/cli/installs/ls.html)
+- [`mise installs migrate [-n --dry-run] [TOOL@VERSION]…`](/cli/installs/migrate.html)
 - [`mise installs select <INSTALLATION>`](/cli/installs/select.html)
 
 <!-- generated reference navigation -->
