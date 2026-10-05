@@ -40,7 +40,7 @@ backend = "aqua:gruntwork-io/terragrunt"
 "platforms.$MISE_PLATFORM" = { url = "$OLD_WRONG_URL" }
 EOF
 
-rm -rf "$MISE_DATA_DIR/installs/terragrunt"
+mise uninstall --all terragrunt
 rm -rf "$MISE_DATA_DIR/downloads/terragrunt"
 
 # Run mise install and capture output
