@@ -163,10 +163,10 @@ pub(crate) fn canonical_backend(full: &str) -> String {
 /// is used.
 pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     let backend = tv.backend().ok()?;
-    // Credentials in an option (a registry URL, a signed download URL) do not change
-    // what is installed, so they neither take part in the identity nor reach the
-    // catalog or a receipt, which are plain files. A URL's query string is dropped
-    // with them: that is where signed URLs and API keys carry theirs.
+    // Credentials in an option (a registry URL, a signed download URL) must not
+    // reach the catalog or a receipt, which are plain files: URL userinfo is
+    // dropped, and a query string, which can carry a token but can also choose
+    // what is downloaded, takes part in the identity only as a digest.
     let mut options: BTreeMap<String, String> = backend
         .install_identity_options(tv)
         .into_iter()
@@ -208,9 +208,11 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
     })
 }
 
-/// `value` with the parts of URLs in it that carry credentials removed: userinfo
-/// (`user:token@`) and the query string, where signed URLs and API keys
-/// (`?token=`) put them. Applied to whole values and to values that merely
+/// `value` with the parts of URLs in it that can carry credentials kept out of
+/// plain text: userinfo (`user:token@`) is removed, and the query string, where
+/// signed URLs and API keys (`?token=`) put them but which can also choose what
+/// is downloaded (`?id=2`), is replaced by a digest of itself, so two queries
+/// still make two identities. Applied to whole values and to values that merely
 /// contain a URL.
 fn redact_credentials(value: &str) -> String {
     let ends_at = |s: &str, stop: &dyn Fn(char) -> bool| s.find(stop).unwrap_or(s.len());
@@ -232,8 +234,11 @@ fn redact_credentials(value: &str) -> String {
         let path = ends_at(tail, &|c| matches!(c, '?' | '#') || c.is_whitespace());
         out.push_str(&tail[..path]);
         let mut tail = &tail[path..];
-        if tail.starts_with('?') {
-            tail = &tail[ends_at(tail, &|c| c == '#' || c.is_whitespace())..];
+        if let Some(query) = tail.strip_prefix('?') {
+            let end = ends_at(query, &|c| c == '#' || c.is_whitespace());
+            out.push('?');
+            out.push_str(&digest_of_string(&query[..end])[..16]);
+            tail = &query[end..];
         }
         rest = tail;
     }
@@ -1189,18 +1194,28 @@ mod tests {
             redact_credentials("https://user:tok@registry.example.com/simple/"),
             "https://registry.example.com/simple/"
         );
+        let query = |q: &str| digest_of_string(q)[..16].to_string();
         assert_eq!(
             redact_credentials("https://tok@host.example/a?b=c@d"),
-            "https://host.example/a"
+            format!("https://host.example/a?{}", query("b=c@d"))
         );
-        // Signed URLs and API keys travel in the query string.
+        // Signed URLs and API keys travel in the query string, which is kept only
+        // as a digest...
         assert_eq!(
             redact_credentials("https://bucket.example/t.tgz?X-Amz-Signature=s#frag"),
-            "https://bucket.example/t.tgz#frag"
+            format!(
+                "https://bucket.example/t.tgz?{}#frag",
+                query("X-Amz-Signature=s")
+            )
         );
         assert_eq!(
             redact_credentials("https://api.example?token=t other"),
-            "https://api.example other"
+            format!("https://api.example?{} other", query("token=t"))
+        );
+        // ...because a query can also choose what is downloaded.
+        assert_ne!(
+            redact_credentials("https://example.com/patch?id=1"),
+            redact_credentials("https://example.com/patch?id=2")
         );
         assert_eq!(redact_credentials("plain value?x=1"), "plain value?x=1");
         assert_eq!(redact_credentials("plain value"), "plain value");
