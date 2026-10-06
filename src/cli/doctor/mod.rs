@@ -1229,13 +1229,13 @@ impl Doctor {
                     formatdoc!(
                         r#"tool '{short}' installed with explicit backend '{stored_full}'
                            differs from registry recommendation '{registry_full}'.
-                           To switch: mise uninstall --all {short} && mise install {short}"#
+                           To switch: mise backends switch {short}"#
                     )
                 } else {
                     formatdoc!(
                         r#"tool '{short}' installed with backend '{stored_full}'
                            but registry now recommends '{registry_full}'.
-                           To migrate: mise uninstall --all {short} && mise install {short}"#
+                           To migrate: mise backends switch {short}"#
                     )
                 };
                 self.warnings.push(msg);
