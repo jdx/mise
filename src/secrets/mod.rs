@@ -259,7 +259,10 @@ pub async fn check_task_secrets(
     cache: &TaskSecretsCache,
 ) -> TaskSecretsCheck {
     let (grant, mut problems) = grant_for_task(task);
-    let view = EnvView::load(config).await;
+    let view = EnvView::load(config)
+        .await
+        .for_task(config, &cache.ctx, task)
+        .await;
     problems.extend(static_problems(task, &grant, None, &view));
     let mut check = TaskSecretsCheck {
         problems,
