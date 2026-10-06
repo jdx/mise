@@ -186,16 +186,16 @@ pathdiff = "0.2"
 petgraph = "0.8"
 phf = "0.14"
 rand = "0.10"
-rattler = { version = "0.50", default-features = false }
-rattler_conda_types = { version = "0.54", default-features = false }
-rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
+rattler = { version = "0.52", default-features = false }
+rattler_conda_types = { version = "0.56", default-features = false }
+rattler_repodata_gateway = { version = "0.36", default-features = false, features = [
   "gateway",
 ] }
-rattler_solve = { version = "10", default-features = false, features = [
+rattler_solve = { version = "11", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
-rattler_virtual_packages = { version = "7", default-features = false }
+rattler_virtual_packages = { version = "8", default-features = false }
 regex = "1"
 plist = "1"
 reflink-copy = "0.1"
