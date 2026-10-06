@@ -384,6 +384,10 @@ pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Optio
                     && need.by.iter().any(|(path, _)| !Path::new(path).exists())
             })
         });
+        // With nothing left, no context vouches for the config as it is now.
+        if contexts.is_empty() {
+            return None;
+        }
         for (env, context) in contexts {
             let covered = |backend: &String| {
                 claims.needs.iter().any(|need| {
