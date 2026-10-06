@@ -2323,6 +2323,7 @@ impl TaskExecutor {
         let mut items = vec![];
         let mut problems = vec![];
         let mut privilege_problem = false;
+        let env_view = crate::secrets::EnvView::load(config).await;
         for task in tasks {
             let (grant, mut found) =
                 crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), false);
@@ -2330,6 +2331,7 @@ impl TaskExecutor {
                 task,
                 &grant,
                 self.secrets_denied,
+                &env_view,
             ));
             privilege_problem |= found.iter().any(|p| {
                 matches!(
@@ -2342,7 +2344,7 @@ impl TaskExecutor {
             if !grant.is_empty() && !self.dry_run {
                 // the sandbox and a plainly declared env var decide before anything runs
                 let sandbox = self.build_sandbox_for_task(task, config).await?;
-                let declared = crate::secrets::declared_env_keys(task, config);
+                let declared = env_view.declared_keys(task);
                 for key in grant.keys.keys() {
                     if !sandbox.keeps_env_key(key.as_str()) {
                         found.push(crate::secrets::sandbox_problem(

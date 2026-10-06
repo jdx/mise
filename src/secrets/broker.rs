@@ -657,7 +657,8 @@ impl SecretBroker {
             bail!("prepare_spawn is for tasks; use prepare_exec");
         };
         let (_, mut problems) = grant_for_task(task);
-        problems.extend(static_problems(task, req.grant, req.denied));
+        let env_view = super::EnvView::load(config).await;
+        problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if !problems.is_empty() {
             bail!(
                 "{}",
@@ -669,7 +670,8 @@ impl SecretBroker {
             );
         }
         let memo = self.memo_for_task(config, req.ctx_builder, task).await?;
-        let spawn = self.grant_values(&memo, &req).await?;
+        let refs = env_view.template_refs(task);
+        let spawn = self.grant_values_with(&memo, &req, &refs).await?;
         spawn.ensure_settable(&req.grantee.subject().text())?;
         Ok(Some(spawn))
     }
@@ -737,17 +739,35 @@ impl SecretBroker {
             grant: &grant,
             ..req
         };
-        let spawn = self.grant_values(&memo, &req).await?;
+        let spawn = self
+            .grant_values_with(&memo, &req, &BTreeSet::new())
+            .await?;
         spawn.ensure_settable(&subject_text)?;
         Ok(Some(spawn))
     }
 
     /// Everything after the source is known: catalog checks, sandbox and collision checks,
     /// resolution, files, `remove`.
-    pub(crate) async fn grant_values(
+    #[cfg(test)]
+    async fn grant_values(
         &self,
         memo: &Arc<SourceMemo>,
         req: &SpawnRequest<'_>,
+    ) -> Result<SpawnSecrets> {
+        let refs = req
+            .grantee
+            .task()
+            .map(|t| super::EnvView::default().template_refs(t))
+            .unwrap_or_default();
+        self.grant_values_with(memo, req, &refs).await
+    }
+
+    /// `template_refs`: env names the task's templates read (empty for `mise x`).
+    pub(crate) async fn grant_values_with(
+        &self,
+        memo: &Arc<SourceMemo>,
+        req: &SpawnRequest<'_>,
+        template_refs: &BTreeSet<String>,
     ) -> Result<SpawnSecrets> {
         let subject = req.grantee.subject();
         let who = subject.text();
@@ -787,11 +807,7 @@ impl SecretBroker {
         let keys: BTreeSet<SecretName> = req.grant.keys.keys().cloned().collect();
         let all = req.grant.all.is_some();
         // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
-        let refs = req
-            .grantee
-            .task()
-            .map(super::grant::task_template_refs)
-            .unwrap_or_default();
+        let refs = template_refs;
         let mut skipped: BTreeSet<SecretName> = BTreeSet::new();
         if all {
             for (key, entry) in &catalog.entries {
@@ -801,7 +817,7 @@ impl SecretBroker {
                 {
                     continue;
                 }
-                if let Some(reason) = skip_reason(req, &refs, key.as_str()) {
+                if let Some(reason) = skip_reason(req, refs, key.as_str()) {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
                 }
@@ -832,7 +848,7 @@ impl SecretBroker {
                     return false;
                 }
                 if !catalog.entries.contains_key(key)
-                    && let Some(reason) = skip_reason(req, &refs, key.as_str())
+                    && let Some(reason) = skip_reason(req, refs, key.as_str())
                 {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
