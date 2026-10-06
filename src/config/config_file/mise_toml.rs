@@ -1816,6 +1816,15 @@ impl ConfigFile for MiseToml {
         backends
     }
 
+    fn tool_backends(&self) -> Vec<String> {
+        self.tools
+            .lock()
+            .unwrap()
+            .keys()
+            .map(|ba| ba.short.to_string())
+            .collect()
+    }
+
     fn has_templated_tool_versions(&self) -> bool {
         self.tools.lock().unwrap().values().any(|tvp| {
             tvp.0

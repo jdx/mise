@@ -198,9 +198,48 @@ fn write(
             || n.fingerprint == need.fingerprint
     });
     claims.config = canonical(path).to_string_lossy().to_string();
+    // A config loaded after a higher-precedence one that sets the same tool never
+    // supplies it in this context. Record that, so the context still counts as
+    // complete: re-running the install cannot record what the project does not use.
+    for backend in overridden_backends(config, path) {
+        let marker = Need {
+            backend,
+            short: String::new(),
+            version: String::new(),
+            ..need.clone()
+        };
+        claims.needs.retain(|n| {
+            n.backend != marker.backend
+                || n.env != marker.env
+                || n.context != marker.context
+                || n.fingerprint == marker.fingerprint
+        });
+        if !claims.needs.contains(&marker) {
+            claims.needs.push(marker);
+        }
+    }
     claims.needs.push(need);
     file::create_dir_all(file.parent().unwrap())?;
     file::write_atomic(file, toml::to_string_pretty(&claims)?)
+}
+
+/// The templated tools of `path` that a config loaded before it (higher
+/// precedence) also sets.
+fn overridden_backends(config: &Config, path: &Path) -> Vec<String> {
+    let Some(cf) = config.config_files.get(path) else {
+        return vec![];
+    };
+    let mut higher = vec![];
+    for (other, cf) in &config.config_files {
+        if other == path {
+            break;
+        }
+        higher.extend(cf.tool_backends());
+    }
+    let mut overridden = cf.templated_tool_backends();
+    overridden.retain(|backend| higher.contains(backend));
+    overridden.dedup();
+    overridden
 }
 
 /// Record an installation that a command resolved for a templated version of its
