@@ -14,7 +14,7 @@ use crate::config::config_file::ConfigFile;
 #[cfg(unix)]
 use crate::config::config_file::mise_toml::MiseToml;
 #[cfg(unix)]
-use crate::config::{ConfigPathOptions, resolve_target_config_path};
+use crate::config::{ConfigPathOptions, GlobalWriteSection, resolve_target_config_path};
 #[cfg(unix)]
 use crate::file::display_path;
 #[cfg(unix)]
@@ -109,15 +109,7 @@ impl SystemImport {
             return Ok(());
         }
 
-        let path = resolve_target_config_path(ConfigPathOptions {
-            global: self.global,
-            path: self.path.clone(),
-            env: self.env.clone(),
-            cwd: None,
-            prefer_toml: true,
-            prevent_home_local: true,
-            ..Default::default()
-        })?;
+        let path = resolve_target_config_path(self.config_path_options())?;
 
         let configured_taps = configured_brew_taps(&path).await?;
         let config = Config::get().await?;
@@ -184,6 +176,20 @@ impl SystemImport {
             formulae.len()
         );
         Ok(())
+    }
+
+    #[cfg(unix)]
+    fn config_path_options(&self) -> ConfigPathOptions {
+        ConfigPathOptions {
+            global: self.global,
+            path: self.path.clone(),
+            env: self.env.clone(),
+            cwd: None,
+            prefer_toml: true,
+            prevent_home_local: true,
+            global_write_section: Some(GlobalWriteSection::Packages),
+            ..Default::default()
+        }
     }
 
     #[cfg(not(unix))]
@@ -282,6 +288,23 @@ fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, PackageToml
 mod tests {
     use super::*;
     use crate::system::PackageOptionsTomlConfig;
+
+    #[test]
+    fn global_import_uses_packages_write_target() {
+        let import = SystemImport {
+            env: None,
+            global: true,
+            manager: "brew".to_string(),
+            all: false,
+            dry_run: true,
+            path: None,
+        };
+
+        assert_eq!(
+            import.config_path_options().global_write_section,
+            Some(GlobalWriteSection::Packages)
+        );
+    }
 
     #[test]
     fn dry_run_preserves_inherited_package_options() {
