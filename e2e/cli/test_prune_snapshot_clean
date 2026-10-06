@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# `mise prune --configs` removes snapshots of configs that are gone, and the contexts
+# that loaded a config file that is gone.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p gone keep/child
+for project in gone keep; do
+  echo '[tools]
+dummy = "{{env.PRUNE_VERSION}}"' >"$project/mise.toml"
+  assert "PRUNE_VERSION=1.0.0 mise -C $project install"
+done
+echo '[vars]
+x = "y"' >keep/child/mise.toml
+assert "PRUNE_VERSION=1.0.0 mise -C keep/child install"
+snapshots="$MISE_DATA_DIR/installs/.mise/snapshots"
+assert "ls $snapshots | wc -l | tr -d ' '" "2"
+assert "cat $snapshots/*.toml | grep -c '^env = '" "3"
+
+rm -r gone keep/child
+assert "mise prune --configs"
+assert "ls $snapshots | wc -l | tr -d ' '" "1"
+assert "cat $snapshots/*.toml | grep -c '^env = '" "1"

@@ -338,6 +338,39 @@ fn write(catalog: &Catalog, file: &Path, path: &Path, snapshot: Snapshot) -> Res
     Ok(())
 }
 
+/// Remove snapshots of configs that no longer exist, and the contexts of the rest
+/// that loaded a config file that is gone. `mise prune --configs` runs this next to
+/// its cleanup of tracked configs.
+pub fn clean() -> Result<()> {
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let dir = catalog.meta_dir().join("snapshots");
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let _lock = catalog.lock()?;
+    for entry in std::fs::read_dir(&dir)? {
+        let path = entry?.path();
+        let Some(mut snapshots) = read(&path) else {
+            continue;
+        };
+        if !Path::new(&snapshots.config).exists() {
+            file::remove_file(&path)?;
+            continue;
+        }
+        let before = snapshots.contexts.len();
+        snapshots.contexts.retain(|snapshot| {
+            snapshot
+                .files
+                .iter()
+                .all(|(file, _)| Path::new(file).exists())
+        });
+        if snapshots.contexts.len() != before {
+            file::write_atomic(&path, toml::to_string_pretty(&snapshots)?)?;
+        }
+    }
+    Ok(())
+}
+
 /// What prune takes from `config`'s snapshots.
 #[derive(Debug, Default)]
 pub(crate) struct Current {

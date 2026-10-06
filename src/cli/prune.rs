@@ -133,6 +133,7 @@ impl Prune {
         } else {
             Tracker::clean()?;
             Trust::clean()?;
+            crate::install_layout::snapshots::clean()?;
             info!("pruned configuration links");
         }
         Ok(())

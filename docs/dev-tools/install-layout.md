@@ -384,7 +384,7 @@ Both work on one installation directory at a time.
   a config file a snapshot loaded has changed, or a config has no snapshot,
   `mise prune` keeps every installation of that config's templated tools until a
   command is run in the project again. A snapshot whose config file is gone is
-  dropped. A change that is not in a config file, such as a shell variable, is
+  ignored, and `mise prune --configs` removes it. A change that is not in a config file, such as a shell variable, is
   noticed at the next such command, not before. A template in a tool's options
   makes the tool templated too. A snapshot stores the requested version and the
   version the command settled on, so project aliases are followed, and it is
