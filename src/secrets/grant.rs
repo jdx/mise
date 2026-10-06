@@ -557,6 +557,10 @@ pub(crate) struct EnvView {
     /// scripts were not run, so whether a task `default` applies is unknown: the static checks
     /// leave defaults to the spawn-time check
     defer_defaults: bool,
+    /// At spawn: the keys the task's env directives really assigned (`task_env`). A `default`
+    /// counts only if its key is among them, i.e. it was rendered and not yielded to a caller
+    /// value; nothing is evaluated again, so no script runs twice.
+    resolved_assigned: Option<BTreeSet<String>>,
 }
 
 impl EnvView {
@@ -577,6 +581,15 @@ impl EnvView {
             base,
             config_keys,
             defer_defaults: false,
+            resolved_assigned: None,
+        }
+    }
+
+    /// The view at spawn, judged by what the task env preparation already resolved.
+    pub(crate) fn resolved(assigned: &BTreeSet<String>) -> Self {
+        Self {
+            resolved_assigned: Some(assigned.clone()),
+            ..Self::default()
         }
     }
 
@@ -647,6 +660,7 @@ impl EnvView {
             base,
             config_keys: config_keys.iter().map(|k| k.to_string()).collect(),
             defer_defaults: false,
+            resolved_assigned: None,
         }
     }
 
@@ -684,7 +698,12 @@ impl EnvView {
                     let satisfied = env
                         .iter()
                         .any(|(e, val)| env_key_eq(e, k) && !val.is_empty());
-                    if !satisfied && !self.defer_defaults {
+                    let applies = match &self.resolved_assigned {
+                        // assigned by the task env, and not by an earlier literal value of its own
+                        Some(assigned) => !satisfied && assigned.iter().any(|a| env_key_eq(a, k)),
+                        None => !satisfied && !self.defer_defaults,
+                    };
+                    if applies {
                         env.insert(k.clone(), v.clone());
                         declared.insert(k.clone());
                         texts.push((k.clone(), v.clone()));
@@ -1016,6 +1035,15 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn resolved_view_trusts_what_the_task_env_assigned() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let assigned = BTreeSet::from(["TOKEN".to_string()]);
+        assert_eq!(EnvView::resolved(&assigned).texts(&task).len(), 1);
+        // the default yielded to a caller value: nothing assigned, nothing scanned
+        assert!(EnvView::resolved(&BTreeSet::new()).texts(&task).is_empty());
     }
 
     #[test]
