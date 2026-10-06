@@ -115,8 +115,11 @@ pub(crate) async fn open_source(
     config: &Arc<Config>,
     selected: &config::SelectedSource,
     ts: &crate::toolset::Toolset,
+    config_env: Option<(crate::env_diff::EnvMap, std::collections::BTreeSet<String>)>,
 ) -> eyre::Result<Arc<dyn SecretSource>> {
-    Ok(Arc::new(fnox::FnoxSource::new(config, selected, ts).await?))
+    Ok(Arc::new(
+        fnox::FnoxSource::new(config, selected, ts, config_env).await?,
+    ))
 }
 
 /// What `mise x` asks for.
@@ -198,7 +201,8 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
             problems: vec![],
         });
     };
-    let source = fnox::FnoxSource::new(config, &selected, config.get_toolset().await?).await?;
+    let source =
+        fnox::FnoxSource::new(config, &selected, config.get_toolset().await?, None).await?;
     debug!("describing secrets from {}", source.label());
     let catalog = source.describe().await?;
     let id = source.id();

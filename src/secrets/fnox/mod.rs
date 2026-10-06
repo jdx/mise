@@ -73,6 +73,7 @@ impl FnoxSource {
         config: &Arc<Config>,
         selected: &SelectedSource,
         ts: &Toolset,
+        config_env: Option<(EnvMap, std::collections::BTreeSet<String>)>,
     ) -> Result<Self> {
         let declared_in = &selected.declared_in[0];
         let Some(bin) = find_binary_in(config, ts).await else {
@@ -87,7 +88,8 @@ impl FnoxSource {
                 display_path(&selected.root)
             )
         })?;
-        let (tool_env, removals) = ts.env_with_path_and_removals(config).await?;
+        let (mut tool_env, mut removals) = ts.env_with_path_and_removals(config).await?;
+        apply_config_env(&mut tool_env, &mut removals, config_env);
         Ok(Self {
             id: SourceId {
                 kind: "fnox",
@@ -422,6 +424,25 @@ fn interpret_resolve(
         out = out.filter_for_all(catalog);
     }
     Ok(out)
+}
+
+/// A monorepo task's source runs with its own subproject's `[env]` on top of the toolset's.
+fn apply_config_env(
+    tool_env: &mut EnvMap,
+    removals: &mut std::collections::BTreeSet<String>,
+    config_env: Option<(EnvMap, std::collections::BTreeSet<String>)>,
+) {
+    let Some((values, unset)) = config_env else {
+        return;
+    };
+    for key in &unset {
+        tool_env.remove(key);
+    }
+    for key in values.keys() {
+        removals.remove(key);
+    }
+    tool_env.extend(values);
+    removals.extend(unset);
 }
 
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
@@ -908,6 +929,24 @@ mod tests {
             with("AWS_PROFILE", "prod-s3cr3t").build_fingerprint()
         );
         assert!(!a.build_fingerprint().contains("s3cr3t"));
+    }
+
+    #[test]
+    fn subproject_env_reaches_the_source_env() {
+        let mut tool_env = EnvMap::from([("ROOT".into(), "1".into()), ("GONE".into(), "1".into())]);
+        let mut removals = BTreeSet::from(["AWS_PROFILE".to_string()]);
+        let sub = (
+            EnvMap::from([("AWS_PROFILE".into(), "staging".into())]),
+            BTreeSet::from(["GONE".to_string()]),
+        );
+        apply_config_env(&mut tool_env, &mut removals, Some(sub));
+        let out = source_env(EnvMap::new(), tool_env, &removals);
+        assert_eq!(out.get("AWS_PROFILE").map(String::as_str), Some("staging"));
+        assert_eq!(out.get("ROOT").map(String::as_str), Some("1"));
+        assert!(!out.contains_key("GONE"));
+        let mut untouched = EnvMap::from([("ROOT".into(), "1".into())]);
+        apply_config_env(&mut untouched, &mut BTreeSet::new(), None);
+        assert_eq!(untouched.len(), 1);
     }
 
     #[test]
