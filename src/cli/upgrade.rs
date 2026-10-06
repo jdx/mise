@@ -190,13 +190,14 @@ impl Upgrade {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
-        self.run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::AllowLocked)
+        self.run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::AllowLocked, false)
             .await
     }
 
     async fn run_with_lockfile_update_mode(
         mut self,
         lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
+        background_tool_update: bool,
     ) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
@@ -387,6 +388,24 @@ impl Upgrade {
             )
             .await
         };
+        if background_tool_update {
+            // Filtering by a ToolArg is backend-wide, so a tool with multiple
+            // configured selectors can include a pinned or lockfile-bound
+            // sibling beside the selector that scheduled this child. Keep the
+            // scheduler's reproducibility exclusions authoritative at the
+            // final install boundary as well. An unreadable lockfile is also
+            // conservatively ineligible.
+            outdated.retain(|outdated| {
+                !outdated.tool_version.request_pinned_this_version()
+                    && matches!(
+                        crate::tool_update::request_has_lockfile(
+                            config.as_ref(),
+                            &outdated.tool_version.request,
+                        ),
+                        Ok(false)
+                    )
+            });
+        }
         if Settings::get().pin {
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
@@ -1285,7 +1304,7 @@ pub(crate) async fn run_background_tool_update(
         prune: false,
         raw: false,
     }
-    .run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::Skip)
+    .run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::Skip, true)
     .await
 }
 
