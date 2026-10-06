@@ -223,6 +223,32 @@ value, force evaluation with `[version + ""]` — a bare `[version]` is treated 
 the literal key `"version"`.
 :::
 
+### `headers`
+
+Extra request headers for the artifact download, [`version_list_url`](#version_list_url),
+and [`checksum_url`](#checksum_url) requests. Use it for servers that need a token other than
+Basic auth, such as a bearer token for an OCI blob on `ghcr.io` or an API key header for
+Artifactory. Values are templates, so the secret can come from the environment:
+
+```toml
+[tools."http:polaris"]
+version = "0.9.2"
+headers = { Authorization = "Bearer {{ env.GHCR_TOKEN | b64_encode }}" }
+
+[tools."http:polaris".platforms]
+linux-x64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format = "tar.gz" }
+macos-arm64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format = "tar.gz" }
+```
+
+Header values are redacted from debug output and do not change where a tool is installed.
+A `headers` entry replaces any automatic token mise would otherwise send to the same host.
+
+::: warning
+When a request is redirected to a different host, only `Authorization`, `Cookie`, and
+`Proxy-Authorization` are dropped. Any other header, such as `X-Api-Key`, is forwarded to the
+redirect target, so only set one on a server that does not redirect to a third party.
+:::
+
 ### `size`
 
 Check the expected byte count. These numbers illustrate the syntax; use the

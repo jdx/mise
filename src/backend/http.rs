@@ -7,10 +7,10 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
-    ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file,
-    fetch_checksum_from_shasums, get_filename_from_url, lookup_value_with_fallback,
+    ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
+    fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
     rename_binary_name, shasums_has_entries, template_string, template_string_for_target,
-    verify_artifact,
+    template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::config::Config;
@@ -25,7 +25,8 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, WrapErr, bail};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -231,6 +232,34 @@ impl<'a> HttpOptions<'a> {
 
     fn rename_exe_for_target(&self, target: &PlatformTarget) -> Option<String> {
         self.values.platform_string_for_target("rename_exe", target)
+    }
+
+    /// Request headers from the `headers` table, with each value rendered as a template
+    /// (`{{ env.TOKEN }}`). Values are marked sensitive so they stay out of debug output.
+    /// `version` is `None` where no concrete version exists, such as `version_list_url`.
+    fn headers(&self, version: Option<&str>) -> Result<HeaderMap> {
+        let mut headers = HeaderMap::new();
+        let Some(value) = lookup_value_with_fallback(self.raw(), "headers") else {
+            return Ok(headers);
+        };
+        let Some(table) = value.as_table() else {
+            bail!("`headers` must be a table of header names to values");
+        };
+        for (name, value) in table {
+            let Some(value) = value.as_str() else {
+                bail!("header `{name}` must be a string");
+            };
+            let rendered = template_string_strict(value, version)
+                .wrap_err_with(|| format!("failed to render header `{name}`"))?;
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .wrap_err_with(|| format!("invalid header name `{name}`"))?;
+            // The error from `from_str` never echoes the value, which is a credential.
+            let mut header_value = HeaderValue::from_str(rendered.trim())
+                .map_err(|_| eyre::eyre!("header `{name}` has an invalid value"))?;
+            header_value.set_sensitive(true);
+            headers.insert(header_name, header_value);
+        }
+        Ok(headers)
     }
 
     fn version_list_url(&self) -> Option<&'a str> {
@@ -942,7 +971,8 @@ impl HttpBackend {
         let json_path = opts.version_json_path();
         let version_expr = opts.version_expr();
 
-        version_list::fetch_versions(&url, regex, json_path, version_expr).await
+        let headers = opts.headers(None)?;
+        version_list::fetch_versions(&url, &headers, regex, json_path, version_expr).await
     }
 
     // -------------------------------------------------------------------------
@@ -982,12 +1012,22 @@ impl HttpBackend {
         let checksum_url_template = opts.checksum_url_for_target(target)?;
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
         let filename = get_filename_from_url(url);
+        let headers = match opts.headers(Some(tv.version.as_str())) {
+            Ok(headers) => headers,
+            Err(e) => {
+                debug!("failed to build headers for {checksum_url}: {e}");
+                return None;
+            }
+        };
 
         // 2a. Manifest with an extraction expression. The expression returns an
         // `algo:hash` string. The manifest is the same across platforms, so use
         // the cached fetch.
         if let Some(expr) = opts.checksum_expr() {
-            let body = match HTTP.get_text_cached(&checksum_url).await {
+            let body = match HTTP
+                .get_text_cached_with_headers(&checksum_url, &headers)
+                .await
+            {
                 Ok(body) => body,
                 Err(e) => {
                     debug!("failed to fetch checksum manifest {checksum_url}: {e}");
@@ -1006,7 +1046,9 @@ impl HttpBackend {
 
         // 2b. Checksum file: a SHASUMS list (filename match) first, then an
         // individual checksum file. The algorithm is detected from its name.
-        if let Some(checksum) = fetch_checksum_from_shasums(&checksum_url, &filename).await {
+        if let Some(checksum) =
+            fetch_checksum_from_shasums_with_headers(&checksum_url, &filename, &headers).await
+        {
             return Some(checksum);
         }
         // A SHASUMS list that has entries but none matching our artifact is a
@@ -1014,7 +1056,7 @@ impl HttpBackend {
         // individual-file scan would return the first hash in the list — another
         // platform's checksum — and silently lock it. Bail so the platform is
         // reported unresolved instead.
-        if shasums_has_entries(&checksum_url).await {
+        if shasums_has_entries(&checksum_url, &headers).await {
             debug!(
                 "checksum_url {checksum_url} is a SHASUMS list with no entry for {filename}; \
                  not falling back to a first-hash scan"
@@ -1024,7 +1066,7 @@ impl HttpBackend {
         let file_algo = crate::backend::asset_matcher::detect_checksum_algorithm(
             &get_filename_from_url(&checksum_url),
         );
-        fetch_checksum_from_file(&checksum_url, &file_algo).await
+        fetch_checksum_from_file_with_headers(&checksum_url, &file_algo, &headers).await
     }
 }
 
@@ -1075,6 +1117,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "windows_script_interpreter".into(),
         "checksum_url".into(),
         "checksum_expr".into(),
+        "headers".into(),
     ]
 }
 
@@ -1119,6 +1162,7 @@ impl Backend for HttpBackend {
             "version_expr",
             "checksum_url",
             "checksum_expr",
+            "headers",
         ]
     }
 
@@ -1270,8 +1314,19 @@ impl Backend for HttpBackend {
             }
             None => {
                 ctx.pr.set_message(format!("download {filename}"));
-                HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
+                let headers = opts.headers(Some(tv.version.as_str()))?;
+                if headers.is_empty() {
+                    HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
+                        .await?
+                } else {
+                    HTTP.download_file_with_headers_metadata(
+                        &url,
+                        &file_path,
+                        &headers,
+                        Some(ctx.pr.as_ref()),
+                    )
                     .await?
+                }
             }
         };
 

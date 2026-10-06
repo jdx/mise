@@ -751,7 +751,7 @@ impl Client {
         self.get_async_with_headers(url, &headers).await
     }
 
-    async fn get_async_with_headers<U: IntoUrl>(
+    pub async fn get_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -825,6 +825,17 @@ impl Client {
     /// when locking multiple platforms). Concurrent requests for the same URL will
     /// wait for the first fetch to complete.
     pub async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
+        self.get_text_cached_with_headers(url, &HeaderMap::new())
+            .await
+    }
+
+    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by URL
+    /// alone, so every caller of one URL within a process must send the same headers.
+    pub async fn get_text_cached_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<String> {
         let url = url.into_url()?;
         let key = url.to_string();
 
@@ -839,7 +850,7 @@ impl Client {
             .get_or_init(|| {
                 let url = url.clone();
                 async move {
-                    match self.get_text(url).await {
+                    match self.get_text_request(url).headers(headers).send().await {
                         Ok(text) => Ok(text),
                         Err(err) => Err(err.to_string()),
                     }
@@ -999,7 +1010,7 @@ impl Client {
             .map(|_| ())
     }
 
-    async fn download_file_with_headers_metadata<U: IntoUrl>(
+    pub async fn download_file_with_headers_metadata<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
