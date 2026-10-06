@@ -950,13 +950,13 @@ fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<S
 
 /// The merge entries of `siblings` that this run is not applying but that
 /// target a file this run merges into, so a conflict with them is caught too.
-/// Entries whose target is blocked are skipped before rendering, so their
-/// templates never run, and templates are not rendered on a dry run.
+/// A template sibling is never rendered, since that could run `exec()` for an
+/// entry nobody asked to apply; its conflicts are found when it is applied.
+/// Entries whose target is blocked are skipped as well.
 fn unapplied_siblings<'a>(
     config: &Config,
     requests: &[EditRequest],
     siblings: &'a [EditRequest],
-    dry_run: bool,
     merged: &[(&EditRequest, Format, String)],
 ) -> Vec<(&'a EditRequest, Format, String)> {
     let mut found = vec![];
@@ -970,7 +970,7 @@ fn unapplied_siblings<'a>(
             || !merged
                 .iter()
                 .any(|(req, ..)| same_target(&req.path, &sibling.path))
-            || (dry_run && sibling.op.is_template())
+            || sibling.op.is_template()
             || !matches!(precheck(sibling), Ok(None | Some(EditCheck::State(_))))
         {
             continue;
@@ -1094,7 +1094,7 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
-    let unapplied = unapplied_siblings(config, requests, &siblings, opts.dry_run, &merged);
+    let unapplied = unapplied_siblings(config, requests, &siblings, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
     problems.extend(format_conflicts(requests, &siblings));
     if !problems.is_empty() {
