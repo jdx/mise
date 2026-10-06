@@ -814,6 +814,37 @@ fn merge_conflicts(merged: &[(&EditRequest, Format, String)]) -> Vec<String> {
     problems
 }
 
+/// Add the merge entries of `siblings` that this run is not applying but that
+/// target a file this run merges into, so a conflict with them is caught too.
+/// Templates are not rendered on a dry run.
+fn add_unapplied_siblings<'a>(
+    config: &Config,
+    requests: &[EditRequest],
+    siblings: &'a [EditRequest],
+    dry_run: bool,
+    merged: &mut Vec<(&'a EditRequest, Format, String)>,
+) {
+    for sibling in siblings {
+        let EditOp::Merge { format, .. } = &sibling.op else {
+            continue;
+        };
+        if requests
+            .iter()
+            .any(|req| req.path == sibling.path && req.id == sibling.id)
+            || !merged
+                .iter()
+                .any(|(req, ..)| same_target(&req.path, &sibling.path))
+            || (dry_run && sibling.op.is_template())
+        {
+            continue;
+        }
+        // a sibling that cannot be rendered is reported when it is applied
+        if let Ok(Some(content)) = desired_content(config, sibling) {
+            merged.push((sibling, *format, content));
+        }
+    }
+}
+
 pub struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
@@ -837,6 +868,16 @@ pub fn apply(
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
+    // other merge entries in the config, so applying one entry through a target
+    // filter still sees a sibling that sets the same key differently
+    let siblings = if requests
+        .iter()
+        .any(|req| matches!(req.op, EditOp::Merge { .. }))
+    {
+        edits_from_config(config).unwrap_or_default()
+    } else {
+        vec![]
+    };
     // every merge source rendered this run, for the cross-entry conflict check
     let mut merged: Vec<(&EditRequest, Format, String)> = vec![];
     for req in requests {
@@ -915,6 +956,7 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
+    add_unapplied_siblings(config, requests, &siblings, opts.dry_run, &mut merged);
     problems.extend(merge_conflicts(&merged));
     if !problems.is_empty() {
         bail!(

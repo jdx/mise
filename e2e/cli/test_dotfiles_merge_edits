@@ -183,3 +183,13 @@ cat <<'EOF' >mise.toml
 EOF
 assert_fail_contains "mise dotfiles apply --yes" "set different values for model"
 assert "cat ~/hl.toml" 'model = "x"'
+
+# applying one of two conflicting entries through a target filter still sees
+# the other one
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/filtered.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/filtered.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply ~/filtered.toml/a --yes" "set different values for model"
+assert_fail "cat ~/filtered.toml"
