@@ -154,3 +154,50 @@ headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
 EOT
 mise install
 assert_contains "mise x -- headers-tool" "headers ok"
+
+# `headers_forward` lets a named header follow a redirect to a listed host. localhost is
+# the other hostname of the fixture server; only X-Api-Key is listed, so a second
+# credential header is still dropped.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-forward"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}", X-Extra-Token = "extra" }
+headers_forward = { X-Api-Key = ["localhost"] }
+EOT
+mise install
+assert_contains "mise x -- headers-tool" "headers ok"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key='s3cret'"
+
+# A host that is not listed still gets nothing.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-forward-miss"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+headers_forward = { X-Api-Key = ["*.example.com"] }
+EOT
+assert_fail "mise install" "401"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key=''"
+
+# Mistakes are reported instead of silently forwarding nothing or everything.
+cat >mise.toml <<EOT
+[tools."http:headers-forward-bad"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+headers = { X-Api-Key = "k" }
+headers_forward = { X-Api-Key = ["*"] }
+EOT
+assert_fail "mise install" "invalid host"
+cat >mise.toml <<EOT
+[tools."http:headers-forward-typo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+headers = { X-Api-Key = "k" }
+headers_forward = { X-Api-Kye = ["localhost"] }
+EOT
+assert_fail "mise install" "X-Api-Kye"

@@ -238,7 +238,11 @@ impl<'a> HttpOptions<'a> {
     /// (`{{ env.TOKEN }}`). Values are marked sensitive so they stay out of debug output.
     /// `version` is `None` where no concrete version exists, such as `version_list_url`.
     fn headers(&self, version: Option<&str>) -> Result<HeaderMap> {
-        header_map(lookup_value_with_fallback(self.raw(), "headers"), version)
+        header_map(
+            lookup_value_with_fallback(self.raw(), "headers"),
+            lookup_value_with_fallback(self.raw(), "headers_forward"),
+            version,
+        )
     }
 
     /// [`Self::headers`] resolved for another platform, for `mise lock`.
@@ -249,6 +253,8 @@ impl<'a> HttpOptions<'a> {
     ) -> Result<HeaderMap> {
         header_map(
             self.values.platform_value_for_target("headers", target),
+            self.values
+                .platform_value_for_target("headers_forward", target),
             version,
         )
     }
@@ -274,15 +280,25 @@ impl<'a> HttpOptions<'a> {
     }
 }
 
-fn header_map(value: Option<&toml::Value>, version: Option<&str>) -> Result<HeaderMap> {
+fn header_map(
+    value: Option<&toml::Value>,
+    forward: Option<&toml::Value>,
+    version: Option<&str>,
+) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     let Some(value) = value else {
+        if forward.is_some() {
+            bail!("`headers_forward` requires `headers`");
+        }
         return Ok(headers);
     };
     let Some(table) = value.as_table() else {
         bail!("`headers` must be a table of header names to values");
     };
     for (name, value) in table {
+        if mise_util::http::is_reserved_header_name(name) {
+            bail!("header name `{name}` is reserved");
+        }
         let Some(value) = value.as_str() else {
             bail!("header `{name}` must be a string");
         };
@@ -295,6 +311,40 @@ fn header_map(value: Option<&toml::Value>, version: Option<&str>) -> Result<Head
             .map_err(|_| eyre::eyre!("header `{name}` has an invalid value"))?;
         header_value.set_sensitive(true);
         headers.insert(header_name, header_value);
+    }
+    if let Some(forward) = forward {
+        let Some(forward) = forward.as_table() else {
+            bail!("`headers_forward` must be a table of header names to host lists");
+        };
+        for (name, hosts) in forward {
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .wrap_err_with(|| format!("invalid header name `{name}` in `headers_forward`"))?;
+            if !headers.contains_key(&header_name) {
+                bail!("`headers_forward` names `{name}`, which is not in `headers`");
+            }
+            let hosts = match hosts {
+                toml::Value::String(host) => vec![host.clone()],
+                toml::Value::Array(hosts) => hosts
+                    .iter()
+                    .map(|host| {
+                        host.as_str().map(str::to_string).ok_or_else(|| {
+                            eyre::eyre!("`headers_forward.{name}` must contain only strings")
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+                _ => bail!("`headers_forward.{name}` must be a host or a list of hosts"),
+            };
+            for host in &hosts {
+                if !mise_util::http::is_valid_forward_host(host) {
+                    bail!(
+                        "`headers_forward.{name}` has invalid host `{host}`; use an exact host or `*.` plus a suffix"
+                    );
+                }
+            }
+            let (rule_name, rule_value) =
+                mise_util::http::forward_rule_header(&header_name, &hosts)?;
+            headers.insert(rule_name, rule_value);
+        }
     }
     Ok(headers)
 }
@@ -1134,6 +1184,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "checksum_url".into(),
         "checksum_expr".into(),
         "headers".into(),
+        "headers_forward".into(),
     ]
 }
 
@@ -1180,6 +1231,7 @@ impl Backend for HttpBackend {
             "checksum_url",
             "checksum_expr",
             "headers",
+            "headers_forward",
         ]
     }
 

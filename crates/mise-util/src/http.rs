@@ -748,9 +748,10 @@ impl Client {
         method: &Method,
         url: &Url,
         headers: &HeaderMap,
+        forward: &ForwardRules,
         timeout: Option<Duration>,
     ) -> std::result::Result<Response, SendError> {
-        if !has_unscoped_credential(headers) {
+        if !has_unscoped_credential(headers) && !forward.applies_to(headers) {
             let mut req = self
                 .reqwest()
                 .map_err(|err| SendError::Refused(format!("{err:#}")))?
@@ -811,7 +812,7 @@ impl Client {
                 || next.port_or_known_default() != url.port_or_known_default()
                 || next.scheme() != url.scheme()
             {
-                clear_all_credentials(&mut headers);
+                forward.retain_for(&mut headers, &url, &next);
                 // Userinfo carried over from the previous URL is a credential too.
                 let _ = next.set_username("");
                 let _ = next.set_password(None);
@@ -1644,6 +1645,8 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
+        let (headers, forward_rules) = split_forward_rules(headers);
+        let headers = &headers;
         crate::resolve_progress::fetching(&url);
         #[cfg(unix)]
         if let Some(socket) = github_relay_socket(&url) {
@@ -1726,7 +1729,7 @@ impl Client {
         let request_timeout = self.request_timeout();
         let timeout = matches!(self.kind, ClientKind::Fetch).then_some(request_timeout);
         let resp = match self
-            .send_scoped(&method, &url, &final_headers, timeout)
+            .send_scoped(&method, &url, &final_headers, &forward_rules, timeout)
             .await
         {
             Ok(resp) => resp,
@@ -2181,15 +2184,108 @@ fn has_unscoped_credential(headers: &HeaderMap) -> bool {
     })
 }
 
-fn clear_all_credentials(headers: &mut HeaderMap) {
-    let names = headers
-        .iter()
-        .filter(|(name, value)| is_credential_header(name, value))
-        .map(|(name, _)| name.clone())
-        .collect::<Vec<_>>();
-    for name in names {
-        headers.remove(name);
+/// Prefix of the internal headers that carry [`ForwardRules`] alongside the real ones, so
+/// they travel through every retry and cache key without a parallel argument. They are
+/// removed before a request is built and are never sent.
+const FORWARD_RULE_PREFIX: &str = "x-mise-forward-";
+
+/// Whether `name` is reserved for forwarding rules and cannot be used as a request header.
+pub fn is_reserved_header_name(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with(FORWARD_RULE_PREFIX)
+}
+
+/// Whether `pattern` is a host an allowlist may contain: an exact hostname, or `*.` followed
+/// by a suffix for its subdomains. A bare `*` is refused so the list cannot mean "everywhere".
+pub fn is_valid_forward_host(pattern: &str) -> bool {
+    let host = pattern.strip_prefix("*.").unwrap_or(pattern);
+    !host.is_empty()
+        && !host.contains('*')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        && !host.starts_with('.')
+        && !host.ends_with('.')
+}
+
+/// Encode "`name` may follow a redirect to these hosts" as an internal header.
+pub fn forward_rule_header(
+    name: &HeaderName,
+    hosts: &[String],
+) -> Result<(HeaderName, HeaderValue)> {
+    for host in hosts {
+        ensure!(is_valid_forward_host(host), "invalid forward host `{host}`");
     }
+    Ok((
+        HeaderName::from_bytes(format!("{FORWARD_RULE_PREFIX}{}", name.as_str()).as_bytes())?,
+        HeaderValue::from_str(&hosts.join(","))?,
+    ))
+}
+
+/// Which hosts each request header may be forwarded to after a cross-host redirect.
+/// Everything not listed is dropped, so the default is to forward nothing.
+#[derive(Debug, Default)]
+struct ForwardRules(HashMap<HeaderName, Vec<String>>);
+
+impl ForwardRules {
+    fn applies_to(&self, headers: &HeaderMap) -> bool {
+        self.0.keys().any(|name| headers.contains_key(name))
+    }
+
+    /// Cross-origin hop to `next`: drop every credential header that is not allowed to
+    /// reach `next`. A header dropped here stays dropped for the rest of the chain.
+    fn retain_for(&self, headers: &mut HeaderMap, previous: &Url, next: &Url) {
+        let host = next.host_str().unwrap_or_default();
+        // Forwarding is for secrets, so it never steps down to plain HTTP. A chain that
+        // is already plain HTTP, because the user wrote an `http://` URL, stays allowed.
+        let secure = next.scheme() == "https" || previous.scheme() == "http";
+        let dropped = headers
+            .iter()
+            .filter(|(name, value)| is_credential_header(name, value))
+            .filter(|(name, _)| {
+                !(secure
+                    && self
+                        .0
+                        .get(*name)
+                        .is_some_and(|patterns| host_matches_any(patterns, host)))
+            })
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        for name in dropped {
+            headers.remove(name);
+        }
+    }
+}
+
+fn host_matches_any(patterns: &[String], host: &str) -> bool {
+    patterns
+        .iter()
+        .any(|pattern| match pattern.strip_prefix("*.") {
+            Some(suffix) => host
+                .strip_suffix(suffix)
+                .is_some_and(|rest| rest.ends_with('.') && rest.len() > 1),
+            None => pattern.eq_ignore_ascii_case(host),
+        })
+}
+
+/// Separate the real request headers from the internal forwarding rules.
+fn split_forward_rules(headers: &HeaderMap) -> (HeaderMap, ForwardRules) {
+    let mut real = HeaderMap::new();
+    let mut rules = HashMap::new();
+    for (name, value) in headers {
+        if let Some(target) = name.as_str().strip_prefix(FORWARD_RULE_PREFIX) {
+            if let (Ok(target), Ok(value)) =
+                (HeaderName::from_bytes(target.as_bytes()), value.to_str())
+            {
+                rules.insert(
+                    target,
+                    value.split(',').map(str::to_string).collect::<Vec<_>>(),
+                );
+            }
+        } else {
+            real.append(name.clone(), value.clone());
+        }
+    }
+    (real, ForwardRules(rules))
 }
 
 fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {

@@ -245,8 +245,32 @@ A `headers` entry replaces any automatic token mise would otherwise send to the 
 
 Headers are sent to the host in `url` only. If the server redirects to a different host, port,
 or scheme, every `headers` entry is dropped for the rest of the redirect chain, which is what
-GHCR's signed blob URLs need. Headers survive a redirect within the same origin. To send a
-header to the final host, point `url` at it directly.
+GHCR's signed blob URLs need. Headers survive a redirect within the same origin.
+
+### `headers_forward`
+
+Names the extra hosts each header may follow a redirect to. Use it when a server hands off to
+another host that also needs the credential, such as a CDN. A header with no entry is never
+forwarded, so each secret reaches only the hosts you list for it:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://releases.example.com/my-tool-{{ version }}.tar.gz"
+headers = { X-Api-Key = "{{ env.RELEASES_KEY }}", Authorization = "Bearer {{ env.RELEASES_TOKEN }}" }
+headers_forward = { X-Api-Key = ["cdn.example.com", "*.assets.example.com"] }
+```
+
+Here `X-Api-Key` also goes to `cdn.example.com` and any subdomain of `assets.example.com`, while
+`Authorization` stays with `releases.example.com`.
+
+- Each value is a host or a list of hosts: an exact hostname, or `*.` plus a suffix for its
+  subdomains (`*.example.com` matches `a.example.com` but not `example.com`). A bare `*` and
+  ports are not accepted.
+- Forwarding never steps down to plain HTTP. A chain that is already plain HTTP, because `url`
+  is an `http://` URL, may stay that way.
+- A header dropped at one hop is not restored by a later hop, even if that host is listed.
+- Every name must also appear in `headers`, so a typo is an error instead of a silent no-op.
 
 ### `size`
 
