@@ -20,6 +20,15 @@ type EnvResolutionResult = (
     BTreeSet<String>,
 );
 
+/// The config-level `[env]` of a monorepo task's own hierarchy, for a secrets source.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct SourceConfigEnv {
+    pub(crate) values: BTreeMap<String, String>,
+    pub(crate) unset: BTreeSet<String>,
+    /// `_.path` entries of the hierarchy, in the order the directives gave them
+    pub(crate) paths: Vec<PathBuf>,
+}
+
 /// Builds toolset and environment context for task execution
 ///
 /// Handles:
@@ -184,7 +193,7 @@ impl TaskContextBuilder {
         config: &Arc<Config>,
         task: &Task,
         ts: &Toolset,
-    ) -> Result<Option<(BTreeMap<String, String>, BTreeSet<String>)>> {
+    ) -> Result<Option<SourceConfigEnv>> {
         let Some(task_cf) = task.cf.as_ref() else {
             return Ok(None);
         };
@@ -220,7 +229,11 @@ impl TaskContextBuilder {
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
-        Ok(Some((values, results.env_remove.clone())))
+        Ok(Some(SourceConfigEnv {
+            values,
+            unset: results.env_remove.clone(),
+            paths: results.env_paths.clone(),
+        }))
     }
 
     /// Resolve environment variables for a task using its config file context

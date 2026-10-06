@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::{self, display_path};
+use crate::task::task_context_builder::SourceConfigEnv;
 use crate::toolset::Toolset;
 
 mod wire;
@@ -73,7 +74,7 @@ impl FnoxSource {
         config: &Arc<Config>,
         selected: &SelectedSource,
         ts: &Toolset,
-        config_env: Option<(EnvMap, std::collections::BTreeSet<String>)>,
+        config_env: Option<SourceConfigEnv>,
     ) -> Result<Self> {
         let declared_in = &selected.declared_in[0];
         let Some(bin) = find_binary_in(config, ts).await else {
@@ -89,7 +90,7 @@ impl FnoxSource {
             )
         })?;
         let (mut tool_env, mut removals) = ts.env_with_path_and_removals(config).await?;
-        apply_config_env(&mut tool_env, &mut removals, config_env);
+        let extra_paths = apply_config_env(&mut tool_env, &mut removals, config_env);
         Ok(Self {
             id: SourceId {
                 kind: "fnox",
@@ -97,7 +98,7 @@ impl FnoxSource {
                 profile: selected.profile.clone(),
             },
             bin,
-            env: source_env(env::PRISTINE_ENV.clone(), tool_env, &removals),
+            env: source_env(env::PRISTINE_ENV.clone(), tool_env, &removals, &extra_paths),
         })
     }
 
@@ -418,10 +419,15 @@ fn interpret_resolve(
 fn apply_config_env(
     tool_env: &mut EnvMap,
     removals: &mut std::collections::BTreeSet<String>,
-    config_env: Option<(EnvMap, std::collections::BTreeSet<String>)>,
-) {
-    let Some((values, unset)) = config_env else {
-        return;
+    config_env: Option<SourceConfigEnv>,
+) -> Vec<PathBuf> {
+    let Some(SourceConfigEnv {
+        values,
+        unset,
+        paths,
+    }) = config_env
+    else {
+        return vec![];
     };
     for key in &unset {
         tool_env.remove(key);
@@ -431,6 +437,7 @@ fn apply_config_env(
     }
     tool_env.extend(values);
     removals.extend(unset);
+    paths
 }
 
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
@@ -439,6 +446,7 @@ fn source_env(
     mut base: EnvMap,
     overlay: EnvMap,
     removals: &std::collections::BTreeSet<String>,
+    extra_paths: &[PathBuf],
 ) -> EnvMap {
     base.extend(overlay);
     for key in removals {
@@ -447,6 +455,23 @@ fn source_env(
     base.retain(|k, _| !k.starts_with("__MISE_"));
     if let Some(path) = base.get_mut(&*env::PATH_KEY) {
         *path = file::strip_dispatch_dirs_from_path(&file::strip_shims_from_path(path));
+    }
+    // the subproject's own `_.path`, in front, after the shim stripping (it never holds shims)
+    if !extra_paths.is_empty() {
+        let current = base.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        let merged: Vec<PathBuf> = extra_paths
+            .iter()
+            .cloned()
+            .chain(env::split_paths(&current))
+            .filter(|p| seen.insert(p.clone()))
+            .collect();
+        if let Ok(joined) = env::join_paths(merged) {
+            base.insert(
+                env::PATH_KEY.to_string(),
+                joined.to_string_lossy().to_string(),
+            );
+        }
     }
     base
 }
@@ -862,18 +887,36 @@ mod tests {
     fn subproject_env_reaches_the_source_env() {
         let mut tool_env = EnvMap::from([("ROOT".into(), "1".into()), ("GONE".into(), "1".into())]);
         let mut removals = BTreeSet::from(["AWS_PROFILE".to_string()]);
-        let sub = (
-            EnvMap::from([("AWS_PROFILE".into(), "staging".into())]),
-            BTreeSet::from(["GONE".to_string()]),
-        );
-        apply_config_env(&mut tool_env, &mut removals, Some(sub));
-        let out = source_env(EnvMap::new(), tool_env, &removals);
+        let sub = SourceConfigEnv {
+            values: EnvMap::from([("AWS_PROFILE".into(), "staging".into())]),
+            unset: BTreeSet::from(["GONE".to_string()]),
+            paths: vec![PathBuf::from("/sub/bin")],
+        };
+        let paths = apply_config_env(&mut tool_env, &mut removals, Some(sub));
+        let key = env::PATH_KEY.clone();
+        tool_env.insert(key.clone(), "/usr/bin".into());
+        let out = source_env(EnvMap::new(), tool_env, &removals, &paths);
+        let path: Vec<PathBuf> = env::split_paths(&out[&key]).collect();
+        assert_eq!(path, [PathBuf::from("/sub/bin"), PathBuf::from("/usr/bin")]);
         assert_eq!(out.get("AWS_PROFILE").map(String::as_str), Some("staging"));
         assert_eq!(out.get("ROOT").map(String::as_str), Some("1"));
         assert!(!out.contains_key("GONE"));
         let mut untouched = EnvMap::from([("ROOT".into(), "1".into())]);
         apply_config_env(&mut untouched, &mut BTreeSet::new(), None);
         assert_eq!(untouched.len(), 1);
+        // already present: moved to the front once, not duplicated
+        let mut again = EnvMap::from([(env::PATH_KEY.clone(), "/usr/bin:/sub/bin".into())]);
+        if cfg!(windows) {
+            again.insert(env::PATH_KEY.clone(), "/usr/bin;/sub/bin".into());
+        }
+        let out = source_env(
+            again,
+            EnvMap::new(),
+            &BTreeSet::new(),
+            &[PathBuf::from("/sub/bin")],
+        );
+        let path: Vec<PathBuf> = env::split_paths(&out[&env::PATH_KEY.clone()]).collect();
+        assert_eq!(path, [PathBuf::from("/sub/bin"), PathBuf::from("/usr/bin")]);
     }
 
     #[test]
@@ -892,7 +935,7 @@ mod tests {
         ]);
         let overlay = EnvMap::from([("__MISE_ENV_CACHE_KEY".into(), "x".into())]);
         let removals = BTreeSet::from(["DROP".to_string()]);
-        let out = source_env(base, overlay, &removals);
+        let out = source_env(base, overlay, &removals, &[]);
         assert_eq!(out.get("KEEP").map(String::as_str), Some("1"));
         assert!(!out.keys().any(|k| k.starts_with("__MISE_")));
         assert!(!out.contains_key("DROP"));

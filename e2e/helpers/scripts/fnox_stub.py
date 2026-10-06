@@ -42,6 +42,7 @@ def main(argv):
             'cwd': os.getcwd(),
             'stdin_tty': sys.stdin.isatty(),
             'env_keys': sorted(os.environ),
+            'path': os.environ.get('PATH', ''),
             'leaked': sorted(k for k, v in os.environ.items() if 's3cr3t' in v),
         }) + '\n')
     if argv == ['--version']:
