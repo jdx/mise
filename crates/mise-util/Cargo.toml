@@ -84,7 +84,7 @@ rmp-serde = "1"
 same-file = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_yaml = "0.9"
 sevenz-rust2 = "0.23"
 sha1 = "0.11"
@@ -121,6 +121,7 @@ walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
+yaml-edit = "0.3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 

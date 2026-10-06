@@ -364,12 +364,12 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         toml::Value::Table(table) => table,
         _ => bail!("entries.{key:?}: expected a string or table"),
     };
-    if ["block", "line", "template", "comment", "position"]
+    if ["block", "line", "template", "comment", "position", "merge"]
         .iter()
         .any(|k| table.contains_key(*k))
     {
         bail!(
-            "entries.{key:?}: a group holds whole-file entries; declare block and line edits in [dotfiles]"
+            "entries.{key:?}: a group holds whole-file entries; declare block, line, and merge edits in [dotfiles]"
         );
     }
     match table.get("group").map(|g| g.as_str()) {

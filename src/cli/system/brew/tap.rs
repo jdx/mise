@@ -57,6 +57,7 @@ impl SystemBrewTap {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            ..Default::default()
         })?;
         if self.dry_run {
             miseprintln!(
