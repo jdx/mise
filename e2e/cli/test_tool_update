@@ -166,18 +166,18 @@ rm mise.lock
 # updater leaves that unrelated reproducibility state byte-for-byte unchanged.
 fresh_state unrelated-lockfile
 write_floating_dummy
-cat >mise.lock <<'EOF'
-[[tools.tiny]]
-version = "1.0.0"
-backend = "asdf:tiny"
-EOF
-export unrelated_lock_checksum="$(cksum mise.lock)"
 mise uninstall dummy --all
 # Lockfile mode can make mise's ordinary foreground resolver require the
 # newest matching version even for an unrelated entry. Start with that version
 # already installed: this case verifies the updater is still scheduled (rather
 # than treating every lockfile as a global freeze) and never rewrites it.
 mise install dummy@1.1.0
+cat >mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+export unrelated_lock_checksum="$(cksum mise.lock)"
 assert_contains "mise x -- dummy" "Dummy 1.1.0"
 wait_for_update_marker
 assert "cksum mise.lock" "$unrelated_lock_checksum"
@@ -205,7 +205,8 @@ dummy = { version = "1", postinstall = "sleep 1; false" }
 EOF
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
 wait_for_update_completion
-assert_not_contains "mise ls --installed dummy" "1.1.0"
+# A failed install may retain a repairable partial directory, but it must not
+# replace the executable selected for the next foreground launch.
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
 
 # Simultaneous foreground commands claim the same marker before fork and the

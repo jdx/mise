@@ -1275,18 +1275,20 @@ impl Upgrade {
 /// preserves backend/mirror resolution, minimum-release-age handling, atomic
 /// installation, and process-safe deferred pruning.
 pub(crate) async fn run_background_tool_update(
+    config: &Arc<Config>,
     tool: crate::args::ToolArg,
     current: &str,
+    request: &str,
     policy: crate::tool_update::UpdatePolicy,
 ) -> Result<()> {
     // Supply the bounded selector before outdated resolution, rather than
     // resolving a newest-major candidate and filtering it afterwards. The
     // configured request still supplies its normal options and release-age
     // constraints through ToolsetBuilder's runtime-argument option layering.
-    let tool = match policy.candidate_selector(current) {
-        Some(selector) => tool.with_version(&selector),
-        None => tool,
-    };
+    let selector = policy
+        .candidate_selector(current)
+        .unwrap_or_else(|| request.into());
+    let tool = background_update_tool_arg(config, tool, &selector, request)?;
     Upgrade {
         tool: vec![tool],
         bump: false,
@@ -1306,6 +1308,46 @@ pub(crate) async fn run_background_tool_update(
     }
     .run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::Skip, true)
     .await
+}
+
+/// Reapply the source request's install options to the internal CLI argument.
+/// The hidden command uses a bounded selector (`1`, `1.2`, or `latest`), which
+/// need not exactly match the configured request (for example a date-prefixed
+/// release). Passing that selector through as an ordinary CLI argument would
+/// otherwise discard local options such as `postinstall`, dependencies, and
+/// mirrors before `mise upgrade` reaches the installer.
+fn background_update_tool_arg(
+    config: &Arc<Config>,
+    tool: crate::args::ToolArg,
+    selector: &str,
+    configured_selector: &str,
+) -> Result<crate::args::ToolArg> {
+    let configured = ToolsetBuilder::new().build_unresolved(config)?;
+    let options = configured
+        .versions
+        .iter()
+        .find(|(candidate, _)| {
+            candidate.full_without_opts() == tool.ba.full_without_opts()
+                || candidate.short == tool.short
+        })
+        .and_then(|(_, versions)| {
+            versions
+                .requests
+                .iter()
+                .find(|request| request.version() == configured_selector)
+                .or_else(|| (versions.requests.len() == 1).then(|| &versions.requests[0]))
+        })
+        .map(ToolRequest::options)
+        .unwrap_or_default();
+    let request =
+        ToolRequest::new_with_options(tool.ba.clone(), selector, options, ToolSource::Argument)?;
+    Ok(crate::args::ToolArg {
+        short: request.ba().short.clone(),
+        ba: request.ba().clone(),
+        version: Some(selector.to_string()),
+        version_type: selector.parse()?,
+        tvr: Some(request),
+    })
 }
 
 fn current_satisfies_hidden_release(

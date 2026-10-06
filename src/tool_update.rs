@@ -220,6 +220,8 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
             .arg(&tool.short)
             .arg("--current")
             .arg(&tool_version.version)
+            .arg("--request")
+            .arg(tool_version.request.version())
             .arg("--policy")
             .arg(policy.as_str())
             .stdin(Stdio::null())

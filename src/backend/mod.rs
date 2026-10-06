@@ -4187,7 +4187,6 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
-        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
         let finished = match self.finish_install_changes(&ctx, &tv).await {
             Ok(()) => self.verify_install(&ctx, &tv).await,
             Err(err) => Err(err),
@@ -4201,6 +4200,10 @@ pub trait Backend: Debug + Send + Sync {
             }
             return Err(err);
         }
+        // A postinstall hook or verification may fail after the backend has
+        // written its files. Keep the incomplete marker until both succeed so
+        // a subsequent resolution cannot select that partial version.
+        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
         // A refresh of an unlocked request changes what every project that makes the
         // same request selects; say so rather than leave it implied.
         let selection_note = (ctx.force && allocated.as_ref().is_some_and(|a| a.selects.is_some()))

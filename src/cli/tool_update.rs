@@ -18,6 +18,10 @@ pub(crate) struct ToolUpdate {
     #[usage(long, hide = true)]
     current: String,
 
+    /// Configured selector whose install options must accompany the bounded update.
+    #[usage(long, hide = true)]
+    request: String,
+
     /// Boundary selected from trusted global configuration by the foreground process.
     #[usage(long, hide = true)]
     policy: tool_update::UpdatePolicy,
@@ -47,6 +51,13 @@ impl ToolUpdate {
             return Ok(());
         };
 
-        super::upgrade::run_background_tool_update(self.tool, &self.current, self.policy).await
+        super::upgrade::run_background_tool_update(
+            &config,
+            self.tool,
+            &self.current,
+            &self.request,
+            self.policy,
+        )
+        .await
     }
 }
