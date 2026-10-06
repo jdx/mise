@@ -746,6 +746,49 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     }
 }
 
+/// Whether two edit targets are the same file under different names: equal
+/// paths, or existing files with the same identity (a hard link, or a case
+/// variant on a case-insensitive volume). A target that does not exist yet has
+/// no identity, so its case variants only count as the same when an existing
+/// ancestor reached by two case-only-different spellings resolves to one
+/// directory, which proves the volume ignores case. Volumes that keep case
+/// keep `~/App/x.json` and `~/app/x.json` apart.
+fn same_target(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if let Ok(same) = same_file::is_same_file(a, b) {
+        return same;
+    }
+    let (ancestor_a, tail_a) = split_existing(a);
+    let (ancestor_b, tail_b) = split_existing(b);
+    ancestor_a != ancestor_b
+        && ancestor_a.to_string_lossy().to_lowercase()
+            == ancestor_b.to_string_lossy().to_lowercase()
+        && same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false)
+        && tail_a.len() == tail_b.len()
+        && tail_a
+            .iter()
+            .zip(&tail_b)
+            .all(|(x, y)| x.to_string_lossy().to_lowercase() == y.to_string_lossy().to_lowercase())
+}
+
+/// The nearest existing ancestor of `path` (or `path` itself) and the
+/// components below it.
+fn split_existing(path: &Path) -> (PathBuf, Vec<std::ffi::OsString>) {
+    let mut existing = path;
+    let mut tail = vec![];
+    while !existing.exists() {
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+            break;
+        };
+        tail.push(name.to_os_string());
+        existing = parent;
+    }
+    tail.reverse();
+    (existing.to_path_buf(), tail)
+}
+
 /// Two merge entries for one file that set the same key to different values
 /// would each look unapplied after the other ran, so every apply would flip the
 /// value back and forth. Refuse that instead of picking a winner.
@@ -753,12 +796,7 @@ fn merge_conflicts(merged: &[(&EditRequest, Format, String)]) -> Vec<String> {
     let mut problems = vec![];
     for (i, (first, format, first_content)) in merged.iter().enumerate() {
         for (second, second_format, second_content) in &merged[i + 1..] {
-            // a hard link, or a case-variant spelling on a case-insensitive
-            // filesystem even when the file does not exist yet, is the same
-            // file under another name
-            let same_file = file::paths_eq(&first.path, &second.path)
-                || same_file::is_same_file(&first.path, &second.path).unwrap_or(false);
-            if !same_file || format != second_format {
+            if !same_target(&first.path, &second.path) || format != second_format {
                 continue;
             }
             // unparseable sources were already reported by desired_content
@@ -1567,6 +1605,26 @@ mod tests {
         assert!(edit_entry_from_toml("~/a/config.toml/shared", value).is_some());
         let value: toml::Value = toml::from_str("source = \"s.toml\"").unwrap();
         assert!(edit_entry_from_toml("~/a/config.toml", value).is_none());
+    }
+
+    #[test]
+    fn merge_targets_are_the_same_only_when_provably_so() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let (a, b) = (dir.path().join("a.toml"), dir.path().join("b.toml"));
+        file::write(&a, "x = 1\n")?;
+        file::write(&b, "x = 1\n")?;
+        assert!(same_target(&a, &a));
+        assert!(!same_target(&a, &b));
+        // a hard link is the same file
+        let link = dir.path().join("link.toml");
+        std::fs::hard_link(&a, &link)?;
+        assert!(same_target(&a, &link));
+        // missing targets: equal paths are the same, and a case variant in the
+        // file name alone proves nothing about the volume
+        let (missing, variant) = (dir.path().join("m.toml"), dir.path().join("M.toml"));
+        assert!(same_target(&missing, &missing));
+        assert!(!same_target(&missing, &variant));
+        Ok(())
     }
 
     #[test]
