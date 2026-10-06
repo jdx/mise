@@ -1789,6 +1789,7 @@ impl Client {
                             crate::github::TokenSource::GithubOauth,
                         );
                         headers.insert(AUTHORIZATION, value);
+                        forward_rules.attach_to(&mut headers);
                         if let Some(retry_state) = &options.retry_state {
                             *retry_state.lock().unwrap() = RetryState {
                                 headers: headers.clone(),
@@ -1866,6 +1867,7 @@ impl Client {
             {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
+                forward_rules.attach_to(&mut headers);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
                     verb_label, url, status
@@ -2236,6 +2238,16 @@ pub fn forward_rule_header(
 struct ForwardRules(HashMap<HeaderName, Vec<String>>);
 
 impl ForwardRules {
+    /// Re-encode the rules onto `headers`, for a request that is sent again after
+    /// [`split_forward_rules`] took them off.
+    fn attach_to(&self, headers: &mut HeaderMap) {
+        for (name, hosts) in &self.0 {
+            if let Ok((rule_name, rule_value)) = forward_rule_header(name, hosts) {
+                headers.insert(rule_name, rule_value);
+            }
+        }
+    }
+
     fn applies_to(&self, headers: &HeaderMap) -> bool {
         self.0.keys().any(|name| headers.contains_key(name))
     }

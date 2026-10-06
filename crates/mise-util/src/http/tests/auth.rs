@@ -599,6 +599,13 @@ fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
     headers.insert(rule_name, rule_value);
 
     let (mut real, rules) = split_forward_rules(&headers);
+
+    // A retry sends the request again, so the rules must survive a round trip.
+    let mut resent = real.clone();
+    rules.attach_to(&mut resent);
+    let (resent_real, resent_rules) = split_forward_rules(&resent);
+    assert_eq!(resent_real, real);
+    assert_eq!(resent_rules.0, rules.0);
     assert!(
         real.keys()
             .all(|name| !name.as_str().starts_with(FORWARD_RULE_PREFIX))
