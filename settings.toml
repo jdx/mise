@@ -1353,11 +1353,19 @@ type = "Duration"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-On Linux, notifications require `notify-send`. On macOS, allow notifications
-for mise when prompted. Unofficial macOS builds, such as Homebrew, warn when
-connecting a setup repository because notifications are unavailable. Unsupported
-platforms log the conflict only.
-`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
+Notifications announce sync conflicts only: the moment conflicts newly pause
+sharing for the setup. They are not a general alert channel. Other problems,
+such as a watcher that cannot save checkpoints, are reported only by
+`mise doctor` and `mise dot status`.
+
+On Linux, notifications require `notify-send`. On macOS, the first notification
+asks for permission, so mise does not appear in System Settings > Notifications
+until a conflict first occurs. Run `mise dot notify` to send a test
+notification and be prompted now. Unofficial macOS builds, such as Homebrew,
+never show notifications and warn when connecting a setup repository.
+Unsupported platforms log the conflict only.
+`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications;
+`mise doctor` also reports whether notifications can be delivered.
 """
 env = "MISE_HISTORY_NOTIFY"
 type = "Bool"

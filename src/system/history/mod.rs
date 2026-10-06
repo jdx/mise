@@ -16,7 +16,7 @@ pub mod health;
 pub mod journal;
 pub mod manifest;
 pub mod notices;
-pub(crate) mod notify;
+pub mod notify;
 pub(crate) mod recovery;
 pub mod replay;
 pub mod scope;

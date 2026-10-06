@@ -37,12 +37,60 @@ fn cache_logo(path: &std::path::Path) -> eyre::Result<()> {
 
 /// Shows a notification with `title` and `body`, if a notifier is available.
 pub(crate) fn send(title: &str, body: &str) {
-    let Some(command) = notifier(title, body) else {
-        debug!("history: desktop notifier unavailable");
-        return;
+    let command = match notifier(title, body) {
+        Ok(command) => command,
+        Err(err) => {
+            debug!("history: desktop notifier unavailable: {err:#}");
+            return;
+        }
     };
     if let Err(err) = dispatch(command) {
         debug!("history: could not dispatch notification: {err}");
+    }
+}
+
+/// Why notifications can never be delivered by this build on this machine,
+/// or `None` when a notifier exists. It cannot see macOS permission, which
+/// is only learned by asking: see [`send_test`].
+pub fn unavailable_reason() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        (!macos::release_signed()).then(|| "unofficial macOS build such as Homebrew".to_string())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        crate::file::which_spawnable("notify-send")
+            .is_none()
+            .then(|| "`notify-send` not found".to_string())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        Some("not supported on this platform".to_string())
+    }
+}
+
+/// Sends a notification and waits for the notifier, so that a refusal can be
+/// reported. On macOS the first call asks for permission, which can take up
+/// to the helper's 30 second prompt timeout.
+pub fn send_test() -> eyre::Result<()> {
+    let mut command = notifier("mise", "Notifications are working.")?;
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let status = command.status()?;
+    if status.success() {
+        return Ok(());
+    }
+    eyre::bail!("{}", failure_message(status.code()))
+}
+
+fn failure_message(code: Option<i32>) -> String {
+    match code {
+        Some(3) => "notification permission was denied. Allow notifications for mise in System Settings > Notifications".into(),
+        Some(4) => "the notification permission prompt timed out. Run the command again and answer the prompt".into(),
+        Some(code) => format!("the notifier exited with status {code}"),
+        None => "the notifier was terminated by a signal".into(),
     }
 }
 
@@ -107,9 +155,11 @@ fn dispatch(
 }
 
 #[cfg(target_os = "linux")]
-fn notifier(title: &str, body: &str) -> Option<Command> {
-    let bin = crate::file::which_spawnable("notify-send")?;
-    Some(linux_notification(&bin, title, body, logo().as_deref()))
+fn notifier(title: &str, body: &str) -> eyre::Result<Command> {
+    let Some(bin) = crate::file::which_spawnable("notify-send") else {
+        eyre::bail!("`notify-send` not found");
+    };
+    Ok(linux_notification(&bin, title, body, logo().as_deref()))
 }
 
 #[cfg(any(target_os = "linux", all(test, target_os = "macos")))]
@@ -129,15 +179,13 @@ fn linux_notification(
 }
 
 #[cfg(target_os = "macos")]
-fn notifier(title: &str, body: &str) -> Option<Command> {
+fn notifier(title: &str, body: &str) -> eyre::Result<Command> {
     macos::notification(title, body)
-        .map_err(|err| debug!("history: could not prepare notification helper: {err:#}"))
-        .ok()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn notifier(_title: &str, _body: &str) -> Option<Command> {
-    None
+fn notifier(_title: &str, _body: &str) -> eyre::Result<Command> {
+    eyre::bail!("not supported on this platform")
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -152,6 +200,14 @@ mod tests {
         assert_eq!(status.code(), Some(7));
         let missing = tempfile::tempdir().unwrap().path().join("missing-notifier");
         assert!(dispatch(Command::new(missing)).is_err());
+    }
+
+    #[test]
+    fn failure_messages_name_the_permission_exit_codes() {
+        assert!(failure_message(Some(3)).contains("denied"));
+        assert!(failure_message(Some(4)).contains("timed out"));
+        assert!(failure_message(Some(9)).contains("status 9"));
+        assert!(failure_message(None).contains("signal"));
     }
 
     #[test]

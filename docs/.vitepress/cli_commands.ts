@@ -124,6 +124,9 @@ export const commands: { [key: string]: Command } = {
           include: {
             hide: false,
           },
+          notify: {
+            hide: false,
+          },
           origin: {
             hide: false,
             subcommands: {
@@ -576,6 +579,9 @@ export const commands: { [key: string]: Command } = {
         },
       },
       include: {
+        hide: false,
+      },
+      notify: {
         hide: false,
       },
       origin: {

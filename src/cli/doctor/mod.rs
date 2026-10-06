@@ -94,6 +94,8 @@ struct DotfilesDiagnosis {
     sync_failing_for_secs: Option<u64>,
     /// Failed syncs in a row, since the last success.
     sync_failures: u32,
+    /// Whether conflict notifications can reach the user.
+    notifications: String,
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -119,6 +121,20 @@ fn sync_failure_duration(
             .num_seconds()
             .max(0) as u64,
     )
+}
+
+/// Notifications only announce sync conflicts that pause sharing; a watcher
+/// that cannot save is reported by doctor and `mise dot status` instead.
+fn notifications_summary() -> String {
+    if !crate::config::Settings::get().history.notify {
+        return "disabled (history.notify = false)".to_string();
+    }
+    match crate::system::history::notify::unavailable_reason() {
+        Some(reason) => format!(
+            "unavailable ({reason}); sync conflicts are only shown by `mise dot status` and `mise doctor`"
+        ),
+        None => "sync conflicts are announced; verify with `mise dot notify`".to_string(),
+    }
 }
 
 enum SystemLoginShellDiagnosis {
@@ -768,6 +784,7 @@ impl Doctor {
             sync_error: None,
             sync_failing_for_secs: None,
             sync_failures: 0,
+            notifications: notifications_summary(),
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -948,6 +965,7 @@ impl Doctor {
                 None => {}
             }
         }
+        lines.push(format!("notifications: {}", diagnosis.notifications));
         info::section("dotfiles", lines.join("\n"))?;
         Ok(())
     }
