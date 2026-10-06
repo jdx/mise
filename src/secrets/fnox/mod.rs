@@ -23,7 +23,6 @@ use crate::toolset::Toolset;
 mod wire;
 
 /// Message text only: never compare versions (versions are not necessarily semver).
-// TODO: confirm once the fnox release containing jdx/fnox#936 is cut
 pub(crate) const FNOX_ENV_MIN_VERSION: &str = "1.39.0";
 
 const NOT_FOUND_PREFIX: &str = "mise secrets: fnox not found";
