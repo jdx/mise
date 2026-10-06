@@ -28,3 +28,20 @@ echo "=== pruning leaves the excluded installation on disk ==="
 assert "mise prune --yes"
 assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert_fail "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
+
+echo "=== mise upgrade --prune keeps the old version of an excluded tool ==="
+mise uninstall dummy --all
+cat >mise.toml <<'EOT'
+[tools]
+dummy = "1"
+EOT
+assert "mise install dummy@1.0.0"
+assert_contains "mise up dummy -n --prune" "Would uninstall dummy@1.0.0"
+export MISE_PRUNE_EXCLUDE=dummy
+assert_not_contains "mise up dummy -n --prune" "Would uninstall"
+assert_not_contains "mise up dummy -n" "Would schedule"
+assert_contains "mise up dummy -n --prune" "Would install dummy@1.1.0"
+assert "mise upgrade dummy --prune"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.1.0"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"

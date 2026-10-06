@@ -1117,15 +1117,7 @@ pub async fn prunable_tools_with_sources(
     }
 
     // Tools the user excluded from pruning are never candidates.
-    let excluded = Settings::get()
-        .prune
-        .exclude
-        .iter()
-        .map(|name| BackendArg::from(name.as_str()))
-        .collect::<Vec<_>>();
-    if !excluded.is_empty() {
-        to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(&excluded, tv.ba()));
-    }
+    to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
 
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
@@ -1174,12 +1166,17 @@ async fn is_version_satisfied(
     }
 }
 
-/// Whether `ba` is one of the tools named in `prune.exclude`. A short name and
-/// its full backend name are the same tool.
-fn is_excluded_from_pruning(excluded: &[BackendArg], ba: &BackendArg) -> bool {
-    excluded
-        .iter()
-        .any(|excluded| excluded == ba || excluded.full() == ba.full())
+/// Whether `ba` is one of the tools named in `prune.exclude`.
+pub fn is_excluded_from_pruning(ba: &BackendArg) -> bool {
+    is_named_in(&Settings::get().prune.exclude, ba)
+}
+
+/// A short name and its full backend name are the same tool.
+fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> bool {
+    names.iter().any(|name| {
+        let named = BackendArg::from(name.as_str());
+        named == *ba || named.full() == ba.full()
+    })
 }
 
 fn collect_needed_versions(
@@ -1231,34 +1228,19 @@ mod tests {
 
     #[test]
     fn test_prune_exclude_matches_short_and_full_names() {
-        let excluded = [
-            BackendArg::from("node"),
-            BackendArg::from("aqua:BurntSushi/ripgrep"),
-        ];
-        assert!(is_excluded_from_pruning(
-            &excluded,
-            &BackendArg::from("node")
-        ));
-        assert!(is_excluded_from_pruning(
-            &excluded,
-            &BackendArg::from("core:node")
-        ));
-        assert!(is_excluded_from_pruning(
-            &excluded,
+        let names = ["node", "aqua:BurntSushi/ripgrep"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(is_named_in(&names, &BackendArg::from("node")));
+        assert!(is_named_in(&names, &BackendArg::from("core:node")));
+        assert!(is_named_in(
+            &names,
             &BackendArg::from("aqua:BurntSushi/ripgrep")
         ));
-        assert!(is_excluded_from_pruning(
-            &excluded,
-            &BackendArg::from("ripgrep")
-        ));
-        assert!(!is_excluded_from_pruning(
-            &excluded,
-            &BackendArg::from("python")
-        ));
-        assert!(!is_excluded_from_pruning(
-            &excluded,
-            &BackendArg::from("aqua:junegunn/fzf")
-        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
+        assert!(!is_named_in(&names, &BackendArg::from("python")));
+        assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
     }
 
     #[tokio::test]
