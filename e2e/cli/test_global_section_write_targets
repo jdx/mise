@@ -86,6 +86,20 @@ EOF
 assert_fail_contains "mise use --global --dry-run dummy@3 tiny@1 2>&1" "use --path to choose one"
 assert_fail_contains "mise use --global --dry-run legacy@2 fresh@1 2>&1" "run separate commands"
 
+# Invalid defaults fail before writing an unreadable config file.
+cat > invalid-relative.toml <<'EOF'
+[settings.write_targets]
+tools = "relative-tools.toml"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+
+mkdir invalid-target-directory
+cat > invalid-directory.toml <<EOF
+[settings.write_targets]
+packages = "$PWD/invalid-target-directory"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-directory.toml mise bootstrap packages use --global --dry-run --no-install pacman:invalid-directory 2>&1" "settings.write_targets.packages must name a config file, not a directory"
+
 # Without a configured default, global writes retain their existing destination.
 mkdir -p no-defaults
 MISE_CONFIG_DIR="$PWD/no-defaults" mise use --global dummy@system
