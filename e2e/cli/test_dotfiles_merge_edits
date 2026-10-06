@@ -171,3 +171,15 @@ cat <<'EOF' >mise.toml
 "~/notes-link.yml/shared" = { source = "shared/notes.yml", merge = true }
 EOF
 assert_succeed "mise dotfiles unapply --yes"
+
+# the same file under another name (a hard link here, a case variant on
+# case-insensitive filesystems) still counts as one target for conflicts
+printf 'model = "x"\n' >~/hl.toml
+ln ~/hl.toml ~/hl-alias.toml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/hl.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/hl-alias.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "set different values for model"
+assert "cat ~/hl.toml" 'model = "x"'

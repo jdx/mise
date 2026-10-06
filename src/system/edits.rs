@@ -753,7 +753,11 @@ fn merge_conflicts(merged: &[(&EditRequest, Format, String)]) -> Vec<String> {
     let mut problems = vec![];
     for (i, (first, format, first_content)) in merged.iter().enumerate() {
         for (second, second_format, second_content) in &merged[i + 1..] {
-            if first.path != second.path || format != second_format {
+            // a hard link or a case-variant spelling on a case-insensitive
+            // filesystem is the same file under another name
+            let same_file = first.path == second.path
+                || same_file::is_same_file(&first.path, &second.path).unwrap_or(false);
+            if !same_file || format != second_format {
                 continue;
             }
             // unparseable sources were already reported by desired_content
