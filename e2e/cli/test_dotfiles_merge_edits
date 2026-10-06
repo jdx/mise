@@ -233,3 +233,21 @@ EOF
 assert_contains "mise dotfiles status 2>&1" "exclude applies to whole-file entries, not merge edits"
 mise dotfiles apply --yes >/dev/null 2>&1
 assert_fail "test -e ~/withx.json"
+
+# one file merged as two formats (a hard link under a .json and a .yml name) is
+# refused whatever the sources hold
+printf '{}\n' >~/fmt.json
+ln ~/fmt.json ~/fmt.yml
+cat <<'EOF' >shared/model.json
+{"model": "a"}
+EOF
+cat <<'EOF' >shared/model.yml
+model: b
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/fmt.json/a" = { source = "shared/model.json", merge = true }
+"~/fmt.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "as different formats"
+assert "cat ~/fmt.json" "{}"

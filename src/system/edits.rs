@@ -289,6 +289,36 @@ const WHOLE_FILE_KEYS: [&str; 15] = [
     "group",
 ];
 
+/// Check an incoming `merge` declaration the way the edit parser will read it,
+/// so `mise dot pull` refuses one that would later be dropped. Templates are
+/// not rendered.
+pub(crate) fn validate_incoming_merge(
+    path_and_id: &str,
+    value: &toml::Value,
+    config_path: &Path,
+) -> Result<()> {
+    if let Some(table) = value.as_table() {
+        for key in WHOLE_FILE_KEYS {
+            if table.contains_key(key) {
+                bail!(
+                    "dotfile {path_and_id}: {key} applies to whole-file entries, not merge edits"
+                );
+            }
+        }
+    }
+    let entry: EditTomlEntry = value
+        .clone()
+        .try_into()
+        .map_err(|err| eyre::eyre!("dotfile {path_and_id}: invalid merge entry: {err}"))?;
+    let Some((path_raw, id)) = split_edit_key(path_and_id) else {
+        bail!("dotfile {path_and_id}: edit entries must end with an id path segment");
+    };
+    let base = config_path.parent().unwrap_or(Path::new("."));
+    resolve_entry(&path_raw, id, entry, base, config_path)
+        .map(|_| ())
+        .map_err(|err| eyre::eyre!("dotfile {path_and_id}: {err}"))
+}
+
 fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTomlEntry> {
     match &value {
         toml::Value::Table(table) if table.contains_key("merge") => {
@@ -838,8 +868,18 @@ fn merge_conflict(
     (first, format, first_content): &(&EditRequest, Format, String),
     (second, second_format, second_content): &(&EditRequest, Format, String),
 ) -> Option<String> {
-    if !same_target(&first.path, &second.path) || format != second_format {
+    if !same_target(&first.path, &second.path) {
         return None;
+    }
+    // one file read as two formats (hard links under a .json and a .yml name)
+    // cannot be merged consistently, whatever the sources hold
+    if format != second_format {
+        return Some(format!(
+            "  \"{}\": {} and {} merge into one file as different formats",
+            first.path_raw,
+            first.describe_op(),
+            second.describe_op(),
+        ));
     }
     // unparseable sources were already reported by desired_content
     let keys = structured_merge::conflicts(*format, first_content, second_content).ok()?;
@@ -1677,6 +1717,42 @@ mod tests {
             ),
         ] {
             let err = resolve(path, entry).unwrap_err().to_string();
+            assert!(err.contains(reason), "{entry}: {err}");
+        }
+    }
+
+    #[test]
+    fn incoming_merge_entries_are_checked_like_the_edit_parser_reads_them() {
+        let check = |key: &str, entry: &str| {
+            let value: toml::Value = toml::from_str(entry).unwrap();
+            validate_incoming_merge(key, &value, Path::new("/cfg/mise.toml"))
+        };
+        assert!(
+            check(
+                "~/a/settings.json/shared",
+                "source = \"s.json\"\nmerge = true"
+            )
+            .is_ok()
+        );
+        for (key, entry, reason) in [
+            (
+                "~/a/settings.json/shared",
+                "source = \"s\"\nmerge = true\nexclude = []",
+                "exclude applies to whole-file",
+            ),
+            (
+                "~/a/notes.txt/shared",
+                "source = \"s\"\nmerge = true",
+                ".json, .toml",
+            ),
+            ("~/a/settings.json/shared", "merge = true", "needs a source"),
+            (
+                "~/a/settings.json/shared",
+                "source = \"s\"\nmerge = false",
+                "must be true",
+            ),
+        ] {
+            let err = check(key, entry).unwrap_err().to_string();
             assert!(err.contains(reason), "{entry}: {err}");
         }
     }

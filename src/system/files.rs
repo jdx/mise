@@ -968,6 +968,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             );
                         }
                     }
+                    if table.contains_key("merge") {
+                        crate::system::edits::validate_incoming_merge(&target, &value, path)?;
+                    }
                     continue;
                 }
                 bail!("invalid dotfile declaration {target} in {}", path.display());
@@ -7814,6 +7817,26 @@ source = "oldrc""#,
             Arc::new(MiseToml::for_history_preflight(body, &path)?),
         );
         validate_incoming_files(&configs)
+    }
+
+    #[test]
+    fn incoming_merge_entries_are_validated_as_edits() -> Result<()> {
+        incoming(
+            "[dotfiles]\n\"~/a/settings.json/shared\" = { source = \"s.json\", merge = true }\n",
+        )?;
+        for entry in [
+            r#"{ source = "s.json", merge = true, exclude = [] }"#,
+            r#"{ source = "s.json", merge = true, mode = "copy" }"#,
+            r#"{ merge = true }"#,
+        ] {
+            let body = format!("[dotfiles]\n\"~/a/settings.json/shared\" = {entry}\n");
+            assert!(incoming(&body).is_err(), "{entry}");
+        }
+        assert!(
+            incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
+                .is_err()
+        );
+        Ok(())
     }
 
     #[test]
