@@ -1232,10 +1232,10 @@ impl Doctor {
             };
             // The install state records one backend per tool, so versions installed
             // on either side of a cutover cannot all match it. Only warn when none do.
-            // A plugin transferred from `mise-plugins/*` to `jdx/*` is the same backend.
+            // Only a change of backend kind counts; a repo or org rename within one does not.
             if recommended.iter().any(|full| {
                 let stripped = full.split('[').next().unwrap_or(full);
-                crate::args::same_backend_after_org_move(stripped, stored_stripped)
+                crate::args::same_backend_kind(stripped, stored_stripped)
             }) {
                 continue;
             }
