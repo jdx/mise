@@ -60,8 +60,8 @@ struct Snapshot {
     files: Vec<(String, String)>,
     /// The rendered requests of the config's templated tools.
     tools: Vec<Recorded>,
-    /// Tools whose requests are not stored because their options may carry a
-    /// secret; prune keeps every installation of these instead.
+    /// Tools whose requests are not stored because they carry backend options or an
+    /// `install_env`; prune keeps every installation of these instead.
     #[serde(default)]
     opaque: Vec<String>,
 }
@@ -205,27 +205,12 @@ pub(crate) fn observe(
     }
 }
 
-/// Whether `options` may carry a secret: an `install_env`, a credential in a URL,
-/// or an option named like one. Such a request is not written to the catalog.
-fn may_hold_secrets(options: &ToolVersionOptions) -> bool {
-    fn value_may(value: &toml::Value) -> bool {
-        match value {
-            toml::Value::String(s) => s.parse::<url::Url>().is_ok_and(|url| {
-                !url.username().is_empty() || url.password().is_some() || url.query().is_some()
-            }),
-            toml::Value::Array(items) => items.iter().any(value_may),
-            toml::Value::Table(table) => table.values().any(value_may),
-            _ => false,
-        }
-    }
-    !options.core.install_env.is_empty()
-        || options.opts.values.iter().any(|(key, value)| {
-            let key = key.to_lowercase();
-            ["token", "password", "secret", "credential"]
-                .iter()
-                .any(|word| key.contains(word))
-                || value_may(value)
-        })
+/// Whether a request carries options that are not stored. Any backend option, and
+/// an `install_env`, can hold a credential under a name or in a shape no list of
+/// names would catch (a nested table, a header, a key), so none are written to the
+/// catalog; prune keeps every installation of such a tool instead.
+fn has_unstored_options(options: &ToolVersionOptions) -> bool {
+    !options.opts.values.is_empty() || !options.core.install_env.is_empty()
 }
 
 fn observe_config(
@@ -263,7 +248,7 @@ fn observe_config(
             for request in tvl.requests.iter().filter(from_config) {
                 seen = true;
                 let options = request.options();
-                if may_hold_secrets(&options) {
+                if has_unstored_options(&options) {
                     if !opaque.contains(backend) {
                         opaque.push(backend.clone());
                     }

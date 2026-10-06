@@ -388,9 +388,9 @@ Both work on one installation directory at a time.
   noticed at the next such command, not before. A template in a tool's options
   makes the tool templated too. A snapshot stores the requested version and the
   version the command settled on, so project aliases are followed, and it is
-  written with owner-only permissions. A tool whose options may hold a secret (an
-  `install_env`, a credential in a URL, an option named like a token) is not
-  stored, and prune keeps every installation of it instead. To keep a version that
+  written with owner-only permissions. A tool with backend options or an
+  `install_env`, which can hold a credential under any name, is not stored, and
+  prune keeps every installation of it instead. To keep a version that
   a snapshot no longer lists, reference it in a tracked config or lockfile. Without the new
   layout, `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
