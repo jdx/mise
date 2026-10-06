@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mkdir project elsewhere
+echo '[tools]
+dummy = "1.0.0"' >project/mise.toml
+assert "mise -C project install"
+assert "mise install dummy@2.0.0"
+
+# Task-only vars may require an environment unavailable to the prune caller.
+cat >>project/mise.toml <<'EOF'
+[vars]
+unused = "{{env.PRUNE_MISSING_VARIABLE}}"
+EOF
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"2.0.0\"]' prunable.json"
+assert_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@2.0.0"

@@ -1384,15 +1384,97 @@ impl Config {
     }
 
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
-        config_file::with_global_ignored_config_paths(self.load_tracked_config_files()).await
+        config_file::with_global_ignored_config_paths(Self::load_trusted_config_files(
+            Tracker::list_all()?,
+        ))
+        .await
     }
 
-    async fn load_tracked_config_files(&self) -> Result<ConfigMap> {
+    pub(crate) async fn tracked_config_hierarchy(
+        &self,
+        cf: &Arc<dyn ConfigFile>,
+    ) -> Result<ConfigMap> {
+        config_file::with_global_ignored_config_paths(async {
+            let (paths, _) = load_config_hierarchy_from_dir(&cf.config_root()).await?;
+            let mut files = Self::load_trusted_config_files(paths).await?;
+            // Include a tracked environment-specific file even when inactive.
+            if !files.contains_key(cf.get_path()) {
+                files.shift_insert(0, cf.get_path().to_path_buf(), cf.clone());
+            }
+            Ok(files)
+        })
+        .await
+    }
+
+    pub(crate) async fn resolve_config_template_context(
+        self: &Arc<Self>,
+        files: &ConfigMap,
+    ) -> Result<tera::Context> {
+        let mut context = BASE_CONTEXT.clone();
+        let results = resolve_vars_with_context(self, files, context.clone()).await?;
+        let vars: IndexMap<_, _> = results
+            .vars
+            .iter()
+            .map(|(key, (value, _))| (key.clone(), value.clone()))
+            .collect();
+        self.add_redactions_excluding(
+            results.redactions.iter().cloned(),
+            &vars.clone().into_iter().collect(),
+            &results.redaction_exclusions,
+        );
+        context.insert("vars", &vars);
+        if !Settings::no_env() && !Settings::get().no_env.unwrap_or(false) {
+            let entries = files
+                .iter()
+                .rev()
+                .map(|(source, cf)| {
+                    cf.env_entries()
+                        .map(|entries| entries.into_iter().map(|entry| (entry, source.clone())))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
+            let results = EnvResults::resolve(
+                self,
+                context.clone(),
+                &env::PRISTINE_ENV,
+                entries,
+                EnvResolveOptions {
+                    vars: false,
+                    tools: ToolsFilter::NonToolsOnly,
+                    warn_on_missing_required: false,
+                },
+            )
+            .await?;
+            let mut env = env::PRISTINE_ENV.clone();
+            for key in &results.env_remove {
+                env.remove(key);
+            }
+            env.extend(
+                results
+                    .env
+                    .iter()
+                    .map(|(key, (value, _))| (key.clone(), value.clone())),
+            );
+            self.add_redactions_excluding(
+                results.redactions.iter().cloned(),
+                &env,
+                &results.redaction_exclusions,
+            );
+            context.insert("env", &env);
+        }
+        Ok(context)
+    }
+
+    async fn load_trusted_config_files(
+        paths: impl IntoIterator<Item = PathBuf>,
+    ) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         let mut idiomatic_settings_by_root =
             BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();
         let require_trust_before_detection = Settings::get().paranoid && !Settings::safe_mode();
-        for path in Tracker::list_all()?.into_iter() {
+        for path in paths {
             if config_path_is_ignored(&path, false) {
                 debug!("skipping ignored tracked config: {}", display_path(&path));
                 continue;
@@ -3815,6 +3897,14 @@ pub(crate) async fn resolve_vars_from_config_files(
     config: &Arc<Config>,
     config_files: &ConfigMap,
 ) -> Result<EnvResults> {
+    resolve_vars_with_context(config, config_files, config.tera_ctx.clone()).await
+}
+
+async fn resolve_vars_with_context(
+    config: &Arc<Config>,
+    config_files: &ConfigMap,
+    context: tera::Context,
+) -> Result<EnvResults> {
     let entries = config_files
         .iter()
         .rev()
@@ -3829,7 +3919,7 @@ pub(crate) async fn resolve_vars_from_config_files(
 
     EnvResults::resolve(
         config,
-        config.tera_ctx.clone(),
+        context,
         &env::PRISTINE_ENV,
         entries,
         EnvResolveOptions {

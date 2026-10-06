@@ -1651,10 +1651,21 @@ impl ConfigFile for MiseToml {
         ToolSource::MiseToml(self.path.clone())
     }
 
+    fn has_tool_templates(&self) -> bool {
+        self.tools.lock().unwrap().values().any(|tools| {
+            tools.0.iter().any(|tool| {
+                contains_template_syntax(&tool.request)
+                    || tool.options.as_ref().is_some_and(|options| {
+                        options.opts.values().any(toml_value_has_template)
+                            || options.core.install_env.values().any(|value| {
+                                matches!(value, EnvValue::String(s) if contains_template_syntax(s))
+                            })
+                    })
+            })
+        })
+    }
+
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
-        let source = ToolSource::MiseToml(self.path.clone());
-        let mut trs = ToolRequestSet::new();
-        let tools = self.tools.lock().unwrap();
         let mut context = self.context.clone();
         if let Some(config) = Config::maybe_get()
             && let Some(env_results) = config.env_results_cached()
@@ -1680,6 +1691,19 @@ impl ConfigFile for MiseToml {
             context.insert("env", &env_vars);
         }
         Self::insert_resolved_vars(&mut context);
+        self.to_tool_request_set_with_context(&context)
+    }
+
+    fn to_tool_request_set_with_context(
+        &self,
+        context: &TeraContext,
+    ) -> eyre::Result<ToolRequestSet> {
+        let source = ToolSource::MiseToml(self.path.clone());
+        let mut trs = ToolRequestSet::new();
+        let tools = self.tools.lock().unwrap();
+        let mut scoped_context = self.context.clone();
+        scoped_context.extend(context.clone());
+        let context = scoped_context;
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.request)?;
