@@ -238,28 +238,19 @@ impl<'a> HttpOptions<'a> {
     /// (`{{ env.TOKEN }}`). Values are marked sensitive so they stay out of debug output.
     /// `version` is `None` where no concrete version exists, such as `version_list_url`.
     fn headers(&self, version: Option<&str>) -> Result<HeaderMap> {
-        let mut headers = HeaderMap::new();
-        let Some(value) = lookup_value_with_fallback(self.raw(), "headers") else {
-            return Ok(headers);
-        };
-        let Some(table) = value.as_table() else {
-            bail!("`headers` must be a table of header names to values");
-        };
-        for (name, value) in table {
-            let Some(value) = value.as_str() else {
-                bail!("header `{name}` must be a string");
-            };
-            let rendered = template_string_strict(value, version)
-                .wrap_err_with(|| format!("failed to render header `{name}`"))?;
-            let header_name = HeaderName::from_bytes(name.as_bytes())
-                .wrap_err_with(|| format!("invalid header name `{name}`"))?;
-            // The error from `from_str` never echoes the value, which is a credential.
-            let mut header_value = HeaderValue::from_str(rendered.trim())
-                .map_err(|_| eyre::eyre!("header `{name}` has an invalid value"))?;
-            header_value.set_sensitive(true);
-            headers.insert(header_name, header_value);
-        }
-        Ok(headers)
+        header_map(lookup_value_with_fallback(self.raw(), "headers"), version)
+    }
+
+    /// [`Self::headers`] resolved for another platform, for `mise lock`.
+    fn headers_for_target(
+        &self,
+        version: Option<&str>,
+        target: &PlatformTarget,
+    ) -> Result<HeaderMap> {
+        header_map(
+            self.values.platform_value_for_target("headers", target),
+            version,
+        )
     }
 
     fn version_list_url(&self) -> Option<&'a str> {
@@ -281,6 +272,31 @@ impl<'a> HttpOptions<'a> {
     fn url_platforms(&self) -> Vec<String> {
         self.values.available_platforms_with_key("url")
     }
+}
+
+fn header_map(value: Option<&toml::Value>, version: Option<&str>) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    let Some(value) = value else {
+        return Ok(headers);
+    };
+    let Some(table) = value.as_table() else {
+        bail!("`headers` must be a table of header names to values");
+    };
+    for (name, value) in table {
+        let Some(value) = value.as_str() else {
+            bail!("header `{name}` must be a string");
+        };
+        let rendered = template_string_strict(value, version)
+            .wrap_err_with(|| format!("failed to render header `{name}`"))?;
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .wrap_err_with(|| format!("invalid header name `{name}`"))?;
+        // The error from `from_str` never echoes the value, which is a credential.
+        let mut header_value = HeaderValue::from_str(rendered.trim())
+            .map_err(|_| eyre::eyre!("header `{name}` has an invalid value"))?;
+        header_value.set_sensitive(true);
+        headers.insert(header_name, header_value);
+    }
+    Ok(headers)
 }
 
 impl HttpBackend {
@@ -1012,7 +1028,7 @@ impl HttpBackend {
         let checksum_url_template = opts.checksum_url_for_target(target)?;
         let checksum_url = template_string_for_target(&checksum_url_template, tv, target);
         let filename = get_filename_from_url(url);
-        let headers = match opts.headers(Some(tv.version.as_str())) {
+        let headers = match opts.headers_for_target(Some(tv.version.as_str()), target) {
             Ok(headers) => headers,
             Err(e) => {
                 debug!("failed to build headers for {checksum_url}: {e}");
@@ -1145,6 +1161,7 @@ impl Backend for HttpBackend {
             "version_regex",
             "version_json_path",
             "version_expr",
+            "headers",
         ]
     }
 

@@ -509,10 +509,13 @@ fn update_download_hash(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(value);
 }
 
-fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
+fn header_digest(headers: &HeaderMap) -> String {
     let mut hasher = blake3::Hasher::new();
-    update_download_hash(&mut hasher, url.as_str().as_bytes());
+    hash_headers(&mut hasher, headers);
+    hasher.finalize().to_hex().to_string()
+}
 
+fn hash_headers(hasher: &mut blake3::Hasher, headers: &HeaderMap) {
     let mut header_values = headers
         .keys()
         .flat_map(|name| {
@@ -524,9 +527,16 @@ fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
         .collect::<Vec<_>>();
     header_values.sort_unstable();
     for (name, value) in header_values {
-        update_download_hash(&mut hasher, name);
-        update_download_hash(&mut hasher, value);
+        update_download_hash(hasher, name);
+        update_download_hash(hasher, value);
     }
+}
+
+fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
+    let mut hasher = blake3::Hasher::new();
+    update_download_hash(&mut hasher, url.as_str().as_bytes());
+
+    hash_headers(&mut hasher, headers);
 
     if let Some(replacements) = &Settings::get().url_replacements {
         for (pattern, replacement) in replacements {
@@ -934,7 +944,14 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<String> {
         let url = url.into_url()?;
-        let key = url.to_string();
+        // Responses can depend on the credentials (a token may select a repository), so
+        // they are part of the key, as a digest so the values are never kept in memory
+        // as plain text.
+        let key = if headers.is_empty() {
+            url.to_string()
+        } else {
+            format!("{url}\n{}", header_digest(headers))
+        };
 
         // Get or create the OnceCell for this URL
         let cell = {

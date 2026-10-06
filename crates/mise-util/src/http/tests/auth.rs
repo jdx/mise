@@ -523,3 +523,27 @@ fn unscoped_credential_detection_ignores_headers_reqwest_already_strips() {
     assert!(!headers.contains_key("x-api-key"));
     assert_eq!(headers["x-request-id"], "keep-me");
 }
+
+#[test]
+fn user_headers_replace_host_auth_headers_instead_of_appending() {
+    // `TextRequest::send` starts from the host's automatic token and extends it with
+    // the caller's headers; the caller's `Authorization` must be the only one sent.
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer automatic"));
+    let mut user = HeaderMap::new();
+    user.insert(AUTHORIZATION, HeaderValue::from_static("Bearer configured"));
+    headers.extend(user);
+    let values = headers.get_all(AUTHORIZATION).iter().collect::<Vec<_>>();
+    assert_eq!(values, ["Bearer configured"]);
+}
+
+#[test]
+fn header_digest_depends_on_values_without_exposing_them() {
+    let mut a = HeaderMap::new();
+    a.insert(AUTHORIZATION, HeaderValue::from_static("Bearer one"));
+    let mut b = HeaderMap::new();
+    b.insert(AUTHORIZATION, HeaderValue::from_static("Bearer two"));
+    assert_ne!(header_digest(&a), header_digest(&b));
+    assert_eq!(header_digest(&a), header_digest(&a.clone()));
+    assert!(!header_digest(&a).contains("one"));
+}

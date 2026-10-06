@@ -85,6 +85,16 @@ headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
 EOT
 assert_contains "mise ls-remote http:headers-list" "2.0.0"
 
+# A cached version list is not reused for other credentials.
+cat >mise.toml <<EOT
+[tools."http:headers-list"]
+version = "latest"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions.txt"
+headers = { Authorization = "Bearer wrong" }
+EOT
+assert_fail "mise ls-remote http:headers-list" "401"
+
 # An unset variable fails the install instead of sending the literal template.
 cat >mise.toml <<EOT
 [tools."http:headers-missing"]
