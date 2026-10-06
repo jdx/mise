@@ -945,6 +945,24 @@ to select which files the directory saves.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="The glob as written by `mise dot exclude`"
         }
+        cmd notify help="Send a test desktop notification" effect=write {
+            long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            example "mise dot notify"
+        }
         cmd origin help="Connect or disconnect the setup repository" effect=destructive {
             long_help #"""
 Connect or disconnect the setup repository
@@ -2735,6 +2753,24 @@ to select which files the directory saves.
 """#
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <GLOB> help="The glob as written by `mise dot exclude`"
+    }
+    cmd notify help="Send a test desktop notification" effect=write {
+        long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise dot notify"
     }
     cmd origin help="Connect or disconnect the setup repository" effect=destructive {
         long_help #"""

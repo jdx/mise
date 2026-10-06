@@ -94,6 +94,8 @@ struct DotfilesDiagnosis {
     sync_failing_for_secs: Option<u64>,
     /// Failed syncs in a row, since the last success.
     sync_failures: u32,
+    /// Whether conflict notifications can reach the user.
+    notifications: String,
 }
 
 /// How long syncs have been failing: since the current run of failures
@@ -768,6 +770,7 @@ impl Doctor {
             sync_error: None,
             sync_failing_for_secs: None,
             sync_failures: 0,
+            notifications: crate::system::history::notify::summary(),
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
@@ -948,6 +951,7 @@ impl Doctor {
                 None => {}
             }
         }
+        lines.push(format!("notifications: {}", diagnosis.notifications));
         info::section("dotfiles", lines.join("\n"))?;
         Ok(())
     }
