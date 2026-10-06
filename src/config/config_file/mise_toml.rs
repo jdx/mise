@@ -1792,12 +1792,18 @@ impl ConfigFile for MiseToml {
         self.build_tool_request_set(true)
     }
 
-    fn has_templated_tool_versions(&self) -> bool {
-        self.tools.lock().unwrap().values().any(|tvp| {
-            tvp.0
-                .iter()
-                .any(|tool| contains_template_syntax(&tool.request))
-        })
+    fn templated_tool_backends(&self) -> Vec<String> {
+        self.tools
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, tvp)| {
+                tvp.0
+                    .iter()
+                    .any(|tool| contains_template_syntax(&tool.request))
+            })
+            .map(|(ba, _)| ba.short.to_string())
+            .collect()
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {

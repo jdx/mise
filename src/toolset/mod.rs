@@ -190,6 +190,13 @@ impl Toolset {
         )
         .await?;
         self.versions = tvls.into_iter().collect();
+        if crate::install_layout::resolver::enabled() {
+            for tvl in self.versions.values() {
+                for tv in &tvl.versions {
+                    crate::install_layout::claims::note_use(config, tv);
+                }
+            }
+        }
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
         }
@@ -1014,9 +1021,11 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let mut requests = if crate::install_layout::resolver::enabled()
             && cf.has_templated_tool_versions()
         {
-            let Some(recorded) = crate::install_layout::claims::needed_by(&path) else {
+            let Some(recorded) =
+                crate::install_layout::claims::needed_by(&path, &cf.templated_tool_backends())
+            else {
                 bail!(
-                    "cannot tell which tool versions {} needs: they are templates, and no installation has been recorded for this config; run `mise install` in {} to record them",
+                    "cannot tell which tool versions {} needs: they are templates, and no installation has been recorded for some of them; run `mise install` in {} to record them",
                     display_path(&path),
                     display_path(cf.config_root())
                 );

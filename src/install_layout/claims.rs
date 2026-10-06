@@ -9,10 +9,12 @@
 //! prune protects what is recorded.
 //!
 //! Recording a tool replaces that tool's entries made under an older
-//! configuration, so an edit does not protect old versions forever. Other tools
-//! keep their entries until they are recorded again, so between an edit and the
-//! next use a record can only keep too much, never too little: a version that is
-//! installed is recorded as it is installed.
+//! configuration of the same `MISE_ENV`, so an edit does not protect old
+//! versions forever. Other tools, and other environments, keep their entries
+//! until they are recorded again, so a record only ever keeps too much: a
+//! version that is installed or resolved for a config is recorded as it is.
+//! Prune refuses a config with a templated tool that has no entry, and a record
+//! that fails to write is deleted, so a stale one is never trusted.
 
 use std::path::Path;
 
@@ -38,7 +40,10 @@ struct Claims {
 struct Need {
     /// The tool this installation is for.
     backend: String,
-    /// Fingerprint of the configuration it was rendered under.
+    /// The `MISE_ENV` it was rendered under.
+    #[serde(default)]
+    env: String,
+    /// Fingerprint of the config files it was rendered under.
     fingerprint: String,
     /// The tool name for a legacy path; empty for an identity-layout directory.
     short: String,
@@ -59,8 +64,7 @@ fn path_for(catalog: &Catalog, config: &Path) -> std::path::PathBuf {
         .join(format!("{}.toml", hash::hash_to_str(&canonical(config))))
 }
 
-/// Fingerprint of everything that rendered the config's templates: the loaded
-/// config files and the environments selecting among them.
+/// Fingerprint of the loaded config files that rendered the config's templates.
 fn fingerprint(config: &Config) -> Result<String> {
     let mut text = String::new();
     for (path, cf) in &config.config_files {
@@ -69,7 +73,6 @@ fn fingerprint(config: &Config) -> Result<String> {
         text.push_str(&cf.dump()?);
         text.push('\n');
     }
-    text.push_str(&crate::env::MISE_ENV.join(","));
     Ok(hash::hash_to_str(&text))
 }
 
@@ -77,10 +80,15 @@ fn fingerprint(config: &Config) -> Result<String> {
 /// config renders to. A version that is not a template, or that did not come
 /// from a config, is not recorded: prune renders it without help.
 pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
+    match Config::maybe_get() {
+        Some(config) => record_with(&config, tv, dir),
+        None => Ok(()),
+    }
+}
+
+/// [`record`] for a caller that has the config in hand.
+pub(crate) fn record_with(config: &Config, tv: &ToolVersion, dir: &Path) -> Result<()> {
     let ToolSource::MiseToml(path) = tv.request.source() else {
-        return Ok(());
-    };
-    let Some(config) = Config::maybe_get() else {
         return Ok(());
     };
     if !config
@@ -90,11 +98,31 @@ pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
     {
         return Ok(());
     }
-    let fingerprint = fingerprint(&config)?;
+    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
+    let file = path_for(&catalog, path);
+    let result = write(config, tv, dir, path, &catalog, &file);
+    if result.is_err() {
+        // A record that cannot be brought up to date must not be trusted.
+        let _ = std::fs::remove_file(&file);
+    }
+    result
+}
+
+fn write(
+    config: &Config,
+    tv: &ToolVersion,
+    dir: &Path,
+    path: &Path,
+    catalog: &Catalog,
+    file: &Path,
+) -> Result<()> {
+    let fingerprint = fingerprint(config)?;
+    let env = crate::env::MISE_ENV.join(",");
     let backend = tv.ba().short.to_string();
     let need = match super::resolver::dir_name_of(dir) {
         Some(dir) => Need {
             backend,
+            env,
             fingerprint,
             short: String::new(),
             version: dir,
@@ -102,26 +130,52 @@ pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
         None => Need {
             short: backend.clone(),
             backend,
+            env,
             fingerprint,
             version: tv.tv_pathname(),
         },
     };
-    let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
-    let file = path_for(&catalog, path);
     let _lock = catalog.lock()?;
-    let mut claims = read(&file).unwrap_or_default();
+    let mut claims = read(file).unwrap_or_default();
     if claims.needs.contains(&need) {
         return Ok(());
     }
     // This tool's entries from an older configuration are stale; other tools'
-    // are left until they are recorded themselves.
-    claims
-        .needs
-        .retain(|n| n.backend != need.backend || n.fingerprint == need.fingerprint);
+    // and other environments' are left until they are recorded themselves.
+    claims.needs.retain(|n| {
+        n.backend != need.backend || n.env != need.env || n.fingerprint == need.fingerprint
+    });
     claims.config = canonical(path).to_string_lossy().to_string();
     claims.needs.push(need);
     file::create_dir_all(file.parent().unwrap())?;
-    file::write_atomic(&file, toml::to_string_pretty(&claims)?)
+    file::write_atomic(file, toml::to_string_pretty(&claims)?)
+}
+
+/// Record an installation that a command resolved for a templated version of its
+/// config and found already installed, for commands that only use installs
+/// (`mise exec`, `mise run`, the shell hook) and so never reach an install.
+pub(crate) fn note_use(config: &Config, tv: &ToolVersion) {
+    let ToolSource::MiseToml(path) = tv.request.source() else {
+        return;
+    };
+    if !config
+        .config_files
+        .get(path)
+        .is_some_and(|cf| cf.has_templated_tool_versions())
+    {
+        return;
+    }
+    let mut bare = tv.clone();
+    bare.install_path = None;
+    let Some(located) = super::resolver::locate(&bare) else {
+        return;
+    };
+    if !located.installed {
+        return;
+    }
+    if let Err(err) = record_with(config, tv, &located.dir) {
+        warn!("could not record what {} is used for: {err:#}", tv.style());
+    }
 }
 
 fn read(path: &Path) -> Option<Claims> {
@@ -129,10 +183,16 @@ fn read(path: &Path) -> Option<Claims> {
 }
 
 /// The installations recorded for `config`, in the keys `mise prune` uses, or
-/// `None` when nothing was recorded.
-pub(crate) fn needed_by(config: &Path) -> Option<Vec<(String, String)>> {
+/// `None` when nothing was recorded or a tool in `backends` has no entry.
+pub(crate) fn needed_by(config: &Path, backends: &[String]) -> Option<Vec<(String, String)>> {
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let claims = read(&path_for(&catalog, config))?;
+    if backends
+        .iter()
+        .any(|backend| !claims.needs.iter().any(|need| &need.backend == backend))
+    {
+        return None;
+    }
     Some(
         claims
             .needs

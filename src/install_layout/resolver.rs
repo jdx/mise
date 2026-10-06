@@ -1377,7 +1377,7 @@ pub(crate) fn finish(
         catalog.select(key, &record, None)?;
     }
     if let Err(err) = super::claims::record(tv, &allocated.dir) {
-        debug!(
+        warn!(
             "could not record what {} was installed for: {err:#}",
             tv.style()
         );
@@ -1479,7 +1479,7 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
         reset_cache();
     }
     if let Err(err) = super::claims::record(tv, &located.dir) {
-        debug!("could not record what {} is used for: {err:#}", tv.style());
+        warn!("could not record what {} is used for: {err:#}", tv.style());
     }
     link(tv, &located.dir)
 }

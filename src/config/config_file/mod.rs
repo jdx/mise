@@ -137,9 +137,13 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    /// Whether any tool version is a template (`node = "{{ vars.node }}"`).
+    /// The tools whose version is a template (`node = "{{ vars.node }}"`).
+    fn templated_tool_backends(&self) -> Vec<String> {
+        vec![]
+    }
+    /// Whether any tool version is a template.
     fn has_templated_tool_versions(&self) -> bool {
-        false
+        !self.templated_tool_backends().is_empty()
     }
     /// [`ConfigFile::to_tool_request_set`] without the templated versions, for a
     /// caller that has another source for them.
