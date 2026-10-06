@@ -42,6 +42,10 @@ pub struct TaskContextBuilder {
     toolset_cache: RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
     tool_request_set_cache: RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
     env_resolution_cache: RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
+    /// The config-level `[env]` results of a monorepo hierarchy, run once per hierarchy: the
+    /// task's own env preparation and the secrets source env both consume it, so a
+    /// `_.source`/module script (a credential refresher, say) is not executed twice.
+    hierarchy_env_cache: RwLock<IndexMap<PathBuf, EnvResults>>,
 }
 
 impl Clone for TaskContextBuilder {
@@ -53,6 +57,7 @@ impl Clone for TaskContextBuilder {
                 self.tool_request_set_cache.read().unwrap().clone(),
             ),
             env_resolution_cache: RwLock::new(self.env_resolution_cache.read().unwrap().clone()),
+            hierarchy_env_cache: RwLock::new(self.hierarchy_env_cache.read().unwrap().clone()),
         }
     }
 }
@@ -63,7 +68,37 @@ impl TaskContextBuilder {
             toolset_cache: RwLock::new(IndexMap::new()),
             tool_request_set_cache: RwLock::new(IndexMap::new()),
             env_resolution_cache: RwLock::new(IndexMap::new()),
+            hierarchy_env_cache: RwLock::new(IndexMap::new()),
         }
+    }
+
+    /// `resolve_env_directives` for a monorepo hierarchy's config entries, memoized per
+    /// hierarchy when the task adds no tools of its own (which could change the result).
+    async fn hierarchy_env_results(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        tera_ctx: &tera::Context,
+        env: &BTreeMap<String, String>,
+        entries: Vec<(EnvDirective, PathBuf)>,
+    ) -> Result<EnvResults> {
+        let cacheable = task.tools.is_empty();
+        let key = canonicalize_path(task_cf.get_path());
+        if cacheable && let Some(hit) = self.hierarchy_env_cache.read().unwrap().get(&key) {
+            return Ok(hit.clone());
+        }
+        let results = self
+            .resolve_env_directives(config, tera_ctx, env, entries)
+            .await?;
+        if cacheable {
+            self.hierarchy_env_cache
+                .write()
+                .unwrap()
+                .entry(key)
+                .or_insert_with(|| results.clone());
+        }
+        Ok(results)
     }
 
     /// Build toolset for a task, with caching for monorepo tasks
@@ -242,9 +277,14 @@ impl TaskContextBuilder {
                 env.insert(key.clone(), value.clone());
             }
         }
-        let results = self
-            .resolve_env_directives(config, &tera_ctx, &env, entries)
-            .await?;
+        // the full (script-running) result is shared with the task's own env preparation
+        let results = if skip_scripts {
+            self.resolve_env_directives(config, &tera_ctx, &env, entries)
+                .await?
+        } else {
+            self.hierarchy_env_results(config, task, task_cf, &tera_ctx, &env, entries)
+                .await?
+        };
         let values = results
             .env
             .iter()
@@ -373,14 +413,25 @@ impl TaskContextBuilder {
                 config_resolution_env.insert(key.clone(), value.clone());
             }
         }
-        let config_env_results = self
-            .resolve_env_directives(
+        let config_env_results = if task_config_files.is_some() {
+            self.hierarchy_env_results(
+                config,
+                task,
+                task_cf,
+                &tera_ctx,
+                &config_resolution_env,
+                all_config_env_entries,
+            )
+            .await?
+        } else {
+            self.resolve_env_directives(
                 config,
                 &tera_ctx,
                 &config_resolution_env,
                 all_config_env_entries,
             )
-            .await?;
+            .await?
+        };
         Self::apply_env_results(&mut env, &mut env_remove, &config_env_results);
         mise_keys.extend(config_env_results.env.keys().cloned());
 
