@@ -46,7 +46,7 @@ pub(crate) fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     let sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) = &bundle.content else {
         return None;
     };
-    release_statement_repository(&envelope.decode_payload())
+    release_statement_repository(envelope.payload.as_bytes())
 }
 
 pub(crate) fn certificate_source_repository(cert: &x509_cert::Certificate) -> Option<String> {

@@ -2,7 +2,7 @@ use super::*;
 
 /// Override the Sigstore public-good TUF URL (e.g. a mirror derived from mise's
 /// `settings.url_replacements`). Passing a mirror URL still bootstraps from the
-/// embedded production root ([`PRODUCTION_TUF_ROOT`]), so a mirror cannot forge
+/// embedded production root ([`SigstoreInstance::tuf_root`]), so a mirror cannot forge
 /// the chain of trust — TUF verifies all fetched metadata against that pinned
 /// root. Passing `None` restores the default behavior.
 pub fn set_tuf_url(url: Option<String>) {
@@ -19,9 +19,12 @@ pub(crate) fn select_tuf_config(override_url: Option<String>) -> TufConfig {
     match override_url {
         // SECURITY: pin the embedded production root even when fetching from a
         // mirror. A custom URL has no embedded-root fallback, and the mirror
-        // serves identical TUF content; bootstrapping with PRODUCTION_TUF_ROOT
+        // serves identical TUF content; bootstrapping with the production root
         // means every metadata file is verified against the canonical root.
-        Some(url) => TufConfig::custom(url).with_root(PRODUCTION_TUF_ROOT),
+        Some(url) => TufConfig::custom(
+            url,
+            TufBootstrap::trusted(SigstoreInstance::PublicGood.tuf_root()),
+        ),
         // Equivalent to `TrustedRoot::production()` (which is itself
         // `from_tuf(TufConfig::production())`) — the default path is unchanged.
         None => TufConfig::production(),
