@@ -63,6 +63,19 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
     })
 }
 
+/// The deprecated plugin, by name (`mise-env-fnox = "./plugins/secrets"`) or by the repo name
+/// ending its source (`https://github.com/x/mise-env-fnox.git`). A source that merely contains
+/// the text, such as `mise-env-fnox-fork-tools`, is some other plugin.
+fn is_env_fnox_plugin(name: &str, source: &str) -> bool {
+    const PLUGIN: &str = "mise-env-fnox";
+    let last = source
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\', ':'])
+        .next()
+        .unwrap_or_default();
+    name == PLUGIN || last.strip_suffix(".git").unwrap_or(last) == PLUGIN
+}
+
 /// Used by `mise doctor`. Never spawns fnox, never errors.
 pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
     let mut warnings = vec![];
@@ -87,7 +100,9 @@ pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
     }
     for (path, cf) in config.config_files.iter() {
         if let Ok(plugins) = cf.plugins()
-            && plugins.values().any(|v| v.contains("mise-env-fnox"))
+            && plugins
+                .iter()
+                .any(|(name, src)| is_env_fnox_plugin(name, src))
         {
             warnings.push(format!(
                 "the mise-env-fnox plugin is deprecated (configured in {}); see https://mise.jdx.dev/environments/secrets/fnox.html#migrating",
@@ -96,4 +111,36 @@ pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
         }
     }
     warnings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_env_fnox_plugin;
+
+    #[test]
+    fn env_fnox_plugin_matches_by_name_or_repo() {
+        assert!(is_env_fnox_plugin("mise-env-fnox", "./plugins/secrets"));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox"
+        ));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox.git"
+        ));
+        assert!(is_env_fnox_plugin("x", "git@github.com:jdx/mise-env-fnox/"));
+    }
+
+    #[test]
+    fn env_fnox_plugin_ignores_lookalikes() {
+        assert!(!is_env_fnox_plugin(
+            "other",
+            "https://github.com/a/mise-env-fnox-tools"
+        ));
+        assert!(!is_env_fnox_plugin("other", "./mise-env-fnox/other-plugin"));
+        assert!(!is_env_fnox_plugin(
+            "other",
+            "https://github.com/a/not-mise-env-fnox"
+        ));
+    }
 }
