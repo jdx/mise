@@ -384,7 +384,7 @@ impl SecretBroker {
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
                     config_env = ctx
-                        .config_env_for_source(config, task, &owned)
+                        .config_env_for_source(config, task, &owned, false)
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
                     &owned

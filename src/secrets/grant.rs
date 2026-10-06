@@ -588,7 +588,7 @@ impl EnvView {
             let ts = ctx
                 .build_toolset_for_task(config, task, Some(task_cf), &[])
                 .await?;
-            ctx.config_env_for_source(config, task, &ts).await
+            ctx.config_env_for_source(config, task, &ts, true).await
         };
         match overlay.await {
             Ok(Some(env)) => self.with_config_env(env.values, env.unset),
