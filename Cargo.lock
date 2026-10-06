@@ -7028,9 +7028,9 @@ dependencies = [
 
 [[package]]
 name = "nodejs-semver"
-version = "6.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1358f4e8050406325a3903addb0b1c1289aa9c353e4e0469cef6585b5876152f"
+checksum = "938185814d480ac0eff0ac4676d27deef920cbd2b83df83603a873af5b7c8fc9"
 dependencies = [
  "smallvec",
  "thiserror 2.0.21",
