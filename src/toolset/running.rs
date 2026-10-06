@@ -173,10 +173,12 @@ mod tests {
             .expect("sleep binary")
     }
 
+    /// Copies sleep into `install`. The copy keeps its name because multi-call
+    /// coreutils and busybox pick the program to run from it.
     fn install_with_sleep(install: &Path) -> PathBuf {
         let bin = install.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        let sleep = bin.join("held");
+        let sleep = bin.join("sleep");
         std::fs::copy(system_sleep(), &sleep).unwrap();
         sleep
     }
@@ -199,7 +201,7 @@ mod tests {
 
         let found = processes_running_from(&[install.clone(), idle.clone()]);
         assert_eq!(pids(&found, &install), vec![child.0.id()]);
-        assert_eq!(found[&install][0].name, "held");
+        assert_eq!(found[&install][0].name, "sleep");
         assert!(!found.contains_key(&idle));
 
         child.0.kill().unwrap();
