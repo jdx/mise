@@ -1817,11 +1817,13 @@ impl ConfigFile for MiseToml {
     }
 
     fn tool_backends(&self) -> Vec<String> {
+        // `tiny = []` adds no request, so it does not replace a parent's.
         self.tools
             .lock()
             .unwrap()
-            .keys()
-            .map(|ba| ba.short.to_string())
+            .iter()
+            .filter(|(_, tvp)| !tvp.0.is_empty())
+            .map(|(ba, _)| ba.short.to_string())
             .collect()
     }
 
