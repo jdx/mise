@@ -78,12 +78,14 @@ export function description(file: string): string | undefined {
   const paragraph: string[] = [];
 
   for (const raw of md.split(/\r?\n/)) {
-    const line = raw.trim();
+    // Blockquotes can contain fenced examples as well as summary prose.
+    const content = raw.replace(/^ {0,3}>[\t ]?/, "");
+    const line = content.trim();
 
     // Skip the entire fenced block, including headings and blank lines in it.
     // A closing fence must use the same character and be at least as long.
     if (codeFence) {
-      const closing = raw.match(/^ {0,3}(`{3,}|~{3,})[\t ]*$/)?.[1];
+      const closing = content.match(/^ {0,3}(`{3,}|~{3,})[\t ]*$/)?.[1];
       if (
         closing &&
         closing[0] === codeFence[0] &&
@@ -92,7 +94,7 @@ export function description(file: string): string | undefined {
         codeFence = undefined;
       continue;
     }
-    const opening = raw.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    const opening = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening && !(opening[1][0] === "`" && opening[2].includes("`"))) {
       if (paragraph.length) break;
       codeFence = opening[1];
@@ -109,7 +111,7 @@ export function description(file: string): string | undefined {
       // Skip anything before the first prose block.
       if (
         line === "" ||
-        /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/.test(line) ||
+        /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/.test(raw.trim()) ||
         line.startsWith("#") ||
         line.startsWith(":::") ||
         line.startsWith("<") ||
@@ -126,7 +128,7 @@ export function description(file: string): string | undefined {
     } else if (line === "" || line.startsWith("#") || line.startsWith(":::")) {
       break;
     }
-    paragraph.push(line.replace(/^>\s?/, ""));
+    paragraph.push(line);
   }
 
   // Many lead paragraphs introduce a list or code block, so they end in a colon.

@@ -76,6 +76,35 @@ test("GitHub alert markers are not part of the summary", () => {
   }
 });
 
+test("skips fenced code inside blockquotes before the lead paragraph", () => {
+  for (const fence of ["```", "~~~"]) {
+    for (const prefix of ["> ", "  > ", ">   "]) {
+      assert.equal(
+        summary(
+          `# Guide\n\n${prefix}${fence}sh\n${prefix}mise install\n${prefix}\n${prefix}# Example heading\n${prefix}${fence}\n\nInstall tools for your project.\n`,
+        ),
+        "Install tools for your project.",
+      );
+    }
+  }
+});
+
+test("skips an alert's fenced example before its warning text", () => {
+  assert.equal(
+    summary(
+      "# Guide\n\n> [!WARNING]\n> ```sh\n> mise install\n> ```\n>\n> A useful warning.\n> More detail.\n",
+    ),
+    "A useful warning. More detail.",
+  );
+});
+
+test("a quoted fence ends a blockquote summary", () => {
+  assert.equal(
+    summary("# Guide\n\n> Install tools.\n> ```sh\n> mise install\n> ```\n"),
+    "Install tools.",
+  );
+});
+
 test("keeps prose, code identifiers, and blockquote summaries", () => {
   assert.equal(
     summary(
