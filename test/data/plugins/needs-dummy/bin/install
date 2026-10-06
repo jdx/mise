@@ -5,9 +5,13 @@ set -eu -o pipefail
 # It checks that a completed dummy installation exists on disk,
 # simulating a real runtime dependency (e.g., pipx:ruff needing a custom python).
 #
-# ASDF_INSTALL_PATH is like .../installs/needs-dummy/1.0.0
-# We go up to .../installs/ and check for a completed dummy install.
-INSTALLS_DIR="$(dirname "$(dirname "$ASDF_INSTALL_PATH")")"
+# ASDF_INSTALL_PATH is like .../installs/needs-dummy/1.0.0, or .../installs/needs-dummy-<hash>
+# under the identity install layout. We go up to .../installs/ and check for a completed
+# dummy install.
+INSTALLS_DIR="$(dirname "$ASDF_INSTALL_PATH")"
+if [ "$(basename "$INSTALLS_DIR")" != installs ]; then
+    INSTALLS_DIR="$(dirname "$INSTALLS_DIR")"
+fi
 
 found_dummy=0
 for d in "$INSTALLS_DIR"/dummy/*/bin/dummy; do

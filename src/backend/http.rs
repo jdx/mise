@@ -1105,6 +1105,23 @@ impl Backend for HttpBackend {
         ]
     }
 
+    /// Version discovery, and where a checksum is looked up when `mise lock` has none.
+    /// Neither is consulted to install a concrete version from `url`.
+    ///
+    /// `bin_path` is not listed: it decides where a raw file or an archive lands in the
+    /// install directory, not only which directory goes on PATH. Note that http installs
+    /// keep the legacy layout, so this is not consulted for them today.
+    fn identity_ignored_options(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+            "checksum_url",
+            "checksum_expr",
+        ]
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = HttpOptions::new(&raw_opts);
@@ -1459,6 +1476,56 @@ mod tests {
             assert_ne!(launcher, script);
         }
         assert!(windows_script_launcher(Path::new("tool.js"), "node & echo injected").is_err());
+    }
+
+    #[test]
+    fn identity_options_ignore_listing_and_lock_time_options() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = HttpBackend::from_arg(BackendArg::new_raw(
+            "http-xtool".to_string(),
+            Some("http:xtool".to_string()),
+            "xtool".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let identity = |options: &[(&str, &str)]| {
+            test_identity_options(
+                &backend,
+                "1.0.0",
+                &[
+                    &[("url", "https://example.com/xtool-{{version}}.tar.gz")],
+                    options,
+                ]
+                .concat(),
+            )
+        };
+        let base = identity(&[]);
+        for (key, value) in [
+            ("version_list_url", "https://example.com/versions.json"),
+            ("version_regex", "xtool-([0-9.]+)"),
+            ("version_json_path", "versions"),
+            ("version_expr", "split(body, \"\\n\")"),
+            ("checksum_url", "https://example.com/SHA256SUMS"),
+            ("checksum_expr", "body"),
+        ] {
+            assert_eq!(
+                identity(&[(key, value)]),
+                base,
+                "{key} is not install-affecting"
+            );
+        }
+        for (key, value) in [
+            ("bin_path", "tool/bin"),
+            ("strip_components", "2"),
+            ("rename_exe", "xt"),
+            ("format", "tar.gz"),
+        ] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
     }
 
     fn http_test_tv(version: &str) -> ToolVersion {

@@ -1353,11 +1353,19 @@ type = "Duration"
 default = true
 description = "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync."
 docs = """
-On Linux, notifications require `notify-send`. On macOS, allow notifications
-for mise when prompted. Unofficial macOS builds, such as Homebrew, warn when
-connecting a setup repository because notifications are unavailable. Unsupported
-platforms log the conflict only.
-`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications.
+Notifications announce sync conflicts only: the moment conflicts newly pause
+sharing for the setup. They are not a general alert channel. Other problems,
+such as a watcher that cannot save checkpoints, are reported only by
+`mise doctor` and `mise dot status`.
+
+On Linux, notifications require `notify-send`. On macOS, the first notification
+asks for permission, so mise does not appear in System Settings > Notifications
+until a conflict first occurs. Run `mise dot notify` to send a test
+notification and be prompted now. Unofficial macOS builds, such as Homebrew,
+never show notifications and warn when connecting a setup repository.
+Unsupported platforms log the conflict only.
+`mise bootstrap dotfiles status` and `mise doctor` show the same conflicts without notifications;
+`mise doctor` also reports whether notifications can be delivered.
 """
 env = "MISE_HISTORY_NOTIFY"
 type = "Bool"
@@ -1622,6 +1630,30 @@ hide = true
 optional = true
 type = "String"
 
+[install_layout]
+default_docs = "legacy"
+description = "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`)."
+docs = """
+Set to `identity` to install into `installs/<label>-<hash>/` directories named by the
+installation's identity (backend, version, platform, and install-affecting options), with
+`installs/<tool>/<version>` kept as a link to the installation. Shorthands such as `age` and
+`aqua:FiloSottile/age` then share one install, and variants of one version that differ in an
+install-affecting option coexist. Existing installs stay where they are and keep working.
+
+This is opt-in even with `experimental = true`, which it also requires. See
+[Install layout](/dev-tools/install-layout.html) for what changes and what does not.
+
+```toml
+[settings]
+experimental = true
+install_layout = "identity"
+```
+"""
+enum = ["legacy", "identity"]
+env = "MISE_INSTALL_LAYOUT"
+optional = true
+type = "String"
+
 [java.shorthand_vendor]
 default = "openjdk"
 description = "Shorthand for Java. Used when installing Java without a vendor prefix."
@@ -1805,6 +1837,31 @@ When unset (the default), existing lockfiles are read and written, but new lockf
 """
 env = "MISE_LOCKFILE"
 optional = true
+type = "Bool"
+
+[lockfile_auto_prune]
+default = true
+description = "Remove lockfile tools that are absent from the active configuration."
+docs = """
+By default, a full `mise lock` run removes entries for tools that are not
+declared by the active configuration. This keeps lockfiles in sync with one
+configuration and removes obsolete entries.
+
+Set this to `false` for a shared lockfile where different profiles
+intentionally configure different tools. The setting changes only top-level
+tool retention: configured tools still refresh, and their stale versions,
+option variants, and native dependency graphs are still removed.
+
+```toml
+[settings]
+lockfile_auto_prune = false
+```
+
+This applies to both `lockfile_mode = "merge"` and `lockfile_mode = "generate"`,
+including `mise lock --global`. Filtered commands such as `mise lock node`
+already retain tools outside their explicit filter.
+"""
+env = "MISE_LOCKFILE_AUTO_PRUNE"
 type = "Bool"
 
 [lockfile_mode]
@@ -3959,8 +4016,9 @@ mise-managed interpreter, for example — and the old version is left in place w
 removal.
 
 Versions that another tracked config or tool stub still needs are kept regardless of this setting.
-Once such a version is due, mise checks it again at most once a day, so it can be pruned up to a
-day after the last reference to it goes away.
+So are versions that a running process was started from, even after the grace period
+ends. Once such a version is due, mise checks it again at most once a day, so it can be
+pruned up to a day after the last reference to it goes away or the last process using it exits.
 `mise upgrade --prune` removes the replaced version immediately, and `--no-prune` leaves it in
 place without scheduling removal.
 """

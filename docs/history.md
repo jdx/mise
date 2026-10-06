@@ -379,12 +379,19 @@ point to `mise dot status` for resolution steps. A pause
 produces one notification; further retries during the same pause stay quiet.
 A new pause after recovery can notify again.
 
-On Linux, install `notify-send`. On macOS, allow notifications for mise
-when prompted, or enable them in System Settings → Notifications → mise.
-Unofficial macOS builds, including Homebrew, warn when connecting because
-notifications are unavailable. Use `status` or `doctor` on Windows and
-headless systems. Missing or failing notifications leave history and sync
-running. Set `settings.history.notify = false` to disable notifications.
+Notifications cover sharing conflicts only. They are not a general alert
+channel: a problem such as a watcher that cannot save checkpoints is reported
+only by `mise doctor` and `mise dot status`.
+
+On Linux, install `notify-send`. On macOS, the first notification asks for
+permission, so mise does not appear in System Settings → Notifications until a
+conflict first occurs. Run `mise dot notify` to send a test notification and
+answer the prompt now; it also reports why a notification cannot be shown.
+Unofficial macOS builds, including Homebrew, never show notifications and warn
+when connecting. `mise doctor` reports whether notifications can be delivered.
+Use `status` or `doctor` on Windows and headless systems. Missing or failing
+notifications leave history and sync running. Set
+`settings.history.notify = false` to disable notifications.
 
 ### Repository authentication
 

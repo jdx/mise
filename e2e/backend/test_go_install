@@ -20,6 +20,9 @@ go = "prefix:1.24"
 "go:github.com/jdx/go-example/deep/cmd/tool/v2[tags=postgres]" = "latest"
 [settings]
 experimental = true
+# go-example's untagged deep module resolves to a pseudo-version minted on every
+# commit; the default 24h minimum_release_age would hide a fresh one.
+minimum_release_age = "0s"
 EOF
 
 mise install go

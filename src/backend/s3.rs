@@ -528,6 +528,21 @@ impl Backend for S3Backend {
         ]
     }
 
+    /// How versions are discovered. By the time something is installed the version is
+    /// concrete and the artifact comes from `url`, so none of these change what is installed.
+    ///
+    /// `bin_path` is not listed: it decides where a raw file or an archive lands in the
+    /// install directory, not only which directory goes on PATH.
+    fn identity_ignored_options(&self) -> &'static [&'static str] {
+        &[
+            "version_list_url",
+            "version_regex",
+            "version_json_path",
+            "version_expr",
+            "version_prefix",
+        ]
+    }
+
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let raw_opts = tv.request.options();
         let opts = S3Options::new(&raw_opts);
@@ -732,6 +747,55 @@ mod tests {
 
     fn target(key: &str) -> PlatformTarget {
         PlatformTarget::new(Platform::parse(key).unwrap())
+    }
+
+    #[test]
+    fn test_identity_options_ignore_version_listing_options() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = s3_test_backend();
+        let identity = |options: &[(&str, &str)]| {
+            test_identity_options(
+                &backend,
+                "1.0.0",
+                &[
+                    &[("url", "s3://bucket/tools/xtool-{{version}}.tar.gz")],
+                    options,
+                ]
+                .concat(),
+            )
+        };
+        let base = identity(&[]);
+        assert_eq!(
+            base.get("url").map(String::as_str),
+            Some("s3://bucket/tools/xtool-{{version}}.tar.gz")
+        );
+
+        for (key, value) in [
+            ("version_list_url", "s3://bucket/tools/versions.json"),
+            ("version_prefix", "tools/xtool-"),
+            ("version_regex", "xtool-([0-9.]+)"),
+            ("version_json_path", "versions"),
+            ("version_expr", "split(body, \"\\n\")"),
+        ] {
+            assert_eq!(
+                identity(&[(key, value)]),
+                base,
+                "{key} only discovers versions"
+            );
+        }
+
+        for (key, value) in [
+            ("bin_path", "tool/bin"),
+            ("strip_components", "2"),
+            ("region", "eu-west-1"),
+            ("endpoint", "https://minio.internal:9000"),
+        ] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
     }
 
     #[test]

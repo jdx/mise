@@ -69,7 +69,8 @@ This is where plugins may write downloaded assets such as tarballs during instal
 default after install/uninstall; set `always_keep_download` to keep them for debugging backend/plugin install behavior.
 This directory is not a supported download cache. Some backends may skip a download when the expected file already exists,
 but that behavior is backend-specific and not guaranteed. Cache `~/.local/share/mise/installs` instead if you want to
-avoid reinstalling tools in CI or offline workflows.
+avoid reinstalling tools in CI or offline workflows, together with the install store when it is a separate directory
+(`MISE_INSTALL_STORE_DIR`, or `%LOCALAPPDATA%\mise\i` on Windows with the identity [install layout](/dev-tools/install-layout.html)).
 
 ### `~/.local/share/mise/plugins`
 
@@ -87,6 +88,21 @@ Stores installed tool versions. For example, `mise install node@24.0.0` installs
 `installs/node/24.0.0` under the data directory. mise may also create version-prefix and alias
 symlinks that point at concrete installations. Use `mise where node` or `mise which node` to
 find the selected installation or executable, rather than constructing a path from an alias.
+
+With the experimental [install layout](/dev-tools/install-layout.html)
+(`install_layout = "identity"`, which also needs `experimental = true`), new installations go into `installs/<label>-<hash>/`
+instead, such as `installs/age-hlencrst`, and `installs/age/1.2.1` becomes a link
+to that directory. The `installs/.mise/` directory holds the catalog that
+remembers each installation's directory and which installation an unlocked request
+selected. It is durable metadata, not a cache: keep it with the installs it
+describes. Installations made before you enabled the layout stay where they are.
+
+On Windows the installations themselves go into `i` beside `installs`
+(`%LOCALAPPDATA%\mise\i\age-hlencrst`), a shorter path that leaves more room
+under the 260-character limit. The links, runtime aliases and catalog stay in
+`installs`. Set `MISE_INSTALL_STORE_DIR` to choose where installations go on any
+platform; it defaults to the installs directory, and on Windows to `i` unless
+`MISE_INSTALLS_DIR` is set. A directory inside the installs directory is ignored.
 
 You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
 

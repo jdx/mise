@@ -84,6 +84,14 @@ impl Link {
         if !file::is_symlink_to(&target, &path) && file::same_file(&path, &target) {
             bail!("cannot link {} to its own install path", self.tool.style());
         }
+        // Under the identity layout the slot is a link to the installation, so the
+        // install path is that installation however it is spelled (the version
+        // link, a runtime alias, or the directory itself).
+        if crate::install_layout::resolver::link_target(&target)
+            .is_some_and(|install| file::same_file(&path, &install))
+        {
+            bail!("cannot link {} to its own install path", self.tool.style());
+        }
         {
             let _state_lock = install_state::lock_tool_version(&self.tool.ba, &version_pathname)?;
             if !file::is_symlink_to(&target, &path) {

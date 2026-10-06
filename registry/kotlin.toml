@@ -20,4 +20,4 @@ bin_path = "kotlinc/bin"
 full = "asdf:mise-plugins/mise-kotlin"
 
 [[backends]]
-full = "vfox:mise-plugins/vfox-kotlin"
+full = "vfox:jdx/vfox-kotlin"

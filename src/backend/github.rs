@@ -3458,6 +3458,46 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
+    fn test_identity_options_keep_the_signer_and_the_release_selection() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = create_test_backend();
+        let identity = |options: &[(&str, &str)]| test_identity_options(&backend, "1.0.0", options);
+        let base = identity(&[]);
+
+        // An install verified against one signer is not the install a request with
+        // another signer requirement asked for, so the signer is part of the identity.
+        assert_ne!(
+            identity(&[
+                (
+                    "slsa_signer_identity",
+                    "https://example.com/wf@refs/tags/v1"
+                ),
+                (
+                    "slsa_signer_issuer",
+                    "https://token.actions.githubusercontent.com"
+                ),
+            ]),
+            base
+        );
+
+        // Each of these selects a different release or a different layout.
+        for (key, value) in [
+            ("version_prefix", "release-"),
+            ("api_url", "https://ghe.example.com/api/v3"),
+            ("asset_pattern", "tool-*.tar.gz"),
+            ("bin_path", "tool/bin"),
+            ("filter_bins", "a,b"),
+            ("matching", "musl"),
+        ] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
+    }
+
+    #[test]
     fn test_additional_assets_install_state_tracks_patterns() {
         let backend = create_test_backend();
         let backend_arg = Arc::new(BackendArg::new(

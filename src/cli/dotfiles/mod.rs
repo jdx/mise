@@ -12,6 +12,7 @@ mod edit;
 mod exclude;
 pub(crate) mod history;
 mod history_status;
+mod notify;
 mod origin;
 mod paths;
 mod pull;
@@ -79,6 +80,7 @@ enum Commands {
     Exclude(exclude::DotfilesExclude),
     History(history::DotfilesHistory),
     Include(exclude::DotfilesInclude),
+    Notify(notify::DotfilesNotify),
     Origin(origin::DotfilesOrigin),
     Paths(paths::DotfilesPaths),
     Pull(pull::DotfilesPull),
@@ -133,6 +135,7 @@ impl Dotfiles {
             Commands::Exclude(cmd) => Box::pin(cmd.run()),
             Commands::History(cmd) => Box::pin(cmd.run()),
             Commands::Include(cmd) => Box::pin(cmd.run()),
+            Commands::Notify(cmd) => Box::pin(cmd.run()),
             Commands::Origin(cmd) => Box::pin(cmd.run()),
             Commands::Paths(cmd) => Box::pin(cmd.run()),
             Commands::Pull(cmd) => Box::pin(cmd.run()),

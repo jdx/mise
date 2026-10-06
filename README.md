@@ -18,6 +18,12 @@
   <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?style=for-the-badge&color=8B2252"></a>
 </p>
 
+<p align="center">
+  <a href="https://www.star-history.com/jdx/mise">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=jdx/mise&type=rank&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=jdx/mise&type=rank" /><img alt="Star History Rank" src="https://api.star-history.com/badge?repo=jdx/mise&type=rank" /></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=jdx/mise&type=trending&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=jdx/mise&type=trending" /><img alt="GitHub Trending Repository of the Day" src="https://api.star-history.com/badge?repo=jdx/mise&type=trending" /></picture>
+  </a>
+</p>
+
 <p><b>Dev tools, env vars, and tasks in one CLI</b></p>
 
 <p align="center">

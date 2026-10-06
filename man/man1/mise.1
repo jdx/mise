@@ -232,6 +232,9 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBbootstrap dotfiles include\fR
 Stop excluding paths matching a glob
 .TP
+\fBbootstrap dotfiles notify\fR
+Send a test desktop notification
+.TP
 \fBbootstrap dotfiles origin\fR
 Connect or disconnect the setup repository
 .TP
@@ -616,6 +619,9 @@ Show one checkpoint: what triggered it, what changed, and its journal
 \fBdotfiles include\fR
 Stop excluding paths matching a glob
 .TP
+\fBdotfiles notify\fR
+Send a test desktop notification
+.TP
 \fBdotfiles origin\fR
 Connect or disconnect the setup repository
 .TP
@@ -741,6 +747,21 @@ Install a tool version
 .TP
 \fBinstall\-into\fR
 Install a tool version to a specific path
+.TP
+\fBinstalls\fR
+[experimental] Inspect and choose installations of the identity install layout
+.TP
+\fBinstalls ls\fR
+List the installations of the identity install layout
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBinstalls migrate\fR
+Reinstall legacy installations into the identity install layout
+.TP
+\fBinstalls select\fR
+Choose the installation that requests without a lockfile use
 .TP
 \fBlatest\fR
 Resolve the latest matching version request for a tool
@@ -2020,6 +2041,33 @@ Print help
 .TP
 \fB<GLOB>\fR
 The glob as written by `mise dot exclude`
+.SH "MISE BOOTSTRAP DOTFILES NOTIFY"
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify\-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles notify [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise dot notify
+.RE
 .SH "MISE BOOTSTRAP DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 
@@ -4679,6 +4727,33 @@ Print help
 .TP
 \fB<GLOB>\fR
 The glob as written by `mise dot exclude`
+.SH "MISE DOTFILES NOTIFY"
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify\-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+.PP
+\fBUsage:\fR mise dotfiles notify [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+.PP
+.RS 4
+mise dot notify
+.RE
 .SH "MISE DOTFILES ORIGIN"
 Connect or disconnect the setup repository
 
@@ -6111,6 +6186,144 @@ install node@20.0.0 into ./mynode
 mise install\-into node@20.0.0 ./mynode && ./mynode/bin/node \-v
 v20.0.0
 .RE
+.SH "MISE INSTALLS"
+[experimental] Inspect and choose installations of the identity install layout
+
+With `install_layout = "identity"`, each installation lives in its own
+`<label>\-<hash>` directory, and several installations of one version can
+exist side by side (different options, platforms, pinned artifacts, or a
+refreshed copy). These commands list them, choose which one requests
+without a lockfile use, and move installations made before the layout
+was turned on into it.
+.PP
+\fBUsage:\fR mise installs [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE INSTALLS LS"
+List the installations of the identity install layout
+
+Every installation is listed separately, so variants of one version (made
+with different options, or pinned to different artifacts by lockfiles) can
+be told apart. The status column says which installation requests without
+a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
+live in a read\-only shared installs directory (`shared`).
+.PP
+\fBUsage:\fR mise installs ls [OPTIONS] [<TOOL>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-no\-header\fR
+Don't display headers
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL>\fR
+Only show the installations of these tools
+\fBExamples:\fR
+.PP
+Every installation in the identity layout
+.PP
+.RS 4
+mise installs ls
+.RE
+.PP
+The installations of node, as JSON
+.PP
+.RS 4
+mise installs ls node \-\-json
+.RE
+.SH "MISE INSTALLS MIGRATE"
+Reinstall legacy installations into the identity install layout
+
+Installations made before `install_layout = "identity"` was turned on stay in
+`installs/<tool>/<version>` and keep working; mise never moves them on its own,
+because tools record their own path in shebangs, virtual environments and
+package\-manager files. This reinstalls each one into its own `<label>\-<hash>`
+directory, then removes the old directory and puts the version link in its
+place, so a path that pointed into the old directory still resolves.
+
+Each version is reinstalled from its backend, not copied, so the files are
+written for their new path. Run it while nothing is using the tools: the old
+directory is moved aside while its replacement installs, and put back if that
+fails. Versions whose recorded backend is not the one their tool resolves to
+now are left alone, as are tools that keep the legacy layout (`http:`,
+`rust`, `dotnet`).
+.PP
+\fBUsage:\fR mise installs migrate [OPTIONS] [<TOOL@VERSION>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would move without changing anything
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TOOL@VERSION>\fR
+Only migrate these tools, or these versions of them
+
+Defaults to every legacy installation.
+\fBExamples:\fR
+.PP
+List the legacy installations that would move
+.PP
+.RS 4
+mise installs migrate \-\-dry\-run
+.RE
+.PP
+Move every installed node, and one python
+.PP
+.RS 4
+mise installs migrate node python@3.12.1
+.RE
+.SH "MISE INSTALLS SELECT"
+Choose the installation that requests without a lockfile use
+
+Several installations can answer the same request: a refresh that could not
+replace a lockfile's installation in place, or installations made for
+different lockfiles. Requests without a lockfile entry use the one selected
+for their tool, version, platform and options, and when none is selected and
+several match, mise stops and asks for this command.
+
+The selection is shared by every project on this machine that makes the same
+request without a lockfile. Projects whose lockfile pins an artifact keep the
+installation of that artifact. The version link (`installs/<tool>/<version>`)
+is pointed at the selected installation.
+.PP
+\fBUsage:\fR mise installs select [OPTIONS] <INSTALLATION>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<INSTALLATION>\fR
+The installation to select: its directory name, or its path
+\fBExamples:\fR
+.PP
+Find jq's installations, then choose one
+.PP
+.RS 4
+mise installs ls jq
+mise installs select jq\-hm3qa4vb
+.RE
 .SH "MISE LATEST"
 Resolve the latest matching version request for a tool
 
@@ -7022,7 +7235,7 @@ These are hidden by default
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
+e.g.: https://github.com/jdx/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin
@@ -7167,7 +7380,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
+e.g.: https://github.com/jdx/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin
@@ -7201,7 +7414,7 @@ These are the shorthand names from the registry: https://github.com/jdx/mise/blo
 .PP
 .TP
 \fB\-u, \-\-urls\fR
-Show the git url for each plugin, e.g. https://github.com/mise\-plugins/mise\-poetry.git
+Show the plugin source for each shorthand, e.g. vfox:jdx/vfox\-poetry
 .TP
 \fB\-\-only\-names\fR
 Only show the name of each plugin, without the "*" marking installed plugins
@@ -7434,6 +7647,9 @@ as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>
 
 Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked\-stubs.
 Versions still referenced by a tracked stub are not deleted.
+
+Versions that a running process was started from are not deleted either,
+so a long\-running program keeps its files after its version stops being needed.
 
 You can list prunable tools with `mise ls \-\-prunable`
 .PP
