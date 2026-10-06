@@ -68,6 +68,8 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
 /// the text, such as `mise-env-fnox-fork-tools`, is some other plugin.
 fn is_env_fnox_plugin(name: &str, source: &str) -> bool {
     const PLUGIN: &str = "mise-env-fnox";
+    // A pinned source (`...#main`, `...?ref=x`) still names the same repo.
+    let source = source.split(['#', '?']).next().unwrap_or_default();
     let last = source
         .trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\', ':'])
@@ -129,6 +131,14 @@ mod tests {
             "https://github.com/jdx/mise-env-fnox.git"
         ));
         assert!(is_env_fnox_plugin("x", "git@github.com:jdx/mise-env-fnox/"));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox.git#main"
+        ));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox?ref=v1"
+        ));
     }
 
     #[test]
