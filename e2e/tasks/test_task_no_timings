@@ -12,9 +12,14 @@ run = 'echo b-out'
 run = 'mise run a ::: b'
 EOF
 
-# parallel tasks default to prefix output, which times each task and the run
-assert_contains "mise run a ::: b 2>&1" "[a] Finished in"
-assert_contains "mise run a ::: b 2>&1" "[b] Finished in"
+# Parallel tasks default to prefix output, which emits two task timings and a
+# run timing. Capture one run: its stdout and stderr are concurrent streams,
+# so their individual writes may legally interleave after `2>&1` joins them.
+timed_output="$(mise run a ::: b 2>&1)"
+assert_contains_text "$timed_output" "[a]"
+assert_contains_text "$timed_output" "[b]"
+timing_count="$(grep -oF "Finished in" <<<"$timed_output" | wc -l | tr -d ' ')"
+[[ $timing_count == 3 ]] || fail "expected two task timings and one run timing, got $timing_count: $timed_output"
 
 assert_not_contains "mise run --no-timings a ::: b 2>&1" "Finished in"
 assert_contains "mise run --no-timings a ::: b 2>&1" "[a] a-out"
