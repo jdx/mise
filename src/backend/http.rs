@@ -1213,6 +1213,7 @@ impl Backend for HttpBackend {
             "version_json_path",
             "version_expr",
             "headers",
+            "headers_forward",
         ]
     }
 

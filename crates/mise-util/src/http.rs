@@ -2266,14 +2266,17 @@ impl ForwardRules {
 }
 
 fn host_matches_any(patterns: &[String], host: &str) -> bool {
-    patterns
-        .iter()
-        .any(|pattern| match pattern.strip_prefix("*.") {
+    // DNS names are case-insensitive, and so are both sides of the comparison.
+    let host = host.to_ascii_lowercase();
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.to_ascii_lowercase();
+        match pattern.strip_prefix("*.") {
             Some(suffix) => host
                 .strip_suffix(suffix)
                 .is_some_and(|rest| rest.ends_with('.') && rest.len() > 1),
-            None => pattern.eq_ignore_ascii_case(host),
-        })
+            None => pattern == host,
+        }
+    })
 }
 
 /// Separate the real request headers from the internal forwarding rules.

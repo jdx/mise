@@ -576,6 +576,9 @@ fn forward_hosts_accept_exact_hosts_and_subdomain_wildcards_only() {
     ];
     assert!(host_matches_any(&patterns, "cdn.example.com"));
     assert!(host_matches_any(&patterns, "CDN.example.com"));
+    let mixed = vec!["*.Assets.EXAMPLE.com".to_string()];
+    assert!(host_matches_any(&mixed, "a.assets.example.com"));
+    assert!(host_matches_any(&mixed, "A.ASSETS.example.com"));
     assert!(host_matches_any(&patterns, "a.assets.example.com"));
     assert!(host_matches_any(&patterns, "a.b.assets.example.com"));
     // A wildcard is for subdomains: neither the bare suffix nor a lookalike matches.
