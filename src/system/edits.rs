@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, bail};
 use indexmap::IndexMap;
+use mise_util::structured_merge::{self, Format};
 use serde::Deserialize;
 
 use crate::config::{Config, ConfigMap};
@@ -75,6 +76,11 @@ pub(crate) struct EditTomlTable {
     /// when omitted
     #[serde(default)]
     pub comment: Option<String>,
+    /// `merge = true` sets the keys in `source` on a structured target file
+    /// (JSON, TOML, or YAML) and leaves every other key to the application
+    /// that also writes it
+    #[serde(default)]
+    pub merge: Option<bool>,
 }
 
 /// where a block's content comes from
@@ -96,6 +102,38 @@ pub enum EditOp {
         line: String,
         position: LinePosition,
     },
+    /// set the keys of a JSON/TOML/YAML source on the target and leave the
+    /// target's other keys alone
+    Merge {
+        source: BlockSource,
+        template: bool,
+        format: Format,
+    },
+}
+
+impl EditOp {
+    /// the source file this edit reads, if it reads one
+    pub fn source_file(&self) -> Option<&Path> {
+        match self {
+            Self::Block {
+                source: BlockSource::File(path),
+                ..
+            }
+            | Self::Merge {
+                source: BlockSource::File(path),
+                ..
+            } => Some(path),
+            _ => None,
+        }
+    }
+
+    /// whether rendering the edit's content runs the template engine
+    fn is_template(&self) -> bool {
+        matches!(
+            self,
+            Self::Block { template: true, .. } | Self::Merge { template: true, .. }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
@@ -130,6 +168,7 @@ impl EditRequest {
         match &self.op {
             EditOp::Block { .. } => format!("block:{}", self.id),
             EditOp::Line { .. } => format!("line:{}", self.id),
+            EditOp::Merge { .. } => format!("merge:{}", self.id),
         }
     }
 
@@ -197,7 +236,7 @@ fn edit_requests_match(config: &Config, first: &EditRequest, second: &EditReques
     first.path == second.path
         && first.id == second.id
         && first.op == second.op
-        && (!matches!(first.op, EditOp::Block { template: true, .. })
+        && (!first.op.is_template()
             || first.base == second.base
                 && config.bootstrap_tera_ctx(&first.origin.config)
                     == config.bootstrap_tera_ctx(&second.origin.config))
@@ -245,7 +284,8 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
                     && !table.contains_key("line")
                     && !table.contains_key("template")
                     && !table.contains_key("comment")
-                    && !table.contains_key("position");
+                    && !table.contains_key("position")
+                    && !table.contains_key("merge");
             if is_whole_file_table {
                 return None;
             }
@@ -311,9 +351,22 @@ fn resolve_entry(
             line: None,
             position: None,
             comment: None,
+            merge: None,
         },
         EditTomlEntry::Table(table) => table,
     };
+    if let Some(merge) = entry.merge {
+        let op = merge_op(path_raw, &id, &path, &entry, merge, base, &mut origin)?;
+        return Ok(EditRequest {
+            path_raw: path_raw.to_string(),
+            path,
+            id,
+            op,
+            base: base.to_path_buf(),
+            config_path: config_path.to_path_buf(),
+            origin,
+        });
+    }
     let is_block = entry.block.is_some() || entry.source.is_some();
     let op = match (&is_block, &entry.line) {
         (true, Some(_)) => {
@@ -402,6 +455,56 @@ fn resolve_entry(
     })
 }
 
+/// the operation for `{ source = "...", merge = true }`
+fn merge_op(
+    path_raw: &str,
+    id: &str,
+    path: &Path,
+    entry: &EditTomlTable,
+    merge: bool,
+    base: &Path,
+    origin: &mut ResourceOrigin,
+) -> Result<EditOp> {
+    if !merge {
+        bail!("\"{path_raw}\".{id}: merge must be true when present, ignoring entry");
+    }
+    if entry.block.is_some() || entry.line.is_some() {
+        bail!("\"{path_raw}\".{id}: merge cannot be combined with block or line, ignoring entry");
+    }
+    if entry.position.is_some() || entry.comment.is_some() {
+        bail!("\"{path_raw}\".{id}: position and comment do not apply to merge, ignoring entry");
+    }
+    let Some(source) = &entry.source else {
+        bail!("\"{path_raw}\".{id}: merge needs a source file, ignoring entry");
+    };
+    let Some(format) = Format::from_path(path) else {
+        bail!(
+            "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
+        );
+    };
+    let source = file::replace_path(source);
+    let source = if source.is_relative() {
+        base.join(source)
+    } else {
+        source
+    };
+    origin.source = Some(source.clone());
+    let template = match entry.template.as_deref() {
+        None => false,
+        Some("tera") => true,
+        Some(other) => {
+            bail!(
+                "\"{path_raw}\".{id}: unknown template engine '{other}' (expected \"tera\"), ignoring entry"
+            )
+        }
+    };
+    Ok(EditOp::Merge {
+        source: BlockSource::File(source),
+        template,
+        format,
+    })
+}
+
 /// comment prefix for marker lines, by file extension; `#` covers most
 /// config and shell files (and extensionless files like `.zshrc`, `hosts`)
 fn infer_comment(path: &Path) -> &'static str {
@@ -475,13 +578,16 @@ fn find_block(
 /// the content a block should contain, resolved and rendered at most once
 /// per check/apply cycle (templates may use exec())
 fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>> {
-    let EditOp::Block {
-        source,
-        template,
-        comment,
-    } = &req.op
-    else {
-        return Ok(None);
+    let (source, template, comment) = match &req.op {
+        EditOp::Block {
+            source,
+            template,
+            comment,
+        } => (source, template, Some(comment)),
+        EditOp::Merge {
+            source, template, ..
+        } => (source, template, None),
+        EditOp::Line { .. } => return Ok(None),
     };
     let id = &req.id;
     let raw = match source {
@@ -506,6 +612,9 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         raw
     };
     let content = content.trim_end_matches('\n').to_string();
+    let Some(comment) = comment else {
+        return Ok(Some(content));
+    };
     // a block containing its own marker lines would write a file that can't
     // be parsed back — refuse up front instead of corrupting on reapply
     for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
@@ -529,10 +638,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
 pub fn check(config: &Config, req: &EditRequest) -> Result<FileState> {
-    if let EditOp::Block {
-        source: BlockSource::File(p),
-        ..
-    } = &req.op
+    if let Some(p) = req.op.source_file()
         && !p.exists()
     {
         return Ok(FileState::SourceMissing);
@@ -579,6 +685,8 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
                 Ok(Some(_)) => Ok(None),
             }
         }
+        // whether the owned keys are in place takes a parse of both sides
+        EditOp::Merge { .. } => Ok(None),
         EditOp::Line { line, .. } => Ok(Some(EditCheck::State(
             if text
                 .strip_prefix('\u{feff}')
@@ -597,11 +705,20 @@ fn precheck(req: &EditRequest) -> Result<Option<EditCheck>> {
 /// content comparison for a block whose markers exist ([`precheck`]
 /// returned None)
 fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
-    let EditOp::Block { comment, .. } = &req.op else {
-        unreachable!("only blocks reach a content comparison");
+    let text = file::read_to_string(&req.path)?;
+    let comment = match &req.op {
+        EditOp::Block { comment, .. } => comment,
+        EditOp::Merge { format, .. } => {
+            let desired = desired.expect("resolved merge content");
+            return Ok(if structured_merge::contains(*format, &text, desired)? {
+                FileState::Applied
+            } else {
+                FileState::Differs("merged keys differ".into())
+            });
+        }
+        EditOp::Line { .. } => unreachable!("only blocks and merges reach a content comparison"),
     };
     let id = &req.id;
-    let text = file::read_to_string(&req.path)?;
     let lines: Vec<&str> = text.lines().collect();
     match find_block(&lines, id, comment) {
         Ok(Some((begin, end))) => {
@@ -641,10 +758,7 @@ pub fn apply(
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     for req in requests {
-        if let EditOp::Block {
-            source: BlockSource::File(p),
-            ..
-        } = &req.op
+        if let Some(p) = req.op.source_file()
             && !p.exists()
         {
             problems.push(format!(
@@ -686,7 +800,7 @@ pub fn apply(
         // rendering can run exec() — a dry run must not execute anything,
         // so template blocks are listed without computing their content
         // (same policy as template file entries)
-        if opts.dry_run && matches!(&req.op, EditOp::Block { template: true, .. }) {
+        if opts.dry_run && req.op.is_template() {
             todo.push((req, None));
             continue;
         }
@@ -730,8 +844,7 @@ pub fn apply(
         for (req, desired) in &todo {
             // template state wasn't computed (no rendering on dry runs), so
             // the entry may already be converged
-            let conditional =
-                desired.is_none() && matches!(&req.op, EditOp::Block { template: true, .. });
+            let conditional = desired.is_none() && req.op.is_template();
             let suffix = if conditional { " (if changed)" } else { "" };
             miseprintln!(
                 "edit {} ({}){suffix}",
@@ -776,10 +889,7 @@ pub fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
     let mut changed = false;
     let mut problems = vec![];
     for req in requests {
-        if let EditOp::Block {
-            source: BlockSource::File(path),
-            ..
-        } = &req.op
+        if let Some(path) = req.op.source_file()
             && !path.exists()
         {
             miseprintln!(
@@ -969,6 +1079,9 @@ pub fn plan_unapply<'a>(
                 }
             }
             EditOp::Line { .. } => {}
+            // merged keys carry no ownership record and may have been
+            // changed by the application since, so they stay put
+            EditOp::Merge { .. } => {}
         }
     }
     if !problems.is_empty() {
@@ -1084,6 +1197,7 @@ fn unapply_one(req: &EditRequest) -> Result<()> {
                 ),
             }
         }
+        EditOp::Merge { .. } => return Ok(()),
         EditOp::Line { line, position } => {
             // Use the occurrence nearest the configured insertion edge as the
             // best stateless approximation of the line mise added.
@@ -1143,7 +1257,7 @@ pub fn apply_dry_run_to_string(
     req: &EditRequest,
     text: &str,
 ) -> Result<Option<String>> {
-    if matches!(&req.op, EditOp::Block { template: true, .. }) {
+    if req.op.is_template() {
         return Ok(None);
     }
     let desired = desired_content(config, req)?;
@@ -1199,6 +1313,11 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
 
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
     match &req.op {
+        EditOp::Merge { format, .. } => {
+            let desired = desired.expect("resolved merge content");
+            structured_merge::merge(*format, text, desired)
+                .wrap_err_with(|| format!("merge into \"{}\" failed", req.path.display_user()))
+        }
         EditOp::Block { comment, .. } => {
             let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
             let id = &req.id;
@@ -1303,6 +1422,97 @@ mod tests {
         assert!(written.is_empty());
         assert_eq!(file::read_to_string(&path)?, "before\n");
         Ok(())
+    }
+
+    fn resolve(path: &str, entry: &str) -> Result<EditRequest> {
+        let entry: EditTomlEntry = toml::from_str(entry).map_err(|e| eyre::eyre!("{e}"))?;
+        resolve_entry(
+            path,
+            "shared".into(),
+            entry,
+            Path::new("/cfg"),
+            Path::new("/cfg/mise.toml"),
+        )
+    }
+
+    #[test]
+    fn merge_entries_infer_the_format_from_the_target() {
+        for (path, format) in [
+            ("~/a/config.toml", Format::Toml),
+            ("~/a/settings.json", Format::Json),
+            ("~/a/config.yml", Format::Yaml),
+            ("~/a/config.yaml", Format::Yaml),
+        ] {
+            let req = resolve(path, "source = \"shared.txt\"\nmerge = true").unwrap();
+            assert_eq!(
+                req.op,
+                EditOp::Merge {
+                    source: BlockSource::File(PathBuf::from("/cfg/shared.txt")),
+                    template: false,
+                    format,
+                }
+            );
+            assert_eq!(req.describe_op(), "merge:shared");
+            assert_eq!(req.origin.source, Some(PathBuf::from("/cfg/shared.txt")));
+        }
+    }
+
+    #[test]
+    fn merge_entries_can_be_templates() {
+        let req = resolve(
+            "~/a/config.toml",
+            "source = \"s.toml.tera\"\nmerge = true\ntemplate = \"tera\"",
+        )
+        .unwrap();
+        assert!(req.op.is_template());
+    }
+
+    #[test]
+    fn invalid_merge_entries_are_refused() {
+        for (path, entry, reason) in [
+            (
+                "~/a/notes.txt",
+                "source = \"s\"\nmerge = true",
+                ".json, .toml",
+            ),
+            (
+                "~/a/config.toml",
+                "source = \"s\"\nmerge = false",
+                "must be true",
+            ),
+            ("~/a/config.toml", "merge = true", "needs a source"),
+            (
+                "~/a/config.toml",
+                "block = \"x\"\nmerge = true",
+                "block or line",
+            ),
+            (
+                "~/a/config.toml",
+                "line = \"x\"\nmerge = true",
+                "block or line",
+            ),
+            (
+                "~/a/config.toml",
+                "source = \"s\"\nmerge = true\ncomment = \"#\"",
+                "do not apply",
+            ),
+            (
+                "~/a/config.toml",
+                "source = \"s\"\nmerge = true\ntemplate = \"jinja\"",
+                "unknown template engine",
+            ),
+        ] {
+            let err = resolve(path, entry).unwrap_err().to_string();
+            assert!(err.contains(reason), "{entry}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_merge_table_is_an_edit_not_a_whole_file_entry() {
+        let value: toml::Value = toml::from_str("source = \"s.toml\"\nmerge = true").unwrap();
+        assert!(edit_entry_from_toml("~/a/config.toml/shared", value).is_some());
+        let value: toml::Value = toml::from_str("source = \"s.toml\"").unwrap();
+        assert!(edit_entry_from_toml("~/a/config.toml", value).is_none());
     }
 
     #[test]

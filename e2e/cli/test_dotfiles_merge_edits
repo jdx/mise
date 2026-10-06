@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+
+# merge entries own some keys of a JSON, TOML, or YAML file that an
+# application also writes; every other key, comment, and the key order stay
+mkdir -p shared
+cat <<'EOF' >shared/codex.toml
+model = "gpt-5"
+
+[tui]
+theme = "light"
+EOF
+cat <<'EOF' >shared/claude.json
+{"model": "opus", "permissions": {"allow": ["Bash(ls)"]}}
+EOF
+cat <<'EOF' >shared/omp.yml
+theme: light
+tools:
+  bash: true
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.codex/config.toml/shared" = { source = "shared/codex.toml", merge = true }
+"~/.claude/settings.json/shared" = { source = "shared/claude.json", merge = true }
+"~/.omp/config.yml/shared" = { source = "shared/omp.yml", merge = true }
+EOF
+
+# nothing exists yet, so everything is missing
+assert_contains "mise dotfiles status" "merge:shared"
+assert_contains "mise dotfiles status" "missing"
+assert_fail "mise dotfiles status --missing"
+
+# a dry run lists the work and writes nothing
+assert_contains "mise dotfiles apply --dry-run" "merge:shared"
+assert_fail "cat ~/.codex/config.toml"
+
+# applying creates missing files from the source
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.codex/config.toml" 'model = "gpt-5"'
+assert_contains "cat ~/.claude/settings.json" '"model": "opus"'
+assert_contains "cat ~/.omp/config.yml" "theme: light"
+
+# the applications write their own keys, comments included
+mkdir -p ~/.codex ~/.claude ~/.omp
+cat <<'EOF' >~/.codex/config.toml
+# written by the desktop app
+notify = ["a"]
+model = "gpt-4"
+
+[tui]
+theme = "dark"  # app picked this
+
+[plugins.foo]
+path = "/Applications/X.app"
+EOF
+cat <<'EOF' >~/.claude/settings.json
+{
+    "zzz": 1,
+    "model": "sonnet",
+    "permissions": {"deny": ["Bash(rm)"]}
+}
+EOF
+cat <<'EOF' >~/.omp/config.yml
+# omp keeps this note
+theme: dark   # toggled in the UI
+modes:
+  fast: true
+tools:
+  bash: false
+EOF
+
+# drift is reported for owned keys only
+assert_contains "mise dotfiles status" "differs"
+assert_contains "mise dotfiles diff" '-model = "gpt-4"'
+assert_contains "mise dotfiles diff" '+model = "gpt-5"'
+assert_not_contains "mise dotfiles diff" '-notify'
+
+assert_succeed "mise dotfiles apply --yes"
+
+# owned keys are set; everything else is exactly where the app left it
+cat <<'EOF' >expected-codex.toml
+# written by the desktop app
+notify = ["a"]
+model = "gpt-5"
+
+[tui]
+theme = "light"  # app picked this
+
+[plugins.foo]
+path = "/Applications/X.app"
+EOF
+assert_succeed "cmp expected-codex.toml ~/.codex/config.toml"
+cat <<'EOF' >expected-omp.yml
+# omp keeps this note
+theme: light   # toggled in the UI
+modes:
+  fast: true
+tools:
+  bash: true
+EOF
+assert_succeed "cmp expected-omp.yml ~/.omp/config.yml"
+assert "jq -r .zzz ~/.claude/settings.json" "1"
+assert "jq -r .model ~/.claude/settings.json" "opus"
+assert "jq -c .permissions ~/.claude/settings.json" '{"deny":["Bash(rm)"],"allow":["Bash(ls)"]}'
+assert "head -2 ~/.claude/settings.json | tail -1" '    "zzz": 1,'
+
+# in sync now, and an application writing a new key does not cause drift
+assert_succeed "mise dotfiles status --missing"
+echo 'extra = true' >>~/.codex/config.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.codex/config.toml" "extra = true"
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+
+# unapply leaves merged keys alone
+assert_succeed "mise dotfiles unapply --yes"
+assert_contains "cat ~/.codex/config.toml" 'model = "gpt-5"'
+
+# unusable entries are refused instead of guessed at
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes.txt/shared" = { source = "shared/codex.toml", merge = true }
+EOF
+assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .toml, .yaml, or .yml target"
+
+# a target that does not parse is reported, never overwritten
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/broken.json/shared" = { source = "shared/claude.json", merge = true }
+EOF
+echo '{// not json' >~/broken.json
+assert_fail "mise dotfiles apply --yes"
+assert "cat ~/broken.json" "{// not json"

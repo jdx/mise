@@ -6260,6 +6260,10 @@
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
+              "merge": {
+                "type": "boolean",
+                "description": "edit entry: set the keys of source on a JSON, TOML, or YAML target and leave the target's other keys to the application that also writes it; the format comes from the target's extension"
+              },
               "variants": {
                 "type": "array",
                 "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
@@ -6296,6 +6300,28 @@
               }
             },
             "allOf": [
+              {
+                "if": {
+                  "required": ["merge"],
+                  "properties": {
+                    "merge": {
+                      "const": true
+                    }
+                  }
+                },
+                "then": {
+                  "required": ["source"],
+                  "properties": {
+                    "mode": false,
+                    "content": false,
+                    "permissions": false,
+                    "block": false,
+                    "line": false,
+                    "position": false,
+                    "comment": false
+                  }
+                }
+              },
               {
                 "anyOf": [
                   {

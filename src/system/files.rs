@@ -945,7 +945,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             }
             if value.as_table().is_some_and(|t| {
                 t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-                    && ["content", "block", "line", "template"]
+                    && ["content", "block", "line", "template", "merge"]
                         .iter()
                         .any(|key| t.contains_key(*key))
             }) {
@@ -957,7 +957,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
                 if let Some(table) = value.as_table().filter(|table| {
-                    ["block", "line", "template", "comment", "position"]
+                    ["block", "line", "template", "comment", "position", "merge"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
@@ -1312,7 +1312,7 @@ const GROUP_KEY_IN_DOTFILES: &str =
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-            && ["content", "block", "line", "template"]
+            && ["content", "block", "line", "template", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1328,7 +1328,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
     // file it meant to edit.
     if value.as_table().is_some_and(|t| {
         t.get("mode").and_then(toml::Value::as_str) == Some("absent")
-            && ["block", "line", "template", "comment", "position"]
+            && ["block", "line", "template", "comment", "position", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1377,7 +1377,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
-                    && !table.contains_key("comment")) => {}
+                    && !table.contains_key("comment")
+                    && !table.contains_key("merge")) => {}
         toml::Value::Table(_) => return None,
         _ => {
             warn!("[dotfiles].\"{target_raw}\": expected string or table entry, ignoring entry");
