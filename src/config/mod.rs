@@ -3552,7 +3552,22 @@ fn configured_global_write_path(section: GlobalWriteSection) -> Result<Option<Pa
             display_path(&path)
         );
     }
+    if !is_loadable_global_write_path(&path) {
+        bail!(
+            "{} must name a global config file that mise loads (such as config.toml or conf.d/*.toml): {}",
+            section.setting_name(),
+            display_path(&path)
+        );
+    }
     Ok(Some(path))
+}
+
+fn is_loadable_global_write_path(path: &Path) -> bool {
+    if let Some(global_config_file) = &*env::MISE_GLOBAL_CONFIG_FILE {
+        return lockfile::same_file_path(global_config_file, path);
+    }
+    let incoming = BTreeSet::from([path.to_path_buf()]);
+    config_set_contains(&config_files_with_incoming(&dirs::CONFIG, &incoming), path)
 }
 
 /// Unified config file path resolution for both `mise use` and `mise set`
@@ -3589,36 +3604,7 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
     // If global flag is set and no explicit path provided, update an existing
     // declaration in place before considering an opt-in section default.
     if opts.global {
-        if let Some(section) = opts.global_write_section {
-            if opts.existing_global_paths.len() > 1 {
-                let paths = opts
-                    .existing_global_paths
-                    .iter()
-                    .map(|path| display_path(path).to_string())
-                    .join(", ");
-                bail!(
-                    "requested entries are declared in multiple global config files ({paths}); use --path to choose one"
-                );
-            }
-            if let Some(path) = opts.existing_global_paths.into_iter().next() {
-                if opts.has_new_global_entries {
-                    let new_entry_path =
-                        configured_global_write_path(section)?.unwrap_or_else(global_config_path);
-                    if path != new_entry_path {
-                        bail!(
-                            "requested entries include existing declarations in {} and new declarations for {}; run separate commands or use --path",
-                            display_path(&path),
-                            display_path(&new_entry_path),
-                        );
-                    }
-                }
-                return Ok(path);
-            }
-            if let Some(path) = configured_global_write_path(section)? {
-                return Ok(path);
-            }
-        }
-        return Ok(global_config_path());
+        return resolve_global_write_path(&opts);
     }
 
     // If env-specific config is requested
@@ -3633,7 +3619,7 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
 
     // If we're in HOME directory and prevent_home_local is true, use global config
     if opts.prevent_home_local && env::in_home_dir() {
-        return Ok(global_config_path());
+        return resolve_global_write_path(&opts);
     }
 
     // Default: determine based on current directory
@@ -3645,6 +3631,39 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         // For mise use, use existing config_file_from_dir logic which respects ASDF compat
         Ok(config_file_from_dir(&cwd))
     }
+}
+
+fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
+    if let Some(section) = opts.global_write_section {
+        if opts.existing_global_paths.len() > 1 {
+            let paths = opts
+                .existing_global_paths
+                .iter()
+                .map(|path| display_path(path).to_string())
+                .join(", ");
+            bail!(
+                "requested entries are declared in multiple global config files ({paths}); use --path to choose one"
+            );
+        }
+        if let Some(path) = opts.existing_global_paths.first() {
+            if opts.has_new_global_entries {
+                let new_entry_path =
+                    configured_global_write_path(section)?.unwrap_or_else(global_config_path);
+                if !crate::lockfile::same_file_path(path, &new_entry_path) {
+                    bail!(
+                        "requested entries include existing declarations in {} and new declarations for {}; run separate commands or use --path",
+                        display_path(path),
+                        display_path(&new_entry_path),
+                    );
+                }
+            }
+            return Ok(path.clone());
+        }
+        if let Some(path) = configured_global_write_path(section)? {
+            return Ok(path);
+        }
+    }
+    Ok(global_config_path())
 }
 
 /// Whether `err` is the untrusted-config error for a config the user has just
@@ -9597,6 +9616,22 @@ mod write_target_tests {
         })
         .unwrap();
 
-        assert_eq!(resolved, explicit);
+        assert_eq!(resolved, explicit.absolutize().unwrap().to_path_buf());
+    }
+
+    #[test]
+    fn global_section_targets_must_be_discoverable() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_root = temp.path().join("mise");
+        let fragment = config_root.join("conf.d/10-tools.toml");
+
+        let incoming = BTreeSet::from([fragment.clone()]);
+        let discovered = config_files_with_incoming(&config_root, &incoming);
+        assert!(config_set_contains(&discovered, &fragment));
+
+        let ignored = config_root.join("tools.toml");
+        let incoming = BTreeSet::from([ignored.clone()]);
+        let discovered = config_files_with_incoming(&config_root, &incoming);
+        assert!(!config_set_contains(&discovered, &ignored));
     }
 }

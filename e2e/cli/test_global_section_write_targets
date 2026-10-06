@@ -23,6 +23,15 @@ mise dot add --global --no-apply --yes "$HOME/.write-target"
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" '"~/.write-target"'
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'write-target'
 
+# Writes that select the global config because they run from $HOME use the same defaults.
+cd "$HOME"
+mise use home-tool@system
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "system"'
+
+mise bootstrap packages use --no-install pacman:home-package
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "latest"'
+cd - >/dev/null
+
 # Explicit paths still win over defaults.
 mise use --path explicit-tools.toml dummy@1
 assert_contains "cat explicit-tools.toml" 'dummy = "1"'
@@ -45,6 +54,9 @@ assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'dummy = "2"'
 mise bootstrap packages use --global --no-install pacman:ripgrep@2
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:ripgrep" = "2"'
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'pacman:ripgrep'
+
+mise use --global --remove dummy
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy ='
 
 mkdir -p "$HOME/.dotfiles"
 printf 'old source\n' >"$HOME/.dotfiles/existing-write-target"

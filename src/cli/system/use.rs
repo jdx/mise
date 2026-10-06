@@ -6,6 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, GlobalWriteSection, resolve_target_config_path};
+use crate::env;
 use crate::file::display_path;
 use crate::system;
 use crate::system::driver::{self, Action, DriverOpts};
@@ -109,7 +110,7 @@ impl SystemUse {
             cwd: None,
             prefer_toml: true,        // [bootstrap] only exists in mise.toml
             prevent_home_local: true, // in $HOME, write the global config
-            global_write_section: self.global.then_some(GlobalWriteSection::Packages),
+            global_write_section: Some(GlobalWriteSection::Packages),
             existing_global_paths,
             has_new_global_entries,
         })?;
@@ -176,7 +177,7 @@ impl SystemUse {
         config: &crate::config::Config,
         entries: &[(String, String)],
     ) -> Result<(IndexSet<PathBuf>, bool)> {
-        if !self.global || self.path.is_some() || self.env.is_some() {
+        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
             return Ok((Default::default(), false));
         }
         let requested = entries

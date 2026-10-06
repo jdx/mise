@@ -439,7 +439,7 @@ impl Use {
             cwd: Some(cwd),
             prefer_toml: false,
             prevent_home_local: true, // When in HOME, use global config
-            global_write_section: self.global.then_some(GlobalWriteSection::Tools),
+            global_write_section: Some(GlobalWriteSection::Tools),
             existing_global_paths,
             has_new_global_entries,
         };
@@ -455,13 +455,14 @@ impl Use {
     }
 
     fn global_write_paths(&self, config: &Config) -> Result<(IndexSet<PathBuf>, bool)> {
-        if !self.global || self.path.is_some() || self.env.is_some() {
+        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
             return Ok((Default::default(), false));
         }
         let requested = self
             .tools
             .iter()
-            .map(|tool| tool.tool.ba.clone())
+            .map(|tool| tool.tool.ba.as_ref().clone())
+            .chain(self.remove.iter().cloned())
             .collect::<IndexSet<_>>();
         let mut paths = IndexSet::new();
         let mut existing = IndexSet::new();
