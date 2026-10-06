@@ -156,6 +156,7 @@ pub(crate) struct Upgrade {
     raw: bool,
 
     /// Additional candidate filter used only by the hidden background updater.
+    #[usage(skip)]
     background_update_policy: Option<UpdatePolicy>,
 }
 
