@@ -868,18 +868,8 @@ fn merge_conflict(
     (first, format, first_content): &(&EditRequest, Format, String),
     (second, second_format, second_content): &(&EditRequest, Format, String),
 ) -> Option<String> {
-    if !same_target(&first.path, &second.path) {
+    if !same_target(&first.path, &second.path) || format != second_format {
         return None;
-    }
-    // one file read as two formats (hard links under a .json and a .yml name)
-    // cannot be merged consistently, whatever the sources hold
-    if format != second_format {
-        return Some(format!(
-            "  \"{}\": {} and {} merge into one file as different formats",
-            first.path_raw,
-            first.describe_op(),
-            second.describe_op(),
-        ));
     }
     // unparseable sources were already reported by desired_content
     let keys = structured_merge::conflicts(*format, first_content, second_content).ok()?;
@@ -892,6 +882,44 @@ fn merge_conflict(
             keys.join(", ")
         )
     })
+}
+
+/// Merge entries that reach one file through different extensions (hard links
+/// under a .json and a .yml name) cannot be merged consistently as both
+/// formats, whatever their sources hold. The format comes from the extension,
+/// so this needs no rendering and holds on dry runs and for templates too.
+fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<String> {
+    let merges = |reqs: &[EditRequest]| {
+        reqs.iter()
+            .filter_map(|req| match &req.op {
+                EditOp::Merge { format, .. } => Some((req.clone(), *format)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let applied = merges(requests);
+    let others: Vec<_> = merges(siblings)
+        .into_iter()
+        .filter(|(sibling, _)| {
+            !requests
+                .iter()
+                .any(|req| req.path == sibling.path && req.id == sibling.id)
+        })
+        .collect();
+    let mut problems = vec![];
+    for (i, (first, first_format)) in applied.iter().enumerate() {
+        for (second, second_format) in applied[i + 1..].iter().chain(&others) {
+            if first_format != second_format && same_target(&first.path, &second.path) {
+                problems.push(format!(
+                    "  \"{}\": {} and {} merge into one file as different formats",
+                    first.path_raw,
+                    first.describe_op(),
+                    second.describe_op(),
+                ));
+            }
+        }
+    }
+    problems
 }
 
 /// The merge entries of `siblings` that this run is not applying but that
@@ -1042,6 +1070,7 @@ pub fn apply(
     }
     let unapplied = unapplied_siblings(config, requests, &siblings, opts.dry_run, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
+    problems.extend(format_conflicts(requests, &siblings));
     if !problems.is_empty() {
         bail!(
             "edits: cannot apply these entries, fix them manually:\n{}",

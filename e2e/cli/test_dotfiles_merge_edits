@@ -251,3 +251,14 @@ cat <<'EOF' >mise.toml
 EOF
 assert_fail_contains "mise dotfiles apply --yes" "as different formats"
 assert "cat ~/fmt.json" "{}"
+
+# the format conflict needs no rendering, so templates and dry runs see it too
+cat <<'EOF' >shared/model.json.tera
+{"model": "{{ 'a' }}"}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/fmt.json/a" = { source = "shared/model.json.tera", merge = true, template = "tera" }
+"~/fmt.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --dry-run" "as different formats"
