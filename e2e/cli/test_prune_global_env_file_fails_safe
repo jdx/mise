@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# A global environment file can supply the vars a project was installed with, even
+# when the project lives outside the config directory. Prune must refuse.
+mkdir -p project elsewhere
+echo '[vars]
+v = "1.0.0"' >"$MISE_CONFIG_DIR/config.dev.toml"
+echo '[vars]
+v = "9.9.9"' >"$MISE_CONFIG_DIR/config.toml"
+echo '[tools]
+dummy = "{{vars.v}}"' >project/mise.toml
+assert "MISE_ENV=dev mise -C project install"
+assert "mise install dummy@3.0.0"
+
+assert_fail "mise -C elsewhere prune --yes" "MISE_ENV"
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "3.0.0"

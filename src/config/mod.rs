@@ -1400,9 +1400,11 @@ impl Config {
             // environment-specific file other than the tracked one that sets vars
             // or env, loaded or not, could change what a template renders to.
             // Refuse rather than prune the wrong version.
-            if let Some(path) =
-                other_env_config_setting_template_inputs(&cf.config_root(), cf.get_path(), inputs)
-            {
+            if let Some(path) = other_env_config_setting_template_inputs(
+                &cf.config_root(),
+                cf.get_path(),
+                inputs,
+            )? {
                 bail!(
                     "cannot tell which tool versions {} needs: {} sets vars or env for a MISE_ENV that may not be the one it was installed with",
                     display_path(cf.get_path()),
@@ -2631,37 +2633,56 @@ fn ensure_inert_entries(kind: &str, entries: &[(EnvDirective, PathBuf)]) -> Resu
     Ok(())
 }
 
-/// First environment-specific config file above `start_dir`, other than
-/// `tracked`, whose text mentions a thing the templates read. Matching is
-/// textual and so errs toward reporting a file.
+/// First environment-specific config file other than `tracked`, in the
+/// directories above `start_dir` or the global and system config directories,
+/// whose text mentions a thing the templates read. Matching is textual and so
+/// errs toward reporting a file; a file that cannot be read is an error.
 fn other_env_config_setting_template_inputs(
     start_dir: &Path,
     tracked: &Path,
     inputs: TemplateInputs,
-) -> Option<PathBuf> {
+) -> Result<Option<PathBuf>> {
     const ANY_ENV: &str = "MISEANYENV";
-    let patterns = env_config_patterns(ANY_ENV)
+    let project_patterns = env_config_patterns(ANY_ENV)
         .into_iter()
         .map(|pattern| pattern.replace(ANY_ENV, "*"))
         .collect_vec();
-    all_dirs_from(start_dir)
-        .ok()?
-        .iter()
-        .filter(|dir| !config_dir_is_ignored(dir, false))
-        .flat_map(|dir| {
-            patterns
-                .iter()
-                .flat_map(|pattern| config_glob(dir, pattern))
-        })
-        .filter(|path| path != tracked)
-        .find(|path| {
-            std::fs::read_to_string(path)
-                .map(|text| {
-                    ((inputs.vars || inputs.env) && text.contains("vars"))
-                        || (inputs.env && text.contains("env"))
-                })
-                .unwrap_or(false)
-        })
+    let global_patterns = [
+        "config.*.toml",
+        "mise.*.toml",
+        "conf.d/*.*.toml",
+        "conf.d/*/mise.*.toml",
+    ];
+    let mut candidates = vec![];
+    for dir in all_dirs_from(start_dir)? {
+        if !config_dir_is_ignored(&dir, false) {
+            for pattern in &project_patterns {
+                candidates.extend(config_glob(&dir, pattern));
+            }
+        }
+    }
+    for dir in [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG] {
+        for pattern in global_patterns {
+            candidates.extend(config_glob(dir, pattern));
+        }
+    }
+    for path in candidates {
+        // `local` files load in every environment, so they are not overlays.
+        let is_local = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"));
+        if path == tracked || is_local || config_path_is_ignored(&path, false) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .wrap_err_with(|| format!("failed to read {}", display_path(&path)))?;
+        if ((inputs.vars || inputs.env) && text.contains("vars"))
+            || (inputs.env && text.contains("env"))
+        {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {

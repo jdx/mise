@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# `mise.local.toml` loads in every environment and an ignored file is never
+# loaded, so neither is an environment overlay that makes prune refuse.
+mkdir -p project/child elsewhere
+echo '[vars]
+v = "1.0.0"' >project/mise.toml
+echo '[vars]
+v = "1.0.0"' >project/mise.local.toml
+echo '[vars]
+v = "2.0.0"' >project/mise.prod.toml
+echo '[tools]
+dummy = "{{vars.v}}"' >project/child/mise.toml
+assert "mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert_contains "MISE_IGNORED_CONFIG_PATHS=$PWD/project/mise.prod.toml mise -C elsewhere prune --dry-run 2>&1" "dummy@3.0.0"
