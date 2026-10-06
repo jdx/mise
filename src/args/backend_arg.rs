@@ -765,7 +765,13 @@ impl BackendArg {
         let full = self.full_without_opts();
         REGISTRY
             .get(self.registry_short().as_str())
-            .map(|rt| rt.backend_options(&full))
+            .map(|rt| {
+                let mut options = rt.backend_options(&full);
+                // This is a user-consent option, never a registry default.
+                options.auto_update = None;
+                options.opts.shift_remove("auto_update");
+                options
+            })
             .unwrap_or_default()
     }
 

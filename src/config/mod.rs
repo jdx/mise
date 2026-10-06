@@ -4516,6 +4516,9 @@ pub async fn generate_lockfiles_after_changes(
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
+    if lockfile_update_mode.skips_update() {
+        return Ok(());
+    }
     if Settings::get().generate_lockfiles()
         && Settings::get().lockfile_enabled()
         && (!Settings::get().locked
@@ -4607,6 +4610,9 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
                 .wrap_err("failed to rebuild system shims")?;
         }
     });
+    if lockfile_update_mode.skips_update() {
+        return Ok(());
+    }
     if Settings::get().generate_lockfiles() {
         return Ok(());
     }

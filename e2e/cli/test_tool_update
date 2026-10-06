@@ -13,7 +13,16 @@ wait_for_dummy() {
   local attempt
   for attempt in {1..100}; do
     if mise ls --installed dummy | grep -Fq "$version"; then
-      return
+      # Installation becomes visible before the updater has rebuilt shims and
+      # released its lock. Waiting for that release keeps the next fixture
+      # from racing a still-running updater from this one.
+      for attempt in {1..100}; do
+        if ! grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
+          return
+        fi
+        sleep 0.1
+      done
+      fail "background updater did not finish after installing dummy@$version"
     fi
     sleep 0.1
   done
@@ -31,13 +40,31 @@ wait_for_update_marker() {
   fail "background updater did not record its check"
 }
 
-write_global_update_settings() {
+# Wait for a child that actually acquired the per-tool lock and then released
+# it. Lock files persist, but their PID is cleared on unlock. This avoids a
+# fixed sleep while still proving the detached child reached completion.
+wait_for_update_completion() {
+  local lock_seen=0
+  local attempt
+  wait_for_update_marker
+  for attempt in {1..100}; do
+    if grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
+      lock_seen=1
+    elif [ "$lock_seen" = 1 ] && ! grep -q '[0-9]' "$MISE_STATE_DIR/tool-update"/*.lock 2>/dev/null; then
+      return
+    fi
+    sleep 0.1
+  done
+  fail "background updater did not finish"
+}
+
+write_global_auto_update() {
   cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [settings.tool_update]
 check_duration = "1h"
 
-[settings.tool_update.tools]
-dummy = "minor"
+[tools]
+dummy = { version = "1", auto_update = "minor" }
 EOF
 }
 
@@ -49,19 +76,16 @@ EOF
 }
 
 # A repository cannot opt a user into background network or installation work.
-fresh_state local-setting
+fresh_state local-option
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
-# No global opt-in.
+# No global auto_update option.
 EOF
 cat >mise.toml <<'EOF'
 [tools]
-dummy = "1"
+dummy = { version = "1", auto_update = "minor" }
 
 [settings.tool_update]
 check_duration = "0s"
-
-[settings.tool_update.tools]
-dummy = "minor"
 EOF
 mise uninstall dummy --all
 mise install dummy@1.0.0
@@ -69,21 +93,18 @@ assert_contains "mise x -- dummy" "Dummy 1.0.0"
 assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 
-write_global_update_settings
+write_global_auto_update
 
 # `mise x` keeps its selected installed version, then updates only within the
-# globally configured minor boundary for a later resolution. The local major
-# entry is ignored because tool-update settings are global-only.
+# global minor boundary. A project cannot widen that boundary to major.
 fresh_state exec
 cat >mise.toml <<'EOF'
 [tools]
-dummy = "1"
-
-[settings.tool_update.tools]
-dummy = "major"
+dummy = { version = "1", auto_update = "major" }
 EOF
 mise uninstall dummy --all
 mise install dummy@1.0.0
+assert_contains "mise where dummy" "$MISE_DATA_DIR/installs/dummy/1.0.0"
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
 wait_for_dummy "1.1.0"
 assert_contains "mise x -- dummy" "Dummy 1.1.0"
@@ -103,6 +124,16 @@ mise install dummy@1.0.0
 assert_contains "mise run current" "Dummy 1.0.0"
 wait_for_dummy "1.1.0"
 
+# A PATH shim uses the same post-resolution scheduler, without making shell
+# activation or hook-env do foreground update work.
+fresh_state shim
+write_floating_dummy
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise reshim
+assert_contains '"$MISE_DATA_DIR/shims/dummy"' "Dummy 1.0.0"
+wait_for_dummy "1.1.0"
+
 # Exact pins never schedule background work.
 fresh_state pin
 cat >mise.toml <<'EOF'
@@ -115,8 +146,8 @@ assert_contains "mise x -- dummy" "Dummy 1.0.0"
 assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 
-# Any project lockfile disables the automatic updater rather than allowing it
-# to rewrite a binding in the background.
+# A matching lockfile binding is preserved, while an unrelated lock entry does
+# not unnecessarily disable this tool's separately opted-in update.
 fresh_state lockfile
 write_floating_dummy
 cat >mise.lock <<'EOF'
@@ -131,8 +162,30 @@ assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm mise.lock
 
-# hook-env remains an entirely foreground-free path even when the global
-# allowlist includes the configured tool.
+# A lockfile for another tool does not freeze this one, and the background
+# updater leaves that unrelated reproducibility state byte-for-byte unchanged.
+fresh_state unrelated-lockfile
+write_floating_dummy
+cat >mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+export unrelated_lock_checksum="$(cksum mise.lock)"
+mise uninstall dummy --all
+# Lockfile mode can make mise's ordinary foreground resolver require the
+# newest matching version even for an unrelated entry. Start with that version
+# already installed: this case verifies the updater is still scheduled (rather
+# than treating every lockfile as a global freeze) and never rewrites it.
+mise install dummy@1.1.0
+assert_contains "mise x -- dummy" "Dummy 1.1.0"
+wait_for_update_marker
+assert "cksum mise.lock" "$unrelated_lock_checksum"
+unset unrelated_lock_checksum
+rm mise.lock
+
+# hook-env remains an entirely foreground-free path even when the global tool
+# option enables background updates for the configured tool.
 fresh_state hook-env
 write_floating_dummy
 mise uninstall dummy --all
@@ -148,22 +201,21 @@ mise uninstall dummy --all
 mise install dummy@1.0.0
 cat >mise.toml <<'EOF'
 [tools]
-dummy = { version = "1", postinstall = "false" }
+dummy = { version = "1", postinstall = "sleep 1; false" }
 EOF
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_update_marker
-sleep 0.2
+wait_for_update_completion
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
 
-# Simultaneous foreground commands must yield one updater. The bundled dummy
-# plugin records whether two top-level installs overlap.
+# Simultaneous foreground commands claim the same marker before fork and the
+# child lock still protects the full installation from cross-process races.
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [settings.tool_update]
 check_duration = "0s"
 
-[settings.tool_update.tools]
-dummy = "minor"
+[tools]
+dummy = { version = "1", auto_update = "minor" }
 EOF
 fresh_state concurrent
 write_floating_dummy

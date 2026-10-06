@@ -13,7 +13,6 @@ use crate::install_before::{
     resolve_cli_minimum_release_age,
 };
 use crate::semver::split_version_prefix;
-use crate::tool_update::UpdatePolicy;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
@@ -154,10 +153,6 @@ pub(crate) struct Upgrade {
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
-
-    /// Additional candidate filter used only by the hidden background updater.
-    #[usage(skip)]
-    background_update_policy: Option<UpdatePolicy>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,7 +189,15 @@ impl Upgrade {
         }
     }
 
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        self.run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::AllowLocked)
+            .await
+    }
+
+    async fn run_with_lockfile_update_mode(
+        mut self,
+        lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
+    ) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",
@@ -287,7 +290,10 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
+        if !self.is_dry_run()
+            && !Settings::get().generate_lockfiles()
+            && !lockfile_update_mode.skips_update()
+        {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
@@ -381,16 +387,6 @@ impl Upgrade {
             )
             .await
         };
-        if let Some(policy) = self.background_update_policy {
-            // Keep normal tool-request range resolution intact, then apply the
-            // opt-in update boundary to the selected candidate.
-            outdated.retain(|outdated| {
-                outdated
-                    .current
-                    .as_deref()
-                    .is_some_and(|current| policy.allows(current, &outdated.latest))
-            });
-        }
         if Settings::get().pin {
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
@@ -494,8 +490,14 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&mut config, outdated, before_date, &explicit_config_bumps)
-                .await?;
+            self.upgrade(
+                &mut config,
+                outdated,
+                before_date,
+                &explicit_config_bumps,
+                lockfile_update_mode,
+            )
+            .await?;
         }
 
         Ok(())
@@ -507,6 +509,7 @@ impl Upgrade {
         outdated: Vec<OutdatedInfo>,
         before_date: Option<Timestamp>,
         explicit_config_bumps: &[ExplicitConfigBump],
+        lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let prune_mode = self.prune_mode()?;
@@ -1011,7 +1014,7 @@ impl Upgrade {
             config,
             ts,
             &successful_versions,
-            crate::lockfile::LockfileUpdateMode::AllowLocked,
+            lockfile_update_mode,
         )
         .await?;
 
@@ -1247,16 +1250,24 @@ impl Upgrade {
     }
 }
 
-/// Run a single, already-authorized background update. The hidden caller
-/// acquires the per-tool lock and records the check before reaching here.
-/// Keeping this on the ordinary upgrade path is intentional: it preserves
-/// selector/range handling and atomic installation instead of building a
-/// second updater. Deferred pruning uses the normal cross-platform
-/// running-process protection from the stacked safety change.
+/// Run a single, already-authorized background update. The hidden caller owns
+/// the per-tool lock; the foreground caller recorded the rate-limit marker
+/// before it detached this process. Keeping this on the ordinary upgrade path
+/// preserves backend/mirror resolution, minimum-release-age handling, atomic
+/// installation, and process-safe deferred pruning.
 pub(crate) async fn run_background_tool_update(
     tool: crate::args::ToolArg,
-    policy: UpdatePolicy,
+    current: &str,
+    policy: crate::tool_update::UpdatePolicy,
 ) -> Result<()> {
+    // Supply the bounded selector before outdated resolution, rather than
+    // resolving a newest-major candidate and filtering it afterwards. The
+    // configured request still supplies its normal options and release-age
+    // constraints through ToolsetBuilder's runtime-argument option layering.
+    let tool = match policy.candidate_selector(current) {
+        Some(selector) => tool.with_version(&selector),
+        None => tool,
+    };
     Upgrade {
         tool: vec![tool],
         bump: false,
@@ -1273,9 +1284,8 @@ pub(crate) async fn run_background_tool_update(
         no_prune: false,
         prune: false,
         raw: false,
-        background_update_policy: Some(policy),
     }
-    .run()
+    .run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::Skip)
     .await
 }
 

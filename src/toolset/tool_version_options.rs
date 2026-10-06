@@ -16,6 +16,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "install_before",
     "minimum_release_age",
     "version_order",
+    "auto_update",
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -30,6 +31,10 @@ pub struct CoreToolOptions {
     pub lazy: Option<bool>,
     #[serde(default)]
     pub lazy_bins: Vec<String>,
+    /// A mise control-plane option; it is never passed to a backend or stored
+    /// in an install manifest.
+    #[serde(default)]
+    pub auto_update: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -253,6 +258,12 @@ impl ResolvedToolOptions {
         {
             options.lazy_bins.clone_from(&self.options.lazy_bins);
         }
+        if self
+            .source_for_key("auto_update")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.auto_update.clone_from(&self.options.auto_update);
+        }
         options
     }
 
@@ -282,6 +293,9 @@ impl ResolvedToolOptions {
         }
         if !options.lazy_bins.is_empty() {
             self.sources.insert("lazy_bins".to_string(), source);
+        }
+        if options.auto_update.is_some() {
+            self.sources.insert("auto_update".to_string(), source);
         }
     }
 }
@@ -351,12 +365,16 @@ impl ToolOptions {
             && self.install_env.is_empty()
             && self.lazy.is_none()
             && self.lazy_bins.is_empty()
+            && self.auto_update.is_none()
             && self.opts.is_empty()
     }
 
     /// Get a string value for a key. Returns the str for String values,
     /// or None for non-string values.
     pub(crate) fn get(&self, key: &str) -> Option<&str> {
+        if key == "auto_update" {
+            return self.auto_update.as_deref();
+        }
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
@@ -428,6 +446,9 @@ impl ToolOptions {
         if !overrides.lazy_bins.is_empty() {
             self.lazy_bins.clone_from(&overrides.lazy_bins);
         }
+        if overrides.auto_update.is_some() {
+            self.auto_update.clone_from(&overrides.auto_update);
+        }
     }
 
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
@@ -479,6 +500,13 @@ impl ToolOptions {
                 {
                     return Err("lazy_bins must contain command names, not paths".to_string());
                 }
+                Ok(true)
+            }
+            "auto_update" => {
+                let value = value
+                    .as_str()
+                    .ok_or_else(|| "auto_update must be a string".to_string())?;
+                self.auto_update = Some(value.to_string());
                 Ok(true)
             }
             "postinstall" => {
@@ -544,6 +572,9 @@ impl ToolOptions {
         }
         if key == "lazy_bins" {
             return !self.lazy_bins.is_empty();
+        }
+        if key == "auto_update" {
+            return self.auto_update.is_some();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -972,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_parse_tool_options_core_keys_from_toml() {
-        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2, REMOVE = false },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01""#;
+        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2, REMOVE = false },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01",auto_update="minor""#;
         let opts = parse_tool_options(input);
 
         assert_eq!(
@@ -992,9 +1023,12 @@ mod tests {
         assert_eq!(opts.get("postinstall"), Some("echo hi"));
         assert_eq!(opts.get("minimum_release_age"), Some("7d"));
         assert_eq!(opts.get("install_before"), Some("2024-01-01"));
+        assert_eq!(opts.auto_update.as_deref(), Some("minor"));
+        assert!(!opts.opts_as_strings().contains_key("auto_update"));
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+        assert!(!opts.opts.contains_key("auto_update"));
     }
 
     #[test]

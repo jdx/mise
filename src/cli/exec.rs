@@ -464,13 +464,19 @@ impl Exec {
         time!("exec");
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
-        // command must not be reinterpreted as a shell body.
-        // The environment now contains the concrete tool paths selected for
-        // this invocation. Scheduling only forks a detached child, so it
-        // cannot delay this command or change its chosen version.
-        crate::tool_update::schedule(&config, &ts);
-
-        exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
+        // command must not be reinterpreted as a shell body. `exec_program`
+        // resolves a concrete executable before it schedules the update, so
+        // the update cannot win a PATH race and change this launch.
+        exec_program(
+            program,
+            args,
+            env,
+            env_remove,
+            &sandbox,
+            self.c.is_some(),
+            Some((&config, &ts)),
+        )
+        .await
     }
 }
 
@@ -624,6 +630,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     _shell_body_mode: bool,
+    tool_update: Option<(&Arc<Config>, &Toolset)>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -747,6 +754,9 @@ where
             program.to_string_lossy()
         ));
     }
+    if let Some((config, toolset)) = tool_update {
+        crate::tool_update::schedule(config, toolset);
+    }
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
     let args_str: Vec<String> = args
@@ -795,6 +805,7 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     shell_body_mode: bool,
+    tool_update: Option<(&Arc<Config>, &Toolset)>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -897,6 +908,10 @@ where
     }
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
+    if let Some((config, toolset)) = tool_update {
+        crate::tool_update::schedule(config, toolset);
+    }
+
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
     // the child process deal with it instead.
@@ -973,12 +988,16 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     _sandbox: &SandboxConfig,
     _shell_body_mode: bool,
+    tool_update: Option<(&Arc<Config>, &Toolset)>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
+    if let Some((config, toolset)) = tool_update {
+        crate::tool_update::schedule(config, toolset);
+    }
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);

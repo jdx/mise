@@ -716,6 +716,17 @@
             "type": "string"
           }
         },
+        "tool_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "check_duration": {
+              "default": "24h",
+              "description": "Minimum time between background update checks for an opted-in tool.",
+              "type": "string"
+            }
+          }
+        },
         "auto_update": {
           "default": false,
           "description": "Automatically update mise before running eligible commands.",

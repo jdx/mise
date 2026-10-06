@@ -164,8 +164,10 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
-        if self.scope == ConfigScope::LocalOnly {
-            // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
+        if self.scope != ConfigScope::All {
+            // Scoped toolsets represent config provenance only. In particular,
+            // GlobalOnly must not let a runtime MISE_*_VERSION override a
+            // policy read exclusively from the global config file.
             return Ok(());
         }
         let postinstall = postinstall_tool_request(&env)?.map(|(mut request, source)| {

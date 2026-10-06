@@ -298,10 +298,10 @@ type = "ListString"
 default = "24h"
 description = "Minimum time between background update checks for an opted-in tool."
 docs = """
-Controls how often mise starts a background `mise upgrade <tool>` for a tool named in
-[`tool_update.tools`](#tool_update.tools). The foreground `mise x` or `mise run` command
-continues immediately with the installed version; a successful update is used the next time
-the tool resolves.
+Controls how often mise starts a background update for a tool whose global `[tools]` entry has
+an `auto_update` option. The foreground `mise x`, `mise run`, or shim command continues
+immediately with its installed version; a successful update is used the next time the tool
+resolves.
 
 The check marker is shared by all projects for the same backend. Failed or offline
 checks still leave the current installation untouched and wait until the next interval before
@@ -310,39 +310,6 @@ trying again.
 env = "MISE_TOOL_UPDATE_CHECK_DURATION"
 global_only = true
 type = "Duration"
-
-[tool_update.tools]
-description = "Tools that mise may update in the background after `mise x` or `mise run` starts, mapped to their allowed update level."
-docs = """
-An opt-in map of configured tool names to their allowed update level. Set it in global config:
-
-```toml
-[settings.tool_update]
-check_duration = "24h"
-
-[settings.tool_update.tools]
-claude = "patch"
-codex = "minor"
-"npm:typescript" = "major"
-```
-
-`major` permits every version allowed by the configured tool request. `minor` only permits a new
-version with the foreground version's major number, and `patch` only permits a new version with the
-foreground version's major and minor numbers. mise still resolves candidates through the normal
-configured backend and registry or mirror, honors the configured version request and
-[`minimum_release_age`](#minimum_release_age), and never fetches a separate upstream "latest"
-release. Exact pins do not schedule an update. A fully qualified backend name such as
-`"npm:typescript"` takes precedence over its short tool name.
-
-This setting is global-only: a project cannot opt someone into background network or installation
-work. Tools with an existing lockfile are skipped to preserve lockfile reproducibility. Automatic
-updates never run from `mise hook-env`, shell activation, shims, or an installed service/scheduler.
-No registry entry enables this feature by default. Background updates use mise's normal atomic
-installation and deferred pruning path, including its live running-process protection.
-"""
-global_only = true
-optional = true
-type = "IndexMap<String, String>"
 
 [auto_update]
 default = false

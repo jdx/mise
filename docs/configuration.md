@@ -276,6 +276,7 @@ See [Tools](/dev-tools/). In addition to specifying versions, each tool entry ca
 - `depends`: Install order relative to other tools in this config only; vfox plugin hook dependencies belong in plugin `metadata.lua` (see [Tool Dependencies](/dev-tools/#tool-dependencies))
 - `install_env`: Environment vars used during download, install, and tool-level `postinstall`
 - `postinstall`: Command to run after installation completes for that specific tool
+- `auto_update`: Opt a global tool entry into background updates (`major`, `minor`, or `patch`)
 
 Examples:
 
@@ -283,6 +284,36 @@ Examples:
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
 ```
+
+### Background tool updates
+
+Set `auto_update` only in your global config (for example `~/.config/mise/config.toml`) to let a
+floating tool update in the background after it is used:
+
+```toml
+[tools]
+claude = { version = "latest", auto_update = "patch" }
+codex = { version = "latest", auto_update = "minor" }
+```
+
+`major` asks the backend for its newest version. `minor` retains the first numeric version component
+of the installed version; `patch` retains its first two components.
+This uses mise's existing version-prefix matching, so date-like and other non-SemVer versions keep
+their visible numeric components rather than being parsed as SemVer. If a version has no numeric
+components, mise falls back to the configured request rather than silently disabling updates.
+
+The option is read only from global configuration: a project file cannot opt you into background
+network or installation work, and registry entries never enable it. Exact pins and matching
+lockfile entries are skipped. Candidate resolution continues through the configured backend,
+registry or mirror, and `minimum_release_age`; mise derives the policy's `latest` or version-prefix
+query before normal resolution rather than fetching a separate upstream release. The updater never
+rewrites a lockfile.
+
+The foreground command does not wait for an update. `mise x`, `mise run`, and mise shims perform a
+cheap rate-limit check after selecting their installed tool paths; `mise hook-env` and shell
+activation do not schedule work. There is no installed service or OS scheduler, so direct PATH
+activation that does not pass through mise cannot trigger an update. Set
+`settings.tool_update.check_duration` globally to change the default 24-hour interval.
 
 ### `include` - Share config from a remote file {#include}
 
