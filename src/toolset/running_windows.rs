@@ -138,15 +138,36 @@ fn command_line(handle: &Handle) -> Option<String> {
     Some(String::from_utf16_lossy(&wide))
 }
 
-/// The absolute paths among the arguments of a Windows command line, where
-/// double quotes group words that contain spaces.
+/// The absolute paths among the arguments of a Windows command line, split by
+/// the rules `CommandLineToArgvW` uses: double quotes group words, `2n`
+/// backslashes before a quote are `n` backslashes and toggle the quote, and
+/// `2n+1` backslashes before a quote are `n` backslashes and a literal quote.
+/// Backslashes anywhere else are literal.
 pub(super) fn absolute_paths(line: &str) -> Vec<PathBuf> {
     let mut args = vec![];
     let mut current = String::new();
     let mut quoted = false;
     let mut any = false;
-    for c in line.chars() {
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
+            '\\' => {
+                let mut backslashes = 1;
+                while chars.next_if_eq(&'\\').is_some() {
+                    backslashes += 1;
+                }
+                any = true;
+                if chars.next_if_eq(&'"').is_some() {
+                    current.extend(std::iter::repeat_n('\\', backslashes / 2));
+                    if backslashes % 2 == 1 {
+                        current.push('"');
+                    } else {
+                        quoted = !quoted;
+                    }
+                } else {
+                    current.extend(std::iter::repeat_n('\\', backslashes));
+                }
+            }
             '"' => {
                 quoted = !quoted;
                 any = true;

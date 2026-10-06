@@ -566,4 +566,19 @@ mod windows_tests {
             vec![PathBuf::from(r"C:\a b\c.js"), PathBuf::from(r"C:\d\e")]
         );
     }
+
+    #[test]
+    fn splits_escaped_quotes() {
+        // An escaped quote does not end the quoted title, so the script that
+        // follows is still its own argument.
+        let paths = sys::absolute_paths(r#"node --title "a\"b" C:\tools\x\1.0.0\app.js"#);
+        assert_eq!(paths, vec![PathBuf::from(r"C:\tools\x\1.0.0\app.js")]);
+        // Two backslashes before a quote are one backslash, and the quote
+        // closes the argument.
+        let paths = sys::absolute_paths(r#""C:\a b\\" C:\d\e"#);
+        assert_eq!(
+            paths,
+            vec![PathBuf::from(r"C:\a b\"), PathBuf::from(r"C:\d\e")]
+        );
+    }
 }
