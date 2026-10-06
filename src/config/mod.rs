@@ -2609,14 +2609,17 @@ impl TemplateInputs {
         }
     }
 
-    /// Whether a config file has a top-level `vars` or `env` table these
+    /// Whether a config file has a top-level `vars` or `env` table (or `env_file`/`env_path`) these
     /// templates could read. A file that does not parse counts as setting them.
     fn set_by_config(self, text: &str) -> bool {
         let Ok(table) = text.parse::<toml::Table>() else {
             return true;
         };
         ((self.vars || self.env) && table.contains_key("vars"))
-            || (self.env && table.contains_key("env"))
+            || (self.env
+                && ["env", "env_file", "env_path"]
+                    .iter()
+                    .any(|key| table.contains_key(*key)))
     }
 }
 
@@ -7225,6 +7228,8 @@ mod tests {
         // The text of a comment or value is not a section.
         assert!(!both.set_by_config("# sets no environment variables\n[tools]\nnode = \"1\"\n"));
         assert!(!both.set_by_config("[tasks.t]\nenv = { A = \"1\" }\n"));
+        assert!(both.set_by_config("env_file = \".env\"\n"));
+        assert!(both.set_by_config("env_path = [\"bin\"]\n"));
         // A template that reads only vars is unaffected by an env section.
         assert!(!vars_only.set_by_config("[env]\nA = \"1\"\n"));
     }
