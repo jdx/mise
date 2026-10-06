@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A global lockfile can be committed for machines that load different profile
+# configurations. Keep the active profile intentionally small while the shared
+# file starts with a tool from an inactive profile and an aube sidecar.
+export MISE_LOCKFILE=1
+detect_platform
+
+write_global_config() {
+  local mode="$1"
+  local auto_prune="${2:-}"
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+lockfile_mode = "$mode"
+EOF
+  if [ -n "$auto_prune" ]; then
+    echo "lockfile_auto_prune = $auto_prune" >>"$MISE_CONFIG_DIR/config.toml"
+  fi
+  cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+
+[settings.npm]
+shell_out = true
+
+[tools]
+dummy = "1.0.0"
+EOF
+  cat >"$MISE_CONFIG_DIR/config.appliance.toml" <<'EOF'
+[tools]
+age = "1.2"
+EOF
+}
+
+write_shared_lockfile() {
+  local lockfile="$MISE_CONFIG_DIR/mise.lock"
+  local sidecar="$MISE_CONFIG_DIR/locks/npm-retained/1.0.0/aube-lock.yaml"
+  mkdir -p "$(dirname "$sidecar")"
+  printf "lockfileVersion: '9.0'\npackages: {}\n" >"$sidecar"
+  local digest
+  digest="$(
+    python3 - "$sidecar" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(f"sha256:{hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()}")
+PY
+  )"
+  cat >"$lockfile" <<EOF
+lockfile_version = 3
+
+[[tools.age]]
+version = "1.2.1"
+backend = "aqua:FiloSottile/age"
+
+[[tools."npm:retained"]]
+version = "1.0.0"
+backend = "npm:retained"
+aube = { path = "locks/npm-retained/1.0.0", digest = "$digest" }
+EOF
+}
+
+for mode in merge generate; do
+  echo "=== $mode mode prunes by default ==="
+  write_global_config "$mode"
+  write_shared_lockfile
+
+  mise lock --global --platform "$MISE_PLATFORM"
+  assert_not_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools.age]]'
+  assert_not_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools."npm:retained"]]'
+  assert_fail "test -e '$MISE_CONFIG_DIR/locks/npm-retained/1.0.0/aube-lock.yaml'"
+
+  echo "=== filtered locks retain entries outside their filter ==="
+  write_shared_lockfile
+  mise lock --global dummy --platform "$MISE_PLATFORM"
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools.age]]'
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools."npm:retained"]]'
+  assert_succeed "test -e '$MISE_CONFIG_DIR/locks/npm-retained/1.0.0/aube-lock.yaml'"
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'aube = { path = "locks/npm-retained/1.0.0", digest = "sha256:'
+
+  echo "=== $mode mode preserves inactive profiles when automatic pruning is disabled ==="
+  write_global_config "$mode" false
+  cat >>"$MISE_CONFIG_DIR/mise.lock" <<'EOF'
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+options = { stale = "true" }
+EOF
+  mise lock --global --platform "$MISE_PLATFORM"
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools.age]]'
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools."npm:retained"]]'
+  assert_not_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'stale = "true"'
+  assert_succeed "test -e '$MISE_CONFIG_DIR/locks/npm-retained/1.0.0/aube-lock.yaml'"
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'aube = { path = "locks/npm-retained/1.0.0", digest = "sha256:'
+
+  rm -rf "$MISE_CONFIG_DIR/locks" "$MISE_CONFIG_DIR/mise.lock" \
+    "$MISE_CONFIG_DIR/config.toml" "$MISE_CONFIG_DIR/config.appliance.toml"
+done
+
+for mode in merge generate; do
+  echo "=== $mode mode upgrades an empty active profile without pruning ==="
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+lockfile_mode = "$mode"
+lockfile_auto_prune = false
+EOF
+  cat >"$MISE_CONFIG_DIR/mise.lock" <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+  mise lock --global --upgrade --platform "$MISE_PLATFORM"
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'lockfile_version = 3'
+  assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '[[tools.dummy]]'
+
+  rm -f "$MISE_CONFIG_DIR/mise.lock" "$MISE_CONFIG_DIR/config.toml"
+done
