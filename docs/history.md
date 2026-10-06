@@ -1381,8 +1381,17 @@ History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
 one, `mise dot save` fails and bootstrap commands still run, recording
 their journals without content; `mise dot status` says so.
 
-`settings.history.enabled` defaults to `true`. Disabling it stops automatic
-capture; it does not delete committed history.
+`settings.history.enabled` defaults to `true`, but history only records once you opt in
+by tracking files (`mise dot track`, a `[dotfiles]` declaration in your global or system
+configuration, or an adopted setup repository). Config that arrives any other way (a
+`git clone`, a dotfile manager, Nix) activates it the same way, so nothing needs to be
+written to enable it. Setting it to `false` is a kill switch: it stops automatic capture
+and the `mise dot` history commands; it does not delete committed history.
+
+A bootstrap on a machine that tracks nothing does not wait for, or fail on, another mise
+process using the same `$MISE_STATE_DIR` (parallel CI jobs, for example). Runs that record
+history do wait, up to 30 seconds. Give each CI job its own `MISE_STATE_DIR`, or set
+`MISE_HISTORY_ENABLED=false`, if they should never interact.
 
 Keep your repository and decryption identities recoverable independently.
 Repository authentication and an age identity serve different purposes:
