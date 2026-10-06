@@ -5002,6 +5002,9 @@ as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>
 Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
 Versions still referenced by a tracked stub are not deleted.
 
+On Linux, versions that a running process was started from are not deleted either,
+so a long-running program keeps its files after its version stops being needed.
+
 You can list prunable tools with `mise ls --prunable`
 """#
     flag "-n --dry-run" help="Do not actually delete anything"

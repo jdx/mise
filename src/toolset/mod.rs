@@ -33,6 +33,7 @@ use std::{
 use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
+pub use running::RunningProcess;
 pub use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{
@@ -55,6 +56,7 @@ mod helpers;
 mod install_options;
 pub mod install_state;
 pub mod outdated_info;
+mod running;
 mod tool_deps;
 pub(crate) mod tool_request;
 mod tool_request_set;
@@ -1073,17 +1075,29 @@ pub async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
-    Ok(prunable_tools_with_sources(config, tools).await?.0)
+    Ok(prunable_tools_with_sources(config, tools).await?.to_delete)
 }
 
-/// Like [`prunable_tools`], but also returns what the tracked configs and stubs
-/// still need. Pruning removes what none of them named, so the versions that
-/// were kept — and the files that kept them — are the only evidence available
-/// for explaining a removal.
+/// The outcome of deciding which installed versions are unused.
+pub struct PrunableTools {
+    /// Versions that nothing tracked or running needs.
+    pub to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
+    /// What the tracked configs and stubs still need, and the files that need it.
+    pub needed: NeededVersions,
+    /// Versions no tracked config or stub needs, kept because processes are
+    /// still running from them.
+    pub running: Vec<(ToolVersion, Vec<RunningProcess>)>,
+}
+
+/// Like [`prunable_tools`], but also returns why the other versions are kept:
+/// what the tracked configs and stubs still need, and which versions running
+/// processes hold. Pruning removes what none of them named, so the versions
+/// that were kept — and what kept them — are the only evidence available for
+/// explaining a removal.
 pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
-) -> Result<(Vec<(Arc<dyn Backend>, ToolVersion)>, NeededVersions)> {
+) -> Result<PrunableTools> {
     let ts = ToolsetBuilder::new().build(config).await?;
     let mut to_delete = ts
         .list_installed_versions(config)
@@ -1114,7 +1128,27 @@ pub async fn prunable_tools_with_sources(
         to_delete.remove(key);
     }
 
-    Ok((to_delete.into_values().collect(), needed))
+    // A process started before its version stopped being needed may still be
+    // running from it. Removing the version would delete files from under it.
+    let install_paths = to_delete
+        .values()
+        .map(|(_, tv)| tv.install_path())
+        .collect::<Vec<_>>();
+    let mut processes = running::processes_running_from(&install_paths);
+    let mut running = vec![];
+    to_delete.retain(|_, (_, tv)| match processes.remove(&tv.install_path()) {
+        Some(procs) => {
+            running.push((tv.clone(), procs));
+            false
+        }
+        None => true,
+    });
+
+    Ok(PrunableTools {
+        to_delete: to_delete.into_values().collect(),
+        needed,
+        running,
+    })
 }
 
 async fn is_version_satisfied(

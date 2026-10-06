@@ -7,7 +7,9 @@ use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
-use crate::toolset::{NeededVersions, ToolVersion, prunable_tools, prunable_tools_with_sources};
+use crate::toolset::{
+    NeededVersions, PrunableTools, RunningProcess, ToolVersion, prunable_tools_with_sources,
+};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt::{self, Confirmation};
@@ -26,6 +28,9 @@ use super::trust::Trust;
 ///
 /// Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
 /// Versions still referenced by a tracked stub are not deleted.
+///
+/// On Linux, versions that a running process was started from are not deleted either,
+/// so a long-running program keeps its files after its version stops being needed.
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
@@ -83,7 +88,12 @@ impl Prune {
                 .as_ref()
                 .map(|it| it.iter().map(|ta| ta.ba.as_ref()).collect());
             let tools = backends.unwrap_or_default();
-            let (to_delete, needed) = prunable_tools_with_sources(&config, tools).await?;
+            let PrunableTools {
+                to_delete,
+                needed,
+                running,
+            } = prunable_tools_with_sources(&config, tools).await?;
+            explain_running(&running);
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
             delete(
@@ -130,7 +140,10 @@ pub(super) async fn prune(
     tools: Vec<&BackendArg>,
     dry_run: bool,
 ) -> Result<()> {
-    let to_delete = prunable_tools(config, tools).await?;
+    let PrunableTools {
+        to_delete, running, ..
+    } = prunable_tools_with_sources(config, tools).await?;
+    explain_running(&running);
     delete(
         config,
         dry_run,
@@ -231,6 +244,25 @@ pub(crate) fn removal_key(tv: &ToolVersion) -> String {
         // Variants of one version are separate rows.
         Some(dir) => format!("{}@{}#{dir}", tv.ba().short, tv.version),
         None => format!("{}@{}", tv.ba().short, tv.version),
+    }
+}
+
+/// Say which versions are kept because processes are still running from them.
+/// Nothing tracked needs these, so without this a version left behind after a
+/// prune would look like a mistake.
+fn explain_running(running: &[(ToolVersion, Vec<RunningProcess>)]) {
+    const SHOWN: usize = 3;
+    for (tv, processes) in running {
+        let mut held_by = processes
+            .iter()
+            .take(SHOWN)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if processes.len() > SHOWN {
+            held_by.push_str(&format!(" and {} more", processes.len() - SHOWN));
+        }
+        info!("{} is kept: still running as {held_by}", tv.style());
     }
 }
 
