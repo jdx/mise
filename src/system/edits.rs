@@ -951,8 +951,10 @@ fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<S
 /// The merge entries of `siblings` that this run is not applying but that
 /// target a file this run merges into, so a conflict with them is caught too.
 /// A template sibling is never rendered, since that could run `exec()` for an
-/// entry nobody asked to apply; its conflicts are found when it is applied.
-/// Entries whose target is blocked are skipped as well.
+/// entry nobody asked to apply. A conflict involving a template is therefore
+/// found only when every entry in it is applied in the same run, not when one
+/// of them is applied alone through a target filter. Entries whose target is
+/// blocked are skipped as well.
 fn unapplied_siblings<'a>(
     config: &Config,
     requests: &[EditRequest],

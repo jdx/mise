@@ -899,7 +899,10 @@ the application wrote. A missing target is created from the source.
   key differs. A target that is not valid JSON, TOML, or YAML (including JSON
   with comments) is reported and never overwritten.
 - Two merge entries for one file that set the same key to different values are
-  refused instead of fighting over it. mise does not compare a merge with a
+  refused instead of fighting over it. An entry with `template = "tera"` is
+  rendered only when it is applied, so a conflict with one is found when both
+  are applied in the same run, not when one is applied alone through a target
+  filter. mise does not compare a merge with a
   `block` or `line` edit of the same file, so don't have both own one key.
 - `template = "tera"` renders the source first, like other edit entries.
 - `mise dot unapply` leaves merged keys in place, because the application may
