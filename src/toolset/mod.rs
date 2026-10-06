@@ -1008,7 +1008,26 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut requests = cf.to_tool_request_set()?;
+        // The identity layout records what a config's templated versions rendered
+        // to when they were installed or used; a global prune cannot render them
+        // the way the project does, so it protects what was recorded.
+        let mut requests = if crate::install_layout::resolver::enabled()
+            && cf.has_templated_tool_versions()
+        {
+            let Some(recorded) = crate::install_layout::claims::needed_by(&path) else {
+                bail!(
+                    "cannot tell which tool versions {} needs: they are templates, and no installation has been recorded for this config; run `mise install` in {} to record them",
+                    display_path(&path),
+                    display_path(cf.config_root())
+                );
+            };
+            for key in recorded {
+                needed.entry(key).or_default().insert(path.clone());
+            }
+            cf.to_tool_request_set_skipping_templated()?
+        } else {
+            cf.to_tool_request_set()?
+        };
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         let mut ts = Toolset::from(requests);

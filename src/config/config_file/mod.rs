@@ -137,6 +137,15 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
+    /// Whether any tool version is a template (`node = "{{ vars.node }}"`).
+    fn has_templated_tool_versions(&self) -> bool {
+        false
+    }
+    /// [`ConfigFile::to_tool_request_set`] without the templated versions, for a
+    /// caller that has another source for them.
+    fn to_tool_request_set_skipping_templated(&self) -> eyre::Result<ToolRequestSet> {
+        self.to_tool_request_set()
+    }
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
     }

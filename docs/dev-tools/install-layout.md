@@ -370,6 +370,16 @@ Both work on one installation directory at a time.
   installations of its backend and version, narrowed to the pinned artifact when
   the entry has a checksum for your platform. Legacy installations are pruned as
   before.
+- A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
+  on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
+  where the project is used, which `mise prune` cannot reproduce from another
+  directory. The catalog therefore records, under `installs/.mise/claims/`, the
+  installations a config's templated versions rendered to whenever they are
+  installed or used, and `mise prune` keeps them. Editing the config or anything
+  it loads replaces the record the next time the project is used. A config with a
+  templated version and no record makes `mise prune` stop and name the config;
+  run `mise install` in that project to record it. Without the new layout,
+  `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
   the new layout.
 - `mise ls` and `mise prune` list each installation separately. When several
