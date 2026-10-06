@@ -455,9 +455,11 @@ impl BackendsSwitch {
     }
 
     /// Reinstall the switched versions that are installed, from the new
-    /// backend. Installs are keyed by tool and version, not backend, so an
-    /// install from the old backend would otherwise keep satisfying the new
-    /// lock entry.
+    /// backend. In the legacy layout installs are keyed by tool and version, not
+    /// backend, so an install from the old backend would otherwise keep
+    /// satisfying the new lock entry. In the identity layout the new backend's
+    /// installation is a different one, so a version is reinstalled when its
+    /// version path (the old backend's install, or its version link) is there.
     async fn reinstall(
         &self,
         switched: &BTreeSet<(String, String)>,
@@ -465,11 +467,35 @@ impl BackendsSwitch {
     ) -> Result<()> {
         let mut config = Config::reset().await?;
         let mut requests = vec![];
+        // Read once, and only if some switched version has no version path.
+        let mut installations = None;
         for (lockfile, tv) in self.scoped_versions(&config).await? {
-            if (switched.contains(&(tv.short().to_string(), tv.version.clone()))
-                || relocked_tools.contains(&(lockfile, tv.short().to_string())))
-                && tv.backend()?.is_version_installed(&config, &tv, false)
+            if !switched.contains(&(tv.short().to_string(), tv.version.clone()))
+                && !relocked_tools.contains(&(lockfile, tv.short().to_string()))
             {
+                continue;
+            }
+            // The old backend's install may be in the user's root or in a shared
+            // or system one, and may have no version link (Windows without
+            // junctions), so its receipt is looked for too.
+            let installed = tv.backend()?.is_version_installed(&config, &tv, false)
+                || (crate::install_layout::resolver::enabled()
+                    && (std::iter::once(crate::dirs::INSTALLS.to_path_buf())
+                        .chain(crate::env::shared_install_dirs())
+                        .any(|root| {
+                            tv.ba()
+                                .installs_path()
+                                .file_name()
+                                .is_some_and(|tool_dir| has_version_path(&root.join(tool_dir), &tv))
+                        })
+                        || installations
+                            .get_or_insert_with(crate::install_layout::resolver::installations)
+                            .iter()
+                            .any(|i| {
+                                i.version == layout_version(&tv)
+                                    && i.requested_as.as_deref() == Some(tv.short())
+                            })));
+            if installed {
                 requests.push(tv.request);
             }
         }
@@ -555,4 +581,33 @@ impl Snapshot {
             None => Err(err),
         }
     }
+}
+
+/// `tv`'s version as installations and version paths name it (`ref-main` for
+/// `ref:main`).
+fn layout_version(tv: &ToolVersion) -> String {
+    crate::install_layout::resolver::identity_scope(tv)
+        .map(|(_, version)| version)
+        .unwrap_or_else(|| tv.version.replace([':', '/'], "-"))
+}
+
+/// Whether the tool directory `tool_dir` has a version path for `tv`'s version,
+/// as the backend before the switch named it. That is `tv`'s own path name, or
+/// the version with the private dependency-graph suffix an aube or uv install
+/// adds (`1.0.0~aube~…`), which only one of the two backends may carry.
+fn has_version_path(tool_dir: &Path, tv: &ToolVersion) -> bool {
+    let version = layout_version(tv);
+    if tool_dir.join(tv.tv_pathname()).exists() || tool_dir.join(&version).exists() {
+        return true;
+    }
+    let suffixed = format!("{version}~");
+    std::fs::read_dir(tool_dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(&suffixed))
+                && entry.path().exists()
+        })
+    })
 }

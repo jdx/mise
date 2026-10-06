@@ -783,15 +783,11 @@ pub fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()>
         // An absent entry has no source and claims its target as a leaf, so
         // declaring the same path present elsewhere (or a file beneath it)
         // conflicts.
-        let source_unavailable = request.mode.has_source()
-            && (!request.source.exists()
-                || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
+        let source_unavailable = source_unavailable(request);
         let directory_walker = !source_unavailable
             && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
-        let unresolved_directory = source_unavailable
-            && (request.mode == FileMode::SymlinkEach
-                || request.mode == FileMode::Copy && group_tree(request));
+        let unresolved_directory = unresolved_directory(request);
         let request_leaves = if unresolved_directory {
             vec![]
         } else if directory_walker {
@@ -857,9 +853,37 @@ fn composed_file_footprint_conflict(
     eyre::eyre!(
         "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
         path.display(),
-        conflict_origin(first),
-        conflict_origin(second),
+        footprint_conflict_origin(first),
+        footprint_conflict_origin(second),
     )
+}
+
+/// Whether a declaration's source cannot be read yet: missing, or not a
+/// directory for `symlink-each`.
+fn source_unavailable(req: &FileRequest) -> bool {
+    req.mode.has_source()
+        && (!req.source.exists() || req.mode == FileMode::SymlinkEach && !req.source.is_dir())
+}
+
+/// Whether a declaration with an unavailable source still has a known
+/// directory shape, rather than reserving its target as a single leaf.
+fn unresolved_directory(req: &FileRequest) -> bool {
+    source_unavailable(req)
+        && (req.mode == FileMode::SymlinkEach || req.mode == FileMode::Copy && group_tree(req))
+}
+
+/// A missing source reserves its target as one leaf, which collides with
+/// any declaration nested under it. Nothing in the config shows that, so
+/// the diagnostic names the cause.
+fn footprint_conflict_origin(req: &FileRequest) -> String {
+    let origin = conflict_origin(req);
+    if source_unavailable(req) && !unresolved_directory(req) {
+        format!(
+            "{origin}\n    note: the source does not exist, so the whole target is reserved and nothing can be declared under it"
+        )
+    } else {
+        origin
+    }
 }
 
 /// Where a conflicting declaration came from, with its group if it has one.
@@ -921,7 +945,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             }
             if value.as_table().is_some_and(|t| {
                 t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-                    && ["content", "block", "line", "template"]
+                    && ["content", "block", "line", "template", "merge"]
                         .iter()
                         .any(|key| t.contains_key(*key))
             }) {
@@ -933,7 +957,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
                 if let Some(table) = value.as_table().filter(|table| {
-                    ["block", "line", "template", "comment", "position"]
+                    ["block", "line", "template", "comment", "position", "merge"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
@@ -943,6 +967,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
                             );
                         }
+                    }
+                    if table.contains_key("merge") {
+                        crate::system::edits::validate_incoming_merge(&target, &value, path)?;
                     }
                     continue;
                 }
@@ -1288,7 +1315,7 @@ const GROUP_KEY_IN_DOTFILES: &str =
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-            && ["content", "block", "line", "template"]
+            && ["content", "block", "line", "template", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1304,7 +1331,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
     // file it meant to edit.
     if value.as_table().is_some_and(|t| {
         t.get("mode").and_then(toml::Value::as_str) == Some("absent")
-            && ["block", "line", "template", "comment", "position"]
+            && ["block", "line", "template", "comment", "position", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1332,6 +1359,9 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
     match &value {
         toml::Value::String(_) => {}
+        // a merge is an edit of a structured file, whatever else the table says;
+        // the edit parser accepts it or says why not
+        toml::Value::Table(table) if table.contains_key("merge") => return None,
         toml::Value::Table(table)
             if table.is_empty()
                 || table.contains_key("mode")
@@ -3522,8 +3552,14 @@ fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
 /// Legacy ownership discovery for installations that predate persistent
 /// symlink-each state. A successful apply records the exact links it owns, so
 /// this unbounded target walk happens at most once per target.
+///
+/// Group requests never use it: groups postdate the state file, so there is no
+/// legacy deployment to discover. Their entries are carved out of the walk
+/// with generated excludes, which would make an entry's own pre-existing link
+/// (a stow migration) look stale, and every group targeting `~` would pay a
+/// full walk of it.
 fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    if cfg!(windows) || !req.target.is_dir() || req.target.is_symlink() {
+    if cfg!(windows) || req.group.is_some() || !req.target.is_dir() || req.target.is_symlink() {
         return Ok(vec![]);
     }
     let mut out = vec![];
@@ -7386,6 +7422,7 @@ source = "oldrc""#,
                 err.to_string()
                     .contains(&target.join("shared").to_string_lossy().to_string())
             );
+            assert!(!err.to_string().contains("note:"));
         }
         Ok(())
     }
@@ -7434,6 +7471,7 @@ source = "oldrc""#,
             err.to_string()
                 .contains(&target.to_string_lossy().to_string())
         );
+        assert!(err.to_string().contains("note: the source does not exist"));
         Ok(())
     }
 
@@ -7785,6 +7823,26 @@ source = "oldrc""#,
             Arc::new(MiseToml::for_history_preflight(body, &path)?),
         );
         validate_incoming_files(&configs)
+    }
+
+    #[test]
+    fn incoming_merge_entries_are_validated_as_edits() -> Result<()> {
+        incoming(
+            "[dotfiles]\n\"~/a/settings.json/shared\" = { source = \"s.json\", merge = true }\n",
+        )?;
+        for entry in [
+            r#"{ source = "s.json", merge = true, exclude = [] }"#,
+            r#"{ source = "s.json", merge = true, mode = "copy" }"#,
+            r#"{ merge = true }"#,
+        ] {
+            let body = format!("[dotfiles]\n\"~/a/settings.json/shared\" = {entry}\n");
+            assert!(incoming(&body).is_err(), "{entry}");
+        }
+        assert!(
+            incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
+                .is_err()
+        );
+        Ok(())
     }
 
     #[test]
@@ -8439,6 +8497,25 @@ source = "oldrc""#,
         req.source = alias;
         assert!(legacy_stale_links(&req)?.contains(&aliased));
         assert!(legacy_owned_links(&req)?.contains(&aliased));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_cleanup_skips_group_requests() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        let target = dir.path().join("home");
+        file::create_dir_all(source.join(".config/demo"))?;
+        file::create_dir_all(target.join(".config"))?;
+        // an entry's own link, at a path the group's walk excludes
+        let entry = target.join(".config/demo");
+        file::make_symlink(&source.join(".config/demo"), &entry)?;
+        let mut req = link_req(&source, &target, FileMode::SymlinkEach);
+        req.exclude = vec![glob::Pattern::new(".config/demo")?];
+        assert_eq!(legacy_stale_links(&req)?, vec![entry]);
+        req.group = Some("demo".into());
+        assert!(legacy_stale_links(&req)?.is_empty());
         Ok(())
     }
 

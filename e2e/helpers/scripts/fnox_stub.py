@@ -3,7 +3,7 @@
 
 Knobs: FNOX_STUB_LOG (jsonl call log), FNOX_STUB_LEGACY=1 (no env command),
 FNOX_STUB_SCHEMA=<n>, FNOX_STUB_FAIL=<key> (resolution error),
-FNOX_STUB_MODE=garbage|extra|nul.
+FNOX_STUB_MODE=garbage|extra|nul|ansi.
 '''
 import json
 import os
@@ -42,6 +42,7 @@ def main(argv):
             'cwd': os.getcwd(),
             'stdin_tty': sys.stdin.isatty(),
             'env_keys': sorted(os.environ),
+            'path': os.environ.get('PATH', ''),
             'leaked': sorted(k for k, v in os.environ.items() if 's3cr3t' in v),
         }) + '\n')
     if argv == ['--version']:
@@ -72,7 +73,10 @@ def main(argv):
             keys.append(info)
         for k, (lease, _) in LEASES.items():
             keys.append({'key': k, 'kind': 'lease', 'lease': lease, 'injectable': {'exec': True, 'shell': False}})
-        out({'schema': schema, 'fnox_version': '1.38.0', 'profile': profile, 'keys': keys, 'dynamic_leases': []})
+        version = '1.\x1b[31m38.0' if mode == 'ansi' else '1.38.0'
+        if mode == 'ansi':
+            profile = ['dev\x1b]0;pwned\x07']
+        out({'schema': schema, 'fnox_version': version, 'profile': profile, 'keys': keys, 'dynamic_leases': []})
     if '--keys' in rest:
         keys = list(dict.fromkeys(rest[rest.index('--keys') + 1].split(',')))
     else:

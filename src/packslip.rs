@@ -1109,7 +1109,7 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
         sync_skills(
             &dir,
             &skills.found,
-            &crate::dirs::INSTALLS,
+            &[*crate::dirs::INSTALLS, *crate::dirs::INSTALL_STORE],
             settings.skills.prune,
         )
     }
@@ -1167,13 +1167,14 @@ pub struct SyncReport {
 }
 
 /// Link each skill into `dir` under its name. Only links mise made, which
-/// it records in [`SYNC_STATE`] beside them and which point into
-/// `installs`, are ever replaced or, with `prune`, removed; anything else
-/// at a skill's name is left alone.
+/// it records in [`SYNC_STATE`] beside them and which point into one of
+/// `installs` (the installs directory and the install store), are ever
+/// replaced or, with `prune`, removed; anything else at a skill's name is
+/// left alone.
 pub fn sync_skills(
     dir: &Path,
     skills: &[Skill],
-    installs: &Path,
+    installs: &[&Path],
     prune: bool,
 ) -> Result<SyncReport> {
     let mut report = SyncReport::default();
@@ -1208,7 +1209,9 @@ pub fn sync_skills(
         before.get(name).is_some_and(|target| {
             file::is_symlink_or_junction(link)
                 && points_at(link, target)
-                && file::is_symlink_target_within(link, installs).unwrap_or(false)
+                && installs
+                    .iter()
+                    .any(|dir| file::is_symlink_target_within(link, dir).unwrap_or(false))
         })
     };
     // The record is written before a link is made and after one is
@@ -2834,17 +2837,32 @@ mod tests {
         };
         let target = dir.path().join("project/.claude/skills");
 
-        let report =
-            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("t", "tool", "1", &v1)],
+            &[installs.as_path()],
+            false,
+        )
+        .unwrap();
         assert_eq!(report.linked, ["t"]);
         assert!(file::is_symlink_to(&target.join("t"), &v1));
 
         // Same again: nothing to do. A version switch: the link follows.
-        let report =
-            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("t", "tool", "1", &v1)],
+            &[installs.as_path()],
+            false,
+        )
+        .unwrap();
         assert_eq!(report.unchanged, ["t"]);
-        let report =
-            sync_skills(&target, &[skill("t", "tool", "2", &v2)], &installs, false).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("t", "tool", "2", &v2)],
+            &[installs.as_path()],
+            false,
+        )
+        .unwrap();
         assert_eq!(report.linked, ["t"]);
         assert!(file::is_symlink_to(&target.join("t"), &v2));
 
@@ -2861,7 +2879,7 @@ mod tests {
                 skill("o", "other", "1", &other),
                 skill("o", "tool", "2", &v2),
             ],
-            &installs,
+            &[installs.as_path()],
             true,
         )
         .unwrap();
@@ -2890,7 +2908,7 @@ mod tests {
         let report = sync_skills(
             &target,
             &[skill("o", "other", "1", &other)],
-            &installs,
+            &[installs.as_path()],
             true,
         )
         .unwrap();
@@ -2909,7 +2927,7 @@ mod tests {
         let report = sync_skills(
             &target,
             &[skill("o", "other", "1", &other)],
-            &installs,
+            &[installs.as_path()],
             false,
         )
         .unwrap();
@@ -2924,7 +2942,7 @@ mod tests {
                 skill("handmade", "tool", "2", &v2),
                 skill("o", "other", "1", &other),
             ],
-            &installs,
+            &[installs.as_path()],
             true,
         )
         .unwrap();
@@ -2941,7 +2959,7 @@ mod tests {
         let report = sync_skills(
             &target,
             &[skill("same", "other", "1", &other)],
-            &installs,
+            &[installs.as_path()],
             false,
         )
         .unwrap();
@@ -2956,7 +2974,7 @@ mod tests {
         let err = sync_skills(
             &target,
             &[skill("o", "other", "1", &other)],
-            &installs,
+            &[installs.as_path()],
             false,
         )
         .unwrap_err();
@@ -2964,7 +2982,7 @@ mod tests {
 
         // Nothing to link creates nothing.
         let empty = dir.path().join("empty");
-        let report = sync_skills(&empty, &[], &installs, false).unwrap();
+        let report = sync_skills(&empty, &[], &[installs.as_path()], false).unwrap();
         assert_eq!(report, SyncReport::default());
         assert!(!empty.exists());
     }

@@ -123,6 +123,16 @@ fn build_stdlib_venv_command<'a>(
         .args(extra)
 }
 
+/// The configured python and uv, resolved on their own.
+async fn python_uv_toolset(config: &Arc<Config>) -> Result<Toolset> {
+    let trs = config.get_tool_request_set().await?;
+    let filter = HashSet::from(["python".to_string(), "uv".to_string()]);
+    let mut ts: Toolset = trs.filter_by_tool(filter).into();
+    // Ignore resolution errors for venv creation - if tools aren't available, we'll warn below
+    let _ = ts.resolve(config).await;
+    Ok(ts)
+}
+
 pub(crate) async fn create_python_venv(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -139,6 +149,20 @@ pub(crate) async fn create_python_venv(
     } = options;
     let python = python.as_deref();
     let ba = BackendArg::from("python");
+    // `mise install` passes its toolset unresolved, and `mise install <tool>` leaves python out of
+    // it. Either would read as "python comes from outside mise", and uv would pick or download its
+    // own.
+    let resolved;
+    let ts = if ts
+        .versions
+        .get(&ba)
+        .is_none_or(|tvl| tvl.versions.is_empty())
+    {
+        resolved = python_uv_toolset(config).await?;
+        &resolved
+    } else {
+        ts
+    };
     let tv = ts.versions.get(&ba).and_then(|tv| {
         // if a python version is specified, check if that version is installed
         // otherwise use the first since that's what `python3` will refer to
@@ -275,16 +299,7 @@ impl EnvResults {
             // directive as part of config.env().
             // By filtering to only Python/UV BEFORE resolution, we avoid resolving unrelated tools
             // that have their own dependencies and environment requirements.
-            let trs = ctx.config.get_tool_request_set().await?;
-            let mut filter = HashSet::new();
-            filter.insert("python".to_string());
-            filter.insert("uv".to_string());
-            let filtered_trs = trs.filter_by_tool(filter);
-
-            // Convert the filtered tool request set to a toolset and resolve only these tools
-            let mut ts: Toolset = filtered_trs.into();
-            // Ignore resolution errors for venv creation - if tools aren't available, we'll warn below
-            let _ = ts.resolve(ctx.config).await;
+            let ts = python_uv_toolset(ctx.config).await?;
             create_python_venv(ctx.config, &ts, &venv, ctx.exec_env.clone(), options).await?;
         }
         drop(venv_lock);

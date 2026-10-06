@@ -113,6 +113,8 @@ struct PreparedTaskContext {
     mise_set_inherited: BTreeSet<String>,
     /// Every key mise itself sets for this task, whatever its value.
     mise_env_keys: BTreeSet<String>,
+    /// keys whose task-env `default` rendered
+    rendered_defaults: BTreeSet<String>,
 }
 
 /// Format a task path for a child process without leaking the mixture of `/` and `\` that
@@ -670,6 +672,7 @@ impl TaskExecutor {
             extra_vars,
             mise_set_inherited,
             mise_env_keys,
+            rendered_defaults,
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
@@ -882,6 +885,7 @@ impl TaskExecutor {
                         task_env_keys: &task_env_keys,
                         mise_set_inherited: &mise_set_inherited,
                         mise_env_keys: &mise_env_keys,
+                        rendered_defaults: &rendered_defaults,
                         sandbox: &sandbox,
                         file_dir: Some(&self.secrets_file_dir),
                         terminal: &terminal,
@@ -2323,13 +2327,23 @@ impl TaskExecutor {
         let mut items = vec![];
         let mut problems = vec![];
         let mut privilege_problem = false;
+        let root_env_view = crate::secrets::EnvView::load(config).await;
         for task in tasks {
             let (grant, mut found) =
                 crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), false);
+            // a task without a grant never needs the view (and must not pay for it)
+            let env_view = if grant.is_empty() {
+                root_env_view.clone()
+            } else {
+                root_env_view
+                    .for_task(config, &self.context_builder, task, true)
+                    .await
+            };
             found.extend(crate::secrets::static_problems(
                 task,
                 &grant,
                 self.secrets_denied,
+                &env_view,
             ));
             // plaintext an age value decrypts to can read a composed key; found before fnox
             // is asked anything
@@ -2347,7 +2361,7 @@ impl TaskExecutor {
             if !grant.is_empty() && !self.dry_run {
                 // the sandbox and a plainly declared env var decide before anything runs
                 let sandbox = self.build_sandbox_for_task(task, config).await?;
-                let declared = crate::secrets::declared_env_keys(task, config);
+                let declared = env_view.declared_keys(task);
                 found.extend(crate::secrets::sandbox_and_collision_problems(
                     task, &grant, &sandbox, &declared,
                 ));
@@ -2561,7 +2575,7 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, mut env_remove, mut mise_env_keys) =
+        let (mut env, task_env, extra_vars, mut env_remove, env_keys) =
             if let Some(task_cf) = task_cf {
                 self.context_builder
                     .resolve_task_env_with_config(config, task, task_cf, &toolset)
@@ -2715,7 +2729,9 @@ impl TaskExecutor {
             );
         }
 
+        let mut mise_env_keys = env_keys.mise;
         mise_env_keys.extend(nested_mise_diff_exclude_keys.iter().cloned());
+        let rendered_defaults = env_keys.rendered_defaults;
         let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
         if let Ok(serialized) =
             EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
@@ -2740,6 +2756,7 @@ impl TaskExecutor {
             extra_vars,
             mise_set_inherited,
             mise_env_keys,
+            rendered_defaults,
         })
     }
 

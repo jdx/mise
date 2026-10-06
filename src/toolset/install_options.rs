@@ -37,6 +37,10 @@ pub struct InstallOptions {
     /// The user explicitly passed `--yes` for this invocation or install operation.
     /// Unlike `yes`, this is not enabled implicitly by CI mode.
     pub explicit_yes: bool,
+    /// Install without the lockfile policy a configuration sets for its tools
+    /// (`tool_config.locked`): for `mise installs migrate`, which moves a version
+    /// already installed rather than one the lockfile chose.
+    pub ignore_tool_config_locked: bool,
     /// Reload global configuration after installation.
     ///
     /// Task-only tools resolved while a run is active must leave the live config
@@ -64,6 +68,7 @@ impl Default for InstallOptions {
             scoped_install_dirs: false,
             yes: Settings::get().yes,
             explicit_yes: Settings::cli_yes(),
+            ignore_tool_config_locked: false,
             reload_config: true,
         }
     }

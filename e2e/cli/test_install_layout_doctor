@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# `mise doctor` and an identity-layout installation whose payload is gone: the
+# receipt stays (it is what marks the install complete), so a directory holding
+# nothing but the receipt is "installed but empty". jdx/mise#13678
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+echo "=== identity layout: the install directory is installs/<label>-<hash> ==="
+mise use dummy@2.0.0
+install_dir="$(mise where dummy@2.0.0)"
+assert_matches "mise where dummy@2.0.0" "^$MISE_DATA_DIR/installs/dummy-[a-z2-7]{8}\$"
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"
+
+# installs/dummy/2.0.0 is only a link to the installation, so emptying "the
+# install directory" means emptying what the link points at. The receipt stays:
+# it is what says an installation is complete, so a directory with nothing but
+# the receipt is exactly an install whose payload is gone.
+assert "test -L $MISE_DATA_DIR/installs/dummy/2.0.0"
+find "$install_dir" -mindepth 1 ! -name .mise-install.toml -delete
+assert "test -d $install_dir"
+assert "test -f $install_dir/.mise-install.toml"
+
+assert_contains "mise doctor 2>&1 || true" "is installed but its directory is empty"
+assert_contains "mise doctor 2>&1 || true" "mise install --force dummy@2.0.0"
+assert "mise doctor -J 2>/dev/null | jq -e '.errors | map(contains(\"directory is empty\")) | any' >/dev/null"
+assert "mise doctor -J 2>/dev/null | jq -e '.toolset.dummy[] | select(.version == \"2.0.0\") | .empty == true' >/dev/null"
+
+# Reinstalling clears it, into the same directory.
+assert "mise install --force dummy@2.0.0"
+assert "mise where dummy@2.0.0" "$install_dir"
+assert "test -x $install_dir/bin/dummy"
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"
+
+# An interrupted install leaves no receipt: the directory is not an install at
+# all, so there is nothing "installed but empty" to report. It is simply
+# missing, and a plain install (no --force) repairs it in place.
+find "$install_dir" -mindepth 1 -delete
+assert_not_contains "mise doctor 2>&1 || true" "directory is empty"
+assert_contains "mise ls dummy" "2.0.0 (missing)"
+assert "mise install dummy@2.0.0"
+assert "mise where dummy@2.0.0" "$install_dir"
+assert "test -f $install_dir/.mise-install.toml"
+assert "test -x $install_dir/bin/dummy"
+assert_not_contains "mise ls dummy" "(missing)"

@@ -71,6 +71,7 @@ mod editor;
 mod implode;
 mod install;
 mod install_into;
+mod installs;
 mod latest;
 mod link;
 mod local;
@@ -349,6 +350,7 @@ pub(crate) enum Commands {
     Edit(edit::Edit),
     Install(install::Install),
     InstallInto(install_into::InstallInto),
+    Installs(installs::Installs),
     Latest(latest::Latest),
     Link(link::Link),
     Local(local::Local),
@@ -515,6 +517,7 @@ impl Commands {
             Self::Edit(cmd) => Box::pin(cmd.run()),
             Self::Install(cmd) => Box::pin(cmd.run()),
             Self::InstallInto(cmd) => Box::pin(cmd.run()),
+            Self::Installs(cmd) => Box::pin(cmd.run()),
             Self::Latest(cmd) => Box::pin(cmd.run()),
             Self::Link(cmd) => Box::pin(cmd.run()),
             Self::Local(cmd) => Box::pin(cmd.run()),

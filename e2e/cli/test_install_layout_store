@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# A separate install store (the default on Windows, where it is <data>\i): the
+# installations live in MISE_INSTALL_STORE_DIR, while the version links, runtime
+# aliases and the catalog stay in the installs directory.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+export MISE_INSTALL_STORE_DIR="$MISE_DATA_DIR/i"
+
+installs="$MISE_DATA_DIR/installs"
+store="$MISE_INSTALL_STORE_DIR"
+
+assert "mise install dummy@1.1.0 dummy@2.0.0"
+dir_1="$(mise where dummy@1.1.0)"
+dir_2="$(mise where dummy@2.0.0)"
+name_1="$(basename "$dir_1")"
+name_2="$(basename "$dir_2")"
+
+echo "=== installations go in the store ==="
+assert_matches "mise where dummy@1.1.0" "^$store/dummy-[a-z2-7]{8}\$"
+assert "test -f '$dir_1/.mise-install.toml'"
+assert "test ! -e '$installs/$name_1'"
+
+echo "=== links, aliases and the catalog stay in the installs directory ==="
+assert "readlink '$installs/dummy/1.1.0'" "../../i/$name_1"
+assert "readlink '$installs/dummy/2.0.0'" "../../i/$name_2"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+assert_contains "$installs/dummy/latest/bin/dummy" "This is Dummy 2.0.0!"
+assert "test -f '$installs/.mise/names/$name_1'"
+assert "test ! -e '$store/.mise'"
+
+echo "=== listing and PATH see through the store ==="
+assert_contains "mise ls dummy" "1.1.0"
+assert_contains "mise ls dummy" "2.0.0"
+assert_not_contains "mise ls" "dummy-"
+echo 'tools.dummy = "1"' >mise.toml
+assert "mise which dummy" "$installs/dummy/1/bin/dummy"
+assert_contains "mise x -- dummy" "This is Dummy 1.1.0!"
+
+echo "=== a lost catalog is rebuilt from the store's receipts ==="
+rm -rf "$installs/.mise"
+assert_contains "mise ls dummy" "1.1.0"
+assert "test -f '$installs/.mise/names/$name_1'"
+assert "mise where dummy@1.1.0" "$dir_1"
+
+echo "=== uninstall and prune remove the installation and its links ==="
+assert "mise uninstall dummy@2.0.0"
+assert "test ! -e '$dir_2'"
+assert "test ! -L '$installs/dummy/2.0.0'"
+assert "test -d '$dir_1'"
+rm mise.toml
+assert "mise prune --yes dummy"
+assert "test ! -e '$dir_1'"
+assert "test ! -L '$installs/dummy/1.1.0'"
+
+echo "=== a reinstall lands in the same directory ==="
+assert "mise install dummy@1.1.0"
+assert "mise where dummy@1.1.0" "$dir_1"
+
+echo "=== a store inside the installs directory is ignored ==="
+assert "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise install dummy@2.0.0"
+assert_matches "MISE_INSTALL_STORE_DIR='$installs/dummy/store' mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test ! -e '$installs/dummy/store'"
+
+echo "=== installs directories sharing a store share its installations ==="
+other="$HOME/other-installs"
+assert "MISE_INSTALLS_DIR='$other' mise install dummy@1.1.0"
+assert "MISE_INSTALLS_DIR='$other' mise where dummy@1.1.0" "$dir_1"
+assert "readlink '$other/dummy/1.1.0'" "$dir_1"
+
+echo "=== the store written through the installs directory is still the store ==="
+beside="$(MISE_INSTALL_STORE_DIR="$installs/../i" mise where dummy@1.1.0)"
+assert "realpath '$beside'" "$(realpath "$dir_1")"

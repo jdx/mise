@@ -197,11 +197,8 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
-            let bumped_version = check_semver_bump(old, new).or_else(|| {
-                oi.tool_version
-                    .request_pinned_this_version()
-                    .then(|| new.to_string())
-            });
+            let bumped_version =
+                bumped_request_version(old, new, || oi.tool_version.request_pinned_this_version());
             if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
             {
@@ -301,6 +298,27 @@ pub fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<Strin
         .unwrap_or_else(|| prefix_version.to_string());
 
     Some(format!("{prefix}{query_version}"))
+}
+
+/// The version a request should be bumped to, given the request and the latest
+/// version (both without any vendor prefix). `pinned` says whether the request
+/// is a literal pin of the installed version.
+///
+/// A request with no version in it (`java = "temurin"`) names a moving target,
+/// not a range, so there is nothing to bump. The lookup for it has no vendor
+/// prefix and can resolve to another vendor's release (`27.0.0` is OpenJDK),
+/// which a bump would write over the config.
+fn bumped_request_version(old: &str, new: &str, pinned: impl FnOnce() -> bool) -> Option<String> {
+    if !request_names_a_version(old) {
+        return None;
+    }
+    check_semver_bump(old, new).or_else(|| pinned().then(|| new.to_string()))
+}
+
+/// Whether a request (minus any vendor prefix) contains a version at all.
+/// `temurin` or `nightly` do not; `27`, `v1.2` and `nightly-2026-09-15` do.
+fn request_names_a_version(request: &str) -> bool {
+    request.chars().any(|c| c.is_ascii_digit())
 }
 
 /// check if the new version is a bump from the old version and return the new version
@@ -491,7 +509,10 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
-    use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use super::{
+        OutdatedInfo, bumped_request_version, check_semver_bump, is_outdated_version,
+        prefixed_latest_query, request_names_a_version,
+    };
     use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
@@ -601,6 +622,34 @@ mod tests {
             check_semver_bump("beta", "1.0.0-beta.1"),
             Some("beta".to_string())
         );
+    }
+
+    #[test]
+    fn test_bumped_request_version() {
+        // A vendor-only request has no range to leave, even when the latest
+        // lookup returned another vendor's release.
+        assert_eq!(bumped_request_version("temurin", "27.0.0", || false), None);
+        assert_eq!(bumped_request_version("temurin", "27.0.0", || true), None);
+        // Requests that name a version still bump.
+        assert_eq!(
+            bumped_request_version("20", "27.0.0", || false),
+            Some("27".to_string())
+        );
+        assert_eq!(
+            bumped_request_version("27.0.0+35", "27.0.1+9", || true),
+            Some("27.0.1+9".to_string())
+        );
+        assert_eq!(bumped_request_version("27", "27.0.0", || false), None);
+    }
+
+    #[test]
+    fn test_request_names_a_version() {
+        assert!(request_names_a_version("27"));
+        assert!(request_names_a_version("27.0.0+35"));
+        assert!(request_names_a_version("nightly-2026-09-15"));
+        assert!(!request_names_a_version("temurin"));
+        assert!(!request_names_a_version("latest"));
+        assert!(!request_names_a_version("lts"));
     }
 
     #[test]

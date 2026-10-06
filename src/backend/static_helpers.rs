@@ -8,6 +8,7 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
+use reqwest::header::HeaderMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -36,11 +37,15 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
-pub(crate) async fn fetch_checksum_from_shasums(
+pub(crate) async fn fetch_checksum_from_shasums_with_headers(
     shasums_url: &str,
     filename: &str,
+    headers: &HeaderMap,
 ) -> Option<String> {
-    match HTTP.get_text_cached(shasums_url).await {
+    match HTTP
+        .get_text_cached_with_headers(shasums_url, headers)
+        .await
+    {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
             let algo = crate::backend::asset_matcher::detect_checksum_algorithm(
@@ -63,8 +68,11 @@ pub(crate) async fn fetch_checksum_from_shasums(
 /// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
 /// that simply has no row for our artifact" — in which case falling back to a
 /// first-hash scan would silently pick another platform's checksum.
-pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
-    match HTTP.get_text_cached(shasums_url).await {
+pub(crate) async fn shasums_has_entries(shasums_url: &str, headers: &HeaderMap) -> bool {
+    match HTTP
+        .get_text_cached_with_headers(shasums_url, headers)
+        .await
+    {
         Ok(content) => !hash::parse_shasums(&content).is_empty(),
         Err(_) => false,
     }
@@ -84,14 +92,34 @@ pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
 /// Uses the in-process cache so that resolving an individual checksum file
 /// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
 /// / [`shasums_has_entries`] for that platform.
-pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
-    match HTTP.get_text_cached(checksum_url).await {
+pub(crate) async fn fetch_checksum_from_file_with_headers(
+    checksum_url: &str,
+    algo: &str,
+    headers: &HeaderMap,
+) -> Option<String> {
+    match HTTP
+        .get_text_cached_with_headers(checksum_url, headers)
+        .await
+    {
         Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
             None
         }
     }
+}
+
+/// [`fetch_checksum_from_shasums_with_headers`] without extra request headers.
+pub(crate) async fn fetch_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Option<String> {
+    fetch_checksum_from_shasums_with_headers(shasums_url, filename, &HeaderMap::new()).await
+}
+
+/// [`fetch_checksum_from_file_with_headers`] without extra request headers.
+pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
+    fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
 }
 
 fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
@@ -584,6 +612,21 @@ pub(crate) fn template_string_for_target(
         &tv.version,
         crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
     )
+}
+
+/// Renders a template that must not fall back to its source text on failure, such as
+/// a credential header: sending a literal `{{ env.TOKEN }}` to a server is worse than
+/// failing. `version` is only defined for templates rendered for a concrete version.
+pub(crate) fn template_string_strict(template: &str, version: Option<&str>) -> Result<String> {
+    if !crate::tera::contains_template_syntax(template) {
+        return Ok(template.to_string());
+    }
+    let mut ctx = crate::tera::BASE_CONTEXT.clone();
+    if let Some(version) = version {
+        ctx.insert("version", version);
+    }
+    let mut tera = crate::tera::get_tera(None);
+    Ok(crate::tera::render_str(&mut tera, template, &ctx)?)
 }
 
 fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEngine) -> String {
@@ -1613,11 +1656,338 @@ fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
     name.to_string()
 }
 
+/// Request options every backend reads only to decide which versions are listed.
+/// `prerelease = true` asks for prereleases in `ls-remote` and `latest`; the version that
+/// gets installed is the same either way.
+pub(crate) const LISTING_ONLY_OPT_KEYS: &[&str] = &["prerelease"];
+
+/// What `Backend::install_identity_options` yields unless a backend overrides it: the
+/// lockfile options, then every other option the request sets that is neither
+/// ephemeral, listing-only ([`LISTING_ONLY_OPT_KEYS`]) nor listed by
+/// `Backend::identity_ignored_options`.
+///
+/// A backend whose installs also depend on settings (an installer picked by a setting, a
+/// build flag) calls this and inserts those inputs under stable keys. Only a value that
+/// differs from the default belongs there, so that a setting added later does not move
+/// an installation that never used it.
+pub(crate) fn request_identity_options<B: crate::backend::Backend + ?Sized>(
+    backend: &B,
+    tv: &ToolVersion,
+) -> std::collections::BTreeMap<String, String> {
+    let mut options = backend
+        .resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())
+        .unwrap_or_default();
+    let ignored = backend.identity_ignored_options();
+    let request_options = tv.request.options();
+    for (key, value) in request_options.opts_as_strings() {
+        if crate::toolset::EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            || LISTING_ONLY_OPT_KEYS.contains(&key.as_str())
+            || ignored.contains(&key.as_str())
+            || is_platform_scoped_option(&key)
+        {
+            continue;
+        }
+        options.entry(key).or_insert(value);
+    }
+    // Per-platform values (`platforms.<os>-<arch>.url`, `platform_<os>_<arch>_url`)
+    // describe other machines too. Only this platform's take part, so editing
+    // another OS's entry (or reordering keys) does not move an installation here.
+    for (key, value) in current_platform_options(&request_options) {
+        options.entry(key).or_insert(value);
+    }
+    options
+}
+
+/// Whether `key` is a platform-scoped option: the `platforms` / `platform` tables or a
+/// flat `platforms_<os>_<arch>_<name>` / `platform_<os>_<arch>_<name>` key.
+fn is_platform_scoped_option(key: &str) -> bool {
+    PLATFORM_PREFIXES.iter().any(|prefix| {
+        key == *prefix
+            || key
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.starts_with('_'))
+    })
+}
+
+/// The spellings of the platform-scoped options, in the order the option lookups
+/// ([`lookup_platform_value_for_aliases`]) prefer them.
+const PLATFORM_PREFIXES: [&str; 2] = ["platforms", "platform"];
+
+/// The platform-scoped options that apply to the current platform, under one stable
+/// spelling (`platforms.current.<name>`) whichever of the accepted spellings (nested
+/// tables or flat keys, `x64` or `amd64`) set them. The preferred platform alias wins
+/// when several spellings set one value.
+fn current_platform_options(opts: &ToolVersionOptions) -> Vec<(String, String)> {
+    let aliases = platform_aliases();
+    let text = |value: &toml::Value| match value {
+        toml::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let mut out: Vec<(String, String)> = vec![];
+    let mut push = |name: &str, value: String| {
+        let key = format!("platforms.current.{name}");
+        if !out.iter().any(|(k, _)| *k == key) {
+            out.push((key, value));
+        }
+    };
+    // The order the option lookups use: per platform alias, per spelling, the
+    // nested table before the flat keys.
+    for (os, arch) in &aliases {
+        let platform = format!("{os}-{arch}");
+        for prefix in PLATFORM_PREFIXES {
+            if let Some(toml::Value::Table(table)) = opts.opts.get(prefix)
+                && let Some(entry) = table.get(&platform)
+            {
+                match entry {
+                    toml::Value::Table(inner) => {
+                        for (name, value) in inner {
+                            push(name, text(value));
+                        }
+                    }
+                    other => push("", text(other)),
+                }
+            }
+            let flat = format!("{prefix}_{os}_{arch}_");
+            for (key, value) in &opts.opts {
+                if let Some(name) = key.strip_prefix(&flat) {
+                    push(name, text(value));
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A path inside an identity-layout installation of `tool` of the installs root
+/// `installs` (`installs/<name>-<hash>/…`, or the same under its install store),
+/// spelled through the tool's version link (`installs/<tool>/<version>/…`).
+///
+/// What other tools record about an interpreter (a venv's `python`, a gem's shebang) has to
+/// name it the way the runtime aliases do, so that a patch upgrade can retarget it. The
+/// hashed directory is one specific build and will not be there to follow.
+///
+/// `None` when `path` is not inside such an installation, or the version link does not
+/// name that installation, and the caller keeps `path`. A legacy path is never rewritten.
+#[cfg(unix)]
+pub(crate) fn tool_link_path(installs: &Path, path: &Path, tool: &str) -> Option<PathBuf> {
+    // The installation is in the install store, which may be a directory of its own.
+    let store = crate::install_layout::resolver::store_of(installs);
+    let (base, rest) = match path.strip_prefix(&store) {
+        Ok(rest) => (store.as_path(), rest),
+        Err(_) => (installs, path.strip_prefix(installs).ok()?),
+    };
+    let mut components = rest.components();
+    let install = base.join(components.next()?.as_os_str());
+    let receipt = crate::install_layout::catalog::read_receipt(&install)?;
+    let identity = &receipt.record.identity;
+    if crate::backend::unalias_backend(&identity.backend) != tool {
+        return None;
+    }
+    let link = installs
+        .join(crate::backend::tool_directory_name(tool))
+        .join(&identity.version);
+    if link.canonicalize().ok()? != install.canonicalize().ok()? {
+        return None;
+    }
+    Some(link.join(components.as_path()))
+}
+
+/// A tool version of `backend` at `version` whose request carries `options`, each a string
+/// value.
+#[cfg(test)]
+pub(crate) fn test_tool_version(
+    backend: &dyn crate::backend::Backend,
+    version: &str,
+    options: &[(&str, &str)],
+) -> ToolVersion {
+    let mut request_options = ToolVersionOptions::default();
+    for (key, value) in options {
+        request_options.opts.insert(
+            (*key).to_string(),
+            toml::Value::String((*value).to_string()),
+        );
+    }
+    let request = crate::toolset::ToolRequest::new_with_options(
+        backend.ba().clone(),
+        version,
+        request_options,
+        crate::toolset::ToolSource::Argument,
+    )
+    .unwrap();
+    ToolVersion::new(request, version.to_string())
+}
+
+/// The identity options of `backend` for a request of `version` carrying `options`,
+/// each a string value.
+#[cfg(test)]
+pub(crate) fn test_identity_options(
+    backend: &dyn crate::backend::Backend,
+    version: &str,
+    options: &[(&str, &str)],
+) -> std::collections::BTreeMap<String, String> {
+    backend.install_identity_options(&test_tool_version(backend, version, options))
+}
+
+/// An identity-layout installation of `backend` at `version` in the directory `dir` of
+/// `installs`, receipt included. `test_link_install` adds the version link beside it.
+#[cfg(all(test, unix))]
+pub(crate) fn test_identity_install(
+    installs: &Path,
+    backend: &str,
+    version: &str,
+    dir: &str,
+) -> PathBuf {
+    use crate::install_layout::catalog::write_receipt;
+    use crate::install_layout::identity::InstallIdentity;
+    use crate::install_layout::record::{IdentityRecord, Receipt};
+
+    let install = installs.join(dir);
+    file::create_dir_all(install.join("bin")).unwrap();
+    let identity = InstallIdentity {
+        backend: backend.to_string(),
+        version: version.to_string(),
+        platform: "linux-x64".to_string(),
+        ..Default::default()
+    };
+    write_receipt(
+        &install,
+        &Receipt {
+            record: IdentityRecord::new(identity, dir.to_string()),
+            requested_as: None,
+            mise_version: None,
+        },
+    )
+    .unwrap();
+    install
+}
+
+/// The version link `installs/<tool>/<version> -> ../<dir>` of a `test_identity_install`.
+#[cfg(all(test, unix))]
+pub(crate) fn test_link_install(installs: &Path, tool: &str, version: &str, dir: &str) {
+    let tool_dir = installs.join(tool);
+    file::create_dir_all(&tool_dir).unwrap();
+    file::make_symlink(&Path::new("..").join(dir), &tool_dir.join(version)).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    #[test]
+    fn test_platform_options_only_count_for_the_current_platform() {
+        let backend = crate::backend::gem::GemBackend::from_arg("gem:rubocop".into());
+        let (os, arch) = platform_aliases().remove(0);
+        let current_flat = format!("platform_{os}_{arch}_url");
+        let tv = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[
+                (current_flat.as_str(), "https://example.com/here.tgz"),
+                (
+                    "platform_plan9_mips_url",
+                    "https://example.com/elsewhere.tgz",
+                ),
+            ],
+        );
+        let options = request_identity_options(&backend, &tv);
+        assert_eq!(
+            options.get("platforms.current.url").map(String::as_str),
+            Some("https://example.com/here.tgz")
+        );
+        assert!(
+            options.keys().all(|k| !k.starts_with("platform_")),
+            "{options:?}"
+        );
+        // Another platform's entry never changes this platform's identity.
+        let other = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[
+                (current_flat.as_str(), "https://example.com/here.tgz"),
+                ("platform_plan9_mips_url", "https://example.com/changed.tgz"),
+            ],
+        );
+        assert_eq!(options, request_identity_options(&backend, &other));
+        // The plural flat spelling, which the option lookups accept too, is the same
+        // option: it names the same identity, and another platform's is left out.
+        let plural = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[
+                (
+                    format!("platforms_{os}_{arch}_url").as_str(),
+                    "https://example.com/here.tgz",
+                ),
+                (
+                    "platforms_plan9_mips_url",
+                    "https://example.com/elsewhere.tgz",
+                ),
+            ],
+        );
+        assert_eq!(options, request_identity_options(&backend, &plural));
+        // Where spellings disagree, the identity records the value the download
+        // uses: `platforms_…` before `platform.…`, as the option lookups order them.
+        let mut both = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[(
+                format!("platforms_{os}_{arch}_url").as_str(),
+                "https://example.com/plural.tgz",
+            )],
+        );
+        let mut nested = toml::Table::new();
+        nested.insert(
+            format!("{os}-{arch}"),
+            toml::Value::Table(toml::Table::from_iter([(
+                "url".to_string(),
+                toml::Value::String("https://example.com/singular.tgz".into()),
+            )])),
+        );
+        let mut request_options = both.request.options();
+        request_options
+            .opts
+            .insert("platform".into(), toml::Value::Table(nested));
+        both.request = crate::toolset::ToolRequest::new_with_options(
+            both.request.ba().clone(),
+            "1.0.0",
+            request_options,
+            crate::toolset::ToolSource::Argument,
+        )
+        .unwrap();
+        assert_eq!(
+            request_identity_options(&backend, &both)
+                .get("platforms.current.url")
+                .map(String::as_str),
+            Some("https://example.com/plural.tgz")
+        );
+    }
+
+    #[test]
+    fn test_request_identity_options_skip_ephemeral_and_listing_only_options() {
+        let backend = crate::backend::gem::GemBackend::from_arg("gem:rubocop".into());
+        let tv = test_tool_version(
+            &backend,
+            "1.0.0",
+            &[
+                ("source", "https://gems.example.com"),
+                ("custom", "x"),
+                ("prerelease", "true"),
+                ("postinstall", "echo hi"),
+                ("minimum_release_age", "7d"),
+            ],
+        );
+        let options = request_identity_options(&backend, &tv);
+        assert_eq!(
+            options,
+            std::collections::BTreeMap::from([
+                ("source".to_string(), "https://gems.example.com".to_string()),
+                ("custom".to_string(), "x".to_string()),
+            ])
+        );
+    }
 
     #[test]
     fn test_get_filename_from_url() {
@@ -3003,5 +3373,65 @@ bin = "tool.exe"
             "tried: {:?}",
             tried.lock().unwrap()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_tool_link_path_names_a_hashed_install_through_its_version_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        test_identity_install(&installs, "core:python", "3.12.1", "python-aaaaaaaa");
+        test_link_install(&installs, "python", "3.12.1", "python-aaaaaaaa");
+
+        let python = installs.join("python-aaaaaaaa/bin/python3");
+        assert_eq!(
+            tool_link_path(&installs, &python, "python"),
+            Some(installs.join("python/3.12.1/bin/python3"))
+        );
+        // The installation itself.
+        assert_eq!(
+            tool_link_path(&installs, &installs.join("python-aaaaaaaa"), "python"),
+            Some(installs.join("python/3.12.1"))
+        );
+        // Another tool's files are not rewritten as python's.
+        assert_eq!(tool_link_path(&installs, &python, "ruby"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_tool_link_path_keeps_paths_it_cannot_vouch_for() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        test_identity_install(&installs, "core:python", "3.12.1", "python-aaaaaaaa");
+        test_identity_install(&installs, "core:python", "3.12.1", "python-bbbbbbbb");
+        // The version link names the other variant, so it says nothing about this one.
+        test_link_install(&installs, "python", "3.12.1", "python-bbbbbbbb");
+        assert_eq!(
+            tool_link_path(
+                &installs,
+                &installs.join("python-aaaaaaaa/bin/python3"),
+                "python"
+            ),
+            None
+        );
+        assert_eq!(
+            tool_link_path(
+                &installs,
+                &installs.join("python-bbbbbbbb/bin/python3"),
+                "python"
+            ),
+            Some(installs.join("python/3.12.1/bin/python3"))
+        );
+
+        // A legacy path, a path elsewhere and a directory with no receipt are left alone.
+        file::create_dir_all(installs.join("python/3.11.2/bin")).unwrap();
+        file::create_dir_all(installs.join("plain-dir/bin")).unwrap();
+        for path in [
+            installs.join("python/3.11.2/bin/python3"),
+            installs.join("plain-dir/bin/python3"),
+            PathBuf::from("/usr/bin/python3"),
+        ] {
+            assert_eq!(tool_link_path(&installs, &path, "python"), None, "{path:?}");
+        }
     }
 }

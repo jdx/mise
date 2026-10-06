@@ -34,6 +34,7 @@ static INSTALL_PATH_CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::n
 /// to avoid stale paths (e.g. shared dir paths after a new install).
 pub(super) fn reset_install_path_cache() {
     INSTALL_PATH_CACHE.clear();
+    crate::install_layout::resolver::reset_cache();
 }
 
 /// represents a single version of a tool for a particular plugin
@@ -361,7 +362,7 @@ impl ToolVersion {
         (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
     }
 
-    fn uv_install_identity(&self) -> Option<String> {
+    pub(crate) fn uv_install_identity(&self) -> Option<String> {
         use sha2::{Digest, Sha256};
         let lock = self.uv_lock.as_ref()?;
         let python = self
@@ -419,6 +420,11 @@ impl ToolVersion {
         if let Some(p) = &self.install_path {
             return p.clone();
         }
+        // The identity layout names the directory by what is installed, so it is
+        // resolved before (and instead of) the legacy `<short>/<version>` path.
+        if let Some(located) = crate::install_layout::resolver::locate(self) {
+            return located.dir;
+        }
         if let Some(p) = INSTALL_PATH_CACHE.get(self) {
             return p.clone();
         }
@@ -469,6 +475,12 @@ impl ToolVersion {
         if self.locked {
             return self.install_path();
         }
+        // Identity layout: an unlocked request puts the friendly link path on
+        // PATH (`installs/node/20`, `installs/node/20.1.0`), never the hashed
+        // directory it points at, whenever that link is this installation.
+        if crate::install_layout::resolver::governs(self) {
+            return crate::install_layout::resolver::runtime_dir(self);
+        }
         let Some(pathname) = self.runtime_pathname() else {
             return self.install_path();
         };
@@ -496,10 +508,10 @@ impl ToolVersion {
         self.install_path()
     }
     pub(crate) fn cache_path(&self) -> PathBuf {
-        self.ba().cache_path().join(self.tv_pathname())
+        self.ba().cache_path().join(self.state_key())
     }
     pub(crate) fn download_path(&self) -> PathBuf {
-        self.request.ba().downloads_path().join(self.tv_pathname())
+        self.request.ba().downloads_path().join(self.state_key())
     }
     pub(crate) async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
         self.latest_version_with_opts(config, &ResolveOptions::default())
@@ -539,8 +551,10 @@ impl ToolVersion {
             style(&format!("@{}", self.version)).for_stderr()
         )
     }
-    pub fn tv_pathname(&self) -> String {
-        let pathname = match &self.request {
+    /// The logical name of this version as a path component: the version, a
+    /// `<ref type>-<ref>`, and so on, without any dependency-graph identity.
+    pub(crate) fn logical_pathname(&self) -> String {
+        match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
@@ -564,7 +578,11 @@ impl ToolVersion {
                 "system".to_string()
             }
         }
-        .replace([':', '/'], "-");
+        .replace([':', '/'], "-")
+    }
+
+    pub fn tv_pathname(&self) -> String {
+        let pathname = self.logical_pathname();
         if let Some(identity) = self.uv_install_identity() {
             return format!("{pathname}~uv~{}", &identity[..16]);
         }
@@ -577,7 +595,29 @@ impl ToolVersion {
         pathname
     }
 
-    fn aube_install_identity(&self) -> Option<String> {
+    /// What install state (the incomplete marker, the install lock, the cache and
+    /// download directories) is keyed by. The legacy layout keys it by the
+    /// logical version; the identity layout by the installation directory, so
+    /// two variants of one version never share it.
+    pub(crate) fn state_key(&self) -> String {
+        // Resolving the install path is not free, and with the layout off it is
+        // never an installation directory.
+        if !crate::install_layout::resolver::governs(self) {
+            return self.tv_pathname();
+        }
+        crate::install_layout::resolver::dir_name_of(&self.install_path())
+            .unwrap_or_else(|| self.tv_pathname())
+    }
+
+    /// Whether an install into `path` was interrupted: the incomplete marker for
+    /// it is still in the cache.
+    pub(crate) fn is_incomplete_at(&self, path: &Path) -> bool {
+        let key = crate::install_layout::resolver::dir_name_of(path)
+            .unwrap_or_else(|| self.tv_pathname());
+        install_state::incomplete_file_path(self.ba(), &key).exists()
+    }
+
+    pub(crate) fn aube_install_identity(&self) -> Option<String> {
         use sha2::{Digest, Sha256};
 
         let lock = self.aube_lock.as_ref()?;
@@ -1294,9 +1334,15 @@ fn is_mise_managed_symlink_target(target: &Path) -> bool {
     debug_assert!(target.is_absolute(), "caller filters relative targets");
     let target = normalize_path_components(target);
 
-    [*dirs::DATA, *dirs::CACHE, *dirs::DOWNLOADS, *dirs::INSTALLS]
-        .into_iter()
-        .any(|root| target.starts_with(normalize_path_components(root)))
+    [
+        *dirs::DATA,
+        *dirs::CACHE,
+        *dirs::DOWNLOADS,
+        *dirs::INSTALLS,
+        *dirs::INSTALL_STORE,
+    ]
+    .into_iter()
+    .any(|root| target.starts_with(normalize_path_components(root)))
         || env::shared_install_dirs()
             .iter()
             .any(|root| target.starts_with(normalize_path_components(root)))

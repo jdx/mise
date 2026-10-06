@@ -615,7 +615,7 @@ pub fn is_trusted(path: &Path) -> bool {
     // The `ignored_config_paths` setting is an explicit "never load this
     // config" instruction and is a hard block that takes precedence over
     // everything, including `trusted_config_paths`.
-    if is_ignored_via_setting(canonicalized_path.as_path()) {
+    if is_config_ignored_via_setting(path) {
         return false;
     }
     if IS_TRUSTED
@@ -788,6 +788,12 @@ impl IgnoredConfigPathMatcher {
         matcher
     }
 
+    /// Matches `path` as written, without resolving symlinks.
+    fn is_match_as_written(&self, path: &Path) -> bool {
+        self.literals.iter().any(|p| path.starts_with(p))
+            || self.globs.iter().any(|glob| glob.is_match(path))
+    }
+
     fn is_match(&self, path: &Path) -> bool {
         path_is_under_any(path, &self.literals)
             || self.globs.iter().any(|glob| glob.is_match(path))
@@ -826,6 +832,26 @@ pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
     } else {
         IGNORED_CONFIG_PATH_MATCHER.is_match(path)
     }
+}
+
+/// Whether the config file at `path`, or its trust root, is ignored by the
+/// `ignored_config_paths` setting.
+///
+/// A global or system config is matched as discovered, not by its symlink
+/// target. With `~/.config/mise` symlinked into a project, a project
+/// `.miserc.toml` that ignores the project's copy would otherwise resolve onto
+/// the global config too and hide it.
+pub(crate) fn is_config_ignored_via_setting(path: &Path) -> bool {
+    let root = config_trust_root(path);
+    if !config::is_global_config(path) {
+        return is_ignored_via_setting(&root) || is_ignored_via_setting(path);
+    }
+    let matcher = if GLOBAL_IGNORE_SCOPE.try_with(|_| ()).is_ok() {
+        &*GLOBAL_IGNORED_CONFIG_PATH_MATCHER
+    } else {
+        &*IGNORED_CONFIG_PATH_MATCHER
+    };
+    matcher.is_match_as_written(&root) || matcher.is_match_as_written(path)
 }
 
 /// The config path an ignore-list entry records.

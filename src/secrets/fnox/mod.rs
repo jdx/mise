@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::{self, display_path};
+use crate::task::task_context_builder::SourceConfigEnv;
 use crate::toolset::Toolset;
 
 mod wire;
@@ -44,26 +45,31 @@ pub(crate) struct FnoxSource {
     env: EnvMap,
 }
 
-/// The project's own `[tools] fnox`, then PATH without mise shims.
-pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
-    match config.get_toolset().await {
-        Ok(ts) => find_binary_in(config, ts).await,
-        Err(_) => find_binary_on_path(),
-    }
-}
-
-/// Like `find_binary`, for a toolset other than the current project's (a monorepo task's).
-pub(crate) async fn find_binary_in(config: &Arc<Config>, ts: &Toolset) -> Option<PathBuf> {
+/// The project's own `[tools] fnox` (from `ts`, the toolset of whoever the source is for: the
+/// current project's, or a monorepo task's own), then `path` (an activated shell's PATH)
+/// without mise shims.
+async fn find_binary_in(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    path: &std::ffi::OsStr,
+) -> Option<PathBuf> {
     if let Some(bin) = ts.which_bin_spawnable(config, "fnox").await {
         return Some(bin);
     }
-    find_binary_on_path()
-}
-
-fn find_binary_on_path() -> Option<PathBuf> {
     // Absolute against mise's cwd: fnox runs from the source root, so a relative PATH hit
     // would resolve somewhere else. Not canonicalized, so a multi-call binary keeps its name.
-    crate::backend::which_no_shims_spawnable("fnox").map(|p| std::path::absolute(&p).unwrap_or(p))
+    crate::backend::which_in_path_value_no_shims_spawnable("fnox", path)
+        .map(|p| std::path::absolute(&p).unwrap_or(p))
+}
+
+/// Used by `mise doctor`, which must not build the toolset env (that can run scripts): the
+/// project's tools, then the `[env] _.path` dirs already loaded with the config, then the
+/// inherited PATH.
+pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = config.path_dirs().await.ok()?.clone();
+    dirs.extend(env::PATH_NON_PRISTINE.iter().cloned());
+    let path = std::env::join_paths(dirs).ok()?;
+    find_binary_in(config, config.get_toolset().await.ok()?, &path).await
 }
 
 impl FnoxSource {
@@ -73,9 +79,13 @@ impl FnoxSource {
         config: &Arc<Config>,
         selected: &SelectedSource,
         ts: &Toolset,
+        config_env: Option<SourceConfigEnv>,
     ) -> Result<Self> {
         let declared_in = &selected.declared_in[0];
-        let Some(bin) = find_binary_in(config, ts).await else {
+        let (mut tool_env, mut removals) = ts.env_with_path_and_removals(config).await?;
+        let extra_paths = apply_config_env(&mut tool_env, &mut removals, config_env);
+        let env = source_env(env::PRISTINE_ENV.clone(), tool_env, &removals, &extra_paths);
+        let Some(bin) = find_binary_in(config, ts, source_path(&env)).await else {
             bail!(
                 "{NOT_FOUND_PREFIX}\n  [secrets.fnox] in {} needs the fnox CLI. Add it to the project: mise use fnox\n  mise looks in the project's tools first, then on PATH.",
                 display_path(declared_in)
@@ -87,7 +97,6 @@ impl FnoxSource {
                 display_path(&selected.root)
             )
         })?;
-        let (tool_env, removals) = ts.env_with_path_and_removals(config).await?;
         Ok(Self {
             id: SourceId {
                 kind: "fnox",
@@ -95,7 +104,7 @@ impl FnoxSource {
                 profile: selected.profile.clone(),
             },
             bin,
-            env: source_env(env::PRISTINE_ENV.clone(), tool_env, &removals),
+            env,
         })
     }
 
@@ -356,12 +365,27 @@ fn interpret_resolve(
             Err(_) => return Err(NoJson(status.to_string())),
         };
         let e = doc.error;
-        let message = mise_util::redactions::redact_global(&e.message);
-        return Err(Error(match e.kind.as_str() {
+        // everything fnox sends reaches the terminal: strip control characters from all of it
+        let message = strip_control(&mise_util::redactions::redact_global(&e.message));
+        let kind = strip_control(&e.kind);
+        return Err(Error(match kind.as_str() {
             "invalid_keys" => ResolveError::Invalid {
-                unknown: e.unknown,
-                suggestions: e.suggestions,
-                not_injectable: e.not_injectable.into_iter().map(|n| n.key).collect(),
+                unknown: e.unknown.iter().map(|k| strip_control(k)).collect(),
+                suggestions: e
+                    .suggestions
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            strip_control(k),
+                            v.iter().map(|s| strip_control(s)).collect(),
+                        )
+                    })
+                    .collect(),
+                not_injectable: e
+                    .not_injectable
+                    .into_iter()
+                    .map(|n| strip_control(&n.key))
+                    .collect(),
             },
             "resolution" => ResolveError::Resolution(message),
             "config" => ResolveError::Other(format!(
@@ -410,7 +434,20 @@ fn interpret_resolve(
     for (key, value) in doc.files {
         accept(true, key, value, &mut out);
     }
-    out.remove = doc.remove.into_iter().collect();
+    // fnox's `remove` is the ambient scrub plus out-of-scope secrets, deliberately not tied to
+    // the requested keys, so it is not filtered against them. Only names that could never be
+    // environment variables are dropped.
+    out.remove = doc
+        .remove
+        .into_iter()
+        .filter(|k| {
+            let valid = SecretName::new(k).is_some();
+            if !valid {
+                debug!("ignoring an invalid name in fnox's remove list");
+            }
+            valid
+        })
+        .collect();
     out.missing = doc
         .missing
         .iter()
@@ -424,12 +461,46 @@ fn interpret_resolve(
     Ok(out)
 }
 
+/// A monorepo task's source runs with its own subproject's `[env]` on top of the toolset's.
+fn apply_config_env(
+    tool_env: &mut EnvMap,
+    removals: &mut std::collections::BTreeSet<String>,
+    config_env: Option<SourceConfigEnv>,
+) -> Vec<PathBuf> {
+    let Some(SourceConfigEnv {
+        values,
+        unset,
+        paths,
+        ..
+    }) = config_env
+    else {
+        return vec![];
+    };
+    for key in &unset {
+        tool_env.remove(key);
+    }
+    for key in values.keys() {
+        removals.remove(key);
+    }
+    tool_env.extend(values);
+    removals.extend(unset);
+    paths
+}
+
+fn source_path(env: &EnvMap) -> &std::ffi::OsStr {
+    env.get(&*env::PATH_KEY)
+        .map_or(std::ffi::OsStr::new(""), |p| {
+            std::ffi::OsStr::new(p.as_str())
+        })
+}
+
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
 /// bookkeeping, shims or dispatch dirs. Never task env or resolved values.
 fn source_env(
     mut base: EnvMap,
     overlay: EnvMap,
     removals: &std::collections::BTreeSet<String>,
+    extra_paths: &[PathBuf],
 ) -> EnvMap {
     base.extend(overlay);
     for key in removals {
@@ -438,6 +509,23 @@ fn source_env(
     base.retain(|k, _| !k.starts_with("__MISE_"));
     if let Some(path) = base.get_mut(&*env::PATH_KEY) {
         *path = file::strip_dispatch_dirs_from_path(&file::strip_shims_from_path(path));
+    }
+    // the subproject's own `_.path`, in front, after the shim stripping (it never holds shims)
+    if !extra_paths.is_empty() {
+        let current = base.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        let merged: Vec<PathBuf> = extra_paths
+            .iter()
+            .cloned()
+            .chain(env::split_paths(&current))
+            .filter(|p| seen.insert(p.clone()))
+            .collect();
+        if let Ok(joined) = env::join_paths(merged) {
+            base.insert(
+                env::PATH_KEY.to_string(),
+                joined.to_string_lossy().to_string(),
+            );
+        }
     }
     base
 }
@@ -469,15 +557,14 @@ fn interpret(
     if !success {
         return match serde_json::from_slice::<wire::ErrorDocument>(buf) {
             Ok(doc) => {
-                let message = mise_util::redactions::redact_global(&doc.error.message);
+                let message =
+                    strip_control(&mise_util::redactions::redact_global(&doc.error.message));
+                let kind = strip_control(&doc.error.kind);
                 let root = display_path(root);
-                Err(Failure::Message(if doc.error.kind == "config" {
+                Err(Failure::Message(if kind == "config" {
                     format!("mise secrets: fnox could not load its config in {root}: {message}")
                 } else {
-                    format!(
-                        "mise secrets: fnox env failed ({}) in {root}: {message}",
-                        doc.error.kind
-                    )
+                    format!("mise secrets: fnox env failed ({kind}) in {root}: {message}")
                 }))
             }
             Err(_) => Err(Failure::NoJson(status.to_string())),
@@ -487,7 +574,7 @@ fn interpret(
     if head.schema != 1 {
         return Err(Failure::Message(format!(
             "mise secrets: fnox {} sent env schema {}; this mise understands schema 1. Upgrade mise (mise self-update) or pin an older fnox.",
-            head.fnox_version.as_deref().unwrap_or("(unknown version)"),
+            strip_control(head.fnox_version.as_deref().unwrap_or("(unknown version)")),
             head.schema
         )));
     }
@@ -536,9 +623,13 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
     }
     Catalog {
         entries,
-        profile: doc.profile,
-        dynamic_leases: doc.dynamic_leases,
-        tool_version: doc.fnox_version,
+        profile: doc.profile.iter().map(|p| strip_control(p)).collect(),
+        dynamic_leases: doc
+            .dynamic_leases
+            .iter()
+            .map(|l| strip_control(l))
+            .collect(),
+        tool_version: strip_control(&doc.fnox_version),
     }
 }
 
@@ -566,6 +657,29 @@ mod tests {
             Failure::Message(m) => m,
             Failure::NoJson(s) => format!("nojson {s}"),
         }
+    }
+
+    #[test]
+    fn terminal_bound_strings_are_stripped() {
+        let doc = r#"{"schema":1,"fnox_version":"1.\u001b[31m39","profile":["dev\u001b]0;pwned\u0007"],"keys":[],"dynamic_leases":["l\u001b[2Jx"]}"#;
+        let c = interpret(true, "exit status: 0", doc.as_bytes(), Path::new("/p"))
+            .ok()
+            .unwrap();
+        let all = format!("{} {:?} {:?}", c.tool_version, c.profile, c.dynamic_leases);
+        assert!(!all.chars().any(|ch| ch.is_ascii_control()), "{all:?}");
+        assert_eq!(c.tool_version, "1.[31m39");
+        assert_eq!(strip_control("plain text-1.2"), "plain text-1.2");
+        let m = message(
+            interpret(
+                false,
+                "exit status: 1",
+                br#"{"schema":1,"error":{"kind":"x\u001b[1m","message":"a\u001b]0;t\u0007b"}}"#,
+                Path::new("/p"),
+            )
+            .err()
+            .unwrap(),
+        );
+        assert!(!m.chars().any(|ch| ch.is_ascii_control()), "{m:?}");
     }
 
     #[test]
@@ -852,6 +966,54 @@ mod tests {
     }
 
     #[test]
+    fn remove_list_keeps_valid_names_only() {
+        let r = resolved(
+            r#"{"schema":1,"set":{},"files":{},"remove":["","A=B","bad\u0000name","OK_NAME","FNOX_AGE_KEY"],"missing":[]}"#,
+            &["DATABASE_URL"],
+        );
+        assert_eq!(
+            r.remove,
+            BTreeSet::from(["OK_NAME".to_string(), "FNOX_AGE_KEY".to_string()])
+        );
+    }
+
+    #[test]
+    fn resolve_errors_are_stripped_of_control_characters() {
+        let requested = sel(&[]);
+        let catalog = catalog_with_signing();
+        let err = |doc: &str| match interpret_resolve(
+            false,
+            "exit status: 1",
+            doc.as_bytes(),
+            &requested,
+            &catalog,
+            Path::new("/p"),
+        ) {
+            Err(ResolveFailure::Error(e)) => e,
+            _ => panic!("expected an error document"),
+        };
+        match err(r#"{"schema":1,"error":{"kind":"resolution","message":"no\u001b[31mpe\u0007"}}"#)
+        {
+            ResolveError::Resolution(m) => assert_eq!(m, "no[31mpe"),
+            other => panic!("{other:?}"),
+        }
+        match err(
+            r#"{"schema":1,"error":{"kind":"invalid_keys","message":"m","unknown":["A\u001b]0;x\u0007"],"suggestions":{"A\u001b":["B\u0007"]},"not_injectable":[{"key":"S\u001b","env":false}]}}"#,
+        ) {
+            ResolveError::Invalid {
+                unknown,
+                suggestions,
+                not_injectable,
+            } => {
+                assert_eq!(unknown, ["A]0;x"]);
+                assert_eq!(suggestions["A"], ["B"]);
+                assert_eq!(not_injectable, ["S"]);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
     fn resolve_error_documents() {
         let requested = sel(&[]);
         let catalog = catalog_with_signing();
@@ -911,6 +1073,43 @@ mod tests {
     }
 
     #[test]
+    fn subproject_env_reaches_the_source_env() {
+        let mut tool_env = EnvMap::from([("ROOT".into(), "1".into()), ("GONE".into(), "1".into())]);
+        let mut removals = BTreeSet::from(["AWS_PROFILE".to_string()]);
+        let sub = SourceConfigEnv {
+            values: EnvMap::from([("AWS_PROFILE".into(), "staging".into())]),
+            unset: BTreeSet::from(["GONE".to_string()]),
+            paths: vec![PathBuf::from("/sub/bin")],
+            skipped_scripts: false,
+        };
+        let paths = apply_config_env(&mut tool_env, &mut removals, Some(sub));
+        let key = env::PATH_KEY.clone();
+        tool_env.insert(key.clone(), "/usr/bin".into());
+        let out = source_env(EnvMap::new(), tool_env, &removals, &paths);
+        let path: Vec<PathBuf> = env::split_paths(&out[&key]).collect();
+        assert_eq!(path, [PathBuf::from("/sub/bin"), PathBuf::from("/usr/bin")]);
+        assert_eq!(out.get("AWS_PROFILE").map(String::as_str), Some("staging"));
+        assert_eq!(out.get("ROOT").map(String::as_str), Some("1"));
+        assert!(!out.contains_key("GONE"));
+        let mut untouched = EnvMap::from([("ROOT".into(), "1".into())]);
+        apply_config_env(&mut untouched, &mut BTreeSet::new(), None);
+        assert_eq!(untouched.len(), 1);
+        // already present: moved to the front once, not duplicated
+        let mut again = EnvMap::from([(env::PATH_KEY.clone(), "/usr/bin:/sub/bin".into())]);
+        if cfg!(windows) {
+            again.insert(env::PATH_KEY.clone(), "/usr/bin;/sub/bin".into());
+        }
+        let out = source_env(
+            again,
+            EnvMap::new(),
+            &BTreeSet::new(),
+            &[PathBuf::from("/sub/bin")],
+        );
+        let path: Vec<PathBuf> = env::split_paths(&out[&env::PATH_KEY.clone()]).collect();
+        assert_eq!(path, [PathBuf::from("/sub/bin"), PathBuf::from("/usr/bin")]);
+    }
+
+    #[test]
     fn source_env_drops_mise_keys_and_shims() {
         let key = env::PATH_KEY.clone();
         let shims = crate::dirs::shims().to_string_lossy().to_string();
@@ -926,10 +1125,18 @@ mod tests {
         ]);
         let overlay = EnvMap::from([("__MISE_ENV_CACHE_KEY".into(), "x".into())]);
         let removals = BTreeSet::from(["DROP".to_string()]);
-        let out = source_env(base, overlay, &removals);
+        let out = source_env(base, overlay, &removals, &[]);
         assert_eq!(out.get("KEEP").map(String::as_str), Some("1"));
         assert!(!out.keys().any(|k| k.starts_with("__MISE_")));
         assert!(!out.contains_key("DROP"));
         assert_eq!(out[&key], "/usr/bin");
+    }
+
+    #[test]
+    fn source_path_reads_the_computed_path() {
+        let key = env::PATH_KEY.clone();
+        let env = EnvMap::from([(key, "/opt/fnox/bin".to_string())]);
+        assert_eq!(source_path(&env), std::ffi::OsStr::new("/opt/fnox/bin"));
+        assert_eq!(source_path(&EnvMap::new()), std::ffi::OsStr::new(""));
     }
 }

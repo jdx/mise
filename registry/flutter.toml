@@ -37,4 +37,4 @@ url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/wind
 full = "asdf:mise-plugins/mise-flutter"
 
 [[backends]]
-full = "vfox:mise-plugins/vfox-flutter"
+full = "vfox:jdx/vfox-flutter"

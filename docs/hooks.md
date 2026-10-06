@@ -112,7 +112,10 @@ Each entry has five fields:
 - `install_path`: the exact directory of the completed installation. This names the
   concrete version directory, not a floating link such as `latest` or `20`. Like other
   environment variables, paths that are not valid Unicode use the platform's lossy
-  Unicode representation.
+  Unicode representation. With the experimental
+  [install layout](/dev-tools/install-layout.html), this is the installation's own
+  directory, such as `~/.local/share/mise/installs/node-<hash>`, rather than a
+  path under `installs/node/`.
 
 `requested_version` lets a hook branch on how the tool was selected without re-reading
 config files, which a `postinstall` hook cannot reliably do for the install that just

@@ -15,7 +15,7 @@ full = "conda:redis-server"
 platforms = ["linux", "macos"]
 
 [[backends]]
-full = "vfox:mise-plugins/vfox-redis"
+full = "vfox:jdx/vfox-redis"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-redis"

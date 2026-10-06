@@ -1191,6 +1191,27 @@ impl Backend for PythonPlugin {
         Ok(opts)
     }
 
+    /// A python that is compiled with `python.patch_url` or `python.patches_directory` is not
+    /// the python that is built without them. They only apply when compiling is asked for, the
+    /// same case in which the lockfile records `compile`; a precompiled python never sees
+    /// them, so leaving them out there keeps one install per version.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = crate::backend::static_helpers::request_identity_options(self, tv);
+        let settings = Settings::get();
+        if settings.python_compile(CompilePurpose::Inspect) == Some(true) {
+            if let Some(patch_url) = &settings.python.patch_url {
+                options.insert("python.patch_url".to_string(), patch_url.to_string());
+            }
+            if let Some(patches_dir) = &settings.python.patches_directory {
+                options.insert(
+                    "python.patches_directory".to_string(),
+                    patches_dir.to_string_lossy().to_string(),
+                );
+            }
+        }
+        options
+    }
+
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
@@ -1956,6 +1977,42 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
                     .to_string()
             ))
         );
+    }
+
+    #[test]
+    fn test_python_identity_options_include_patches_only_when_compiling() {
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+
+        let _guard = crate::test::SettingsGuard::lock();
+        let backend = PythonPlugin::new();
+        let identity = |compile: Option<bool>, patched: bool| {
+            let mut partial = SettingsPartial::empty();
+            partial.python.compile = compile;
+            if patched {
+                partial.python.patch_url = Some("https://example.com/fix.patch".parse().unwrap());
+                partial.python.patches_directory = Some(PathBuf::from("/etc/python-patches"));
+            }
+            Settings::reset(Some(partial));
+            crate::backend::static_helpers::test_identity_options(&backend, "3.12.1", &[])
+        };
+
+        // A precompiled python never sees the patches.
+        assert_eq!(identity(Some(false), true), identity(Some(false), false));
+        assert_eq!(identity(None, true), identity(None, false));
+
+        let plain = identity(Some(true), false);
+        let patched = identity(Some(true), true);
+        assert_ne!(patched, plain);
+        assert_eq!(
+            patched.get("python.patch_url").map(String::as_str),
+            Some("https://example.com/fix.patch")
+        );
+        assert_eq!(
+            patched.get("python.patches_directory").map(String::as_str),
+            Some("/etc/python-patches")
+        );
+        Settings::reset(None);
     }
 
     #[test]

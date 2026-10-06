@@ -27,7 +27,7 @@ pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, Pending, SecretBroker, SpawnRequest, TerminalAccess};
 pub use grant::{CliSecretGrant, G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub(crate) use grant::{
-    DENIED_MARKER, SecretGrant, Subject, age_read_problems, aggregate_error, declared_env_keys,
+    DENIED_MARKER, EnvView, SecretGrant, Subject, age_read_problems, aggregate_error,
     denied_from_env, effective_grant, grant_for_task, sandbox_and_collision_problems,
     static_problems,
 };
@@ -133,8 +133,11 @@ pub(crate) async fn open_source(
     config: &Arc<Config>,
     selected: &config::SelectedSource,
     ts: &crate::toolset::Toolset,
+    config_env: Option<crate::task::task_context_builder::SourceConfigEnv>,
 ) -> eyre::Result<Arc<dyn SecretSource>> {
-    Ok(Arc::new(fnox::FnoxSource::new(config, selected, ts).await?))
+    Ok(Arc::new(
+        fnox::FnoxSource::new(config, selected, ts, config_env).await?,
+    ))
 }
 
 /// What `mise x` asks for.
@@ -192,6 +195,8 @@ pub async fn prepare_exec_secrets(
                 task_env_keys: &no_env_keys,
                 mise_set_inherited: &no_env_keys,
                 mise_env_keys: &mise_env_keys,
+                // mise x has no task env, so no default was rendered
+                rendered_defaults: &no_env_keys,
                 sandbox: req.sandbox,
                 file_dir: None,
                 terminal: &ExecTerminal,
@@ -216,7 +221,8 @@ pub async fn inventory(config: &Arc<Config>) -> eyre::Result<Inventory> {
             problems: vec![],
         });
     };
-    let source = fnox::FnoxSource::new(config, &selected, config.get_toolset().await?).await?;
+    let source =
+        fnox::FnoxSource::new(config, &selected, config.get_toolset().await?, None).await?;
     debug!("describing secrets from {}", source.label());
     let catalog = source.describe().await?;
     let id = source.id();
@@ -295,7 +301,7 @@ pub struct TaskSecretsCheck {
 /// `[env]` keys it declares. `mise run` flags (`--deny-env`, `--allow-env`) and the run's
 /// resolved environment can still change the result there.
 fn task_level_problems(
-    config: &Arc<Config>,
+    view: &EnvView,
     task: &crate::task::Task,
     grant: &SecretGrant,
 ) -> Vec<Problem> {
@@ -316,7 +322,7 @@ fn task_level_problems(
         false,
         task_sandbox,
     );
-    sandbox_and_collision_problems(task, grant, &sandbox, &declared_env_keys(task, config))
+    sandbox_and_collision_problems(task, grant, &sandbox, &view.declared_keys(task))
 }
 
 /// Shared by every `check_task_secrets` call of one `mise tasks validate`, so a source is
@@ -333,7 +339,15 @@ pub async fn check_task_secrets(
     cache: &TaskSecretsCache,
 ) -> TaskSecretsCheck {
     let (grant, mut problems) = grant_for_task(task);
-    problems.extend(static_problems(task, &grant, None));
+    let view = if grant.is_empty() {
+        EnvView::default()
+    } else {
+        EnvView::load(config)
+            .await
+            .for_task(config, &cache.ctx, task, true)
+            .await
+    };
+    problems.extend(static_problems(task, &grant, None, &view));
     problems.extend(grant::age_read_problems(task, &grant).await);
     let mut check = TaskSecretsCheck {
         problems,
@@ -345,7 +359,7 @@ pub async fn check_task_secrets(
     }
     check
         .problems
-        .extend(task_level_problems(config, task, &grant));
+        .extend(task_level_problems(&view, task, &grant));
     let ctx = &cache.ctx;
     let selection = match config::select_for_task_ungated(config, ctx, task).await {
         Ok(selection) => selection,
@@ -412,6 +426,21 @@ pub async fn check_task_secrets(
     check
 }
 
+/// The deprecated plugin, by name (`mise-env-fnox = "./plugins/secrets"`) or by the repo name
+/// ending its source (`https://github.com/x/mise-env-fnox.git`). A source that merely contains
+/// the text, such as `mise-env-fnox-fork-tools`, is some other plugin.
+fn is_env_fnox_plugin(name: &str, source: &str) -> bool {
+    const PLUGIN: &str = "mise-env-fnox";
+    // A pinned source (`...#main`, `...?ref=x`) still names the same repo.
+    let source = source.split(['#', '?']).next().unwrap_or_default();
+    let last = source
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\', ':'])
+        .next()
+        .unwrap_or_default();
+    name == PLUGIN || last.strip_suffix(".git").unwrap_or(last) == PLUGIN
+}
+
 /// Used by `mise doctor`. Never spawns fnox, never errors.
 pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
     let mut warnings = vec![];
@@ -436,7 +465,9 @@ pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
     }
     for (path, cf) in config.config_files.iter() {
         if let Ok(plugins) = cf.plugins()
-            && plugins.values().any(|v| v.contains("mise-env-fnox"))
+            && plugins
+                .iter()
+                .any(|(name, src)| is_env_fnox_plugin(name, src))
         {
             warnings.push(format!(
                 "the mise-env-fnox plugin is deprecated (configured in {}); see https://mise.jdx.dev/environments/secrets/fnox.html#migrating",
@@ -445,4 +476,44 @@ pub async fn doctor_warnings(config: &Arc<Config>) -> Vec<String> {
         }
     }
     warnings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_env_fnox_plugin;
+
+    #[test]
+    fn env_fnox_plugin_matches_by_name_or_repo() {
+        assert!(is_env_fnox_plugin("mise-env-fnox", "./plugins/secrets"));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox"
+        ));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox.git"
+        ));
+        assert!(is_env_fnox_plugin("x", "git@github.com:jdx/mise-env-fnox/"));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox.git#main"
+        ));
+        assert!(is_env_fnox_plugin(
+            "fnox-env",
+            "https://github.com/jdx/mise-env-fnox?ref=v1"
+        ));
+    }
+
+    #[test]
+    fn env_fnox_plugin_ignores_lookalikes() {
+        assert!(!is_env_fnox_plugin(
+            "other",
+            "https://github.com/a/mise-env-fnox-tools"
+        ));
+        assert!(!is_env_fnox_plugin("other", "./mise-env-fnox/other-plugin"));
+        assert!(!is_env_fnox_plugin(
+            "other",
+            "https://github.com/a/not-mise-env-fnox"
+        ));
+    }
 }

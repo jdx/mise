@@ -6,7 +6,6 @@ use crate::backend::Backend;
 #[cfg(unix)]
 use crate::config::SettingsExt;
 use crate::config::{Alias, Config};
-use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
 use crate::toolset::{ToolRequest, Toolset, install_state};
@@ -83,6 +82,9 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
+    if installs_dir == backend.ba().installs_path() {
+        crate::install_layout::resolver::heal_links(backend.ba());
+    }
     let concrete_installs = concrete_installs_in_dir(backend, installs_dir);
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
     let default_alias = Alias::default();
@@ -139,11 +141,14 @@ fn rebuild_symlinks_in_dir(
         if from.exists() {
             if is_runtime_symlink(&from) {
                 // Existing runtime symlink: only rewrite if the target changed.
-                if file::resolve_symlink(&from)?.unwrap_or_default() == *to {
+                // A Windows text-file alias is rewritten as a real link.
+                if runtime_symlink_target(&from).as_ref() == Some(to) && !is_text_file_alias(&from)
+                {
                     continue;
                 }
-                trace!("Removing existing symlink: {}", from.display());
-                file::remove_file(&from)?;
+                // `make_dir_link` below replaces it, keeping the old link if the
+                // new one cannot be made.
+                trace!("Retargeting existing symlink: {}", from.display());
             } else if from
                 .file_name()
                 .zip(to.file_name())
@@ -158,7 +163,19 @@ fn rebuild_symlinks_in_dir(
                 continue;
             }
         }
-        make_symlink_or_file(to, &from)?;
+        if let Err(err) = file::make_dir_link(to, &from) {
+            if cfg!(windows) {
+                warn!(
+                    "could not create {} -> {}: {err:#}. The tool works through mise, but \
+                     external programs cannot use this path; run `mise where` for the real \
+                     install path.",
+                    from.display(),
+                    to.display()
+                );
+            } else {
+                return Err(err);
+            }
+        }
     }
     prune_stale_generated_symlinks(backend, installs_dir, &symlinks, &alias_names)?;
     remove_missing_symlinks_in_dir(installs_dir)?;
@@ -209,6 +226,19 @@ fn list_symlinks_for_dir(
                 continue;
             };
             let install_path = tv.install_path();
+            // An identity-layout install is a hashed directory in the installs root;
+            // the pin points at the version link beside it, which names the same
+            // installation, never at the hash.
+            if crate::install_layout::resolver::dir_name_of(&install_path).is_some() {
+                let name = tv.tv_pathname();
+                if installs_dir == tv.ba().installs_path()
+                    && install_path.exists()
+                    && installs_dir.join(&name).exists()
+                {
+                    symlinks.insert(from, PathBuf::from(".").join(name));
+                }
+                continue;
+            }
             if install_path.parent() != Some(installs_dir) || !install_path.exists() {
                 continue;
             }
@@ -231,7 +261,7 @@ fn list_symlinks_for_dir(
 fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
-        .filter(|v| !is_install_incomplete(backend, v))
+        .filter(|v| !is_install_incomplete(backend, installs_dir, v))
         .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
@@ -240,8 +270,14 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
 /// Whether version dir `v` belongs to an install that never finished. The
 /// marker is keyed by the tool's name, not by the install dir's basename, which
 /// install state can map to a differently named directory.
-fn is_install_incomplete(backend: &Arc<dyn Backend>, v: &str) -> bool {
-    install_state::incomplete_file_path(backend.ba(), v).exists()
+///
+/// An identity-layout version is a link, and its marker is keyed by the
+/// installation the link names.
+fn is_install_incomplete(backend: &Arc<dyn Backend>, installs_dir: &Path, v: &str) -> bool {
+    let key = crate::install_layout::resolver::link_target(&installs_dir.join(v))
+        .and_then(|install| install.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| v.to_string());
+    install_state::incomplete_file_path(backend.ba(), &key).exists()
 }
 
 /// Real install directories a rebuild must never replace with a selector
@@ -257,7 +293,7 @@ fn concrete_installs_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> 
         .chain(
             real_installs_in_dir(installs_dir)
                 .into_iter()
-                .filter(|v| is_install_incomplete(backend, v)),
+                .filter(|v| is_install_incomplete(backend, installs_dir, v)),
         )
         .collect()
 }
@@ -363,7 +399,7 @@ fn prune_stale_generated_symlinks(
 ) -> Result<()> {
     for path in stale_generated_symlinks(backend, installs_dir, desired, alias_names)? {
         trace!("Removing stale runtime symlink: {}", path.display());
-        file::remove_file(&path)?;
+        file::remove_dir_link(&path)?;
     }
     Ok(())
 }
@@ -425,7 +461,7 @@ pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> 
     }
     for path in missing_symlinks_in_dir(installs_dir)? {
         trace!("Removing missing symlink: {}", path.display());
-        file::remove_file(path)?;
+        file::remove_dir_link(&path)?;
     }
     // remove install dir if empty (ignore metadata)
     file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
@@ -448,6 +484,11 @@ fn missing_symlinks_in_dir(installs_dir: &Path) -> Result<Vec<PathBuf>> {
             && !installs_dir.join(target).exists()
         {
             missing.push(path);
+        } else if crate::install_layout::resolver::is_compat_link_shape(&path)
+            && crate::install_layout::resolver::link_target(&path).is_none()
+        {
+            // A version link into the identity layout whose installation is gone.
+            missing.push(path);
         }
     }
     Ok(missing)
@@ -460,17 +501,29 @@ pub fn is_runtime_symlink(path: &Path) -> bool {
 /// Returns the (relative) target a runtime symlink points to, or None if
 /// `path` is not a runtime symlink.
 fn runtime_symlink_target(path: &Path) -> Option<PathBuf> {
-    if let Ok(Some(link)) = file::resolve_symlink(path)
-        && link.starts_with("./")
-    {
+    let link = file::resolve_symlink(path).ok().flatten()?;
+    if link.starts_with("./") {
         return Some(link);
     }
-    None
+    // A Windows junction records an absolute target; one that points at a
+    // sibling directory is the same runtime link written as `./name`.
+    if !cfg!(windows) {
+        return None;
+    }
+    let (parent, name) = (link.parent()?, link.file_name()?);
+    (std::fs::canonicalize(parent).ok()? == std::fs::canonicalize(path.parent()?).ok()?)
+        .then(|| Path::new(".").join(name))
+}
+
+/// A pre-junction Windows alias: a regular file holding the target path.
+fn is_text_file_alias(path: &Path) -> bool {
+    cfg!(windows) && path.is_file() && !path.is_symlink()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file::make_symlink_or_file;
     use std::fs;
 
     fn npm_test_backend() -> Arc<dyn Backend> {
@@ -837,5 +890,51 @@ mod tests {
             generated_names_for("temurin-21.0.1"),
             ["temurin-21", "temurin-21.0", "temurin-latest"]
         );
+    }
+
+    /// The links `rebuild_symlinks_in_dir` writes now: real symlinks on unix and
+    /// junctions on Windows. They must be recognised as runtime links, excluded
+    /// from the real installs, pruned when stale and removed once their target
+    /// is gone.
+    #[test]
+    fn dir_links_are_runtime_links_that_are_pruned_and_cleaned_up() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        let backend = unique_backend(&temp_dir);
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        let _interrupted = interrupted_install(&backend, "1.3.1-3")?;
+        file::make_dir_link(Path::new("./1.2.4"), &installs_dir.join("1.2"))?;
+        file::make_dir_link(Path::new("./1.3.1-3"), &installs_dir.join("1.3"))?;
+        file::make_dir_link(Path::new("./1.2.4"), &installs_dir.join("latest"))?;
+
+        // Recognised, and never mistaken for an installed version.
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert_eq!(
+            runtime_symlink_target(&installs_dir.join("1.2")),
+            Some(PathBuf::from("./1.2.4"))
+        );
+        assert_eq!(
+            real_installs_in_dir(&installs_dir)
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from(["1.2.4".to_string(), "1.3.1-3".to_string()])
+        );
+
+        // A link into an ineligible (incomplete) install is stale and removed;
+        // the others stay.
+        prune_stale_generated_symlinks(&backend, &installs_dir, &IndexMap::new(), &HashSet::new())?;
+        assert!(fs::symlink_metadata(installs_dir.join("1.3")).is_err());
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert!(is_runtime_symlink(&installs_dir.join("latest")));
+        assert!(installs_dir.join("1.3.1-3").is_dir(), "target must survive");
+
+        // A link whose target was deleted is cleaned up without touching others.
+        fs::remove_dir_all(installs_dir.join("1.2.4"))?;
+        remove_missing_symlinks_in_dir(&installs_dir)?;
+        assert!(fs::symlink_metadata(installs_dir.join("1.2")).is_err());
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        assert!(installs_dir.join("1.3.1-3").is_dir());
+        Ok(())
     }
 }

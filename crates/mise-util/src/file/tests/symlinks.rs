@@ -461,3 +461,54 @@ fn test_is_unc_path() {
 
     assert!(!is_unc_path(Path::new(r"D:\github\verzly\mise-php")));
 }
+
+#[test]
+fn dir_link_is_a_real_directory_link_that_resolves_and_removes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let installs = tmp.path().join("installs");
+    fs::create_dir_all(installs.join("3.9.16")).unwrap();
+    fs::write(installs.join("3.9.16").join("tool.txt"), "x").unwrap();
+    let link = installs.join("3");
+
+    // A text-file alias left by an older mise is replaced.
+    fs::write(&link, "./3.9.16").unwrap();
+    make_dir_link(Path::new("./3.9.16"), &link).unwrap();
+
+    assert!(link.is_dir());
+    assert!(link.join("tool.txt").exists());
+    assert!(is_symlink_or_junction(&link));
+    let target = resolve_symlink(&link).unwrap().unwrap();
+    assert_eq!(target.file_name().unwrap(), "3.9.16");
+
+    // Retargeting an existing link works.
+    fs::create_dir_all(installs.join("3.9.17")).unwrap();
+    make_dir_link(Path::new("./3.9.17"), &link).unwrap();
+    assert_eq!(
+        resolve_symlink(&link)
+            .unwrap()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "3.9.17"
+    );
+
+    remove_dir_link(&link).unwrap();
+    assert!(!link.exists());
+    assert!(installs.join("3.9.16").join("tool.txt").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn failed_junction_creation_leaves_no_placeholder_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let link = tmp.path().join("3");
+    // A target too long for the reparse buffer fails after the directory exists.
+    let target = tmp.path().join("x".repeat(9000));
+    assert!(make_dir_link(&target, &link).is_err());
+    assert!(!link.exists(), "a placeholder directory was left behind");
+
+    // A directory that was already there is never removed.
+    fs::create_dir(&link).unwrap();
+    assert!(make_symlink(&target, &link).is_err());
+    assert!(link.is_dir());
+}

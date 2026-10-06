@@ -88,6 +88,8 @@ pub(crate) struct SpawnRequest<'a> {
     pub(crate) mise_set_inherited: &'a BTreeSet<String>,
     /// every key mise itself sets for this child, whatever its value
     pub(crate) mise_env_keys: &'a BTreeSet<String>,
+    /// keys whose task-env `default` directive actually rendered
+    pub(crate) rendered_defaults: &'a BTreeSet<String>,
     pub(crate) sandbox: &'a SandboxConfig,
     /// `None` refuses `as_file` keys
     pub(crate) file_dir: Option<&'a Path>,
@@ -233,8 +235,25 @@ impl MemoValues {
                 let message: Arc<str> = Arc::from(message);
                 match what {
                     Pending::Keys(keys) => {
+                        // `invalid_keys` names the keys it rejects; the others were never
+                        // tried and stay retryable. Any other failure marks the whole batch.
+                        let rejected: BTreeSet<&str> = match &err {
+                            ResolveError::Invalid {
+                                unknown,
+                                not_injectable,
+                                ..
+                            } => unknown
+                                .iter()
+                                .chain(not_injectable)
+                                .map(String::as_str)
+                                .collect(),
+                            _ => BTreeSet::new(),
+                        };
+                        let named = keys.iter().any(|k| rejected.contains(k.as_str()));
                         for key in keys {
-                            self.failed.insert(key, message.clone());
+                            if !named || rejected.contains(key.as_str()) {
+                                self.failed.insert(key, message.clone());
+                            }
                         }
                     }
                     Pending::All => self.all = Some(Err(message)),
@@ -531,10 +550,15 @@ impl SecretBroker {
         let opened = cell
             .get_or_init(|| async {
                 let owned: Toolset;
+                let mut config_env = None;
                 let ts: &Toolset = if monorepo {
                     let task_cf = task.cf.as_ref().expect("monorepo task has a config file");
                     owned = ctx
                         .build_toolset_for_task(config, task, Some(task_cf), &[])
+                        .await
+                        .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
+                    config_env = ctx
+                        .config_env_for_source(config, task, &owned, false)
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
                     &owned
@@ -544,7 +568,7 @@ impl SecretBroker {
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?
                 };
-                super::open_source(config, selected, ts)
+                super::open_source(config, selected, ts, config_env)
                     .await
                     .map_err(|e| Arc::<str>::from(format!("{e:#}")))
             })
@@ -707,7 +731,9 @@ impl SecretBroker {
             bail!("prepare_spawn is for tasks; use prepare_exec");
         };
         let (_, mut problems) = grant_for_task(task);
-        problems.extend(static_problems(task, req.grant, req.denied));
+        // judged by what the task env preparation already resolved: no script runs again
+        let env_view = super::EnvView::resolved(req.rendered_defaults);
+        problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if problems.is_empty() {
             problems.extend(super::grant::age_read_problems(task, req.grant).await);
         }
@@ -722,7 +748,8 @@ impl SecretBroker {
             );
         }
         let memo = self.memo_for_task(config, req.ctx_builder, task).await?;
-        let spawn = self.grant_values(&memo, &req).await?;
+        let refs = env_view.template_refs(task);
+        let spawn = self.grant_values_with(&memo, &req, &refs).await?;
         spawn.ensure_settable(&req.grantee.subject().text())?;
         Ok(Some(spawn))
     }
@@ -757,7 +784,7 @@ impl SecretBroker {
             bail!("{msg}");
         };
         let ts = config.get_toolset().await?;
-        let opened = super::open_source(config, &selected, ts).await?;
+        let opened = super::open_source(config, &selected, ts, None).await?;
         let memo_key = (opened.id().clone(), opened.build_fingerprint());
         let memo = self
             .sources
@@ -790,17 +817,35 @@ impl SecretBroker {
             grant: &grant,
             ..req
         };
-        let spawn = self.grant_values(&memo, &req).await?;
+        let spawn = self
+            .grant_values_with(&memo, &req, &BTreeSet::new())
+            .await?;
         spawn.ensure_settable(&subject_text)?;
         Ok(Some(spawn))
     }
 
     /// Everything after the source is known: catalog checks, sandbox and collision checks,
     /// resolution, files, `remove`.
-    pub(crate) async fn grant_values(
+    #[cfg(test)]
+    async fn grant_values(
         &self,
         memo: &Arc<SourceMemo>,
         req: &SpawnRequest<'_>,
+    ) -> Result<SpawnSecrets> {
+        let refs = req
+            .grantee
+            .task()
+            .map(|t| super::EnvView::default().template_refs(t))
+            .unwrap_or_default();
+        self.grant_values_with(memo, req, &refs).await
+    }
+
+    /// `template_refs`: env names the task's templates read (empty for `mise x`).
+    pub(crate) async fn grant_values_with(
+        &self,
+        memo: &Arc<SourceMemo>,
+        req: &SpawnRequest<'_>,
+        template_refs: &BTreeSet<String>,
     ) -> Result<SpawnSecrets> {
         let subject = req.grantee.subject();
         let who = subject.text();
@@ -860,11 +905,7 @@ impl SecretBroker {
         let keys: BTreeSet<SecretName> = req.grant.exported_keys().cloned().collect();
         let all = req.grant.all.is_some();
         // `--secrets-all`: keys that would collide or be dropped are skipped, not errors
-        let refs = req
-            .grantee
-            .task()
-            .map(super::grant::task_template_refs)
-            .unwrap_or_default();
+        let refs = template_refs;
         let mut skipped: BTreeSet<SecretName> = BTreeSet::new();
         if all {
             for (key, entry) in &catalog.entries {
@@ -874,7 +915,7 @@ impl SecretBroker {
                 {
                     continue;
                 }
-                if let Some(reason) = skip_reason(req, &refs, key.as_str()) {
+                if let Some(reason) = skip_reason(req, refs, key.as_str()) {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
                 }
@@ -905,7 +946,7 @@ impl SecretBroker {
                     return false;
                 }
                 if !catalog.entries.contains_key(key)
-                    && let Some(reason) = skip_reason(req, &refs, key.as_str())
+                    && let Some(reason) = skip_reason(req, refs, key.as_str())
                 {
                     warn_skipped(subject, key.as_str(), reason);
                     skipped.insert(key.clone());
@@ -1113,6 +1154,7 @@ mod tests {
         calls: AtomicUsize,
         asked: StdMutex<Vec<Vec<String>>>,
         fail: BTreeSet<String>,
+        reject: StdMutex<BTreeSet<String>>,
         fingerprint: String,
         /// catalog keys with `as_file = true` that resolve to a file
         file_keys: BTreeSet<String>,
@@ -1130,6 +1172,7 @@ mod tests {
             "PATH_LIKE",
             "SHORT",
             "HIDDEN_KEY",
+            "LEASE",
         ] {
             entries.insert(
                 SecretName::new(k).unwrap(),
@@ -1193,6 +1236,19 @@ mod tests {
             if all && self.fail.contains("*") {
                 return Err(ResolveError::Resolution("not signed in".into()));
             }
+            let rejected: Vec<String> = keys
+                .keys()
+                .iter()
+                .filter(|k| self.reject.lock().unwrap().contains(k.as_str()))
+                .map(|k| k.to_string())
+                .collect();
+            if !rejected.is_empty() {
+                return Err(ResolveError::Invalid {
+                    unknown: rejected,
+                    suggestions: BTreeMap::new(),
+                    not_injectable: vec![],
+                });
+            }
             if keys.keys().iter().any(|k| self.fail.contains(k.as_str())) {
                 return Err(ResolveError::Resolution("not signed in".into()));
             }
@@ -1231,6 +1287,10 @@ mod tests {
                 out.set.insert(k.clone(), SecretValue::new(value));
             }
             out.remove = BTreeSet::from(["SCRUB".to_string(), "A".to_string()]);
+            // like a lease credential: fnox leaves it out of `remove` only when requested
+            if !keys.keys().iter().any(|k| k.as_str() == "LEASE") {
+                out.remove.insert("LEASE".to_string());
+            }
             Ok(out)
         }
     }
@@ -1298,6 +1358,7 @@ mod tests {
         task_env: BTreeSet<String>,
         inherited: BTreeSet<String>,
         mise_env: BTreeSet<String>,
+        rendered: BTreeSet<String>,
         sandbox: SandboxConfig,
         ctx: TaskContextBuilder,
     }
@@ -1313,6 +1374,7 @@ mod tests {
                 task_env: BTreeSet::new(),
                 inherited: BTreeSet::new(),
                 mise_env: BTreeSet::new(),
+                rendered: BTreeSet::new(),
                 sandbox: SandboxConfig::default(),
                 ctx: TaskContextBuilder::new(),
             }
@@ -1326,6 +1388,7 @@ mod tests {
                 task_env_keys: &self.task_env,
                 mise_set_inherited: &self.inherited,
                 mise_env_keys: &self.mise_env,
+                rendered_defaults: &self.rendered,
                 sandbox: &self.sandbox,
                 file_dir: None,
                 terminal: term,
@@ -1392,6 +1455,78 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!crate::secrets::is_resolve_failure(&err));
+    }
+
+    /// `remove` accumulates in the shared memo, but per spawn it never deletes a key the spawn
+    /// sets, and a union-only entry is one fnox itself lists for the profile.
+    #[tokio::test]
+    async fn accumulated_remove_never_deletes_what_a_task_sets() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake(&[]);
+        // task A is granted the "lease" key; its own response leaves LEASE out of remove
+        let a = Inputs::new("a", &["A", "LEASE"]);
+        let spawn_a = broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn_a.remove.contains("LEASE"));
+        // task B asks for other keys; fnox's response lists LEASE (B does not request it)
+        let b = Inputs::new("b", &["C"]);
+        let spawn_b = broker
+            .grant_values(&memo, &b.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn_b.remove.contains("LEASE"));
+        assert!(spawn_b.remove.contains("SCRUB"));
+        // the union now holds LEASE, yet A (memoized, no new call) still keeps its own value
+        let spawn_a = broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn_a.remove.contains("LEASE"), "{:?}", spawn_a.remove);
+        assert!(spawn_a.marker_value().contains("LEASE"));
+        // and nothing either task sets is ever in its own remove list
+        for (spawn, set) in [
+            (&spawn_a, ["A", "LEASE"].as_slice()),
+            (&spawn_b, ["C"].as_slice()),
+        ] {
+            for key in set {
+                assert!(!spawn.remove.contains(*key), "{key}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_keys_fail_only_the_rejected_key() {
+        let (fake, memo) = fake(&[]);
+        fake.reject.lock().unwrap().insert("B".to_string());
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let both = Inputs::new("t1", &["A", "B"]);
+        let err = broker
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown secret B"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        // A was never tried: it is retried, not "not retrying"
+        let a = Inputs::new("t2", &["A"]);
+        broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+        // B stays failed
+        let b = Inputs::new("t3", &["B"]);
+        let err = broker
+            .grant_values(&memo, &b.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not retrying B"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -1683,7 +1818,10 @@ mod tests {
             .await
             .unwrap();
         // remove lists SCRUB but not A, which this spawn sets
-        assert_eq!(spawn.remove, BTreeSet::from(["SCRUB".to_string()]));
+        assert_eq!(
+            spawn.remove,
+            BTreeSet::from(["SCRUB".to_string(), "LEASE".to_string()])
+        );
         for leaked in [
             "line-one-s3cr3t",
             "line-two-s3cr3t \"q\"",
@@ -1974,7 +2112,7 @@ mod tests {
         let names = |v: &[SecretName]| v.iter().map(|k| k.to_string()).collect::<Vec<_>>();
         assert_eq!(
             names(&split.keys),
-            ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT"]
+            ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT", "LEASE"]
         );
         assert_eq!(split.files, ["GCP_SA_JSON"]);
         let text = |s, k, r| skipped_text(s, k, r);

@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eyre::{Result, WrapErr};
 
@@ -11,17 +10,19 @@ use super::{SecretName, SecretValue};
 use crate::env_diff::EnvMap;
 use mise_util::env::env_key_eq;
 
-static FILE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-/// Files that hold `as_file` secrets for one spawn. Dropping deletes them.
+/// Files that hold `as_file` secrets for one spawn, in a private directory of their own with
+/// an unpredictable name. Dropping deletes them, so they live exactly as long as the task
+/// that was granted them.
 #[derive(Default)]
 pub(crate) struct TempSecretFiles {
     paths: Vec<PathBuf>,
+    dir: Option<tempfile::TempDir>,
 }
 
 impl TempSecretFiles {
-    /// Writes each value to `<dir>/<n>-<KEY>` (0600, never overwriting) and returns the
-    /// `KEY=<path>` pairs. `dir` is created with 0700 if missing.
+    /// Writes each value to `<dir>/<random>/<KEY>` (0600, never overwriting) and returns the
+    /// `KEY=<path>` pairs. `dir` is created with 0700 if missing, and the per-spawn
+    /// directory inside it is 0700 and named unpredictably.
     pub(crate) fn create(
         dir: &Path,
         entries: &BTreeMap<SecretName, SecretValue>,
@@ -32,9 +33,16 @@ impl TempSecretFiles {
             return Ok((files, env));
         }
         create_private_dir(dir)?;
-        for (key, value) in entries {
-            let n = FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = dir.join(format!("{n}-{key}"));
+        let spawn_dir = tempfile::Builder::new()
+            .prefix("s-")
+            .tempdir_in(dir)
+            .wrap_err("mise secrets: cannot create a directory for secret files")?;
+        let base = spawn_dir.path().to_path_buf();
+        restrict_dir(&base)?;
+        files.dir = Some(spawn_dir);
+        for (i, (key, value)) in entries.iter().enumerate() {
+            // an index in the name keeps `TOKEN` and `token` apart on case-insensitive filesystems
+            let path = base.join(format!("{i}-{key}"));
             let mut file = open_private(&path)
                 .wrap_err_with(|| format!("mise secrets: cannot write a file for {key}"))?;
             files.paths.push(path.clone());
@@ -56,6 +64,18 @@ impl Drop for TempSecretFiles {
             let _ = std::fs::remove_file(path);
         }
     }
+}
+
+#[cfg(unix)]
+fn restrict_dir(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+        .wrap_err("mise secrets: cannot restrict the secret files directory")
+}
+
+#[cfg(not(unix))]
+fn restrict_dir(_dir: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -270,6 +290,20 @@ mod tests {
         assert!(text.contains("A") && text.contains("[redacted]"));
     }
 
+    #[test]
+    fn keys_differing_only_in_case_get_distinct_files() {
+        let t = tempfile::tempdir().unwrap();
+        let entries = BTreeMap::from([
+            (SecretName::new("TOKEN").unwrap(), SecretValue::new("upper")),
+            (SecretName::new("token").unwrap(), SecretValue::new("lower")),
+        ]);
+        let (_files, env) = TempSecretFiles::create(&t.path().join("secrets"), &entries).unwrap();
+        let (a, b) = (&env["TOKEN"], &env["token"]);
+        assert_ne!(a.to_lowercase(), b.to_lowercase());
+        assert_eq!(std::fs::read_to_string(a).unwrap(), "upper");
+        assert_eq!(std::fs::read_to_string(b).unwrap(), "lower");
+    }
+
     #[cfg(unix)]
     #[test]
     fn files_are_private_and_removed_on_drop() {
@@ -285,9 +319,17 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"k\":1}");
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&dir), 0o700);
+        let spawn_dir = path.parent().unwrap().to_path_buf();
+        assert_eq!(mode(&spawn_dir), 0o700);
         assert_eq!(mode(&path), 0o600);
+        // a second spawn gets a different, unpredictable directory
+        let (second, env2) = TempSecretFiles::create(&dir, &entries).unwrap();
+        assert_ne!(PathBuf::from(&env2["GCP_SA_JSON"]).parent(), path.parent());
         drop(files);
         assert!(!path.exists());
+        assert!(!spawn_dir.exists());
+        assert!(PathBuf::from(&env2["GCP_SA_JSON"]).exists());
+        drop(second);
         assert!(dir.exists());
     }
 }

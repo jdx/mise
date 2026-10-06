@@ -51,6 +51,7 @@ impl Unset {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            ..Default::default()
         })?;
 
         let mut config = MiseToml::from_file(&filename).unwrap_or_default();

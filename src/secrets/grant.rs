@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
 
@@ -274,6 +275,7 @@ pub enum ProblemKind {
     Sandbox,
     Template,
     Source,
+    NoProcess,
 }
 
 impl ProblemKind {
@@ -291,6 +293,7 @@ impl ProblemKind {
             Self::Sandbox => "sandbox",
             Self::Template => "template",
             Self::Source => "source",
+            Self::NoProcess => "no_process",
         }
     }
 }
@@ -525,6 +528,14 @@ impl CliSecretGrant {
         if injected || !self.named.contains(&task_key(task)) {
             return None;
         }
+        if orchestrates_only(task) {
+            // nothing to inject into: it only starts other tasks, which are not named
+            warn_once!(
+                "--secrets: task {} starts no process of its own, so it receives nothing; name the tasks that run commands",
+                task.name
+            );
+            return None;
+        }
         Some(SecretGrant {
             keys: self
                 .keys
@@ -606,6 +617,7 @@ pub(crate) fn static_problems(
     task: &Task,
     grant: &SecretGrant,
     denied: Option<SecretsDenied>,
+    view: &EnvView,
 ) -> Vec<Problem> {
     let mut problems = vec![];
     if grant.is_empty() {
@@ -689,6 +701,18 @@ pub(crate) fn static_problems(
             );
         }
     }
+    // a command-line grant to such a task is dropped with a warning instead (`for_task`)
+    if own && orchestrates_only(task) {
+        problems.push(Problem::new(
+            &task.name,
+            None,
+            ProblemKind::NoProcess,
+            format!(
+                "task {} lists secrets but starts no process of its own; list them on the tasks that run commands",
+                task.name
+            ),
+        ));
+    }
     // a key that the task exports under its own name is not in the environment when a
     // template is rendered
     let granted: BTreeSet<&str> = grant.exported_keys().map(|k| k.as_str()).collect();
@@ -697,7 +721,7 @@ pub(crate) fn static_problems(
         run_refs.extend(tera_env_refs(&script));
     }
     let env_texts = task.non_late_env_texts();
-    for key in task_template_refs(task) {
+    for key in view.template_refs(task) {
         // a key built from secrets is read from env only through T5 below
         let late = grant.is_late_key(&key) && run_refs.contains(&key);
         if granted.contains(key.as_str()) || late {
@@ -957,6 +981,16 @@ fn osa_distance(a: &str, b: &str) -> usize {
     d[a.len()][b.len()]
 }
 
+/// A task whose `run` only injects other tasks and that has no file: it would resolve secrets
+/// and then hold them (and any secret files) while ungranted tasks run. It is refused instead.
+/// A task with no run entries at all is skipped without resolving anything.
+pub(crate) fn orchestrates_only(task: &Task) -> bool {
+    use crate::task::RunEntry;
+    task.file.is_none()
+        && !task.run().is_empty()
+        && !task.run().iter().any(|e| matches!(e, RunEntry::Script(_)))
+}
+
 /// G13: the sandbox would drop the granted key.
 pub(crate) fn sandbox_problem(subject: Subject<'_>, key: &str) -> Problem {
     let who = subject.text();
@@ -1034,43 +1068,198 @@ pub(crate) fn sandbox_and_collision_problems(
     problems
 }
 
-/// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. The spawn
-/// repeats the exact check against the real environment.
-pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> BTreeSet<String> {
-    use crate::config::env_directive::EnvDirective;
-    // the task's part leaves out the values rendered at spawn: they are the composites, not
-    // something that could collide with them
-    let directives = task
-        .render_env_directives()
-        .into_iter()
-        .map(|(d, _)| d)
-        .chain(
-            config
-                .config_files
-                .values()
-                .filter_map(|cf| cf.env_entries().ok())
-                .flatten(),
-        );
-    directives
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, ..) | EnvDirective::Default(k, ..) => Some(k),
-            _ => None,
-        })
-        .collect()
+/// The environment task `[env]` directives are evaluated against, as the resolver sees it:
+/// the process env minus what config `_.unset`s, plus config `[env]` results. Every static
+/// check that depends on whether a `default` applies reads this one view, so they cannot drift
+/// apart. The spawn repeats the exact check against the real environment and stays
+/// authoritative.
+#[derive(Default, Clone)]
+pub(crate) struct EnvView {
+    base: crate::env_diff::EnvMap,
+    /// keys config `[env]` assigns (plain values and defaults that applied)
+    config_keys: BTreeSet<String>,
+    /// scripts were not run, so whether a task `default` applies is unknown: the static checks
+    /// leave defaults to the spawn-time check
+    defer_defaults: bool,
+    /// At spawn: the keys whose task-env `default` directive the resolver reported as rendered
+    /// (not yielded to a value). A `default` counts only if its key is among them; nothing is
+    /// evaluated again, so no script runs twice.
+    resolved_assigned: Option<BTreeSet<String>>,
 }
 
-/// Env names the task's `run` scripts and `env` values read through a template. Those render
-/// before secrets exist, so a granted key among them would render without its value. Env
-/// values that use `{{ secrets.X }}` are not scanned: they are rendered at spawn.
-pub(crate) fn task_template_refs(task: &Task) -> BTreeSet<String> {
-    let mut refs = BTreeSet::new();
-    for script in task.run_script_strings() {
-        refs.extend(tera_env_refs(&script));
+impl EnvView {
+    pub(crate) async fn load(config: &Arc<crate::config::Config>) -> Self {
+        let mut base: crate::env_diff::EnvMap =
+            crate::env::PRISTINE_ENV.clone().into_iter().collect();
+        let mut config_keys = BTreeSet::new();
+        if let Ok(results) = config.env_results().await {
+            for key in &results.env_remove {
+                base.retain(|k, _| !mise_util::env::env_key_eq(k, key));
+            }
+            for (key, (value, _)) in &results.env {
+                base.insert(key.clone(), value.clone());
+                config_keys.insert(key.clone());
+            }
+        }
+        Self {
+            base,
+            config_keys,
+            defer_defaults: false,
+            resolved_assigned: None,
+        }
     }
-    for (_, value) in task.plain_env_vals() {
-        refs.extend(tera_env_refs(&value));
+
+    /// The view at spawn, judged by what the task env preparation already resolved.
+    pub(crate) fn resolved(rendered: &BTreeSet<String>) -> Self {
+        Self {
+            resolved_assigned: Some(rendered.clone()),
+            ..Self::default()
+        }
     }
-    refs
+
+    /// The view for `task`: a monorepo task's defaults are judged against its own config
+    /// hierarchy's `[env]`, not the current project's. Everything else keeps `self`.
+    /// `skip_scripts` keeps a static preflight from running `_.source` scripts (keys they
+    /// touch are then unknown); the spawn-time check runs them, since the task env does too.
+    pub(crate) async fn for_task(
+        &self,
+        config: &Arc<crate::config::Config>,
+        ctx: &crate::task::task_context_builder::TaskContextBuilder,
+        task: &Task,
+        skip_scripts: bool,
+    ) -> Self {
+        let Some(task_cf) = task.cf.as_ref().filter(|_| !task.is_remote()) else {
+            return self.clone();
+        };
+        let overlay = async {
+            let ts = ctx
+                .build_toolset_for_task(config, task, Some(task_cf), &[])
+                .await?;
+            ctx.config_env_for_source(config, task, &ts, skip_scripts)
+                .await
+        };
+        match overlay.await {
+            Ok(Some(env)) => {
+                let mut view = self.with_config_env(env.values, env.unset);
+                view.defer_defaults = env.skipped_scripts;
+                view
+            }
+            _ => self.clone(),
+        }
+    }
+
+    fn with_config_env(
+        &self,
+        values: std::collections::BTreeMap<String, String>,
+        unset: BTreeSet<String>,
+    ) -> Self {
+        let mut view = self.clone();
+        for key in &unset {
+            view.base.retain(|k, _| !mise_util::env::env_key_eq(k, key));
+            // an unset key is no longer assigned by config
+            view.config_keys
+                .retain(|k| !mise_util::env::env_key_eq(k, key));
+        }
+        for (key, value) in values {
+            view.base.insert(key.clone(), value);
+            view.config_keys.insert(key);
+        }
+        view
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test_with_config_env(&self, values: &[(&str, &str)], unset: &[&str]) -> Self {
+        self.with_config_env(
+            values
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            unset.iter().map(|k| k.to_string()).collect(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(base: crate::env_diff::EnvMap, config_keys: &[&str]) -> Self {
+        Self {
+            base,
+            config_keys: config_keys.iter().map(|k| k.to_string()).collect(),
+            defer_defaults: false,
+            resolved_assigned: None,
+        }
+    }
+
+    /// Walks the task's env directives in the order the resolver applies them. Returns the
+    /// keys they assign and the texts they render (a `default` only when it applies).
+    fn walk(&self, task: &Task) -> (BTreeSet<String>, Vec<(String, String)>) {
+        use crate::config::env_directive::EnvDirective;
+        use mise_util::env::env_key_eq;
+        let mut env = self.base.clone();
+        let mut declared = BTreeSet::new();
+        let mut texts = vec![];
+        // in the order the env resolves, without the values rendered at spawn (a composite is
+        // not something that could collide with itself, and a superseded one never applies)
+        let directives = task.render_env_directives();
+        for (d, _) in &directives {
+            match d {
+                EnvDirective::Val(k, v, _) => {
+                    env.retain(|e, _| !env_key_eq(e, k));
+                    // A templated value is not rendered here and may well render empty, which
+                    // would not satisfy a later `default`. Treat it as unknown (empty) so the
+                    // default is scanned: a conservative choice that can only add a refusal.
+                    let known = if v.contains("{{") || v.contains("{%") {
+                        String::new()
+                    } else {
+                        v.clone()
+                    };
+                    env.insert(k.clone(), known);
+                    declared.insert(k.clone());
+                    texts.push((k.clone(), v.clone()));
+                }
+                EnvDirective::Default(k, v, _) => {
+                    let satisfied = env
+                        .iter()
+                        .any(|(e, val)| env_key_eq(e, k) && !val.is_empty());
+                    let applies = match &self.resolved_assigned {
+                        // assigned by the task env, and not by an earlier literal value of its own
+                        Some(assigned) => !satisfied && assigned.iter().any(|a| env_key_eq(a, k)),
+                        None => !satisfied && !self.defer_defaults,
+                    };
+                    if applies {
+                        env.insert(k.clone(), v.clone());
+                        declared.insert(k.clone());
+                        texts.push((k.clone(), v.clone()));
+                    }
+                }
+                EnvDirective::Rm(k, _) => env.retain(|e, _| !env_key_eq(e, k)),
+                _ => {}
+            }
+        }
+        (declared, texts)
+    }
+
+    /// Keys the task's env and the config's `[env]` set.
+    pub(crate) fn declared_keys(&self, task: &Task) -> BTreeSet<String> {
+        let (mut declared, _) = self.walk(task);
+        declared.extend(self.config_keys.iter().cloned());
+        declared
+    }
+
+    fn texts(&self, task: &Task) -> Vec<(String, String)> {
+        self.walk(task).1
+    }
+
+    /// Env names the task's `run` scripts and `env` values read through a template. Those
+    /// render before secrets exist, so a granted key among them would render without its value.
+    pub(crate) fn template_refs(&self, task: &Task) -> BTreeSet<String> {
+        let mut refs = BTreeSet::new();
+        for script in task.run_script_strings() {
+            refs.extend(tera_env_refs(&script));
+        }
+        for (_, value) in self.texts(task) {
+            refs.extend(tera_env_refs(&value));
+        }
+        refs
+    }
 }
 
 /// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical, but
@@ -1282,11 +1471,146 @@ mod tests {
             ..Default::default()
         };
         let (grant, _) = grant_for_task(&task);
-        let problems = static_problems(&task, &grant, None);
+        let problems = static_problems(&task, &grant, None, &EnvView::default());
         assert!(
             problems.iter().any(|p| p.kind == ProblemKind::Template),
             "{problems:?}"
         );
+    }
+
+    #[test]
+    fn default_values_are_checked_for_secret_reads() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["DEPLOY_KEY".into()])),
+            env: crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Default(
+                "TOKEN".into(),
+                "{{ env.DEPLOY_KEY }}".into(),
+                EnvDirectiveOptions::default(),
+            )]),
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, None, &EnvView::default());
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.kind == ProblemKind::Template && !p.render().contains("s3cr3t")),
+            "{problems:?}"
+        );
+    }
+
+    fn default_task(default: &str) -> Task {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        Task {
+            env: crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Default(
+                "TOKEN".into(),
+                default.into(),
+                EnvDirectiveOptions::default(),
+            )]),
+            ..Default::default()
+        }
+    }
+
+    fn map(pairs: &[(&str, &str)]) -> crate::env_diff::EnvMap {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// One view decides both checks: whether a default renders and whether it declares a key.
+    #[test]
+    fn defaults_follow_the_resolved_env_for_both_checks() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let check = |view: EnvView, applies: bool| {
+            assert_eq!(view.texts(&task).len(), usize::from(applies));
+            assert_eq!(view.declared_keys(&task).contains("TOKEN"), applies);
+        };
+        // shell-only value: the default does not apply
+        check(EnvView::for_test(map(&[("TOKEN", "ready")]), &[]), false);
+        // config `[env] TOKEN = ""` over a shell value: the resolved env holds an empty TOKEN,
+        // which does not satisfy the default
+        check(EnvView::for_test(map(&[("TOKEN", "")]), &["TOKEN"]), true);
+        // an empty value does not satisfy it; nor does an absent one
+        check(EnvView::for_test(map(&[("TOKEN", "")]), &[]), true);
+        check(EnvView::for_test(map(&[]), &[]), true);
+        // config `[env]` assigned TOKEN before the task: the default does not apply (the key is
+        // still declared, by config)
+        let view = EnvView::for_test(map(&[("TOKEN", "from-config")]), &["TOKEN"]);
+        assert!(view.texts(&task).is_empty());
+        assert!(view.declared_keys(&task).contains("TOKEN"));
+    }
+
+    #[test]
+    fn a_templated_earlier_value_may_render_empty() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let opts = EnvDirectiveOptions::default;
+        let mut task = default_task("{{ env.DEPLOY_KEY }}");
+        let view = EnvView::for_test(map(&[]), &[]);
+        // TOKEN = "{{ '' }}" renders empty, so the default still applies
+        task.env.0.insert(
+            0,
+            EnvDirective::Val("TOKEN".into(), "{{ '' }}".into(), opts()),
+        );
+        assert_eq!(view.texts(&task).len(), 2);
+        // a plain non-empty literal satisfies it
+        task.env.0[0] = EnvDirective::Val("TOKEN".into(), "plain".into(), opts());
+        assert_eq!(view.texts(&task).len(), 1);
+    }
+
+    #[test]
+    fn a_subproject_env_overlay_decides_the_default() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let root = EnvView::for_test(map(&[]), &[]);
+        // the subproject's [env] assigns TOKEN: the default does not apply
+        let sub = root.for_test_with_config_env(&[("TOKEN", "x")], &[]);
+        assert!(sub.texts(&task).is_empty());
+        // the root view alone would have let it render
+        assert_eq!(root.texts(&task).len(), 1);
+        // the subproject unsets a shell TOKEN: the default applies
+        let shell = EnvView::for_test(map(&[("TOKEN", "ready")]), &[]);
+        assert!(shell.texts(&task).is_empty());
+        assert_eq!(
+            shell
+                .for_test_with_config_env(&[], &["TOKEN"])
+                .texts(&task)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn resolved_view_trusts_the_rendered_defaults() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let assigned = BTreeSet::from(["TOKEN".to_string()]);
+        assert_eq!(EnvView::resolved(&assigned).texts(&task).len(), 1);
+        // the default yielded to a caller value: nothing assigned, nothing scanned
+        assert!(EnvView::resolved(&BTreeSet::new()).texts(&task).is_empty());
+    }
+
+    #[test]
+    fn defaults_are_deferred_when_scripts_were_skipped() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let mut view = EnvView::for_test(map(&[]), &[]);
+        assert_eq!(view.texts(&task).len(), 1);
+        view.defer_defaults = true;
+        assert!(view.texts(&task).is_empty());
+        assert!(!view.declared_keys(&task).contains("TOKEN"));
+    }
+
+    #[test]
+    fn unset_in_the_task_env_lets_a_later_default_apply() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let mut task = default_task("{{ env.DEPLOY_KEY }}");
+        task.env.0.insert(
+            0,
+            EnvDirective::Rm("TOKEN".into(), EnvDirectiveOptions::default()),
+        );
+        let view = EnvView::for_test(map(&[("TOKEN", "ready")]), &[]);
+        assert_eq!(view.texts(&task).len(), 1);
+        assert!(view.declared_keys(&task).contains("TOKEN"));
     }
 
     #[test]
@@ -1343,7 +1667,12 @@ mod tests {
             ..Default::default()
         };
         let (grant, _) = grant_for_task(&task);
-        let problems = static_problems(&task, &grant, Some(SecretsDenied::ShellHook));
+        let problems = static_problems(
+            &task,
+            &grant,
+            Some(SecretsDenied::ShellHook),
+            &EnvView::default(),
+        );
         let text = problems
             .iter()
             .find(|p| p.kind == ProblemKind::Denied)
@@ -1351,7 +1680,12 @@ mod tests {
             .unwrap();
         assert!(text.contains("started by a mise shell hook"), "{text}");
         assert!(text.contains("left __MISE_SECRETS_DENIED set"), "{text}");
-        let plain = static_problems(&task, &grant, Some(SecretsDenied::Hook));
+        let plain = static_problems(
+            &task,
+            &grant,
+            Some(SecretsDenied::Hook),
+            &EnvView::default(),
+        );
         assert!(
             !plain
                 .iter()
@@ -1425,11 +1759,10 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test]
-    async fn declared_env_keys_omit_a_composite_only_key() {
+    #[test]
+    fn declared_env_keys_omit_a_composite_only_key() {
         let task = composed(vec![val("OTHER", "x")]);
-        let config = crate::config::Config::get().await.unwrap();
-        let keys = declared_env_keys(&task, &config);
+        let keys = EnvView::default().declared_keys(&task);
         assert!(
             keys.contains("OTHER") && !keys.contains("PGURL"),
             "{keys:?}"
@@ -1645,6 +1978,18 @@ mod tests {
         );
         assert!(cli.for_task(&named("deploy", &["--prod"]), false).is_none());
         assert!(cli.for_task(&deploy, true).is_none());
+        // a task that only starts other tasks has nothing to receive the grant
+        let orchestrator = Task {
+            run: vec![crate::task::RunEntry::SingleTask {
+                task: "build".into(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..named("parent", &[])
+        };
+        let cli =
+            CliSecretGrant::new(&["A".into()], false, std::slice::from_ref(&orchestrator)).unwrap();
+        assert!(cli.for_task(&orchestrator, false).is_none());
         // every task a glob, `default` or `--all` selected is named
         let cli =
             CliSecretGrant::new(&[], true, &[named("lint", &[]), named("test", &[])]).unwrap();
@@ -1697,7 +2042,7 @@ mod tests {
             late: vec![],
         };
         assert!(
-            static_problems(&task, &own, None)
+            static_problems(&task, &own, None, &EnvView::default())
                 .iter()
                 .any(|p| p.kind == ProblemKind::NotProject)
         );
@@ -1706,18 +2051,18 @@ mod tests {
             all: None,
             late: vec![],
         };
-        assert!(static_problems(&task, &cli, None).is_empty());
+        assert!(static_problems(&task, &cli, None, &EnvView::default()).is_empty());
         let all = SecretGrant {
             keys: BTreeMap::new(),
             all: Some(GrantOrigin::CliAll),
             late: vec![],
         };
         assert!(!all.is_empty());
-        assert!(static_problems(&task, &all, None).is_empty());
+        assert!(static_problems(&task, &all, None, &EnvView::default()).is_empty());
         // both: the task's own list still counts
         let both = own.merged(cli);
         assert!(
-            static_problems(&task, &both, None)
+            static_problems(&task, &both, None, &EnvView::default())
                 .iter()
                 .any(|p| p.kind == ProblemKind::NotProject)
         );
@@ -1727,7 +2072,7 @@ mod tests {
         );
         // a launcher that was not a person is refused either way
         assert!(
-            static_problems(&task, &all, Some(SecretsDenied::Hook))
+            static_problems(&task, &all, Some(SecretsDenied::Hook), &EnvView::default())
                 .iter()
                 .any(|p| p.kind == ProblemKind::Denied)
         );
@@ -1749,7 +2094,7 @@ mod tests {
             Default::default(),
         ));
         assert_eq!(
-            task_template_refs(&task),
+            EnvView::default().template_refs(&task),
             BTreeSet::from(["STRIPE_KEY", "B", "C"].map(String::from))
         );
     }
