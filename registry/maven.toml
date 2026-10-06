@@ -1,7 +1,7 @@
 backends = [
   "aqua:apache/maven",
   "asdf:mise-plugins/mise-maven",
-  "vfox:mise-plugins/vfox-maven",
+  "vfox:jdx/vfox-maven",
 ]
 bins = ["mvn", "mvnDebug", "mvnyjp"]
 description = "Apache Maven core"

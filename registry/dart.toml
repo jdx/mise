@@ -23,4 +23,4 @@ version_list_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?p
 full = "asdf:mise-plugins/mise-dart"
 
 [[backends]]
-full = "vfox:mise-plugins/vfox-dart"
+full = "vfox:jdx/vfox-dart"
