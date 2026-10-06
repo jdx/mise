@@ -693,7 +693,7 @@ mod tests {
     fn describe_reports_fnoxs_daemon_decision() {
         let with = |extra: &str| {
             let doc = format!(
-                r#"{{"schema":1,"fnox_version":"1.40.0","profile":[],"keys":[],"dynamic_leases":[]{extra}}}"#
+                r#"{{"schema":1,"fnox_version":"1.39.0","profile":[],"keys":[],"dynamic_leases":[]{extra}}}"#
             );
             interpret(true, "exit status: 0", doc.as_bytes(), Path::new("/p"))
                 .ok()
@@ -826,7 +826,7 @@ mod tests {
     /// A complete schema-1 document: `fields` override the empty defaults.
     fn env_doc(fields: serde_json::Value) -> String {
         let mut doc = serde_json::json!({
-            "schema": 1, "fnox_version": "1.40.0", "scope": "exec", "profile": ["default"],
+            "schema": 1, "fnox_version": "1.39.0", "scope": "exec", "profile": ["default"],
             "set": {}, "files": {}, "remove": [], "missing": [], "leases": []
         });
         doc.as_object_mut()

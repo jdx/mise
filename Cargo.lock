@@ -3591,8 +3591,9 @@ dependencies = [
 
 [[package]]
 name = "fnox-client"
-version = "1.38.1"
-source = "git+https://github.com/jdx/fnox?branch=claude%2Ffnox-client#4979e6cc673cca9193f0a1aa8bbe30c696a7a20f"
+version = "1.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a08b18c98d5c1e2fe60da5c7d59bdc809c5fd0f5fc0ba1ad0ebd3046d1fac6"
 dependencies = [
  "blake3",
  "indexmap 2.14.2",

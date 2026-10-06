@@ -841,7 +841,7 @@ mod tests {
                 Some(Response::Hello {
                     protocol: 6,
                     min_protocol: 6,
-                    fnox_version: "1.40.0".into(),
+                    fnox_version: "1.39.0".into(),
                     pid: 1,
                 }),
                 true,
