@@ -13,9 +13,9 @@
 //! versions forever. Other tools, and other environments, keep their entries
 //! until they are recorded again, so a record only ever keeps too much: a
 //! version that is installed or resolved for a config is recorded as it is.
-//! Prune refuses a config with a templated tool that has no entry for the config
-//! file as it is now, and a record
-//! that fails to write is deleted, so a stale one is never trusted.
+//! Prune refuses a config unless, for the config file as it is now, every
+//! environment and directory it was used in recorded every templated tool, and a
+//! record that fails to write is deleted, so a stale one is never trusted.
 
 use std::path::Path;
 
@@ -259,8 +259,12 @@ pub(crate) struct Needed {
 }
 
 /// The installations recorded for `config`, or `None` when a templated version
-/// in `backends` (one per version, so a tool may repeat) was not recorded for
-/// the config file as it is now. `file` is [`file_hash`] of that file.
+/// in `backends` (one per version, so a tool may repeat) is not covered. `file`
+/// is [`file_hash`] of the config file as it is now.
+///
+/// Every environment and directory the config was used in has to cover every
+/// templated tool on its own: entries recorded under different contexts must not
+/// stand in for each other, since each context renders its own versions.
 pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Option<Needed> {
     if backends.is_empty() {
         return Some(Needed::default());
@@ -268,17 +272,39 @@ pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Optio
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let claims = read(&path_for(&catalog, config))?;
     let mut needed = Needed::default();
+    let mut single: Vec<&String> = vec![];
     for backend in backends {
         if backends.iter().filter(|b| *b == backend).count() > 1 {
             if !needed.keep_all.contains(backend) {
                 needed.keep_all.push(backend.clone());
             }
-        } else if !claims
-            .needs
-            .iter()
-            .any(|need| &need.backend == backend && need.file == file)
-        {
+        } else {
+            single.push(backend);
+        }
+    }
+    if !single.is_empty() {
+        let mut contexts: Vec<(&str, &str)> = vec![];
+        for need in claims.needs.iter().filter(|need| need.file == file) {
+            let key = (need.env.as_str(), need.context.as_str());
+            if !contexts.contains(&key) {
+                contexts.push(key);
+            }
+        }
+        if contexts.is_empty() {
             return None;
+        }
+        for (env, context) in contexts {
+            let covered = |backend: &String| {
+                claims.needs.iter().any(|need| {
+                    need.file == file
+                        && need.env == env
+                        && need.context == context
+                        && &need.backend == backend
+                })
+            };
+            if !single.iter().all(|backend| covered(backend)) {
+                return None;
+            }
         }
     }
     needed.keys = claims
