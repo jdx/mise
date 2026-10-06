@@ -1040,10 +1040,32 @@ fn parse_secret_keys(marker: &str, eq: fn(&str, &str) -> bool) -> BTreeSet<Strin
 /// A forged marker can only add redaction, turn caches off, or hide those keys
 /// from templates and nested tasks; it never grants anything.
 pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
-    var(SECRET_KEYS_MARKER)
-        .map(|v| parse_secret_keys(&v, env_key_eq))
-        .unwrap_or_default()
+    inherited_secret_keys(
+        var(SECRET_KEYS_MARKER).ok().as_deref(),
+        vars_safe().map(|(k, _)| k),
+        env_key_eq,
+    )
 });
+
+/// `mise x -- fish` hands fish its variables through temporary `__MISE_FISH_ENV_<n>` copies that
+/// fish only reads after config.fish has run. A mise started from config.fish would otherwise
+/// see them as ordinary, unmarked variables, so they are always treated as secrets.
+const FISH_TEMP_PREFIX: &str = "__MISE_FISH_ENV_";
+
+fn is_fish_temp_name(name: &str, eq: fn(&str, &str) -> bool) -> bool {
+    name.get(..FISH_TEMP_PREFIX.len())
+        .is_some_and(|head| eq(head, FISH_TEMP_PREFIX))
+}
+
+fn inherited_secret_keys(
+    marker: Option<&str>,
+    names: impl Iterator<Item = String>,
+    eq: fn(&str, &str) -> bool,
+) -> BTreeSet<String> {
+    let mut keys = marker.map(|v| parse_secret_keys(v, eq)).unwrap_or_default();
+    keys.extend(names.filter(|k| is_fish_temp_name(k, eq)));
+    keys
+}
 
 /// The live process environment minus inherited secrets and their marker, for
 /// expanding `${VAR}` references in config-derived files: expanding against
@@ -1474,6 +1496,36 @@ mod launcher_args_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fish_temp_copies_are_always_inherited_secrets() {
+        let names = [
+            "PATH",
+            "__MISE_FISH_ENV_0",
+            "__MISE_FISH_ENV_12",
+            "__MISE_DIFF",
+        ]
+        .iter()
+        .map(|s| s.to_string());
+        let keys =
+            inherited_secret_keys(Some("DEPLOY_KEY,__MISE_FISH_ENV_9"), names, |a, b| a == b);
+        // the marker parser still ignores mise's own names; the live copies are added
+        assert_eq!(
+            keys,
+            BTreeSet::from(
+                ["DEPLOY_KEY", "__MISE_FISH_ENV_0", "__MISE_FISH_ENV_12"].map(String::from)
+            )
+        );
+        // so a child mise strips them, whatever the marker says, and redaction seeding sees them
+        let mut env = EnvMap::from([
+            ("__MISE_FISH_ENV_0".into(), "s3cr3t".into()),
+            ("KEEP".into(), "1".into()),
+        ]);
+        let mut remove = BTreeSet::new();
+        strip_secrets_for_child(&mut env, &mut remove, &keys, |a, b| a == b);
+        assert_eq!(env.keys().collect::<Vec<_>>(), ["KEEP"]);
+        assert!(remove.contains("__MISE_FISH_ENV_0"));
+    }
+
     use super::*;
 
     fn keys(names: &[&str]) -> BTreeSet<String> {
