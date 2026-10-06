@@ -1229,13 +1229,15 @@ impl Doctor {
                     formatdoc!(
                         r#"tool '{short}' installed with explicit backend '{stored_full}'
                            differs from registry recommendation '{registry_full}'.
-                           To switch: mise backends switch {short}"#
+                           To switch: mise backends switch {short} (add --global for the global lockfile)
+                           If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
                     )
                 } else {
                     formatdoc!(
                         r#"tool '{short}' installed with backend '{stored_full}'
                            but registry now recommends '{registry_full}'.
-                           To migrate: mise backends switch {short}"#
+                           To migrate: mise backends switch {short} (add --global for the global lockfile)
+                           If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
                     )
                 };
                 self.warnings.push(msg);
