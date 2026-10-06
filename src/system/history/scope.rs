@@ -263,7 +263,7 @@ impl OperationScope {
         }
         let tracked = TrackedSet::effective().await?;
         let command = command.to_owned();
-        if kind == OperationKind::Bootstrap && !would_record(&dirs::STATE, &tracked, kind)? {
+        if kind == OperationKind::Bootstrap && !would_record_blocking(&tracked, kind).await? {
             debug!("history: nothing to record; journaling waits for the first write");
             // child mise processes (hooks) still attach to this run, as they
             // do for a run that journals from the start
@@ -338,7 +338,7 @@ impl OperationScope {
     /// needs the journal and the operation lock after all.
     async fn start_if_recording(&self, tracked: &TrackedSet) {
         let kind = OperationKind::Bootstrap;
-        match would_record(&dirs::STATE, tracked, kind) {
+        match would_record_blocking(tracked, kind).await {
             Ok(false) => return,
             Ok(true) => {}
             Err(err) => {
@@ -850,6 +850,12 @@ fn records_file_history(
             .transpose()?
             .flatten()
             .is_some())
+}
+
+/// [`would_record`] off the async worker: it reads the filesystem.
+async fn would_record_blocking(tracked: &TrackedSet, kind: OperationKind) -> Result<bool> {
+    let tracked = tracked.clone();
+    tokio::task::spawn_blocking(move || would_record(&dirs::STATE, &tracked, kind)).await?
 }
 
 /// Whether a run of `kind` would record file history, decided without
