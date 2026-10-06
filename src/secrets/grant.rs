@@ -415,6 +415,14 @@ impl CliSecretGrant {
         if injected || !self.named.contains(&task_key(task)) {
             return None;
         }
+        if orchestrates_only(task) {
+            // nothing to inject into: it only starts other tasks, which are not named
+            warn_once!(
+                "--secrets: task {} starts no process of its own, so it receives nothing; name the tasks that run commands",
+                task.name
+            );
+            return None;
+        }
         Some(SecretGrant {
             keys: self
                 .keys
@@ -563,7 +571,8 @@ pub(crate) fn static_problems(
             );
         }
     }
-    if orchestrates_only(task) {
+    // a command-line grant to such a task is dropped with a warning instead (`for_task`)
+    if own && orchestrates_only(task) {
         problems.push(Problem::new(
             &task.name,
             None,
@@ -1184,6 +1193,18 @@ mod tests {
         );
         assert!(cli.for_task(&named("deploy", &["--prod"]), false).is_none());
         assert!(cli.for_task(&deploy, true).is_none());
+        // a task that only starts other tasks has nothing to receive the grant
+        let orchestrator = Task {
+            run: vec![crate::task::RunEntry::SingleTask {
+                task: "build".into(),
+                args: vec![],
+                env: Default::default(),
+            }],
+            ..named("parent", &[])
+        };
+        let cli =
+            CliSecretGrant::new(&["A".into()], false, std::slice::from_ref(&orchestrator)).unwrap();
+        assert!(cli.for_task(&orchestrator, false).is_none());
         // every task a glob, `default` or `--all` selected is named
         let cli =
             CliSecretGrant::new(&[], true, &[named("lint", &[]), named("test", &[])]).unwrap();

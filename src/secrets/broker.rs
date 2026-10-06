@@ -704,7 +704,7 @@ impl SecretBroker {
             bail!("{msg}");
         };
         let ts = config.get_toolset().await?;
-        let opened = super::open_source(config, &selected, ts).await?;
+        let opened = super::open_source(config, &selected, ts, None).await?;
         let memo_key = (opened.id().clone(), opened.build_fingerprint());
         let memo = self
             .sources
