@@ -373,6 +373,17 @@ pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Optio
         if contexts.is_empty() {
             return None;
         }
+        // A context that loaded a config file that is gone cannot happen again, so
+        // its override markers can no longer be checked or refreshed; retire it.
+        // Its recorded installations are still kept.
+        contexts.retain(|(env, context)| {
+            !claims.needs.iter().any(|need| {
+                need.overridden
+                    && need.env == *env
+                    && need.context == *context
+                    && need.by.iter().any(|(path, _)| !Path::new(path).exists())
+            })
+        });
         for (env, context) in contexts {
             let covered = |backend: &String| {
                 claims.needs.iter().any(|need| {
