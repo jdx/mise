@@ -24,10 +24,11 @@ assert_contains "cat $MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" '"~/.write-target
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'write-target'
 
 # Writes that select the global config because they run from $HOME use the same defaults.
+mise use --global --remove dummy
 (
   cd "$HOME"
-  mise use home-tool@system
-  assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "system"'
+  mise use dummy@system
+  assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "system"'
 
   mise bootstrap packages use --no-install pacman:home-package
   assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "latest"'
@@ -73,9 +74,9 @@ tools = "$MISE_CONFIG_DIR/conf.d/40-new-tools.toml"
 packages = "$MISE_CONFIG_DIR/conf.d/50-new-packages.toml"
 dotfiles = "$MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml"
 EOF
-mise use --global home-tool@2
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "2"'
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml 2>/dev/null" 'home-tool'
+mise use --global dummy@3
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "3"'
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml 2>/dev/null" 'dummy'
 
 mise bootstrap packages use --global --no-install pacman:home-package@2
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "2"'
@@ -89,10 +90,8 @@ assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml 2>/dev/nul
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 # Existing entries still resolve to their defining fragments without write targets.
 EOF
-mise use --global home-tool@3
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "3"'
-mise use --global dummy@3
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "3"'
+mise use --global dummy@4
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "4"'
 mise use --global --remove dummy
 assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy ='
 
@@ -119,6 +118,10 @@ assert_contains "cat mise.staging.toml" '"pacman:fd" = "latest"'
 assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml 2>/dev/null" 'pacman:fd'
 
 # Multiple existing fragments are intentionally not guessed; an explicit path is required.
+cat >"$MISE_CONFIG_DIR/conf.d/10-tools.toml" <<'EOF'
+[tools]
+home-tool = "system"
+EOF
 cat >"$MISE_CONFIG_DIR/conf.d/11-other-tools.toml" <<'EOF'
 [tools]
 dummy = "1"
