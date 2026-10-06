@@ -724,7 +724,7 @@ impl BackendArg {
             .first()?
             .to_string();
         let current = self.full_without_opts();
-        (current != registry).then_some((current, registry))
+        (!same_backend_after_org_move(&current, &registry)).then_some((current, registry))
     }
 
     /// [`Self::superseded_backend`], when it is a lock entry that keeps the
@@ -1027,6 +1027,25 @@ impl Hash for BackendArg {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.short.hash(state);
     }
+}
+
+/// Whether two backends name the same plugin repository across the
+/// `mise-plugins/*` to `jdx/*` transfer (`vfox:mise-plugins/vfox-lua` and
+/// `vfox:jdx/vfox-lua`). The registry moved those entries without changing what
+/// they install, so a lock entry or install on the old location is not
+/// superseded and needs no `mise backends switch`.
+pub fn same_backend_after_org_move(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    fn canonical(full: &str) -> Option<String> {
+        let (kind, rest) = full.split_once(':')?;
+        let repo = rest
+            .strip_prefix("mise-plugins/")
+            .or_else(|| rest.strip_prefix("jdx/"))?;
+        Some(format!("{kind}:{repo}"))
+    }
+    matches!((canonical(a), canonical(b)), (Some(a), Some(b)) if a == b)
 }
 
 #[cfg(test)]
@@ -1346,4 +1365,28 @@ fn pypi_and_pipx_use_distinct_tool_identities() {
     assert_eq!(preferred.tool_dir_name(), "pypi-black");
     assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
     assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
+}
+
+#[test]
+fn same_backend_after_org_move_matches_only_the_transfer() {
+    assert!(same_backend_after_org_move(
+        "vfox:mise-plugins/vfox-lua",
+        "vfox:jdx/vfox-lua"
+    ));
+    assert!(same_backend_after_org_move(
+        "asdf:jdx/mise-lua",
+        "asdf:mise-plugins/mise-lua"
+    ));
+    assert!(!same_backend_after_org_move(
+        "vfox:mise-plugins/vfox-lua",
+        "asdf:jdx/vfox-lua"
+    ));
+    assert!(!same_backend_after_org_move(
+        "vfox:mise-plugins/vfox-lua",
+        "vfox:jdx/vfox-luajit"
+    ));
+    assert!(!same_backend_after_org_move(
+        "vfox:someone/vfox-lua",
+        "vfox:jdx/vfox-lua"
+    ));
 }
