@@ -130,7 +130,6 @@ impl SystemImport {
             global_write_section: Some(GlobalWriteSection::Packages),
             existing_global_paths,
             has_new_global_entries,
-            ..Default::default()
         })?;
 
         let configured_taps = configured_brew_taps(&path).await?;
