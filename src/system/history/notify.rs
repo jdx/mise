@@ -74,23 +74,35 @@ pub fn unavailable_reason() -> Option<String> {
 /// to the helper's 30 second prompt timeout.
 pub fn send_test() -> eyre::Result<()> {
     let mut command = notifier("mise", "Notifications are working.")?;
-    command
+    let output = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let status = command.status()?;
-    if status.success() {
+        .stderr(Stdio::piped())
+        .output()?;
+    if output.status.success() {
         return Ok(());
     }
-    eyre::bail!("{}", failure_message(status.code()))
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    eyre::bail!("{}", failure_message(output.status.code(), stderr.trim()))
 }
 
-fn failure_message(code: Option<i32>) -> String {
-    match code {
-        Some(3) => "notification permission was denied. Allow notifications for mise in System Settings > Notifications".into(),
-        Some(4) => "the notification permission prompt timed out. Run the command again and answer the prompt".into(),
+/// The macOS helper's exit codes 3 and 4 mean the permission prompt was
+/// refused or unanswered; `notify-send` gives them no such meaning.
+fn failure_message(code: Option<i32>, stderr: &str) -> String {
+    let status = match code {
+        Some(3) if cfg!(target_os = "macos") => {
+            return "notification permission was denied. Allow notifications for mise in System Settings > Notifications".into();
+        }
+        Some(4) if cfg!(target_os = "macos") => {
+            return "the notification permission prompt timed out. Run the command again and answer the prompt".into();
+        }
         Some(code) => format!("the notifier exited with status {code}"),
         None => "the notifier was terminated by a signal".into(),
+    };
+    if stderr.is_empty() {
+        status
+    } else {
+        format!("{status}: {stderr}")
     }
 }
 
@@ -203,11 +215,29 @@ mod tests {
     }
 
     #[test]
-    fn failure_messages_name_the_permission_exit_codes() {
-        assert!(failure_message(Some(3)).contains("denied"));
-        assert!(failure_message(Some(4)).contains("timed out"));
-        assert!(failure_message(Some(9)).contains("status 9"));
-        assert!(failure_message(None).contains("signal"));
+    fn failure_messages_name_the_permission_exit_codes_on_macos_only() {
+        let denied = failure_message(Some(3), "");
+        let timed_out = failure_message(Some(4), "");
+        if cfg!(target_os = "macos") {
+            assert!(denied.contains("denied"));
+            assert!(timed_out.contains("timed out"));
+        } else {
+            assert!(denied.contains("status 3"));
+            assert!(timed_out.contains("status 4"));
+        }
+        assert_eq!(
+            failure_message(Some(9), ""),
+            "the notifier exited with status 9"
+        );
+        assert!(failure_message(None, "").contains("signal"));
+    }
+
+    #[test]
+    fn failure_messages_keep_the_notifier_explanation() {
+        assert_eq!(
+            failure_message(Some(1), "Cannot autolaunch D-Bus"),
+            "the notifier exited with status 1: Cannot autolaunch D-Bus"
+        );
     }
 
     #[test]

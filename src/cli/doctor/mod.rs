@@ -133,7 +133,7 @@ fn notifications_summary() -> String {
         Some(reason) => format!(
             "unavailable ({reason}); sync conflicts are only shown by `mise dot status` and `mise doctor`"
         ),
-        None => "sync conflicts are announced; verify with `mise dot notify`".to_string(),
+        None => "available for sync conflicts; confirm delivery with `mise dot notify`".to_string(),
     }
 }
 
