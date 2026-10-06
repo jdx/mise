@@ -84,6 +84,7 @@ pub mod resolve_progress;
 pub mod sandbox;
 pub mod semver;
 pub mod shells;
+pub mod structured_merge;
 pub mod style;
 pub mod sysconfig;
 pub mod tera;
