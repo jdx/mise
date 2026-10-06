@@ -2674,7 +2674,15 @@ fn other_env_config_setting_template_inputs(
                 Some("mise" | ".mise" | "config")
             )
         });
-        if path == tracked || is_local || !path.is_file() || config_path_is_ignored(&path, false) {
+        // A direct conf.d fragment without a reserved environment component, such
+        // as `tools.local.toml`, loads in every environment.
+        let unconditional_fragment = is_conf_d_file(&path) && !is_environment_conf_d_file(&path);
+        if path == tracked
+            || is_local
+            || unconditional_fragment
+            || !path.is_file()
+            || config_path_is_ignored(&path, false)
+        {
             continue;
         }
         let text = std::fs::read_to_string(&path)

@@ -12,3 +12,10 @@ assert "mise -C project install"
 assert "mise install dummy@3.0.0"
 
 assert_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@3.0.0"
+
+# With env_conf_d on, conf.d/<name>.local.toml still loads in every environment.
+echo '[vars]
+v = "1.0.0"' >"$MISE_CONFIG_DIR/conf.d/tools.local.toml"
+rm "$MISE_CONFIG_DIR/conf.d/node.tools.toml"
+export MISE_ENV_CONF_D=true
+assert_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@3.0.0"
