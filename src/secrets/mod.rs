@@ -115,7 +115,7 @@ pub(crate) async fn open_source(
     config: &Arc<Config>,
     selected: &config::SelectedSource,
     ts: &crate::toolset::Toolset,
-    config_env: Option<(crate::env_diff::EnvMap, std::collections::BTreeSet<String>)>,
+    config_env: Option<crate::task::task_context_builder::SourceConfigEnv>,
 ) -> eyre::Result<Arc<dyn SecretSource>> {
     Ok(Arc::new(
         fnox::FnoxSource::new(config, selected, ts, config_env).await?,

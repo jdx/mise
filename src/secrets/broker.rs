@@ -1047,6 +1047,7 @@ mod tests {
             "PATH_LIKE",
             "SHORT",
             "HIDDEN_KEY",
+            "LEASE",
         ] {
             entries.insert(
                 SecretName::new(k).unwrap(),
@@ -1140,6 +1141,10 @@ mod tests {
                 out.set.insert(k.clone(), SecretValue::new(value));
             }
             out.remove = BTreeSet::from(["SCRUB".to_string(), "A".to_string()]);
+            // like a lease credential: fnox leaves it out of `remove` only when requested
+            if !keys.keys().iter().any(|k| k.as_str() == "LEASE") {
+                out.remove.insert("LEASE".to_string());
+            }
             Ok(out)
         }
     }
@@ -1301,6 +1306,46 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!crate::secrets::is_resolve_failure(&err));
+    }
+
+    /// `remove` accumulates in the shared memo, but per spawn it never deletes a key the spawn
+    /// sets, and a union-only entry is one fnox itself lists for the profile.
+    #[tokio::test]
+    async fn accumulated_remove_never_deletes_what_a_task_sets() {
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let (_, memo) = fake(&[]);
+        // task A is granted the "lease" key; its own response leaves LEASE out of remove
+        let a = Inputs::new("a", &["A", "LEASE"]);
+        let spawn_a = broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn_a.remove.contains("LEASE"));
+        // task B asks for other keys; fnox's response lists LEASE (B does not request it)
+        let b = Inputs::new("b", &["C"]);
+        let spawn_b = broker
+            .grant_values(&memo, &b.req(&term, false))
+            .await
+            .unwrap();
+        assert!(spawn_b.remove.contains("LEASE"));
+        assert!(spawn_b.remove.contains("SCRUB"));
+        // the union now holds LEASE, yet A (memoized, no new call) still keeps its own value
+        let spawn_a = broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert!(!spawn_a.remove.contains("LEASE"), "{:?}", spawn_a.remove);
+        assert!(spawn_a.marker_value().contains("LEASE"));
+        // and nothing either task sets is ever in its own remove list
+        for (spawn, set) in [
+            (&spawn_a, ["A", "LEASE"].as_slice()),
+            (&spawn_b, ["C"].as_slice()),
+        ] {
+            for key in set {
+                assert!(!spawn.remove.contains(*key), "{key}");
+            }
+        }
     }
 
     #[tokio::test]
@@ -1514,7 +1559,10 @@ mod tests {
             .await
             .unwrap();
         // remove lists SCRUB but not A, which this spawn sets
-        assert_eq!(spawn.remove, BTreeSet::from(["SCRUB".to_string()]));
+        assert_eq!(
+            spawn.remove,
+            BTreeSet::from(["SCRUB".to_string(), "LEASE".to_string()])
+        );
         for leaked in [
             "line-one-s3cr3t",
             "line-two-s3cr3t \"q\"",
