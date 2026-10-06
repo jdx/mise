@@ -13,6 +13,7 @@ use crate::install_before::{
     resolve_cli_minimum_release_age,
 };
 use crate::semver::split_version_prefix;
+use crate::tool_update::UpdatePolicy;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
@@ -153,6 +154,9 @@ pub(crate) struct Upgrade {
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
+
+    /// Additional candidate filter used only by the hidden background updater.
+    background_update_policy: Option<UpdatePolicy>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -376,6 +380,16 @@ impl Upgrade {
             )
             .await
         };
+        if let Some(policy) = self.background_update_policy {
+            // Keep normal tool-request range resolution intact, then apply the
+            // opt-in update boundary to the selected candidate.
+            outdated.retain(|outdated| {
+                outdated
+                    .current
+                    .as_deref()
+                    .is_some_and(|current| policy.allows(current, &outdated.latest))
+            });
+        }
         if Settings::get().pin {
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
@@ -1230,6 +1244,38 @@ impl Upgrade {
         };
         backend.latest_version_unfiltered(config, query).await
     }
+}
+
+/// Run a single, already-authorized background update. The hidden caller
+/// acquires the per-tool lock and records the check before reaching here.
+/// Keeping this on the ordinary upgrade path is intentional: it preserves
+/// selector/range handling and atomic installation instead of building a
+/// second updater. Deferred pruning uses the normal cross-platform
+/// running-process protection from the stacked safety change.
+pub(crate) async fn run_background_tool_update(
+    tool: crate::args::ToolArg,
+    policy: UpdatePolicy,
+) -> Result<()> {
+    Upgrade {
+        tool: vec![tool],
+        bump: false,
+        interactive: false,
+        jobs: None,
+        legacy_bump: false,
+        dry_run: false,
+        exclude: vec![],
+        dry_run_code: false,
+        inactive: false,
+        local: false,
+        minimum_release_age: None,
+        monorepo: false,
+        no_prune: false,
+        prune: false,
+        raw: false,
+        background_update_policy: Some(policy),
+    }
+    .run()
+    .await
 }
 
 fn current_satisfies_hidden_release(

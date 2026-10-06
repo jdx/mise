@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+
+# Exercise only the bundled dummy backend in the isolated e2e home. Background
+# updater children intentionally inherit these directories, so each case uses a
+# fresh state dir without touching a real installed tool or the host's mise state.
+
+fresh_state() {
+  export MISE_STATE_DIR="$PWD/state-$1"
+}
+
+wait_for_dummy() {
+  local version="$1"
+  local attempt
+  for attempt in {1..100}; do
+    if mise ls --installed dummy | grep -Fq "$version"; then
+      return
+    fi
+    sleep 0.1
+  done
+  fail "dummy@$version was not installed by the background updater"
+}
+
+wait_for_update_marker() {
+  local attempt
+  for attempt in {1..100}; do
+    if find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.lock' -print -quit 2>/dev/null | grep -q .; then
+      return
+    fi
+    sleep 0.1
+  done
+  fail "background updater did not record its check"
+}
+
+write_global_update_settings() {
+  cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings.tool_update]
+check_duration = "1h"
+
+[settings.tool_update.tools]
+dummy = "minor"
+EOF
+}
+
+write_floating_dummy() {
+  cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+EOF
+}
+
+# A repository cannot opt a user into background network or installation work.
+fresh_state local-setting
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+# No global opt-in.
+EOF
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+
+[settings.tool_update]
+check_duration = "0s"
+
+[settings.tool_update.tools]
+dummy = "minor"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+write_global_update_settings
+
+# `mise x` keeps its selected installed version, then updates only within the
+# globally configured minor boundary for a later resolution. The local major
+# entry is ignored because tool-update settings are global-only.
+fresh_state exec
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+
+[settings.tool_update.tools]
+dummy = "major"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+wait_for_dummy "1.1.0"
+assert_contains "mise x -- dummy" "Dummy 1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+# Tasks schedule only after their task environment has fixed its tool paths.
+fresh_state run
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1"
+
+[tasks.current]
+run = "dummy"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise run current" "Dummy 1.0.0"
+wait_for_dummy "1.1.0"
+
+# Exact pins never schedule background work.
+fresh_state pin
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# Any project lockfile disables the automatic updater rather than allowing it
+# to rewrite a binding in the background.
+fresh_state lockfile
+write_floating_dummy
+cat >mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+rm mise.lock
+
+# hook-env remains an entirely foreground-free path even when the global
+# allowlist includes the configured tool.
+fresh_state hook-env
+write_floating_dummy
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_succeed "mise hook-env -s bash >/dev/null"
+assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# Failed background installation leaves the working old version untouched.
+fresh_state failed-install
+write_floating_dummy
+mise uninstall dummy --all
+mise install dummy@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1", postinstall = "false" }
+EOF
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+wait_for_update_marker
+sleep 0.2
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+
+# Simultaneous foreground commands must yield one updater. The bundled dummy
+# plugin records whether two top-level installs overlap.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings.tool_update]
+check_duration = "0s"
+
+[settings.tool_update.tools]
+dummy = "minor"
+EOF
+fresh_state concurrent
+write_floating_dummy
+export DUMMY_INSTALL_GATE_DIR="$PWD/background-update-gate"
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise x -- dummy >first-exec.log 2>&1 &
+first=$!
+mise x -- dummy >second-exec.log 2>&1 &
+second=$!
+wait "$first"
+wait "$second"
+assert_contains "cat first-exec.log" "Dummy 1.0.0"
+assert_contains "cat second-exec.log" "Dummy 1.0.0"
+wait_for_dummy "1.1.0"
+assert_fail "test -e '$DUMMY_INSTALL_GATE_DIR.overlap'"
+unset DUMMY_INSTALL_GATE_DIR

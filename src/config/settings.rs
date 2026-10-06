@@ -752,6 +752,8 @@ pub trait SettingsExt: Sized {
 
     fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration>;
 
+    fn tool_update_check_duration(&self) -> eyre::Result<Duration>;
+
     #[cfg(feature = "self_update")]
     fn auto_update_check_duration(&self) -> eyre::Result<Duration>;
 
@@ -1089,6 +1091,10 @@ impl SettingsExt for Settings {
 
     fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
         duration::parse_duration(&self.upgrade.prune_after)
+    }
+
+    fn tool_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.tool_update.check_duration)
     }
 
     #[cfg(feature = "self_update")]

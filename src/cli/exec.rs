@@ -465,6 +465,11 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
+        // The environment now contains the concrete tool paths selected for
+        // this invocation. Scheduling only forks a detached child, so it
+        // cannot delay this command or change its chosen version.
+        crate::tool_update::schedule(&config, &ts);
+
         exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
 }

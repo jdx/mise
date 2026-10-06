@@ -63,6 +63,7 @@ mod global;
 mod hook_env;
 mod hook_not_found;
 mod tool_alias;
+mod tool_update;
 
 mod command_effects;
 mod deps;
@@ -321,6 +322,8 @@ fn render_subcommand_help(name: &str, long: bool) -> String {
 pub(crate) enum Commands {
     Activate(activate::Activate),
     ToolAlias(Box<tool_alias::ToolAlias>),
+    #[usage(name = "__tool-update", hide = true)]
+    ToolUpdate(tool_update::ToolUpdate),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
@@ -447,6 +450,7 @@ impl Commands {
                 | Self::Implode(_)
                 | Self::PublishSystemInstall(_)
                 | Self::SelfUpdate(_)
+                | Self::ToolUpdate(_)
                 | Self::Settings(_)
                 | Self::Shell(_)
                 | Self::Ssh(_)
@@ -467,6 +471,7 @@ impl Commands {
                 | Self::HookNotFound(_)
                 | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
+                | Self::ToolUpdate(_)
         )
     }
 
@@ -489,6 +494,7 @@ impl Commands {
         match self {
             Self::Activate(cmd) => Box::pin(async move { cmd.run() }),
             Self::ToolAlias(cmd) => Box::pin(cmd.run()),
+            Self::ToolUpdate(cmd) => Box::pin(cmd.run()),
             Self::Asdf(cmd) => Box::pin(cmd.run()),
             Self::Backends(cmd) => Box::pin(cmd.run()),
             Self::BinPaths(cmd) => Box::pin(cmd.run()),

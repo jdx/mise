@@ -571,6 +571,11 @@ impl TaskExecutor {
             .parse_task_usage(config, task, &mut env, extra_vars.clone())
             .await?;
 
+        // The task environment now contains the tool paths selected for this
+        // invocation. Schedule detached updates only after that point so a
+        // successful update is used by a later resolution, never this task.
+        crate::tool_update::schedule(config, &ts);
+
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
         let confirm_guard = if task.interactive {
