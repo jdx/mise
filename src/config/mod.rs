@@ -3237,7 +3237,9 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     }
     let ctr = config_trust_root(path);
     // The `ignored_config_paths` setting is a hard filter.
-    if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(path) {
+    if config_file::is_config_ignored_via_setting(&ctr)
+        || config_file::is_config_ignored_via_setting(path)
+    {
         return true;
     }
     // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is

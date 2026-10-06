@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml that ignores a directory must not hide the global
+# config when ~/.config/mise is a symlink into that directory.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_IGNORED_CONFIG_PATHS
+
+mkdir -p "$HOME/dotfiles/mise/dot-config/mise" "$HOME/.config"
+rmdir "$HOME/.config/mise"
+ln -s "$HOME/dotfiles/mise/dot-config/mise" "$HOME/.config/mise"
+cat <<TOML >"$HOME/dotfiles/mise/dot-config/mise/config.toml"
+[env]
+FROM_GLOBAL = "1"
+TOML
+echo 'ignored_config_paths = ["mise"]' >"$HOME/dotfiles/.miserc.toml"
+
+cd "$HOME"
+assert_contains "mise env" "FROM_GLOBAL"
+
+cd "$HOME/dotfiles"
+assert_contains "mise env" "FROM_GLOBAL"
+assert_contains "mise config ls" "config.toml"
+assert_not_contains "mise config ls" "dotfiles/mise/dot-config"
+
+# Ignoring the global config by its own path still works
+cd "$HOME"
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=$HOME/.config/mise mise env" "FROM_GLOBAL"
