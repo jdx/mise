@@ -396,7 +396,7 @@ impl Upgrade {
             // final install boundary as well. An unreadable lockfile is also
             // conservatively ineligible.
             outdated.retain(|outdated| {
-                !outdated.tool_version.request_pinned_this_version()
+                !outdated.request_pinned_to_current_version()
                     && matches!(
                         crate::tool_update::request_has_lockfile(
                             config.as_ref(),
