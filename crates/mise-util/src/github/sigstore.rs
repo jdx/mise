@@ -249,7 +249,8 @@ async fn verify_attestation_uncached(
                             "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
                         ),
                         CachedAttestationVerification::Retry(Some(err)) => debug!(
-                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API: {err}"
+                            "mise-versions GitHub attestation verification failed overall for {owner}/{repo}; falling back to GitHub API: {}",
+                            err.diagnostic_summary()
                         ),
                     }
                 }
