@@ -129,3 +129,45 @@ EOF
 echo '{// not json' >~/broken.json
 assert_fail "mise dotfiles apply --yes"
 assert "cat ~/broken.json" "{// not json"
+
+# a source that does not parse is refused before anything is written, even
+# when its target does not exist yet
+mkdir -p ~/early
+echo '{// not json' >shared/bad.json
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/early/first.toml/shared" = { source = "shared/codex.toml", merge = true }
+"~/early/second.json/shared" = { source = "shared/bad.json", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "invalid merge source"
+assert_fail "cat ~/early/first.toml"
+
+# two entries that set one key to different values are refused, not flipped
+cat <<'EOF' >shared/other.toml
+model = "gpt-4"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/conflict.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/conflict.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "set different values for model"
+assert_fail "cat ~/conflict.toml"
+
+# a trailing newline in a YAML block scalar is part of the value
+printf 'notes: |\n  line one\n  line two\n' >shared/notes.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes.yml/shared" = { source = "shared/notes.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles status --missing"
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+
+# unapply never touches a merge target, even one it could not read
+ln -sf ~/notes.yml ~/notes-link.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes-link.yml/shared" = { source = "shared/notes.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles unapply --yes"

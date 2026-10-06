@@ -114,6 +114,83 @@ fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
     })
 }
 
+/// Dotted paths that `a` and `b` both set, to different values. Two sources
+/// that agree on a key, or that set different keys of the same table, do not
+/// conflict.
+pub fn conflicts(format: Format, a: &str, b: &str) -> Result<Vec<String>> {
+    let mut paths = vec![];
+    match (parse(format, a, "source")?, parse(format, b, "source")?) {
+        (Doc::Json(a), Doc::Json(b)) => json_conflicts(&a, &b, "", &mut paths),
+        (Doc::Toml(a), Doc::Toml(b)) => toml_conflicts(&a, &b, "", &mut paths),
+        (Doc::Yaml(a), Doc::Yaml(b)) => yaml_conflicts(&a, &b, "", &mut paths),
+        _ => unreachable!("both sides are parsed as the same format"),
+    }
+    Ok(paths)
+}
+
+fn child_path(prefix: &str, key: &str) -> String {
+    if prefix.is_empty() {
+        key.to_string()
+    } else {
+        format!("{prefix}.{key}")
+    }
+}
+
+fn json_conflicts(a: &Value, b: &Value, prefix: &str, paths: &mut Vec<String>) {
+    let (Value::Object(a), Value::Object(b)) = (a, b) else {
+        return;
+    };
+    for (key, av) in a {
+        let Some(bv) = b.get(key) else { continue };
+        let path = child_path(prefix, key);
+        if av.is_object() && bv.is_object() {
+            json_conflicts(av, bv, &path, paths);
+        } else if av != bv {
+            paths.push(path);
+        }
+    }
+}
+
+fn toml_conflicts(a: &toml::Table, b: &toml::Table, prefix: &str, paths: &mut Vec<String>) {
+    for (key, av) in a {
+        let Some(bv) = b.get(key) else { continue };
+        let path = child_path(prefix, key);
+        match (av, bv) {
+            (toml::Value::Table(av), toml::Value::Table(bv)) => {
+                toml_conflicts(av, bv, &path, paths);
+            }
+            _ if av != bv => paths.push(path),
+            _ => {}
+        }
+    }
+}
+
+fn yaml_conflicts(
+    a: &serde_yaml::Mapping,
+    b: &serde_yaml::Mapping,
+    prefix: &str,
+    paths: &mut Vec<String>,
+) {
+    for (key, av) in a {
+        let Some(bv) = b.get(key) else { continue };
+        let name = match key {
+            serde_yaml::Value::String(name) => name.clone(),
+            other => serde_yaml::to_string(other)
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        };
+        let path = child_path(prefix, &name);
+        match (av, bv) {
+            (serde_yaml::Value::Mapping(av), serde_yaml::Value::Mapping(bv)) => {
+                yaml_conflicts(av, bv, &path, paths);
+            }
+            _ if av != bv => paths.push(path),
+            _ => {}
+        }
+    }
+}
+
 fn is_comments_only(text: &str) -> bool {
     text.lines()
         .all(|l| l.trim().is_empty() || l.trim_start().starts_with('#'))
@@ -462,6 +539,30 @@ path = \"/Applications/X.app\"
             target.replace("old", "new")
         );
         assert!(!contains(Format::Yaml, target, "env:\n  2: three\n").unwrap());
+    }
+
+    #[test]
+    fn sources_conflict_only_on_different_values_for_one_key() {
+        let conflicts = |a, b| conflicts(Format::Toml, a, b).unwrap();
+        assert_eq!(
+            conflicts("m = 1\n[t]\nx = 1\ny = 2\n", "m = 2\n[t]\nx = 9\ny = 2\n"),
+            vec!["m".to_string(), "t.x".to_string()]
+        );
+        assert!(conflicts("m = 1\n[t]\nx = 1\n", "m = 1\n[t]\ny = 2\n").is_empty());
+        // a table against a scalar is a conflict too
+        assert_eq!(conflicts("t = 1\n", "[t]\nx = 1\n"), vec!["t".to_string()]);
+    }
+
+    #[test]
+    fn conflicts_are_found_in_every_format() {
+        assert_eq!(
+            conflicts(Format::Json, r#"{"a": {"b": 1}}"#, r#"{"a": {"b": 2}}"#).unwrap(),
+            vec!["a.b".to_string()]
+        );
+        assert_eq!(
+            conflicts(Format::Yaml, "a:\n  b: 1\n1: x\n", "a:\n  b: 2\n1: y\n").unwrap(),
+            vec!["a.b".to_string(), "1".to_string()]
+        );
     }
 
     #[test]

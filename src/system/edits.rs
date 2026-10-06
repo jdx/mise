@@ -611,10 +611,22 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     } else {
         raw
     };
-    let content = content.trim_end_matches('\n').to_string();
     let Some(comment) = comment else {
+        // the source is data, not a block: a trailing newline can be part of
+        // a YAML block scalar, so keep it. Parse it now so a bad source is
+        // reported before any entry is written, even when the target is
+        // missing
+        if let EditOp::Merge { format, .. } = &req.op {
+            structured_merge::contains(*format, "", &content).wrap_err_with(|| {
+                format!(
+                    "[dotfiles].\"{}/{}\": invalid merge source",
+                    req.path_raw, req.id
+                )
+            })?;
+        }
         return Ok(Some(content));
     };
+    let content = content.trim_end_matches('\n').to_string();
     // a block containing its own marker lines would write a file that can't
     // be parsed back — refuse up front instead of corrupting on reapply
     for pat in [format!(">>> mise:{id} >>>"), format!("<<< mise:{id} <<<")] {
@@ -734,6 +746,35 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
     }
 }
 
+/// Two merge entries for one file that set the same key to different values
+/// would each look unapplied after the other ran, so every apply would flip the
+/// value back and forth. Refuse that instead of picking a winner.
+fn merge_conflicts(merged: &[(&EditRequest, Format, String)]) -> Vec<String> {
+    let mut problems = vec![];
+    for (i, (first, format, first_content)) in merged.iter().enumerate() {
+        for (second, second_format, second_content) in &merged[i + 1..] {
+            if first.path != second.path || format != second_format {
+                continue;
+            }
+            // unparseable sources were already reported by desired_content
+            let Ok(keys) = structured_merge::conflicts(*format, first_content, second_content)
+            else {
+                continue;
+            };
+            if !keys.is_empty() {
+                problems.push(format!(
+                    "  \"{}\": {} and {} set different values for {}",
+                    first.path_raw,
+                    first.describe_op(),
+                    second.describe_op(),
+                    keys.join(", ")
+                ));
+            }
+        }
+    }
+    problems
+}
+
 pub struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
@@ -757,6 +798,8 @@ pub fn apply(
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
+    // every merge source rendered this run, for the cross-entry conflict check
+    let mut merged: Vec<(&EditRequest, Format, String)> = vec![];
     for req in requests {
         if let Some(p) = req.op.source_file()
             && !p.exists()
@@ -812,6 +855,9 @@ pub fn apply(
                 continue;
             }
         };
+        if let (EditOp::Merge { format, .. }, Some(content)) = (&req.op, &desired) {
+            merged.push((req, *format, content.clone()));
+        }
         match pre {
             // markers exist: compare content to see if anything would change
             None => match block_state(req, desired.as_deref()) {
@@ -830,6 +876,7 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
+    problems.extend(merge_conflicts(&merged));
     if !problems.is_empty() {
         bail!(
             "edits: cannot apply these entries, fix them manually:\n{}",
@@ -1028,6 +1075,11 @@ pub fn plan_unapply<'a>(
     let mut problems = vec![];
     let mut seen_lines = indexmap::IndexSet::new();
     for req in requests {
+        // merged keys carry no ownership record and may have been changed by
+        // the application since, so they stay put; the target is never read
+        if matches!(req.op, EditOp::Merge { .. }) {
+            continue;
+        }
         if req.path.is_symlink() {
             problems.push(format!(
                 "  \"{}\" ({}): {SYMLINK_REASON}",
@@ -1078,10 +1130,7 @@ pub fn plan_unapply<'a>(
                     todo.push(UnapplyPlan { req, text });
                 }
             }
-            EditOp::Line { .. } => {}
-            // merged keys carry no ownership record and may have been
-            // changed by the application since, so they stay put
-            EditOp::Merge { .. } => {}
+            EditOp::Line { .. } | EditOp::Merge { .. } => {}
         }
     }
     if !problems.is_empty() {
