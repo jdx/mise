@@ -749,10 +749,9 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
 /// Whether two edit targets are the same file under different names: equal
 /// paths, or existing files with the same identity (a hard link, or a case
 /// variant on a case-insensitive volume). A target that does not exist yet has
-/// no identity, so its case variants only count as the same when an existing
-/// ancestor reached by two case-only-different spellings resolves to one
-/// directory, which proves the volume ignores case. Volumes that keep case
-/// keep `~/App/x.json` and `~/app/x.json` apart.
+/// no identity, so its case variants only count as the same when the volume
+/// is shown to ignore case (see [`volume_ignores_case`]); on a volume that
+/// keeps case, `~/App/x.json` and `~/app/x.json` are separate files.
 fn same_target(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
@@ -762,15 +761,46 @@ fn same_target(a: &Path, b: &Path) -> bool {
     }
     let (ancestor_a, tail_a) = split_existing(a);
     let (ancestor_b, tail_b) = split_existing(b);
-    ancestor_a != ancestor_b
-        && ancestor_a.to_string_lossy().to_lowercase()
-            == ancestor_b.to_string_lossy().to_lowercase()
-        && same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false)
+    let lowercase = |path: &Path| path.to_string_lossy().to_lowercase();
+    let same_ancestor = ancestor_a == ancestor_b
+        || (lowercase(&ancestor_a) == lowercase(&ancestor_b)
+            && same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false));
+    same_ancestor
         && tail_a.len() == tail_b.len()
         && tail_a
             .iter()
             .zip(&tail_b)
             .all(|(x, y)| x.to_string_lossy().to_lowercase() == y.to_string_lossy().to_lowercase())
+        && volume_ignores_case(&ancestor_a)
+}
+
+/// Whether the volume holding the existing directory `dir` ignores case.
+/// Swaps the case of the nearest path component that has letters and checks
+/// whether the swapped spelling still names the same directory, without
+/// creating anything.
+fn volume_ignores_case(dir: &Path) -> bool {
+    for ancestor in dir.ancestors() {
+        let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) else {
+            continue;
+        };
+        let name = name.to_string_lossy();
+        let swapped: String = name
+            .chars()
+            .map(|c| {
+                if c.is_lowercase() {
+                    c.to_uppercase().collect::<String>()
+                } else {
+                    c.to_lowercase().collect::<String>()
+                }
+            })
+            .collect();
+        // the first component with letters decides; a deeper mount point
+        // is not probed past it
+        if swapped != name {
+            return same_file::is_same_file(ancestor, parent.join(&swapped)).unwrap_or(false);
+        }
+    }
+    false
 }
 
 /// The nearest existing ancestor of `path` (or `path` itself) and the
@@ -1624,6 +1654,8 @@ mod tests {
         let (missing, variant) = (dir.path().join("m.toml"), dir.path().join("M.toml"));
         assert!(same_target(&missing, &missing));
         assert!(!same_target(&missing, &variant));
+        // the test volume keeps case
+        assert!(!volume_ignores_case(dir.path()));
         Ok(())
     }
 
