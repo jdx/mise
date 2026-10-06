@@ -35,21 +35,23 @@ pub(super) fn list() -> Listing {
 }
 
 fn pids() -> Vec<libc::pid_t> {
-    // SAFETY: a null buffer asks for the size needed.
-    let bytes = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
-    if bytes <= 0 {
+    // `proc_listallpids` takes a buffer size in bytes but returns a number of
+    // pids. A null buffer asks for the number needed.
+    // SAFETY: a null buffer is allowed.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    let Ok(count) = usize::try_from(count) else {
         return vec![];
-    }
-    // Leave room for processes started since the size was read.
-    let mut pids = vec![0 as libc::pid_t; bytes as usize / size_of::<libc::pid_t>() + 64];
+    };
+    // Leave room for processes started since the count was read.
+    let mut pids = vec![0 as libc::pid_t; count + 64];
     // SAFETY: the buffer holds `pids.len()` pids and the size passed is its length in bytes.
-    let bytes = unsafe {
+    let written = unsafe {
         libc::proc_listallpids(
             pids.as_mut_ptr().cast::<c_void>(),
             (pids.len() * size_of::<libc::pid_t>()) as libc::c_int,
         )
     };
-    pids.truncate(usize::try_from(bytes).unwrap_or(0) / size_of::<libc::pid_t>());
+    pids.truncate(usize::try_from(written).unwrap_or(0));
     pids.retain(|pid| *pid > 0);
     pids
 }

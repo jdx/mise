@@ -355,6 +355,20 @@ mod tests {
         filetime::set_symlink_file_times(link, at, at).unwrap();
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn lists_every_process_on_macos() {
+        let listed = sys::list().processes.len();
+        let ps = Command::new("ps")
+            .args(["-A", "-o", "pid="])
+            .output()
+            .unwrap();
+        let total = String::from_utf8_lossy(&ps.stdout).lines().count();
+        // Some processes cannot be inspected, but a prefix of the list would
+        // fall far short of this.
+        assert!(listed * 2 > total, "listed {listed} of {total} processes");
+    }
+
     #[test]
     fn finds_a_process_by_its_executable() {
         let tmp = tempfile::tempdir().unwrap();
