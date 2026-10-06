@@ -74,7 +74,7 @@ export function description(file: string): string | undefined {
   md = md.replace(/^---\n[\s\S]*?\n---\n/, ""); // frontmatter
 
   let seenHeading = false;
-  let codeFence: string | undefined;
+  let codeFence: { marker: string; quoted: boolean } | undefined;
   const paragraph: string[] = [];
 
   for (const raw of md.split(/\r?\n/)) {
@@ -85,11 +85,14 @@ export function description(file: string): string | undefined {
     // Skip the entire fenced block, including headings and blank lines in it.
     // A closing fence must use the same character and be at least as long.
     if (codeFence) {
-      const closing = content.match(/^ {0,3}(`{3,}|~{3,})[\t ]*$/)?.[1];
+      // Quote markers inside an ordinary example are literal code content.
+      const closing = (codeFence.quoted ? content : raw).match(
+        /^ {0,3}(`{3,}|~{3,})[\t ]*$/,
+      )?.[1];
       if (
         closing &&
-        closing[0] === codeFence[0] &&
-        closing.length >= codeFence.length
+        closing[0] === codeFence.marker[0] &&
+        closing.length >= codeFence.marker.length
       )
         codeFence = undefined;
       continue;
@@ -97,7 +100,7 @@ export function description(file: string): string | undefined {
     const opening = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening && !(opening[1][0] === "`" && opening[2].includes("`"))) {
       if (paragraph.length) break;
-      codeFence = opening[1];
+      codeFence = { marker: opening[1], quoted: content !== raw };
       continue;
     }
 

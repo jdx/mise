@@ -98,6 +98,17 @@ test("skips an alert's fenced example before its warning text", () => {
   );
 });
 
+test("a quoted fence inside an ordinary code block does not close it", () => {
+  for (const fence of ["```", "~~~"]) {
+    assert.equal(
+      summary(
+        `# Guide\n\n${fence}markdown\n> ${fence}\nFake summary.\n${fence}\n\nReal summary.\n`,
+      ),
+      "Real summary.",
+    );
+  }
+});
+
 test("a quoted fence ends a blockquote summary", () => {
   assert.equal(
     summary("# Guide\n\n> Install tools.\n> ```sh\n> mise install\n> ```\n"),
