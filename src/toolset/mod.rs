@@ -1021,17 +1021,27 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let mut requests = if crate::install_layout::resolver::enabled()
             && cf.has_templated_tool_versions()
         {
-            let Some(recorded) =
-                crate::install_layout::claims::needed_by(&path, &cf.templated_tool_backends())
-            else {
+            let recorded = crate::install_layout::claims::file_hash(cf.as_ref())
+                .ok()
+                .and_then(|file| {
+                    crate::install_layout::claims::needed_by(
+                        &path,
+                        &file,
+                        &cf.templated_tool_backends(),
+                    )
+                });
+            let Some(recorded) = recorded else {
                 bail!(
                     "cannot tell which tool versions {} needs: they are templates, and no installation has been recorded for some of them; run `mise install` in {} to record them",
                     display_path(&path),
                     display_path(cf.config_root())
                 );
             };
-            for key in recorded {
+            for key in recorded.keys {
                 needed.entry(key).or_default().insert(path.clone());
+            }
+            for short in &recorded.keep_all {
+                keep_every_installation(short, &path, &mut needed);
             }
             cf.to_tool_request_set_skipping_templated()?
         } else {
@@ -1157,6 +1167,28 @@ async fn is_version_satisfied(
             .await
     } else {
         backend.is_version_installed(config, tv, true)
+    }
+}
+
+/// Keep every installed version of a tool for `source`, for a config whose
+/// templated versions of it cannot be told apart.
+fn keep_every_installation(short: &str, source: &Path, needed: &mut NeededVersions) {
+    let ba = crate::args::BackendArg::from(short);
+    if let Some(backend) = backend::get(&ba) {
+        for v in backend.list_installed_versions() {
+            needed
+                .entry((ba.short.clone(), v))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
+    }
+    for (_, dir) in crate::install_layout::resolver::installs_of(&ba) {
+        if let Some(dir) = crate::install_layout::resolver::dir_name_of(&dir) {
+            needed
+                .entry((String::new(), dir))
+                .or_default()
+                .insert(source.to_path_buf());
+        }
     }
 }
 

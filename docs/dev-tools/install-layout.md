@@ -379,8 +379,12 @@ Both work on one installation directory at a time.
   hook), and `mise prune` keeps it. Editing the config or anything it loads
   replaces that tool's record for the same `MISE_ENV` the next time the project
   is used; other tools and other environments keep theirs. A config with a
-  templated tool that has no record makes `mise prune` stop and name the config;
-  run `mise install` in that project to record it. Without the new layout,
+  templated tool that has no record for the config file as it is now, for
+  example after editing that file, makes `mise prune` stop and name the config;
+  run `mise install` in that project to record it. A tool with several templated
+  versions in one config keeps all of its installations while the config exists.
+  Editing a parent config changes what a child renders to, and prune only learns
+  that the next time the child is used. Without the new layout,
   `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
   the new layout.

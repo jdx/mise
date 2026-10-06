@@ -13,7 +13,8 @@
 //! versions forever. Other tools, and other environments, keep their entries
 //! until they are recorded again, so a record only ever keeps too much: a
 //! version that is installed or resolved for a config is recorded as it is.
-//! Prune refuses a config with a templated tool that has no entry, and a record
+//! Prune refuses a config with a templated tool that has no entry for the config
+//! file as it is now, and a record
 //! that fails to write is deleted, so a stale one is never trusted.
 
 use std::path::Path;
@@ -49,6 +50,10 @@ struct Need {
     context: String,
     /// Fingerprint of those files' contents.
     fingerprint: String,
+    /// Hash of the config's own file, so prune can tell whether the record was
+    /// made for the file as it is now.
+    #[serde(default)]
+    file: String,
     /// The tool name for a legacy path; empty for an identity-layout directory.
     short: String,
     /// The version directory name, or the identity-layout directory name.
@@ -78,6 +83,11 @@ fn fingerprint(config: &Config) -> Result<String> {
         text.push('\n');
     }
     Ok(hash::hash_to_str(&text))
+}
+
+/// Hash of one config file's own contents.
+pub(crate) fn file_hash(cf: &dyn crate::config::config_file::ConfigFile) -> Result<String> {
+    Ok(hash::hash_to_str(&cf.dump()?))
 }
 
 /// Which config files were loaded, by path alone.
@@ -136,12 +146,19 @@ fn write(
     let env = crate::env::MISE_ENV.join(",");
     let backend = tv.ba().short.to_string();
     let context = context(config);
+    let file_hash = config
+        .config_files
+        .get(path)
+        .map(|cf| file_hash(cf.as_ref()))
+        .transpose()?
+        .unwrap_or_default();
     let need = match dir {
         None => Need {
             backend,
             env,
             context,
             fingerprint,
+            file: file_hash,
             short: String::new(),
             version: String::new(),
         },
@@ -151,6 +168,7 @@ fn write(
                 env,
                 context,
                 fingerprint,
+                file: file_hash,
                 short: String::new(),
                 version: dir,
             },
@@ -160,6 +178,7 @@ fn write(
                 env,
                 context,
                 fingerprint,
+                file: file_hash,
                 version: tv.tv_pathname(),
             },
         },
@@ -229,32 +248,44 @@ fn read(path: &Path) -> Option<Claims> {
     toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
-/// The installations recorded for `config`, in the keys `mise prune` uses, or
-/// `None` when nothing was recorded or a templated version in `backends` (one
-/// per version, so a tool may repeat) has no entry of its own.
-pub(crate) fn needed_by(config: &Path, backends: &[String]) -> Option<Vec<(String, String)>> {
+/// What `mise prune` keeps for a config's templated versions.
+#[derive(Debug, Default)]
+pub(crate) struct Needed {
+    /// Installations to keep, in the keys `mise prune` uses.
+    pub(crate) keys: Vec<(String, String)>,
+    /// Tools with several templated versions in the config. The record cannot say
+    /// which version an entry belongs to, so every installation of these is kept.
+    pub(crate) keep_all: Vec<String>,
+}
+
+/// The installations recorded for `config`, or `None` when a templated version
+/// in `backends` (one per version, so a tool may repeat) was not recorded for
+/// the config file as it is now. `file` is [`file_hash`] of that file.
+pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Option<Needed> {
     if backends.is_empty() {
-        return Some(vec![]);
+        return Some(Needed::default());
     }
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let claims = read(&path_for(&catalog, config))?;
+    let mut needed = Needed::default();
     for backend in backends {
-        let wanted = backends.iter().filter(|b| *b == backend).count();
-        let recorded = claims
+        if backends.iter().filter(|b| *b == backend).count() > 1 {
+            if !needed.keep_all.contains(backend) {
+                needed.keep_all.push(backend.clone());
+            }
+        } else if !claims
             .needs
             .iter()
-            .filter(|need| &need.backend == backend)
-            .count();
-        if recorded < wanted {
+            .any(|need| &need.backend == backend && need.file == file)
+        {
             return None;
         }
     }
-    Some(
-        claims
-            .needs
-            .into_iter()
-            .filter(|need| backends.contains(&need.backend) && !need.version.is_empty())
-            .map(|need| (need.short, need.version))
-            .collect(),
-    )
+    needed.keys = claims
+        .needs
+        .into_iter()
+        .filter(|need| backends.contains(&need.backend) && !need.version.is_empty())
+        .map(|need| (need.short, need.version))
+        .collect();
+    Some(needed)
 }

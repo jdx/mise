@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Two templated versions of one tool are two records: prune refuses when only one of
-# them has been recorded.
+# Two templated versions of one tool cannot be told apart in the record, so prune
+# keeps every installation of that tool for the config, whether the two versions
+# render to the same install or to different ones.
 export MISE_EXPERIMENTAL=1
 export MISE_INSTALL_LAYOUT=identity
 
@@ -13,13 +14,11 @@ dummy = ["{{vars.a}}", "{{vars.b}}"]' >project/child/mise.toml
 assert "mise -C project/child install"
 assert "mise install dummy@3.0.0"
 assert "mise -C elsewhere ls --prunable --json >prunable.json"
-assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
 
-claims="$(echo "$MISE_DATA_DIR"/installs/.mise/claims/*.toml)"
-python3 - "$claims" <<'PY'
-import re, sys
-text = open(sys.argv[1]).read()
-blocks = re.split(r"(?m)^(?=\[\[needs\]\])", text)
-open(sys.argv[1], "w").write("".join(blocks[:-1]))
-PY
-assert_fail "mise -C elsewhere prune --yes" "no installation has been recorded"
+echo '[vars]
+a = "1.0.0"
+b = "1.0.0"' >project/mise.toml
+assert "mise -C project/child exec -- true"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
