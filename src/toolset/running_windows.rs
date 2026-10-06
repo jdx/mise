@@ -132,8 +132,10 @@ fn command_line(handle: &Handle) -> Option<String> {
     let offset = pointer.checked_sub(data)?;
     let bytes = buf.get(offset..offset + length * 2)?;
     let wide = bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_ne_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_ne_bytes(*c))
         .collect::<Vec<_>>();
     Some(String::from_utf16_lossy(&wide))
 }
