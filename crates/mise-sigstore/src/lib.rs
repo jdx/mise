@@ -11,8 +11,7 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sigstore_verify::VerificationPolicy;
-pub use sigstore_verify::trust_root::DEFAULT_TUF_URL;
-use sigstore_verify::trust_root::{PRODUCTION_TUF_ROOT, SigstoreInstance, TrustedRoot, TufConfig};
+use sigstore_verify::trust_root::{SigstoreInstance, TrustedRoot, TufBootstrap, TufConfig};
 use sigstore_verify::types::bundle::VerificationMaterialContent;
 use sigstore_verify::types::{
     Artifact, Bundle, DerCertificate, DerPublicKey, HashAlgorithm, Sha256Hash, SignatureBytes,
@@ -32,6 +31,9 @@ mod model;
 mod retry;
 mod slsa;
 mod trust;
+
+/// The Sigstore public-good TUF repository URL.
+pub const DEFAULT_TUF_URL: &str = "https://tuf-repo-cdn.sigstore.dev";
 
 pub use client::{
     Attestation, AttestationClient, AttestationClientBuilder, FetchParams, GitHubSource, sources,
