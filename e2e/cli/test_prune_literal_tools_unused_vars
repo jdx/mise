@@ -14,3 +14,16 @@ EOF
 assert "mise -C elsewhere ls --prunable --json >prunable.json"
 assert "jq -e '[.dummy[].version] == [\"2.0.0\"]' prunable.json"
 assert_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@2.0.0"
+
+# A templated version that reads neither vars nor env must not evaluate them.
+mkdir templated
+cat >templated/mise.toml <<'EOT'
+[tools]
+dummy = '{{"4.0.0"}}'
+EOT
+assert "mise -C templated install"
+cat >>templated/mise.toml <<'EOT'
+[env]
+TASK_ONLY = "{{env.PRUNE_MISSING_VARIABLE}}"
+EOT
+assert_not_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@4.0.0"

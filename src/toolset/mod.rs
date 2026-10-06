@@ -1009,14 +1009,23 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut requests = if cf.has_tool_templates() {
-            let files = config.tracked_config_hierarchy(&cf).await?;
-            let paths = files.keys().cloned().collect::<Vec<_>>();
-            let context = match template_contexts.entry(paths) {
+        // Only vars and env a template can read matter; a project whose tool
+        // templates read neither never depends on anything resolved here.
+        let templates = cf.tool_templates().join("\n");
+        let inputs = crate::config::TemplateInputs {
+            vars: templates.contains("vars"),
+            env: templates.contains("env"),
+        };
+        let mut requests = if inputs.vars || inputs.env {
+            let files = config.tracked_config_hierarchy(&cf, inputs).await?;
+            let key = (files.keys().cloned().collect::<Vec<_>>(), inputs);
+            let context = match template_contexts.entry(key) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(config.resolve_config_template_context(&files).await?)
-                }
+                std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
+                    config
+                        .resolve_config_template_context(&files, inputs)
+                        .await?,
+                ),
             };
             cf.to_tool_request_set_with_context(context)?
         } else {

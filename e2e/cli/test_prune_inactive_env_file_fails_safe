@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 
-# An inactive MISE_ENV file in the project's tree may have supplied the vars, so
-# prune refuses instead of rendering against the default config.
-mkdir -p project/child elsewhere
+# The MISE_ENV a project was installed under is unknown to prune. An environment
+# file that sets the vars it reads, active or not, may have supplied them, so
+# prune refuses instead of rendering against whichever files the caller loads.
+mkdir -p inactive/child active/child elsewhere
 echo '[vars]
-v = "9.9.9"' >project/mise.toml
+v = "9.9.9"' >inactive/mise.toml
 echo '[vars]
-v = "1.0.0"' >project/mise.dev.toml
+v = "1.0.0"' >inactive/mise.dev.toml
 echo '[tools]
-dummy = "{{vars.v}}"' >project/child/mise.toml
-assert "MISE_ENV=dev mise -C project/child install"
+dummy = "{{vars.v}}"' >inactive/child/mise.toml
+assert "MISE_ENV=dev mise -C inactive/child install"
 assert "mise install dummy@3.0.0"
 
-assert_fail "mise -C elsewhere prune --dry-run" "MISE_ENV"
+assert_fail "mise -C elsewhere prune --yes" "MISE_ENV"
 assert_fail "mise -C elsewhere ls --prunable --json" "MISE_ENV"
 assert_contains "mise ls dummy" "1.0.0"
-
-# With the environment active the hierarchy is complete and prune proceeds.
-assert_contains "MISE_ENV=dev mise -C elsewhere prune --dry-run 2>&1" "dummy@3.0.0"
+assert_contains "mise ls dummy" "3.0.0"

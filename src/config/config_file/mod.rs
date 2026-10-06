@@ -137,8 +137,9 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    fn has_tool_templates(&self) -> bool {
-        false
+    /// Every tool version and option that contains template syntax, as text.
+    fn tool_templates(&self) -> Vec<String> {
+        vec![]
     }
     fn to_tool_request_set_with_context(
         &self,

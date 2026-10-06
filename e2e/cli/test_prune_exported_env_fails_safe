@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# A version that comes from the project's shell cannot be reproduced from another
+# directory. Prune must refuse rather than guess and delete what the project uses.
+mkdir -p project elsewhere
+echo '[tools]
+dummy = "{{env.PRUNE_EXPORTED_VERSION}}"' >project/mise.toml
+assert "PRUNE_EXPORTED_VERSION=1.0.0 mise -C project install"
+assert "mise install dummy@3.0.0"
+
+assert_fail "mise -C elsewhere prune --yes"
+assert_fail "mise -C elsewhere ls --prunable --json"
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "3.0.0"

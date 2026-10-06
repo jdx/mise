@@ -1651,18 +1651,31 @@ impl ConfigFile for MiseToml {
         ToolSource::MiseToml(self.path.clone())
     }
 
-    fn has_tool_templates(&self) -> bool {
-        self.tools.lock().unwrap().values().any(|tools| {
-            tools.0.iter().any(|tool| {
-                contains_template_syntax(&tool.request)
-                    || tool.options.as_ref().is_some_and(|options| {
-                        options.opts.values().any(toml_value_has_template)
-                            || options.core.install_env.values().any(|value| {
-                                matches!(value, EnvValue::String(s) if contains_template_syntax(s))
-                            })
-                    })
-            })
-        })
+    fn tool_templates(&self) -> Vec<String> {
+        let mut templates = vec![];
+        for tool in self.tools.lock().unwrap().values().flat_map(|tvp| &tvp.0) {
+            if contains_template_syntax(&tool.request) {
+                templates.push(tool.request.clone());
+            }
+            let Some(options) = &tool.options else {
+                continue;
+            };
+            templates.extend(
+                options
+                    .opts
+                    .values()
+                    .filter(|value| toml_value_has_template(value))
+                    .map(|value| value.to_string()),
+            );
+            for value in options.core.install_env.values() {
+                if let EnvValue::String(s) = value
+                    && contains_template_syntax(s)
+                {
+                    templates.push(s.clone());
+                }
+            }
+        }
+        templates
     }
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {

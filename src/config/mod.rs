@@ -1393,23 +1393,27 @@ impl Config {
     pub(crate) async fn tracked_config_hierarchy(
         &self,
         cf: &Arc<dyn ConfigFile>,
+        inputs: TemplateInputs,
     ) -> Result<ConfigMap> {
         config_file::with_global_ignored_config_paths(async {
+            // The MISE_ENV a project was installed under is unknown here, so an
+            // environment-specific file other than the tracked one that sets vars
+            // or env, loaded or not, could change what a template renders to.
+            // Refuse rather than prune the wrong version.
+            if let Some(path) =
+                other_env_config_setting_template_inputs(&cf.config_root(), cf.get_path(), inputs)
+            {
+                bail!(
+                    "cannot tell which tool versions {} needs: {} sets vars or env for a MISE_ENV that may not be the one it was installed with",
+                    display_path(cf.get_path()),
+                    display_path(&path)
+                );
+            }
             let (paths, _) = load_config_hierarchy_from_dir(&cf.config_root()).await?;
             let mut files = Self::load_trusted_config_files(paths).await?;
             // Include a tracked environment-specific file even when inactive.
             if !files.contains_key(cf.get_path()) {
                 files.shift_insert(0, cf.get_path().to_path_buf(), cf.clone());
-            }
-            // The MISE_ENV the project was installed under is unknown here. An
-            // inactive environment file that sets vars or env could change what a
-            // template renders to, so refuse rather than prune the wrong version.
-            if let Some(path) = inactive_env_config_with_vars_or_env(&cf.config_root(), &files) {
-                bail!(
-                    "cannot tell which tool versions {} needs: {} sets vars or env for an inactive MISE_ENV; run this command with that MISE_ENV set or from the project directory",
-                    display_path(cf.get_path()),
-                    display_path(&path)
-                );
             }
             Ok(files)
         })
@@ -1419,45 +1423,33 @@ impl Config {
     pub(crate) async fn resolve_config_template_context(
         self: &Arc<Self>,
         files: &ConfigMap,
+        inputs: TemplateInputs,
     ) -> Result<tera::Context> {
         let mut context = BASE_CONTEXT.clone();
-        let results = resolve_vars_with_context(self, files, context.clone()).await?;
-        let vars: IndexMap<_, _> = results
-            .vars
-            .iter()
-            .map(|(key, (value, _))| (key.clone(), value.clone()))
-            .collect();
-        self.add_redactions_excluding(
-            results.redactions.iter().cloned(),
-            &vars.clone().into_iter().collect(),
-            &results.redaction_exclusions,
-        );
-        context.insert("vars", &vars);
-        if !Settings::no_env() && !Settings::get().no_env.unwrap_or(false) {
-            let entries = files
+        // Env values can themselves read vars, so env needs them resolved too.
+        if inputs.vars || inputs.env {
+            let entries = tracked_entries(files, |cf| cf.vars_entries())?;
+            ensure_inert_entries("vars", &entries)?;
+            let results = resolve_vars_with_context(self, files, context.clone()).await?;
+            let vars: IndexMap<_, _> = results
+                .vars
                 .iter()
-                .rev()
-                .map(|(source, cf)| {
-                    cf.env_entries()
-                        .map(|entries| entries.into_iter().map(|entry| (entry, source.clone())))
-                })
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                // Prune and upgrade run from an unrelated directory, so only
-                // directives that cannot run code or need secrets contribute.
-                // A template that needs anything else is undefined here and fails
-                // the command rather than resolving to a guess.
-                .filter(|(entry, _)| {
-                    matches!(
-                        entry,
-                        EnvDirective::Val(..)
-                            | EnvDirective::Default(..)
-                            | EnvDirective::Rm(..)
-                            | EnvDirective::File(..)
-                    )
-                })
+                .map(|(key, (value, _))| (key.clone(), value.clone()))
                 .collect();
+            self.add_redactions_excluding(
+                results.redactions.iter().cloned(),
+                &vars.clone().into_iter().collect(),
+                &results.redaction_exclusions,
+            );
+            context.insert("vars", &vars);
+        }
+        if inputs.env && !Settings::no_env() && !Settings::get().no_env.unwrap_or(false) {
+            // Prune and upgrade run from an unrelated directory. A directive that
+            // runs code or needs secrets can set or override any key, and its
+            // value cannot be reproduced here, so a template that reads env must
+            // not run alongside one: it would see a caller or parent value.
+            let entries = tracked_entries(files, |cf| cf.env_entries())?;
+            ensure_inert_entries("env", &entries)?;
             let results = EnvResults::resolve(
                 self,
                 context.clone(),
@@ -2595,10 +2587,58 @@ fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
     literal.as_os_str().is_empty() || dir.join(literal).is_dir()
 }
 
-/// First environment-specific config file above `start_dir` that is not part of
-/// `loaded` and mentions `vars` or `env`. Matching is textual and so errs toward
-/// reporting a file.
-fn inactive_env_config_with_vars_or_env(start_dir: &Path, loaded: &ConfigMap) -> Option<PathBuf> {
+/// Which of `vars` and `env` a tracked project's tool templates read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct TemplateInputs {
+    pub(crate) vars: bool,
+    pub(crate) env: bool,
+}
+
+fn tracked_entries(
+    files: &ConfigMap,
+    entries: impl Fn(&Arc<dyn ConfigFile>) -> Result<Vec<EnvDirective>>,
+) -> Result<Vec<(EnvDirective, PathBuf)>> {
+    Ok(files
+        .iter()
+        .rev()
+        .map(|(source, cf)| {
+            entries(cf).map(|entries| entries.into_iter().map(|e| (e, source.clone())))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
+fn ensure_inert_entries(kind: &str, entries: &[(EnvDirective, PathBuf)]) -> Result<()> {
+    let runs_code = entries.iter().find(|(entry, _)| {
+        !matches!(
+            entry,
+            EnvDirective::Val(..)
+                | EnvDirective::Default(..)
+                | EnvDirective::Rm(..)
+                | EnvDirective::File(..)
+                | EnvDirective::Path(..)
+                | EnvDirective::Required(..)
+        )
+    });
+    if let Some((_, source)) = runs_code {
+        bail!(
+            "cannot tell which tool versions are needed: a tool template reads {kind}, but {} sets {kind} with a directive that runs code or needs secrets",
+            display_path(source)
+        );
+    }
+    Ok(())
+}
+
+/// First environment-specific config file above `start_dir`, other than
+/// `tracked`, whose text mentions a thing the templates read. Matching is
+/// textual and so errs toward reporting a file.
+fn other_env_config_setting_template_inputs(
+    start_dir: &Path,
+    tracked: &Path,
+    inputs: TemplateInputs,
+) -> Option<PathBuf> {
     const ANY_ENV: &str = "MISEANYENV";
     let patterns = env_config_patterns(ANY_ENV)
         .into_iter()
@@ -2613,10 +2653,13 @@ fn inactive_env_config_with_vars_or_env(start_dir: &Path, loaded: &ConfigMap) ->
                 .iter()
                 .flat_map(|pattern| config_glob(dir, pattern))
         })
-        .filter(|path| !loaded.contains_key(path))
+        .filter(|path| path != tracked)
         .find(|path| {
             std::fs::read_to_string(path)
-                .map(|text| text.contains("vars") || text.contains("env"))
+                .map(|text| {
+                    ((inputs.vars || inputs.env) && text.contains("vars"))
+                        || (inputs.env && text.contains("env"))
+                })
                 .unwrap_or(false)
         })
 }
