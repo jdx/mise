@@ -15,8 +15,8 @@
 //! - Keys only the target has are never touched, and nothing is ever removed.
 //! - An empty target is an empty table.
 
-use crate::yaml_merge::merge_yaml;
-use eyre::{Result, bail, eyre};
+use crate::yaml_merge::{mapping_subset, merge_yaml};
+use eyre::{Result, eyre};
 use serde_json::{Map, Value};
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, TableLike};
@@ -48,12 +48,28 @@ impl Format {
     }
 }
 
+/// A parsed document in its format's own value type. JSON's cannot hold TOML
+/// datetimes or YAML's non-string keys, so each format is compared as itself.
+enum Doc {
+    Json(Value),
+    Toml(toml::Table),
+    Yaml(serde_yaml::Mapping),
+}
+
 /// Whether every key in `source` is already set to the same value in
 /// `target`.
 pub fn contains(format: Format, target: &str, source: &str) -> Result<bool> {
-    let target = parse(format, target, "target")?;
-    let source = parse(format, source, "source")?;
-    Ok(is_subset(&source, &target))
+    Ok(
+        match (
+            parse(format, target, "target")?,
+            parse(format, source, "source")?,
+        ) {
+            (Doc::Json(target), Doc::Json(source)) => json_subset(&source, &target),
+            (Doc::Toml(target), Doc::Toml(source)) => toml_subset(&source, &target),
+            (Doc::Yaml(target), Doc::Yaml(source)) => mapping_subset(&source, &target),
+            _ => unreachable!("both sides are parsed as the same format"),
+        },
+    )
 }
 
 /// Set the keys of `source` on `target` and return the new text. A target that
@@ -69,25 +85,31 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
     }
 }
 
-fn parse(format: Format, text: &str, what: &str) -> Result<Value> {
+fn parse(format: Format, text: &str, what: &str) -> Result<Doc> {
+    // an empty file, or one holding only comments, is an empty table
     let blank = text.trim().is_empty() || (format != Format::Json && is_comments_only(text));
-    let value = if blank {
-        Value::Object(Map::new())
-    } else {
-        match format {
-            Format::Json => serde_json::from_str(text).map_err(|e| e.to_string()),
-            Format::Toml => toml::from_str(text).map_err(|e| e.to_string()),
-            Format::Yaml => serde_yaml::from_str(text).map_err(|e| e.to_string()),
-        }
-        .map_err(|e| eyre!("failed to parse the {} {what}: {e}", format.name()))?
-    };
-    if !value.is_object() {
-        bail!(
+    let fail =
+        |e: &dyn std::fmt::Display| eyre!("failed to parse the {} {what}: {e}", format.name());
+    let not_a_table = || {
+        eyre!(
             "the {} {what} must hold a table at the top level",
             format.name()
-        );
-    }
-    Ok(value)
+        )
+    };
+    Ok(match format {
+        Format::Json if blank => Doc::Json(Value::Object(Map::new())),
+        Format::Json => match serde_json::from_str(text).map_err(|e| fail(&e))? {
+            value @ Value::Object(_) => Doc::Json(value),
+            _ => return Err(not_a_table()),
+        },
+        Format::Toml if blank => Doc::Toml(toml::Table::new()),
+        Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
+        Format::Yaml if blank => Doc::Yaml(serde_yaml::Mapping::new()),
+        Format::Yaml => match serde_yaml::from_str(text).map_err(|e| fail(&e))? {
+            serde_yaml::Value::Mapping(map) => Doc::Yaml(map),
+            _ => return Err(not_a_table()),
+        },
+    })
 }
 
 fn is_comments_only(text: &str) -> bool {
@@ -95,18 +117,31 @@ fn is_comments_only(text: &str) -> bool {
         .all(|l| l.trim().is_empty() || l.trim_start().starts_with('#'))
 }
 
-fn is_subset(source: &Value, target: &Value) -> bool {
+fn json_subset(source: &Value, target: &Value) -> bool {
     match (source, target) {
         (Value::Object(s), Value::Object(t)) => s
             .iter()
-            .all(|(k, sv)| t.get(k).is_some_and(|tv| is_subset(sv, tv))),
+            .all(|(k, sv)| t.get(k).is_some_and(|tv| json_subset(sv, tv))),
         _ => source == target,
     }
 }
 
+fn toml_subset(source: &toml::Table, target: &toml::Table) -> bool {
+    source.iter().all(|(key, sv)| match (sv, target.get(key)) {
+        (toml::Value::Table(s), Some(toml::Value::Table(t))) => toml_subset(s, t),
+        (sv, Some(tv)) => sv == tv,
+        (_, None) => false,
+    })
+}
+
 fn merge_json(target: &str, source: &str) -> Result<String> {
-    let mut merged = parse(Format::Json, target, "target")?;
-    merge_value(&mut merged, parse(Format::Json, source, "source")?);
+    let (Doc::Json(mut merged), Doc::Json(source)) = (
+        parse(Format::Json, target, "target")?,
+        parse(Format::Json, source, "source")?,
+    ) else {
+        unreachable!("parsed as JSON");
+    };
+    merge_value(&mut merged, source);
     let indent = json_indent(target);
     let mut out = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
@@ -178,18 +213,21 @@ fn merge_toml_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
     }
 }
 
-/// Equality that ignores the whitespace around a value, so a matching value
-/// keeps its own formatting.
+/// Equality of two TOML values by what they hold, not how they are written, so
+/// an array that already matches keeps its own spacing and comments.
 fn same_toml_item(a: &Item, b: &Item) -> bool {
-    match (a.as_value(), b.as_value()) {
-        (Some(a), Some(b)) => {
-            let (mut a, mut b) = (a.clone(), b.clone());
-            a.decor_mut().clear();
-            b.decor_mut().clear();
-            a.to_string() == b.to_string()
-        }
+    match (toml_value(a), toml_value(b)) {
+        (Some(a), Some(b)) => a == b,
         _ => false,
     }
+}
+
+fn toml_value(item: &Item) -> Option<toml::Value> {
+    let mut value = item.as_value()?.clone();
+    value.decor_mut().clear();
+    toml::from_str::<toml::Table>(&format!("v = {value}"))
+        .ok()?
+        .remove("v")
 }
 
 #[cfg(test)]
@@ -311,6 +349,35 @@ path = \"/Applications/X.app\"
         assert!(!contains(Format::Toml, "a = 1\n", source).unwrap());
         // arrays are compared whole
         assert!(!contains(Format::Json, r#"{"l":[1,2]}"#, r#"{"l":[1]}"#).unwrap());
+    }
+
+    #[test]
+    fn an_equal_toml_array_keeps_its_spacing_and_comments() {
+        let target = "list = [\n  1,   # one\n  2,\n] # keep\nmode = \"old\"\n";
+        let merged = merge(Format::Toml, target, "list = [1, 2]\nmode = \"new\"\n").unwrap();
+        assert_eq!(merged, target.replace("\"old\"", "\"new\""));
+    }
+
+    #[test]
+    fn values_json_cannot_hold_are_compared_as_themselves() {
+        // TOML: a datetime is not the string that prints like it, and inf is fine
+        assert!(
+            !contains(
+                Format::Toml,
+                "when = \"2026-01-02T03:04:05Z\"\n",
+                "when = 2026-01-02T03:04:05Z\n"
+            )
+            .unwrap()
+        );
+        let merged = merge(Format::Toml, "big = inf\nx = 1\n", "x = 2\n").unwrap();
+        assert_eq!(merged, "big = inf\nx = 2\n");
+        // YAML: non-string keys elsewhere in the file are not an error
+        let target = "# keep\n1: one\nenv:\n  2: two\nname: old\n";
+        assert_eq!(
+            merge(Format::Yaml, target, "name: new\n").unwrap(),
+            target.replace("old", "new")
+        );
+        assert!(!contains(Format::Yaml, target, "env:\n  2: three\n").unwrap());
     }
 
     #[test]
