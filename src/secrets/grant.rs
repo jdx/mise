@@ -557,9 +557,9 @@ pub(crate) struct EnvView {
     /// scripts were not run, so whether a task `default` applies is unknown: the static checks
     /// leave defaults to the spawn-time check
     defer_defaults: bool,
-    /// At spawn: the keys the task's env directives really assigned (`task_env`). A `default`
-    /// counts only if its key is among them, i.e. it was rendered and not yielded to a caller
-    /// value; nothing is evaluated again, so no script runs twice.
+    /// At spawn: the keys whose task-env `default` directive the resolver reported as rendered
+    /// (not yielded to a value). A `default` counts only if its key is among them; nothing is
+    /// evaluated again, so no script runs twice.
     resolved_assigned: Option<BTreeSet<String>>,
 }
 
@@ -586,9 +586,9 @@ impl EnvView {
     }
 
     /// The view at spawn, judged by what the task env preparation already resolved.
-    pub(crate) fn resolved(assigned: &BTreeSet<String>) -> Self {
+    pub(crate) fn resolved(rendered: &BTreeSet<String>) -> Self {
         Self {
-            resolved_assigned: Some(assigned.clone()),
+            resolved_assigned: Some(rendered.clone()),
             ..Self::default()
         }
     }
@@ -1038,7 +1038,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_view_trusts_what_the_task_env_assigned() {
+    fn resolved_view_trusts_the_rendered_defaults() {
         let task = default_task("{{ env.DEPLOY_KEY }}");
         let assigned = BTreeSet::from(["TOKEN".to_string()]);
         assert_eq!(EnvView::resolved(&assigned).texts(&task).len(), 1);

@@ -3158,7 +3158,7 @@ impl Task {
         EnvMap,
         Vec<(String, String)>,
         BTreeSet<String>,
-        BTreeSet<String>,
+        crate::task::task_context_builder::TaskEnvKeys,
     )> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let (mut env, mut env_remove, mut mise_keys) =
@@ -3215,6 +3215,7 @@ impl Task {
             &redaction_exclusions,
         );
 
+        let rendered_defaults = env_results.rendered_defaults.clone();
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         for (key, _) in task_env.clone() {
             env_remove.remove(&key);
@@ -3240,7 +3241,15 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok((env, task_env.collect(), env_remove, mise_keys))
+        Ok((
+            env,
+            task_env.collect(),
+            env_remove,
+            crate::task::task_context_builder::TaskEnvKeys {
+                mise: mise_keys,
+                rendered_defaults,
+            },
+        ))
     }
 }
 

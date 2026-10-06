@@ -17,8 +17,17 @@ type EnvResolutionResult = (
     Vec<(String, String)>,
     Option<IndexMap<String, String>>,
     BTreeSet<String>,
-    BTreeSet<String>,
+    TaskEnvKeys,
 );
+
+/// What the secrets checks need to know about how a task's env came about.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TaskEnvKeys {
+    /// every key mise itself sets for the task, whatever its value
+    pub(crate) mise: BTreeSet<String>,
+    /// keys whose task-env `default` directive rendered (and did not yield to a value)
+    pub(crate) rendered_defaults: BTreeSet<String>,
+}
 
 /// The config-level `[env]` of a monorepo task's own hierarchy, for a secrets source.
 #[derive(Debug, Default, Clone)]
@@ -45,7 +54,7 @@ pub struct TaskContextBuilder {
     /// The config-level `[env]` results of a monorepo hierarchy, run once per hierarchy: the
     /// task's own env preparation and the secrets source env both consume it, so a
     /// `_.source`/module script (a credential refresher, say) is not executed twice.
-    hierarchy_env_cache: RwLock<IndexMap<PathBuf, EnvResults>>,
+    hierarchy_env_cache: RwLock<IndexMap<String, Arc<tokio::sync::OnceCell<EnvResults>>>>,
 }
 
 impl Clone for TaskContextBuilder {
@@ -72,33 +81,39 @@ impl TaskContextBuilder {
         }
     }
 
-    /// `resolve_env_directives` for a monorepo hierarchy's config entries, memoized per
-    /// hierarchy when the task adds no tools of its own (which could change the result).
+    /// `resolve_env_directives` for a monorepo hierarchy's config entries, shared only between
+    /// callers whose inputs are identical: the key hashes the hierarchy path, the base env
+    /// (which carries the toolset's effect, `--tool` included) and the directives. A concurrent miss on one key evaluates once.
     async fn hierarchy_env_results(
         &self,
         config: &Arc<Config>,
-        task: &Task,
         task_cf: &Arc<dyn ConfigFile>,
         tera_ctx: &tera::Context,
         env: &BTreeMap<String, String>,
         entries: Vec<(EnvDirective, PathBuf)>,
     ) -> Result<EnvResults> {
-        let cacheable = task.tools.is_empty();
-        let key = canonicalize_path(task_cf.get_path());
-        if cacheable && let Some(hit) = self.hierarchy_env_cache.read().unwrap().get(&key) {
-            return Ok(hit.clone());
-        }
-        let results = self
-            .resolve_env_directives(config, tera_ctx, env, entries)
-            .await?;
-        if cacheable {
-            self.hierarchy_env_cache
-                .write()
-                .unwrap()
-                .entry(key)
-                .or_insert_with(|| results.clone());
-        }
-        Ok(results)
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(
+            canonicalize_path(task_cf.get_path())
+                .to_string_lossy()
+                .as_bytes(),
+        );
+        hasher.update(format!("{env:?}").as_bytes());
+        // The template context (a map with no stable iteration order) is not hashed: its
+        // `tools` come from the toolset, whose install paths are in the base env hashed above,
+        // and the rest is a function of the hierarchy itself.
+        hasher.update(format!("{entries:?}").as_bytes());
+        let key = hasher.finalize().to_hex().to_string();
+        let cell = self
+            .hierarchy_env_cache
+            .write()
+            .unwrap()
+            .entry(key)
+            .or_default()
+            .clone();
+        cell.get_or_try_init(|| self.resolve_env_directives(config, tera_ctx, env, entries))
+            .await
+            .cloned()
     }
 
     /// Build toolset for a task, with caching for monorepo tasks
@@ -282,7 +297,7 @@ impl TaskContextBuilder {
             self.resolve_env_directives(config, &tera_ctx, &env, entries)
                 .await?
         } else {
-            self.hierarchy_env_results(config, task, task_cf, &tera_ctx, &env, entries)
+            self.hierarchy_env_results(config, task_cf, &tera_ctx, &env, entries)
                 .await?
         };
         let values = results
@@ -313,7 +328,7 @@ impl TaskContextBuilder {
         Vec<(String, String)>,
         Option<IndexMap<String, String>>,
         BTreeSet<String>,
-        BTreeSet<String>,
+        TaskEnvKeys,
     )> {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
@@ -367,8 +382,8 @@ impl TaskContextBuilder {
         // Check using task_cf entries for compatibility with existing logic
         let task_cf_env_entries = task_cf.env_entries()?;
         if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
-            let (env, task_env, env_remove, mise_keys) = task.render_env(config, ts).await?;
-            return Ok((env, task_env, None, env_remove, mise_keys));
+            let (env, task_env, env_remove, keys) = task.render_env(config, ts).await?;
+            return Ok((env, task_env, None, env_remove, keys));
         }
 
         let config_path = canonicalize_path(task_cf.get_path());
@@ -416,7 +431,6 @@ impl TaskContextBuilder {
         let config_env_results = if task_config_files.is_some() {
             self.hierarchy_env_results(
                 config,
-                task,
                 task_cf,
                 &tera_ctx,
                 &config_resolution_env,
@@ -451,6 +465,7 @@ impl TaskContextBuilder {
 
         let task_env = self.extract_task_env(&task_env_results);
         mise_keys.extend(task_env.iter().map(|(k, _)| k.clone()));
+        let rendered_defaults = task_env_results.rendered_defaults.clone();
         Self::apply_env_results(&mut env, &mut env_remove, &task_env_results);
 
         // Register task-specific redactions with the global redactor
@@ -489,12 +504,24 @@ impl TaskContextBuilder {
                     task_env.clone(),
                     resolved_vars.clone(),
                     env_remove.clone(),
-                    mise_keys.clone(),
+                    TaskEnvKeys {
+                        mise: mise_keys.clone(),
+                        rendered_defaults: rendered_defaults.clone(),
+                    },
                 )
             });
         }
 
-        Ok((env, task_env, resolved_vars, env_remove, mise_keys))
+        Ok((
+            env,
+            task_env,
+            resolved_vars,
+            env_remove,
+            TaskEnvKeys {
+                mise: mise_keys,
+                rendered_defaults,
+            },
+        ))
     }
 
     /// Check if standard env resolution should be used instead of special context

@@ -111,6 +111,8 @@ struct PreparedTaskContext {
     mise_set_inherited: BTreeSet<String>,
     /// Every key mise itself sets for this task, whatever its value.
     mise_env_keys: BTreeSet<String>,
+    /// keys whose task-env `default` rendered
+    rendered_defaults: BTreeSet<String>,
 }
 
 /// Format a task path for a child process without leaking the mixture of `/` and `\` that
@@ -671,6 +673,7 @@ impl TaskExecutor {
             extra_vars,
             mise_set_inherited,
             mise_env_keys,
+            rendered_defaults,
         } = self
             .prepare_task_context(config, task, otel_span_cx.as_ref())
             .await?;
@@ -884,6 +887,7 @@ impl TaskExecutor {
                         task_env_keys: &task_env_keys,
                         mise_set_inherited: &mise_set_inherited,
                         mise_env_keys: &mise_env_keys,
+                        rendered_defaults: &rendered_defaults,
                         sandbox: &sandbox,
                         file_dir: Some(&self.secrets_file_dir),
                         terminal: &terminal,
@@ -2575,7 +2579,7 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, mut env_remove, mut mise_env_keys) =
+        let (mut env, task_env, extra_vars, mut env_remove, env_keys) =
             if let Some(task_cf) = task_cf {
                 self.context_builder
                     .resolve_task_env_with_config(config, task, task_cf, &toolset)
@@ -2729,7 +2733,9 @@ impl TaskExecutor {
             );
         }
 
+        let mut mise_env_keys = env_keys.mise;
         mise_env_keys.extend(nested_mise_diff_exclude_keys.iter().cloned());
+        let rendered_defaults = env_keys.rendered_defaults;
         let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
         if let Ok(serialized) =
             EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
@@ -2754,6 +2760,7 @@ impl TaskExecutor {
             extra_vars,
             mise_set_inherited,
             mise_env_keys,
+            rendered_defaults,
         })
     }
 
