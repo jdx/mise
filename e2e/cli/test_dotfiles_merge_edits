@@ -193,3 +193,33 @@ cat <<'EOF' >mise.toml
 EOF
 assert_fail_contains "mise dotfiles apply ~/filtered.toml/a --yes" "set different values for model"
 assert_fail "cat ~/filtered.toml"
+
+# two siblings that disagree do not block applying a third entry that this run
+# is not conflicting with
+cat <<'EOF' >shared/third.toml
+other = 1
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/trio.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/trio.toml/b" = { source = "shared/other.toml", merge = true }
+"~/trio.toml/c" = { source = "shared/third.toml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply ~/trio.toml/c --yes"
+assert "cat ~/trio.toml" "other = 1"
+
+# a sibling whose target is blocked is not rendered, so its template's exec()
+# does not run
+printf 'x = 1\n' >~/real-target.toml
+ln -sf ~/real-target.toml ~/linked.toml
+cat <<'EOF' >shared/exec.toml.tera
+{{ exec(command="touch $HOME/sibling-exec-ran") }}x = 2
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/real-target.toml/a" = { source = "shared/other.toml", merge = true }
+"~/linked.toml/b" = { source = "shared/exec.toml.tera", merge = true, template = "tera" }
+EOF
+rm -f ~/sibling-exec-ran
+assert_succeed "mise dotfiles apply ~/real-target.toml/a --yes"
+assert_fail "test -e ~/sibling-exec-ran"

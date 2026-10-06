@@ -787,43 +787,55 @@ fn split_existing(path: &Path) -> (PathBuf, Vec<std::ffi::OsString>) {
 
 /// Two merge entries for one file that set the same key to different values
 /// would each look unapplied after the other ran, so every apply would flip the
-/// value back and forth. Refuse that instead of picking a winner.
-fn merge_conflicts(merged: &[(&EditRequest, Format, String)]) -> Vec<String> {
+/// value back and forth. Refuse that instead of picking a winner. Every entry
+/// this run applies is compared with the others it applies and with the
+/// config's other entries for the file; entries this run leaves alone are not
+/// compared with each other, since nothing here would write them.
+fn merge_conflicts(
+    applied: &[(&EditRequest, Format, String)],
+    unapplied: &[(&EditRequest, Format, String)],
+) -> Vec<String> {
     let mut problems = vec![];
-    for (i, (first, format, first_content)) in merged.iter().enumerate() {
-        for (second, second_format, second_content) in &merged[i + 1..] {
-            if !same_target(&first.path, &second.path) || format != second_format {
-                continue;
-            }
-            // unparseable sources were already reported by desired_content
-            let Ok(keys) = structured_merge::conflicts(*format, first_content, second_content)
-            else {
-                continue;
-            };
-            if !keys.is_empty() {
-                problems.push(format!(
-                    "  \"{}\": {} and {} set different values for {}",
-                    first.path_raw,
-                    first.describe_op(),
-                    second.describe_op(),
-                    keys.join(", ")
-                ));
-            }
+    for (i, first) in applied.iter().enumerate() {
+        for second in applied[i + 1..].iter().chain(unapplied) {
+            problems.extend(merge_conflict(first, second));
         }
     }
     problems
 }
 
-/// Add the merge entries of `siblings` that this run is not applying but that
+fn merge_conflict(
+    (first, format, first_content): &(&EditRequest, Format, String),
+    (second, second_format, second_content): &(&EditRequest, Format, String),
+) -> Option<String> {
+    if !same_target(&first.path, &second.path) || format != second_format {
+        return None;
+    }
+    // unparseable sources were already reported by desired_content
+    let keys = structured_merge::conflicts(*format, first_content, second_content).ok()?;
+    (!keys.is_empty()).then(|| {
+        format!(
+            "  \"{}\": {} and {} set different values for {}",
+            first.path_raw,
+            first.describe_op(),
+            second.describe_op(),
+            keys.join(", ")
+        )
+    })
+}
+
+/// The merge entries of `siblings` that this run is not applying but that
 /// target a file this run merges into, so a conflict with them is caught too.
-/// Templates are not rendered on a dry run.
-fn add_unapplied_siblings<'a>(
+/// Entries whose target is blocked are skipped before rendering, so their
+/// templates never run, and templates are not rendered on a dry run.
+fn unapplied_siblings<'a>(
     config: &Config,
     requests: &[EditRequest],
     siblings: &'a [EditRequest],
     dry_run: bool,
-    merged: &mut Vec<(&'a EditRequest, Format, String)>,
-) {
+    merged: &[(&EditRequest, Format, String)],
+) -> Vec<(&'a EditRequest, Format, String)> {
+    let mut found = vec![];
     for sibling in siblings {
         let EditOp::Merge { format, .. } = &sibling.op else {
             continue;
@@ -835,14 +847,16 @@ fn add_unapplied_siblings<'a>(
                 .iter()
                 .any(|(req, ..)| same_target(&req.path, &sibling.path))
             || (dry_run && sibling.op.is_template())
+            || !matches!(precheck(sibling), Ok(None | Some(EditCheck::State(_))))
         {
             continue;
         }
         // a sibling that cannot be rendered is reported when it is applied
         if let Ok(Some(content)) = desired_content(config, sibling) {
-            merged.push((sibling, *format, content));
+            found.push((sibling, *format, content));
         }
     }
+    found
 }
 
 pub struct ApplyOpts {
@@ -956,8 +970,8 @@ pub fn apply(
             Some(_) => todo.push((req, desired)),
         }
     }
-    add_unapplied_siblings(config, requests, &siblings, opts.dry_run, &mut merged);
-    problems.extend(merge_conflicts(&merged));
+    let unapplied = unapplied_siblings(config, requests, &siblings, opts.dry_run, &merged);
+    problems.extend(merge_conflicts(&merged, &unapplied));
     if !problems.is_empty() {
         bail!(
             "edits: cannot apply these entries, fix them manually:\n{}",
