@@ -405,7 +405,20 @@ fn interpret_resolve(
     for (key, value) in doc.files {
         accept(true, key, value, &mut out);
     }
-    out.remove = doc.remove.into_iter().collect();
+    // fnox's `remove` is the ambient scrub plus out-of-scope secrets, deliberately not tied to
+    // the requested keys, so it is not filtered against them. Only names that could never be
+    // environment variables are dropped.
+    out.remove = doc
+        .remove
+        .into_iter()
+        .filter(|k| {
+            let valid = SecretName::new(k).is_some();
+            if !valid {
+                debug!("ignoring an invalid name in fnox's remove list");
+            }
+            valid
+        })
+        .collect();
     out.missing = doc
         .missing
         .iter()
@@ -822,6 +835,18 @@ mod tests {
         assert!(r.files.is_empty());
         assert_eq!(r.remove, BTreeSet::from(["X".to_string()]));
         assert!(!format!("{r:?}").contains("v1"));
+    }
+
+    #[test]
+    fn remove_list_keeps_valid_names_only() {
+        let r = resolved(
+            r#"{"schema":1,"set":{},"files":{},"remove":["","A=B","bad\u0000name","OK_NAME","FNOX_AGE_KEY"],"missing":[]}"#,
+            &["DATABASE_URL"],
+        );
+        assert_eq!(
+            r.remove,
+            BTreeSet::from(["OK_NAME".to_string(), "FNOX_AGE_KEY".to_string()])
+        );
     }
 
     #[test]
