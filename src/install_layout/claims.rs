@@ -77,8 +77,8 @@ fn fingerprint(config: &Config) -> Result<String> {
 }
 
 /// Record that `tv`, installed in `dir`, is what a templated version of its
-/// config renders to. A version that is not a template, or that did not come
-/// from a config, is not recorded: prune renders it without help.
+/// config renders to. A tool whose version is not a template, or that did not
+/// come from a config, is not recorded: prune renders it without help.
 pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
     match Config::maybe_get() {
         Some(config) => record_with(&config, tv, dir),
@@ -94,7 +94,7 @@ pub(crate) fn record_with(config: &Config, tv: &ToolVersion, dir: &Path) -> Resu
     if !config
         .config_files
         .get(path)
-        .is_some_and(|cf| cf.has_templated_tool_versions())
+        .is_some_and(|cf| cf.templated_tool_backends().contains(&tv.ba().short))
     {
         return Ok(());
     }
@@ -161,7 +161,7 @@ pub(crate) fn note_use(config: &Config, tv: &ToolVersion) {
     if !config
         .config_files
         .get(path)
-        .is_some_and(|cf| cf.has_templated_tool_versions())
+        .is_some_and(|cf| cf.templated_tool_backends().contains(&tv.ba().short))
     {
         return;
     }
@@ -205,6 +205,7 @@ pub(crate) fn needed_by(config: &Path, backends: &[String]) -> Option<Vec<(Strin
         claims
             .needs
             .into_iter()
+            .filter(|need| backends.contains(&need.backend))
             .map(|need| (need.short, need.version))
             .collect(),
     )
