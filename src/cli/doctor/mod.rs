@@ -1226,10 +1226,16 @@ impl Doctor {
                     .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
                     .collect()
             };
-            let Some(registry_full) = recommended
+            // The install state records one backend per tool, so versions installed
+            // on either side of a cutover cannot all match it. Only warn when none do.
+            let strip = |full: &str| full.split('[').next().unwrap_or(full).to_string();
+            if recommended
                 .iter()
-                .find(|full| full.split('[').next().unwrap_or(full) != stored_stripped)
-            else {
+                .any(|full| strip(full) == stored_stripped)
+            {
+                continue;
+            }
+            let Some(registry_full) = recommended.first() else {
                 continue;
             };
             let msg = if ist.explicit_backend {
