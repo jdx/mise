@@ -648,7 +648,11 @@ mod tests {
         );
         assert_eq!(
             (a.unwrap(), b.unwrap(), c.unwrap()),
-            ("value".to_string(), "value".to_string(), "value".to_string())
+            (
+                "value".to_string(),
+                "value".to_string(),
+                "value".to_string()
+            )
         );
         assert_eq!(fetches.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
