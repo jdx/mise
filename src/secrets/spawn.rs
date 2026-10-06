@@ -40,8 +40,9 @@ impl TempSecretFiles {
         let base = spawn_dir.path().to_path_buf();
         restrict_dir(&base)?;
         files.dir = Some(spawn_dir);
-        for (key, value) in entries {
-            let path = base.join(key.as_str());
+        for (i, (key, value)) in entries.iter().enumerate() {
+            // an index in the name keeps `TOKEN` and `token` apart on case-insensitive filesystems
+            let path = base.join(format!("{i}-{key}"));
             let mut file = open_private(&path)
                 .wrap_err_with(|| format!("mise secrets: cannot write a file for {key}"))?;
             files.paths.push(path.clone());
@@ -230,6 +231,20 @@ mod tests {
         let text = format!("{s:?} {:?}", SecretValue::new("s3cr3t"));
         assert!(!text.contains("s3cr3t"), "{text}");
         assert!(text.contains("A") && text.contains("[redacted]"));
+    }
+
+    #[test]
+    fn keys_differing_only_in_case_get_distinct_files() {
+        let t = tempfile::tempdir().unwrap();
+        let entries = BTreeMap::from([
+            (SecretName::new("TOKEN").unwrap(), SecretValue::new("upper")),
+            (SecretName::new("token").unwrap(), SecretValue::new("lower")),
+        ]);
+        let (_files, env) = TempSecretFiles::create(&t.path().join("secrets"), &entries).unwrap();
+        let (a, b) = (&env["TOKEN"], &env["token"]);
+        assert_ne!(a.to_lowercase(), b.to_lowercase());
+        assert_eq!(std::fs::read_to_string(a).unwrap(), "upper");
+        assert_eq!(std::fs::read_to_string(b).unwrap(), "lower");
     }
 
     #[cfg(unix)]
