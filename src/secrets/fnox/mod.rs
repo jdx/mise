@@ -450,6 +450,7 @@ fn apply_config_env(
         values,
         unset,
         paths,
+        ..
     }) = config_env
     else {
         return vec![];
@@ -1015,6 +1016,7 @@ mod tests {
             values: EnvMap::from([("AWS_PROFILE".into(), "staging".into())]),
             unset: BTreeSet::from(["GONE".to_string()]),
             paths: vec![PathBuf::from("/sub/bin")],
+            skipped_scripts: false,
         };
         let paths = apply_config_env(&mut tool_env, &mut removals, Some(sub));
         let key = env::PATH_KEY.clone();

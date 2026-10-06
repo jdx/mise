@@ -27,6 +27,9 @@ pub(crate) struct SourceConfigEnv {
     pub(crate) unset: BTreeSet<String>,
     /// `_.path` entries of the hierarchy, in the order the directives gave them
     pub(crate) paths: Vec<PathBuf>,
+    /// `_.source`, module or venv directives were left out (`skip_scripts`): keys they could
+    /// set are unknown.
+    pub(crate) skipped_scripts: bool,
 }
 
 /// Builds toolset and environment context for task execution
@@ -201,6 +204,14 @@ impl TaskContextBuilder {
         let Some(files) = self.task_config_files(config, task, task_cf).await? else {
             return Ok(None);
         };
+        let is_script = |d: &EnvDirective| {
+            matches!(
+                d,
+                EnvDirective::Source(..)
+                    | EnvDirective::Module(..)
+                    | EnvDirective::PythonVenv { .. }
+            )
+        };
         let entries: Vec<(EnvDirective, PathBuf)> = files
             .iter()
             .rev()
@@ -212,16 +223,14 @@ impl TaskContextBuilder {
             .flatten()
             // A static preflight must not run `_.source` scripts or modules: the keys they
             // could set are then simply unknown, and the spawn-time check decides.
-            .filter(|(d, _)| {
-                !skip_scripts
-                    || !matches!(
-                        d,
-                        EnvDirective::Source(..)
-                            | EnvDirective::Module(..)
-                            | EnvDirective::PythonVenv { .. }
-                    )
-            })
+            .filter(|(d, _)| !skip_scripts || !is_script(d))
             .collect();
+        let skipped_scripts = skip_scripts
+            && files.values().any(|cf| {
+                cf.env_entries()
+                    .map(|entries| entries.iter().any(is_script))
+                    .unwrap_or(false)
+            });
         let (tera_ctx, _) = self
             .build_tera_context(task_cf, ts, config, Some(&files))
             .await?;
@@ -245,6 +254,7 @@ impl TaskContextBuilder {
             values,
             unset: results.env_remove.clone(),
             paths: results.env_paths.clone(),
+            skipped_scripts,
         }))
     }
 
