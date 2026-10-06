@@ -450,3 +450,55 @@ async fn test_retries_disabled_fails_immediately() {
     assert!(format!("{err:?}").contains("502"));
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_with_long_retry_after_is_not_retried() {
+    // A limiter that says "come back in a minute" will not be moved by our
+    // ~15s backoff, and every retry is another request it counts against us.
+    let _guard = set_test_http_retries(3);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(60), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    // Callers key their fallback on the 429 surviving the wrapper.
+    assert_eq!(error_code(&err), Some(429));
+    assert!(format!("{err:?}").contains("retry-after: 60s"));
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_with_short_retry_after_is_retried() {
+    let _guard = set_test_http_retries(1);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(0), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let resp = client.get_async(url).await.unwrap();
+    assert!(resp.status().is_success());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_retry_after_ignores_non_429_and_http_dates() {
+    let response = |status: u16, value: &str| {
+        Response::from(
+            http::Response::builder()
+                .status(status)
+                .header("retry-after", value)
+                .body("")
+                .unwrap(),
+        )
+    };
+    assert_eq!(
+        retry_after(&response(429, "45")),
+        Some(Duration::from_secs(45))
+    );
+    assert_eq!(retry_after(&response(503, "45")), None);
+    assert_eq!(
+        retry_after(&response(429, "Wed, 21 Oct 2026 07:28:00 GMT")),
+        None
+    );
+}

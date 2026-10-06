@@ -107,8 +107,15 @@ impl SendOnceOptions {
         if self.error_for_status
             && !(self.allow_range_not_satisfiable
                 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
+            && let Err(err) = response.error_for_status_ref()
         {
-            response.error_for_status_ref()?;
+            return Err(match retry_after(&response) {
+                Some(wait) => {
+                    let message = err.to_string();
+                    Report::new(err).wrap_err(RetryAfter { wait, message })
+                }
+                None => err.into(),
+            });
         }
         Ok(response)
     }
@@ -218,6 +225,48 @@ impl std::fmt::Display for GithubRateLimited {
 }
 
 impl std::error::Error for GithubRateLimited {}
+
+/// Longest `Retry-After` the retry loop will wait out. Past this, retrying
+/// within the backoff schedule only adds requests to a limiter that is still
+/// blocking us, so the 429 is returned for the caller to fall back on.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+
+/// A 429 that told us how long to wait. Wraps the status error, so
+/// [`error_code`] still sees the 429, and carries the message so what the user
+/// reads is unchanged apart from the wait.
+#[derive(Debug)]
+struct RetryAfter {
+    wait: Duration,
+    message: String,
+}
+
+impl std::fmt::Display for RetryAfter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} (retry-after: {}s)",
+            self.message,
+            self.wait.as_secs()
+        )
+    }
+}
+
+/// The wait a 429 asked for, in delay-seconds form. An HTTP-date, which no
+/// host we talk to sends, is ignored and the normal backoff applies.
+fn retry_after(response: &Response) -> Option<Duration> {
+    if response.status() != StatusCode::TOO_MANY_REQUESTS {
+        return None;
+    }
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PartialDownloadState {
@@ -2620,6 +2669,12 @@ pub fn is_transient(err: &Report) -> bool {
     if is_dns_error(err.as_ref()) {
         return false;
     }
+    if err
+        .downcast_ref::<RetryAfter>()
+        .is_some_and(|r| r.wait > MAX_RETRY_AFTER)
+    {
+        return false;
+    }
     err.chain().any(|e| {
         if e.downcast_ref::<DownloadSizeMismatch>().is_some() {
             return true;
@@ -2696,9 +2751,12 @@ where
                 if !is_transient(&err) {
                     return Err(err);
                 }
-                let Some(delay) = backoff.next() else {
+                let Some(mut delay) = backoff.next() else {
                     return Err(err);
                 };
+                if let Some(retry_after) = err.downcast_ref::<RetryAfter>() {
+                    delay = delay.max(retry_after.wait);
+                }
                 warn!(
                     "HTTP {} {} attempt {} failed after {} (transient): {}; retrying in {:?}",
                     verb_label,
