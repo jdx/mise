@@ -1389,8 +1389,10 @@ written to enable it. Setting it to `false` stops automatic capture and explicit
 it does not disable browsing history or changing checkpoint descriptions, and it does not
 delete committed history.
 
-A bootstrap with nothing tracked and no existing history does not wait for, or fail on,
-another mise process using the same `$MISE_STATE_DIR` (parallel CI jobs, for example). Runs that record
+A bootstrap with nothing tracked and no existing history does not create history state or
+take the history lock until it first rewrites a dotfile or edit, and then it does not wait
+for, or fail on, another mise process using the same `$MISE_STATE_DIR` (parallel CI jobs, for
+example): it warns and runs without its private write-recovery journal. Runs that record
 history do wait, up to 30 seconds. Give each CI job its own `MISE_STATE_DIR`, or set
 `MISE_HISTORY_ENABLED=false`, if they should never interact.
 

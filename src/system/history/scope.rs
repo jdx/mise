@@ -4,7 +4,9 @@
 //! finished at its end. It owns the operation lock for its whole lifetime,
 //! writes the recovery marker and the pending outcome record before any
 //! mutation, takes the protective `*-before` checkpoint, and captures the
-//! outcome at the end. It is process-global so the apply code deep inside
+//! outcome at the end. A bootstrap that records no file history does all of
+//! that only when it first journals a write, and runs unjournaled instead of
+//! failing when another process holds the lock. It is process-global so the apply code deep inside
 //! `system::*` can append journal entries through [`record`] without every
 //! signature threading a writer, and it exports [`ENV_VAR`] so child `mise`
 //! processes spawned by hooks attach to the parent's operation instead of
@@ -49,7 +51,22 @@ struct Writer {
 
 type Shared = Arc<Mutex<Writer>>;
 
-static CURRENT: Mutex<Option<Shared>> = Mutex::new(None);
+/// What a bootstrap that records no file history needs to open its journal.
+/// Its journal protects only the files the run is about to rewrite, so the
+/// operation lock, marker, and state directory wait for the first of them.
+struct LazyStart {
+    kind: OperationKind,
+    command: String,
+    tracked: TrackedSet,
+}
+
+enum Current {
+    /// `None` once the run gave up on a journal (the lock was busy).
+    Lazy(Option<Box<LazyStart>>),
+    Started(Shared),
+}
+
+static CURRENT: Mutex<Option<Current>> = Mutex::new(None);
 static INITIALIZING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -62,31 +79,92 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// it. Returns the entry's index, or an error when it could not be written
 /// to disk (the caller decides whether to proceed).
 pub(crate) fn record(entry: JournalEntry) -> Result<Option<u32>> {
-    let shared = lock_unpoisoned(&CURRENT).clone();
-    match shared {
+    match started() {
         Some(shared) => lock_unpoisoned(&shared).record(entry).map(Some),
         None => Ok(None),
     }
 }
 
-/// Whether an operation is open in this process.
+/// The open operation whose journal is writable.
+fn started() -> Option<Shared> {
+    match &*lock_unpoisoned(&CURRENT) {
+        Some(Current::Started(shared)) => Some(shared.clone()),
+        _ => None,
+    }
+}
+
+/// Whether an operation with a journal is open in this process.
 pub fn is_active() -> bool {
-    lock_unpoisoned(&CURRENT).is_some()
+    started().is_some()
+}
+
+/// Opens the journal of a bootstrap that records no file history, which is
+/// deferred until something is about to be rewritten. Returns whether
+/// changes are journaled. Another process holding the operation lock does
+/// not fail such a run (parallel jobs sharing a state dir): it proceeds
+/// without a journal, as bootstrap already does when it cannot save a
+/// recovery copy.
+pub(crate) fn ensure_started() -> Result<bool> {
+    let mut current = lock_unpoisoned(&CURRENT);
+    let lazy = match &mut *current {
+        Some(Current::Started(_)) => return Ok(true),
+        Some(Current::Lazy(lazy)) => lazy,
+        None => return Ok(false),
+    };
+    let Some(start) = lazy.as_ref() else {
+        return Ok(false);
+    };
+    match start_lazy(start, std::time::Duration::ZERO)? {
+        Some(shared) => {
+            *current = Some(Current::Started(shared));
+            Ok(true)
+        }
+        None => {
+            *lazy = None;
+            Ok(false)
+        }
+    }
+}
+
+fn start_lazy(start: &LazyStart, wait: std::time::Duration) -> Result<Option<Shared>> {
+    match Writer::begin(
+        &dirs::STATE,
+        start.kind,
+        &start.command,
+        start.tracked.clone(),
+        wait,
+        false,
+    ) {
+        Ok(writer) => {
+            let uuid = writer.pending.checkpoint.uuid.clone();
+            debug!("history: recording operation {uuid}");
+            env::set_var(ENV_VAR, uuid);
+            Ok(Some(Arc::new(Mutex::new(writer))))
+        }
+        Err(err) if err.downcast_ref::<OperationLockBusy>().is_some() => {
+            warn!("history: {err}; continuing without recovery data for this run");
+            Ok(None)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 /// History-driven writes require recoverable preimages. Ordinary bootstrap
 /// retains its existing ability to deploy large files and special targets.
 pub(crate) fn requires_recovery_preimage() -> bool {
-    lock_unpoisoned(&CURRENT)
-        .as_ref()
-        .is_some_and(|writer| lock_unpoisoned(writer).kind() != OperationKind::Bootstrap)
+    started().is_some_and(|writer| lock_unpoisoned(&writer).kind() != OperationKind::Bootstrap)
 }
 
 /// RAII handle for the operation a command records into. Inactive scopes
 /// (dry runs, recording disabled, nested commands) are no-ops so callers
 /// never branch on them.
 #[must_use = "finish the scope so the operation is recorded"]
-pub struct OperationScope(Option<Shared>);
+pub struct OperationScope {
+    /// The journal this scope opened itself.
+    shared: Option<Shared>,
+    /// Opened on demand: the journal, if any, is in [`CURRENT`].
+    lazy: bool,
+}
 
 impl OperationScope {
     /// Opens an operation for `command` unless nothing should be recorded.
@@ -133,44 +211,72 @@ impl OperationScope {
         fresh_adoption: bool,
     ) -> Result<Self> {
         if dry_run {
-            return Ok(Self(None));
+            return Ok(Self::inactive());
         }
         if !Settings::get().history.enabled
             && matches!(kind, OperationKind::Capture | OperationKind::Bootstrap)
         {
             debug!("history: disabled by settings");
-            return Ok(Self(None));
+            return Ok(Self::inactive());
         }
         let _initializing = INITIALIZING.lock().await;
         if std::env::var_os(ENV_VAR).is_some() {
             debug!("history: attached to the parent mise operation");
-            return Ok(Self(None));
+            return Ok(Self::inactive());
         }
         if lock_unpoisoned(&CURRENT).is_some() {
             debug!("history: an operation is already open");
-            return Ok(Self(None));
+            return Ok(Self::inactive());
         }
         let tracked = TrackedSet::effective().await?;
         let command = command.to_owned();
+        if kind == OperationKind::Bootstrap && !would_record(&dirs::STATE, &tracked, kind)? {
+            debug!("history: nothing to record; journaling waits for the first write");
+            *lock_unpoisoned(&CURRENT) = Some(Current::Lazy(Some(Box::new(LazyStart {
+                kind,
+                command,
+                tracked,
+            }))));
+            return Ok(Self {
+                shared: None,
+                lazy: true,
+            });
+        }
         let writer = tokio::task::spawn_blocking(move || {
-            Writer::begin_unless_busy(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
+            Writer::begin(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
         })
         .await??;
-        let Some(writer) = writer else {
-            return Ok(Self(None));
-        };
         let uuid = writer.pending.checkpoint.uuid.clone();
         debug!("history: recording operation {uuid}");
         let shared = Arc::new(Mutex::new(writer));
-        *lock_unpoisoned(&CURRENT) = Some(shared.clone());
+        *lock_unpoisoned(&CURRENT) = Some(Current::Started(shared.clone()));
         env::set_var(ENV_VAR, uuid);
-        Ok(Self(Some(shared)))
+        Ok(Self {
+            shared: Some(shared),
+            lazy: false,
+        })
+    }
+
+    fn inactive() -> Self {
+        Self {
+            shared: None,
+            lazy: false,
+        }
+    }
+
+    /// The journal this scope writes to, once it exists.
+    fn writer(&self) -> Option<Shared> {
+        match &self.shared {
+            Some(shared) => Some(shared.clone()),
+            None if self.lazy => started(),
+            None => None,
+        }
     }
 
     /// Reloads the tracked set so the outcome capture covers what the
     /// operation declared or removed (a new track entry, a new destination).
     pub async fn refresh_tracked(&self) {
-        if self.0.is_none() {
+        if self.shared.is_none() && !self.lazy {
             return;
         }
         let tracked = match crate::config::Config::reset().await {
@@ -179,12 +285,46 @@ impl OperationScope {
         };
         match tracked {
             Ok(tracked) => {
-                if let Some(shared) = &self.0 {
-                    let mut writer = lock_unpoisoned(shared);
+                if self.lazy {
+                    self.start_if_recording(&tracked).await;
+                }
+                if let Some(shared) = self.writer() {
+                    let mut writer = lock_unpoisoned(&shared);
                     writer.tracked = tracked;
                 }
             }
             Err(err) => warn!("history: keeping the tracked set from before the run: {err:#}"),
+        }
+    }
+
+    /// A run that started with nothing to record may have declared tracking
+    /// (a pulled configuration, say). Its outcome is then recorded, which
+    /// needs the journal and the operation lock after all.
+    async fn start_if_recording(&self, tracked: &TrackedSet) {
+        let kind = OperationKind::Bootstrap;
+        match would_record(&dirs::STATE, tracked, kind) {
+            Ok(false) => return,
+            Ok(true) => {}
+            Err(err) => {
+                warn!("history: could not tell whether this run is recorded: {err:#}");
+                return;
+            }
+        }
+        let started = tokio::task::spawn_blocking(|| {
+            let mut current = lock_unpoisoned(&CURRENT);
+            let Some(Current::Lazy(Some(start))) = &*current else {
+                return Ok(());
+            };
+            if let Some(shared) = start_lazy(start, OPERATION_LOCK_WAIT)? {
+                *current = Some(Current::Started(shared));
+            }
+            Ok::<_, eyre::Report>(())
+        })
+        .await;
+        match started {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => warn!("history: this run's outcome is not recorded: {err:#}"),
+            Err(err) => warn!("history: this run's outcome is not recorded: {err}"),
         }
     }
 
@@ -208,8 +348,8 @@ impl OperationScope {
     /// Changes the pending outcome record (its `to`, `undoes`, `affected`,
     /// message) before it is written.
     pub(crate) fn with_operation(&self, f: impl FnOnce(&mut Operation)) {
-        if let Some(shared) = &self.0 {
-            let mut writer = lock_unpoisoned(shared);
+        if let Some(shared) = self.writer() {
+            let mut writer = lock_unpoisoned(&shared);
             f(writer.operation_mut());
             if let Err(err) = writer.write_pending() {
                 warn!("history: could not persist the operation record: {err:#}");
@@ -221,8 +361,8 @@ impl OperationScope {
     /// entries live (including manual-save files) and keep the label on the
     /// pending record so crash recovery can identify the operation too.
     pub fn prepare_capture(&self, label: Option<&str>) {
-        if let Some(shared) = &self.0 {
-            let mut writer = lock_unpoisoned(shared);
+        if let Some(shared) = self.writer() {
+            let mut writer = lock_unpoisoned(&shared);
             writer.promote = writer
                 .tracked
                 .entries
@@ -239,16 +379,15 @@ impl OperationScope {
 
     /// The protective checkpoint this operation took, if any.
     pub fn before(&self) -> Option<(u64, String)> {
-        self.0
-            .as_ref()
-            .and_then(|shared| lock_unpoisoned(shared).before.clone())
+        self.writer()
+            .and_then(|shared| lock_unpoisoned(&shared).before.clone())
     }
 
     pub(crate) fn validate_starting_head(&self, expected: Option<&str>) -> Result<()> {
-        let Some(shared) = &self.0 else {
+        let Some(shared) = self.writer() else {
             eyre::bail!("incoming application requires an active recovery operation");
         };
-        let writer = lock_unpoisoned(shared);
+        let writer = lock_unpoisoned(&shared);
         if writer.starting_head.as_deref() != expected {
             eyre::bail!(
                 "local saved history changed since planning; nothing was applied; run pull again"
@@ -260,10 +399,10 @@ impl OperationScope {
     /// Retakes the protective checkpoint, replacing the earlier one, when
     /// files changed between it and the verified plan.
     pub(crate) fn recapture_before(&self, paths: &[PathBuf]) -> Result<()> {
-        let Some(shared) = &self.0 else {
+        let Some(shared) = self.writer() else {
             return Ok(());
         };
-        let mut writer = lock_unpoisoned(shared);
+        let mut writer = lock_unpoisoned(&shared);
         // held across the reservation, the capture, and the removal: the
         // capture writes the index and a checkpoint ref, which a concurrent
         // `mise dot save` must not interleave with
@@ -287,8 +426,8 @@ impl OperationScope {
 
     /// Marks paths the outcome capture reads live and promotes.
     pub(crate) fn promote(&self, paths: &[PathBuf]) {
-        if let Some(shared) = &self.0 {
-            lock_unpoisoned(shared)
+        if let Some(shared) = self.writer() {
+            lock_unpoisoned(&shared)
                 .promote
                 .extend(paths.iter().cloned());
         }
@@ -312,13 +451,25 @@ impl OperationScope {
         summary: Option<Summary>,
         writes_finished: bool,
     ) {
-        let Some(shared) = self.0.take() else {
+        let Some(shared) = self.close() else {
             return;
         };
-        Self::clear_current();
         if let Err(err) = lock_unpoisoned(&shared).finish(error, summary, writes_finished) {
             warn!("history: could not finish the operation record: {err:#}");
         }
+    }
+
+    /// Ends this scope's hold on the process-wide operation, returning the
+    /// journal it wrote, if it ever opened one.
+    fn close(&mut self) -> Option<Shared> {
+        let shared = match self.shared.take() {
+            Some(shared) => Some(shared),
+            None if self.lazy => started(),
+            None => return None,
+        };
+        self.lazy = false;
+        Self::clear_current();
+        shared
     }
 
     fn clear_current() {
@@ -329,10 +480,9 @@ impl OperationScope {
 
 impl Drop for OperationScope {
     fn drop(&mut self) {
-        let Some(shared) = self.0.take() else {
+        let Some(shared) = self.close() else {
             return;
         };
-        Self::clear_current();
         if std::thread::panicking() {
             return;
         }
@@ -343,43 +493,6 @@ impl Drop for OperationScope {
 }
 
 impl Writer {
-    /// A bootstrap that records no file history only journals its own writes
-    /// for crash recovery. Another operation holding the lock must not fail
-    /// it (parallel CI jobs sharing a state dir), so it runs unjournaled.
-    /// Anything that records history still waits for the lock and fails.
-    fn begin_unless_busy(
-        state_dir: &Path,
-        kind: OperationKind,
-        command: &str,
-        tracked: TrackedSet,
-        wait: std::time::Duration,
-        fresh_adoption: bool,
-    ) -> Result<Option<Self>> {
-        if kind != OperationKind::Bootstrap {
-            return Self::begin(state_dir, kind, command, tracked, wait, fresh_adoption).map(Some);
-        }
-        let store = Store::open_in(state_dir)?;
-        if records_file_history(&store, &tracked, Some(kind))? {
-            return Self::begin(state_dir, kind, command, tracked, wait, fresh_adoption).map(Some);
-        }
-        drop(store);
-        match Self::begin(
-            state_dir,
-            kind,
-            command,
-            tracked,
-            std::time::Duration::ZERO,
-            fresh_adoption,
-        ) {
-            Ok(writer) => Ok(Some(writer)),
-            Err(err) if err.downcast_ref::<OperationLockBusy>().is_some() => {
-                warn!("history: {err}; continuing without recording this run");
-                Ok(None)
-            }
-            Err(err) => Err(err),
-        }
-    }
-
     fn begin(
         state_dir: &Path,
         kind: OperationKind,
@@ -698,6 +811,24 @@ fn records_file_history(
             .transpose()?
             .flatten()
             .is_some())
+}
+
+/// Whether a run of `kind` would record file history, decided without
+/// creating the state directory's history store.
+fn would_record(state_dir: &Path, tracked: &TrackedSet, kind: OperationKind) -> Result<bool> {
+    if !Settings::get().history.enabled {
+        return Ok(false);
+    }
+    if kind == OperationKind::Capture
+        || !tracked.entries.is_empty()
+        || !tracked.manifest.enrollment.is_empty()
+    {
+        return Ok(true);
+    }
+    if !super::shadow::HistoryRepo::path_in(state_dir).is_dir() {
+        return Ok(false);
+    }
+    records_file_history(&Store::open_in(state_dir)?, tracked, Some(kind))
 }
 
 /// Takes the operation lock, or fails naming the operation that holds it.
@@ -1136,7 +1267,10 @@ mod tests {
             std::time::Duration::ZERO,
             false,
         )?;
-        let scope = OperationScope(Some(Arc::new(Mutex::new(writer))));
+        let scope = OperationScope {
+            shared: Some(Arc::new(Mutex::new(writer))),
+            lazy: false,
+        };
         assert!(scope.validate_starting_head(Some(&planned)).is_err());
         assert!(scope.validate_starting_head(Some(&saved)).is_ok());
         assert_ne!(
@@ -1148,32 +1282,54 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_without_recorded_history_runs_when_the_lock_is_busy() -> Result<()> {
+    fn nothing_to_record_creates_no_history_store() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        assert!(!would_record(
+            temp.path(),
+            &TrackedSet::default(),
+            OperationKind::Bootstrap
+        )?);
+        assert!(!HistoryRepo::path_in(temp.path()).exists());
+        assert!(!store::operation_lock_in(temp.path()).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn existing_history_is_recorded() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;
-        let _held = LockFile::at(&store::operation_lock_in(temp.path()))
-            .try_lock()?
-            .unwrap();
-        let begin = |kind| {
-            Writer::begin_unless_busy(
-                temp.path(),
-                kind,
-                "bootstrap",
-                TrackedSet::default(),
-                std::time::Duration::ZERO,
-                false,
-            )
-        };
-        assert!(begin(OperationKind::Bootstrap)?.is_none());
-        // only a run that records nothing may skip the lock
-        assert!(begin(OperationKind::Apply).is_err());
         let repo = store.repo().unwrap();
         let tree =
             super::super::manifest::Manifest::default().write(repo, &repo.empty_object("tree")?)?;
         let root = repo.commit_tree(&tree, vec![], "existing")?;
         repo.update_history_head(&root, None)?;
-        let err = begin(OperationKind::Bootstrap).err().unwrap();
-        assert!(err.to_string().contains("another history operation"));
+        assert!(would_record(
+            temp.path(),
+            &TrackedSet::default(),
+            OperationKind::Bootstrap
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn busy_lock_is_a_typed_error_only_when_held() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let _store = Store::open_in(temp.path())?;
+        let held = LockFile::at(&store::operation_lock_in(temp.path()))
+            .try_lock()?
+            .unwrap();
+        let busy = Writer::begin(
+            temp.path(),
+            OperationKind::Bootstrap,
+            "bootstrap",
+            TrackedSet::default(),
+            std::time::Duration::ZERO,
+            false,
+        )
+        .err()
+        .unwrap();
+        assert!(busy.downcast_ref::<OperationLockBusy>().is_some());
+        drop(held);
         Ok(())
     }
 
