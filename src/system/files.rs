@@ -3546,8 +3546,14 @@ fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
 /// Legacy ownership discovery for installations that predate persistent
 /// symlink-each state. A successful apply records the exact links it owns, so
 /// this unbounded target walk happens at most once per target.
+///
+/// Group requests never use it: groups postdate the state file, so there is no
+/// legacy deployment to discover. Their entries are carved out of the walk
+/// with generated excludes, which would make an entry's own pre-existing link
+/// (a stow migration) look stale, and every group targeting `~` would pay a
+/// full walk of it.
 fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    if cfg!(windows) || !req.target.is_dir() || req.target.is_symlink() {
+    if cfg!(windows) || req.group.is_some() || !req.target.is_dir() || req.target.is_symlink() {
         return Ok(vec![]);
     }
     let mut out = vec![];
@@ -8465,6 +8471,25 @@ source = "oldrc""#,
         req.source = alias;
         assert!(legacy_stale_links(&req)?.contains(&aliased));
         assert!(legacy_owned_links(&req)?.contains(&aliased));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_cleanup_skips_group_requests() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("src");
+        let target = dir.path().join("home");
+        file::create_dir_all(source.join(".config/demo"))?;
+        file::create_dir_all(target.join(".config"))?;
+        // an entry's own link, at a path the group's walk excludes
+        let entry = target.join(".config/demo");
+        file::make_symlink(&source.join(".config/demo"), &entry)?;
+        let mut req = link_req(&source, &target, FileMode::SymlinkEach);
+        req.exclude = vec![glob::Pattern::new(".config/demo")?];
+        assert_eq!(legacy_stale_links(&req)?, vec![entry]);
+        req.group = Some("demo".into());
+        assert!(legacy_stale_links(&req)?.is_empty());
         Ok(())
     }
 
