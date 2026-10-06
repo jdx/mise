@@ -137,6 +137,15 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
+    fn has_tool_templates(&self) -> bool {
+        false
+    }
+    fn to_tool_request_set_with_context(
+        &self,
+        _context: &tera::Context,
+    ) -> eyre::Result<ToolRequestSet> {
+        self.to_tool_request_set()
+    }
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
     }

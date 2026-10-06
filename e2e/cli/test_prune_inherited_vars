@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+mkdir -p first/child second/child elsewhere
+for project in first second; do
+  version=1.0.0
+  [[ $project == second ]] && version=2.0.0
+  cat >"$project/mise.toml" <<EOF
+[vars]
+tool_version = "$version"
+[env]
+PRUNE_TOOL_VERSION = "{{vars.tool_version}}"
+EOF
+  cat >"$project/child/mise.toml" <<'EOF'
+[tools]
+dummy = "{{vars.tool_version}}"
+EOF
+  if [[ $project == second ]]; then
+    cat >"$project/child/mise.toml" <<'EOF'
+[tools]
+dummy = "{{env.PRUNE_TOOL_VERSION}}"
+EOF
+  fi
+  assert "mise -C '$project/child' install"
+done
+assert "mise install dummy@3.0.0"
+
+# Both projects must retain their own version, regardless of the caller's vars.
+for directory in first/child second/child elsewhere; do
+  assert "mise -C '$directory' ls --prunable --json >prunable.json"
+  assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+  assert_contains "mise -C '$directory' prune --dry-run 2>&1" "dummy@3.0.0"
+done

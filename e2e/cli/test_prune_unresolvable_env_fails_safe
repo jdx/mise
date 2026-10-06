@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# A tracked project whose tool version comes from the shell or a sourced script
+# cannot be evaluated from another directory. Prune must refuse rather than guess
+# and delete the version that project is using.
+mkdir -p exported sourced/child elsewhere
+echo '[tools]
+dummy = "{{env.PRUNE_EXPORTED_VERSION}}"' >exported/mise.toml
+assert "PRUNE_EXPORTED_VERSION=1.0.0 mise -C exported install"
+
+echo 'export PRUNE_SOURCED_VERSION=1.0.0' >sourced/env.sh
+echo '[env]
+_.source = "env.sh"' >sourced/mise.toml
+echo '[tools]
+dummy = "{{env.PRUNE_SOURCED_VERSION}}"' >sourced/child/mise.toml
+assert "mise -C sourced/child install"
+assert "mise install dummy@3.0.0"
+
+assert_fail "mise -C elsewhere prune --dry-run"
+assert_fail "mise -C elsewhere ls --prunable --json"
+assert_contains "mise ls dummy" "1.0.0"

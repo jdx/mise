@@ -943,6 +943,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
     exclude_locked_config_paths: &HashSet<PathBuf>,
 ) -> Result<NeededVersions> {
     let mut needed = NeededVersions::new();
+    let mut template_contexts = HashMap::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
     // also protects lockfiles for other tracked projects, but excludes configs
     // it just upgraded so stale locks there do not keep the old version alive.
@@ -1008,7 +1009,19 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut requests = cf.to_tool_request_set()?;
+        let mut requests = if cf.has_tool_templates() {
+            let files = config.tracked_config_hierarchy(&cf).await?;
+            let paths = files.keys().cloned().collect::<Vec<_>>();
+            let context = match template_contexts.entry(paths) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(config.resolve_config_template_context(&files).await?)
+                }
+            };
+            cf.to_tool_request_set_with_context(context)?
+        } else {
+            cf.to_tool_request_set()?
+        };
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         let mut ts = Toolset::from(requests);
