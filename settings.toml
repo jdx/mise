@@ -2620,6 +2620,29 @@ lockfiles that already require provenance for the tool being installed.
 env = "MISE_PROVENANCE_API_FAILURES_FATAL"
 type = "Bool"
 
+[prune.exclude]
+default = []
+description = "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`."
+docs = """
+Versions of the listed tools are kept by `mise prune`, `mise ls --prunable`, and the automatic
+removal that follows `mise upgrade`, even when no tracked config uses them and even when the tool
+is named on the command line. Tools are named as they are elsewhere in mise: `node`, `core:node`,
+and `aqua:BurntSushi/ripgrep` are all accepted, and a short name matches the same tool as its full
+name.
+
+Use this for a tool that something outside of mise resolves through its install path, or whose old
+versions you keep on purpose. `mise uninstall` is unaffected.
+
+```toml
+[settings]
+prune.exclude = ["node", "aqua:BurntSushi/ripgrep"]
+```
+"""
+env = "MISE_PRUNE_EXCLUDE"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [pypi.registry_url]
 description = "Package registry URL for Python tools (pipx.registry_url is a compatibility alias)."
 env = "MISE_PYPI_REGISTRY_URL"
