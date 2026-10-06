@@ -17,6 +17,8 @@
 
 use crate::yaml_merge::{mapping_subset, merge_yaml};
 use eyre::{Result, eyre};
+use indexmap::IndexMap;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, TableLike};
@@ -135,21 +137,20 @@ fn toml_subset(source: &toml::Table, target: &toml::Table) -> bool {
 }
 
 fn merge_json(target: &str, source: &str) -> Result<String> {
-    let (Doc::Json(mut merged), Doc::Json(source)) = (
-        parse(Format::Json, target, "target")?,
-        parse(Format::Json, source, "source")?,
-    ) else {
-        unreachable!("parsed as JSON");
+    let Doc::Json(Value::Object(source)) = parse(Format::Json, source, "source")? else {
+        unreachable!("parsed as a JSON object");
     };
-    merge_value(&mut merged, source);
+    // Values the source does not touch stay as the exact text they were parsed
+    // from: a number past f64 or an `1e3` spelling is not renormalized.
+    let existing: IndexMap<String, Box<RawValue>> = if target.trim().is_empty() {
+        IndexMap::new()
+    } else {
+        serde_json::from_str(target).map_err(|e| eyre!("failed to parse the JSON target: {e}"))?
+    };
+    let merged = merge_json_objects(existing, source);
     let indent = json_indent(target);
-    let mut out = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
-    serde::Serialize::serialize(
-        &merged,
-        &mut serde_json::Serializer::with_formatter(&mut out, formatter),
-    )?;
-    let mut out = String::from_utf8(out)?;
+    let mut out = String::new();
+    print_json_object(&merged, 0, &indent, &mut out)?;
     // Hand-edited JSON nearly always ends in a newline; keep that.
     if target.is_empty() || target.ends_with('\n') {
         out.push('\n');
@@ -157,20 +158,82 @@ fn merge_json(target: &str, source: &str) -> Result<String> {
     Ok(out)
 }
 
-fn merge_value(target: &mut Value, source: Value) {
-    match (target, source) {
-        (Value::Object(t), Value::Object(s)) => {
-            for (k, sv) in s {
-                match t.get_mut(&k) {
-                    Some(tv) => merge_value(tv, sv),
-                    None => {
-                        t.insert(k, sv);
-                    }
-                }
+/// A JSON value on its way back to text: either the exact source text it came
+/// from, an object some of whose entries changed, or a new value.
+enum JsonNode {
+    Raw(Box<RawValue>),
+    Object(IndexMap<String, JsonNode>),
+    Value(Value),
+}
+
+fn merge_json_objects(
+    target: IndexMap<String, Box<RawValue>>,
+    source: Map<String, Value>,
+) -> IndexMap<String, JsonNode> {
+    let mut merged: IndexMap<String, JsonNode> = target
+        .into_iter()
+        .map(|(key, raw)| (key, JsonNode::Raw(raw)))
+        .collect();
+    for (key, value) in source {
+        match (merged.get_mut(&key), value) {
+            (Some(node), Value::Object(source_child)) => {
+                let existing = match node {
+                    JsonNode::Raw(raw) => serde_json::from_str(raw.get()).ok(),
+                    _ => None,
+                };
+                *node = match existing {
+                    Some(existing) => JsonNode::Object(merge_json_objects(existing, source_child)),
+                    None => JsonNode::Value(Value::Object(source_child)),
+                };
+            }
+            (Some(node), value) => *node = JsonNode::Value(value),
+            (None, value) => {
+                merged.insert(key, JsonNode::Value(value));
             }
         }
-        (t, s) => *t = s,
     }
+    merged
+}
+
+fn print_json_object(
+    map: &IndexMap<String, JsonNode>,
+    depth: usize,
+    indent: &str,
+    out: &mut String,
+) -> Result<()> {
+    if map.is_empty() {
+        out.push_str("{}");
+        return Ok(());
+    }
+    out.push_str("{\n");
+    for (i, (key, node)) in map.iter().enumerate() {
+        if i > 0 {
+            out.push_str(",\n");
+        }
+        out.push_str(&indent.repeat(depth + 1));
+        out.push_str(&serde_json::to_string(key)?);
+        out.push_str(": ");
+        match node {
+            JsonNode::Raw(raw) => out.push_str(raw.get()),
+            JsonNode::Object(child) => print_json_object(child, depth + 1, indent, out)?,
+            JsonNode::Value(value) => {
+                let mut buf = Vec::new();
+                let formatter = serde_json::ser::PrettyFormatter::with_indent(indent.as_bytes());
+                serde::Serialize::serialize(
+                    value,
+                    &mut serde_json::Serializer::with_formatter(&mut buf, formatter),
+                )?;
+                // pretty-printed from column zero; move it to this depth
+                let nested = String::from_utf8(buf)?
+                    .replace('\n', &format!("\n{}", indent.repeat(depth + 1)));
+                out.push_str(&nested);
+            }
+        }
+    }
+    out.push('\n');
+    out.push_str(&indent.repeat(depth));
+    out.push('}');
+    Ok(())
 }
 
 /// The indent of the target's first indented line, two spaces if it has none.
@@ -213,8 +276,9 @@ fn merge_toml_tables(target: &mut dyn TableLike, source: &dyn TableLike) {
     }
 }
 
-/// Equality of two TOML values by what they hold, not how they are written, so
-/// an array that already matches keeps its own spacing and comments.
+/// Equality of two TOML items by what they hold, not how they are written, so
+/// an array or array of tables that already matches keeps its own spacing and
+/// comments.
 fn same_toml_item(a: &Item, b: &Item) -> bool {
     match (toml_value(a), toml_value(b)) {
         (Some(a), Some(b)) => a == b,
@@ -222,10 +286,11 @@ fn same_toml_item(a: &Item, b: &Item) -> bool {
     }
 }
 
+/// An item as a plain value, by rendering it under a key and parsing that.
 fn toml_value(item: &Item) -> Option<toml::Value> {
-    let mut value = item.as_value()?.clone();
-    value.decor_mut().clear();
-    toml::from_str::<toml::Table>(&format!("v = {value}"))
+    let mut doc = DocumentMut::new();
+    doc.insert("v", item.clone());
+    toml::from_str::<toml::Table>(&doc.to_string())
         .ok()?
         .remove("v")
 }
@@ -355,6 +420,25 @@ path = \"/Applications/X.app\"
     fn an_equal_toml_array_keeps_its_spacing_and_comments() {
         let target = "list = [\n  1,   # one\n  2,\n] # keep\nmode = \"old\"\n";
         let merged = merge(Format::Toml, target, "list = [1, 2]\nmode = \"new\"\n").unwrap();
+        assert_eq!(merged, target.replace("\"old\"", "\"new\""));
+    }
+
+    #[test]
+    fn an_equal_toml_array_of_tables_keeps_its_formatting() {
+        let target = "mode = \"old\"\n\n[[bin]]  # first\nname = \"a\"\n\n[[bin]]\nname = \"b\"\n";
+        let merged = merge(
+            Format::Toml,
+            target,
+            "mode = \"new\"\n[[bin]]\nname = \"a\"\n[[bin]]\nname = \"b\"\n",
+        )
+        .unwrap();
+        assert_eq!(merged, target.replace("\"old\"", "\"new\""));
+    }
+
+    #[test]
+    fn untouched_json_values_keep_their_exact_text() {
+        let target = "{\n  \"big\": 18446744073709551617,\n  \"sci\": 1e3,\n  \"esc\": \"\\u00e9\",\n  \"model\": \"old\"\n}\n";
+        let merged = merge(Format::Json, target, r#"{"model": "new"}"#).unwrap();
         assert_eq!(merged, target.replace("\"old\"", "\"new\""));
     }
 
