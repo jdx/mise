@@ -604,6 +604,9 @@ impl EnvView {
         let mut view = self.clone();
         for key in &unset {
             view.base.retain(|k, _| !mise_util::env::env_key_eq(k, key));
+            // an unset key is no longer assigned by config
+            view.config_keys
+                .retain(|k| !mise_util::env::env_key_eq(k, key));
         }
         for (key, value) in values {
             view.base.insert(key.clone(), value);
