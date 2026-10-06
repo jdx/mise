@@ -4468,12 +4468,15 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             self.uninstall_version_impl(config, pr, tv).await?;
         }
-        let rmdir = |dir: &Path| {
+        // A dry run reports once, after every path is known: each message on a live
+        // progress row is drawn as a row of its own, so reporting per path repeated the row.
+        let mut would_remove: Vec<String> = vec![];
+        let mut rmdir = |dir: &Path| {
             if dryrun {
                 // Not `exists()`, which resolves a link: a dry run has to name the entry the real
                 // run would remove, and a link whose target is gone is one of them.
                 if entry_exists(dir) {
-                    pr.set_message(format!("remove {}", display_path(dir)));
+                    would_remove.push(display_path(dir));
                 }
                 return Ok(());
             }
@@ -4494,7 +4497,11 @@ pub trait Backend: Debug + Send + Sync {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
-        if !dryrun {
+        if dryrun {
+            if !would_remove.is_empty() {
+                pr.set_message(format!("remove {}", would_remove.join(", ")));
+            }
+        } else {
             self.cleanup_empty_installs_dir();
         }
         Ok(())

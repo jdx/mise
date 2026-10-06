@@ -18,4 +18,4 @@ jobs:
       checks: read
       statuses: read
     steps:
-      - uses: jdx/pr-closer@389c3b65873b020f75418c44ccca9987717eaf2f # PR #12 merge
+      - uses: jdx/pr-closer@cfa2025cb55ac202d3e329fc4cc412449de884e2 # v1.3.0
