@@ -547,7 +547,8 @@ impl SecretBroker {
         Settings::ensure_not_safe("mise secrets")?;
         let task = req.grantee.task();
         let (_, mut problems) = grant_for_task(task);
-        problems.extend(static_problems(task, req.grant, req.denied));
+        let env_view = super::EnvView::load(config).await;
+        problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if !problems.is_empty() {
             bail!(
                 "{}",

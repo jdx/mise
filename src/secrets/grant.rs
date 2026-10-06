@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
 
@@ -302,6 +303,7 @@ pub(crate) fn static_problems(
     task: &Task,
     grant: &SecretGrant,
     denied: Option<SecretsDenied>,
+    view: &EnvView,
 ) -> Vec<Problem> {
     let mut problems = vec![];
     if grant.is_empty() {
@@ -377,7 +379,7 @@ pub(crate) fn static_problems(
     for script in task.run_script_strings() {
         refs.extend(tera_env_refs(&script));
     }
-    for (_, value) in task_env_literals(task) {
+    for (_, value) in view.texts(task) {
         refs.extend(tera_env_refs(&value));
     }
     for key in refs {
@@ -542,75 +544,92 @@ pub(crate) fn collision_problem(label: &str, key: &str) -> Problem {
     ))
 }
 
-/// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. A `default`
-/// only counts when the shell supplies no non-empty value for the key, as it is evaluated.
-/// The spawn repeats the exact check against the real environment and stays authoritative.
-pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> BTreeSet<String> {
-    declared_env_keys_with(task, config, &crate::env::PRISTINE_ENV)
+/// The environment task `[env]` directives are evaluated against, as the resolver sees it:
+/// the process env minus what config `_.unset`s, plus config `[env]` results. Every static
+/// check that depends on whether a `default` applies reads this one view, so they cannot drift
+/// apart. The spawn repeats the exact check against the real environment and stays
+/// authoritative.
+#[derive(Default, Clone)]
+pub(crate) struct EnvView {
+    base: crate::env_diff::EnvMap,
+    /// keys config `[env]` assigns (plain values and defaults that applied)
+    config_keys: BTreeSet<String>,
 }
 
-fn declared_env_keys_with(
-    task: &Task,
-    config: &crate::config::Config,
-    shell_env: &crate::env_diff::EnvMap,
-) -> BTreeSet<String> {
-    let directives = task
-        .env
-        .0
-        .iter()
-        .chain(task.inherited_env.0.iter())
-        .chain(task.overlay_env.iter().map(|(d, _)| d))
-        .cloned()
-        .chain(
-            config
-                .config_files
-                .values()
-                .filter_map(|cf| cf.env_entries().ok())
-                .flatten(),
-        );
-    directives_keys(directives, shell_env)
-}
-
-/// A `default` assigns (and renders) only when the env has no non-empty value for its key.
-fn default_applies(key: &str, env: &crate::env_diff::EnvMap) -> bool {
-    !env.iter()
-        .any(|(k, v)| mise_util::env::env_key_eq(k, key) && !v.is_empty())
-}
-
-fn directives_keys(
-    directives: impl Iterator<Item = crate::config::env_directive::EnvDirective>,
-    shell_env: &crate::env_diff::EnvMap,
-) -> BTreeSet<String> {
-    use crate::config::env_directive::EnvDirective;
-    directives
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, ..) => Some(k),
-            EnvDirective::Default(k, ..) if default_applies(&k, shell_env) => Some(k),
-            _ => None,
-        })
-        .collect()
-}
-
-fn task_env_literals(task: &Task) -> Vec<(String, String)> {
-    task_env_literals_with(task, &crate::env::PRISTINE_ENV)
-}
-
-fn task_env_literals_with(task: &Task, env: &crate::env_diff::EnvMap) -> Vec<(String, String)> {
-    use crate::config::env_directive::EnvDirective;
-    task.env
-        .0
-        .iter()
-        .chain(task.inherited_env.0.iter())
-        .chain(task.overlay_env.iter().map(|(d, _)| d))
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
-            // a default the env already satisfies is never rendered
-            EnvDirective::Default(k, v, _) if default_applies(k, env) => {
-                Some((k.clone(), v.clone()))
+impl EnvView {
+    pub(crate) async fn load(config: &Arc<crate::config::Config>) -> Self {
+        let mut base: crate::env_diff::EnvMap =
+            crate::env::PRISTINE_ENV.clone().into_iter().collect();
+        let mut config_keys = BTreeSet::new();
+        if let Ok(results) = config.env_results().await {
+            for key in &results.env_remove {
+                base.retain(|k, _| !mise_util::env::env_key_eq(k, key));
             }
-            _ => None,
-        })
-        .collect()
+            for (key, (value, _)) in &results.env {
+                base.insert(key.clone(), value.clone());
+                config_keys.insert(key.clone());
+            }
+        }
+        Self { base, config_keys }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(base: crate::env_diff::EnvMap, config_keys: &[&str]) -> Self {
+        Self {
+            base,
+            config_keys: config_keys.iter().map(|k| k.to_string()).collect(),
+        }
+    }
+
+    /// Walks the task's env directives in the order the resolver applies them. Returns the
+    /// keys they assign and the texts they render (a `default` only when it applies).
+    fn walk(&self, task: &Task) -> (BTreeSet<String>, Vec<(String, String)>) {
+        use crate::config::env_directive::EnvDirective;
+        use mise_util::env::env_key_eq;
+        let mut env = self.base.clone();
+        let mut declared = BTreeSet::new();
+        let mut texts = vec![];
+        let directives = task
+            .inherited_env
+            .0
+            .iter()
+            .chain(task.env.0.iter())
+            .chain(task.overlay_env.iter().map(|(d, _)| d));
+        for d in directives {
+            match d {
+                EnvDirective::Val(k, v, _) => {
+                    env.retain(|e, _| !env_key_eq(e, k));
+                    env.insert(k.clone(), v.clone());
+                    declared.insert(k.clone());
+                    texts.push((k.clone(), v.clone()));
+                }
+                EnvDirective::Default(k, v, _) => {
+                    let satisfied = env
+                        .iter()
+                        .any(|(e, val)| env_key_eq(e, k) && !val.is_empty());
+                    if !satisfied {
+                        env.insert(k.clone(), v.clone());
+                        declared.insert(k.clone());
+                        texts.push((k.clone(), v.clone()));
+                    }
+                }
+                EnvDirective::Rm(k, _) => env.retain(|e, _| !env_key_eq(e, k)),
+                _ => {}
+            }
+        }
+        (declared, texts)
+    }
+
+    /// Keys the task's env and the config's `[env]` set.
+    pub(crate) fn declared_keys(&self, task: &Task) -> BTreeSet<String> {
+        let (mut declared, _) = self.walk(task);
+        declared.extend(self.config_keys.iter().cloned());
+        declared
+    }
+
+    fn texts(&self, task: &Task) -> Vec<(String, String)> {
+        self.walk(task).1
+    }
 }
 
 /// `{{ env.K }}`, `{{ env["K"] }}` and `get_env(name="K")` inside Tera tags. Lexical, but
@@ -812,7 +831,7 @@ mod tests {
             ..Default::default()
         };
         let (grant, _) = grant_for_task(&task);
-        let problems = static_problems(&task, &grant, None);
+        let problems = static_problems(&task, &grant, None, &EnvView::default());
         assert!(
             problems.iter().any(|p| p.kind == ProblemKind::Template),
             "{problems:?}"
@@ -833,7 +852,7 @@ mod tests {
             ..Default::default()
         };
         let (grant, _) = grant_for_task(&task);
-        let problems = static_problems(&task, &grant, None);
+        let problems = static_problems(&task, &grant, None, &EnvView::default());
         assert!(
             problems
                 .iter()
@@ -842,50 +861,59 @@ mod tests {
         );
     }
 
-    #[test]
-    fn satisfied_defaults_are_not_scanned() {
+    fn default_task(default: &str) -> Task {
         use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
-        let task = Task {
+        Task {
             env: crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Default(
                 "TOKEN".into(),
-                "{{ env.DEPLOY_KEY }}".into(),
+                default.into(),
                 EnvDirectiveOptions::default(),
             )]),
             ..Default::default()
+        }
+    }
+
+    fn map(pairs: &[(&str, &str)]) -> crate::env_diff::EnvMap {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// One view decides both checks: whether a default renders and whether it declares a key.
+    #[test]
+    fn defaults_follow_the_resolved_env_for_both_checks() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let check = |view: EnvView, applies: bool| {
+            assert_eq!(view.texts(&task).len(), usize::from(applies));
+            assert_eq!(view.declared_keys(&task).contains("TOKEN"), applies);
         };
-        let supplied = crate::env_diff::EnvMap::from([("TOKEN".to_string(), "ready".to_string())]);
-        assert!(task_env_literals_with(&task, &supplied).is_empty());
-        let empty = crate::env_diff::EnvMap::from([("TOKEN".to_string(), String::new())]);
-        assert_eq!(task_env_literals_with(&task, &empty).len(), 1);
-        assert_eq!(
-            task_env_literals_with(&task, &crate::env_diff::EnvMap::new()).len(),
-            1
-        );
+        // shell-only value: the default does not apply
+        check(EnvView::for_test(map(&[("TOKEN", "ready")]), &[]), false);
+        // config `[env] TOKEN = ""` over a shell value: the resolved env holds an empty TOKEN,
+        // which does not satisfy the default
+        check(EnvView::for_test(map(&[("TOKEN", "")]), &["TOKEN"]), true);
+        // an empty value does not satisfy it; nor does an absent one
+        check(EnvView::for_test(map(&[("TOKEN", "")]), &[]), true);
+        check(EnvView::for_test(map(&[]), &[]), true);
+        // config `[env]` assigned TOKEN before the task: the default does not apply (the key is
+        // still declared, by config)
+        let view = EnvView::for_test(map(&[("TOKEN", "from-config")]), &["TOKEN"]);
+        assert!(view.texts(&task).is_empty());
+        assert!(view.declared_keys(&task).contains("TOKEN"));
     }
 
     #[test]
-    fn defaults_only_count_when_the_shell_has_no_value() {
+    fn unset_in_the_task_env_lets_a_later_default_apply() {
         use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
-        let opts = EnvDirectiveOptions::default;
-        let directives = || {
-            vec![
-                EnvDirective::Default("DB".into(), "local".into(), opts()),
-                EnvDirective::Val("FIXED".into(), "x".into(), opts()),
-                EnvDirective::Default("EMPTY".into(), "d".into(), opts()),
-            ]
-            .into_iter()
-        };
-        let shell = crate::env_diff::EnvMap::from([
-            ("DB".to_string(), "from-shell".to_string()),
-            ("EMPTY".to_string(), String::new()),
-        ]);
-        let keys = directives_keys(directives(), &shell);
-        assert_eq!(keys, BTreeSet::from(["EMPTY", "FIXED"].map(String::from)));
-        let keys = directives_keys(directives(), &crate::env_diff::EnvMap::new());
-        assert_eq!(
-            keys,
-            BTreeSet::from(["DB", "EMPTY", "FIXED"].map(String::from))
+        let mut task = default_task("{{ env.DEPLOY_KEY }}");
+        task.env.0.insert(
+            0,
+            EnvDirective::Rm("TOKEN".into(), EnvDirectiveOptions::default()),
         );
+        let view = EnvView::for_test(map(&[("TOKEN", "ready")]), &[]);
+        assert_eq!(view.texts(&task).len(), 1);
+        assert!(view.declared_keys(&task).contains("TOKEN"));
     }
 
     #[test]
@@ -942,7 +970,12 @@ mod tests {
             ..Default::default()
         };
         let (grant, _) = grant_for_task(&task);
-        let problems = static_problems(&task, &grant, Some(SecretsDenied::ShellHook));
+        let problems = static_problems(
+            &task,
+            &grant,
+            Some(SecretsDenied::ShellHook),
+            &EnvView::default(),
+        );
         let text = problems
             .iter()
             .find(|p| p.kind == ProblemKind::Denied)
@@ -950,7 +983,12 @@ mod tests {
             .unwrap();
         assert!(text.contains("started by a mise shell hook"), "{text}");
         assert!(text.contains("left __MISE_SECRETS_DENIED set"), "{text}");
-        let plain = static_problems(&task, &grant, Some(SecretsDenied::Hook));
+        let plain = static_problems(
+            &task,
+            &grant,
+            Some(SecretsDenied::Hook),
+            &EnvView::default(),
+        );
         assert!(
             !plain
                 .iter()

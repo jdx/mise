@@ -23,8 +23,8 @@ mod spawn;
 pub use broker::is_resolve_failure;
 pub(crate) use broker::{Grantee, SecretBroker, SpawnRequest, TerminalAccess};
 pub(crate) use grant::{
-    DENIED_MARKER, SecretGrant, aggregate_error, collision_problem, declared_env_keys,
-    grant_for_task, sandbox_problem, static_problems,
+    DENIED_MARKER, EnvView, SecretGrant, aggregate_error, collision_problem, grant_for_task,
+    sandbox_problem, static_problems,
 };
 pub use grant::{G7_TEXT, Problem, ProblemKind, SecretsDenied, TaskSecrets};
 pub use name::SecretName;
@@ -208,7 +208,7 @@ pub struct TaskSecretsCheck {
 /// `[env]` keys it declares. `mise run` flags (`--deny-env`, `--allow-env`) and the run's
 /// resolved environment can still change the result there.
 fn task_level_problems(
-    config: &Arc<Config>,
+    view: &EnvView,
     task: &crate::task::Task,
     grant: &SecretGrant,
 ) -> Vec<Problem> {
@@ -229,7 +229,7 @@ fn task_level_problems(
         false,
         task_sandbox,
     );
-    let declared = declared_env_keys(task, config);
+    let declared = view.declared_keys(task);
     let mut problems = vec![];
     for key in grant.keys.keys() {
         if !sandbox.keeps_env_key(key.as_str()) {
@@ -259,7 +259,8 @@ pub async fn check_task_secrets(
     cache: &TaskSecretsCache,
 ) -> TaskSecretsCheck {
     let (grant, mut problems) = grant_for_task(task);
-    problems.extend(static_problems(task, &grant, None));
+    let view = EnvView::load(config).await;
+    problems.extend(static_problems(task, &grant, None, &view));
     let mut check = TaskSecretsCheck {
         problems,
         catalog_skipped: false,
@@ -270,7 +271,7 @@ pub async fn check_task_secrets(
     }
     check
         .problems
-        .extend(task_level_problems(config, task, &grant));
+        .extend(task_level_problems(&view, task, &grant));
     let ctx = &cache.ctx;
     let selection = match config::select_for_task_ungated(config, ctx, task).await {
         Ok(selection) => selection,
