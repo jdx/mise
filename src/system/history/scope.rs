@@ -265,6 +265,9 @@ impl OperationScope {
         let command = command.to_owned();
         if kind == OperationKind::Bootstrap && !would_record(&dirs::STATE, &tracked, kind)? {
             debug!("history: nothing to record; journaling waits for the first write");
+            // child mise processes (hooks) still attach to this run, as they
+            // do for a run that journals from the start
+            env::set_var(ENV_VAR, store::new_uuid());
             *lock_unpoisoned(&CURRENT) = Some(Current::Lazy(Some(Arc::new(LazyStart {
                 kind,
                 command,
