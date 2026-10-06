@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Name collisions under the identity install layout (jdx/mise#13678).
+# An installation directory is <label>-<first 8 base32 chars of the identity
+# digest>. When that name is already taken by something that is not this
+# identity (another installation, a stranger directory, a file, a name reserved
+# in the catalog) mise extends the new suffix by two characters at a time and
+# never overwrites, renames or reuses what is there. Once assigned, the path is
+# stable: uninstalling and reinstalling lands on the same directory.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+
+# The directory name only depends on the identity (backend, version, platform,
+# options), so a second data directory tells us what dummy@1.1.0 will be called
+# here without allocating anything in the data directory under test.
+other="$HOME/other-data"
+mkdir -p "$other/plugins"
+ln -s "$ROOT/test/data/plugins/dummy" "$other/plugins/dummy"
+
+# The digest recorded in the receipt of dummy@<version> under an installs dir.
+digest_of() {
+  local receipt
+  for receipt in "$1"/dummy-*/.mise-install.toml; do
+    if grep -q "^version = \"$2\"\$" "$receipt"; then
+      sed -n 's/^digest = "\(.*\)"$/\1/p' "$receipt"
+      return
+    fi
+  done
+}
+
+assert "MISE_DATA_DIR='$other' mise install dummy@1.1.0"
+digest="$(digest_of "$other/installs" 1.1.0)"
+[[ $digest =~ ^[a-z2-7]{52}$ ]] || fail "not a 52 char base32 digest: '$digest'"
+name8="dummy-${digest:0:8}"
+name10="dummy-${digest:0:10}"
+name12="dummy-${digest:0:12}"
+assert "test -d '$other/installs/$name8'"
+
+echo "=== a stranger directory in the way is never overwritten ==="
+mkdir -p "$installs/$name8/bin"
+echo "not a mise installation" >"$installs/$name8/precious"
+echo "#!/bin/sh" >"$installs/$name8/bin/dummy"
+assert "mise install dummy@1.1.0"
+assert_matches "mise where dummy@1.1.0" "^$installs/$name10\$"
+# the stranger is exactly as it was: no receipt, no new files, same contents
+assert "cat '$installs/$name8/precious'" "not a mise installation"
+assert "cat '$installs/$name8/bin/dummy'" "#!/bin/sh"
+assert "test ! -e '$installs/$name8/.mise-install.toml'"
+assert "find '$installs/$name8' -type f | wc -l | tr -d ' '" "2"
+# the installation went into the extended name, complete and working
+assert "test -f '$installs/$name10/.mise-install.toml'"
+assert_contains "cat '$installs/$name10/.mise-install.toml'" "dir = \"$name10\""
+assert_contains "cat '$installs/$name10/.mise-install.toml'" "digest = \"$digest\""
+assert_contains "$installs/$name10/bin/dummy" "This is Dummy 1.1.0!"
+assert "readlink '$installs/dummy/1.1.0'" "../$name10"
+# the stranger is not a tool, an installation or a version of dummy
+assert_not_contains "mise ls" "dummy-"
+assert "mise ls --json dummy | jq -r '.[0].install_path'" "$installs/$name10"
+assert "mise ls --json dummy | jq -r 'length'" "1"
+
+echo "=== the catalog reserves the extended name ==="
+assert "test -f '$installs/.mise/names/$name10'"
+assert_contains "cat '$installs/.mise/names/$name10'" "$digest"
+assert "test ! -e '$installs/.mise/names/$name8'"
+assert "ls '$installs'/.mise/identities/*/$digest.toml"
+assert_contains "cat '$installs'/.mise/identities/*/$digest.toml" "dir = \"$name10\""
+
+echo "=== the assignment is stable across uninstall and reinstall ==="
+assert "mise uninstall dummy@1.1.0"
+assert "test ! -e '$installs/$name10'"
+assert "cat '$installs/$name8/precious'" "not a mise installation"
+assert "test -f '$installs/.mise/names/$name10'"
+assert "mise install dummy@1.1.0"
+assert "mise where dummy@1.1.0" "$installs/$name10"
+assert "test ! -e '$installs/$name12'"
+assert "cat '$installs/$name8/precious'" "not a mise installation"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 2"
+
+echo "=== a later install of another version does not disturb either ==="
+assert "mise install dummy@2.0.0"
+assert "test -f '$installs/$name10/.mise-install.toml'"
+assert "cat '$installs/$name8/precious'" "not a mise installation"
+assert_matches "mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8,12}\$"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 3"
+
+echo "=== every candidate occupied: the suffix keeps growing ==="
+# 8 chars: a stranger directory, 10 chars: a stranger file, both in place
+# before 1.0.0 is installed here for the first time
+assert "MISE_DATA_DIR='$other' mise install dummy@1.0.0"
+other_digest="$(digest_of "$other/installs" 1.0.0)"
+[[ $other_digest =~ ^[a-z2-7]{52}$ ]] || fail "not a 52 char base32 digest: '$other_digest'"
+old8="dummy-${other_digest:0:8}"
+old10="dummy-${other_digest:0:10}"
+old12="dummy-${other_digest:0:12}"
+mkdir -p "$installs/$old8"
+echo "stranger" >"$installs/$old8/keep"
+echo "stranger file" >"$installs/$old10"
+assert "mise install dummy@1.0.0"
+assert "mise where dummy@1.0.0" "$installs/$old12"
+assert "cat '$installs/$old8/keep'" "stranger"
+assert "cat '$installs/$old10'" "stranger file"
+assert "test -f '$installs/$old12/.mise-install.toml'"
+assert_contains "$installs/$old12/bin/dummy" "This is Dummy 1.0.0!"
+
+echo "=== a name reserved in the catalog for another identity is skipped ==="
+# the reservation outlives the payload of whatever owned it
+assert "mise uninstall dummy@1.0.0"
+assert "mise uninstall dummy@2.0.0"
+assert "mise uninstall dummy@1.1.0"
+assert_fail "ls -d '$installs'/dummy-*/.mise-install.toml"
+# a fresh data directory with only a reservation in the way
+rm -rf "$installs"
+mkdir -p "$installs/.mise/names"
+printf '%s' "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" >"$installs/.mise/names/$name8"
+assert "mise install dummy@1.1.0"
+assert "mise where dummy@1.1.0" "$installs/$name10"
+assert "test ! -e '$installs/$name8'"
+assert "cat '$installs/.mise/names/$name8'" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+assert_contains "cat '$installs/.mise/names/$name10'" "$digest"
+assert_contains "$installs/$name10/bin/dummy" "This is Dummy 1.1.0!"

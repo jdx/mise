@@ -22,7 +22,7 @@ Use `mise plugins ls-remote` for registry plugin sources and `mise ls` for tools
 - **`-o --outdated`** — Show plugins with available updates
   Checks the remote for newer versions and only displays plugins that are outdated
 - **`-u --urls`** — Show the git url for each plugin
-  e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
+  e.g.: <https://github.com/jdx/vfox-cmake.git>
 - **`--user`** — List installed plugins
 
   This is the default behavior but can be used with --core

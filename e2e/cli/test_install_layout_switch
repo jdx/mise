@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# `mise backends switch` under the identity install layout: the new backend's
+# installation is a different one from the old backend's, so the switch installs
+# it (instead of finding the version "already installed"), and the version link
+# moves to it. hk moved from Aqua to Packslip at 1.58.1.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+export MISE_LOCKFILE=1
+export MISE_MINIMUM_RELEASE_AGE=0
+detect_platform
+installs="$MISE_DATA_DIR/installs"
+
+cat <<'EOF2' >mise.toml
+[tools]
+hk = "1"
+EOF2
+cat <<'EOF2' >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+specifiers = ["1"]
+EOF2
+
+assert_contains "mise install 2>&1" "mise backends switch hk"
+old_dir="$(mise where hk)"
+assert_contains "cat '$old_dir/.mise-install.toml'" 'backend = "aqua:jdx/hk"'
+
+mise backends switch hk
+assert_contains "cat mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+new_dir="$(mise where hk)"
+[[ $new_dir != "$old_dir" ]] || fail "the switch kept the aqua installation $old_dir"
+assert_contains "cat '$new_dir/.mise-install.toml'" 'backend = "packslip:github.com/jdx/hk"'
+assert "readlink '$installs/hk/1.58.1'" "../$(basename "$new_dir")"
+assert_contains "mise exec -- hk --version" "hk 1.58.1"
+# the old backend's installation is left for prune, not deleted
+assert "test -f '$old_dir/.mise-install.toml'"

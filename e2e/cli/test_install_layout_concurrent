@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Concurrent installs under the identity install layout (jdx/mise#13678).
+# Allocation of a directory is serialized: concurrent installers of the same
+# identity select the same directory and only one of them installs into it,
+# while different identities racing for the catalog each get a directory of
+# their own, with consistent catalog records for all of them.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+work="$PWD"
+
+# wait for every pid and fail if any of the background installs failed
+wait_all() {
+  local pid status
+  for pid in "$@"; do
+    status=0
+    wait "$pid" || status=$?
+    [[ $status == 0 ]] || fail "a concurrent install failed with status $status"
+  done
+}
+
+echo "=== six processes install one identity at once ==="
+# the dummy plugin records overlapping installs in <gate>.overlap
+export DUMMY_INSTALL_GATE_DIR="$work/install-gate"
+pids=()
+for i in 1 2 3 4 5 6; do
+  mise install dummy@1.1.0 >"$work/same.$i.log" 2>&1 &
+  pids+=($!)
+done
+wait_all "${pids[@]}"
+assert "test ! -e '$work/install-gate.overlap'"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 1"
+dir="$(mise where dummy@1.1.0)"
+name="$(basename "$dir")"
+assert_matches "echo '$dir'" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test -f '$dir/.mise-install.toml' && test -x '$dir/bin/dummy'"
+assert "readlink '$installs/dummy/1.1.0'" "../$name"
+assert "test \"\$(ls '$installs/.mise/names' | wc -l)\" -eq 1"
+assert "test -f '$installs/.mise/names/$name'"
+assert "test \"\$(ls '$installs/.mise/selections' | wc -l)\" -eq 1"
+assert_contains "$dir/bin/dummy" "This is Dummy 1.1.0!"
+# the processes that did not install it found the one that did
+installed=0
+for i in 1 2 3 4 5 6; do
+  if grep -q "already installed" "$work/same.$i.log"; then
+    continue
+  fi
+  installed=$((installed + 1))
+done
+[[ $installed -ge 1 ]] || fail "no process installed dummy@1.1.0"
+unset DUMMY_INSTALL_GATE_DIR
+
+echo "=== four variants of one version install at once ==="
+pids=()
+for variant in a b c d; do
+  mkdir "$work/project-$variant"
+  cat >"$work/project-$variant/mise.toml" <<EOF
+[tools]
+dummy = { version = "1.1.0", install_env = { DUMMY_VARIANT = "$variant" } }
+EOF
+  (cd "$work/project-$variant" && mise install >"$work/variant.$variant.log" 2>&1) &
+  pids+=($!)
+done
+wait_all "${pids[@]}"
+# each variant got a directory of its own, next to the first installation
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 5"
+assert "test \"\$(ls '$installs/.mise/names' | wc -l)\" -eq 5"
+seen=""
+for variant in a b c d; do
+  variant_dir="$(mise -C "$work/project-$variant" where dummy)"
+  assert_matches "echo '$variant_dir'" "^$installs/dummy-[a-z2-7]{8}\$"
+  assert "test -f '$variant_dir/.mise-install.toml' && test -x '$variant_dir/bin/dummy'"
+  assert_contains "cat '$variant_dir/env'" "DUMMY_VARIANT=$variant"
+  [[ $variant_dir != "$dir" ]] || fail "variant $variant reused the unvariant installation"
+  [[ $seen != *"$variant_dir"* ]] || fail "variant $variant shares $variant_dir with another variant"
+  seen="$seen $variant_dir"
+  assert_contains "mise -C '$work/project-$variant' x -- dummy" "This is Dummy 1.1.0!"
+done
+# every directory a name was reserved for holds a complete installation
+for reserved in "$installs"/.mise/names/*; do
+  assert "test -f '$installs/$(basename "$reserved")/.mise-install.toml'"
+done
+assert_empty "find -L '$installs' -maxdepth 2 -type l"
+
+echo "=== concurrent uninstalls of the same installation both succeed ==="
+pids=()
+for i in 1 2 3; do
+  mise uninstall --all dummy >"$work/uninstall.$i.log" 2>&1 &
+  pids+=($!)
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || true
+done
+assert_fail "ls -d '$installs'/dummy-*"
+assert_empty "find -L '$installs' -maxdepth 2 -type l"

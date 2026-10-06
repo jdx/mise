@@ -945,6 +945,24 @@ to select which files the directory saves.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <GLOB> help="The glob as written by `mise dot exclude`"
         }
+        cmd notify help="Send a test desktop notification" effect=write {
+            long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            example "mise dot notify"
+        }
         cmd origin help="Connect or disconnect the setup repository" effect=destructive {
             long_help #"""
 Connect or disconnect the setup repository
@@ -2736,6 +2754,24 @@ to select which files the directory saves.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <GLOB> help="The glob as written by `mise dot exclude`"
     }
+    cmd notify help="Send a test desktop notification" effect=write {
+        long_help #"""
+Send a test desktop notification
+
+Checks that `history.notify` can reach you. On macOS the first
+notification asks for permission, so run this once to be prompted now
+instead of at the first sync conflict. Fails with the reason when this
+build or machine cannot show notifications, such as an unofficial macOS
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
+
+Notifications are only sent when conflicts pause sharing for the setup.
+Other problems, such as a watcher that cannot save, show in `mise doctor`
+and `mise dot status`.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        example "mise dot notify"
+    }
     cmd origin help="Connect or disconnect the setup repository" effect=destructive {
         long_help #"""
 Connect or disconnect the setup repository
@@ -3931,6 +3967,87 @@ v20.0.0
 """# help="install node@20.0.0 into ./mynode"
     complete path type=dir
 }
+cmd installs help="[experimental] Inspect and choose installations of the identity install layout" effect=read {
+    long_help #"""
+[experimental] Inspect and choose installations of the identity install layout
+
+With `install_layout = "identity"`, each installation lives in its own
+`<label>-<hash>` directory, and several installations of one version can
+exist side by side (different options, platforms, pinned artifacts, or a
+refreshed copy). These commands list them, choose which one requests
+without a lockfile use, and move installations made before the layout
+was turned on into it.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd ls help="List the installations of the identity install layout" effect=read {
+        alias list
+        long_help #"""
+List the installations of the identity install layout
+
+Every installation is listed separately, so variants of one version (made
+with different options, or pinned to different artifacts by lockfiles) can
+be told apart. The status column says which installation requests without
+a lockfile use (`selected`), which a lockfile adopted (`pinned`), and which
+live in a read-only shared installs directory (`shared`).
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --no-header help="Don't display headers"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL]…" help="Only show the installations of these tools" required=#false var=#true
+        example "mise installs ls" help="Every installation in the identity layout"
+        example "mise installs ls node --json" help="The installations of node, as JSON"
+    }
+    cmd migrate help="Reinstall legacy installations into the identity install layout" effect=write {
+        long_help #"""
+Reinstall legacy installations into the identity install layout
+
+Installations made before `install_layout = "identity"` was turned on stay in
+`installs/<tool>/<version>` and keep working; mise never moves them on its own,
+because tools record their own path in shebangs, virtual environments and
+package-manager files. This reinstalls each one into its own `<label>-<hash>`
+directory, then removes the old directory and puts the version link in its
+place, so a path that pointed into the old directory still resolves.
+
+Each version is reinstalled from its backend, not copied, so the files are
+written for their new path. Run it while nothing is using the tools: the old
+directory is moved aside while its replacement installs, and put back if that
+fails. Versions whose recorded backend is not the one their tool resolves to
+now are left alone, as are tools that keep the legacy layout (`http:`,
+`rust`, `dotnet`).
+"""#
+        flag "-n --dry-run" help="Show what would move without changing anything"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TOOL@VERSION]…" help="Only migrate these tools, or these versions of them" help_long=#"""
+Only migrate these tools, or these versions of them
+
+Defaults to every legacy installation.
+"""# required=#false var=#true
+        example "mise installs migrate --dry-run" help="List the legacy installations that would move"
+        example "mise installs migrate node python@3.12.1" help="Move every installed node, and one python"
+    }
+    cmd select help="Choose the installation that requests without a lockfile use" effect=write {
+        long_help #"""
+Choose the installation that requests without a lockfile use
+
+Several installations can answer the same request: a refresh that could not
+replace a lockfile's installation in place, or installations made for
+different lockfiles. Requests without a lockfile entry use the one selected
+for their tool, version, platform and options, and when none is selected and
+several match, mise stops and asks for this command.
+
+The selection is shared by every project on this machine that makes the same
+request without a lockfile. Projects whose lockfile pins an artifact keep the
+installation of that artifact. The version link (`installs/<tool>/<version>`)
+is pointed at the selected installation.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <INSTALLATION> help="The installation to select: its directory name, or its path"
+        example #"""
+mise installs ls jq
+mise installs select jq-hm3qa4vb
+"""# help="Find jq's installations, then choose one"
+    }
+}
 cmd latest help="Resolve the latest matching version request for a tool" effect=read {
     long_help #"""
 Resolve the latest matching version request for a tool
@@ -4636,7 +4753,7 @@ These are hidden by default
 """# conflicts=--all
     flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
         alias "--url" hide=#true
     }
@@ -4739,7 +4856,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 """#
         flag "-u --urls" help=#"""
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: https://github.com/jdx/vfox-cmake.git
 """# {
             alias "--url" hide=#true
         }
@@ -4770,7 +4887,7 @@ List all available remote plugins
 
 These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/
 """#
-        flag "-u --urls" help="Show the git url for each plugin, e.g. https://github.com/mise-plugins/mise-poetry.git"
+        flag "-u --urls" help="Show the plugin source for each shorthand, e.g. vfox:jdx/vfox-poetry"
         flag --only-names help="Only show the name of each plugin, without the \"*\" marking installed plugins"
         flag "-h --help" help="Print help" action=help builtin=#true
         example "mise plugins ls-remote"
@@ -4920,6 +5037,9 @@ as will versions only referenced on the command line `mise exec <TOOL>@<VERSION>
 
 Tool stubs that have been executed are tracked in ~/.local/state/mise/tracked-stubs.
 Versions still referenced by a tracked stub are not deleted.
+
+Versions that a running process was started from are not deleted either,
+so a long-running program keeps its files after its version stops being needed.
 
 You can list prunable tools with `mise ls --prunable`
 """#

@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# Legacy installs and the identity install layout coexist (jdx/mise#13678).
+# A real installs/<short>/<version> directory made before the layout was turned
+# on is used where it is and never moved; new versions install into hashed
+# directories next to it; both list, run and uninstall; and turning the layout
+# back off still finds the hashed installs through their compatibility links.
+installs="$MISE_DATA_DIR/installs"
+legacy="$installs/dummy/1.0.0"
+
+echo "=== install_layout=legacy: the legacy layout ==="
+export MISE_INSTALL_LAYOUT=legacy
+assert "mise install dummy@1.0.0"
+assert "test -d '$legacy' && test ! -L '$legacy'"
+assert "test -x '$legacy/bin/dummy'"
+assert "test ! -e '$legacy/.mise-install.toml'"
+assert "test ! -e '$installs/.mise'"
+assert "ls '$installs'" "dummy"
+assert "readlink '$installs/dummy/latest'" "./1.0.0"
+assert "readlink '$installs/dummy/1'" "./1.0.0"
+echo 'tools.dummy = "1.0.0"' >mise.toml
+assert "mise where dummy" "$legacy"
+assert "mise which dummy" "$legacy/bin/dummy"
+
+echo "=== install_layout=identity: the legacy install is used in place ==="
+export MISE_INSTALL_LAYOUT=identity
+assert "mise where dummy@1.0.0" "$legacy"
+assert "mise which dummy" "$legacy/bin/dummy"
+assert_contains "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_contains "mise install dummy@1.0.0 2>&1" "already installed"
+assert "mise ls --json dummy | jq -r '.[0].install_path'" "$legacy"
+# it is not moved, replaced by a link, or shadowed by a hashed copy
+assert "test -d '$legacy' && test ! -L '$legacy'"
+assert "test ! -e '$legacy/.mise-install.toml'"
+assert_fail "ls -d '$installs'/dummy-*"
+assert "readlink '$installs/dummy/latest'" "./1.0.0"
+
+echo "=== a forced reinstall refreshes the legacy install in place ==="
+echo old >"$legacy/marker"
+assert "mise install --force dummy@1.0.0"
+assert "mise where dummy@1.0.0" "$legacy"
+assert "test -d '$legacy' && test ! -L '$legacy'"
+assert "test ! -e '$legacy/marker'"
+assert "test -x '$legacy/bin/dummy'"
+assert_fail "ls -d '$installs'/dummy-*"
+
+echo "=== a new version installs into a hashed directory ==="
+assert "mise install dummy@2.0.0"
+new="$(mise where dummy@2.0.0)"
+new_name="$(basename "$new")"
+assert_matches "mise where dummy@2.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert "test -d '$new' && test ! -L '$new'"
+assert "test -f '$new/.mise-install.toml'"
+assert "readlink '$installs/dummy/2.0.0'" "../$new_name"
+assert "test -d '$legacy' && test ! -L '$legacy'"
+# the runtime aliases span both layouts and keep their ./<version> form
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+assert "readlink '$installs/dummy/2'" "./2.0.0"
+assert "readlink '$installs/dummy/1'" "./1.0.0"
+assert "readlink '$installs/dummy/1.0'" "./1.0.0"
+# the legacy install still resolves to itself
+assert "mise where dummy@1.0.0" "$legacy"
+assert "mise where dummy@1" "$legacy"
+
+echo "=== both layouts list as one tool ==="
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "2.0.0"
+assert_not_contains "mise ls" "dummy-"
+assert "mise ls --json dummy | jq -r '.[] | select(.version == \"1.0.0\") | .install_path'" "$legacy"
+assert "mise ls --json dummy | jq -r '.[] | select(.version == \"2.0.0\") | .install_path'" "$new"
+assert "mise ls --json dummy | jq -r 'map(select(.installed)) | length'" "2"
+assert_contains "mise x dummy@2.0.0 -- dummy" "This is Dummy 2.0.0!"
+assert_contains "mise x dummy@1.0.0 -- dummy" "This is Dummy 1.0.0!"
+
+echo "=== install_layout=legacy again: hashed installs work through their links ==="
+export MISE_INSTALL_LAYOUT=legacy
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "2.0.0"
+assert "mise ls --json dummy | jq -r 'map(select(.installed)) | length'" "2"
+assert "mise where dummy@2.0.0" "$installs/dummy/2.0.0"
+assert "mise where dummy@1.0.0" "$legacy"
+assert_contains "mise x dummy@2.0.0 -- dummy" "This is Dummy 2.0.0!"
+assert_contains "mise x dummy@1.0.0 -- dummy" "This is Dummy 1.0.0!"
+assert "test -f '$new/.mise-install.toml'"
+# installing another version with the layout off is a plain legacy install
+assert "mise install dummy@3.0.0"
+assert "test -d '$installs/dummy/3.0.0' && test ! -L '$installs/dummy/3.0.0'"
+assert "readlink '$installs/dummy/latest'" "./3.0.0"
+assert "readlink '$installs/dummy/2.0.0'" "../$new_name"
+
+echo "=== install_layout=identity again: all three are found ==="
+export MISE_INSTALL_LAYOUT=identity
+assert "mise ls --json dummy | jq -r 'map(select(.installed)) | length'" "3"
+assert "mise where dummy@3.0.0" "$installs/dummy/3.0.0"
+assert "mise where dummy@2.0.0" "$new"
+assert "mise where dummy@1.0.0" "$legacy"
+
+echo "=== uninstall removes each, whichever layout it is in ==="
+assert "mise uninstall dummy@3.0.0"
+assert "test ! -e '$installs/dummy/3.0.0'"
+assert "mise uninstall dummy@1.0.0"
+assert "test ! -e '$legacy'"
+assert "test ! -L '$installs/dummy/1'"
+assert "test ! -L '$installs/dummy/1.0'"
+# the hashed installation and what points at it are not touched by that
+assert "test -f '$new/.mise-install.toml'"
+assert "readlink '$installs/dummy/2.0.0'" "../$new_name"
+assert "readlink '$installs/dummy/latest'" "./2.0.0"
+assert "mise uninstall dummy@2.0.0"
+assert "test ! -e '$new'"
+assert "test ! -e '$installs/dummy/2.0.0'"
+assert "test ! -L '$installs/dummy/2'"
+assert "test ! -L '$installs/dummy/latest'"
+assert_empty "mise ls --installed dummy"
+
+echo "=== legacy installs in shared roots: a different recorded backend is not claimed ==="
+# Each root describes its own tool directories. A legacy version is used in
+# place unless the backend recorded for it is a different one than the request
+# resolves to: another backend's payload is not reinterpreted, so that version
+# gets a fresh installation of its own instead. A directory with no recorded
+# backend is, as it always was, the tool directory of its short.
+make_legacy_dummy() {
+  local root="$1" version="$2" backend="$3"
+  mkdir -p "$root/dummy/$version/bin"
+  printf '#!/usr/bin/env bash\necho "This is Dummy %s! (shared)"\n' "$version" >"$root/dummy/$version/bin/dummy"
+  chmod +x "$root/dummy/$version/bin/dummy"
+  if [[ -n $backend ]]; then
+    cat >"$root/.mise-installs.toml" <<TOML
+[dummy]
+short = "dummy"
+full = "$backend"
+explicit_backend = false
+TOML
+  fi
+}
+
+# the primary root records dummy as an asdf install, which is what a request for
+# dummy resolves to; the shared roots below each record their own backend
+assert "mise install dummy@1.0.0"
+
+claimed="$HOME/shared-claimed"
+other_backend="$HOME/shared-other-backend"
+unrecorded="$HOME/shared-unrecorded"
+make_legacy_dummy "$claimed" 7.0.0 asdf:dummy
+make_legacy_dummy "$claimed" 7.5.0 asdf:dummy
+make_legacy_dummy "$other_backend" 8.0.0 vfox:dummy
+make_legacy_dummy "$other_backend" 7.5.0 vfox:dummy
+make_legacy_dummy "$unrecorded" 6.0.0 ""
+
+# a matching legacy version is used where it is, and the layout writes nothing to
+# the shared root: no installation, no receipt, no catalog. (Runtime aliases such as
+# `7` and `latest` are rebuilt there by every layout, as they always have been.)
+export MISE_SHARED_INSTALL_DIRS="$claimed"
+assert "mise where dummy@7.0.0" "$claimed/dummy/7.0.0"
+assert_contains "mise install dummy@7.0.0 2>&1" "already installed"
+assert_contains "mise x dummy@7.0.0 -- dummy" "This is Dummy 7.0.0! (shared)"
+assert "mise ls --json dummy | jq -r '.[] | select(.version == \"7.0.0\") | .install_path'" "$claimed/dummy/7.0.0"
+assert "test ! -e '$installs/dummy/7.0.0'"
+assert "test ! -e '$claimed/.mise'"
+assert_empty "find '$claimed' -name .mise-install.toml"
+assert_empty "find '$claimed' -maxdepth 1 -name 'dummy-*'"
+
+# another backend's payload under the same name is not reinterpreted: it is
+# installed afresh in the primary root and the shared copy is left alone
+export MISE_SHARED_INSTALL_DIRS="$other_backend"
+assert "mise install dummy@8.0.0"
+assert_matches "mise where dummy@8.0.0" "^$installs/dummy-[a-z2-7]{8}\$"
+assert_contains "mise x dummy@8.0.0 -- dummy" "This is Dummy 8.0.0!"
+assert_not_contains "mise x dummy@8.0.0 -- dummy" "(shared)"
+assert "test ! -e '$other_backend/.mise'"
+assert_empty "find '$other_backend' -name .mise-install.toml"
+assert_empty "find '$other_backend' -maxdepth 1 -name 'dummy-*'"
+assert "test -x '$other_backend/dummy/8.0.0/bin/dummy'"
+
+# a directory with no recorded backend is the tool directory of its short
+export MISE_SHARED_INSTALL_DIRS="$unrecorded"
+assert "mise where dummy@6.0.0" "$unrecorded/dummy/6.0.0"
+assert_contains "mise x dummy@6.0.0 -- dummy" "This is Dummy 6.0.0! (shared)"
+
+# the same version in two roots resolves to the one whose own metadata matches,
+# whichever root comes first
+export MISE_SHARED_INSTALL_DIRS="$claimed:$other_backend"
+assert "mise where dummy@7.5.0" "$claimed/dummy/7.5.0"
+assert_contains "mise x dummy@7.5.0 -- dummy" "This is Dummy 7.5.0! (shared)"
+export MISE_SHARED_INSTALL_DIRS="$other_backend:$claimed"
+assert "mise where dummy@7.5.0" "$claimed/dummy/7.5.0"
+assert_contains "mise x dummy@7.5.0 -- dummy" "This is Dummy 7.5.0! (shared)"
+assert "test ! -e '$installs/dummy/7.5.0'"
+unset MISE_SHARED_INSTALL_DIRS

@@ -122,6 +122,13 @@ impl Backend for UbiBackend {
         &["provider", "api_url", "tag_regex"]
     }
 
+    /// `tag_regex` only filters which tags show up in the version list; the installed
+    /// version is already a concrete tag. `provider` and `api_url` are not listed: they
+    /// are read again at install time and name the forge and server the release comes from.
+    fn identity_ignored_options(&self) -> &'static [&'static str] {
+        &["tag_regex"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
             "2026.4.0",
@@ -578,6 +585,30 @@ async fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_identity_options_ignore_tag_regex_only() {
+        use crate::backend::static_helpers::test_identity_options;
+        let backend = UbiBackend::from_arg(BackendArg::from("ubi:test/repo"));
+        let identity = |options: &[(&str, &str)]| test_identity_options(&backend, "1.0.0", options);
+        let base = identity(&[]);
+
+        // A listing filter never changes what a concrete tag installs.
+        assert_eq!(identity(&[("tag_regex", "^v\\d+")]), base);
+
+        for (key, value) in [
+            ("exe", "tool"),
+            ("matching", "musl"),
+            ("provider", "gitlab"),
+            ("api_url", "https://ghe.example.com/api/v3"),
+        ] {
+            assert_ne!(
+                identity(&[(key, value)]),
+                base,
+                "{key} changes what is installed"
+            );
+        }
+    }
 
     #[test]
     fn test_extract_all_accepts_native_bool_or_string() {

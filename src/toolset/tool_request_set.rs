@@ -304,7 +304,10 @@ impl ToolRequestSetBuilder {
 /// defaults, so option emptiness cannot indicate whether config should apply.
 /// The canonical backend resolver preserves the normal precedence and reapplies
 /// explicit inline backend options last.
-fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolRequest) -> ToolRequest {
+pub fn apply_config_options_to_runtime_arg(
+    trs: &ToolRequestSet,
+    mut tvr: ToolRequest,
+) -> ToolRequest {
     if let Some(config_options) = trs
         .tools
         .get(tvr.ba())

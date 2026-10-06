@@ -9,7 +9,6 @@ use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
 use std::sync::Mutex;
-#[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -1100,10 +1099,24 @@ fn create_windows_unc_symlink(target: &Path, link: &Path) -> std::io::Result<()>
 #[cfg(windows)]
 fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
     if is_unc_path(target) {
-        create_windows_unc_symlink(target, link)
-    } else {
-        junction::create(target, link)
+        return create_windows_unc_symlink(target, link);
     }
+    let existed = fs::symlink_metadata(link).is_ok();
+    let result = junction::create(target, link);
+    // `junction::create` makes the directory before it sets the reparse point,
+    // so a later failure (a target too long for the reparse buffer) leaves a
+    // plain directory that would pass for an installed version. Remove only what
+    // this call created, and only if it is still an empty plain directory.
+    // `AlreadyExists` means `create_dir` itself failed because something else holds the
+    // name (another process won the race), so there is nothing of ours to remove.
+    if let Err(err) = &result
+        && err.kind() != std::io::ErrorKind::AlreadyExists
+        && !existed
+        && junction::get_target(link).is_err()
+    {
+        let _ = fs::remove_dir(link);
+    }
+    result
 }
 
 #[cfg(windows)]
@@ -1134,14 +1147,100 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
 }
 
 pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
-    // Windows symlink are write in file currently
-    // may be changed to symlink in the future
+    // Windows aliases created before runtime links became junctions are plain
+    // files holding the target path, so both forms are read here.
     if link.is_symlink() {
         Ok(Some(fs::read_link(link)?))
+    } else if let Some(target) = junction_target(link) {
+        Ok(Some(target))
     } else if link.is_file() {
         Ok(Some(fs::read_to_string(link)?.into()))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(windows)]
+fn junction_target(link: &Path) -> Option<PathBuf> {
+    junction::get_target(link).ok()
+}
+
+#[cfg(not(windows))]
+fn junction_target(_link: &Path) -> Option<PathBuf> {
+    None
+}
+
+/// Links `link` to the directory `target` (a relative target is taken from
+/// `link`'s parent) for a runtime alias such as `installs/node/latest`.
+///
+/// On Windows this is a real junction, which tools that enumerate the path
+/// (IDE SDK selectors) can follow; it never falls back to a text file. A failure
+/// is returned so the caller can warn and carry on without the link.
+#[cfg(unix)]
+pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
+    make_symlink(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn make_dir_link(target: &Path, link: &Path) -> Result<()> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let target = resolve_relative_link_target(link, target.to_path_buf());
+    let target = target.absolutize()?.into_owned();
+    if fs::symlink_metadata(link).is_err() {
+        match make_symlink(&target, link) {
+            Ok(_) => return Ok(()),
+            // Something else made the slot in the meantime: replace it below.
+            Err(_) if fs::symlink_metadata(link).is_ok() => {}
+            Err(err) => return Err(err),
+        }
+    }
+    // Replacing a link: build the new one beside it first, so a failure to
+    // create it leaves the working link in place instead of an empty slot.
+    let name = link.file_name().and_then(|n| n.to_str()).unwrap_or("link");
+    let tmp = link.with_file_name(format!(
+        ".{name}.tmp.{}.{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    make_symlink(&target, &tmp)?;
+    // What the link pointed at, to put it back if the swap cannot be completed.
+    let previous = resolve_symlink(link)
+        .ok()
+        .flatten()
+        .map(|old| resolve_relative_link_target(link, old));
+    let swapped = remove_dir_link(link).and_then(|()| {
+        // `rename` retries the transient locks antivirus and the OS put on a fresh entry.
+        rename(&tmp, link)
+    });
+    if swapped.is_err() {
+        let _ = remove_symlink_or_junction(&tmp);
+        if let Some(previous) = previous
+            && fs::symlink_metadata(link).is_err()
+        {
+            let _ = make_symlink(&previous, link);
+        }
+    }
+    swapped
+}
+
+/// Removes a link made by [`make_dir_link`], or an older text-file alias.
+#[cfg(unix)]
+pub fn remove_dir_link(link: &Path) -> Result<()> {
+    if link.is_symlink() || link.is_file() {
+        remove_file(link)?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn remove_dir_link(link: &Path) -> Result<()> {
+    if is_symlink_or_junction(link) {
+        remove_symlink_or_junction(link)
+    } else if link.is_file() {
+        remove_file(link)
+    } else {
+        Ok(())
     }
 }
 

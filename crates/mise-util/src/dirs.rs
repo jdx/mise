@@ -17,6 +17,7 @@ pub static SYSTEM_CONFIG: Lazy<&Path> = Lazy::new(|| &env::MISE_SYSTEM_CONFIG_DI
 pub static PLUGINS: Lazy<&Path> = Lazy::new(|| &env::MISE_PLUGINS_DIR);
 pub static DOWNLOADS: Lazy<&Path> = Lazy::new(|| &env::MISE_DOWNLOADS_DIR);
 pub static INSTALLS: Lazy<&Path> = Lazy::new(|| &env::MISE_INSTALLS_DIR);
+pub static INSTALL_STORE: Lazy<&Path> = Lazy::new(|| &env::MISE_INSTALL_STORE_DIR);
 pub static COMMAND_WRAPPERS: Lazy<PathBuf> =
     Lazy::new(|| DATA.join("command-wrappers").join("bin"));
 
