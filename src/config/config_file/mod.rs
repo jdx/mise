@@ -137,8 +137,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    /// The tool of each templated version (`node = "{{ vars.node }}"`) that this
-    /// platform resolves, once per version.
+    /// The tools with a templated version (`node = "{{ vars.node }}"`) that this
+    /// platform resolves, each once.
     fn templated_tool_backends(&self) -> Vec<String> {
         vec![]
     }

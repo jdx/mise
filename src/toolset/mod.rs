@@ -1025,12 +1025,8 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                     requests.add_version(request, &cf.source());
                 }
                 if current.keep_all {
-                    let mut kept = vec![];
                     for short in cf.templated_tool_backends() {
-                        if !kept.contains(&short) {
-                            keep_every_installation(&short, &path, &mut needed);
-                            kept.push(short);
-                        }
+                        keep_every_installation(&short, &path, &mut needed);
                     }
                 }
                 requests

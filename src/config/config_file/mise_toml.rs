@@ -1808,7 +1808,10 @@ impl ConfigFile for MiseToml {
                         os.iter()
                             .any(|entry| crate::platform::os_selector_matches(entry))
                     });
-                if on_this_os && contains_template_syntax(&tool.request) {
+                if on_this_os
+                    && contains_template_syntax(&tool.request)
+                    && !backends.contains(&ba.short.to_string())
+                {
                     backends.push(ba.short.to_string());
                 }
             }
