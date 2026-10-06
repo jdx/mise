@@ -190,14 +190,19 @@ impl Upgrade {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
-        self.run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::AllowLocked, false)
-            .await
+        self.run_with_lockfile_update_mode(
+            crate::lockfile::LockfileUpdateMode::AllowLocked,
+            false,
+            None,
+        )
+        .await
     }
 
     async fn run_with_lockfile_update_mode(
         mut self,
         lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
         background_tool_update: bool,
+        background_scheduled_request: Option<&ToolRequest>,
     ) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
@@ -396,7 +401,11 @@ impl Upgrade {
             // final install boundary as well. An unreadable lockfile is also
             // conservatively ineligible.
             outdated.retain(|outdated| {
-                !outdated.request_pinned_to_current_version()
+                background_scheduled_request.is_some_and(|scheduled| {
+                    outdated.tool_version.request.ba() == scheduled.ba()
+                        && outdated.tool_version.request.version() == scheduled.version()
+                        && outdated.tool_version.request.options() == scheduled.options()
+                }) && !outdated.request_pinned_to_current_version()
                     && matches!(
                         crate::tool_update::request_has_lockfile(
                             config.as_ref(),
@@ -515,6 +524,7 @@ impl Upgrade {
                 before_date,
                 &explicit_config_bumps,
                 lockfile_update_mode,
+                background_tool_update,
             )
             .await?;
         }
@@ -529,6 +539,7 @@ impl Upgrade {
         before_date: Option<Timestamp>,
         explicit_config_bumps: &[ExplicitConfigBump],
         lockfile_update_mode: crate::lockfile::LockfileUpdateMode,
+        background_tool_update: bool,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let prune_mode = self.prune_mode()?;
@@ -568,19 +579,25 @@ impl Upgrade {
                 }
             }
         }
-        let config_file_updates = outdated_with_config_files
-            .iter()
-            .filter_map(|(o, cf)| {
-                if let Ok(trs) = cf.to_tool_request_set()
-                    && let Some(versions) = trs.tools.get(o.tool_request.ba())
-                    && versions.len() != 1
-                {
-                    warn!("upgrading multiple versions with --bump is not yet supported");
-                    return None;
-                }
-                Some((*o, Arc::clone(cf)))
-            })
-            .collect::<Vec<_>>();
+        let config_file_updates = if background_tool_update {
+            // The hidden updater may install a newer floating version, but it
+            // must never persist that selection back into any configuration.
+            vec![]
+        } else {
+            outdated_with_config_files
+                .iter()
+                .filter_map(|(o, cf)| {
+                    if let Ok(trs) = cf.to_tool_request_set()
+                        && let Some(versions) = trs.tools.get(o.tool_request.ba())
+                        && versions.len() != 1
+                    {
+                        warn!("upgrading multiple versions with --bump is not yet supported");
+                        return None;
+                    }
+                    Some((*o, Arc::clone(cf)))
+                })
+                .collect::<Vec<_>>()
+        };
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
@@ -637,7 +654,7 @@ impl Upgrade {
                 }
             }
             print_explicit_config_bumps(&planned_explicit_config_bumps)?;
-            if !self.bump {
+            if !background_tool_update && !self.bump {
                 use crate::toolset::outdated_info::compute_config_bumps;
                 let tool_versions: Vec<(String, String)> = self
                     .tool
@@ -820,7 +837,7 @@ impl Upgrade {
             // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
             // update the config file prefix if the new version doesn't match the current specifier.
             // Skip if --bump was used since it already handles config updates.
-            if !self.bump {
+            if !background_tool_update && !self.bump {
                 use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
                 let tool_versions: Vec<(String, String)> = self
                     .tool
@@ -1285,10 +1302,12 @@ pub(crate) async fn run_background_tool_update(
     // resolving a newest-major candidate and filtering it afterwards. The
     // configured request still supplies its normal options and release-age
     // constraints through ToolsetBuilder's runtime-argument option layering.
-    let selector = policy
-        .candidate_selector(current)
-        .unwrap_or_else(|| request.into());
+    let selector = crate::tool_update::bounded_update_selector(policy, current, request);
     let tool = background_update_tool_arg(config, tool, &selector, request)?;
+    let scheduled_request = tool
+        .tvr
+        .clone()
+        .ok_or_else(|| eyre!("background updater requires a concrete tool request"))?;
     Upgrade {
         tool: vec![tool],
         bump: false,
@@ -1306,7 +1325,11 @@ pub(crate) async fn run_background_tool_update(
         prune: false,
         raw: false,
     }
-    .run_with_lockfile_update_mode(crate::lockfile::LockfileUpdateMode::Skip, true)
+    .run_with_lockfile_update_mode(
+        crate::lockfile::LockfileUpdateMode::Skip,
+        true,
+        Some(&scheduled_request),
+    )
     .await
 }
 

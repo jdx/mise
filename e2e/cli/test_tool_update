@@ -105,10 +105,31 @@ EOF
 mise uninstall dummy --all
 mise install dummy@1.0.0
 assert_contains "mise where dummy" "$MISE_DATA_DIR/installs/dummy/1.0.0"
+local_config_checksum="$(cksum mise.toml)"
 assert_contains "mise x -- dummy" "Dummy 1.0.0"
 wait_for_dummy "1.1.0"
 assert_contains "mise x -- dummy" "Dummy 1.1.0"
 assert_not_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "cksum mise.toml" "$local_config_checksum"
+
+# Even the broadest policy is only an additional bound; it can never widen the
+# version range selected by configuration.
+fresh_state major-range
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings.tool_update]
+check_duration = "1h"
+
+[tools]
+dummy = { version = "1", auto_update = "major" }
+EOF
+write_floating_dummy
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+wait_for_dummy "1.1.0"
+assert_not_contains "mise ls --installed dummy" "2.0.0"
+
+write_global_auto_update
 
 # Tasks schedule only after their task environment has fixed its tool paths.
 fresh_state run

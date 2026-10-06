@@ -296,8 +296,9 @@ claude = { version = "latest", auto_update = "patch" }
 codex = { version = "latest", auto_update = "minor" }
 ```
 
-`major` asks the backend for its newest version. `minor` retains the first numeric version component
-of the installed version; `patch` retains its first two components.
+`major` keeps the configured selector's normal range. `minor` retains the first numeric version
+component of the installed version; `patch` retains its first two components. An update boundary
+can narrow a floating selector, but never widens the configured request.
 This uses mise's existing version-prefix matching, so date-like and other non-SemVer versions keep
 their visible numeric components rather than being parsed as SemVer. If a version has no numeric
 components, mise falls back to the configured request rather than silently disabling updates.

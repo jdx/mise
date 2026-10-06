@@ -60,6 +60,29 @@ impl UpdatePolicy {
     }
 }
 
+/// Apply a policy boundary only when it is a strict refinement of the
+/// configured selector. A background update may narrow a floating request,
+/// but it must never widen it: `node = "20"` stays in 20 even if the trusted
+/// policy is `major`.
+pub fn bounded_update_selector(policy: UpdatePolicy, current: &str, configured: &str) -> String {
+    let Some(candidate) = policy.candidate_selector(current) else {
+        return configured.to_string();
+    };
+    if candidate == configured
+        // `latest` is mise's explicit unbounded floating selector, so a
+        // version prefix derived from the working installation can only
+        // narrow it.
+        || configured == "latest"
+        || candidate.strip_prefix(configured).is_some_and(|rest| {
+            rest.starts_with('.') || rest.starts_with('-') || rest.starts_with('_')
+        })
+    {
+        candidate
+    } else {
+        configured.to_string()
+    }
+}
+
 /// Derive a prefix query from the first `component_count` numeric components.
 /// Separators deliberately include dots, dashes, and underscores: dates such
 /// as `2026-10-06` need the same bounded behavior as `1.2.3`, and names like
@@ -148,6 +171,7 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
     };
 
     let mut scheduled = HashSet::new();
+    let mut global_toolset = None;
     for (_, tool_version) in toolset.list_current_versions() {
         let tool = tool_version.ba();
         let tool_id = tool.full_without_opts();
@@ -166,10 +190,29 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
             debug!("skipping background update for {tool_id}: selected version is not installed");
             continue;
         }
-        let Some(policy) = global_update_policy(config, tool) else {
+        let global = global_toolset.get_or_insert_with(|| {
+            ToolsetBuilder::new()
+                .with_scope(ConfigScope::GlobalOnly)
+                .build_unresolved(config)
+                .ok()
+        });
+        let Some(global) = global.as_ref() else {
+            debug!("skipping background update for {tool_id}: could not read global config");
+            continue;
+        };
+        let Some(policy) = global_update_policy(global, tool) else {
             debug!("skipping background update for {tool_id}: no global auto_update option");
             continue;
         };
+        match tool_version.resolved_from_lockfile() {
+            true => {
+                debug!(
+                    "skipping background update for {tool_id}: request resolved from a lockfile"
+                );
+                continue;
+            }
+            false => {}
+        }
         match request_has_lockfile(config, &tool_version.request) {
             Ok(true) => {
                 debug!("skipping background update for {tool_id}: request is lockfile-bound");
@@ -209,6 +252,10 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
             debug!("failed to record background update attempt for {tool_id}: {err:#}");
             continue;
         }
+        // The marker now prevents another foreground process from starting a
+        // child for this interval. Release the short parent claim before the
+        // child is spawned so it cannot observe the handoff lock and give up.
+        drop(claim);
 
         let mut command = Command::new(&*env::MISE_BIN);
         command
@@ -230,18 +277,13 @@ pub fn schedule(config: &Arc<Config>, toolset: &Toolset) {
         if let Err(err) = spawn_detached(&mut command) {
             debug!("failed to start background update for {tool_id}: {err}");
         }
-        drop(claim);
     }
 }
 
 /// Obtain the option only from the user's global config layer. Local project
 /// config can still select a floating version, but can never turn background
 /// installation on or change its update boundary.
-fn global_update_policy(config: &Arc<Config>, tool: &BackendArg) -> Option<UpdatePolicy> {
-    let global = ToolsetBuilder::new()
-        .with_scope(ConfigScope::GlobalOnly)
-        .build_unresolved(config)
-        .ok()?;
+fn global_update_policy(global: &Toolset, tool: &BackendArg) -> Option<UpdatePolicy> {
     let exact = global
         .versions
         .iter()
@@ -332,7 +374,7 @@ fn spawn_detached(command: &mut Command) -> std::io::Result<()> {
 mod tests {
     use std::time::Duration;
 
-    use super::{UpdatePolicy, tool_update_key, update_check_due};
+    use super::{UpdatePolicy, bounded_update_selector, tool_update_key, update_check_due};
 
     #[test]
     fn tool_key_is_stable_and_distinct() {
@@ -375,6 +417,34 @@ mod tests {
             Some("cpython-3.13".into())
         );
         assert_eq!(UpdatePolicy::Minor.candidate_selector("nightly"), None);
+    }
+
+    #[test]
+    fn policy_selector_refines_but_never_widens_the_configured_request() {
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Major, "1.2.3", "1"),
+            "1"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "1.2"),
+            "1.2"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Patch, "1.2.3", "1"),
+            "1.2"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "latest"),
+            "1"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Minor, "go1.23.4", "go1"),
+            "go1"
+        );
+        assert_eq!(
+            bounded_update_selector(UpdatePolicy::Minor, "1.2.3", "lts"),
+            "lts"
+        );
     }
 
     #[test]
