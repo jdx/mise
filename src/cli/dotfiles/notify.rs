@@ -8,7 +8,8 @@ use crate::system::history::notify;
 /// notification asks for permission, so run this once to be prompted now
 /// instead of at the first sync conflict. Fails with the reason when this
 /// build or machine cannot show notifications, such as an unofficial macOS
-/// build (Homebrew), a missing `notify-send` on Linux, or denied permission.
+/// build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+/// `history.notify = false`.
 ///
 /// Notifications are only sent when conflicts pause sharing for the setup.
 /// Other problems, such as a watcher that cannot save, show in `mise doctor`
@@ -19,6 +20,11 @@ pub(crate) struct DotfilesNotify {}
 
 impl DotfilesNotify {
     pub(crate) async fn run(self) -> Result<()> {
+        if !crate::config::Settings::get().history.notify {
+            eyre::bail!(
+                "desktop notifications are disabled (history.notify = false); enable the setting to test them"
+            );
+        }
         if let Some(reason) = notify::unavailable_reason() {
             eyre::bail!("desktop notifications are unavailable: {reason}");
         }

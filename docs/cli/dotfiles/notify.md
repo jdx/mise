@@ -6,6 +6,7 @@ description: "Send a test desktop notification"
 # `mise dotfiles notify`
 
 - **Usage:** `mise dotfiles notify`
+- **Effect:** modifies state
 - **Source code:** [`src/cli/dotfiles/notify.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/notify.rs)
 
 Send a test desktop notification
@@ -14,7 +15,8 @@ Checks that `history.notify` can reach you. On macOS the first
 notification asks for permission, so run this once to be prompted now
 instead of at the first sync conflict. Fails with the reason when this
 build or machine cannot show notifications, such as an unofficial macOS
-build (Homebrew), a missing `notify-send` on Linux, or denied permission.
+build (Homebrew), a missing `notify-send` on Linux, denied permission, or
+`history.notify = false`.
 
 Notifications are only sent when conflicts pause sharing for the setup.
 Other problems, such as a watcher that cannot save, show in `mise doctor`
