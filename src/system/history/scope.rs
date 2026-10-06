@@ -54,7 +54,6 @@ type Shared = Arc<Mutex<Writer>>;
 /// What a bootstrap that records no file history needs to open its journal.
 /// Its journal protects only the files the run is about to rewrite, so the
 /// operation lock, marker, and state directory wait for the first of them.
-#[derive(Clone)]
 struct LazyStart {
     kind: OperationKind,
     command: String,
@@ -63,7 +62,7 @@ struct LazyStart {
 
 enum Current {
     /// `None` once the run gave up on a journal (the lock was busy).
-    Lazy(Option<Box<LazyStart>>),
+    Lazy(Option<Arc<LazyStart>>),
     Started(Shared),
 }
 
@@ -124,13 +123,18 @@ fn open_lazy(wait: std::time::Duration) -> Result<bool> {
     let _serial = lock_unpoisoned(&STARTING);
     let start = match &*lock_unpoisoned(&CURRENT) {
         Some(Current::Started(_)) => return Ok(true),
-        Some(Current::Lazy(Some(start))) => (**start).clone(),
+        Some(Current::Lazy(Some(start))) => Arc::clone(start),
         _ => return Ok(false),
     };
     let shared = start_lazy(&start, wait)?;
     let mut current = lock_unpoisoned(&CURRENT);
     // the scope may have ended while the journal opened
-    let Some(Current::Lazy(lazy @ Some(_))) = &mut *current else {
+    // ... or ended and a later scope started: that one is not ours to touch
+    let ours = matches!(
+        &*current,
+        Some(Current::Lazy(Some(now))) if Arc::ptr_eq(now, &start)
+    );
+    if !ours {
         drop(current);
         if let Some(shared) = shared {
             // nobody owns the journal that just opened: close it out
@@ -140,14 +144,14 @@ fn open_lazy(wait: std::time::Duration) -> Result<bool> {
             }
         }
         return Ok(false);
-    };
+    }
     match shared {
         Some(shared) => {
             *current = Some(Current::Started(shared));
             Ok(true)
         }
         None => {
-            *lazy = None;
+            *current = Some(Current::Lazy(None));
             Ok(false)
         }
     }
@@ -261,7 +265,7 @@ impl OperationScope {
         let command = command.to_owned();
         if kind == OperationKind::Bootstrap && !would_record(&dirs::STATE, &tracked, kind)? {
             debug!("history: nothing to record; journaling waits for the first write");
-            *lock_unpoisoned(&CURRENT) = Some(Current::Lazy(Some(Box::new(LazyStart {
+            *lock_unpoisoned(&CURRENT) = Some(Current::Lazy(Some(Arc::new(LazyStart {
                 kind,
                 command,
                 tracked,
@@ -482,14 +486,23 @@ impl OperationScope {
     /// Ends this scope's hold on the process-wide operation, returning the
     /// journal it wrote, if it ever opened one.
     fn close(&mut self) -> Option<Shared> {
-        let shared = match self.shared.take() {
-            Some(shared) => Some(shared),
-            None if self.lazy => started(),
-            None => return None,
-        };
+        if let Some(shared) = self.shared.take() {
+            self.lazy = false;
+            Self::clear_current();
+            return Some(shared);
+        }
+        if !self.lazy {
+            return None;
+        }
         self.lazy = false;
-        Self::clear_current();
-        shared
+        // read and clear in one step, so a journal published meanwhile is
+        // either returned here or sees the cleared state and closes itself
+        let current = lock_unpoisoned(&CURRENT).take();
+        env::remove_var(ENV_VAR);
+        match current {
+            Some(Current::Started(shared)) => Some(shared),
+            _ => None,
+        }
     }
 
     fn clear_current() {
