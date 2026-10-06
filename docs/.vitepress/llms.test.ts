@@ -109,6 +109,28 @@ test("a quoted fence inside an ordinary code block does not close it", () => {
   }
 });
 
+test("an unclosed quoted fence ends with its blockquote", () => {
+  for (const fence of ["```", "~~~"]) {
+    assert.equal(
+      summary(`# Guide\n\n> ${fence}sh\n> mise install\nReal summary.\n`),
+      "Real summary.",
+    );
+  }
+});
+
+test("reprocesses an unquoted fence after an unclosed quoted example", () => {
+  for (const fence of ["```", "~~~"]) {
+    for (const separator of ["", "\n"]) {
+      assert.equal(
+        summary(
+          `# Guide\n\n> ${fence}sh\n> mise install\n${separator}${fence}\nnot a summary\n${fence}\n\nReal summary.\n`,
+        ),
+        "Real summary.",
+      );
+    }
+  }
+});
+
 test("a quoted fence ends a blockquote summary", () => {
   assert.equal(
     summary("# Guide\n\n> Install tools.\n> ```sh\n> mise install\n> ```\n"),

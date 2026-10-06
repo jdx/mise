@@ -82,6 +82,10 @@ export function description(file: string): string | undefined {
     const content = raw.replace(/^ {0,3}>[\t ]?/, "");
     const line = content.trim();
 
+    // An unclosed quoted fence ends with its blockquote. Process the first
+    // unquoted line normally so it can start a separate code block or prose.
+    if (codeFence?.quoted && content === raw) codeFence = undefined;
+
     // Skip the entire fenced block, including headings and blank lines in it.
     // A closing fence must use the same character and be at least as long.
     if (codeFence) {
