@@ -1213,33 +1213,47 @@ impl Doctor {
                 continue;
             };
 
-            // Get recommended backend for current platform
-            let backends = rt.backends();
-            let Some(registry_full) = backends.first() else {
+            // Recommended backend for the installed versions: a registry backend can
+            // start at a later version (`min_version`), so an older install is not
+            // one the registry has moved. Strip options for comparison
+            // (e.g., "github:repo[exe=bin]" -> "github:repo").
+            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
+            let recommended: Vec<&str> = if ist.versions.is_empty() {
+                rt.backends().into_iter().take(1).collect()
+            } else {
+                ist.versions
+                    .iter()
+                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+                    .collect()
+            };
+            // The install state records one backend per tool, so versions installed
+            // on either side of a cutover cannot all match it. Only warn when none do.
+            let strip = |full: &str| full.split('[').next().unwrap_or(full).to_string();
+            if recommended
+                .iter()
+                .any(|full| strip(full) == stored_stripped)
+            {
+                continue;
+            }
+            let Some(registry_full) = recommended.first() else {
                 continue;
             };
-
-            // Strip options for comparison (e.g., "github:repo[exe=bin]" -> "github:repo")
-            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let registry_stripped = registry_full.split('[').next().unwrap_or(registry_full);
-
-            // Compare backends
-            if stored_stripped != registry_stripped {
-                let msg = if ist.explicit_backend {
-                    formatdoc!(
-                        r#"tool '{short}' installed with explicit backend '{stored_full}'
-                           differs from registry recommendation '{registry_full}'.
-                           To switch: mise uninstall --all {short} && mise install {short}"#
-                    )
-                } else {
-                    formatdoc!(
-                        r#"tool '{short}' installed with backend '{stored_full}'
-                           but registry now recommends '{registry_full}'.
-                           To migrate: mise uninstall --all {short} && mise install {short}"#
-                    )
-                };
-                self.warnings.push(msg);
-            }
+            let msg = if ist.explicit_backend {
+                formatdoc!(
+                    r#"tool '{short}' installed with explicit backend '{stored_full}'
+                       differs from registry recommendation '{registry_full}'.
+                       To switch: mise backends switch {short} (add --global for the global lockfile)
+                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+                )
+            } else {
+                formatdoc!(
+                    r#"tool '{short}' installed with backend '{stored_full}'
+                       but registry now recommends '{registry_full}'.
+                       To migrate: mise backends switch {short} (add --global for the global lockfile)
+                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+                )
+            };
+            self.warnings.push(msg);
         }
     }
 
