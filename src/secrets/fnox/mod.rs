@@ -966,7 +966,7 @@ mod tests {
 
     #[test]
     fn resolve_errors_are_stripped_of_control_characters() {
-        let requested = BTreeSet::new();
+        let requested = sel(&[]);
         let catalog = catalog_with_signing();
         let err = |doc: &str| match interpret_resolve(
             false,

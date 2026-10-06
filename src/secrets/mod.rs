@@ -177,6 +177,8 @@ pub async fn prepare_exec_secrets(
                 task_env_keys: &no_env_keys,
                 mise_set_inherited: &no_env_keys,
                 mise_env_keys: &mise_env_keys,
+                // mise x has no task env, so no default was rendered
+                rendered_defaults: &no_env_keys,
                 sandbox: req.sandbox,
                 file_dir: None,
                 terminal: &ExecTerminal,
