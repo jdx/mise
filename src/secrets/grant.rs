@@ -1752,7 +1752,7 @@ mod tests {
 
     fn t5(task: &Task) -> Vec<String> {
         let (grant, _) = grant_for_task(task);
-        static_problems(task, &grant, None)
+        static_problems(task, &grant, None, &EnvView::default())
             .into_iter()
             .filter(|p| p.kind == ProblemKind::Template)
             .map(|p| p.render())

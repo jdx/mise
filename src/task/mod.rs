@@ -1845,17 +1845,6 @@ impl Task {
         }
     }
 
-    /// Plain `KEY=value` pairs of the task's env, without the values rendered at spawn.
-    pub(crate) fn plain_env_vals(&self) -> Vec<(String, String)> {
-        self.render_env_directives()
-            .into_iter()
-            .filter_map(|(d, _)| match d {
-                EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => Some((k, v)),
-                _ => None,
-            })
-            .collect()
-    }
-
     /// Every text in the task's env that could read another env var through a template:
     /// values and defaults under their key, and path-like directives under `_.file`,
     /// `_.path` and `_.source`.
