@@ -649,7 +649,14 @@ fn uv_index_url(registry: &str) -> Result<String> {
     {
         url.set_path("/simple/");
     } else {
-        let path = url.path().trim_end_matches('/').trim_end_matches("/simple");
+        let path = url.path().trim_end_matches('/');
+        // A JSON API at `<root>/pypi/{}/json` serves its simple index at `<root>/simple/`.
+        let path = if registry.ends_with("/json") {
+            path.strip_suffix("/pypi").unwrap_or(path)
+        } else {
+            path
+        };
+        let path = path.trim_end_matches("/simple");
         url.set_path(&format!("{path}/simple/"));
     }
     Ok(url.into())
