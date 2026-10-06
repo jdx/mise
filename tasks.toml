@@ -138,7 +138,10 @@ sources = [
   "docs/index.md",
 ]
 outputs = ["docs/public/llms.txt"]
-run = ["node --test docs/.vitepress/llms.test.ts", "node docs/.vitepress/llms.ts"]
+run = [
+  "node --test docs/.vitepress/llms.test.ts",
+  "node docs/.vitepress/llms.ts",
+]
 
 [render]
 description = 'Run all render tasks'
