@@ -56,9 +56,6 @@ mise bootstrap packages use --global --no-install pacman:ripgrep@2
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:ripgrep" = "2"'
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'pacman:ripgrep'
 
-mise use --global --remove dummy
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy ='
-
 mkdir -p "$HOME/.dotfiles"
 printf 'old source\n' >"$HOME/.dotfiles/existing-write-target"
 printf 'updated source\n' >"$HOME/.existing-write-target"
@@ -94,8 +91,10 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 EOF
 mise use --global home-tool@3
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "3"'
-mise use --global --remove home-tool
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool ='
+mise use --global dummy@3
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "3"'
+mise use --global --remove dummy
+assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy ='
 
 mise bootstrap packages use --global --no-install pacman:home-package@3
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "3"'
@@ -122,14 +121,13 @@ assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml 2>/dev/nul
 # Multiple existing fragments are intentionally not guessed; an explicit path is required.
 cat >"$MISE_CONFIG_DIR/conf.d/11-other-tools.toml" <<'EOF'
 [tools]
-tiny = "1"
-legacy = "1"
+dummy = "1"
 EOF
-assert_fail_contains "mise use --global --dry-run dummy@3 tiny@1 2>&1" "use --path to choose one"
-assert_fail_contains "mise use --global --dry-run legacy@2 fresh@1 2>&1" "run separate commands"
+assert_fail_contains "mise use --global --dry-run home-tool@system dummy@1 2>&1" "use --path to choose one"
+assert_fail_contains "mise use --global --dry-run dummy@2 fresh@1 2>&1" "run separate commands"
 
 # Missing removals do not make an existing update look like a new declaration.
-mise use --global --dry-run legacy@2 --remove missing-tool
+mise use --global --dry-run dummy@2 --remove missing-tool
 
 # Invalid defaults fail before writing an unreadable config file.
 cat >invalid-relative.toml <<'EOF'
