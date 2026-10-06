@@ -32,3 +32,18 @@ mise cache clear
 # this errors with "Tool roslyn-language-server not found". Published NuGet versions
 # are immutable, so the asserted version is stable.
 assert_contains "mise ls-remote 'dotnet:roslyn-language-server[prerelease=true]'" "5.5.0-2.26103.6"
+
+mise cache clear
+
+# dotnet tools install through `dotnet tool install`, so there is no artifact URL
+# to lock. --locked must still install them once the version is pinned.
+cat >mise.toml <<'EOT'
+[tools]
+"dotnet:Husky" = "0.7.2"
+EOT
+mise trust
+mise lock
+assert_contains "cat mise.lock" 'tools."dotnet:Husky"'
+mise uninstall --all dotnet:Husky
+assert_not_contains "mise install --locked 2>&1" "No lockfile URL found"
+assert_contains "mise x --locked -- husky --version" "v0.7.2"
