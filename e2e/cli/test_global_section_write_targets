@@ -24,13 +24,14 @@ assert_contains "cat $MISE_CONFIG_DIR/conf.d/30-dotfiles.toml" '"~/.write-target
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" 'write-target'
 
 # Writes that select the global config because they run from $HOME use the same defaults.
-cd "$HOME"
-mise use home-tool@system
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "system"'
+(
+  cd "$HOME"
+  mise use home-tool@system
+  assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'home-tool = "system"'
 
-mise bootstrap packages use --no-install pacman:home-package
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "latest"'
-cd - >/dev/null
+  mise bootstrap packages use --no-install pacman:home-package
+  assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "latest"'
+)
 
 # Explicit paths still win over defaults.
 mise use --path explicit-tools.toml dummy@1
@@ -131,14 +132,14 @@ assert_fail_contains "mise use --global --dry-run legacy@2 fresh@1 2>&1" "run se
 mise use --global --dry-run legacy@2 --remove missing-tool
 
 # Invalid defaults fail before writing an unreadable config file.
-cat > invalid-relative.toml <<'EOF'
+cat >invalid-relative.toml <<'EOF'
 [settings.write_targets]
 tools = "relative-tools.toml"
 EOF
 assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
 
 mkdir invalid-target-directory
-cat > invalid-directory.toml <<EOF
+cat >invalid-directory.toml <<EOF
 [settings.write_targets]
 packages = "$PWD/invalid-target-directory"
 EOF
