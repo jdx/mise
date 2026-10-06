@@ -189,6 +189,10 @@ pub async fn auto_prune() -> Result<()> {
         return Ok(());
     }
 
+    // This cleanup builds the current directory's toolset from whatever
+    // environment the command that triggered it runs in. That is not a use of the
+    // project, and recording it would replace what the project's snapshots say.
+    let _suspended = crate::install_layout::snapshots::suspend();
     let config = Config::get().await?;
     let prunable = crate::toolset::prunable_tools(&config, Vec::<&BackendArg>::new()).await?;
     let prunable_by_path = prunable
