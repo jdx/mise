@@ -309,7 +309,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -320,7 +320,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5276,7 +5276,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -10024,7 +10024,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -10344,7 +10344,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11482,15 +11482,15 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-argv"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d81d0292a01b769c28c094fc9da0596f49a4c78a6da88ffda53de9eafefc5b20"
+checksum = "95e0e816704b1c059bade81820deb21681403e303b7b1b43f7d103ccca52a561"
 
 [[package]]
 name = "usage-cli"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35e3113a42d8ac2e396ef0729cd6281963f9d6865eb828a796e2a7ed09b70e9e"
+checksum = "b963171fbc493da01477d4d70bdf2af5d4dae4f91337c4c51f555c4a6e858e4d"
 dependencies = [
  "env_logger",
  "exec",
@@ -11514,15 +11514,15 @@ dependencies = [
 
 [[package]]
 name = "usage-config"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9f207fbe8bc0c04c454f0f0f64f06238e1ca7c1b87af6f7353166944d1c1dc"
+checksum = "f058d1d0e7bc05309ea73e67c63000fd9d10c9755fd25e8f13f8833e3c937146"
 
 [[package]]
 name = "usage-derive"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6731f7bc17e630509b9c254ac13049dfc02451011d9dc9eb52865157304c03dc"
+checksum = "9449158af608b02af78037717ff5e4a36a9f2c82dbadcff7e5fd2e2d84df959d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11532,9 +11532,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0cf136cfca91925955392a6f4926998e07c9e83da69e812e7db1f903b51db41"
+checksum = "e3629826d1fd197c3734b6d0450fefd90a57d413a3eef09b3038ddbae395740a"
 dependencies = [
  "indexmap 2.14.2",
  "itertools 0.15.0",
@@ -11555,9 +11555,9 @@ dependencies = [
 
 [[package]]
 name = "usage-rs"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b770a1ed5bf2c95707490f612e0c5597d7c664c6e37b60772ead3a8359526115"
+checksum = "1c296fe5806b82d0d80374bb56ccd31cd9fe5c49b4b0e5683de6231416bd976d"
 dependencies = [
  "usage-argv",
  "usage-config",
@@ -11568,18 +11568,18 @@ dependencies = [
 
 [[package]]
 name = "usage-test"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1011b07f3e21381eaaada43daeb5dce92469bc25c87921e6c957b2c3ba5ae716"
+checksum = "5be92e160b54b3f3c58dd43e903c7b2e2c676655c5fe20ec9a7b2ba8f06fb861"
 dependencies = [
  "usage-argv",
 ]
 
 [[package]]
 name = "usage-validation"
-version = "6.12.0"
+version = "6.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45d62e7271a029ae2087e1e00a79fbe57dffa3ff8bd9b00f78a34be9013bf76d"
+checksum = "62fb9843f7b52be4669d9f44dd282d23a3bdcb8e4f58c132799cb029745523e6"
 dependencies = [
  "expr-lang",
 ]
