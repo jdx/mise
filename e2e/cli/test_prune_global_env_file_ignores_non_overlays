@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# A directory that matches an env-file name, and a conf.d fragment that loads in
+# every environment (env_conf_d off), are not overlays and must not block prune.
+mkdir -p project elsewhere "$MISE_CONFIG_DIR/config.dev.toml" "$MISE_CONFIG_DIR/conf.d"
+echo '[vars]
+v = "1.0.0"' >"$MISE_CONFIG_DIR/conf.d/node.tools.toml"
+echo '[tools]
+dummy = "{{vars.v}}"' >project/mise.toml
+export MISE_ENV_CONF_D=false
+assert "mise -C project install"
+assert "mise install dummy@3.0.0"
+
+assert_contains "mise -C elsewhere prune --dry-run 2>&1" "dummy@3.0.0"

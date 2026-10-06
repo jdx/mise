@@ -2647,12 +2647,11 @@ fn other_env_config_setting_template_inputs(
         .into_iter()
         .map(|pattern| pattern.replace(ANY_ENV, "*"))
         .collect_vec();
-    let global_patterns = [
-        "config.*.toml",
-        "mise.*.toml",
-        "conf.d/*.*.toml",
-        "conf.d/*/mise.*.toml",
-    ];
+    let mut global_patterns = vec!["config.*.toml", "mise.*.toml", "conf.d/*/mise.*.toml"];
+    // Without `env_conf_d`, `conf.d/<name>.<tag>.toml` loads in every environment.
+    if env::env_conf_d() {
+        global_patterns.push("conf.d/*.*.toml");
+    }
     let mut candidates = vec![];
     for dir in all_dirs_from(start_dir)? {
         if !config_dir_is_ignored(&dir, false) {
@@ -2662,7 +2661,7 @@ fn other_env_config_setting_template_inputs(
         }
     }
     for dir in [&*dirs::CONFIG, &*dirs::SYSTEM_CONFIG] {
-        for pattern in global_patterns {
+        for pattern in &global_patterns {
             candidates.extend(config_glob(dir, pattern));
         }
     }
@@ -2675,7 +2674,7 @@ fn other_env_config_setting_template_inputs(
                 Some("mise" | ".mise" | "config")
             )
         });
-        if path == tracked || is_local || config_path_is_ignored(&path, false) {
+        if path == tracked || is_local || !path.is_file() || config_path_is_ignored(&path, false) {
             continue;
         }
         let text = std::fs::read_to_string(&path)
