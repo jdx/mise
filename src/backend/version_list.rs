@@ -16,11 +16,13 @@ use crate::backend::jq;
 use expr::{Context, Environment, Value};
 use eyre::Result;
 use regex::Regex;
+use reqwest::header::HeaderMap;
 use std::collections::HashSet;
 
 /// Fetch and parse versions from a version list URL
 pub(crate) async fn fetch_versions(
     version_list_url: &str,
+    headers: &HeaderMap,
     version_regex: Option<&str>,
     version_json_path: Option<&str>,
     version_expr: Option<&str>,
@@ -31,10 +33,16 @@ pub(crate) async fn fetch_versions(
         // When a regex is provided, the caller expects to parse arbitrary
         // content (including HTML directory listings), so bypass the HTML rejection
         // in get_text.
-        let resp = HTTP.get_async(version_list_url).await?;
+        let url = reqwest::Url::parse(version_list_url)?;
+        let resp = HTTP
+            .get_async_with_headers(url.clone(), &crate::http::with_host_auth(&url, headers)?)
+            .await?;
         resp.text().await?
     } else {
-        HTTP.get_text(version_list_url).await?
+        HTTP.get_text_request(version_list_url)
+            .headers(headers)
+            .send()
+            .await?
     };
     let content = content.trim();
 

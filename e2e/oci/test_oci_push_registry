@@ -48,6 +48,36 @@ REF="$REGISTRY/e2e/devenv:v1"
 
 # --- 1. Build (offline, scratch base) and push ---
 assert_succeed "mise oci build -o ./img --from scratch --no-mise"
+# Add a valid, incompressible gzip layer just over the streaming-upload
+# threshold. This ensures the real Distribution-compatible registry accepts
+# mise's one-PATCH large blob upload and crane can independently validate the
+# resulting image.
+mkdir -p ./large-layer
+dd if=/dev/urandom of=./large-layer/payload bs=1M count=65 status=none
+tar -cf ./large-layer.tar -C ./large-layer payload
+large_layer_diff_id="sha256:$(sha256sum ./large-layer.tar | awk '{print $1}')"
+gzip -n ./large-layer.tar
+large_layer_size="$(wc -c <./large-layer.tar.gz | tr -d ' ')"
+large_layer_digest="sha256:$(sha256sum ./large-layer.tar.gz | awk '{print $1}')"
+mv ./large-layer.tar.gz "./img/blobs/sha256/${large_layer_digest#sha256:}"
+manifest_digest="$(jq -r '.manifests[0].digest' ./img/index.json)"
+manifest_path="./img/blobs/sha256/${manifest_digest#sha256:}"
+config_digest="$(jq -r '.config.digest' "$manifest_path")"
+config_path="./img/blobs/sha256/${config_digest#sha256:}"
+jq --arg diff_id "$large_layer_diff_id" '.rootfs.diff_ids += [$diff_id]' "$config_path" >./config-with-large-layer.json
+new_config_size="$(wc -c <./config-with-large-layer.json | tr -d ' ')"
+new_config_digest="sha256:$(sha256sum ./config-with-large-layer.json | awk '{print $1}')"
+mv ./config-with-large-layer.json "./img/blobs/sha256/${new_config_digest#sha256:}"
+jq --arg config_digest "$new_config_digest" --argjson config_size "$new_config_size" \
+  --arg layer_digest "$large_layer_digest" --argjson layer_size "$large_layer_size" \
+  '.config.digest = $config_digest | .config.size = $config_size | .layers += [{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":$layer_digest,"size":$layer_size}]' \
+  "$manifest_path" >./manifest-with-large-layer.json
+new_manifest_size="$(wc -c <./manifest-with-large-layer.json | tr -d ' ')"
+new_manifest_digest="sha256:$(sha256sum ./manifest-with-large-layer.json | awk '{print $1}')"
+mv ./manifest-with-large-layer.json "./img/blobs/sha256/${new_manifest_digest#sha256:}"
+jq --arg digest "$new_manifest_digest" --argjson size "$new_manifest_size" \
+  '.manifests[0].digest = $digest | .manifests[0].size = $size' ./img/index.json >./index.json
+mv ./index.json ./img/index.json
 assert_contains "mise oci push --image-dir ./img $REF" "pushed sha256:"
 
 # --- 2. Idempotent re-push: every blob must already be present ---
@@ -62,16 +92,17 @@ assert "mise x crane@latest -- crane digest --insecure $REF" "$local_digest"
 assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REF"
 
 # --- 5. Manifest content survives the round-trip (tool layer annotation) ---
-assert_contains "mise x crane@latest -- crane manifest --insecure $REF" '"dev.mise.tool.short":"jq"'
+assert "mise x crane@latest -- crane manifest --insecure $REF | jq -r '.layers[] | select(.annotations.\"dev.mise.tool.short\" == \"jq\") | .annotations.\"dev.mise.tool.short\"'" "jq"
 
 # --- 6. Push by digest reference ---
 assert_contains "mise oci push --image-dir ./img $REGISTRY/e2e/devenv@$local_digest" \
   "0 blob(s) uploaded"
 
-# --- 7. Build+push in one shot (no --image-dir) to a second tag; the
-# reproducible rebuild produces identical blobs so nothing re-uploads ---
+# --- 7. Build+push in one shot (no --image-dir) to a second tag. The large
+# fixture has its own config, so the reproducible base image uploads only its
+# original config; every layer is already present. ---
 assert_contains "mise oci push --from scratch --no-mise $REGISTRY/e2e/devenv:v2" \
-  "0 blob(s) uploaded"
+  "1 blob(s) uploaded"
 
 # An independent destination with no remote cache reuses the locally built
 # tool layer, and all required blobs are uploaded to the new repository.

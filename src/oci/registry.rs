@@ -12,13 +12,14 @@ use crate::config::SettingsExt;
 use crate::file::ExtractionFormat;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use eyre::{Context, Result, bail};
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_UPLOAD};
 use crate::oci::auth::Credential;
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{
@@ -369,6 +370,81 @@ impl AuthSession {
             return Ok(build(self.header())?.send().await?);
         }
         Ok(resp)
+    }
+
+    /// Send a streaming upload and retry once on an authentication challenge.
+    ///
+    /// Each retry creates a fresh body and watchdog: a streamed request body
+    /// cannot be replayed after it has been consumed by reqwest.
+    async fn send_upload<F>(&mut self, build: F) -> Result<reqwest::Response>
+    where
+        F: Fn(Option<&str>) -> Result<UploadRequest>,
+    {
+        let resp = build(self.header())?.send().await?;
+        if resp.status() != StatusCode::UNAUTHORIZED {
+            return Ok(resp);
+        }
+        let www_auth = header_str(&resp, "www-authenticate");
+        if self.answer_challenge(&www_auth).await? {
+            return build(self.header())?.send().await;
+        }
+        Ok(resp)
+    }
+}
+
+/// Request and watchdog used for one streamed blob upload. Reqwest's
+/// `read_timeout` starts before the request body is sent, so it would reject
+/// healthy slow uploads. Instead, this deadline moves forward as the body
+/// stream produces bytes and then bounds the wait for the registry response.
+#[derive(Clone)]
+struct UploadWatch {
+    last_activity: Arc<std::sync::Mutex<Instant>>,
+    timeout: Duration,
+}
+
+impl UploadWatch {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            last_activity: Arc::new(std::sync::Mutex::new(Instant::now())),
+            timeout,
+        }
+    }
+
+    fn progressed(&self) {
+        *self.last_activity.lock().unwrap() = Instant::now();
+    }
+}
+
+struct UploadRequest {
+    request: reqwest::RequestBuilder,
+    watch: UploadWatch,
+}
+
+impl UploadRequest {
+    async fn send(self) -> Result<reqwest::Response> {
+        let send = self.request.send();
+        tokio::pin!(send);
+        loop {
+            let deadline = *self.watch.last_activity.lock().unwrap() + self.watch.timeout;
+            tokio::select! {
+                biased;
+                response = &mut send => return Ok(response?),
+                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                    if self.watch.last_activity.lock().unwrap().elapsed() >= self.watch.timeout {
+                        return Err(
+                            std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                format!(
+                                    "OCI upload made no progress or received no response for {:?}",
+                                    self.watch.timeout
+                                ),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1158,11 +1234,10 @@ pub struct PushSummary {
     pub index_digest: Option<String>,
 }
 
-/// Blobs above this size upload in chunks (`PATCH` per chunk) instead of a
-/// single monolithic `PUT`. Keeps individual request bodies below the limits
-/// some registries/CDNs impose (e.g. 100 MB behind Cloudflare) and bounds
-/// how much a transient mid-upload failure costs.
-const UPLOAD_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
+/// Blobs above this size stream through one `PATCH`, followed by a zero-length
+/// digest-finalizing `PUT`, instead of using a monolithic `PUT`. The body stays
+/// disk-streamed without loading the blob into memory.
+const STREAMING_UPLOAD_THRESHOLD: u64 = 64 * 1024 * 1024;
 
 /// The standard annotation naming the base image a manifest was built from
 /// (written by `mise oci build`). Push uses it to attempt cross-repository
@@ -1569,7 +1644,7 @@ impl Pusher {
 
     /// One upload attempt: open an upload session (attempting a cross-repo
     /// mount when a source repo is known and `allow_mount`), then transfer the
-    /// bytes — monolithic `PUT` for small blobs, chunked `PATCH`es +
+    /// bytes — monolithic `PUT` for small blobs, one streaming `PATCH` +
     /// finalizing `PUT` for large ones.
     async fn upload_blob_once(
         &mut self,
@@ -1627,47 +1702,43 @@ impl Pusher {
         pr.set_position(0);
 
         // 2. Transfer the bytes.
-        if size > UPLOAD_CHUNK_SIZE {
-            // Chunked: PATCH each segment, then a zero-length finalizing PUT.
-            let mut offset = 0u64;
-            while offset < size {
-                let len = UPLOAD_CHUNK_SIZE.min(size - offset);
-                let err_slot: UploadErrSlot = Default::default();
-                let resp = self
-                    .session
-                    .send(|auth| {
-                        Ok(build_upload_request(
-                            HTTP.reqwest()?.patch(location.as_str()),
-                            auth,
-                            path,
-                            offset,
-                            len,
-                            pr,
-                            &err_slot,
-                        )
-                        // Content-Range is inclusive on both ends.
-                        .header("Content-Range", format!("{}-{}", offset, offset + len - 1)))
-                    })
-                    .await
-                    .wrap_err("PATCH blob chunk")?;
-                check_upload_err(&err_slot, path)?;
-                let status = resp.status();
-                // Per the OCI dist-spec a chunk PATCH returns 202 Accepted, but
-                // AWS ECR answers with 201 Created. Accept both, as the
-                // finalizing PUT below already does.
-                if status != StatusCode::ACCEPTED && status != StatusCode::CREATED {
-                    resp.error_for_status_ref()?;
-                    let body = resp.text().await.unwrap_or_default();
-                    bail!(
-                        "blob chunk upload failed: {}{}\n{}",
-                        status.as_u16(),
-                        push_auth_hint(status, had_credential),
-                        body.trim(),
+        if size > STREAMING_UPLOAD_THRESHOLD {
+            // A single full-blob PATCH is compatible with registries such as
+            // GHCR and ECR that reject or corrupt subsequent non-empty PATCHes.
+            let err_slot: UploadErrSlot = Default::default();
+            let resp = self
+                .session
+                .send_upload(|auth| {
+                    let watch = UploadWatch::new(crate::config::Settings::get().http_timeout());
+                    err_slot.lock().unwrap().watch = Some(watch.clone());
+                    let request = build_upload_request(
+                        HTTP_UPLOAD.reqwest()?.patch(location.as_str()),
+                        auth,
+                        path,
+                        0,
+                        size,
+                        pr,
+                        &err_slot,
                     );
-                }
-                location = self.resolve_location(&resp).unwrap_or(location);
-                offset += len;
+                    Ok(UploadRequest { request, watch })
+                })
+                .await
+                .wrap_err("PATCH blob upload")?;
+            check_upload_err(&err_slot, path)?;
+            let status = resp.status();
+            // Per the OCI dist-spec a PATCH returns 202 Accepted, but AWS ECR
+            // answers with 201 Created. Accept both before finalizing below.
+            if status != StatusCode::ACCEPTED && status != StatusCode::CREATED {
+                resp.error_for_status_ref()?;
+                let body = resp.text().await.unwrap_or_default();
+                bail!(
+                    "blob PATCH upload failed: {}{}\n{}",
+                    status.as_u16(),
+                    push_auth_hint(status, had_credential),
+                    body.trim(),
+                );
             }
+            location = self.resolve_location(&resp).unwrap_or(location);
             // Finalize with ?digest=…
             let mut put_url = location;
             put_url.query_pairs_mut().append_pair("digest", digest);
@@ -1901,15 +1972,20 @@ impl Pusher {
     }
 }
 
-/// Slot for an I/O error raised inside an upload-body closure so the caller
-/// can surface it after `AuthSession::send` returns (the closure itself can
-/// only return a `RequestBuilder`).
-type UploadErrSlot = Arc<std::sync::Mutex<Option<std::io::Error>>>;
+/// State shared with an upload-body closure. It holds any deferred I/O error
+/// and, for streaming uploads, the watchdog to advance as chunks are yielded.
+#[derive(Default)]
+struct UploadBodyState {
+    error: Option<std::io::Error>,
+    watch: Option<UploadWatch>,
+}
+
+type UploadErrSlot = Arc<std::sync::Mutex<UploadBodyState>>;
 
 /// Build a PATCH/PUT upload request whose body streams `len` bytes of `path`
 /// starting at `offset`, advancing `pr` as chunks are read off disk.
 /// Constructed fresh on every call so the auth-retry inside
-/// [`AuthSession::send`] can safely re-send the request; the progress
+/// [`AuthSession::send_upload`] can safely re-send the request; the progress
 /// position is reset to `offset` each time so a re-send doesn't double-count.
 ///
 /// If the file can't be reopened (it was validated readable before the upload
@@ -1934,7 +2010,11 @@ fn build_upload_request(
     // Clear any error from a previous attempt so this call's outcome wins:
     // `AuthSession::send` may invoke this closure twice (retry after 401), and
     // a stale error from the first attempt must not fail a successful retry.
-    *err_slot.lock().unwrap() = None;
+    let watch = {
+        let mut state = err_slot.lock().unwrap();
+        state.error = None;
+        state.watch.clone()
+    };
 
     let mut rb = rb.header("Content-Type", "application/octet-stream");
     if let Some(a) = auth {
@@ -1948,7 +2028,7 @@ fn build_upload_request(
     let file = match file {
         Ok(f) => tokio::fs::File::from_std(f),
         Err(e) => {
-            *err_slot.lock().unwrap() = Some(e);
+            err_slot.lock().unwrap().error = Some(e);
             // Length-consistent empty body so the request completes instead of
             // hanging; the caller turns the stashed error into a clear failure.
             return rb.header("Content-Length", 0).body(Vec::new());
@@ -1960,6 +2040,9 @@ fn build_upload_request(
         .inspect(move |chunk| {
             if let Ok(c) = chunk {
                 pr.inc(c.len() as u64);
+                if let Some(watch) = &watch {
+                    watch.progressed();
+                }
             }
         });
     rb.header("Content-Length", len)
@@ -1968,7 +2051,7 @@ fn build_upload_request(
 
 /// Return an error if an upload-body closure stashed one in `slot`.
 fn check_upload_err(slot: &UploadErrSlot, path: &Path) -> Result<()> {
-    if let Some(e) = slot.lock().unwrap().take() {
+    if let Some(e) = slot.lock().unwrap().error.take() {
         return Err(eyre::Report::new(e))
             .wrap_err_with(|| format!("reading blob {} during upload", path.display()));
     }
@@ -1991,6 +2074,152 @@ fn push_auth_hint(status: StatusCode, had_credential: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn read_upload_request(
+        socket: tokio::net::TcpStream,
+    ) -> (tokio::net::TcpStream, Vec<u8>) {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+
+        let mut reader = BufReader::new(socket);
+        let mut content_length = None;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                content_length = Some(value.trim().parse::<usize>().unwrap());
+            }
+        }
+        let mut body = vec![0; content_length.unwrap()];
+        reader.read_exact(&mut body).await.unwrap();
+        (reader.into_inner(), body)
+    }
+
+    #[tokio::test]
+    async fn upload_watch_allows_steady_slow_streams() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let (mut socket, body) = read_upload_request(socket).await;
+            assert_eq!(body, b"slowslowslow");
+            socket
+                .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let watch = UploadWatch::new(Duration::from_millis(200));
+        let body_watch = watch.clone();
+        let body = futures_util::stream::unfold(0, move |chunk| {
+            let watch = body_watch.clone();
+            async move {
+                if chunk == 3 {
+                    return None;
+                }
+                tokio::time::sleep(Duration::from_millis(75)).await;
+                watch.progressed();
+                Some((Ok::<_, std::io::Error>(b"slow".to_vec()), chunk + 1))
+            }
+        });
+        let response = tokio::time::timeout(
+            Duration::from_secs(2),
+            UploadRequest {
+                request: HTTP_UPLOAD
+                    .reqwest()
+                    .unwrap()
+                    .post(format!("http://{address}/upload"))
+                    .header("Content-Length", "12")
+                    .body(reqwest::Body::wrap_stream(body)),
+                watch,
+            }
+            .send(),
+        )
+        .await
+        .expect("steady upload progress should keep the request alive")
+        .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn upload_watch_times_out_a_stalled_stream() {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        let watch = UploadWatch::new(Duration::from_millis(100));
+        let err = UploadRequest {
+            request: HTTP_UPLOAD
+                .reqwest()
+                .unwrap()
+                .post(format!("http://{address}/upload"))
+                .header("Content-Length", "1")
+                .body(reqwest::Body::wrap_stream(futures_util::stream::pending::<
+                    std::result::Result<Vec<u8>, std::io::Error>,
+                >())),
+            watch,
+        }
+        .send()
+        .await
+        .unwrap_err();
+
+        assert!(crate::http::is_transient(&err));
+        assert!(format!("{err:#}").contains("made no progress"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn upload_watch_times_out_when_the_registry_never_answers() {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let (_socket, body) = read_upload_request(socket).await;
+            assert_eq!(body, b"body");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        let watch = UploadWatch::new(Duration::from_millis(100));
+        let body_watch = watch.clone();
+        let body = futures_util::stream::once(async move {
+            body_watch.progressed();
+            Ok::<_, std::io::Error>(b"body".to_vec())
+        });
+        let err = UploadRequest {
+            request: HTTP_UPLOAD
+                .reqwest()
+                .unwrap()
+                .post(format!("http://{address}/upload"))
+                .header("Content-Length", "4")
+                .body(reqwest::Body::wrap_stream(body)),
+            watch,
+        }
+        .send()
+        .await
+        .unwrap_err();
+
+        assert!(crate::http::is_transient(&err));
+        assert!(format!("{err:#}").contains("received no response"));
+        server.abort();
+    }
 
     #[test]
     fn repository_identity_uses_canonical_registry_endpoint() {
@@ -2174,6 +2403,143 @@ mod tests {
             layer_get,
             upload,
             put,
+            manifest_put,
+        ] {
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn large_blob_uses_one_content_range_free_patch() {
+        use sha2::{Digest, Sha256};
+
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let td = tempfile::tempdir().unwrap();
+        let layout = ImageLayout::init(td.path()).unwrap();
+        let config = br#"{}"#;
+        let (config_digest, config_size) = layout.write_blob(config).unwrap();
+
+        // Keep this >64 MiB regression test cheap to create: a sparse file
+        // reads as zero bytes on every supported filesystem, so calculate its
+        // digest in small blocks instead of materializing it in memory.
+        let layer_size = STREAMING_UPLOAD_THRESHOLD + 1;
+        let zeros = vec![0u8; 1024 * 1024];
+        let mut hasher = Sha256::new();
+        let mut remaining = layer_size;
+        while remaining > 0 {
+            let len = remaining.min(zeros.len() as u64) as usize;
+            hasher.update(&zeros[..len]);
+            remaining -= len as u64;
+        }
+        let layer_digest = format!(
+            "sha256:{}",
+            crate::oci::layer::hex_encode(&hasher.finalize())
+        );
+        let layer_path = layout.blob_path(&layer_digest);
+        std::fs::File::create(layer_path)
+            .unwrap()
+            .set_len(layer_size)
+            .unwrap();
+
+        let manifest: ImageManifest = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": config_digest,
+                "size": config_size,
+            },
+            "layers": [{
+                "mediaType": "application/vnd.oci.image.layer.v1.tar",
+                "digest": layer_digest,
+                "size": layer_size,
+            }],
+        }))
+        .unwrap();
+        let (manifest_digest, manifest_size) = layout.write_manifest(&manifest).unwrap();
+        layout
+            .write_index(&manifest_digest, manifest_size, None, None)
+            .unwrap();
+
+        let probe = server
+            .mock("GET", "/v2/")
+            .with_status(200)
+            .create_async()
+            .await;
+        let config_head = server
+            .mock("HEAD", format!("/v2/tools/blobs/{config_digest}").as_str())
+            .with_status(404)
+            .create_async()
+            .await;
+        let layer_head = server
+            .mock("HEAD", format!("/v2/tools/blobs/{layer_digest}").as_str())
+            .with_status(404)
+            .create_async()
+            .await;
+        let upload = server
+            .mock("POST", "/v2/tools/blobs/uploads/")
+            .with_status(202)
+            .with_header("Location", "/uploads/1")
+            .expect(2)
+            .create_async()
+            .await;
+        let config_put = server
+            .mock("PUT", "/uploads/1")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "digest".into(),
+                config_digest.clone(),
+            ))
+            .match_body(config.to_vec())
+            .with_status(201)
+            .create_async()
+            .await;
+        // GHCR-compatible large uploads are exactly one PATCH without
+        // Content-Range, then the normal empty digest-finalizing PUT.
+        let layer_patch = server
+            .mock("PATCH", "/uploads/1")
+            .match_header(
+                "content-length",
+                mockito::Matcher::Exact(layer_size.to_string()),
+            )
+            .match_header("content-range", mockito::Matcher::Missing)
+            .with_status(202)
+            .with_header("Location", "/uploads/1")
+            .expect(1)
+            .create_async()
+            .await;
+        let layer_finalize = server
+            .mock("PUT", "/uploads/1")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "digest".into(),
+                layer_digest.clone(),
+            ))
+            .match_header("content-length", "0")
+            .with_status(201)
+            .create_async()
+            .await;
+        let manifest_put = server
+            .mock("PUT", "/v2/tools/manifests/dev")
+            .with_status(201)
+            .create_async()
+            .await;
+
+        let result = push_image(
+            td.path(),
+            &format!("{}/tools:dev", server.host_with_port()),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.uploaded, 2);
+        for mock in [
+            probe,
+            config_head,
+            layer_head,
+            upload,
+            config_put,
+            layer_patch,
+            layer_finalize,
             manifest_put,
         ] {
             mock.assert_async().await;

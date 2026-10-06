@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# `prune.exclude` names tools that prune never removes.
+
+assert "mise use dummy@2.0.0 tiny@2.0.0"
+assert "mise use dummy@3.0.0 tiny@3.0.0"
+
+assert_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@2.0.0"
+
+echo "=== an excluded tool is not prunable, others are ==="
+export MISE_PRUNE_EXCLUDE=dummy
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@2.0.0"
+assert "mise ls --prunable --json >prunable.json"
+assert "jq -e '(has(\"dummy\") | not) and has(\"tiny\")' prunable.json"
+
+echo "=== naming the tool on the command line does not override it ==="
+assert_not_contains "mise prune dummy --dry-run 2>&1" "dummy@2.0.0"
+
+echo "=== a full backend name matches the same tool, and the config file works too ==="
+unset MISE_PRUNE_EXCLUDE
+echo '[settings]
+prune.exclude = ["asdf:dummy"]' >>mise.toml
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@2.0.0"
+
+echo "=== pruning leaves the excluded installation on disk ==="
+assert "mise prune --yes"
+assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
+assert_fail "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
+
+echo "=== mise upgrade --prune keeps the old version of an excluded tool ==="
+mise uninstall dummy --all
+cat >mise.toml <<'EOT'
+[tools]
+dummy = "1"
+EOT
+assert "mise install dummy@1.0.0"
+assert_contains "mise up dummy -n --prune" "Would uninstall dummy@1.0.0"
+export MISE_PRUNE_EXCLUDE=dummy
+assert_not_contains "mise up dummy -n --prune" "Would uninstall"
+assert_not_contains "mise up dummy -n" "Would schedule"
+assert_contains "mise up dummy -n --prune" "Would install dummy@1.1.0"
+assert "mise upgrade dummy --prune"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.1.0"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"

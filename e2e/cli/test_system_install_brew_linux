@@ -64,6 +64,22 @@ assert_contains "mise bootstrap packages import --manager brew --dry-run --path 
 mise bootstrap packages import --manager brew --path imported.toml
 assert_contains "cat imported.toml" '"brew:xz" = "latest"'
 
+# Global imports update the fragment that already owns their package entries.
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings.write_targets]
+packages = "$MISE_CONFIG_DIR/conf.d/20-new-packages.toml"
+EOF
+cat >"$MISE_CONFIG_DIR/conf.d/10-existing-packages.toml" <<'EOF'
+[bootstrap.packages]
+"brew:unzip" = "0"
+"brew:xz" = "0"
+EOF
+mise bootstrap packages import --manager brew --global
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-existing-packages.toml" '"brew:xz" = "latest"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/20-new-packages.toml || cat $MISE_CONFIG_DIR/conf.d/20-new-packages.toml" 'brew:xz'
+rm "$MISE_CONFIG_DIR/conf.d/10-existing-packages.toml"
+
 # prune is a no-op while the formula is still configured
 assert_contains "mise bootstrap packages prune --manager brew --dry-run 2>&1" "nothing to prune"
 
