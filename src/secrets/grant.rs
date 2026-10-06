@@ -649,7 +649,15 @@ impl EnvView {
             match d {
                 EnvDirective::Val(k, v, _) => {
                     env.retain(|e, _| !env_key_eq(e, k));
-                    env.insert(k.clone(), v.clone());
+                    // A templated value is not rendered here and may well render empty, which
+                    // would not satisfy a later `default`. Treat it as unknown (empty) so the
+                    // default is scanned: a conservative choice that can only add a refusal.
+                    let known = if v.contains("{{") || v.contains("{%") {
+                        String::new()
+                    } else {
+                        v.clone()
+                    };
+                    env.insert(k.clone(), known);
                     declared.insert(k.clone());
                     texts.push((k.clone(), v.clone()));
                 }
@@ -951,6 +959,23 @@ mod tests {
         let view = EnvView::for_test(map(&[("TOKEN", "from-config")]), &["TOKEN"]);
         assert!(view.texts(&task).is_empty());
         assert!(view.declared_keys(&task).contains("TOKEN"));
+    }
+
+    #[test]
+    fn a_templated_earlier_value_may_render_empty() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let opts = EnvDirectiveOptions::default;
+        let mut task = default_task("{{ env.DEPLOY_KEY }}");
+        let view = EnvView::for_test(map(&[]), &[]);
+        // TOKEN = "{{ '' }}" renders empty, so the default still applies
+        task.env.0.insert(
+            0,
+            EnvDirective::Val("TOKEN".into(), "{{ '' }}".into(), opts()),
+        );
+        assert_eq!(view.texts(&task).len(), 2);
+        // a plain non-empty literal satisfies it
+        task.env.0[0] = EnvDirective::Val("TOKEN".into(), "plain".into(), opts());
+        assert_eq!(view.texts(&task).len(), 1);
     }
 
     #[test]
