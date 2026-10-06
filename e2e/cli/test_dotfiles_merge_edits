@@ -283,5 +283,6 @@ cat <<'EOF' >mise.toml
 "~/ok.json/a" = { source = "shared/model.json", merge = true }
 "~/pipe.json/b" = { source = "shared/model.json", merge = true }
 EOF
+printf '{}\n' >~/ok.json
 assert_succeed "timeout 60 mise dotfiles apply ~/ok.json/a --yes"
 assert_contains "cat ~/ok.json" '"model": "a"'

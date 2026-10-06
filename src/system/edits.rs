@@ -819,14 +819,29 @@ fn same_target(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
     }
-    if let Ok(same) = same_file::is_same_file(a, b) {
+    if let Some(same) = same_identity(a, b) {
         return same;
     }
     let (ancestor_a, tail_a) = split_existing(a);
     let (ancestor_b, tail_b) = split_existing(b);
     tail_a == tail_b
-        && (ancestor_a == ancestor_b
-            || same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false))
+        && (ancestor_a == ancestor_b || same_identity(&ancestor_a, &ancestor_b).unwrap_or(false))
+}
+
+/// Whether two existing paths are one file, or `None` when either is missing.
+/// On Unix this compares device and inode from `stat`, which opens nothing, so a
+/// named pipe or another path that blocks on open cannot hang the check.
+fn same_identity(a: &Path, b: &Path) -> Option<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let (a, b) = (std::fs::metadata(a).ok()?, std::fs::metadata(b).ok()?);
+        Some(a.dev() == b.dev() && a.ino() == b.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        same_file::is_same_file(a, b).ok()
+    }
 }
 
 /// The nearest existing ancestor of `path` (or `path` itself) and the
