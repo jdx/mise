@@ -144,7 +144,14 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
     /// Every tool this config sets, templated or not.
     fn tool_backends(&self) -> Vec<String> {
-        vec![]
+        self.to_tool_request_set()
+            .map(|set| {
+                set.list_tools()
+                    .iter()
+                    .map(|ba| ba.short.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
     /// Whether any tool version is a template, on any platform.
     fn has_templated_tool_versions(&self) -> bool {

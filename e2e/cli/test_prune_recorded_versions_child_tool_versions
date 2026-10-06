@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# A child .tool-versions that sets one of a parent's templated tools overrides it just
+# like a child mise.toml does.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+d = "1.0.0"
+t = "2.0.0"
+[tools]
+dummy = "{{vars.d}}"
+tiny = "{{vars.t}}"' >project/mise.toml
+echo 'tiny 3.0.0' >project/child/.tool-versions
+assert "mise -C project install"
+assert "mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"

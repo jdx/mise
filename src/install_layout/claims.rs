@@ -54,6 +54,14 @@ struct Need {
     /// made for the file as it is now.
     #[serde(default)]
     file: String,
+    /// Set when this records that a higher-precedence config supplies the tool in
+    /// this context instead, rather than an installation.
+    #[serde(default)]
+    overridden: bool,
+    /// For an override: the configs that supply the tool, with a hash of each
+    /// file's bytes, so the marker is only trusted while they are unchanged.
+    #[serde(default)]
+    by: Vec<(String, String)>,
     /// The tool name for a legacy path; empty for an identity-layout directory.
     short: String,
     /// The version directory name, or the identity-layout directory name.
@@ -159,6 +167,8 @@ fn write(
             context,
             fingerprint,
             file: file_hash,
+            overridden: false,
+            by: vec![],
             short: String::new(),
             version: String::new(),
         },
@@ -169,6 +179,8 @@ fn write(
                 context,
                 fingerprint,
                 file: file_hash,
+                overridden: false,
+                by: vec![],
                 short: String::new(),
                 version: dir,
             },
@@ -179,66 +191,95 @@ fn write(
                 context,
                 fingerprint,
                 file: file_hash,
+                overridden: false,
+                by: vec![],
                 version: tv.tv_pathname(),
             },
         },
     };
     let _lock = catalog.lock()?;
     let mut claims = read(file).unwrap_or_default();
-    if claims.needs.contains(&need) {
-        return Ok(());
-    }
-    // This tool's entries from older contents of the same config files are stale;
-    // other tools', other environments' and other directories' are left until
-    // they are recorded themselves.
-    claims.needs.retain(|n| {
-        n.backend != need.backend
-            || n.env != need.env
-            || n.context != need.context
-            || n.fingerprint == need.fingerprint
-    });
+    let before = claims.needs.clone();
     claims.config = canonical(path).to_string_lossy().to_string();
+    let same_context = |n: &Need| n.env == need.env && n.context == need.context;
     // A config loaded after a higher-precedence one that sets the same tool never
     // supplies it in this context. Record that, so the context still counts as
-    // complete: re-running the install cannot record what the project does not use.
-    for backend in overridden_backends(config, path) {
+    // complete: re-running the install cannot record what the project does not
+    // use. Markers for tools that are no longer overridden are dropped.
+    let overridden = overridden_by(config, path);
+    claims.needs.retain(|n| {
+        !(n.overridden
+            && same_context(n)
+            && !overridden
+                .iter()
+                .any(|(backend, by)| *backend == n.backend && *by == n.by))
+    });
+    for (backend, by) in overridden {
         let marker = Need {
             backend,
+            overridden: true,
+            by,
             short: String::new(),
             version: String::new(),
             ..need.clone()
         };
         claims.needs.retain(|n| {
-            n.backend != marker.backend
-                || n.env != marker.env
-                || n.context != marker.context
-                || n.fingerprint == marker.fingerprint
+            n.backend != marker.backend || !same_context(n) || n.fingerprint == marker.fingerprint
         });
         if !claims.needs.contains(&marker) {
             claims.needs.push(marker);
         }
     }
-    claims.needs.push(need);
+    if !claims.needs.contains(&need) {
+        // This tool's entries from older contents of the same config files are
+        // stale; other tools', other environments' and other directories' are
+        // left until they are recorded themselves.
+        claims.needs.retain(|n| {
+            n.backend != need.backend || !same_context(n) || n.fingerprint == need.fingerprint
+        });
+        claims.needs.push(need.clone());
+    }
+    if claims.needs == before {
+        return Ok(());
+    }
     file::create_dir_all(file.parent().unwrap())?;
     file::write_atomic(file, toml::to_string_pretty(&claims)?)
 }
 
+/// Hash of a file's bytes, or an empty string when it cannot be read.
+fn bytes_hash(path: &Path) -> String {
+    std::fs::read(path)
+        .map(|bytes| hash::hash_to_str(&bytes))
+        .unwrap_or_default()
+}
+
 /// The templated tools of `path` that a config loaded before it (higher
-/// precedence) also sets.
-fn overridden_backends(config: &Config, path: &Path) -> Vec<String> {
+/// precedence) also sets, each with the configs that set it and their hashes.
+fn overridden_by(config: &Config, path: &Path) -> Vec<(String, Vec<(String, String)>)> {
     let Some(cf) = config.config_files.get(path) else {
         return vec![];
     };
-    let mut higher = vec![];
+    let mut higher: Vec<(String, std::path::PathBuf)> = vec![];
     for (other, cf) in &config.config_files {
         if other == path {
             break;
         }
-        higher.extend(cf.tool_backends());
+        higher.extend(cf.tool_backends().into_iter().map(|b| (b, other.clone())));
     }
-    let mut overridden = cf.templated_tool_backends();
-    overridden.retain(|backend| higher.contains(backend));
-    overridden.dedup();
+    let mut overridden = vec![];
+    for backend in cf.templated_tool_backends() {
+        if overridden.iter().any(|(b, _)| *b == backend) {
+            continue;
+        }
+        let by = higher
+            .iter()
+            .filter(|(b, _)| *b == backend)
+            .map(|(_, other)| (other.to_string_lossy().to_string(), bytes_hash(other)))
+            .collect::<Vec<_>>();
+        if !by.is_empty() {
+            overridden.push((backend, by));
+        }
+    }
     overridden
 }
 
@@ -339,6 +380,12 @@ pub(crate) fn needed_by(config: &Path, file: &str, backends: &[String]) -> Optio
                         && need.env == env
                         && need.context == context
                         && &need.backend == backend
+                        && (!need.overridden
+                            || (!need.by.is_empty()
+                                && need
+                                    .by
+                                    .iter()
+                                    .all(|(path, hash)| bytes_hash(Path::new(path)) == *hash)))
                 })
             };
             if !single.iter().all(|backend| covered(backend)) {

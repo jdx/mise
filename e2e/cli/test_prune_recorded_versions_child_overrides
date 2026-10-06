@@ -20,3 +20,14 @@ assert "mise install dummy@3.0.0"
 
 assert "mise -C elsewhere ls --prunable --json >prunable.json"
 assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+
+# The child stops overriding tiny: the marker that said the parent did not supply it
+# is no longer trusted, so prune refuses until the project records tiny from the
+# parent.
+echo '[vars]
+unrelated = "x"' >project/child/mise.toml
+assert_fail "mise -C elsewhere prune --yes" "no installation has been recorded"
+assert_contains "mise ls tiny" "2.0.0"
+assert "mise -C project/child install"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"] and [.tiny[].version] == [\"3.0.0\"]' prunable.json"
