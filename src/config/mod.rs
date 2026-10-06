@@ -1575,6 +1575,7 @@ impl Config {
                 redactions: cached.redactions.clone(),
                 redaction_exclusions: cached.redaction_exclusions.clone(),
                 caller_env_keys: cached.caller_env_keys.clone(),
+                rendered_defaults: Default::default(),
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,

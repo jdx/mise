@@ -88,6 +88,8 @@ pub(crate) struct SpawnRequest<'a> {
     pub(crate) mise_set_inherited: &'a BTreeSet<String>,
     /// every key mise itself sets for this child, whatever its value
     pub(crate) mise_env_keys: &'a BTreeSet<String>,
+    /// keys whose task-env `default` directive actually rendered
+    pub(crate) rendered_defaults: &'a BTreeSet<String>,
     pub(crate) sandbox: &'a SandboxConfig,
     /// `None` refuses `as_file` keys
     pub(crate) file_dir: Option<&'a Path>,
@@ -658,7 +660,7 @@ impl SecretBroker {
         };
         let (_, mut problems) = grant_for_task(task);
         // judged by what the task env preparation already resolved: no script runs again
-        let env_view = super::EnvView::resolved(req.task_env_keys);
+        let env_view = super::EnvView::resolved(req.rendered_defaults);
         problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if !problems.is_empty() {
             bail!(
@@ -1229,6 +1231,7 @@ mod tests {
         task_env: BTreeSet<String>,
         inherited: BTreeSet<String>,
         mise_env: BTreeSet<String>,
+        rendered: BTreeSet<String>,
         sandbox: SandboxConfig,
         ctx: TaskContextBuilder,
     }
@@ -1244,6 +1247,7 @@ mod tests {
                 task_env: BTreeSet::new(),
                 inherited: BTreeSet::new(),
                 mise_env: BTreeSet::new(),
+                rendered: BTreeSet::new(),
                 sandbox: SandboxConfig::default(),
                 ctx: TaskContextBuilder::new(),
             }
@@ -1257,6 +1261,7 @@ mod tests {
                 task_env_keys: &self.task_env,
                 mise_set_inherited: &self.inherited,
                 mise_env_keys: &self.mise_env,
+                rendered_defaults: &self.rendered,
                 sandbox: &self.sandbox,
                 file_dir: None,
                 terminal: term,
