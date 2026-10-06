@@ -747,11 +747,14 @@ fn block_state(req: &EditRequest, desired: Option<&str>) -> Result<FileState> {
 }
 
 /// Whether two edit targets are the same file under different names: equal
-/// paths, or existing files with the same identity (a hard link, or a case
-/// variant on a case-insensitive volume). A target that does not exist yet has
-/// no identity, so its case variants only count as the same when the volume
-/// is shown to ignore case (see [`volume_ignores_case`]); on a volume that
-/// keeps case, `~/App/x.json` and `~/app/x.json` are separate files.
+/// paths, existing files with the same identity (a hard link, or a case
+/// variant on a case-insensitive volume), or missing files with the same name
+/// in one directory reached by two spellings (a symlinked parent, say).
+///
+/// A missing file has no identity, so a case-only difference in its name is
+/// not guessed at: whether the directory ignores case can't be learned without
+/// writing to it. Once the first of two such entries has created the file, the
+/// pair is compared by identity and a conflict between them is refused.
 fn same_target(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
@@ -759,57 +762,11 @@ fn same_target(a: &Path, b: &Path) -> bool {
     if let Ok(same) = same_file::is_same_file(a, b) {
         return same;
     }
-    // at least one target is missing: compare where the existing part of each
-    // path lands and what is left below it
     let (ancestor_a, tail_a) = split_existing(a);
     let (ancestor_b, tail_b) = split_existing(b);
-    let same_ancestor = ancestor_a == ancestor_b
-        || same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false);
-    if !same_ancestor || tail_a.len() != tail_b.len() {
-        return false;
-    }
-    // the same directory reached by two spellings (a symlinked parent, say)
-    // and the same file name below it: one file
-    if tail_a == tail_b {
-        return true;
-    }
-    // names that differ only by case are one file only on a volume that
-    // ignores case
-    let lowercase = |name: &std::ffi::OsString| name.to_string_lossy().to_lowercase();
-    tail_a
-        .iter()
-        .map(lowercase)
-        .eq(tail_b.iter().map(lowercase))
-        && volume_ignores_case(&ancestor_a)
-}
-
-/// Whether the volume holding the existing directory `dir` ignores case.
-/// Swaps the case of the nearest path component that has letters and checks
-/// whether the swapped spelling still names the same directory, without
-/// creating anything.
-fn volume_ignores_case(dir: &Path) -> bool {
-    for ancestor in dir.ancestors() {
-        let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) else {
-            continue;
-        };
-        let name = name.to_string_lossy();
-        let swapped: String = name
-            .chars()
-            .map(|c| {
-                if c.is_lowercase() {
-                    c.to_uppercase().collect::<String>()
-                } else {
-                    c.to_lowercase().collect::<String>()
-                }
-            })
-            .collect();
-        // the first component with letters decides; a deeper mount point
-        // is not probed past it
-        if swapped != name {
-            return same_file::is_same_file(ancestor, parent.join(&swapped)).unwrap_or(false);
-        }
-    }
-    false
+    tail_a == tail_b
+        && (ancestor_a == ancestor_b
+            || same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false))
 }
 
 /// The nearest existing ancestor of `path` (or `path` itself) and the
@@ -1659,11 +1616,9 @@ mod tests {
         let link = dir.path().join("link.toml");
         std::fs::hard_link(&a, &link)?;
         assert!(same_target(&a, &link));
-        // missing targets: equal paths are the same, and a case variant in the
-        // file name alone proves nothing about the volume
-        let (missing, variant) = (dir.path().join("m.toml"), dir.path().join("M.toml"));
+        // missing targets: equal paths are the same
+        let missing = dir.path().join("m.toml");
         assert!(same_target(&missing, &missing));
-        assert!(!same_target(&missing, &variant));
         // two spellings of one existing directory, same missing file name
         let real = dir.path().join("real");
         file::create_dir_all(&real)?;
@@ -1674,8 +1629,6 @@ mod tests {
             &real.join("new.toml"),
             &alias.join("other.toml")
         ));
-        // the test volume keeps case
-        assert!(!volume_ignores_case(dir.path()));
         Ok(())
     }
 
