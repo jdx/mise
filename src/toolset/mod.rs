@@ -1175,7 +1175,7 @@ pub fn is_excluded_from_pruning(ba: &BackendArg) -> bool {
 fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> bool {
     names.iter().any(|name| {
         let named = BackendArg::from(name.as_str());
-        named == *ba || named.full() == ba.full()
+        named == *ba || named.full_without_opts() == ba.full_without_opts()
     })
 }
 
@@ -1241,6 +1241,12 @@ mod tests {
         assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
         assert!(!is_named_in(&names, &BackendArg::from("python")));
         assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
+        // Inline options do not make it another tool.
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
     }
 
     #[tokio::test]
