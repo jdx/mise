@@ -2130,6 +2130,15 @@ pub fn error_code(e: &Report) -> Option<u16> {
     }
 }
 
+/// The automatic host credentials for `url` (a forge token, say) with `headers` layered
+/// on top, so a configured header replaces the one of the same name and every other
+/// automatic header is kept. Every request that takes caller headers sends this.
+pub fn with_host_auth(url: &Url, headers: &HeaderMap) -> Result<HeaderMap> {
+    let mut merged = host_auth_headers(url)?;
+    merged.extend(headers.clone());
+    Ok(merged)
+}
+
 fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // raw.githubusercontent.com is not an API host, but a private repository's
     // files are a 404 without the token, so it is routed here too. `get_headers`

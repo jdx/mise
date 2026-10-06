@@ -636,3 +636,15 @@ fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
     assert_eq!(real["x-api-key"], "secret");
     assert!(!real.contains_key("x-other-token"));
 }
+
+#[test]
+fn with_host_auth_layers_configured_headers_over_automatic_ones() {
+    let url = Url::parse("https://example.com/file").unwrap();
+    let mut user = HeaderMap::new();
+    user.insert(AUTHORIZATION, HeaderValue::from_static("Bearer configured"));
+    user.insert("x-extra", HeaderValue::from_static("1"));
+    let merged = with_host_auth(&url, &user).unwrap();
+    assert_eq!(merged.get_all(AUTHORIZATION).iter().count(), 1);
+    assert_eq!(merged[AUTHORIZATION], "Bearer configured");
+    assert_eq!(merged["x-extra"], "1");
+}

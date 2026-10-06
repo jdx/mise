@@ -1388,6 +1388,9 @@ impl Backend for HttpBackend {
                     HTTP.download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
                         .await?
                 } else {
+                    // Keep the automatic host token; configured headers override it.
+                    let headers =
+                        crate::http::with_host_auth(&reqwest::Url::parse(&url)?, &headers)?;
                     HTTP.download_file_with_headers_metadata(
                         &url,
                         &file_path,
