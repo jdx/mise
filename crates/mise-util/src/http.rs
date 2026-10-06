@@ -251,6 +251,13 @@ impl std::fmt::Display for RetryAfter {
     }
 }
 
+/// How long to sleep before retrying: the scheduled backoff, or the wait the
+/// server asked for if that is longer.
+fn retry_delay(backoff: Duration, err: &Report) -> Duration {
+    err.downcast_ref::<RetryAfter>()
+        .map_or(backoff, |retry_after| backoff.max(retry_after.wait))
+}
+
 /// The wait a 429 asked for, in delay-seconds form. An HTTP-date, which no
 /// host we talk to sends, is ignored and the normal backoff applies.
 fn retry_after(response: &Response) -> Option<Duration> {
@@ -2755,12 +2762,10 @@ where
                 if !is_transient(&err) {
                     return Err(err);
                 }
-                let Some(mut delay) = backoff.next() else {
+                let Some(delay) = backoff.next() else {
                     return Err(err);
                 };
-                if let Some(retry_after) = err.downcast_ref::<RetryAfter>() {
-                    delay = delay.max(retry_after.wait);
-                }
+                let delay = retry_delay(delay, &err);
                 warn!(
                     "HTTP {} {} attempt {} failed after {} (transient): {}; retrying in {:?}",
                     verb_label,

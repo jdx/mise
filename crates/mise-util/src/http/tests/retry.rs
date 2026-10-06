@@ -470,19 +470,38 @@ async fn test_429_with_long_retry_after_is_not_retried() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn test_429_with_short_retry_after_is_retried() {
-    // The test backoff is a few milliseconds, so waiting a full second can only
-    // come from honoring the header.
     let _guard = set_test_http_retries(1);
     let (port, count) =
-        spawn_canned_server(vec![too_many_requests_response(1), ok_response()]).await;
+        spawn_canned_server(vec![too_many_requests_response(0), ok_response()]).await;
     let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
     let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
-    let started = Instant::now();
     let resp = client.get_async(url).await.unwrap();
     assert!(resp.status().is_success());
-    assert!(started.elapsed() >= Duration::from_secs(1));
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_retry_delay_honors_a_longer_retry_after() {
+    // Asserted on the chosen delay rather than by sleeping through it.
+    let _guard = set_test_http_retries(0);
+    let (port, _) = spawn_canned_server(vec![too_many_requests_response(20)]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    assert_eq!(
+        retry_delay(Duration::from_secs(1), &err),
+        Duration::from_secs(20)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_secs(30), &err),
+        Duration::from_secs(30)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_secs(1), &eyre!("no header")),
+        Duration::from_secs(1)
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
