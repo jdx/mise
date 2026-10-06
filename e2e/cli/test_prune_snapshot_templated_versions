@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# With the identity install layout, prune protects what a templated version rendered to
-# when the project was installed, instead of rendering it from the prune directory.
+# With the identity install layout, prune reads a snapshot of what a project's
+# templated versions rendered to instead of rendering them from the prune directory.
 export MISE_EXPERIMENTAL=1
 export MISE_INSTALL_LAYOUT=identity
 
@@ -19,10 +19,14 @@ for directory in project/child elsewhere; do
   assert_not_contains "mise -C '$directory' prune --dry-run 2>&1" "dummy@1.0.0"
 done
 
-# Editing the parent re-renders the child; the next use records the new version and
-# replaces the old record, so 1.0.0 stops being protected.
+# Editing the parent makes the snapshot stale: until the project is used again,
+# prune keeps every dummy rather than trusting it.
 echo '[vars]
 tool_version = "2.0.0"' >project/mise.toml
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+
+# Using the project takes a new snapshot, which replaces the old one outright.
 assert "mise -C project/child install"
 assert "mise -C elsewhere ls --prunable --json >prunable.json"
 assert "jq -e '[.dummy[].version] | sort == [\"1.0.0\", \"3.0.0\"]' prunable.json"

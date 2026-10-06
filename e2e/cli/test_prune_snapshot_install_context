@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The version a project was installed with can depend on inputs prune cannot see: the
-# command line, a settings-level env file, the shell. The identity layout records the
-# outcome, so prune keeps the installed version in each case.
+# What a project renders to can depend on inputs prune cannot see: the command line,
+# a settings-level env file. The snapshot is taken where the project is used, so prune
+# keeps the version that was rendered there.
 export MISE_EXPERIMENTAL=1
 export MISE_INSTALL_LAYOUT=identity
 

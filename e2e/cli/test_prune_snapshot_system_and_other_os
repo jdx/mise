@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# A templated version that renders to `system` installs nothing, and one restricted
-# to another OS is never resolved here. Neither may make prune refuse or be rendered
-# from the prune directory.
+# A templated version that renders to `system` installs nothing, and one restricted to
+# another OS is never resolved here. Neither may be rendered from the prune directory
+# or make prune fail.
 export MISE_EXPERIMENTAL=1
 export MISE_INSTALL_LAYOUT=identity
 

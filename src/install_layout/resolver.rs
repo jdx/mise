@@ -1376,12 +1376,6 @@ pub(crate) fn finish(
     if let Some(key) = &allocated.selects {
         catalog.select(key, &record, None)?;
     }
-    if let Err(err) = super::claims::record(tv, &allocated.dir) {
-        warn!(
-            "could not record what {} was installed for: {err:#}",
-            tv.style()
-        );
-    }
     reset_cache();
     Ok(())
 }
@@ -1477,9 +1471,6 @@ pub(crate) fn note_reuse(tv: &ToolVersion) -> Result<()> {
         provenance.pinned_by.push(pin.to_string());
         catalog.update_provenance(&record.identity, provenance)?;
         reset_cache();
-    }
-    if let Err(err) = super::claims::record(tv, &located.dir) {
-        warn!("could not record what {} is used for: {err:#}", tv.style());
     }
     link(tv, &located.dir)
 }

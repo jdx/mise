@@ -373,19 +373,19 @@ Both work on one installation directory at a time.
 - A tool version that is a template, such as `node = "{{ vars.node }}"`, depends
   on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
   where the project is used, which `mise prune` cannot reproduce from another
-  directory. The catalog therefore records, under `installs/.mise/claims/`, the
-  installation a config's templated version rendered to whenever a command
-  installs or resolves it (`mise install`, `mise exec`, `mise run`, the shell
-  hook), and `mise prune` keeps it. Editing the config or anything it loads
-  replaces that tool's record for the same `MISE_ENV` the next time the project
-  is used; other tools and other environments keep theirs. A config with a
-  templated tool that has no record for the config file as it is now, for
-  example after editing that file, makes `mise prune` stop and name the config;
-  run `mise install` in that project to record it. A tool with several templated
-  versions in one config keeps all of its installations while the config exists.
-  Editing a parent config changes what a child renders to, and prune only learns
-  that the next time the child is used. Without the new layout,
-  `mise prune` renders these versions from where it runs and can fail.
+  directory. So the catalog keeps a snapshot, under `installs/.mise/snapshots/`,
+  of what a config's templated versions rendered to, taken by any command that
+  resolves tools there, and `mise prune` reads it instead of rendering. A
+  snapshot covers one context, the `MISE_ENV` plus the set of loaded config
+  files, and a new snapshot of that context replaces the old one, so a version a
+  project stopped using becomes prunable. A snapshot is ignored once a config
+  file it loaded has changed, and a config with no current snapshot keeps every
+  installation of its templated tools until a command is run in the project
+  again. A change that is not in a config file, such as a shell variable, is
+  noticed at the next such command, not before. To keep a version that a
+  snapshot no longer lists, reference it in a tracked config or lockfile.
+  Without the new layout, `mise prune` renders these versions from where it
+  runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
   the new layout.
 - `mise ls` and `mise prune` list each installation separately. When several

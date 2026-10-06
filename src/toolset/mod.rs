@@ -193,11 +193,7 @@ impl Toolset {
         .await?;
         self.versions = tvls.into_iter().collect();
         if crate::install_layout::resolver::enabled() {
-            for tvl in self.versions.values() {
-                for tv in &tvl.versions {
-                    crate::install_layout::claims::note_use(config, tv);
-                }
-            }
+            crate::install_layout::snapshots::observe(config);
         }
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
@@ -1017,38 +1013,33 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        // The identity layout records what a config's templated versions rendered
-        // to when they were installed or used; a global prune cannot render them
-        // the way the project does, so it protects what was recorded.
-        let mut requests = if crate::install_layout::resolver::enabled()
-            && cf.has_templated_tool_versions()
-        {
-            let recorded = crate::install_layout::claims::file_hash(cf.as_ref())
-                .ok()
-                .and_then(|file| {
-                    crate::install_layout::claims::needed_by(
-                        &path,
-                        &file,
-                        &cf.templated_tool_backends(),
-                    )
-                });
-            let Some(recorded) = recorded else {
-                bail!(
-                    "cannot tell which tool versions {} needs: they are templates, and no installation has been recorded for some of them; run `mise install` in {} to record them",
-                    display_path(&path),
-                    display_path(cf.config_root())
-                );
+        // The identity layout snapshots what a config's templated versions render
+        // to where the project is used; a global prune cannot render them the way
+        // the project does, so it reads the snapshot. With no current snapshot it
+        // keeps every installation of those tools until the project is used again.
+        let mut requests =
+            if crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions() {
+                let mut requests = cf.to_tool_request_set_skipping_templated()?;
+                match crate::install_layout::snapshots::current_requests(&path, &cf.source()) {
+                    Some(snapshot) => {
+                        for request in snapshot {
+                            requests.add_version(request, &cf.source());
+                        }
+                    }
+                    None => {
+                        let mut kept = vec![];
+                        for short in cf.templated_tool_backends() {
+                            if !kept.contains(&short) {
+                                keep_every_installation(&short, &path, &mut needed);
+                                kept.push(short);
+                            }
+                        }
+                    }
+                }
+                requests
+            } else {
+                cf.to_tool_request_set()?
             };
-            for key in recorded.keys {
-                needed.entry(key).or_default().insert(path.clone());
-            }
-            for short in &recorded.keep_all {
-                keep_every_installation(short, &path, &mut needed);
-            }
-            cf.to_tool_request_set_skipping_templated()?
-        } else {
-            cf.to_tool_request_set()?
-        };
         let files = [(path.clone(), cf.clone())].into_iter().collect();
         crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
         let mut ts = Toolset::from(requests);
