@@ -244,15 +244,14 @@ fn interpret(
     if !success {
         return match serde_json::from_slice::<wire::ErrorDocument>(buf) {
             Ok(doc) => {
-                let message = mise_util::redactions::redact_global(&doc.error.message);
+                let message =
+                    strip_control(&mise_util::redactions::redact_global(&doc.error.message));
+                let kind = strip_control(&doc.error.kind);
                 let root = display_path(root);
-                Err(Failure::Message(if doc.error.kind == "config" {
+                Err(Failure::Message(if kind == "config" {
                     format!("mise secrets: fnox could not load its config in {root}: {message}")
                 } else {
-                    format!(
-                        "mise secrets: fnox env failed ({}) in {root}: {message}",
-                        doc.error.kind
-                    )
+                    format!("mise secrets: fnox env failed ({kind}) in {root}: {message}")
                 }))
             }
             Err(_) => Err(Failure::NoJson(status.to_string())),
@@ -262,7 +261,7 @@ fn interpret(
     if head.schema != 1 {
         return Err(Failure::Message(format!(
             "mise secrets: fnox {} sent env schema {}; this mise understands schema 1. Upgrade mise (mise self-update) or pin an older fnox.",
-            head.fnox_version.as_deref().unwrap_or("(unknown version)"),
+            strip_control(head.fnox_version.as_deref().unwrap_or("(unknown version)")),
             head.schema
         )));
     }
@@ -311,9 +310,13 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
     }
     Catalog {
         entries,
-        profile: doc.profile,
-        dynamic_leases: doc.dynamic_leases,
-        tool_version: doc.fnox_version,
+        profile: doc.profile.iter().map(|p| strip_control(p)).collect(),
+        dynamic_leases: doc
+            .dynamic_leases
+            .iter()
+            .map(|l| strip_control(l))
+            .collect(),
+        tool_version: strip_control(&doc.fnox_version),
     }
 }
 
@@ -341,6 +344,29 @@ mod tests {
             Failure::Message(m) => m,
             Failure::NoJson(s) => format!("nojson {s}"),
         }
+    }
+
+    #[test]
+    fn terminal_bound_strings_are_stripped() {
+        let doc = r#"{"schema":1,"fnox_version":"1.\u001b[31m39","profile":["dev\u001b]0;pwned\u0007"],"keys":[],"dynamic_leases":["l\u001b[2Jx"]}"#;
+        let c = interpret(true, "exit status: 0", doc.as_bytes(), Path::new("/p"))
+            .ok()
+            .unwrap();
+        let all = format!("{} {:?} {:?}", c.tool_version, c.profile, c.dynamic_leases);
+        assert!(!all.chars().any(|ch| ch.is_ascii_control()), "{all:?}");
+        assert_eq!(c.tool_version, "1.[31m39");
+        assert_eq!(strip_control("plain text-1.2"), "plain text-1.2");
+        let m = message(
+            interpret(
+                false,
+                "exit status: 1",
+                br#"{"schema":1,"error":{"kind":"x\u001b[1m","message":"a\u001b]0;t\u0007b"}}"#,
+                Path::new("/p"),
+            )
+            .err()
+            .unwrap(),
+        );
+        assert!(!m.chars().any(|ch| ch.is_ascii_control()), "{m:?}");
     }
 
     #[test]
