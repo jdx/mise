@@ -86,6 +86,9 @@ EOF
 assert_fail_contains "mise use --global --dry-run dummy@3 tiny@1 2>&1" "use --path to choose one"
 assert_fail_contains "mise use --global --dry-run legacy@2 fresh@1 2>&1" "run separate commands"
 
+# Missing removals do not make an existing update look like a new declaration.
+mise use --global --dry-run legacy@2 --remove missing-tool
+
 # Invalid defaults fail before writing an unreadable config file.
 cat > invalid-relative.toml <<'EOF'
 [settings.write_targets]

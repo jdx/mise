@@ -458,10 +458,14 @@ impl Use {
         if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
             return Ok((Default::default(), false));
         }
-        let requested = self
+        let additions = self
             .tools
             .iter()
             .map(|tool| tool.tool.ba.as_ref().clone())
+            .collect::<IndexSet<_>>();
+        let requested = additions
+            .iter()
+            .cloned()
             .chain(self.remove.iter().cloned())
             .collect::<IndexSet<_>>();
         let mut paths = IndexSet::new();
@@ -478,7 +482,8 @@ impl Use {
                 }
             }
         }
-        Ok((paths, existing.len() != requested.len()))
+        let has_new_additions = additions.iter().any(|ba| !existing.contains(ba));
+        Ok((paths, has_new_additions))
     }
 
     async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {
