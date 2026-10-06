@@ -153,9 +153,12 @@ impl OperationScope {
         let tracked = TrackedSet::effective().await?;
         let command = command.to_owned();
         let writer = tokio::task::spawn_blocking(move || {
-            Writer::begin(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
+            Writer::begin_unless_busy(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
         })
         .await??;
+        let Some(writer) = writer else {
+            return Ok(Self(None));
+        };
         let uuid = writer.pending.checkpoint.uuid.clone();
         debug!("history: recording operation {uuid}");
         let shared = Arc::new(Mutex::new(writer));
@@ -340,6 +343,43 @@ impl Drop for OperationScope {
 }
 
 impl Writer {
+    /// A bootstrap that records no file history only journals its own writes
+    /// for crash recovery. Another operation holding the lock must not fail
+    /// it (parallel CI jobs sharing a state dir), so it runs unjournaled.
+    /// Anything that records history still waits for the lock and fails.
+    fn begin_unless_busy(
+        state_dir: &Path,
+        kind: OperationKind,
+        command: &str,
+        tracked: TrackedSet,
+        wait: std::time::Duration,
+        fresh_adoption: bool,
+    ) -> Result<Option<Self>> {
+        if kind != OperationKind::Bootstrap {
+            return Self::begin(state_dir, kind, command, tracked, wait, fresh_adoption).map(Some);
+        }
+        let store = Store::open_in(state_dir)?;
+        if records_file_history(&store, &tracked, Some(kind))? {
+            return Self::begin(state_dir, kind, command, tracked, wait, fresh_adoption).map(Some);
+        }
+        drop(store);
+        match Self::begin(
+            state_dir,
+            kind,
+            command,
+            tracked,
+            std::time::Duration::ZERO,
+            fresh_adoption,
+        ) {
+            Ok(writer) => Ok(Some(writer)),
+            Err(err) if err.downcast_ref::<OperationLockBusy>().is_some() => {
+                warn!("history: {err}; continuing without recording this run");
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     fn begin(
         state_dir: &Path,
         kind: OperationKind,
@@ -698,6 +738,27 @@ pub fn recovery_lock(store: &Store) -> Result<fslock::LockFile> {
     acquire_operation_lock(store, std::time::Duration::ZERO)
 }
 
+/// The operation lock is held by another process.
+#[derive(Debug)]
+struct OperationLockBusy(Option<store::OperationMarker>);
+
+impl std::fmt::Display for OperationLockBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(marker) => write!(
+                f,
+                "another history operation is running: {} since {} ({})",
+                marker.kind.as_str(),
+                marker.started_at,
+                marker.command
+            ),
+            None => f.write_str("another history operation is running"),
+        }
+    }
+}
+
+impl std::error::Error for OperationLockBusy {}
+
 fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fslock::LockFile> {
     let state_dir = store.state_dir();
     let path = store::operation_lock_in(state_dir);
@@ -711,15 +772,7 @@ fn acquire_operation_lock(store: &Store, wait: std::time::Duration) -> Result<fs
         }
         let marker = store::read_marker_in(state_dir)?;
         if std::time::Instant::now() >= deadline {
-            match marker {
-                Some(marker) => bail!(
-                    "another history operation is running: {} since {} ({})",
-                    marker.kind.as_str(),
-                    marker.started_at,
-                    marker.command
-                ),
-                None => bail!("another history operation is running"),
-            }
+            return Err(OperationLockBusy(marker).into());
         }
         if !announced {
             announced = true;
@@ -1091,6 +1144,36 @@ mod tests {
                 .as_deref(),
             Some(saved.as_str())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_without_recorded_history_runs_when_the_lock_is_busy() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let _held = LockFile::at(&store::operation_lock_in(temp.path()))
+            .try_lock()?
+            .unwrap();
+        let begin = |kind| {
+            Writer::begin_unless_busy(
+                temp.path(),
+                kind,
+                "bootstrap",
+                TrackedSet::default(),
+                std::time::Duration::ZERO,
+                false,
+            )
+        };
+        assert!(begin(OperationKind::Bootstrap)?.is_none());
+        // only a run that records nothing may skip the lock
+        assert!(begin(OperationKind::Apply).is_err());
+        let repo = store.repo().unwrap();
+        let tree =
+            super::super::manifest::Manifest::default().write(repo, &repo.empty_object("tree")?)?;
+        let root = repo.commit_tree(&tree, vec![], "existing")?;
+        repo.update_history_head(&root, None)?;
+        let err = begin(OperationKind::Bootstrap).err().unwrap();
+        assert!(err.to_string().contains("another history operation"));
         Ok(())
     }
 
