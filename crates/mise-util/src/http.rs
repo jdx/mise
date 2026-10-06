@@ -107,8 +107,15 @@ impl SendOnceOptions {
         if self.error_for_status
             && !(self.allow_range_not_satisfiable
                 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
+            && let Err(err) = response.error_for_status_ref()
         {
-            response.error_for_status_ref()?;
+            return Err(match retry_after(&response) {
+                Some(wait) => {
+                    let message = err.to_string();
+                    Report::new(err).wrap_err(RetryAfter { wait, message })
+                }
+                None => err.into(),
+            });
         }
         Ok(response)
     }
@@ -218,6 +225,55 @@ impl std::fmt::Display for GithubRateLimited {
 }
 
 impl std::error::Error for GithubRateLimited {}
+
+/// Longest `Retry-After` the retry loop will wait out. Past this, retrying
+/// within the backoff schedule only adds requests to a limiter that is still
+/// blocking us, so the 429 is returned for the caller to fall back on.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+
+/// A 429 that told us how long to wait. Wraps the status error, so
+/// [`error_code`] still sees the 429, and carries the message so what the user
+/// reads is unchanged apart from the wait.
+#[derive(Debug)]
+struct RetryAfter {
+    wait: Duration,
+    message: String,
+}
+
+impl std::fmt::Display for RetryAfter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} (retry-after: {}s)",
+            self.message,
+            self.wait.as_secs()
+        )
+    }
+}
+
+/// How long to sleep before retrying: the scheduled backoff, or the wait the
+/// server asked for if that is longer.
+fn retry_delay(backoff: Duration, err: &Report) -> Duration {
+    err.downcast_ref::<RetryAfter>()
+        .map_or(backoff, |retry_after| backoff.max(retry_after.wait))
+}
+
+/// The wait a 429 asked for, in delay-seconds form. An HTTP-date, which no
+/// host we talk to sends, is ignored and the normal backoff applies.
+fn retry_after(response: &Response) -> Option<Duration> {
+    if response.status() != StatusCode::TOO_MANY_REQUESTS {
+        return None;
+    }
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PartialDownloadState {
@@ -2121,15 +2177,19 @@ fn stale_github_oauth_unauthorized_token(
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
+    // The real status first: a message can mention 404 without being one, such
+    // as a 429 whose `Retry-After` is 404 seconds.
+    if let Some(status) = e
+        .downcast_ref::<reqwest::Error>()
+        .and_then(reqwest::Error::status)
+    {
+        return Some(status.as_u16());
+    }
     if e.to_string().contains("404") {
         // TODO: not this when I can figure out how to use eyre properly
         return Some(404);
     }
-    if let Some(err) = e.downcast_ref::<reqwest::Error>() {
-        err.status().map(|s| s.as_u16())
-    } else {
-        None
-    }
+    None
 }
 
 /// The automatic host credentials for `url` (a forge token, say) with `headers` layered
@@ -2620,6 +2680,12 @@ pub fn is_transient(err: &Report) -> bool {
     if is_dns_error(err.as_ref()) {
         return false;
     }
+    if err
+        .downcast_ref::<RetryAfter>()
+        .is_some_and(|r| r.wait > MAX_RETRY_AFTER)
+    {
+        return false;
+    }
     err.chain().any(|e| {
         if e.downcast_ref::<DownloadSizeMismatch>().is_some() {
             return true;
@@ -2699,6 +2765,7 @@ where
                 let Some(delay) = backoff.next() else {
                     return Err(err);
                 };
+                let delay = retry_delay(delay, &err);
                 warn!(
                     "HTTP {} {} attempt {} failed after {} (transient): {}; retrying in {:?}",
                     verb_label,
