@@ -159,6 +159,38 @@ fn release_url_tag(url: &str) -> Option<String> {
     (!tag.is_empty()).then(|| tag.into_owned())
 }
 
+/// The text of a release list at `url`, or `None` when the repository keeps
+/// none. A resolution reads the list for every release it looks at, so one
+/// command would otherwise fetch the same file over and over, and wait on a
+/// 404 each time. The answer is kept for the life of the process: a withdrawal
+/// is noticed by the next command, as before.
+async fn fetch_github_list(url: &str) -> Result<Option<String>> {
+    type Fetched = Arc<tokio::sync::OnceCell<Option<String>>>;
+    static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
+        std::sync::LazyLock::new(Default::default);
+    let cell: Fetched = FETCHED
+        .lock()
+        .unwrap()
+        .entry(url.to_string())
+        .or_default()
+        .clone();
+    cell.get_or_try_init(|| async {
+        let headers = github::get_headers(url)?;
+        match HTTP_FETCH
+            .get_text_request(url)
+            .headers(&headers)
+            .send()
+            .await
+        {
+            Ok(text) => Ok(Some(text)),
+            Err(err) if crate::http::error_code(&err) == Some(404) => Ok(None),
+            Err(err) => Err(err),
+        }
+    })
+    .await
+    .cloned()
+}
+
 /// The signed release list of a project on its own domain.
 fn well_known_url(project: &str) -> String {
     match project.split_once('/') {
@@ -950,22 +982,12 @@ impl PackslipBackend {
         // users without a token. The CDN serves the default branch for `HEAD`
         // and takes the same token for a private repository.
         let url = format!("https://raw.githubusercontent.com/{repo}/HEAD/{path}");
-        let headers = github::get_headers(&url)?;
-        let text = match HTTP_FETCH
-            .get_text_request(&url)
-            .headers(&headers)
-            .send()
+        let Some(text) = fetch_github_list(&url)
             .await
-        {
-            Ok(text) => text,
-            Err(err) if crate::http::error_code(&err) == Some(404) => {
-                packslip_pins::check_missing_list(project, None)?;
-                return Ok(None);
-            }
-            Err(err) => {
-                return Err(err)
-                    .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
-            }
+            .wrap_err_with(|| format!("fetching the release list of packslip:{project}"))?
+        else {
+            packslip_pins::check_missing_list(project, None)?;
+            return Ok(None);
         };
         let (list, forge) =
             verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
