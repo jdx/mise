@@ -759,18 +759,27 @@ fn same_target(a: &Path, b: &Path) -> bool {
     if let Ok(same) = same_file::is_same_file(a, b) {
         return same;
     }
+    // at least one target is missing: compare where the existing part of each
+    // path lands and what is left below it
     let (ancestor_a, tail_a) = split_existing(a);
     let (ancestor_b, tail_b) = split_existing(b);
-    let lowercase = |path: &Path| path.to_string_lossy().to_lowercase();
     let same_ancestor = ancestor_a == ancestor_b
-        || (lowercase(&ancestor_a) == lowercase(&ancestor_b)
-            && same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false));
-    same_ancestor
-        && tail_a.len() == tail_b.len()
-        && tail_a
-            .iter()
-            .zip(&tail_b)
-            .all(|(x, y)| x.to_string_lossy().to_lowercase() == y.to_string_lossy().to_lowercase())
+        || same_file::is_same_file(&ancestor_a, &ancestor_b).unwrap_or(false);
+    if !same_ancestor || tail_a.len() != tail_b.len() {
+        return false;
+    }
+    // the same directory reached by two spellings (a symlinked parent, say)
+    // and the same file name below it: one file
+    if tail_a == tail_b {
+        return true;
+    }
+    // names that differ only by case are one file only on a volume that
+    // ignores case
+    let lowercase = |name: &std::ffi::OsString| name.to_string_lossy().to_lowercase();
+    tail_a
+        .iter()
+        .map(lowercase)
+        .eq(tail_b.iter().map(lowercase))
         && volume_ignores_case(&ancestor_a)
 }
 
@@ -1637,6 +1646,7 @@ mod tests {
         assert!(edit_entry_from_toml("~/a/config.toml", value).is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn merge_targets_are_the_same_only_when_provably_so() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -1654,6 +1664,16 @@ mod tests {
         let (missing, variant) = (dir.path().join("m.toml"), dir.path().join("M.toml"));
         assert!(same_target(&missing, &missing));
         assert!(!same_target(&missing, &variant));
+        // two spellings of one existing directory, same missing file name
+        let real = dir.path().join("real");
+        file::create_dir_all(&real)?;
+        let alias = dir.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias)?;
+        assert!(same_target(&real.join("new.toml"), &alias.join("new.toml")));
+        assert!(!same_target(
+            &real.join("new.toml"),
+            &alias.join("other.toml")
+        ));
         // the test volume keeps case
         assert!(!volume_ignores_case(dir.path()));
         Ok(())
