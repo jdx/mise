@@ -8,10 +8,11 @@
 //! templated version of a config, the catalog records it under that config, and
 //! prune protects what is recorded.
 //!
-//! A record is replaced when the loaded configuration changes, so an edit does
-//! not protect old versions forever. Between an edit and the next use a stale
-//! record can only keep too much, never too little: a version that is installed
-//! is recorded as it is installed.
+//! Recording a tool replaces that tool's entries made under an older
+//! configuration, so an edit does not protect old versions forever. Other tools
+//! keep their entries until they are recorded again, so between an edit and the
+//! next use a record can only keep too much, never too little: a version that is
+//! installed is recorded as it is installed.
 
 use std::path::Path;
 
@@ -28,8 +29,6 @@ use crate::{dirs, file, hash};
 struct Claims {
     /// The config these belong to, for readers of the catalog.
     config: String,
-    /// Fingerprint of the configuration they were rendered under.
-    fingerprint: String,
     #[serde(default)]
     needs: Vec<Need>,
 }
@@ -37,31 +36,41 @@ struct Claims {
 /// One installation, in the form `mise prune` keys needed versions by.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Need {
+    /// The tool this installation is for.
+    backend: String,
+    /// Fingerprint of the configuration it was rendered under.
+    fingerprint: String,
     /// The tool name for a legacy path; empty for an identity-layout directory.
     short: String,
     /// The version directory name, or the identity-layout directory name.
     version: String,
 }
 
+/// The same file reached through a symlinked directory or a relative path names
+/// one config.
+fn canonical(config: &Path) -> std::path::PathBuf {
+    std::fs::canonicalize(config).unwrap_or_else(|_| config.to_path_buf())
+}
+
 fn path_for(catalog: &Catalog, config: &Path) -> std::path::PathBuf {
     catalog
         .meta_dir()
         .join("claims")
-        .join(format!("{}.toml", hash::hash_to_str(&config)))
+        .join(format!("{}.toml", hash::hash_to_str(&canonical(config))))
 }
 
 /// Fingerprint of everything that rendered the config's templates: the loaded
 /// config files and the environments selecting among them.
-fn fingerprint(config: &Config) -> String {
+fn fingerprint(config: &Config) -> Result<String> {
     let mut text = String::new();
     for (path, cf) in &config.config_files {
         text.push_str(&path.to_string_lossy());
         text.push('\n');
-        text.push_str(&cf.dump().unwrap_or_default());
+        text.push_str(&cf.dump()?);
         text.push('\n');
     }
     text.push_str(&crate::env::MISE_ENV.join(","));
-    hash::hash_to_str(&text)
+    Ok(hash::hash_to_str(&text))
 }
 
 /// Record that `tv`, installed in `dir`, is what a templated version of its
@@ -81,28 +90,35 @@ pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
     {
         return Ok(());
     }
+    let fingerprint = fingerprint(&config)?;
+    let backend = tv.ba().short.to_string();
     let need = match super::resolver::dir_name_of(dir) {
         Some(dir) => Need {
+            backend,
+            fingerprint,
             short: String::new(),
             version: dir,
         },
         None => Need {
-            short: tv.ba().short.to_string(),
+            short: backend.clone(),
+            backend,
+            fingerprint,
             version: tv.tv_pathname(),
         },
     };
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let file = path_for(&catalog, path);
-    let fingerprint = fingerprint(&config);
     let _lock = catalog.lock()?;
     let mut claims = read(&file).unwrap_or_default();
-    if claims.fingerprint != fingerprint {
-        claims = Claims::default();
-    } else if claims.needs.contains(&need) {
+    if claims.needs.contains(&need) {
         return Ok(());
     }
-    claims.config = path.to_string_lossy().to_string();
-    claims.fingerprint = fingerprint;
+    // This tool's entries from an older configuration are stale; other tools'
+    // are left until they are recorded themselves.
+    claims
+        .needs
+        .retain(|n| n.backend != need.backend || n.fingerprint == need.fingerprint);
+    claims.config = canonical(path).to_string_lossy().to_string();
     claims.needs.push(need);
     file::create_dir_all(file.parent().unwrap())?;
     file::write_atomic(&file, toml::to_string_pretty(&claims)?)

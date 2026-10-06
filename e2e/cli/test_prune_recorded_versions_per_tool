@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Recording one templated tool after a config edit must not drop the record of
+# another tool in the same config: using only one of them leaves the other installed
+# and still needed.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+d = "1.0.0"
+t = "2.0.0"' >project/mise.toml
+echo '[tools]
+dummy = "{{vars.d}}"
+tiny = "{{vars.t}}"' >project/child/mise.toml
+assert "mise -C project/child install"
+assert "mise install tiny@3.0.0"
+
+# Edit the parent, then use only dummy.
+echo '[vars]
+d = "2.0.0"
+t = "2.0.0"
+# edited' >project/mise.toml
+assert "mise -C project/child install dummy"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.tiny[].version] == [\"3.0.0\"]' prunable.json"
+assert "jq -e '[.dummy[].version] == [\"1.0.0\"]' prunable.json"
