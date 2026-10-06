@@ -1853,7 +1853,7 @@ mod tests {
         let names = |v: &[SecretName]| v.iter().map(|k| k.to_string()).collect::<Vec<_>>();
         assert_eq!(
             names(&split.keys),
-            ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT"]
+            ["B", "DEPLOY_KEY", "PATH_LIKE", "SHORT", "LEASE"]
         );
         assert_eq!(split.files, ["GCP_SA_JSON"]);
         let text = |s, k, r| skipped_text(s, k, r);
