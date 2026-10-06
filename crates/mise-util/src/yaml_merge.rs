@@ -9,7 +9,7 @@
 
 use eyre::{Result, bail, eyre};
 use std::str::FromStr;
-use yaml_edit::{Mapping, YamlFile};
+use yaml_edit::{Mapping, YamlFile, YamlNode};
 
 /// Set every key in `source` on `target` and return the edited text.
 ///
@@ -32,7 +32,36 @@ pub fn merge_yaml(target: &str, source: &str) -> Result<String> {
         bail!("the YAML source and target must each hold a mapping at the top level");
     };
     merge_mapping(&target_map, &source_map);
-    Ok(target_file.to_string())
+    let merged = target_file.to_string();
+    verify(&merged, source)?;
+    Ok(merged)
+}
+
+/// Check the edited text still parses and holds every source key. The edits
+/// are surgical, so this guards against a syntax-tree edit that corrupts the
+/// document instead of trusting it.
+fn verify(merged: &str, source: &str) -> Result<()> {
+    let parse = |text: &str| match serde_yaml::from_str::<serde_yaml::Value>(text) {
+        Ok(serde_yaml::Value::Mapping(map)) => Some(map),
+        Ok(serde_yaml::Value::Null) => Some(serde_yaml::Mapping::new()),
+        _ => None,
+    };
+    match (parse(source), parse(merged)) {
+        (Some(source), Some(merged)) if mapping_subset(&source, &merged) => Ok(()),
+        _ => bail!("editing the YAML in place did not produce a document holding the merged keys"),
+    }
+}
+
+/// Whether every key of `source` is set to the same value in `target`, tables
+/// compared recursively.
+pub(crate) fn mapping_subset(source: &serde_yaml::Mapping, target: &serde_yaml::Mapping) -> bool {
+    source.iter().all(|(key, sv)| match (sv, target.get(key)) {
+        (serde_yaml::Value::Mapping(s), Some(serde_yaml::Value::Mapping(t))) => {
+            mapping_subset(s, t)
+        }
+        (sv, Some(tv)) => sv == tv,
+        (_, None) => false,
+    })
 }
 
 /// The mapping at the root of a file's only document. An empty target gets a
@@ -54,12 +83,29 @@ fn merge_mapping(target: &Mapping, source: &Mapping) {
         match (target.get(&key), value.as_mapping()) {
             (Some(existing), Some(source_child)) => match existing.as_mapping() {
                 Some(target_child) => merge_mapping(target_child, source_child),
-                None => target.set(&key, &value),
+                None => replace_value(target, &key, &existing, &value),
             },
             (Some(existing), None) if existing.yaml_eq(&value) => {}
-            _ => target.set(&key, &value),
+            (Some(existing), None) => replace_value(target, &key, &existing, &value),
+            (None, _) => target.set(&key, &value),
         }
     }
+}
+
+/// Replace the value of an existing key. `yaml-edit` loses the line break
+/// after a block scalar (`|`, `>`) when it replaces one in place and glues the
+/// next key onto the same line, so such an entry is removed and re-inserted at
+/// the same position instead.
+fn replace_value(target: &Mapping, key: &YamlNode, existing: &YamlNode, value: &YamlNode) {
+    let existing_text = existing.to_string();
+    if existing_text.trim_start().starts_with(['|', '>'])
+        && let Some(index) = target.keys().position(|k| k.yaml_eq(key))
+    {
+        target.remove(key);
+        target.insert_at_index(index, key, value);
+        return;
+    }
+    target.set(key, value);
 }
 
 #[cfg(test)]
@@ -125,6 +171,42 @@ name: demo
             merge_yaml("# nothing yet\n", "a: 1\n").unwrap(),
             "# nothing yet\na: 1\n"
         );
+    }
+
+    #[test]
+    fn a_flow_mapping_keeps_its_style_and_spacing() {
+        let merged = merge_yaml("m: {a: 1,   b: 2}   # flow\nk: 1\n", "m:\n  b: 3\n").unwrap();
+        assert_eq!(merged, "m: {a: 1,   b: 3}   # flow\nk: 1\n");
+        let merged = merge_yaml("m: {a: 1}\n", "m:\n  c: 9\n").unwrap();
+        assert_eq!(merged, "m: {a: 1, c: 9}\n");
+    }
+
+    #[test]
+    fn a_block_scalar_is_kept_or_replaced_cleanly() {
+        // untouched
+        let merged = merge_yaml("text: |\n  keep this\n  block\nk: old\n", "k: new\n").unwrap();
+        assert_eq!(merged, "text: |\n  keep this\n  block\nk: new\n");
+        // replaced: the next key must stay on its own line, in place
+        let merged = merge_yaml("text: |\n  old\nk: 1\n", "text: new\n").unwrap();
+        assert_eq!(merged, "text: new\nk: 1\n");
+        let merged = merge_yaml("a: 1\ntext: >\n  old\n  fold\nz: 2\n", "text: [x]\n").unwrap();
+        assert_eq!(merged, "a: 1\ntext: [x]\nz: 2\n");
+    }
+
+    #[test]
+    fn nested_inserts_follow_the_existing_indentation() {
+        let merged = merge_yaml(
+            "top:\n    inner:\n        a: 1\n",
+            "top:\n  inner:\n    b: 2\n",
+        )
+        .unwrap();
+        assert_eq!(merged, "top:\n    inner:\n        a: 1\n        b: 2\n");
+        // a whole new sub-mapping still parses, with the right values
+        let merged = merge_yaml("top:\n    a: 1\n", "top:\n  new:\n    deep: 2\n").unwrap();
+        let value: serde_yaml::Value = serde_yaml::from_str(&merged).unwrap();
+        assert_eq!(value["top"]["a"], serde_yaml::Value::from(1));
+        assert_eq!(value["top"]["new"]["deep"], serde_yaml::Value::from(2));
+        assert!(merged.starts_with("top:\n    a: 1\n"));
     }
 
     #[test]
