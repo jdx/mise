@@ -168,7 +168,9 @@ fn start_lazy(start: &LazyStart, wait: std::time::Duration) -> Result<Option<Sha
             env::set_var(ENV_VAR, uuid);
             Ok(Some(Arc::new(Mutex::new(writer))))
         }
-        Err(err) if err.downcast_ref::<OperationLockBusy>().is_some() => {
+        // only a first write may go on unjournaled; a run that must record
+        // its outcome waited for the lock and reports why it could not take it
+        Err(err) if wait.is_zero() && err.downcast_ref::<OperationLockBusy>().is_some() => {
             warn!("history: {err}; continuing without recovery data for this run");
             Ok(None)
         }
