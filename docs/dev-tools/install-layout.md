@@ -374,10 +374,12 @@ Both work on one installation directory at a time.
   on the vars, env, `MISE_ENV`, `--no-env`, settings and dotenv files in effect
   where the project is used, which `mise prune` cannot reproduce from another
   directory. The catalog therefore records, under `installs/.mise/claims/`, the
-  installations a config's templated versions rendered to whenever they are
-  installed or used, and `mise prune` keeps them. Editing the config or anything
-  it loads replaces the record the next time the project is used. A config with a
-  templated version and no record makes `mise prune` stop and name the config;
+  installation a config's templated version rendered to whenever a command
+  installs or resolves it (`mise install`, `mise exec`, `mise run`, the shell
+  hook), and `mise prune` keeps it. Editing the config or anything it loads
+  replaces that tool's record for the same `MISE_ENV` the next time the project
+  is used; other tools and other environments keep theirs. A config with a
+  templated tool that has no record makes `mise prune` stop and name the config;
   run `mise install` in that project to record it. Without the new layout,
   `mise prune` renders these versions from where it runs and can fail.
 - `mise plugins uninstall --purge` also removes the plugin's installations in
