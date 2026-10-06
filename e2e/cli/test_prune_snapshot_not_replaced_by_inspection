@@ -22,3 +22,10 @@ assert "PRUNE_VERSION=2.0.0 mise -C project exec dummy@3.0.0 -- true"
 
 assert "mise -C elsewhere ls --prunable --json >prunable.json"
 assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+
+# A real prune from inside the project, which also rebuilds shims afterwards, keeps
+# the version the project recorded and does not replace the snapshot.
+assert "PRUNE_VERSION=2.0.0 mise -C project prune --yes"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0 >/dev/null"

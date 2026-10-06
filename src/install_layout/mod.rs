@@ -23,4 +23,4 @@ pub(crate) mod identity;
 pub(crate) mod label;
 pub(crate) mod record;
 pub mod resolver;
-pub(crate) mod snapshots;
+pub mod snapshots;

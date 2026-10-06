@@ -101,11 +101,11 @@ static OBSERVED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::defau
 /// toolset of the directory it runs in: that is an inspection from whatever
 /// environment prune was started in, not a use of the project, and recording it
 /// would replace the snapshot prune is about to rely on.
-pub(crate) struct Suspended;
+pub struct Suspended;
 
 static SUSPENDED: AtomicUsize = AtomicUsize::new(0);
 
-pub(crate) fn suspend() -> Suspended {
+pub fn suspend() -> Suspended {
     SUSPENDED.fetch_add(1, Ordering::SeqCst);
     Suspended
 }
