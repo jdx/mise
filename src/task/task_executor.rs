@@ -2323,8 +2323,11 @@ impl TaskExecutor {
         let mut items = vec![];
         let mut problems = vec![];
         let mut privilege_problem = false;
-        let env_view = crate::secrets::EnvView::load(config).await;
+        let root_env_view = crate::secrets::EnvView::load(config).await;
         for task in tasks {
+            let env_view = root_env_view
+                .for_task(config, &self.context_builder, task)
+                .await;
             let (grant, mut found) =
                 crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), false);
             found.extend(crate::secrets::static_problems(

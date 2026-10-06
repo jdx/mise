@@ -657,7 +657,10 @@ impl SecretBroker {
             bail!("prepare_spawn is for tasks; use prepare_exec");
         };
         let (_, mut problems) = grant_for_task(task);
-        let env_view = super::EnvView::load(config).await;
+        let env_view = super::EnvView::load(config)
+            .await
+            .for_task(config, req.ctx_builder, task)
+            .await;
         problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if !problems.is_empty() {
             bail!(
