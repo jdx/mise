@@ -815,20 +815,16 @@ fn split_existing(path: &Path) -> (PathBuf, Vec<std::ffi::OsString>) {
     (existing.to_path_buf(), tail)
 }
 
-/// One rendered edit of a structured file, for the cross-entry conflict check:
-/// the request, the format a merge entry sets (`None` for a block), and the
-/// rendered content.
-type Owned<'a> = (&'a EditRequest, Option<Format>, String);
-
-/// Two entries for one file that set the same key to different values would
-/// each look unapplied after the other ran, so every apply would flip the value
-/// back and forth. Refuse that instead of picking a winner. Two merges are
-/// compared key by key, and a merge is compared with a block whose content
-/// parses as the merge's format (a TOML block of dotted keys, say). Every entry
+/// Two merge entries for one file that set the same key to different values
+/// would each look unapplied after the other ran, so every apply would flip the
+/// value back and forth. Refuse that instead of picking a winner. Every entry
 /// this run applies is compared with the others it applies and with the
 /// config's other entries for the file; entries this run leaves alone are not
 /// compared with each other, since nothing here would write them.
-fn merge_conflicts(applied: &[Owned<'_>], unapplied: &[Owned<'_>]) -> Vec<String> {
+fn merge_conflicts(
+    applied: &[(&EditRequest, Format, String)],
+    unapplied: &[(&EditRequest, Format, String)],
+) -> Vec<String> {
     let mut problems = vec![];
     for (i, first) in applied.iter().enumerate() {
         for second in applied[i + 1..].iter().chain(unapplied) {
@@ -839,20 +835,14 @@ fn merge_conflicts(applied: &[Owned<'_>], unapplied: &[Owned<'_>]) -> Vec<String
 }
 
 fn merge_conflict(
-    (first, first_format, first_content): &Owned<'_>,
-    (second, second_format, second_content): &Owned<'_>,
+    (first, format, first_content): &(&EditRequest, Format, String),
+    (second, second_format, second_content): &(&EditRequest, Format, String),
 ) -> Option<String> {
-    if !same_target(&first.path, &second.path) {
+    if !same_target(&first.path, &second.path) || format != second_format {
         return None;
     }
-    let format = match (first_format, second_format) {
-        (Some(a), Some(b)) if a == b => *a,
-        // a merge against a block: the block is read as the merge's format
-        (Some(format), None) | (None, Some(format)) => *format,
-        _ => return None,
-    };
-    // unparseable sources and blocks were already reported or are not data
-    let keys = structured_merge::conflicts(format, first_content, second_content).ok()?;
+    // unparseable sources were already reported by desired_content
+    let keys = structured_merge::conflicts(*format, first_content, second_content).ok()?;
     (!keys.is_empty()).then(|| {
         format!(
             "  \"{}\": {} and {} set different values for {}",
@@ -864,8 +854,8 @@ fn merge_conflict(
     })
 }
 
-/// The merge entries and blocks of `siblings` that this run is not applying but
-/// that target a file this run edits, so a conflict with them is caught too.
+/// The merge entries of `siblings` that this run is not applying but that
+/// target a file this run merges into, so a conflict with them is caught too.
 /// Entries whose target is blocked are skipped before rendering, so their
 /// templates never run, and templates are not rendered on a dry run.
 fn unapplied_siblings<'a>(
@@ -873,19 +863,17 @@ fn unapplied_siblings<'a>(
     requests: &[EditRequest],
     siblings: &'a [EditRequest],
     dry_run: bool,
-    applied: &[Owned<'_>],
-) -> Vec<Owned<'a>> {
+    merged: &[(&EditRequest, Format, String)],
+) -> Vec<(&'a EditRequest, Format, String)> {
     let mut found = vec![];
     for sibling in siblings {
-        let format = match &sibling.op {
-            EditOp::Merge { format, .. } => Some(*format),
-            EditOp::Block { .. } => None,
-            EditOp::Line { .. } => continue,
+        let EditOp::Merge { format, .. } = &sibling.op else {
+            continue;
         };
         if requests
             .iter()
             .any(|req| req.path == sibling.path && req.id == sibling.id)
-            || !applied
+            || !merged
                 .iter()
                 .any(|(req, ..)| same_target(&req.path, &sibling.path))
             || (dry_run && sibling.op.is_template())
@@ -895,7 +883,7 @@ fn unapplied_siblings<'a>(
         }
         // a sibling that cannot be rendered is reported when it is applied
         if let Ok(Some(content)) = desired_content(config, sibling) {
-            found.push((sibling, format, content));
+            found.push((sibling, *format, content));
         }
     }
     found
@@ -924,18 +912,18 @@ pub fn apply(
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
-    // other entries in the config, so applying one entry through a target
+    // other merge entries in the config, so applying one entry through a target
     // filter still sees a sibling that sets the same key differently
     let siblings = if requests
         .iter()
-        .any(|req| matches!(req.op, EditOp::Merge { .. } | EditOp::Block { .. }))
+        .any(|req| matches!(req.op, EditOp::Merge { .. }))
     {
         edits_from_config(config).unwrap_or_default()
     } else {
         vec![]
     };
     // every merge source rendered this run, for the cross-entry conflict check
-    let mut merged: Vec<Owned<'_>> = vec![];
+    let mut merged: Vec<(&EditRequest, Format, String)> = vec![];
     for req in requests {
         if let Some(p) = req.op.source_file()
             && !p.exists()
@@ -991,14 +979,8 @@ pub fn apply(
                 continue;
             }
         };
-        if let Some(content) = &desired {
-            match &req.op {
-                EditOp::Merge { format, .. } => {
-                    merged.push((req, Some(*format), content.clone()));
-                }
-                EditOp::Block { .. } => merged.push((req, None, content.clone())),
-                EditOp::Line { .. } => {}
-            }
+        if let (EditOp::Merge { format, .. }, Some(content)) = (&req.op, &desired) {
+            merged.push((req, *format, content.clone()));
         }
         match pre {
             // markers exist: compare content to see if anything would change
