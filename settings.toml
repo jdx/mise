@@ -4014,8 +4014,9 @@ mise-managed interpreter, for example — and the old version is left in place w
 removal.
 
 Versions that another tracked config or tool stub still needs are kept regardless of this setting.
-Once such a version is due, mise checks it again at most once a day, so it can be pruned up to a
-day after the last reference to it goes away.
+So are versions that a running process was started from, even after the grace period
+ends. Once such a version is due, mise checks it again at most once a day, so it can be
+pruned up to a day after the last reference to it goes away or the last process using it exits.
 `mise upgrade --prune` removes the replaced version immediately, and `--no-prune` leaves it in
 place without scheduling removal.
 """

@@ -33,9 +33,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::Path;
-#[cfg(unix)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
@@ -626,9 +624,19 @@ impl Backend for PIPXBackend {
             .await?;
             cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
             cmd = cmd.args(options.uv_install_args()?);
-            if let Some(args) = options.uvx_args() {
-                cmd = cmd.args(shell_words::split(args)?);
+            let user_args = match options.uvx_args() {
+                Some(args) => shell_words::split(args)?,
+                None => vec![],
+            };
+            // uv prefers a Python it downloaded earlier over the one on PATH, which would
+            // tie the tool's venv to an interpreter outside the mise data dir. Bind it to
+            // mise's Python so a cached data dir restores a working tool.
+            if !uv_args_select_python(&user_args)
+                && let Some(python) = self.mise_managed_python(&ctx.config, &ctx.ts).await
+            {
+                cmd = cmd.arg("--python").arg(python);
             }
+            cmd = cmd.args(user_args);
             cmd.execute()?;
         } else {
             // pipx forwards install `--pip-args` into shared-library bootstrap
@@ -1069,6 +1077,19 @@ impl PIPXBackend {
         Ok(())
     }
 
+    /// The Python mise installed for this tool's toolset, ignoring any interpreter that is
+    /// only on `PATH`.
+    async fn mise_managed_python(&self, config: &Arc<Config>, ts: &Toolset) -> Option<PathBuf> {
+        if let Some(python) = ts.which_bin_spawnable(config, "python").await {
+            return Some(python);
+        }
+        self.dependency_toolset(config)
+            .await
+            .ok()?
+            .which_bin_spawnable(config, "python")
+            .await
+    }
+
     async fn uvx_cmd<'a>(
         uv_program: &Path,
         config: &Arc<Config>,
@@ -1185,6 +1206,12 @@ enum PipxRequest {
     Git(GitSource),
     /// black@24.2.0
     Pypi(String),
+}
+
+/// Whether user-supplied `uv tool install` arguments already pick an interpreter.
+fn uv_args_select_python(args: &[String]) -> bool {
+    args.iter()
+        .any(|a| a == "-p" || a == "--python" || a.starts_with("--python="))
 }
 
 /// A Git source split into its repository and any pip/uv URL fragment
