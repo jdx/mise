@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# A version that no tracked config or tool stub needs any more can still be in
+# use: a long-running process started from it before it was replaced keeps
+# loading files from its install directory. Pruning keeps such a version until
+# the process exits. Windows has its own test in e2e-win.
+
+held=""
+trap '[[ -n $held ]] && kill "$held" 2>/dev/null' EXIT
+
+# Stand in for a program started from the version before it stopped being
+# needed: a copy of sleep inside the version's own install directory. The copy
+# keeps its name because multi-call coreutils and busybox pick the program to
+# run from it, and stays out of bin/ so mise does not create a shim for it.
+start_held_process() {
+  mkdir -p "$1/libexec"
+  cp "$(command -v sleep)" "$1/libexec/sleep"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    # A copy of a system binary is killed on launch until it is signed again.
+    codesign --force --sign - "$1/libexec/sleep" 2>/dev/null
+  fi
+  "$1/libexec/sleep" 120 &
+  held=$!
+  # Wait until the copy is the running program so the checks below do not
+  # race its exec, and stop here if it could not start.
+  local expected attempt running
+  expected="$(realpath "$1/libexec/sleep")"
+  for attempt in {1..50}; do
+    if [[ -e /proc/$held/exe ]]; then
+      running="$(readlink -f "/proc/$held/exe" 2>/dev/null)"
+    else
+      running="$(realpath "$(ps -o comm= -p "$held" 2>/dev/null)" 2>/dev/null)"
+    fi
+    if [[ $running == "$expected" ]]; then
+      return
+    fi
+    sleep 0.1
+  done
+  fail "the stand-in process did not start after $attempt checks"
+}
+
+stop_held_process() {
+  kill "$held"
+  wait "$held" 2>/dev/null || true
+  held=""
+}
+
+install="$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+echo "=== mise prune keeps a version a process is running from ==="
+# Installed on its own, so no tracked config mentions dummy at all.
+assert "mise install dummy@1.0.0"
+start_held_process "$install"
+
+assert_not_contains "mise ls --prunable" "1.0.0"
+assert_contains "mise prune --tools --dry-run 2>&1" \
+  "dummy@1.0.0 is kept: still running as pid $held (sleep)"
+assert_not_contains "mise prune --tools --dry-run 2>&1" "[dryrun]"
+# Nothing is left to prune, so --dry-run-code succeeds.
+assert_succeed "mise prune --tools --dry-run-code"
+MISE_YES=1 assert_contains "mise prune --tools 2>&1" "dummy@1.0.0 is kept"
+assert "ls $install"
+
+# Once the process exits, the version is unused again.
+stop_held_process
+MISE_YES=1 assert_not_contains "mise prune --tools 2>&1" "is kept"
+assert_fail "ls $install"
+
+echo "=== deferred pruning after an upgrade waits for the process ==="
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+
+[settings]
+upgrade.prune_after = "0s"
+EOF
+
+mise install dummy@1.0.0
+start_held_process "$install"
+mise upgrade dummy
+# The grace period is over, but the receipt is kept while the process runs.
+assert_contains "MISE_DEBUG=1 mise current 2>&1" "dummy@1.0.0 because it is still in use"
+assert "ls $install"
+assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+
+# After the process exits, the next due check removes the version.
+stop_held_process
+jq '.entries[].remove_after = 0' "$MISE_STATE_DIR/tool-purgatory.json" >purgatory.json
+mv purgatory.json "$MISE_STATE_DIR/tool-purgatory.json"
+mise current >/dev/null
+assert_fail "ls $install"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"

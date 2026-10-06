@@ -277,8 +277,9 @@ pub async fn auto_prune() -> Result<()> {
             }
         } else if installed_paths.contains(install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
-            // version. It may become prunable again after that reference goes
-            // away, without another upgrade to create a fresh receipt.
+            // version, or a process is still running from it. It may become
+            // prunable again after that reference goes away or the process
+            // exits, without another upgrade to create a fresh receipt.
             debug!("keeping deferred {display} because it is still in use");
             entries_to_recheck.push((key, entry));
         } else {
