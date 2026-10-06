@@ -295,6 +295,7 @@ exec = "0.3"
 mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = [
   "dir",
+  "feature",
   "fs",
   "hostname",
   "signal",
