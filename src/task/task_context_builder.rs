@@ -193,6 +193,7 @@ impl TaskContextBuilder {
         config: &Arc<Config>,
         task: &Task,
         ts: &Toolset,
+        skip_scripts: bool,
     ) -> Result<Option<SourceConfigEnv>> {
         let Some(task_cf) = task.cf.as_ref() else {
             return Ok(None);
@@ -209,6 +210,17 @@ impl TaskContextBuilder {
                     .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
             })
             .flatten()
+            // A static preflight must not run `_.source` scripts or modules: the keys they
+            // could set are then simply unknown, and the spawn-time check decides.
+            .filter(|(d, _)| {
+                !skip_scripts
+                    || !matches!(
+                        d,
+                        EnvDirective::Source(..)
+                            | EnvDirective::Module(..)
+                            | EnvDirective::PythonVenv { .. }
+                    )
+            })
             .collect();
         let (tera_ctx, _) = self
             .build_tera_context(task_cf, ts, config, Some(&files))

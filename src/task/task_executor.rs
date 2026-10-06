@@ -2325,11 +2325,16 @@ impl TaskExecutor {
         let mut privilege_problem = false;
         let root_env_view = crate::secrets::EnvView::load(config).await;
         for task in tasks {
-            let env_view = root_env_view
-                .for_task(config, &self.context_builder, task)
-                .await;
             let (grant, mut found) =
                 crate::secrets::effective_grant(task, self.cli_secrets.as_ref(), false);
+            // a task without a grant never needs the view (and must not pay for it)
+            let env_view = if grant.is_empty() {
+                root_env_view.clone()
+            } else {
+                root_env_view
+                    .for_task(config, &self.context_builder, task)
+                    .await
+            };
             found.extend(crate::secrets::static_problems(
                 task,
                 &grant,
