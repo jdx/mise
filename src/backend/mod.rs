@@ -4157,6 +4157,17 @@ pub trait Backend: Debug + Send + Sync {
             crate::install_layout::resolver::unpublish(&install_path);
             return Err(err);
         }
+        // A tool the layout does not govern is recorded under its legacy path, for
+        // the config whose templated version it was installed for.
+        if allocated.is_none()
+            && crate::install_layout::resolver::enabled()
+            && let Err(err) = crate::install_layout::claims::record(&tv, &install_path)
+        {
+            warn!(
+                "could not record what {} was installed for: {err:#}",
+                tv.style()
+            );
+        }
         // Everything below that can fail runs with the install already published,
         // so a failure withdraws it again instead of leaving a receipt behind.
         let bookkeeping = (|| -> eyre::Result<()> {

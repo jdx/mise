@@ -43,7 +43,11 @@ struct Need {
     /// The `MISE_ENV` it was rendered under.
     #[serde(default)]
     env: String,
-    /// Fingerprint of the config files it was rendered under.
+    /// Which config files were loaded when it was rendered. A project used from
+    /// another directory loads another set and renders its own outcome.
+    #[serde(default)]
+    context: String,
+    /// Fingerprint of those files' contents.
     fingerprint: String,
     /// The tool name for a legacy path; empty for an identity-layout directory.
     short: String,
@@ -76,18 +80,30 @@ fn fingerprint(config: &Config) -> Result<String> {
     Ok(hash::hash_to_str(&text))
 }
 
+/// Which config files were loaded, by path alone.
+fn context(config: &Config) -> String {
+    let mut paths = config
+        .config_files
+        .keys()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    paths.sort();
+    hash::hash_to_str(&paths)
+}
+
 /// Record that `tv`, installed in `dir`, is what a templated version of its
 /// config renders to. A tool whose version is not a template, or that did not
 /// come from a config, is not recorded: prune renders it without help.
 pub(crate) fn record(tv: &ToolVersion, dir: &Path) -> Result<()> {
     match Config::maybe_get() {
-        Some(config) => record_with(&config, tv, dir),
+        Some(config) => record_with(&config, tv, Some(dir)),
         None => Ok(()),
     }
 }
 
-/// [`record`] for a caller that has the config in hand.
-pub(crate) fn record_with(config: &Config, tv: &ToolVersion, dir: &Path) -> Result<()> {
+/// [`record`] for a caller that has the config in hand. With no `dir` the version
+/// renders to nothing installed (`system`), which still counts as recorded.
+pub(crate) fn record_with(config: &Config, tv: &ToolVersion, dir: Option<&Path>) -> Result<()> {
     let ToolSource::MiseToml(path) = tv.request.source() else {
         return Ok(());
     };
@@ -111,7 +127,7 @@ pub(crate) fn record_with(config: &Config, tv: &ToolVersion, dir: &Path) -> Resu
 fn write(
     config: &Config,
     tv: &ToolVersion,
-    dir: &Path,
+    dir: Option<&Path>,
     path: &Path,
     catalog: &Catalog,
     file: &Path,
@@ -119,20 +135,33 @@ fn write(
     let fingerprint = fingerprint(config)?;
     let env = crate::env::MISE_ENV.join(",");
     let backend = tv.ba().short.to_string();
-    let need = match super::resolver::dir_name_of(dir) {
-        Some(dir) => Need {
+    let context = context(config);
+    let need = match dir {
+        None => Need {
             backend,
             env,
+            context,
             fingerprint,
             short: String::new(),
-            version: dir,
+            version: String::new(),
         },
-        None => Need {
-            short: backend.clone(),
-            backend,
-            env,
-            fingerprint,
-            version: tv.tv_pathname(),
+        Some(dir) => match super::resolver::dir_name_of(dir) {
+            Some(dir) => Need {
+                backend,
+                env,
+                context,
+                fingerprint,
+                short: String::new(),
+                version: dir,
+            },
+            None => Need {
+                short: backend.clone(),
+                backend,
+                env,
+                context,
+                fingerprint,
+                version: tv.tv_pathname(),
+            },
         },
     };
     let _lock = catalog.lock()?;
@@ -140,10 +169,14 @@ fn write(
     if claims.needs.contains(&need) {
         return Ok(());
     }
-    // This tool's entries from an older configuration are stale; other tools'
-    // and other environments' are left until they are recorded themselves.
+    // This tool's entries from older contents of the same config files are stale;
+    // other tools', other environments' and other directories' are left until
+    // they are recorded themselves.
     claims.needs.retain(|n| {
-        n.backend != need.backend || n.env != need.env || n.fingerprint == need.fingerprint
+        n.backend != need.backend
+            || n.env != need.env
+            || n.context != need.context
+            || n.fingerprint == need.fingerprint
     });
     claims.config = canonical(path).to_string_lossy().to_string();
     claims.needs.push(need);
@@ -165,6 +198,12 @@ pub(crate) fn note_use(config: &Config, tv: &ToolVersion) {
     {
         return;
     }
+    if matches!(tv.request, crate::toolset::ToolRequest::System { .. }) {
+        if let Err(err) = record_with(config, tv, None) {
+            warn!("could not record what {} is used for: {err:#}", tv.style());
+        }
+        return;
+    }
     let mut bare = tv.clone();
     bare.install_path = None;
     // The identity layout's directory when one is installed; otherwise the legacy
@@ -181,7 +220,7 @@ pub(crate) fn note_use(config: &Config, tv: &ToolVersion) {
             legacy
         }
     };
-    if let Err(err) = record_with(config, tv, &dir) {
+    if let Err(err) = record_with(config, tv, Some(&dir)) {
         warn!("could not record what {} is used for: {err:#}", tv.style());
     }
 }
@@ -191,21 +230,30 @@ fn read(path: &Path) -> Option<Claims> {
 }
 
 /// The installations recorded for `config`, in the keys `mise prune` uses, or
-/// `None` when nothing was recorded or a tool in `backends` has no entry.
+/// `None` when nothing was recorded or a templated version in `backends` (one
+/// per version, so a tool may repeat) has no entry of its own.
 pub(crate) fn needed_by(config: &Path, backends: &[String]) -> Option<Vec<(String, String)>> {
+    if backends.is_empty() {
+        return Some(vec![]);
+    }
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let claims = read(&path_for(&catalog, config))?;
-    if backends
-        .iter()
-        .any(|backend| !claims.needs.iter().any(|need| &need.backend == backend))
-    {
-        return None;
+    for backend in backends {
+        let wanted = backends.iter().filter(|b| *b == backend).count();
+        let recorded = claims
+            .needs
+            .iter()
+            .filter(|need| &need.backend == backend)
+            .count();
+        if recorded < wanted {
+            return None;
+        }
     }
     Some(
         claims
             .needs
             .into_iter()
-            .filter(|need| backends.contains(&need.backend))
+            .filter(|need| backends.contains(&need.backend) && !need.version.is_empty())
             .map(|need| (need.short, need.version))
             .collect(),
     )

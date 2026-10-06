@@ -137,11 +137,12 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(self.to_tool_request_set()?.into())
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
-    /// The tools whose version is a template (`node = "{{ vars.node }}"`).
+    /// The tool of each templated version (`node = "{{ vars.node }}"`) that this
+    /// platform resolves, once per version.
     fn templated_tool_backends(&self) -> Vec<String> {
         vec![]
     }
-    /// Whether any tool version is a template.
+    /// Whether any tool version is a template, on any platform.
     fn has_templated_tool_versions(&self) -> bool {
         !self.templated_tool_backends().is_empty()
     }

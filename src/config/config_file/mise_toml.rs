@@ -1793,27 +1793,35 @@ impl ConfigFile for MiseToml {
     }
 
     fn templated_tool_backends(&self) -> Vec<String> {
-        self.tools
-            .lock()
-            .unwrap()
-            .iter()
+        let mut backends = vec![];
+        for (ba, tvp) in self.tools.lock().unwrap().iter() {
             // A tool this platform never resolves is never recorded either.
-            .filter(|(ba, _)| ba.is_os_supported())
-            .filter(|(_, tvp)| {
-                tvp.0.iter().any(|tool| {
-                    contains_template_syntax(&tool.request)
-                        && tool
-                            .options
-                            .as_ref()
-                            .and_then(|options| options.os.as_ref())
-                            .is_none_or(|os| {
-                                os.iter()
-                                    .any(|entry| crate::platform::os_selector_matches(entry))
-                            })
-                })
-            })
-            .map(|(ba, _)| ba.short.to_string())
-            .collect()
+            if !ba.is_os_supported() {
+                continue;
+            }
+            for tool in &tvp.0 {
+                let on_this_os = tool
+                    .options
+                    .as_ref()
+                    .and_then(|options| options.os.as_ref())
+                    .is_none_or(|os| {
+                        os.iter()
+                            .any(|entry| crate::platform::os_selector_matches(entry))
+                    });
+                if on_this_os && contains_template_syntax(&tool.request) {
+                    backends.push(ba.short.to_string());
+                }
+            }
+        }
+        backends
+    }
+
+    fn has_templated_tool_versions(&self) -> bool {
+        self.tools.lock().unwrap().values().any(|tvp| {
+            tvp.0
+                .iter()
+                .any(|tool| contains_template_syntax(&tool.request))
+        })
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
