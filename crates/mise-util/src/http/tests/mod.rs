@@ -469,6 +469,15 @@ fn range_not_satisfiable_response() -> &'static str {
 fn bad_gateway_response() -> &'static str {
     "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 }
+fn too_many_requests_response(retry_after: u64) -> &'static str {
+    // Leaked so a test can pick the wait; the canned server wants 'static.
+    Box::leak(
+        format!(
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: {retry_after}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .into_boxed_str(),
+    )
+}
 fn not_found_response() -> &'static str {
     "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 }

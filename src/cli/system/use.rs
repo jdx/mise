@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use eyre::Result;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{ConfigPathOptions, resolve_target_config_path};
+use crate::config::{ConfigPathOptions, GlobalWriteSection, resolve_target_config_path};
+use crate::env;
 use crate::file::display_path;
 use crate::system;
 use crate::system::driver::{self, Action, DriverOpts};
@@ -100,6 +101,8 @@ impl SystemUse {
         // manager doesn't get written
         let mgrs = system::packages_from_requests(by_mgr)?;
 
+        let (existing_global_paths, has_new_global_entries) =
+            self.global_write_paths(&config, &entries)?;
         let path = resolve_target_config_path(ConfigPathOptions {
             global: self.global,
             path: self.path.clone(),
@@ -107,6 +110,9 @@ impl SystemUse {
             cwd: None,
             prefer_toml: true,        // [bootstrap] only exists in mise.toml
             prevent_home_local: true, // in $HOME, write the global config
+            global_write_section: Some(GlobalWriteSection::Packages),
+            existing_global_paths,
+            has_new_global_entries,
         })?;
         if self.dry_run {
             for (key, version) in &entries {
@@ -164,5 +170,35 @@ impl SystemUse {
             yes: self.yes,
         };
         driver::run(mgrs, Action::Install, &opts).await
+    }
+
+    fn global_write_paths(
+        &self,
+        config: &crate::config::Config,
+        entries: &[(String, String)],
+    ) -> Result<(IndexSet<PathBuf>, bool)> {
+        if !(self.global || env::in_home_dir()) || self.path.is_some() || self.env.is_some() {
+            return Ok((Default::default(), false));
+        }
+        let requested = entries
+            .iter()
+            .map(|(spec, _)| spec.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut paths = IndexSet::new();
+        let mut existing = std::collections::BTreeSet::new();
+        for (path, cf) in &config.config_files {
+            if !crate::config::is_global_config(path) || crate::config::is_system_config(path) {
+                continue;
+            }
+            if let Some(bootstrap) = cf.bootstrap_config() {
+                for spec in bootstrap.packages.keys() {
+                    if requested.contains(spec) {
+                        paths.insert(path.clone());
+                        existing.insert(spec.clone());
+                    }
+                }
+            }
+        }
+        Ok((paths, existing.len() != requested.len()))
     }
 }

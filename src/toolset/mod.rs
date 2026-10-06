@@ -1141,6 +1141,9 @@ pub async fn prunable_tools_with_sources(
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
     }
 
+    // Tools the user excluded from pruning are never candidates.
+    to_delete.retain(|_, (_, tv)| !is_excluded_from_pruning(tv.ba()));
+
     // Remove versions that are still needed by tracked configs
     let mut needed = get_versions_needed_by_tracked_configs(config, true, true).await?;
 
@@ -1210,6 +1213,19 @@ fn keep_every_installation(short: &str, source: &Path, needed: &mut NeededVersio
     }
 }
 
+/// Whether `ba` is one of the tools named in `prune.exclude`.
+pub fn is_excluded_from_pruning(ba: &BackendArg) -> bool {
+    is_named_in(&Settings::get().prune.exclude, ba)
+}
+
+/// A short name and its full backend name are the same tool.
+fn is_named_in(names: &std::collections::BTreeSet<String>, ba: &BackendArg) -> bool {
+    names.iter().any(|name| {
+        let named = BackendArg::from(name.as_str());
+        named == *ba || named.full_without_opts() == ba.full_without_opts()
+    })
+}
+
 fn collect_needed_versions(
     ts: &Toolset,
     offline: bool,
@@ -1256,6 +1272,36 @@ mod tests {
     use crate::args::BackendArg;
     use crate::backend::arg_to_backend;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[test]
+    fn test_prune_exclude_matches_short_and_full_names() {
+        let names = ["node", "aqua:BurntSushi/ripgrep"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(is_named_in(&names, &BackendArg::from("node")));
+        assert!(is_named_in(&names, &BackendArg::from("core:node")));
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
+        assert!(!is_named_in(&names, &BackendArg::from("python")));
+        assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
+        // A different short name and stored inline options reach the comparison of
+        // full backend names, which must ignore the options.
+        let aliased = BackendArg::new(
+            "ripgrep".into(),
+            Some("aqua:BurntSushi/ripgrep[bin=rg]".into()),
+        );
+        assert!(is_named_in(&names, &aliased));
+        // Inline options do not make it another tool.
+        assert!(is_named_in(
+            &names,
+            &BackendArg::from("aqua:BurntSushi/ripgrep[bin=rg]")
+        ));
+        assert!(is_named_in(&names, &BackendArg::from("ripgrep[bin=rg]")));
+    }
 
     #[tokio::test]
     async fn test_sort_by_overrides() {
