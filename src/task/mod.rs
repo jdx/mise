@@ -1818,6 +1818,15 @@ impl Task {
     }
 
     fn late_matcher(&self, overlay: bool) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
+        self.late_matcher_with(overlay, mise_util::env::env_key_eq)
+    }
+
+    /// `eq` compares env names, so a test can run the case-insensitive (Windows) rule anywhere.
+    fn late_matcher_with(
+        &self,
+        overlay: bool,
+        eq: fn(&str, &str) -> bool,
+    ) -> impl FnMut(&EnvDirective) -> Option<usize> + use<'_> {
         let mut remaining: Vec<(usize, &str, &str)> = self
             .late_secret_env
             .iter()
@@ -1831,7 +1840,7 @@ impl Task {
             };
             let at = remaining
                 .iter()
-                .position(|(_, k, v)| *k == key.as_str() && *v == value.as_str())?;
+                .position(|(_, k, v)| eq(k, key) && *v == value.as_str())?;
             Some(remaining.remove(at).0)
         }
     }
@@ -6390,6 +6399,30 @@ echo "hello world"
         let plain = Task::default().with_dependency_env(&[val("PGURL", text)]);
         assert!(plain.late_secret_env.is_empty());
         assert_eq!(plain.render_env_directives().len(), 1);
+    }
+
+    #[test]
+    fn late_values_match_env_names_by_the_platform_rule() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let text = "p://{{ secrets.DB_PASSWORD }}@h";
+        // the case-insensitive rule (Windows) matches a differently cased name
+        let mut insensitive = task.late_matcher_with(false, |a, b| a.eq_ignore_ascii_case(b));
+        assert_eq!(insensitive(&val("pgurl", text)), Some(0));
+        // the exact rule (Unix) does not
+        let mut exact = task.late_matcher_with(false, |a, b| a == b);
+        assert_eq!(exact(&val("pgurl", text)), None);
+        assert_eq!(exact(&val("PGURL", text)), Some(0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn late_matcher_is_case_insensitive_on_windows() {
+        let task = late_task("env.PGURL = 'p://{{ secrets.DB_PASSWORD }}@h'");
+        let mut matcher = task.late_matcher(false);
+        assert_eq!(
+            matcher(&val("pgurl", "p://{{ secrets.DB_PASSWORD }}@h")),
+            Some(0)
+        );
     }
 
     #[test]
