@@ -1,4 +1,4 @@
-backends = ["vfox:mise-plugins/vfox-chicken"]
+backends = ["vfox:jdx/vfox-chicken"]
 bins = [
   "chicken",
   "chicken-do",

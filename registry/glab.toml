@@ -12,4 +12,4 @@ full = "gitlab:gitlab-org/cli"
 platforms = ["windows"]
 
 [[backends]]
-full = "asdf:mise-plugins/mise-glab"
+full = "asdf:jdx/mise-glab"

@@ -1,4 +1,4 @@
-backends = ["vfox:mise-plugins/vfox-android-sdk"]
+backends = ["vfox:jdx/vfox-android-sdk"]
 bins = [
   "apkanalyzer",
   "avdmanager",

@@ -1,6 +1,6 @@
 backends = [
   "conda:postgresql",
-  "vfox:mise-plugins/vfox-postgres",
+  "vfox:jdx/vfox-postgres",
   "asdf:mise-plugins/mise-postgres",
 ]
 bins = [

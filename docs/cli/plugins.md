@@ -16,7 +16,7 @@ Manage plugins
 - **`-c --core`** — Only show built-in (core) plugins
   These are hidden by default
 - **`-u --urls`** — Show the git url for each plugin
-  e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
+  e.g.: <https://github.com/jdx/vfox-cmake.git>
 - **`--user`** — List installed plugins
 
   This is the default behavior but can be used with --core
