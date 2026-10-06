@@ -736,6 +736,7 @@ async fn hierarchy_env_cache_distinguishes_vars() {
     assert_eq!(seen, [Some("one".to_string()), Some("two".to_string())]);
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

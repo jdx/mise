@@ -45,26 +45,31 @@ pub(crate) struct FnoxSource {
     env: EnvMap,
 }
 
-/// The project's own `[tools] fnox`, then PATH without mise shims.
-pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
-    match config.get_toolset().await {
-        Ok(ts) => find_binary_in(config, ts).await,
-        Err(_) => find_binary_on_path(),
-    }
-}
-
-/// Like `find_binary`, for a toolset other than the current project's (a monorepo task's).
-pub(crate) async fn find_binary_in(config: &Arc<Config>, ts: &Toolset) -> Option<PathBuf> {
+/// The project's own `[tools] fnox` (from `ts`, the toolset of whoever the source is for: the
+/// current project's, or a monorepo task's own), then `path` (an activated shell's PATH)
+/// without mise shims.
+async fn find_binary_in(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    path: &std::ffi::OsStr,
+) -> Option<PathBuf> {
     if let Some(bin) = ts.which_bin_spawnable(config, "fnox").await {
         return Some(bin);
     }
-    find_binary_on_path()
-}
-
-fn find_binary_on_path() -> Option<PathBuf> {
     // Absolute against mise's cwd: fnox runs from the source root, so a relative PATH hit
     // would resolve somewhere else. Not canonicalized, so a multi-call binary keeps its name.
-    crate::backend::which_no_shims_spawnable("fnox").map(|p| std::path::absolute(&p).unwrap_or(p))
+    crate::backend::which_in_path_value_no_shims_spawnable("fnox", path)
+        .map(|p| std::path::absolute(&p).unwrap_or(p))
+}
+
+/// Used by `mise doctor`, which must not build the toolset env (that can run scripts): the
+/// project's tools, then the `[env] _.path` dirs already loaded with the config, then the
+/// inherited PATH.
+pub(crate) async fn find_binary(config: &Arc<Config>) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = config.path_dirs().await.ok()?.clone();
+    dirs.extend(env::PATH_NON_PRISTINE.iter().cloned());
+    let path = std::env::join_paths(dirs).ok()?;
+    find_binary_in(config, config.get_toolset().await.ok()?, &path).await
 }
 
 impl FnoxSource {
@@ -77,7 +82,10 @@ impl FnoxSource {
         config_env: Option<SourceConfigEnv>,
     ) -> Result<Self> {
         let declared_in = &selected.declared_in[0];
-        let Some(bin) = find_binary_in(config, ts).await else {
+        let (mut tool_env, mut removals) = ts.env_with_path_and_removals(config).await?;
+        let extra_paths = apply_config_env(&mut tool_env, &mut removals, config_env);
+        let env = source_env(env::PRISTINE_ENV.clone(), tool_env, &removals, &extra_paths);
+        let Some(bin) = find_binary_in(config, ts, source_path(&env)).await else {
             bail!(
                 "{NOT_FOUND_PREFIX}\n  [secrets.fnox] in {} needs the fnox CLI. Add it to the project: mise use fnox\n  mise looks in the project's tools first, then on PATH.",
                 display_path(declared_in)
@@ -89,8 +97,6 @@ impl FnoxSource {
                 display_path(&selected.root)
             )
         })?;
-        let (mut tool_env, mut removals) = ts.env_with_path_and_removals(config).await?;
-        let extra_paths = apply_config_env(&mut tool_env, &mut removals, config_env);
         Ok(Self {
             id: SourceId {
                 kind: "fnox",
@@ -98,7 +104,7 @@ impl FnoxSource {
                 profile: selected.profile.clone(),
             },
             bin,
-            env: source_env(env::PRISTINE_ENV.clone(), tool_env, &removals, &extra_paths),
+            env,
         })
     }
 
@@ -467,6 +473,13 @@ fn apply_config_env(
     tool_env.extend(values);
     removals.extend(unset);
     paths
+}
+
+fn source_path(env: &EnvMap) -> &std::ffi::OsStr {
+    env.get(&*env::PATH_KEY)
+        .map_or(std::ffi::OsStr::new(""), |p| {
+            std::ffi::OsStr::new(p.as_str())
+        })
 }
 
 /// An activated shell's env for this directory: pristine env plus the toolset's, without mise
@@ -1044,5 +1057,13 @@ mod tests {
         assert!(!out.keys().any(|k| k.starts_with("__MISE_")));
         assert!(!out.contains_key("DROP"));
         assert_eq!(out[&key], "/usr/bin");
+    }
+
+    #[test]
+    fn source_path_reads_the_computed_path() {
+        let key = env::PATH_KEY.clone();
+        let env = EnvMap::from([(key, "/opt/fnox/bin".to_string())]);
+        assert_eq!(source_path(&env), std::ffi::OsStr::new("/opt/fnox/bin"));
+        assert_eq!(source_path(&EnvMap::new()), std::ffi::OsStr::new(""));
     }
 }
