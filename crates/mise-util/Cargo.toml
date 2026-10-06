@@ -121,6 +121,7 @@ walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
+yaml-edit = "0.3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 
