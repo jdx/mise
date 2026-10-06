@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# `mise.<env>.local.toml` is an overlay for that environment, unlike the plain
+# `mise.local.toml` that always loads, so prune must refuse when it sets vars.
+mkdir -p project/child elsewhere
+echo '[vars]
+v = "9.9.9"' >project/mise.toml
+echo '[vars]
+v = "4.0.0"' >project/mise.dev.local.toml
+echo '[tools]
+dummy = "{{vars.v}}"' >project/child/mise.toml
+assert "MISE_ENV=dev mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert_fail "mise -C elsewhere prune --yes" "mise.dev.local.toml"
+assert_contains "mise ls dummy" "4.0.0"
+assert_contains "mise ls dummy" "3.0.0"

@@ -2667,10 +2667,14 @@ fn other_env_config_setting_template_inputs(
         }
     }
     for path in candidates {
-        // `local` files load in every environment, so they are not overlays.
-        let is_local = path
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"));
+        // Only the plain `local` files load in every environment; an
+        // `mise.<env>.local.toml` is still an overlay for that environment.
+        let is_local = path.file_name().is_some_and(|name| {
+            matches!(
+                name.to_string_lossy().strip_suffix(".local.toml"),
+                Some("mise" | ".mise" | "config")
+            )
+        });
         if path == tracked || is_local || config_path_is_ignored(&path, false) {
             continue;
         }
