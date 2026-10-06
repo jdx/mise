@@ -11,29 +11,34 @@
 //!
 //! * **Complete.** A snapshot is the config's whole rendered tool list for one
 //!   context (the `MISE_ENV` and the set of loaded config files), taken from the
-//!   live config and not from whichever tools a command happened to resolve, minus
-//!   tools a higher-precedence config replaces. A new snapshot of a context
-//!   replaces the old one outright, which is how a requirement that has ended
-//!   stops protecting anything.
+//!   requests a command resolved, and only when that command resolved every
+//!   templated tool of the config that no other source replaces. A command that
+//!   resolved fewer (`mise exec node@22`, a scoped toolset) records nothing. A new
+//!   snapshot of a context replaces the old one outright, which is how a
+//!   requirement that has ended stops protecting anything.
 //! * **Current.** A snapshot lists the config files it loaded and a hash of each.
-//!   If one has changed it is stale and ignored, and if one is gone the context
-//!   cannot occur again. A config with no current snapshot keeps every
-//!   installation of its templated tools until it is observed again.
+//!   If one is gone the context cannot occur again and is retired. If one has
+//!   changed the snapshot is stale, and prune keeps every installation of the
+//!   config's templated tools until it is observed again. So does a config with no
+//!   snapshot. Commands that inspect rather than use a project, such as prune,
+//!   do not take snapshots.
 //!
 //! What a snapshot cannot see is anything that is not a config file: a changed
 //! shell variable or flag is noticed at the next observation, not before.
 
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use eyre::Result;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::catalog::Catalog;
 use crate::args::BackendArg;
 use crate::config::Config;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
 use crate::{dirs, file, hash};
 
 /// One config's snapshots, one per context.
@@ -89,13 +94,34 @@ fn read(path: &Path) -> Option<Snapshots> {
     toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
-/// Contexts already snapshotted by this process; one observation is enough.
+/// Observations this process has already recorded.
 static OBSERVED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 
+/// While held, [`observe`] records nothing. Prune holds it while it builds the
+/// toolset of the directory it runs in: that is an inspection from whatever
+/// environment prune was started in, not a use of the project, and recording it
+/// would replace the snapshot prune is about to rely on.
+pub(crate) struct Suspended;
+
+static SUSPENDED: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn suspend() -> Suspended {
+    SUSPENDED.fetch_add(1, Ordering::SeqCst);
+    Suspended
+}
+
+impl Drop for Suspended {
+    fn drop(&mut self) {
+        SUSPENDED.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Snapshot, for the context `config` was loaded in, every loaded config that has
-/// templated tool versions. Commands call this once they have resolved a toolset,
-/// when the live config renders as the project does.
-pub(crate) fn observe(config: &Config) {
+/// templated tool versions, from the requests a command just resolved.
+pub(crate) fn observe(config: &Config, versions: &IndexMap<Arc<BackendArg>, ToolVersionList>) {
+    if SUSPENDED.load(Ordering::SeqCst) > 0 {
+        return;
+    }
     let env = crate::env::MISE_ENV.join(",");
     let mut paths = config
         .config_files
@@ -104,14 +130,11 @@ pub(crate) fn observe(config: &Config) {
         .collect::<Vec<_>>();
     paths.sort();
     let context = hash::hash_to_str(&paths);
-    if !OBSERVED.lock().unwrap().insert(format!("{env}|{context}")) {
-        return;
-    }
     for (path, cf) in &config.config_files {
         if !cf.has_templated_tool_versions() {
             continue;
         }
-        if let Err(err) = observe_config(config, path, &env, &context) {
+        if let Err(err) = observe_config(config, versions, path, &env, &context) {
             warn!(
                 "could not record what {} renders to: {err:#}",
                 crate::file::display_path(path)
@@ -120,7 +143,13 @@ pub(crate) fn observe(config: &Config) {
     }
 }
 
-fn observe_config(config: &Config, path: &Path, env: &str, context: &str) -> Result<()> {
+fn observe_config(
+    config: &Config,
+    versions: &IndexMap<Arc<BackendArg>, ToolVersionList>,
+    path: &Path,
+    env: &str,
+    context: &str,
+) -> Result<()> {
     let Some(cf) = config.config_files.get(path) else {
         return Ok(());
     };
@@ -133,20 +162,38 @@ fn observe_config(config: &Config, path: &Path, env: &str, context: &str) -> Res
         }
         replaced.extend(cf.tool_backends());
     }
-    // A config that does not render keeps the snapshot it has; prune then falls
-    // back on it, or on keeping every installation, as it would anyway.
-    let set = cf.to_tool_request_set()?;
-    let tools = set
-        .iter()
-        .filter(|(ba, _, _)| templated.contains(&ba.short) && !replaced.contains(&ba.short))
-        .flat_map(|(ba, requests, _)| {
-            requests.iter().map(|request| Recorded {
-                backend: ba.short.to_string(),
-                version: request.version(),
-                options: request.options(),
-            })
-        })
-        .collect::<Vec<_>>();
+    let from_config = |request: &&ToolRequest| matches!(request.source(), ToolSource::MiseToml(source) if source == path);
+    let mut tools = vec![];
+    for backend in &templated {
+        if replaced.contains(backend) {
+            continue;
+        }
+        let requests = versions
+            .values()
+            .filter(|tvl| &tvl.backend.short == backend)
+            .flat_map(|tvl| tvl.requests.iter().filter(from_config))
+            .collect::<Vec<_>>();
+        // A command that did not resolve this tool from this config (an argument,
+        // an environment variable, a scoped toolset) cannot vouch for it, and a
+        // partial snapshot must not replace a complete one.
+        if requests.is_empty() {
+            return Ok(());
+        }
+        tools.extend(requests.into_iter().map(|request| Recorded {
+            backend: backend.clone(),
+            version: request.version(),
+            options: request.options(),
+        }));
+    }
+    // The same observation again in this process records nothing new.
+    let key = format!(
+        "{}|{env}|{context}|{}",
+        path.display(),
+        hash::hash_to_str(&format!("{tools:?}"))
+    );
+    if !OBSERVED.lock().unwrap().insert(key) {
+        return Ok(());
+    }
     let snapshot = Snapshot {
         env: env.to_string(),
         context: context.to_string(),
@@ -184,36 +231,58 @@ fn write(catalog: &Catalog, file: &Path, path: &Path, snapshot: Snapshot) -> Res
     file::write_atomic(file, toml::to_string_pretty(&snapshots)?)
 }
 
-/// The requests of `config`'s current snapshots, or `None` when there is no
-/// snapshot that is complete and current. A snapshot that loaded a file that has
-/// changed, or is gone, is not current.
-pub(crate) fn current_requests(config: &Path, source: &ToolSource) -> Option<Vec<ToolRequest>> {
+/// What prune takes from `config`'s snapshots.
+#[derive(Debug, Default)]
+pub(crate) struct Current {
+    /// The requests of every snapshot that is current.
+    pub(crate) requests: Vec<ToolRequest>,
+    /// Whether some snapshot is stale, or none is current, so the config's
+    /// templated tools cannot be told apart and every installation is kept.
+    pub(crate) keep_all: bool,
+}
+
+/// `config`'s snapshots as prune may use them. A snapshot that loaded a file that
+/// is gone is retired; one that loaded a file that has changed makes prune keep
+/// every installation of the config's templated tools.
+pub(crate) fn current(config: &Path, source: &ToolSource) -> Current {
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
-    let snapshots = read(&path_for(&catalog, config))?;
-    let mut requests = vec![];
-    let mut any = false;
+    let mut current = Current::default();
+    let Some(snapshots) = read(&path_for(&catalog, config)) else {
+        current.keep_all = true;
+        return current;
+    };
+    let mut fresh = false;
     for snapshot in snapshots.contexts {
-        let current = snapshot
+        if snapshot
             .files
             .iter()
-            .all(|(path, hash)| !hash.is_empty() && bytes_hash(Path::new(path)) == *hash);
-        if !current {
+            .any(|(path, _)| !Path::new(path).exists())
+        {
             continue;
         }
-        any = true;
+        if !snapshot
+            .files
+            .iter()
+            .all(|(path, hash)| !hash.is_empty() && bytes_hash(Path::new(path)) == *hash)
+        {
+            current.keep_all = true;
+            continue;
+        }
+        fresh = true;
         for tool in snapshot.tools {
             let ba = Arc::new(BackendArg::from(tool.backend.as_str()));
             match ToolRequest::new_with_options(ba, &tool.version, tool.options, source.clone()) {
-                Ok(request) => requests.push(request),
+                Ok(request) => current.requests.push(request),
                 // A request that cannot be rebuilt cannot vouch for anything.
                 Err(err) => {
                     debug!("snapshot of {}: {err:#}", config.display());
-                    return None;
+                    current.keep_all = true;
                 }
             }
         }
     }
-    any.then_some(requests)
+    current.keep_all |= !fresh;
+    current
 }
 
 #[cfg(test)]

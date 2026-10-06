@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# One context's snapshot going stale must not be hidden by another that is current: the
+# stale context's versions may still be needed, so prune keeps every installation.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+mkdir -p project/child elsewhere
+echo '[vars]
+v = "1.0.0"
+[tools]
+dummy = "{{vars.v}}"' >project/mise.toml
+echo '[vars]
+v = "2.0.0"' >project/child/mise.toml
+assert "mise -C project install"
+assert "mise -C project/child install"
+assert "mise install dummy@3.0.0"
+
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"
+
+echo '# touched' >>project/child/mise.toml
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e 'has(\"dummy\") | not' prunable.json"
+
+assert "mise -C project/child install"
+assert "mise -C elsewhere ls --prunable --json >prunable.json"
+assert "jq -e '[.dummy[].version] == [\"3.0.0\"]' prunable.json"

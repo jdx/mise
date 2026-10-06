@@ -193,7 +193,7 @@ impl Toolset {
         .await?;
         self.versions = tvls.into_iter().collect();
         if crate::install_layout::resolver::enabled() {
-            crate::install_layout::snapshots::observe(config);
+            crate::install_layout::snapshots::observe(config, &self.versions);
         }
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
@@ -1020,19 +1020,16 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let mut requests =
             if crate::install_layout::resolver::enabled() && cf.has_templated_tool_versions() {
                 let mut requests = cf.to_tool_request_set_skipping_templated()?;
-                match crate::install_layout::snapshots::current_requests(&path, &cf.source()) {
-                    Some(snapshot) => {
-                        for request in snapshot {
-                            requests.add_version(request, &cf.source());
-                        }
-                    }
-                    None => {
-                        let mut kept = vec![];
-                        for short in cf.templated_tool_backends() {
-                            if !kept.contains(&short) {
-                                keep_every_installation(&short, &path, &mut needed);
-                                kept.push(short);
-                            }
+                let current = crate::install_layout::snapshots::current(&path, &cf.source());
+                for request in current.requests {
+                    requests.add_version(request, &cf.source());
+                }
+                if current.keep_all {
+                    let mut kept = vec![];
+                    for short in cf.templated_tool_backends() {
+                        if !kept.contains(&short) {
+                            keep_every_installation(&short, &path, &mut needed);
+                            kept.push(short);
                         }
                     }
                 }
@@ -1127,6 +1124,9 @@ pub async fn prunable_tools_with_sources(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<PrunableTools> {
+    // Resolving the toolset of this directory inspects it from the environment
+    // prune runs in; it must not replace what the project's snapshots say.
+    let _suspended = crate::install_layout::snapshots::suspend();
     let ts = ToolsetBuilder::new().build(config).await?;
     let mut to_delete = ts
         .list_installed_versions(config)
