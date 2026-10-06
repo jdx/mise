@@ -60,6 +60,10 @@ struct Snapshot {
     files: Vec<(String, String)>,
     /// The rendered requests of the config's templated tools.
     tools: Vec<Recorded>,
+    /// Tools whose requests are not stored because their options may carry a
+    /// secret; prune keeps every installation of these instead.
+    #[serde(default)]
+    opaque: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,10 +120,49 @@ impl Drop for Suspended {
     }
 }
 
+/// The config files a command started resolving tools from, hashed as they were
+/// before it resolved anything.
+pub(crate) struct Begun {
+    files: Vec<(String, String)>,
+}
+
+fn hash_files(config: &Config) -> Vec<(String, String)> {
+    config
+        .config_files
+        .keys()
+        .map(|p| (p.to_string_lossy().to_string(), bytes_hash(p)))
+        .collect()
+}
+
+/// Call before resolving tools; `None` when nothing will be recorded.
+pub(crate) fn begin(config: &Config) -> Option<Begun> {
+    if SUSPENDED.load(Ordering::SeqCst) > 0
+        || !config
+            .config_files
+            .values()
+            .any(|cf| cf.has_templated_tool_versions())
+    {
+        return None;
+    }
+    Some(Begun {
+        files: hash_files(config),
+    })
+}
+
 /// Snapshot, for the context `config` was loaded in, every loaded config that has
-/// templated tool versions, from the requests a command just resolved.
-pub(crate) fn observe(config: &Config, versions: &IndexMap<Arc<BackendArg>, ToolVersionList>) {
+/// templated tool versions, from the requests a command just resolved. Nothing is
+/// recorded if a config file changed while the command was resolving: the
+/// requests then belong to bytes the snapshot would not name.
+pub(crate) fn observe(
+    config: &Config,
+    versions: &IndexMap<Arc<BackendArg>, ToolVersionList>,
+    begun: Begun,
+) {
     if SUSPENDED.load(Ordering::SeqCst) > 0 {
+        return;
+    }
+    if hash_files(config) != begun.files {
+        debug!("config changed while resolving tools; not recording a snapshot");
         return;
     }
     let env = crate::env::MISE_ENV.join(",");
@@ -134,7 +177,7 @@ pub(crate) fn observe(config: &Config, versions: &IndexMap<Arc<BackendArg>, Tool
         if !cf.has_templated_tool_versions() {
             continue;
         }
-        if let Err(err) = observe_config(config, versions, path, &env, &context) {
+        if let Err(err) = observe_config(config, versions, &begun.files, path, &env, &context) {
             warn!(
                 "could not record what {} renders to: {err:#}",
                 crate::file::display_path(path)
@@ -143,9 +186,33 @@ pub(crate) fn observe(config: &Config, versions: &IndexMap<Arc<BackendArg>, Tool
     }
 }
 
+/// Whether `options` may carry a secret: an `install_env`, a credential in a URL,
+/// or an option named like one. Such a request is not written to the catalog.
+fn may_hold_secrets(options: &ToolVersionOptions) -> bool {
+    fn value_may(value: &toml::Value) -> bool {
+        match value {
+            toml::Value::String(s) => s.parse::<url::Url>().is_ok_and(|url| {
+                !url.username().is_empty() || url.password().is_some() || url.query().is_some()
+            }),
+            toml::Value::Array(items) => items.iter().any(value_may),
+            toml::Value::Table(table) => table.values().any(value_may),
+            _ => false,
+        }
+    }
+    !options.core.install_env.is_empty()
+        || options.opts.values.iter().any(|(key, value)| {
+            let key = key.to_lowercase();
+            ["token", "password", "secret", "credential"]
+                .iter()
+                .any(|word| key.contains(word))
+                || value_may(value)
+        })
+}
+
 fn observe_config(
     config: &Config,
     versions: &IndexMap<Arc<BackendArg>, ToolVersionList>,
+    files: &[(String, String)],
     path: &Path,
     env: &str,
     context: &str,
@@ -164,32 +231,61 @@ fn observe_config(
     }
     let from_config = |request: &&ToolRequest| matches!(request.source(), ToolSource::MiseToml(source) if source == path);
     let mut tools = vec![];
+    let mut opaque: Vec<String> = vec![];
     for backend in &templated {
         if replaced.contains(backend) {
             continue;
         }
-        let requests = versions
+        let mut seen = false;
+        for tvl in versions
             .values()
             .filter(|tvl| &tvl.backend.short == backend)
-            .flat_map(|tvl| tvl.requests.iter().filter(from_config))
-            .collect::<Vec<_>>();
+        {
+            for request in tvl.requests.iter().filter(from_config) {
+                seen = true;
+                let options = request.options();
+                if may_hold_secrets(&options) {
+                    if !opaque.contains(backend) {
+                        opaque.push(backend.clone());
+                    }
+                    continue;
+                }
+                let requested = request.version();
+                // The version the command settled on after aliases and the like
+                // is recorded as well: prune rebuilds the request without the
+                // project's aliases and could not reach it from the request.
+                let resolved = tvl
+                    .versions
+                    .iter()
+                    .find(|tv| tv.request.version() == requested)
+                    .map(|tv| tv.version.clone())
+                    .filter(|resolved| *resolved != requested);
+                tools.push(Recorded {
+                    backend: backend.clone(),
+                    version: requested,
+                    options: options.clone(),
+                });
+                if let Some(resolved) = resolved {
+                    tools.push(Recorded {
+                        backend: backend.clone(),
+                        version: resolved,
+                        options,
+                    });
+                }
+            }
+        }
         // A command that did not resolve this tool from this config (an argument,
         // an environment variable, a scoped toolset) cannot vouch for it, and a
         // partial snapshot must not replace a complete one.
-        if requests.is_empty() {
+        if !seen {
             return Ok(());
         }
-        tools.extend(requests.into_iter().map(|request| Recorded {
-            backend: backend.clone(),
-            version: request.version(),
-            options: request.options(),
-        }));
     }
     // The same observation again in this process records nothing new.
     let key = format!(
         "{}|{env}|{context}|{}",
         path.display(),
-        hash::hash_to_str(&format!("{tools:?}"))
+        hash::hash_to_str(&format!("{tools:?}{opaque:?}"))
     );
     if !OBSERVED.lock().unwrap().insert(key) {
         return Ok(());
@@ -197,12 +293,9 @@ fn observe_config(
     let snapshot = Snapshot {
         env: env.to_string(),
         context: context.to_string(),
-        files: config
-            .config_files
-            .keys()
-            .map(|p| (p.to_string_lossy().to_string(), bytes_hash(p)))
-            .collect(),
+        files: files.to_vec(),
         tools,
+        opaque,
     };
     let catalog = Catalog::new(dirs::INSTALLS.to_path_buf());
     let file = path_for(&catalog, path);
@@ -227,8 +320,22 @@ fn write(catalog: &Catalog, file: &Path, path: &Path, snapshot: Snapshot) -> Res
         Some(i) => snapshots.contexts[i] = snapshot,
         None => snapshots.contexts.push(snapshot),
     }
-    file::create_dir_all(file.parent().unwrap())?;
-    file::write_atomic(file, toml::to_string_pretty(&snapshots)?)
+    let dir = file.parent().unwrap();
+    file::create_dir_all(dir)?;
+    // Rendered options can hold values a user would not share, so keep the
+    // snapshots to the user.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    file::write_atomic(file, toml::to_string_pretty(&snapshots)?)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 /// What prune takes from `config`'s snapshots.
@@ -239,6 +346,8 @@ pub(crate) struct Current {
     /// Whether some snapshot is stale, or none is current, so the config's
     /// templated tools cannot be told apart and every installation is kept.
     pub(crate) keep_all: bool,
+    /// Tools a current snapshot could not store, whose installations are all kept.
+    pub(crate) keep_tools: Vec<String>,
 }
 
 /// `config`'s snapshots as prune may use them. A snapshot that loaded a file that
@@ -269,6 +378,11 @@ pub(crate) fn current(config: &Path, source: &ToolSource) -> Current {
             continue;
         }
         fresh = true;
+        for tool in snapshot.opaque {
+            if !current.keep_tools.contains(&tool) {
+                current.keep_tools.push(tool);
+            }
+        }
         for tool in snapshot.tools {
             let ba = Arc::new(BackendArg::from(tool.backend.as_str()));
             match ToolRequest::new_with_options(ba, &tool.version, tool.options, source.clone()) {
@@ -317,6 +431,7 @@ mod tests {
                     context: String::new(),
                     files: vec![],
                     tools: vec![recorded],
+                    opaque: vec![],
                 }],
             })
             .unwrap();

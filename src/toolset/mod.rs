@@ -155,6 +155,9 @@ impl Toolset {
             })
             .flatten();
         self.list_missing_plugins();
+        let begun = crate::install_layout::resolver::enabled()
+            .then(|| crate::install_layout::snapshots::begin(config))
+            .flatten();
         let versions = self
             .versions
             .clone()
@@ -192,8 +195,8 @@ impl Toolset {
         )
         .await?;
         self.versions = tvls.into_iter().collect();
-        if crate::install_layout::resolver::enabled() {
-            crate::install_layout::snapshots::observe(config, &self.versions);
+        if let Some(begun) = begun {
+            crate::install_layout::snapshots::observe(config, &self.versions, begun);
         }
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
@@ -1028,6 +1031,9 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                     for short in cf.templated_tool_backends() {
                         keep_every_installation(&short, &path, &mut needed);
                     }
+                }
+                for short in &current.keep_tools {
+                    keep_every_installation(short, &path, &mut needed);
                 }
                 requests
             } else {

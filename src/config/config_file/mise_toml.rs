@@ -1314,7 +1314,7 @@ impl MiseToml {
         Self::insert_resolved_vars(&mut context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                if skip_templated && contains_template_syntax(&tool.request) {
+                if skip_templated && tool_has_template(tool) {
                     continue;
                 }
                 let version = self.parse_template_with_context(&context, &tool.request)?;
@@ -1510,6 +1510,18 @@ impl MiseToml {
         }
         Ok(())
     }
+}
+
+/// Whether anything that selects or configures a tool is a template: its version,
+/// a backend option, or an `install_env` value.
+fn tool_has_template(tool: &MiseTomlTool) -> bool {
+    contains_template_syntax(&tool.request)
+        || tool.options.as_ref().is_some_and(|options| {
+            options.opts.values.values().any(toml_value_has_template)
+                || options.core.install_env.values().any(
+                    |value| matches!(value, EnvValue::String(s) if contains_template_syntax(s)),
+                )
+        })
 }
 
 impl ConfigFile for MiseToml {
@@ -1809,7 +1821,7 @@ impl ConfigFile for MiseToml {
                             .any(|entry| crate::platform::os_selector_matches(entry))
                     });
                 if on_this_os
-                    && contains_template_syntax(&tool.request)
+                    && tool_has_template(tool)
                     && !backends.contains(&ba.short.to_string())
                 {
                     backends.push(ba.short.to_string());
@@ -1831,11 +1843,11 @@ impl ConfigFile for MiseToml {
     }
 
     fn has_templated_tool_versions(&self) -> bool {
-        self.tools.lock().unwrap().values().any(|tvp| {
-            tvp.0
-                .iter()
-                .any(|tool| contains_template_syntax(&tool.request))
-        })
+        self.tools
+            .lock()
+            .unwrap()
+            .values()
+            .any(|tvp| tvp.0.iter().any(tool_has_template))
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
