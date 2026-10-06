@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+
+FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/http-headers.XXXXXX")
+mkdir -p "$FIXTURE_DIR/archive/bin"
+cat >"$FIXTURE_DIR/archive/bin/headers-tool" <<'TOOL'
+#!/usr/bin/env sh
+echo headers ok
+TOOL
+chmod +x "$FIXTURE_DIR/archive/bin/headers-tool"
+tar -C "$FIXTURE_DIR/archive" -czf "$FIXTURE_DIR/artifact.tar.gz" bin
+printf '1.0.0\n2.0.0\n' >"$FIXTURE_DIR/versions.txt"
+
+SEEN_LOG="$FIXTURE_DIR/seen"
+: >"$SEEN_LOG"
+
+start_http_server --dir "$FIXTURE_DIR" --handler - "$SEEN_LOG" <<'PY'
+import http.server
+import sys
+
+seen_log = sys.argv[1]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        auth = self.headers.get("Authorization", "")
+        key = self.headers.get("X-Api-Key", "")
+        with open(seen_log, "a") as log:
+            log.write(f"{path} auth={auth!r} key={key!r}\n")
+        if path == "/hop":
+            # Same server under another hostname: a cross-host redirect.
+            port = self.server.server_address[1]
+            self.send_response(302)
+            self.send_header("Location", f"http://localhost:{port}/artifact.tar.gz")
+            self.end_headers()
+            return
+        if path == "/same":
+            self.send_response(302)
+            self.send_header("Location", "/artifact.tar.gz")
+            self.end_headers()
+            return
+        if path not in ("/artifact.tar.gz", "/versions.txt", "/direct.tar.gz"):
+            self.send_error(404)
+            return
+        if auth != "Bearer s3cret" and key != "s3cret":
+            self.send_error(401)
+            return
+        name = "artifact.tar.gz" if path.endswith(".tar.gz") else "versions.txt"
+        with open(name, "rb") as file:
+            body = file.read()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+PY
+
+export HEADERS_TEST_TOKEN=s3cret
+
+# Without headers the server answers 401.
+cat >mise.toml <<EOT
+[tools]
+"http:headers-tool" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz", bin_path = "bin" }
+EOT
+assert_fail "mise install" "401"
+
+# The header value is a template, and is sent with the download.
+cat >mise.toml <<EOT
+[tools."http:headers-tool"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+bin_path = "bin"
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+mise install
+assert_contains "mise x -- headers-tool" "headers ok"
+assert_not_contains "mise ls --json" "s3cret"
+
+# version_list_url sends them too.
+cat >mise.toml <<EOT
+[tools."http:headers-list"]
+version = "latest"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions.txt"
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_contains "mise ls-remote http:headers-list" "2.0.0"
+
+# version_regex takes a different fetch path; it sends the headers too.
+cat >mise.toml <<EOT
+[tools."http:headers-list-regex"]
+version = "latest"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions.txt"
+version_regex = '\d+\.\d+\.\d+'
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_contains "mise ls-remote http:headers-list-regex" "2.0.0"
+
+# A cached version list is not reused for other credentials.
+cat >mise.toml <<EOT
+[tools."http:headers-list"]
+version = "latest"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions.txt"
+headers = { Authorization = "Bearer wrong" }
+EOT
+assert_fail "mise ls-remote http:headers-list" "401"
+
+# The same template with a different token is a different listing: the digest covers
+# the rendered value, not the template text.
+cat >mise.toml <<EOT
+[tools."http:headers-list"]
+version = "latest"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions.txt"
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_contains "mise ls-remote http:headers-list" "2.0.0"
+assert_fail "env HEADERS_TEST_TOKEN=other mise ls-remote http:headers-list" "401"
+
+# An unset variable fails the install instead of sending the literal template.
+cat >mise.toml <<EOT
+[tools."http:headers-missing"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_UNSET }}" }
+EOT
+assert_fail "mise install" "HEADERS_TEST_UNSET"
+assert_not_contains "cat $SEEN_LOG" "{{"
+
+# Authorization does not follow a redirect to another host.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-hop"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { Authorization = "Bearer {{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_fail "mise install" "401"
+assert_contains "cat $SEEN_LOG" "/hop auth='Bearer s3cret'"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth=''"
+
+# Every other credential header is dropped on a cross-host redirect too, which
+# reqwest does not do on its own.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-hop-key"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_fail "mise install" "401"
+assert_contains "cat $SEEN_LOG" "/hop auth='' key='s3cret'"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key=''"
+
+# The same host keeps the header across a redirect.
+cat >mise.toml <<EOT
+[tools."http:headers-same-host"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/same"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+mise install
+assert_contains "mise x -- headers-tool" "headers ok"
+
+# `headers_forward` lets a named header follow a redirect to a listed host. localhost is
+# the other hostname of the fixture server; only X-Api-Key is listed, so a second
+# credential header is still dropped.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-forward"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}", X-Extra-Token = "extra" }
+headers_forward = { X-Api-Key = ["localhost"] }
+EOT
+mise install
+assert_contains "mise x -- headers-tool" "headers ok"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key='s3cret'"
+
+# A host that is not listed still gets nothing.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-forward-miss"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+headers_forward = { X-Api-Key = ["*.example.com"] }
+EOT
+assert_fail "mise install" "401"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key=''"
+
+# Mistakes are reported instead of silently forwarding nothing or everything.
+cat >mise.toml <<EOT
+[tools."http:headers-forward-bad"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+headers = { X-Api-Key = "k" }
+headers_forward = { X-Api-Key = ["*"] }
+EOT
+assert_fail "mise install" "invalid host"
+cat >mise.toml <<EOT
+[tools."http:headers-forward-typo"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/artifact.tar.gz"
+headers = { X-Api-Key = "k" }
+headers_forward = { X-Api-Kye = ["localhost"] }
+EOT
+assert_fail "mise install" "X-Api-Kye"

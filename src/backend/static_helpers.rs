@@ -8,6 +8,7 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
+use reqwest::header::HeaderMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -36,11 +37,15 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
-pub(crate) async fn fetch_checksum_from_shasums(
+pub(crate) async fn fetch_checksum_from_shasums_with_headers(
     shasums_url: &str,
     filename: &str,
+    headers: &HeaderMap,
 ) -> Option<String> {
-    match HTTP.get_text_cached(shasums_url).await {
+    match HTTP
+        .get_text_cached_with_headers(shasums_url, headers)
+        .await
+    {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
             let algo = crate::backend::asset_matcher::detect_checksum_algorithm(
@@ -63,8 +68,11 @@ pub(crate) async fn fetch_checksum_from_shasums(
 /// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
 /// that simply has no row for our artifact" — in which case falling back to a
 /// first-hash scan would silently pick another platform's checksum.
-pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
-    match HTTP.get_text_cached(shasums_url).await {
+pub(crate) async fn shasums_has_entries(shasums_url: &str, headers: &HeaderMap) -> bool {
+    match HTTP
+        .get_text_cached_with_headers(shasums_url, headers)
+        .await
+    {
         Ok(content) => !hash::parse_shasums(&content).is_empty(),
         Err(_) => false,
     }
@@ -84,14 +92,34 @@ pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
 /// Uses the in-process cache so that resolving an individual checksum file
 /// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
 /// / [`shasums_has_entries`] for that platform.
-pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
-    match HTTP.get_text_cached(checksum_url).await {
+pub(crate) async fn fetch_checksum_from_file_with_headers(
+    checksum_url: &str,
+    algo: &str,
+    headers: &HeaderMap,
+) -> Option<String> {
+    match HTTP
+        .get_text_cached_with_headers(checksum_url, headers)
+        .await
+    {
         Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
             debug!("Failed to fetch checksum from {}: {e}", checksum_url);
             None
         }
     }
+}
+
+/// [`fetch_checksum_from_shasums_with_headers`] without extra request headers.
+pub(crate) async fn fetch_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Option<String> {
+    fetch_checksum_from_shasums_with_headers(shasums_url, filename, &HeaderMap::new()).await
+}
+
+/// [`fetch_checksum_from_file_with_headers`] without extra request headers.
+pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
+    fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
 }
 
 fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
@@ -584,6 +612,21 @@ pub(crate) fn template_string_for_target(
         &tv.version,
         crate::tera::get_tera_for_target(None, target.os_name(), target.arch_name()),
     )
+}
+
+/// Renders a template that must not fall back to its source text on failure, such as
+/// a credential header: sending a literal `{{ env.TOKEN }}` to a server is worse than
+/// failing. `version` is only defined for templates rendered for a concrete version.
+pub(crate) fn template_string_strict(template: &str, version: Option<&str>) -> Result<String> {
+    if !crate::tera::contains_template_syntax(template) {
+        return Ok(template.to_string());
+    }
+    let mut ctx = crate::tera::BASE_CONTEXT.clone();
+    if let Some(version) = version {
+        ctx.insert("version", version);
+    }
+    let mut tera = crate::tera::get_tera(None);
+    Ok(crate::tera::render_str(&mut tera, template, &ctx)?)
 }
 
 fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEngine) -> String {

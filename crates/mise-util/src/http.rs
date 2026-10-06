@@ -509,10 +509,13 @@ fn update_download_hash(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(value);
 }
 
-fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
+fn header_digest(headers: &HeaderMap) -> String {
     let mut hasher = blake3::Hasher::new();
-    update_download_hash(&mut hasher, url.as_str().as_bytes());
+    hash_headers(&mut hasher, headers);
+    hasher.finalize().to_hex().to_string()
+}
 
+fn hash_headers(hasher: &mut blake3::Hasher, headers: &HeaderMap) {
     let mut header_values = headers
         .keys()
         .flat_map(|name| {
@@ -524,9 +527,16 @@ fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
         .collect::<Vec<_>>();
     header_values.sort_unstable();
     for (name, value) in header_values {
-        update_download_hash(&mut hasher, name);
-        update_download_hash(&mut hasher, value);
+        update_download_hash(hasher, name);
+        update_download_hash(hasher, value);
     }
+}
+
+fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
+    let mut hasher = blake3::Hasher::new();
+    update_download_hash(&mut hasher, url.as_str().as_bytes());
+
+    hash_headers(&mut hasher, headers);
 
     if let Some(replacements) = &Settings::get().url_replacements {
         for (pattern, replacement) in replacements {
@@ -642,6 +652,9 @@ pub fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
 #[derive(Debug)]
 pub struct Client {
     reqwest: Result<reqwest::Client, String>,
+    /// Built on first use by [`Client::send_following_redirects`], which follows
+    /// redirects itself so it can decide what each hop may carry.
+    manual_redirects: std::sync::OnceLock<Result<reqwest::Client, String>>,
     timeout: Duration,
     kind: ClientKind,
 }
@@ -668,6 +681,7 @@ impl Client {
     pub fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
             reqwest: Ok(Self::build(timeout, kind, Downgrade::Refuse)?),
+            manual_redirects: Default::default(),
             timeout,
             kind,
         })
@@ -680,6 +694,7 @@ impl Client {
     fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
         Self {
             reqwest: Self::build(timeout, kind, downgrade).map_err(|err| format!("{err:#}")),
+            manual_redirects: Default::default(),
             timeout,
             kind,
         }
@@ -707,6 +722,7 @@ impl Client {
     pub fn with_init_error(error: impl Into<String>) -> Self {
         Self {
             reqwest: Err(error.into()),
+            manual_redirects: Default::default(),
             timeout: Duration::from_secs(1),
             kind: ClientKind::Http,
         }
@@ -721,6 +737,98 @@ impl Client {
         self.reqwest
             .as_ref()
             .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
+    }
+
+    /// Send `req`, following redirects ourselves when `headers` hold a credential that
+    /// reqwest would forward to another host. reqwest only strips `Authorization`,
+    /// `Cookie` and `Proxy-Authorization` on a cross-host redirect, so a header such as
+    /// `X-Api-Key` would otherwise reach whatever host the server redirects to.
+    async fn send_scoped(
+        &self,
+        method: &Method,
+        url: &Url,
+        headers: &HeaderMap,
+        forward: &ForwardRules,
+        timeout: Option<Duration>,
+    ) -> std::result::Result<Response, SendError> {
+        if !has_unscoped_credential(headers) && !forward.applies_to(headers) {
+            let mut req = self
+                .reqwest()
+                .map_err(|err| SendError::Refused(format!("{err:#}")))?
+                .request(method.clone(), url.clone());
+            if let Some(timeout) = timeout {
+                req = req.timeout(timeout);
+            }
+            return req
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(Into::into);
+        }
+        let client = self
+            .manual_redirects
+            .get_or_init(|| {
+                Self::_new()
+                    .read_timeout(self.timeout)
+                    .connect_timeout(self.timeout)
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .map_err(|err| format!("{err:#}"))
+            })
+            .as_ref()
+            .map_err(|err| {
+                SendError::Refused(format!("Could not initialize the HTTP client: {err}"))
+            })?;
+        let mut method = method.clone();
+        let mut url = url.clone();
+        let mut headers = headers.clone();
+        for _ in 0..MAX_MANUAL_REDIRECTS {
+            let mut req = client.request(method.clone(), url.clone());
+            if let Some(timeout) = timeout {
+                req = req.timeout(timeout);
+            }
+            let resp = req.headers(headers.clone()).send().await?;
+            if !resp.status().is_redirection() {
+                return Ok(resp);
+            }
+            let Some(location) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+            else {
+                return Ok(resp);
+            };
+            let Ok(mut next) = url.join(location) else {
+                return Ok(resp);
+            };
+            if is_https_downgrade(std::slice::from_ref(&url), &next) {
+                return Err(SendError::Refused(
+                    "refusing to redirect a request with credentials from HTTPS to HTTP"
+                        .to_string(),
+                ));
+            }
+            // Scheme and port count as a different origin, as they do for reqwest.
+            if next.host() != url.host()
+                || next.port_or_known_default() != url.port_or_known_default()
+                || next.scheme() != url.scheme()
+            {
+                forward.retain_for(&mut headers, &url, &next);
+                // Userinfo carried over from the previous URL is a credential too.
+                let _ = next.set_username("");
+                let _ = next.set_password(None);
+            }
+            if matches!(
+                resp.status(),
+                StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND | StatusCode::SEE_OTHER
+            ) && method != Method::HEAD
+            {
+                method = Method::GET;
+            }
+            url = next;
+        }
+        Err(SendError::Refused(format!(
+            "too many redirects (more than {MAX_MANUAL_REDIRECTS})"
+        )))
     }
 
     fn _new() -> ClientBuilder {
@@ -751,7 +859,7 @@ impl Client {
         self.get_async_with_headers(url, &headers).await
     }
 
-    async fn get_async_with_headers<U: IntoUrl>(
+    pub async fn get_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -825,8 +933,26 @@ impl Client {
     /// when locking multiple platforms). Concurrent requests for the same URL will
     /// wait for the first fetch to complete.
     pub async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
+        self.get_text_cached_with_headers(url, &HeaderMap::new())
+            .await
+    }
+
+    /// [`Self::get_text_cached`] with extra request headers. The cache is keyed by URL
+    /// alone, so every caller of one URL within a process must send the same headers.
+    pub async fn get_text_cached_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<String> {
         let url = url.into_url()?;
-        let key = url.to_string();
+        // Responses can depend on the credentials (a token may select a repository), so
+        // they are part of the key, as a digest so the values are never kept in memory
+        // as plain text.
+        let key = if headers.is_empty() {
+            url.to_string()
+        } else {
+            format!("{url}\n{}", header_digest(headers))
+        };
 
         // Get or create the OnceCell for this URL
         let cell = {
@@ -839,7 +965,7 @@ impl Client {
             .get_or_init(|| {
                 let url = url.clone();
                 async move {
-                    match self.get_text(url).await {
+                    match self.get_text_request(url).headers(headers).send().await {
                         Ok(text) => Ok(text),
                         Err(err) => Err(err.to_string()),
                     }
@@ -999,7 +1125,7 @@ impl Client {
             .map(|_| ())
     }
 
-    async fn download_file_with_headers_metadata<U: IntoUrl>(
+    pub async fn download_file_with_headers_metadata<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
@@ -1519,6 +1645,8 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
+        let (headers, forward_rules) = split_forward_rules(headers);
+        let headers = &headers;
         crate::resolve_progress::fetching(&url);
         #[cfg(unix)]
         if let Some(socket) = github_relay_socket(&url) {
@@ -1599,14 +1727,14 @@ impl Client {
         }
 
         let request_timeout = self.request_timeout();
-        let mut req = self.reqwest()?.request(method.clone(), url.clone());
-        if matches!(self.kind, ClientKind::Fetch) {
-            req = req.timeout(request_timeout);
-        }
-        req = req.headers(final_headers.clone());
-        let resp = match req.send().await {
+        let timeout = matches!(self.kind, ClientKind::Fetch).then_some(request_timeout);
+        let resp = match self
+            .send_scoped(&method, &url, &final_headers, &forward_rules, timeout)
+            .await
+        {
             Ok(resp) => resp,
-            Err(err) => {
+            Err(SendError::Refused(message)) => return Err(eyre!(message)),
+            Err(SendError::Reqwest(err)) => {
                 let err = err.without_url();
                 if crate::network::prefer_offline(&Settings::get())
                     && is_hard_connection_failure(&err)
@@ -1661,6 +1789,7 @@ impl Client {
                             crate::github::TokenSource::GithubOauth,
                         );
                         headers.insert(AUTHORIZATION, value);
+                        forward_rules.attach_to(&mut headers);
                         if let Some(retry_state) = &options.retry_state {
                             *retry_state.lock().unwrap() = RetryState {
                                 headers: headers.clone(),
@@ -1738,6 +1867,7 @@ impl Client {
             {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
+                forward_rules.attach_to(&mut headers);
                 debug!(
                     "{} {} retrying without GitHub auth after {}",
                     verb_label, url, status
@@ -2002,6 +2132,15 @@ pub fn error_code(e: &Report) -> Option<u16> {
     }
 }
 
+/// The automatic host credentials for `url` (a forge token, say) with `headers` layered
+/// on top, so a configured header replaces the one of the same name and every other
+/// automatic header is kept. Every request that takes caller headers sends this.
+pub fn with_host_auth(url: &Url, headers: &HeaderMap) -> Result<HeaderMap> {
+    let mut merged = host_auth_headers(url)?;
+    merged.extend(headers.clone());
+    Ok(merged)
+}
+
 fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // raw.githubusercontent.com is not an API host, but a private repository's
     // files are a 404 without the token, so it is routed here too. `get_headers`
@@ -2029,6 +2168,148 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
 /// keeps the existing auth, since the forge token is still valid for that host.
 fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
     host_changed || !has_existing_auth
+}
+
+const MAX_MANUAL_REDIRECTS: usize = 10;
+
+enum SendError {
+    Reqwest(reqwest::Error),
+    /// A refusal that is not a transport failure, so it is neither retried nor
+    /// classified as a timeout.
+    Refused(String),
+}
+
+impl From<reqwest::Error> for SendError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Reqwest(err)
+    }
+}
+
+/// A credential header that reqwest does not remove on a cross-host redirect.
+fn has_unscoped_credential(headers: &HeaderMap) -> bool {
+    headers.iter().any(|(name, value)| {
+        is_credential_header(name, value)
+            && name != AUTHORIZATION
+            && name != COOKIE
+            && name != PROXY_AUTHORIZATION
+    })
+}
+
+/// Prefix of the internal headers that carry [`ForwardRules`] alongside the real ones, so
+/// they travel through every retry and cache key without a parallel argument. They are
+/// removed before a request is built and are never sent.
+const FORWARD_RULE_PREFIX: &str = "x-mise-forward-";
+
+/// Whether `name` is reserved for forwarding rules and cannot be used as a request header.
+pub fn is_reserved_header_name(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with(FORWARD_RULE_PREFIX)
+}
+
+/// Whether `pattern` is a host an allowlist may contain: an exact hostname, or `*.` followed
+/// by a suffix for its subdomains. A bare `*` is refused so the list cannot mean "everywhere".
+pub fn is_valid_forward_host(pattern: &str) -> bool {
+    let host = pattern.strip_prefix("*.").unwrap_or(pattern);
+    !host.is_empty()
+        && !host.contains('*')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        && !host.starts_with('.')
+        && !host.ends_with('.')
+}
+
+/// Encode "`name` may follow a redirect to these hosts" as an internal header.
+pub fn forward_rule_header(
+    name: &HeaderName,
+    hosts: &[String],
+) -> Result<(HeaderName, HeaderValue)> {
+    for host in hosts {
+        ensure!(is_valid_forward_host(host), "invalid forward host `{host}`");
+    }
+    Ok((
+        HeaderName::from_bytes(format!("{FORWARD_RULE_PREFIX}{}", name.as_str()).as_bytes())?,
+        HeaderValue::from_str(&hosts.join(","))?,
+    ))
+}
+
+/// Which hosts each request header may be forwarded to after a cross-host redirect.
+/// Everything not listed is dropped, so the default is to forward nothing.
+#[derive(Debug, Default)]
+struct ForwardRules(HashMap<HeaderName, Vec<String>>);
+
+impl ForwardRules {
+    /// Re-encode the rules onto `headers`, for a request that is sent again after
+    /// [`split_forward_rules`] took them off.
+    fn attach_to(&self, headers: &mut HeaderMap) {
+        for (name, hosts) in &self.0 {
+            if let Ok((rule_name, rule_value)) = forward_rule_header(name, hosts) {
+                headers.insert(rule_name, rule_value);
+            }
+        }
+    }
+
+    fn applies_to(&self, headers: &HeaderMap) -> bool {
+        self.0.keys().any(|name| headers.contains_key(name))
+    }
+
+    /// Cross-origin hop to `next`: drop every credential header that is not allowed to
+    /// reach `next`. A header dropped here stays dropped for the rest of the chain.
+    fn retain_for(&self, headers: &mut HeaderMap, previous: &Url, next: &Url) {
+        let host = next.host_str().unwrap_or_default();
+        // Forwarding is for secrets, so it never steps down to plain HTTP. A chain that
+        // is already plain HTTP, because the user wrote an `http://` URL, stays allowed.
+        let secure = next.scheme() == "https" || previous.scheme() == "http";
+        let dropped = headers
+            .iter()
+            .filter(|(name, value)| is_credential_header(name, value))
+            .filter(|(name, _)| {
+                !(secure
+                    && self
+                        .0
+                        .get(*name)
+                        .is_some_and(|patterns| host_matches_any(patterns, host)))
+            })
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        for name in dropped {
+            headers.remove(name);
+        }
+    }
+}
+
+fn host_matches_any(patterns: &[String], host: &str) -> bool {
+    // DNS names are case-insensitive, and so are both sides of the comparison.
+    let host = host.to_ascii_lowercase();
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.to_ascii_lowercase();
+        match pattern.strip_prefix("*.") {
+            Some(suffix) => host
+                .strip_suffix(suffix)
+                .is_some_and(|rest| rest.ends_with('.') && rest.len() > 1),
+            None => pattern == host,
+        }
+    })
+}
+
+/// Separate the real request headers from the internal forwarding rules.
+fn split_forward_rules(headers: &HeaderMap) -> (HeaderMap, ForwardRules) {
+    let mut real = HeaderMap::new();
+    let mut rules = HashMap::new();
+    for (name, value) in headers {
+        if let Some(target) = name.as_str().strip_prefix(FORWARD_RULE_PREFIX) {
+            if let (Ok(target), Ok(value)) =
+                (HeaderName::from_bytes(target.as_bytes()), value.to_str())
+            {
+                rules.insert(
+                    target,
+                    value.split(',').map(str::to_string).collect::<Vec<_>>(),
+                );
+            }
+        } else {
+            real.append(name.clone(), value.clone());
+        }
+    }
+    (real, ForwardRules(rules))
 }
 
 fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {

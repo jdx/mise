@@ -176,6 +176,7 @@ async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
             .connect_timeout(timeout)
             .build()
             .unwrap()),
+        manual_redirects: Default::default(),
         timeout,
         kind: ClientKind::Fetch,
     };

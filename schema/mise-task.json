@@ -2043,6 +2043,30 @@
           "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
           "type": "string"
         },
+        "headers": {
+          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "headers_forward": {
+          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
         "size": {
           "description": "expected artifact size in bytes",
           "oneOf": [
