@@ -2350,6 +2350,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_release_list_is_fetched_once_however_many_callers_ask() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/fetched-once/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!(
+            "{}/fetched-once/HEAD/.well-known/packslip.json",
+            server.url()
+        );
+        let (a, b, c) = tokio::join!(
+            fetch_github_list(&url),
+            fetch_github_list(&url),
+            fetch_github_list(&url)
+        );
+        for fetched in [a, b, c, fetch_github_list(&url).await] {
+            assert_eq!(fetched.unwrap().as_deref(), Some("{}"));
+        }
+        list.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_missing_release_list_is_looked_for_once() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let missing = server
+            .mock("GET", "/missing/HEAD/.well-known/packslip.json")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/missing/HEAD/.well-known/packslip.json", server.url());
+        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
+        assert_eq!(fetch_github_list(&url).await.unwrap(), None);
+        missing.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_failed_release_list_fetch_is_retried() {
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let failing = server
+            .mock("GET", "/retried/HEAD/.well-known/packslip.json")
+            .with_status(500)
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let url = format!("{}/retried/HEAD/.well-known/packslip.json", server.url());
+        assert!(fetch_github_list(&url).await.is_err());
+        failing.remove_async().await;
+        let _working = server
+            .mock("GET", "/retried/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_list(&url).await.unwrap().as_deref(),
+            Some("{}")
+        );
+    }
+
+    #[tokio::test]
     async fn failed_skill_fetch_keeps_the_binary_and_plain_retry_repairs_it() {
         let config = Config::get().await.unwrap();
         let mut server = mockito::Server::new_async().await;
