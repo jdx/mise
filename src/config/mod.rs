@@ -2718,8 +2718,8 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
     filenames
         .iter()
         .flat_map(|f| load_config_glob(dir, f))
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
+        .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
 
@@ -2773,8 +2773,8 @@ fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathB
         let files: IndexSet<PathBuf> = filenames
             .iter()
             .flat_map(|f| glob(&dir, f).unwrap_or_default())
-            .unique_by(|p| file::desymlink_path(p))
             .filter(|p| !config_path_is_ignored(p, false))
+            .unique_by(|p| file::desymlink_path(p))
             .collect();
         if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
@@ -2824,8 +2824,8 @@ fn load_config_paths_from_dirs(
 
     config_files
         .into_iter()
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, include_ignored))
+        .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
 
@@ -3125,8 +3125,8 @@ pub async fn load_config_hierarchy_from_dir(
 
     let paths = config_files
         .into_iter()
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
+        .unique_by(|p| file::desymlink_path(p))
         .collect();
 
     Ok((paths, idiomatic_files))
