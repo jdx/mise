@@ -1719,6 +1719,20 @@
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
         },
+        "prune": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Tools that `mise prune` never removes, such as `node` or `aqua:BurntSushi/ripgrep`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "pypi": {
           "type": "object",
           "unevaluatedProperties": false,
