@@ -30,3 +30,10 @@ assert_contains "mise ls --installed dummy" "1.0.0"
 # Test: --dry-run-code should exit 0 when the tool is not installed
 mise uninstall dummy@1.0.0
 assert_succeed "mise uninstall dummy@1.0.0 --dry-run-code 2>&1"
+
+# Test: a dry run reports each version once, naming every path it would remove
+mise i dummy@1.0.0 dummy@1.1.0
+out="$(mise uninstall --all --dry-run dummy 2>&1)"
+assert_contains_text "$out" "dummy@1.0.0"
+assert_contains_text "$out" "dummy@1.1.0"
+assert_contains_text "count=$(grep -c 'dummy@1.0.0 .*remove' <<<"$out")" "count=1"
