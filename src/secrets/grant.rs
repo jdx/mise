@@ -153,6 +153,7 @@ pub enum ProblemKind {
     Sandbox,
     Template,
     Source,
+    NoProcess,
 }
 
 impl ProblemKind {
@@ -170,6 +171,7 @@ impl ProblemKind {
             Self::Sandbox => "sandbox",
             Self::Template => "template",
             Self::Source => "source",
+            Self::NoProcess => "no_process",
         }
     }
 }
@@ -359,6 +361,17 @@ pub(crate) fn static_problems(
             );
         }
     }
+    if orchestrates_only(task) {
+        problems.push(Problem::new(
+            &task.name,
+            None,
+            ProblemKind::NoProcess,
+            format!(
+                "task {} lists secrets but starts no process of its own; list them on the tasks that run commands",
+                task.name
+            ),
+        ));
+    }
     let granted: BTreeSet<&str> = grant.keys.keys().map(|k| k.as_str()).collect();
     let mut refs = BTreeSet::new();
     for script in task.run_script_strings() {
@@ -489,6 +502,16 @@ fn osa_distance(a: &str, b: &str) -> usize {
         }
     }
     d[a.len()][b.len()]
+}
+
+/// A task whose `run` only injects other tasks and that has no file: it would resolve secrets
+/// and then hold them (and any secret files) while ungranted tasks run. It is refused instead.
+/// A task with no run entries at all is skipped without resolving anything.
+pub(crate) fn orchestrates_only(task: &Task) -> bool {
+    use crate::task::RunEntry;
+    task.file.is_none()
+        && !task.run().is_empty()
+        && !task.run().iter().any(|e| matches!(e, RunEntry::Script(_)))
 }
 
 /// G13: the task's sandbox would drop the granted key.
