@@ -346,10 +346,13 @@ impl OperationScope {
                 return;
             }
         }
-        let started =
-            tokio::task::spawn_blocking(|| open_lazy(OPERATION_LOCK_WAIT).map(|_| ())).await;
+        let started = tokio::task::spawn_blocking(|| open_lazy(OPERATION_LOCK_WAIT)).await;
         match started {
-            Ok(Ok(())) => {}
+            Ok(Ok(true)) => {}
+            // an earlier write already ran without a journal; no second try
+            Ok(Ok(false)) => {
+                warn!("history: this run's outcome is not recorded: it ran without a journal")
+            }
             Ok(Err(err)) => warn!("history: this run's outcome is not recorded: {err:#}"),
             Err(err) => warn!("history: this run's outcome is not recorded: {err}"),
         }
