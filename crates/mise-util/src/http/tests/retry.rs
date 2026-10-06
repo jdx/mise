@@ -470,15 +470,48 @@ async fn test_429_with_long_retry_after_is_not_retried() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn test_429_with_short_retry_after_is_retried() {
+    // The test backoff is a few milliseconds, so waiting a full second can only
+    // come from honoring the header.
     let _guard = set_test_http_retries(1);
     let (port, count) =
-        spawn_canned_server(vec![too_many_requests_response(0), ok_response()]).await;
+        spawn_canned_server(vec![too_many_requests_response(1), ok_response()]).await;
     let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
     let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
+    let started = Instant::now();
     let resp = client.get_async(url).await.unwrap();
     assert!(resp.status().is_success());
+    assert!(started.elapsed() >= Duration::from_secs(1));
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_429_retry_after_digits_are_not_a_404() {
+    let _guard = set_test_http_retries(0);
+    let (port, _) = spawn_canned_server(vec![too_many_requests_response(404)]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client.get_async(url).await.unwrap_err();
+    assert_eq!(error_code(&err), Some(429));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_long_retry_after_survives_added_context() {
+    let _guard = set_test_http_retries(3);
+    let (port, count) =
+        spawn_canned_server(vec![too_many_requests_response(60), ok_response()]).await;
+    let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+    let err = client
+        .get_async(url)
+        .await
+        .unwrap_err()
+        .wrap_err("while listing versions");
+    assert!(!is_transient(&err));
+    assert_eq!(error_code(&err), Some(429));
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
 #[test]

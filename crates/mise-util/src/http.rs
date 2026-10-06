@@ -2170,15 +2170,19 @@ fn stale_github_oauth_unauthorized_token(
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
+    // The real status first: a message can mention 404 without being one, such
+    // as a 429 whose `Retry-After` is 404 seconds.
+    if let Some(status) = e
+        .downcast_ref::<reqwest::Error>()
+        .and_then(reqwest::Error::status)
+    {
+        return Some(status.as_u16());
+    }
     if e.to_string().contains("404") {
         // TODO: not this when I can figure out how to use eyre properly
         return Some(404);
     }
-    if let Some(err) = e.downcast_ref::<reqwest::Error>() {
-        err.status().map(|s| s.as_u16())
-    } else {
-        None
-    }
+    None
 }
 
 /// The automatic host credentials for `url` (a forge token, say) with `headers` layered
