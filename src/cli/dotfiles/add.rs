@@ -6,7 +6,9 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::is_path_trusted;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{Config, ConfigPathOptions, is_global_config, resolve_target_config_path};
+use crate::config::{
+    Config, ConfigPathOptions, GlobalWriteSection, is_global_config, resolve_target_config_path,
+};
 use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
@@ -164,6 +166,9 @@ impl DotfilesAdd {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            global_write_section: (self.global || !self.local)
+                .then_some(GlobalWriteSection::Dotfiles),
+            ..Default::default()
         })?;
 
         let mut planned = vec![];

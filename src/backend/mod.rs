@@ -266,7 +266,18 @@ fn has_local_version_listing_option_override(
 fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[&str]) -> String {
     let values: BTreeMap<&str, String> = version_listing_opt_keys
         .iter()
-        .filter_map(|key| opts.get_string(key).map(|value| (*key, value)))
+        .filter_map(|key| {
+            // A table such as `headers` has no scalar form but still shapes the list, and its
+            // values can be credentials, so only the digest of it is kept.
+            opts.get_string(key)
+                .or_else(|| {
+                    opts.opts
+                        .get(*key)
+                        .filter(|value| value.is_table())
+                        .map(ToString::to_string)
+                })
+                .map(|value| (*key, value))
+        })
         .collect();
     hash::hash_to_str(&values)
 }
