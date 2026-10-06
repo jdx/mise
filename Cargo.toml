@@ -170,7 +170,7 @@ jdx-tar = "1"
 jiff = "0.2"
 junction = "2"
 log = "0.4"
-minisign-verify = "0.2"
+minisign-verify = "0.3"
 miette = { version = "7", features = ["fancy"] }
 nodejs-semver = "6"
 notify = { version = "8", default-features = false, features = [
