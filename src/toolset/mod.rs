@@ -1241,6 +1241,13 @@ mod tests {
         assert!(is_named_in(&names, &BackendArg::from("ripgrep")));
         assert!(!is_named_in(&names, &BackendArg::from("python")));
         assert!(!is_named_in(&names, &BackendArg::from("aqua:junegunn/fzf")));
+        // A different short name and stored inline options reach the comparison of
+        // full backend names, which must ignore the options.
+        let aliased = BackendArg::new(
+            "ripgrep".into(),
+            Some("aqua:BurntSushi/ripgrep[bin=rg]".into()),
+        );
+        assert!(is_named_in(&names, &aliased));
         // Inline options do not make it another tool.
         assert!(is_named_in(
             &names,
