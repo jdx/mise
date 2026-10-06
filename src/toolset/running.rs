@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
+use crate::toolset::ToolVersion;
+
 /// A process running from an install directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunningProcess {
@@ -23,17 +25,8 @@ impl Display for RunningProcess {
     }
 }
 
-/// An install directory that pruning may remove.
-pub(crate) struct PruneCandidate {
-    /// The version's install directory.
-    pub path: PathBuf,
-    /// The directory holding the tool's runtime links, such as `latest` or
-    /// `20`, which may point at `path`.
-    pub links_dir: PathBuf,
-}
-
-/// Returns the processes running from each candidate, keyed by its install
-/// path. Candidates no process runs from are absent.
+/// Returns the processes running from each of `tvs`, keyed by install path.
+/// Versions no process runs from are absent.
 ///
 /// A process runs from an install when its executable, or an absolute path in
 /// its command line, is inside that directory. The command line covers
@@ -43,18 +36,18 @@ pub(crate) struct PruneCandidate {
 /// A command-line path can go through one of the tool's runtime links, such as
 /// `installs/node/latest`, which an upgrade retargets while the process keeps
 /// running. A link that has not changed since the process started is followed.
-/// Otherwise the version the process started from is unknown, so every
-/// candidate of that tool counts as running until the process exits.
+/// Otherwise the version the process started from is unknown, so every one of
+/// `tvs` for that tool counts as running until the process exits.
 ///
 /// Processes are read from `/proc`, so this finds nothing on other platforms.
 /// Processes that cannot be inspected, such as another user's, are skipped.
 pub(crate) fn processes_running_from(
-    candidates: &[PruneCandidate],
+    tvs: &[&ToolVersion],
 ) -> BTreeMap<PathBuf, Vec<RunningProcess>> {
-    if candidates.is_empty() {
+    if tvs.is_empty() {
         return BTreeMap::new();
     }
-    imp::processes_running_from(candidates)
+    imp::processes_running_from(tvs)
 }
 
 #[cfg(target_os = "linux")]
@@ -66,7 +59,8 @@ mod imp {
     use std::path::{Component, Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use super::{PruneCandidate, RunningProcess};
+    use super::RunningProcess;
+    use crate::toolset::ToolVersion;
 
     /// Process start times are only known to the second, because the boot time
     /// they are counted from is.
@@ -75,8 +69,17 @@ mod imp {
     /// Bounds following a chain of runtime links, such as `latest` -> `20` -> `20.1.0`.
     const MAX_LINKS: usize = 8;
 
+    /// An install directory that pruning may remove.
+    pub(super) struct Candidate {
+        /// The version's install directory.
+        pub(super) path: PathBuf,
+        /// The directory holding the tool's runtime links, such as `latest` or
+        /// `20`, which may point at `path`.
+        pub(super) links_dir: PathBuf,
+    }
+
     struct Install<'a> {
-        candidate: &'a PruneCandidate,
+        candidate: &'a Candidate,
         // The kernel records the executable with symlinks resolved, so match
         // the resolved paths as well as the ones mise uses.
         roots: Vec<PathBuf>,
@@ -90,8 +93,19 @@ mod imp {
     }
 
     pub(super) fn processes_running_from(
-        candidates: &[PruneCandidate],
+        tvs: &[&ToolVersion],
     ) -> BTreeMap<PathBuf, Vec<RunningProcess>> {
+        let candidates = tvs
+            .iter()
+            .map(|tv| Candidate {
+                path: tv.install_path(),
+                links_dir: tv.ba().installs_path().to_path_buf(),
+            })
+            .collect::<Vec<_>>();
+        scan(&candidates)
+    }
+
+    pub(super) fn scan(candidates: &[Candidate]) -> BTreeMap<PathBuf, Vec<RunningProcess>> {
         let installs = candidates
             .iter()
             .map(|candidate| Install {
@@ -307,10 +321,11 @@ mod imp {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use super::{PruneCandidate, RunningProcess};
+    use super::RunningProcess;
+    use crate::toolset::ToolVersion;
 
     pub(super) fn processes_running_from(
-        _candidates: &[PruneCandidate],
+        _tvs: &[&ToolVersion],
     ) -> BTreeMap<PathBuf, Vec<RunningProcess>> {
         BTreeMap::new()
     }
@@ -324,6 +339,7 @@ mod tests {
 
     use filetime::FileTime;
 
+    use super::imp::{Candidate, scan};
     use super::*;
 
     /// Kills the child when a test ends, including when an assertion fails.
@@ -382,8 +398,8 @@ mod tests {
         spawn(Command::new("sh").arg(script).stdin(Stdio::piped()))
     }
 
-    fn candidate(path: &Path) -> PruneCandidate {
-        PruneCandidate {
+    fn candidate(path: &Path) -> Candidate {
+        Candidate {
             path: path.to_path_buf(),
             links_dir: path.parent().unwrap().to_path_buf(),
         }
@@ -410,14 +426,14 @@ mod tests {
         let sleep = install_with_sleep(&install);
         let mut child = spawn(Command::new(&sleep).arg("30"));
 
-        let found = processes_running_from(&[candidate(&install), candidate(&idle)]);
+        let found = scan(&[candidate(&install), candidate(&idle)]);
         assert_eq!(pids(&found, &install), vec![child.0.id()]);
         assert_eq!(found[&install][0].name, "sleep");
         assert!(!found.contains_key(&idle));
 
         child.0.kill().unwrap();
         child.0.wait().unwrap();
-        assert!(!processes_running_from(&[candidate(&install)]).contains_key(&install));
+        assert!(!scan(&[candidate(&install)]).contains_key(&install));
     }
 
     #[test]
@@ -427,7 +443,7 @@ mod tests {
         install_with_script(&install);
         let child = run_script(&install.join("bin/tool.sh"));
 
-        let found = processes_running_from(&[candidate(&install)]);
+        let found = scan(&[candidate(&install)]);
         assert_eq!(pids(&found, &install), vec![child.0.id()]);
     }
 
@@ -440,7 +456,7 @@ mod tests {
         let sleep = install_with_sleep(&running);
         let _child = spawn(Command::new(&sleep).arg("30"));
 
-        let found = processes_running_from(&[candidate(&sibling)]);
+        let found = scan(&[candidate(&sibling)]);
         assert!(!found.contains_key(&sibling));
     }
 
@@ -454,7 +470,7 @@ mod tests {
         let install = linked.join("1.0.0");
         let child = spawn(Command::new(&sleep).arg("30"));
 
-        let found = processes_running_from(&[candidate(&install)]);
+        let found = scan(&[candidate(&install)]);
         assert_eq!(pids(&found, &install), vec![child.0.id()]);
     }
 
@@ -471,7 +487,7 @@ mod tests {
         link_written_at(&link, SystemTime::now() - Duration::from_secs(3600));
         let child = run_script(&link.join("bin/tool.sh"));
 
-        let found = processes_running_from(&[candidate(&used), candidate(&other)]);
+        let found = scan(&[candidate(&used), candidate(&other)]);
         assert_eq!(pids(&found, &used), vec![child.0.id()]);
         assert!(!found.contains_key(&other));
     }
@@ -494,7 +510,7 @@ mod tests {
         std::fs::remove_file(&latest).unwrap();
         std::os::unix::fs::symlink("./2.0.0", &latest).unwrap();
 
-        let found = processes_running_from(&[candidate(&old)]);
+        let found = scan(&[candidate(&old)]);
         assert_eq!(pids(&found, &old), vec![child.0.id()]);
     }
 }

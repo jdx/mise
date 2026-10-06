@@ -1130,13 +1130,7 @@ pub async fn prunable_tools_with_sources(
 
     // A process started before its version stopped being needed may still be
     // running from it. Removing the version would delete files from under it.
-    let candidates = to_delete
-        .values()
-        .map(|(_, tv)| running::PruneCandidate {
-            path: tv.install_path(),
-            links_dir: tv.ba().installs_path().to_path_buf(),
-        })
-        .collect::<Vec<_>>();
+    let candidates = to_delete.values().map(|(_, tv)| tv).collect::<Vec<_>>();
     let mut processes = running::processes_running_from(&candidates);
     let mut running = vec![];
     to_delete.retain(|_, (_, tv)| match processes.remove(&tv.install_path()) {
