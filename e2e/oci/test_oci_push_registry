@@ -92,7 +92,7 @@ assert "mise x crane@latest -- crane digest --insecure $REF" "$local_digest"
 assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REF"
 
 # --- 5. Manifest content survives the round-trip (tool layer annotation) ---
-assert_contains "mise x crane@latest -- crane manifest --insecure $REF" '"dev.mise.tool.short":"jq"'
+assert "mise x crane@latest -- crane manifest --insecure $REF | jq -r '.layers[] | select(.annotations.\"dev.mise.tool.short\" == \"jq\") | .annotations.\"dev.mise.tool.short\"'" "jq"
 
 # --- 6. Push by digest reference ---
 assert_contains "mise oci push --image-dir ./img $REGISTRY/e2e/devenv@$local_digest" \
