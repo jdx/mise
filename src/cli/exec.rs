@@ -471,8 +471,16 @@ impl Exec {
                 .filter(|(k, _)| *k != "PATH")
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect_vec();
+            let granted = secrets.as_ref().map(|s| s.scrub_keys()).unwrap_or_default();
             for (i, (k, v)) in reapplied.into_iter().enumerate() {
-                let tmp = format!("__MISE_FISH_ENV_{i}");
+                // A copy that holds a granted value gets the name a nested mise treats as a
+                // secret; plain values keep the ordinary name and are not redacted.
+                let tmp = if granted.iter().any(|g| mise_util::env::env_key_eq(g, &k)) {
+                    scrub_on_failure.push(format!("__MISE_FISH_SECRET_{i}"));
+                    format!("{}{i}", mise_util::env::FISH_SECRET_PREFIX)
+                } else {
+                    format!("__MISE_FISH_ENV_{i}")
+                };
                 if secrets.is_some() {
                     scrub_on_failure.push(tmp.clone());
                 }
