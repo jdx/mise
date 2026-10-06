@@ -827,7 +827,9 @@ fn task_env_literals(task: &Task) -> Vec<(String, String)> {
         .chain(task.inherited_env.0.iter())
         .chain(task.overlay_env.iter().map(|(d, _)| d))
         .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+            EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => {
+                Some((k.clone(), v.clone()))
+            }
             _ => None,
         })
         .collect()
@@ -1035,6 +1037,29 @@ mod tests {
         let problems = static_problems(&task, &grant, None);
         assert!(
             problems.iter().any(|p| p.kind == ProblemKind::Template),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn default_values_are_checked_for_secret_reads() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let task = Task {
+            name: "deploy".into(),
+            secrets: Some(TaskSecrets(vec!["DEPLOY_KEY".into()])),
+            env: crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Default(
+                "TOKEN".into(),
+                "{{ env.DEPLOY_KEY }}".into(),
+                EnvDirectiveOptions::default(),
+            )]),
+            ..Default::default()
+        };
+        let (grant, _) = grant_for_task(&task);
+        let problems = static_problems(&task, &grant, None);
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.kind == ProblemKind::Template && !p.render().contains("s3cr3t")),
             "{problems:?}"
         );
     }
