@@ -889,14 +889,14 @@ fn merge_conflict(
 /// formats, whatever their sources hold. The format comes from the extension,
 /// so this needs no rendering and holds on dry runs and for templates too.
 fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<String> {
-    let merges = |reqs: &[EditRequest]| {
+    fn merges(reqs: &[EditRequest]) -> Vec<(&EditRequest, Format)> {
         reqs.iter()
             .filter_map(|req| match &req.op {
-                EditOp::Merge { format, .. } => Some((req.clone(), *format)),
+                EditOp::Merge { format, .. } => Some((req, *format)),
                 _ => None,
             })
-            .collect::<Vec<_>>()
-    };
+            .collect()
+    }
     let applied = merges(requests);
     let others: Vec<_> = merges(siblings)
         .into_iter()
@@ -904,21 +904,30 @@ fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<S
             !requests
                 .iter()
                 .any(|req| req.path == sibling.path && req.id == sibling.id)
-                // a blocked target (a symlink) can't be written by this entry
-                && matches!(precheck(sibling), Ok(None | Some(EditCheck::State(_))))
         })
         .collect();
     let mut problems = vec![];
     for (i, (first, first_format)) in applied.iter().enumerate() {
-        for (second, second_format) in applied[i + 1..].iter().chain(&others) {
-            if first_format != second_format && same_target(&first.path, &second.path) {
-                problems.push(format!(
-                    "  \"{}\": {} and {} merge into one file as different formats",
-                    first.path_raw,
-                    first.describe_op(),
-                    second.describe_op(),
-                ));
+        let candidates = applied[i + 1..]
+            .iter()
+            .map(|entry| (entry, false))
+            .chain(others.iter().map(|entry| (entry, true)));
+        for ((second, second_format), is_sibling) in candidates {
+            if first_format == second_format || !same_target(&first.path, &second.path) {
+                continue;
             }
+            // only now, for a sibling that really shares the file, look at its
+            // target: a blocked one (a symlink) cannot be written by that entry,
+            // and a target this run never touches is never opened
+            if is_sibling && !matches!(precheck(second), Ok(None | Some(EditCheck::State(_)))) {
+                continue;
+            }
+            problems.push(format!(
+                "  \"{}\": {} and {} merge into one file as different formats",
+                first.path_raw,
+                first.describe_op(),
+                second.describe_op(),
+            ));
         }
     }
     problems

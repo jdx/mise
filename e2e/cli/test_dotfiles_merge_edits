@@ -274,3 +274,14 @@ cat <<'EOF' >mise.toml
 EOF
 assert_succeed "mise dotfiles apply ~/sym.json/a --yes"
 assert_contains "cat ~/sym.json" '"model": "a"'
+
+# an unselected entry whose target is a named pipe is never opened by a filtered
+# apply, so it cannot hang it
+mkfifo ~/pipe.json
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/ok.json/a" = { source = "shared/model.json", merge = true }
+"~/pipe.json/b" = { source = "shared/model.json", merge = true }
+EOF
+assert_succeed "timeout 60 mise dotfiles apply ~/ok.json/a --yes"
+assert_contains "cat ~/ok.json" '"model": "a"'
