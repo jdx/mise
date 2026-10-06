@@ -270,7 +270,7 @@ fn follow_link(path: &Path) -> Followed {
     Followed::Broken
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use std::path::Path;
     use std::process::{Child, Command, Stdio};
