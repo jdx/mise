@@ -1078,12 +1078,22 @@ pub(crate) fn task_template_refs(task: &Task) -> BTreeSet<String> {
 pub(crate) fn tera_env_refs(s: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = s;
-    while let Some(start) = [rest.find("{{"), rest.find("{%")]
+    while let Some(start) = [rest.find("{{"), rest.find("{%"), rest.find("{#")]
         .into_iter()
         .flatten()
         .min()
     {
         let tag = &rest[start..];
+        // Tera does not evaluate comments and raw blocks, so text in them reads nothing
+        if let Some(after) = super::template::skip_inert(tag) {
+            rest = after;
+            continue;
+        }
+        if tag.starts_with("{#") {
+            // an unterminated comment: scan it as text, since Tera rejects it anyway
+            scan_tag(tag, &mut out);
+            break;
+        }
         let close = if tag.starts_with("{{") { "}}" } else { "%}" };
         let end = tag.find(close).map(|e| e + 2).unwrap_or(tag.len());
         scan_tag(&tag[..end], &mut out);
@@ -1478,6 +1488,31 @@ mod tests {
         assert_eq!(on.len(), 1, "{on:?}");
         assert!(on[0].render().contains("uses $VAR expansion together with"));
         assert!(shell_expansion_problems(&task, &grant, &texts, false).is_empty());
+    }
+
+    #[test]
+    fn raw_blocks_and_comments_read_nothing() {
+        let task = composed(vec![]);
+        let (grant, _) = grant_for_task(&task);
+        let check = |text: &str| {
+            let texts = vec![("OTHER".to_string(), text.to_string())];
+            composed_read_problems(&task, &grant, &texts, true).len()
+        };
+        assert_eq!(check("{% raw %}{{ env.PGURL }}{% endraw %}"), 0);
+        assert_eq!(check("{%- raw -%}{{ env.PGURL }}{%- endraw -%}"), 0);
+        assert_eq!(check("a{# {{ env.PGURL }} #}b"), 0);
+        // a real read next to one still counts, before or after
+        assert_eq!(check("{% raw %}x{% endraw %}{{ env.PGURL }}"), 1);
+        assert_eq!(check("{{ env.PGURL }}{# c #}"), 1);
+        assert_eq!(
+            check("{# c #}{% raw %}{{ env.HOME }}{% endraw %}{{ env.PGURL }}"),
+            1
+        );
+        // an unterminated block is a Tera error anyway; it is scanned, not trusted
+        assert_eq!(check("{% raw %}{{ env.PGURL }}"), 1);
+        assert_eq!(check("{# {{ env.PGURL }}"), 1);
+        // the run-script scanner is the same one
+        assert!(tera_env_refs("{% raw %}{{ env.PGURL }}{% endraw %}").is_empty());
     }
 
     #[test]
