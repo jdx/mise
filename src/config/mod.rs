@@ -2596,6 +2596,30 @@ pub(crate) struct TemplateInputs {
     pub(crate) env: bool,
 }
 
+static TEMPLATE_VARS: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\bvars\b").unwrap());
+static TEMPLATE_ENV: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\benv\b").unwrap());
+
+impl TemplateInputs {
+    /// What `templates` read: a whole-word `vars` or `env`, so `{{vars.my_env}}`
+    /// reads only vars. Reading env also needs the vars its values may use.
+    pub(crate) fn read_by(templates: &str) -> Self {
+        Self {
+            vars: TEMPLATE_VARS.is_match(templates),
+            env: TEMPLATE_ENV.is_match(templates),
+        }
+    }
+
+    /// Whether a config file has a top-level `vars` or `env` table these
+    /// templates could read. A file that does not parse counts as setting them.
+    fn set_by_config(self, text: &str) -> bool {
+        let Ok(table) = text.parse::<toml::Table>() else {
+            return true;
+        };
+        ((self.vars || self.env) && table.contains_key("vars"))
+            || (self.env && table.contains_key("env"))
+    }
+}
+
 fn tracked_entries(
     files: &ConfigMap,
     entries: impl Fn(&Arc<dyn ConfigFile>) -> Result<Vec<EnvDirective>>,
@@ -2687,9 +2711,7 @@ fn other_env_config_setting_template_inputs(
         }
         let text = std::fs::read_to_string(&path)
             .wrap_err_with(|| format!("failed to read {}", display_path(&path)))?;
-        if ((inputs.vars || inputs.env) && text.contains("vars"))
-            || (inputs.env && text.contains("env"))
-        {
+        if inputs.set_by_config(&text) {
             return Ok(Some(path));
         }
     }
@@ -7145,6 +7167,67 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn template_inputs_match_whole_words() {
+        let read = TemplateInputs::read_by;
+        assert_eq!(
+            read("{{vars.tool_version}}"),
+            TemplateInputs {
+                vars: true,
+                env: false
+            }
+        );
+        assert_eq!(
+            read("{{env.VERSION}}"),
+            TemplateInputs {
+                vars: false,
+                env: true
+            }
+        );
+        assert_eq!(
+            read("{{vars.my_env}}"),
+            TemplateInputs {
+                vars: true,
+                env: false
+            }
+        );
+        assert_eq!(
+            read("{{ get_env(name='X') }}"),
+            TemplateInputs {
+                vars: false,
+                env: false
+            }
+        );
+        assert_eq!(
+            read("{{\"1.0.0\"}}"),
+            TemplateInputs {
+                vars: false,
+                env: false
+            }
+        );
+    }
+
+    #[test]
+    fn template_inputs_match_config_sections() {
+        let both = TemplateInputs {
+            vars: true,
+            env: true,
+        };
+        let vars_only = TemplateInputs {
+            vars: true,
+            env: false,
+        };
+        assert!(both.set_by_config("[vars]\nv = \"1\"\n"));
+        assert!(both.set_by_config("[env]\nA = \"1\"\n"));
+        assert!(both.set_by_config("  [ env ]\n"));
+        assert!(both.set_by_config("env.A = \"1\"\n"));
+        // The text of a comment or value is not a section.
+        assert!(!both.set_by_config("# sets no environment variables\n[tools]\nnode = \"1\"\n"));
+        assert!(!both.set_by_config("[tasks.t]\nenv = { A = \"1\" }\n"));
+        // A template that reads only vars is unaffected by an env section.
+        assert!(!vars_only.set_by_config("[env]\nA = \"1\"\n"));
+    }
 
     #[test]
     fn test_plugin_entry_to_url_keeps_ref_outside_shorthand_expansion() {

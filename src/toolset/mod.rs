@@ -1012,10 +1012,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         // Only vars and env a template can read matter; a project whose tool
         // templates read neither never depends on anything resolved here.
         let templates = cf.tool_templates().join("\n");
-        let inputs = crate::config::TemplateInputs {
-            vars: templates.contains("vars"),
-            env: templates.contains("env"),
-        };
+        let inputs = crate::config::TemplateInputs::read_by(&templates);
         let mut requests = if inputs.vars || inputs.env {
             let files = config.tracked_config_hierarchy(&cf, inputs).await?;
             let key = (files.keys().cloned().collect::<Vec<_>>(), inputs);
