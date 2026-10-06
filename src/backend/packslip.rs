@@ -166,36 +166,40 @@ fn release_url_tag(url: &str) -> Option<String> {
 /// command and no more: a long-running process (`mise mcp`, `mise watch`) reads
 /// the list again, so a withdrawal is still noticed.
 async fn fetch_github_list(url: &str) -> Result<Option<String>> {
-    type Fetched = Arc<tokio::sync::OnceCell<Option<String>>>;
+    type Fetched = Arc<tokio::sync::OnceCell<(std::time::Instant, Option<String>)>>;
     const REUSE: std::time::Duration = std::time::Duration::from_secs(30);
-    static FETCHED: std::sync::LazyLock<
-        std::sync::Mutex<BTreeMap<String, (std::time::Instant, Fetched)>>,
-    > = std::sync::LazyLock::new(Default::default);
+    static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
+        std::sync::LazyLock::new(Default::default);
     let cell: Fetched = {
         let mut fetched = FETCHED.lock().unwrap();
-        let entry = fetched
-            .entry(url.to_string())
-            .or_insert_with(|| (std::time::Instant::now(), Fetched::default()));
-        if entry.0.elapsed() > REUSE {
-            *entry = (std::time::Instant::now(), Fetched::default());
-        }
-        entry.1.clone()
-    };
-    cell.get_or_try_init(|| async {
-        let headers = github::get_headers(url)?;
-        match HTTP_FETCH
-            .get_text_request(url)
-            .headers(&headers)
-            .send()
-            .await
+        let cell = fetched.entry(url.to_string()).or_default();
+        // The window opens when a fetch finishes, so a slow one is never
+        // replaced while it is still running.
+        if cell
+            .get()
+            .is_some_and(|(fetched_at, _)| fetched_at.elapsed() > REUSE)
         {
-            Ok(text) => Ok(Some(text)),
-            Err(err) if crate::http::error_code(&err) == Some(404) => Ok(None),
-            Err(err) => Err(err),
+            *cell = Fetched::default();
         }
-    })
-    .await
-    .cloned()
+        cell.clone()
+    };
+    let (_, text) = cell
+        .get_or_try_init(|| async {
+            let headers = github::get_headers(url)?;
+            let text = match HTTP_FETCH
+                .get_text_request(url)
+                .headers(&headers)
+                .send()
+                .await
+            {
+                Ok(text) => Some(text),
+                Err(err) if crate::http::error_code(&err) == Some(404) => None,
+                Err(err) => return Err(err),
+            };
+            Ok((std::time::Instant::now(), text))
+        })
+        .await?;
+    Ok(text.clone())
 }
 
 /// The signed release list of a project on its own domain.
