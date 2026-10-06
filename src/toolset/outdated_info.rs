@@ -197,11 +197,20 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
             let new = oi.latest.strip_prefix(&prefix).unwrap_or(&oi.latest);
-            let bumped_version = check_semver_bump(old, new).or_else(|| {
-                oi.tool_version
-                    .request_pinned_this_version()
-                    .then(|| new.to_string())
-            });
+            // A request with no version in it (`java = "temurin"`) names a
+            // moving target, not a range, so there is nothing to bump. The
+            // lookup for it has no vendor prefix and can resolve to another
+            // vendor's release (`27.0.0` is OpenJDK), which a bump would write
+            // over the config.
+            let bumped_version = request_names_a_version(old)
+                .then(|| {
+                    check_semver_bump(old, new).or_else(|| {
+                        oi.tool_version
+                            .request_pinned_this_version()
+                            .then(|| new.to_string())
+                    })
+                })
+                .flatten();
             if let Some(bumped_version) = bumped_version
                 && bumped_version != oi.tool_version.request.version()
             {
@@ -301,6 +310,12 @@ pub fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Option<Strin
         .unwrap_or_else(|| prefix_version.to_string());
 
     Some(format!("{prefix}{query_version}"))
+}
+
+/// Whether a request (minus any vendor prefix) contains a version at all.
+/// `temurin` or `nightly` do not; `27`, `v1.2` and `nightly-2026-09-15` do.
+fn request_names_a_version(request: &str) -> bool {
+    request.chars().any(|c| c.is_ascii_digit())
 }
 
 /// check if the new version is a bump from the old version and return the new version
@@ -491,7 +506,10 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
-    use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use super::{
+        OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query,
+        request_names_a_version,
+    };
     use crate::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
@@ -601,6 +619,16 @@ mod tests {
             check_semver_bump("beta", "1.0.0-beta.1"),
             Some("beta".to_string())
         );
+    }
+
+    #[test]
+    fn test_request_names_a_version() {
+        assert!(request_names_a_version("27"));
+        assert!(request_names_a_version("27.0.0+35"));
+        assert!(request_names_a_version("nightly-2026-09-15"));
+        assert!(!request_names_a_version("temurin"));
+        assert!(!request_names_a_version("latest"));
+        assert!(!request_names_a_version("lts"));
     }
 
     #[test]
