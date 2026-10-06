@@ -131,6 +131,14 @@ fn open_lazy(wait: std::time::Duration) -> Result<bool> {
     let mut current = lock_unpoisoned(&CURRENT);
     // the scope may have ended while the journal opened
     let Some(Current::Lazy(lazy @ Some(_))) = &mut *current else {
+        drop(current);
+        if let Some(shared) = shared {
+            // nobody owns the journal that just opened: close it out
+            env::remove_var(ENV_VAR);
+            if let Err(err) = lock_unpoisoned(&shared).abandon() {
+                warn!("history: could not mark the operation failed: {err:#}");
+            }
+        }
         return Ok(false);
     };
     match shared {
