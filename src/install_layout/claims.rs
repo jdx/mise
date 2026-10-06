@@ -167,13 +167,21 @@ pub(crate) fn note_use(config: &Config, tv: &ToolVersion) {
     }
     let mut bare = tv.clone();
     bare.install_path = None;
-    let Some(located) = super::resolver::locate(&bare) else {
-        return;
+    // The identity layout's directory when one is installed; otherwise the legacy
+    // path, which is where a tool the layout does not govern (`http`, `rust`,
+    // `dotnet`) or one installed before it lives. Prune keys those by tool and
+    // version.
+    let dir = match super::resolver::locate(&bare) {
+        Some(located) if located.installed => located.dir,
+        _ => {
+            let legacy = tv.install_path();
+            if !legacy.exists() {
+                return;
+            }
+            legacy
+        }
     };
-    if !located.installed {
-        return;
-    }
-    if let Err(err) = record_with(config, tv, &located.dir) {
+    if let Err(err) = record_with(config, tv, &dir) {
         warn!("could not record what {} is used for: {err:#}", tv.style());
     }
 }

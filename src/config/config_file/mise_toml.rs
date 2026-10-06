@@ -1797,10 +1797,20 @@ impl ConfigFile for MiseToml {
             .lock()
             .unwrap()
             .iter()
+            // A tool this platform never resolves is never recorded either.
+            .filter(|(ba, _)| ba.is_os_supported())
             .filter(|(_, tvp)| {
-                tvp.0
-                    .iter()
-                    .any(|tool| contains_template_syntax(&tool.request))
+                tvp.0.iter().any(|tool| {
+                    contains_template_syntax(&tool.request)
+                        && tool
+                            .options
+                            .as_ref()
+                            .and_then(|options| options.os.as_ref())
+                            .is_none_or(|os| {
+                                os.iter()
+                                    .any(|entry| crate::platform::os_selector_matches(entry))
+                            })
+                })
             })
             .map(|(ba, _)| ba.short.to_string())
             .collect()
