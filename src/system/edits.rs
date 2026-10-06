@@ -270,8 +270,39 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
     merged.into_values().collect()
 }
 
+/// keys that only mean something on a whole-file entry
+const WHOLE_FILE_KEYS: [&str; 15] = [
+    "mode",
+    "content",
+    "permissions",
+    "exclude",
+    "include",
+    "manifest",
+    "autosave",
+    "encrypt",
+    "allow_plaintext",
+    "variants",
+    "enabled",
+    "remove_empty",
+    "relative",
+    "dot_prefix",
+    "group",
+];
+
 fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTomlEntry> {
     match &value {
+        toml::Value::Table(table) if table.contains_key("merge") => {
+            // a merge edits one structured file, so every key that shapes a
+            // whole-file entry is a mistake worth naming, not silently dropped
+            for key in WHOLE_FILE_KEYS {
+                if table.contains_key(key) {
+                    warn!(
+                        "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not merge edits, ignoring entry"
+                    );
+                    return None;
+                }
+            }
+        }
         toml::Value::Table(table) => {
             let is_whole_file_table = table.is_empty()
                 || table.contains_key("mode")
@@ -284,8 +315,7 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
                     && !table.contains_key("line")
                     && !table.contains_key("template")
                     && !table.contains_key("comment")
-                    && !table.contains_key("position")
-                    && !table.contains_key("merge");
+                    && !table.contains_key("position");
             if is_whole_file_table {
                 return None;
             }
@@ -785,16 +815,20 @@ fn split_existing(path: &Path) -> (PathBuf, Vec<std::ffi::OsString>) {
     (existing.to_path_buf(), tail)
 }
 
-/// Two merge entries for one file that set the same key to different values
-/// would each look unapplied after the other ran, so every apply would flip the
-/// value back and forth. Refuse that instead of picking a winner. Every entry
+/// One rendered edit of a structured file, for the cross-entry conflict check:
+/// the request, the format a merge entry sets (`None` for a block), and the
+/// rendered content.
+type Owned<'a> = (&'a EditRequest, Option<Format>, String);
+
+/// Two entries for one file that set the same key to different values would
+/// each look unapplied after the other ran, so every apply would flip the value
+/// back and forth. Refuse that instead of picking a winner. Two merges are
+/// compared key by key, and a merge is compared with a block whose content
+/// parses as the merge's format (a TOML block of dotted keys, say). Every entry
 /// this run applies is compared with the others it applies and with the
 /// config's other entries for the file; entries this run leaves alone are not
 /// compared with each other, since nothing here would write them.
-fn merge_conflicts(
-    applied: &[(&EditRequest, Format, String)],
-    unapplied: &[(&EditRequest, Format, String)],
-) -> Vec<String> {
+fn merge_conflicts(applied: &[Owned<'_>], unapplied: &[Owned<'_>]) -> Vec<String> {
     let mut problems = vec![];
     for (i, first) in applied.iter().enumerate() {
         for second in applied[i + 1..].iter().chain(unapplied) {
@@ -805,14 +839,20 @@ fn merge_conflicts(
 }
 
 fn merge_conflict(
-    (first, format, first_content): &(&EditRequest, Format, String),
-    (second, second_format, second_content): &(&EditRequest, Format, String),
+    (first, first_format, first_content): &Owned<'_>,
+    (second, second_format, second_content): &Owned<'_>,
 ) -> Option<String> {
-    if !same_target(&first.path, &second.path) || format != second_format {
+    if !same_target(&first.path, &second.path) {
         return None;
     }
-    // unparseable sources were already reported by desired_content
-    let keys = structured_merge::conflicts(*format, first_content, second_content).ok()?;
+    let format = match (first_format, second_format) {
+        (Some(a), Some(b)) if a == b => *a,
+        // a merge against a block: the block is read as the merge's format
+        (Some(format), None) | (None, Some(format)) => *format,
+        _ => return None,
+    };
+    // unparseable sources and blocks were already reported or are not data
+    let keys = structured_merge::conflicts(format, first_content, second_content).ok()?;
     (!keys.is_empty()).then(|| {
         format!(
             "  \"{}\": {} and {} set different values for {}",
@@ -824,8 +864,8 @@ fn merge_conflict(
     })
 }
 
-/// The merge entries of `siblings` that this run is not applying but that
-/// target a file this run merges into, so a conflict with them is caught too.
+/// The merge entries and blocks of `siblings` that this run is not applying but
+/// that target a file this run edits, so a conflict with them is caught too.
 /// Entries whose target is blocked are skipped before rendering, so their
 /// templates never run, and templates are not rendered on a dry run.
 fn unapplied_siblings<'a>(
@@ -833,17 +873,19 @@ fn unapplied_siblings<'a>(
     requests: &[EditRequest],
     siblings: &'a [EditRequest],
     dry_run: bool,
-    merged: &[(&EditRequest, Format, String)],
-) -> Vec<(&'a EditRequest, Format, String)> {
+    applied: &[Owned<'_>],
+) -> Vec<Owned<'a>> {
     let mut found = vec![];
     for sibling in siblings {
-        let EditOp::Merge { format, .. } = &sibling.op else {
-            continue;
+        let format = match &sibling.op {
+            EditOp::Merge { format, .. } => Some(*format),
+            EditOp::Block { .. } => None,
+            EditOp::Line { .. } => continue,
         };
         if requests
             .iter()
             .any(|req| req.path == sibling.path && req.id == sibling.id)
-            || !merged
+            || !applied
                 .iter()
                 .any(|(req, ..)| same_target(&req.path, &sibling.path))
             || (dry_run && sibling.op.is_template())
@@ -853,7 +895,7 @@ fn unapplied_siblings<'a>(
         }
         // a sibling that cannot be rendered is reported when it is applied
         if let Ok(Some(content)) = desired_content(config, sibling) {
-            found.push((sibling, *format, content));
+            found.push((sibling, format, content));
         }
     }
     found
@@ -882,18 +924,18 @@ pub fn apply(
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
-    // other merge entries in the config, so applying one entry through a target
+    // other entries in the config, so applying one entry through a target
     // filter still sees a sibling that sets the same key differently
     let siblings = if requests
         .iter()
-        .any(|req| matches!(req.op, EditOp::Merge { .. }))
+        .any(|req| matches!(req.op, EditOp::Merge { .. } | EditOp::Block { .. }))
     {
         edits_from_config(config).unwrap_or_default()
     } else {
         vec![]
     };
     // every merge source rendered this run, for the cross-entry conflict check
-    let mut merged: Vec<(&EditRequest, Format, String)> = vec![];
+    let mut merged: Vec<Owned<'_>> = vec![];
     for req in requests {
         if let Some(p) = req.op.source_file()
             && !p.exists()
@@ -949,8 +991,14 @@ pub fn apply(
                 continue;
             }
         };
-        if let (EditOp::Merge { format, .. }, Some(content)) = (&req.op, &desired) {
-            merged.push((req, *format, content.clone()));
+        if let Some(content) = &desired {
+            match &req.op {
+                EditOp::Merge { format, .. } => {
+                    merged.push((req, Some(*format), content.clone()));
+                }
+                EditOp::Block { .. } => merged.push((req, None, content.clone())),
+                EditOp::Line { .. } => {}
+            }
         }
         match pre {
             // markers exist: compare content to see if anything would change

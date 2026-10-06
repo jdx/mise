@@ -223,3 +223,26 @@ EOF
 rm -f ~/sibling-exec-ran
 assert_succeed "mise dotfiles apply ~/real-target.toml/a --yes"
 assert_fail "test -e ~/sibling-exec-ran"
+
+# a block and a merge that set one key differently are refused too
+cat <<'EOF' >shared/model-b.toml
+model = "b"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/mixed.toml/block" = { block = 'model = "a"' }
+"~/mixed.toml/merge" = { source = "shared/model-b.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "block:block and merge:merge set different values for model"
+assert_fail "cat ~/mixed.toml"
+assert_fail_contains "mise dotfiles apply ~/mixed.toml/merge --yes" "set different values for model"
+
+# whole-file keys on a merge entry are refused by name and never make the
+# target a directory
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/withx.json/shared" = { source = "shared/claude.json", merge = true, exclude = [] }
+EOF
+assert_contains "mise dotfiles status 2>&1" "exclude applies to whole-file entries, not merge edits"
+mise dotfiles apply --yes >/dev/null 2>&1
+assert_fail "test -e ~/withx.json"

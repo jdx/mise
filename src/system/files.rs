@@ -1356,6 +1356,9 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
     match &value {
         toml::Value::String(_) => {}
+        // a merge is an edit of a structured file, whatever else the table says;
+        // the edit parser accepts it or says why not
+        toml::Value::Table(table) if table.contains_key("merge") => return None,
         toml::Value::Table(table)
             if table.is_empty()
                 || table.contains_key("mode")
@@ -1377,8 +1380,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
-                    && !table.contains_key("comment")
-                    && !table.contains_key("merge")) => {}
+                    && !table.contains_key("comment")) => {}
         toml::Value::Table(_) => return None,
         _ => {
             warn!("[dotfiles].\"{target_raw}\": expected string or table entry, ignoring entry");
