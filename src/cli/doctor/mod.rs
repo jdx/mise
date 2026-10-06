@@ -123,20 +123,6 @@ fn sync_failure_duration(
     )
 }
 
-/// Notifications only announce sync conflicts that pause sharing; a watcher
-/// that cannot save is reported by doctor and `mise dot status` instead.
-fn notifications_summary() -> String {
-    if !crate::config::Settings::get().history.notify {
-        return "disabled (history.notify = false)".to_string();
-    }
-    match crate::system::history::notify::unavailable_reason() {
-        Some(reason) => format!(
-            "unavailable ({reason}); sync conflicts are only shown by `mise dot status` and `mise doctor`"
-        ),
-        None => "available for sync conflicts; confirm delivery with `mise dot notify`".to_string(),
-    }
-}
-
 enum SystemLoginShellDiagnosis {
     Unavailable {
         reason: String,
@@ -784,7 +770,7 @@ impl Doctor {
             sync_error: None,
             sync_failing_for_secs: None,
             sync_failures: 0,
-            notifications: notifications_summary(),
+            notifications: crate::system::history::notify::summary(),
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(

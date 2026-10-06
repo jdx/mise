@@ -69,6 +69,22 @@ pub fn unavailable_reason() -> Option<String> {
     }
 }
 
+/// One line on whether sync-conflict notifications can reach the user, for
+/// `mise doctor` and `mise dot status`. Notifications only announce sync
+/// conflicts that pause sharing; a watcher that cannot save is reported by
+/// those commands instead.
+pub fn summary() -> String {
+    if !crate::config::Settings::get().history.notify {
+        return "disabled (history.notify = false)".to_string();
+    }
+    match unavailable_reason() {
+        Some(reason) => format!(
+            "unavailable ({reason}); sync conflicts are only shown by `mise dot status` and `mise doctor`"
+        ),
+        None => "available for sync conflicts; confirm delivery with `mise dot notify`".to_string(),
+    }
+}
+
 /// Sends a notification and waits for the notifier, so that a refusal can be
 /// reported. On macOS the first call asks for permission, which can take up
 /// to the helper's 30 second prompt timeout.
