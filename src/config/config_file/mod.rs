@@ -142,6 +142,11 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn templated_tool_backends(&self) -> Vec<String> {
         vec![]
     }
+    /// A hash of the text this config was parsed from, for a config that keeps one,
+    /// to tell that its file changed after it was loaded.
+    fn loaded_hash(&self) -> Option<String> {
+        None
+    }
     /// Every tool this config sets, templated or not.
     fn tool_backends(&self) -> Vec<String> {
         self.to_tool_request_set()

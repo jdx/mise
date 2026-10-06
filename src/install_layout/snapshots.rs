@@ -87,10 +87,16 @@ fn path_for(catalog: &Catalog, config: &Path) -> std::path::PathBuf {
         .join(format!("{}.toml", hash::hash_to_str(&canonical(config))))
 }
 
+/// Hash of file contents, the same way for the bytes of a file on disk and for the
+/// text a config was parsed from.
+pub(crate) fn bytes_hash_of(bytes: &[u8]) -> String {
+    hash::hash_to_str(&bytes)
+}
+
 /// Hash of a file's bytes, or an empty string when it cannot be read.
 fn bytes_hash(path: &Path) -> String {
     std::fs::read(path)
-        .map(|bytes| hash::hash_to_str(&bytes))
+        .map(|bytes| bytes_hash_of(&bytes))
         .unwrap_or_default()
 }
 
@@ -144,9 +150,22 @@ pub(crate) fn begin(config: &Config) -> Option<Begun> {
     {
         return None;
     }
-    Some(Begun {
-        files: hash_files(config),
-    })
+    let files = hash_files(config);
+    // A config that kept the hash of what it parsed tells us its file changed
+    // between being loaded and now, which the hashes taken here would hide: the
+    // requests that follow come from the text it was loaded with.
+    let changed = config.config_files.iter().any(|(path, cf)| {
+        cf.loaded_hash().is_some_and(|loaded| {
+            files
+                .iter()
+                .any(|(file, hash)| Path::new(file) == path.as_path() && *hash != loaded)
+        })
+    });
+    if changed {
+        debug!("a config file changed after it was loaded; not recording a snapshot");
+        return None;
+    }
+    Some(Begun { files })
 }
 
 /// Snapshot, for the context `config` was loaded in, every loaded config that has

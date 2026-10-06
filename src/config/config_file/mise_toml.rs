@@ -392,6 +392,10 @@ pub struct MiseToml {
     context: TeraContext,
     #[serde(skip)]
     path: PathBuf,
+    /// Hash of the text this config was parsed from, so a command can tell that the
+    /// file changed after it was loaded.
+    #[serde(skip)]
+    loaded_hash: String,
     #[serde(default, deserialize_with = "deserialize_arr")]
     include: Vec<String>,
     /// The cache files of the remote `include` fragments merged into this
@@ -752,6 +756,7 @@ impl MiseToml {
             );
             rf.monorepo_root.get_or_insert(legacy_monorepo_root);
         }
+        rf.loaded_hash = crate::install_layout::snapshots::bytes_hash_of(body.as_bytes());
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
             "config_root",
@@ -1796,6 +1801,10 @@ impl ConfigFile for MiseToml {
         ToolSource::MiseToml(self.path.clone())
     }
 
+    fn loaded_hash(&self) -> Option<String> {
+        (!self.loaded_hash.is_empty()).then(|| self.loaded_hash.clone())
+    }
+
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
         self.build_tool_request_set(false)
     }
@@ -2211,6 +2220,7 @@ impl Clone for MiseToml {
             min_version: self.min_version.clone(),
             context: self.context.clone(),
             path: self.path.clone(),
+            loaded_hash: self.loaded_hash.clone(),
             include: self.include.clone(),
             included_paths: self.included_paths.clone(),
             env_file: self.env_file.clone(),
