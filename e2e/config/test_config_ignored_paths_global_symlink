@@ -13,13 +13,20 @@ cat <<TOML >"$HOME/dotfiles/mise/dot-config/mise/config.toml"
 [env]
 FROM_GLOBAL = "1"
 TOML
+mkdir -p "$HOME/dotfiles/mise/dot-config/mise/conf.d/git"
+cat <<TOML >"$HOME/dotfiles/mise/dot-config/mise/conf.d/git/mise.toml"
+[env]
+FROM_FRAGMENT = "1"
+TOML
 echo 'ignored_config_paths = ["mise"]' >"$HOME/dotfiles/.miserc.toml"
 
 cd "$HOME"
 assert_contains "mise env" "FROM_GLOBAL"
+assert_contains "mise env" "FROM_FRAGMENT"
 
 cd "$HOME/dotfiles"
 assert_contains "mise env" "FROM_GLOBAL"
+assert_contains "mise env" "FROM_FRAGMENT"
 assert_contains "mise config ls" "config.toml"
 assert_not_contains "mise config ls" "dotfiles/mise/dot-config"
 

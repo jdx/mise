@@ -2428,7 +2428,7 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
             // The `ignored_config_paths` setting is a hard block; the persisted
             // ignore list is overridden by `trusted_config_paths`, matching
             // is_trusted so a settings-trusted config is not reported as ignored.
-            if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(p) {
+            if config_file::is_config_ignored_via_setting(p) {
                 return true;
             }
             (config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(p))
@@ -3237,9 +3237,7 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     }
     let ctr = config_trust_root(path);
     // The `ignored_config_paths` setting is a hard filter.
-    if config_file::is_config_ignored_via_setting(&ctr)
-        || config_file::is_config_ignored_via_setting(path)
-    {
+    if config_file::is_config_ignored_via_setting(path) {
         return true;
     }
     // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is
