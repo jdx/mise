@@ -76,16 +76,16 @@ dotfiles = "$MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml"
 EOF
 mise use --global dummy@3
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/10-tools.toml" 'dummy = "3"'
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml 2>/dev/null" 'dummy'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/40-new-tools.toml || cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml" 'dummy'
 
 mise bootstrap packages use --global --no-install pacman:home-package@2
 assert_contains "cat $MISE_CONFIG_DIR/conf.d/20-packages.toml" '"pacman:home-package" = "2"'
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml 2>/dev/null" 'home-package'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/50-new-packages.toml || cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml" 'home-package'
 
 printf 'changed default source\n' >"$HOME/.existing-write-target"
 mise dot add --global --no-apply --yes "$HOME/.existing-write-target"
 assert "cat $HOME/.dotfiles/existing-write-target" "changed default source"
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml 2>/dev/null" 'existing-write-target'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml || cat $MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml" 'existing-write-target'
 
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 # Existing entries still resolve to their defining fragments without write targets.
@@ -111,11 +111,11 @@ dotfiles = "$MISE_CONFIG_DIR/conf.d/60-new-dotfiles.toml"
 EOF
 mise use --env staging dummy@3
 assert_contains "cat mise.staging.toml" 'dummy = "3"'
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml 2>/dev/null" 'dummy = "3"'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/40-new-tools.toml || cat $MISE_CONFIG_DIR/conf.d/40-new-tools.toml" 'dummy = "3"'
 
 mise bootstrap packages use --env staging --no-install pacman:fd
 assert_contains "cat mise.staging.toml" '"pacman:fd" = "latest"'
-assert_not_contains "cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml 2>/dev/null" 'pacman:fd'
+assert_not_contains "test ! -e $MISE_CONFIG_DIR/conf.d/50-new-packages.toml || cat $MISE_CONFIG_DIR/conf.d/50-new-packages.toml" 'pacman:fd'
 
 # Multiple existing fragments are intentionally not guessed; an explicit path is required.
 cat >"$MISE_CONFIG_DIR/conf.d/10-tools.toml" <<'EOF'
