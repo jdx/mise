@@ -473,15 +473,8 @@ impl Exec {
                 .collect_vec();
             let granted = secrets.as_ref().map(|s| s.scrub_keys()).unwrap_or_default();
             for (i, (k, v)) in reapplied.into_iter().enumerate() {
-                // A copy that holds a granted value gets the name a nested mise treats as a
-                // secret; plain values keep the ordinary name and are not redacted.
-                let tmp = if granted.iter().any(|g| mise_util::env::env_key_eq(g, &k)) {
-                    scrub_on_failure.push(format!("__MISE_FISH_SECRET_{i}"));
-                    format!("{}{i}", mise_util::env::FISH_SECRET_PREFIX)
-                } else {
-                    format!("__MISE_FISH_ENV_{i}")
-                };
-                if secrets.is_some() {
+                let tmp = fish_copy_name(i, &k, &granted, &env::INHERITED_SECRET_KEYS);
+                if tmp.starts_with(mise_util::env::FISH_SECRET_PREFIX) {
                     scrub_on_failure.push(tmp.clone());
                 }
                 cmd.push(format!(
@@ -526,6 +519,26 @@ impl Exec {
             &scrub_on_failure,
         )
         .await
+    }
+}
+
+/// The temporary variable that carries `key`'s value to fish. A key that is granted now, or was
+/// already marked secret by a parent mise (a sandbox may restore it from the live environment),
+/// gets the name a nested mise treats as a secret; plain values get the ordinary name.
+fn fish_copy_name(
+    i: usize,
+    key: &str,
+    granted: &[String],
+    inherited: &std::collections::BTreeSet<String>,
+) -> String {
+    let secret = granted
+        .iter()
+        .chain(inherited.iter())
+        .any(|g| mise_util::env::env_key_eq(g, key));
+    if secret {
+        format!("{}{i}", mise_util::env::FISH_SECRET_PREFIX)
+    } else {
+        format!("__MISE_FISH_ENV_{i}")
     }
 }
 
@@ -1151,6 +1164,25 @@ fn parse_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fish_copies_of_granted_or_inherited_secrets_get_the_secret_name() {
+        let granted = vec!["DEPLOY_KEY".to_string()];
+        let inherited = std::collections::BTreeSet::from(["OLD_KEY".to_string()]);
+        assert_eq!(
+            fish_copy_name(0, "DEPLOY_KEY", &granted, &inherited),
+            "__MISE_FISH_SECRET_0"
+        );
+        // restored by --allow-env from the live env, granted by a parent
+        assert_eq!(
+            fish_copy_name(1, "OLD_KEY", &[], &inherited),
+            "__MISE_FISH_SECRET_1"
+        );
+        assert_eq!(
+            fish_copy_name(2, "FLAG", &granted, &inherited),
+            "__MISE_FISH_ENV_2"
+        );
+    }
 
     #[test]
     fn scrub_removes_the_listed_vars_from_the_process_env() {
