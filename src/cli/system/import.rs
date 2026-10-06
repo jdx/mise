@@ -116,6 +116,7 @@ impl SystemImport {
             cwd: None,
             prefer_toml: true,
             prevent_home_local: true,
+            ..Default::default()
         })?;
 
         let configured_taps = configured_brew_taps(&path).await?;

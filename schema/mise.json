@@ -2497,6 +2497,24 @@
           "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
         },
+        "write_targets": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "dotfiles": {
+              "description": "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "packages": {
+              "description": "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            },
+            "tools": {
+              "description": "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them.",
+              "type": "string"
+            }
+          }
+        },
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"

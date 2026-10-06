@@ -4166,6 +4166,24 @@ docs = """
 env = "MISE_WINDOWS_SHIM_MODE"
 type = "String"
 
+[write_targets.dotfiles]
+description = "Global config file to create new [dotfiles] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.packages]
+description = "Global config file to create new [bootstrap.packages] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
+[write_targets.tools]
+description = "Global config file to create new [tools] entries in. Existing entries stay in the config file that already declares them."
+global_only = true
+optional = true
+type = "Path"
+
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
