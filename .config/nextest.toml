@@ -33,6 +33,14 @@ slow-timeout = { period = "5s", terminate-after = 6 }
 filter = 'test(aqua::aqua_registry_wrapper::tests::parses_bundled_registry_from_local_source)'
 slow-timeout = { period = "1s", terminate-after = 4 }
 
+# This protocol regression test streams a sparse body just over 64 MiB through
+# a local registry. Keep the normal suite ceiling for every other OCI test,
+# but leave a bounded budget for slower macOS runners to drain that deliberate
+# full-size request.
+[[profile.ci.overrides]]
+filter = 'test(oci::registry::tests::large_blob_uses_one_content_range_free_patch)'
+slow-timeout = { period = "1s", terminate-after = 5 }
+
 # These tests compose trees, repositories and package state by shelling out,
 # so their cost is a few hundred git (or apt) subprocesses rather than anything
 # this process computes, and it tracks the host's fork/exec speed. The spread is
