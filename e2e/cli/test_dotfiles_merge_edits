@@ -262,3 +262,15 @@ cat <<'EOF' >mise.toml
 "~/fmt.yml/b" = { source = "shared/model.yml", merge = true }
 EOF
 assert_fail_contains "mise dotfiles apply --dry-run" "as different formats"
+
+# a sibling whose target is a symlink cannot write anything, so it does not
+# count as a format conflict for an entry applied through a filter
+printf '{}\n' >~/sym.json
+ln -sf ~/sym.json ~/sym-alias.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/sym.json/a" = { source = "shared/model.json", merge = true }
+"~/sym-alias.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply ~/sym.json/a --yes"
+assert_contains "cat ~/sym.json" '"model": "a"'

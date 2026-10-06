@@ -904,6 +904,8 @@ fn format_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<S
             !requests
                 .iter()
                 .any(|req| req.path == sibling.path && req.id == sibling.id)
+                // a blocked target (a symlink) can't be written by this entry
+                && matches!(precheck(sibling), Ok(None | Some(EditCheck::State(_))))
         })
         .collect();
     let mut problems = vec![];
