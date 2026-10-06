@@ -2703,7 +2703,8 @@ fn other_env_config_setting_template_inputs(
         });
         // A direct conf.d fragment without a reserved environment component, such
         // as `tools.local.toml`, loads in every environment.
-        let unconditional_fragment = is_conf_d_file(&path) && !is_environment_conf_d_file(&path);
+        let unconditional_fragment =
+            is_conf_d_file(&path) && (!env::env_conf_d() || !is_environment_conf_d_file(&path));
         if path == tracked
             || is_local
             || unconditional_fragment

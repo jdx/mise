@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# A global `config.<env>.local.toml` is an environment overlay too.
+mkdir -p project elsewhere
+echo '[vars]
+v = "9.9.9"' >"$MISE_CONFIG_DIR/config.toml"
+echo '[vars]
+v = "1.0.0"' >"$MISE_CONFIG_DIR/config.dev.local.toml"
+echo '[tools]
+dummy = "{{vars.v}}"' >project/mise.toml
+assert "MISE_ENV=dev mise -C project install"
+assert "mise install dummy@3.0.0"
+
+assert_fail "mise -C elsewhere prune --yes" "config.dev.local.toml"
+assert_contains "mise ls dummy" "1.0.0"
+assert_contains "mise ls dummy" "3.0.0"
