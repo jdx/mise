@@ -54,6 +54,7 @@ type Shared = Arc<Mutex<Writer>>;
 /// What a bootstrap that records no file history needs to open its journal.
 /// Its journal protects only the files the run is about to rewrite, so the
 /// operation lock, marker, and state directory wait for the first of them.
+#[derive(Clone)]
 struct LazyStart {
     kind: OperationKind,
     command: String,
@@ -67,6 +68,8 @@ enum Current {
 }
 
 static CURRENT: Mutex<Option<Current>> = Mutex::new(None);
+/// Serializes opening a lazy journal, so `CURRENT` is never held across it.
+static STARTING: Mutex<()> = Mutex::new(());
 static INITIALIZING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -105,16 +108,32 @@ pub fn is_active() -> bool {
 /// without a journal, as bootstrap already does when it cannot save a
 /// recovery copy.
 pub(crate) fn ensure_started() -> Result<bool> {
-    let mut current = lock_unpoisoned(&CURRENT);
-    let lazy = match &mut *current {
+    // the open does filesystem work: keep it from stalling an async worker
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(|| open_lazy(std::time::Duration::ZERO))
+        }
+        _ => open_lazy(std::time::Duration::ZERO),
+    }
+}
+
+/// Opens the journal of a lazy scope that has none yet. `CURRENT` is only
+/// held to read and to publish the result, never while the journal opens or
+/// waits for the lock.
+fn open_lazy(wait: std::time::Duration) -> Result<bool> {
+    let _serial = lock_unpoisoned(&STARTING);
+    let start = match &*lock_unpoisoned(&CURRENT) {
         Some(Current::Started(_)) => return Ok(true),
-        Some(Current::Lazy(lazy)) => lazy,
-        None => return Ok(false),
+        Some(Current::Lazy(Some(start))) => (**start).clone(),
+        _ => return Ok(false),
     };
-    let Some(start) = lazy.as_ref() else {
+    let shared = start_lazy(&start, wait)?;
+    let mut current = lock_unpoisoned(&CURRENT);
+    // the scope may have ended while the journal opened
+    let Some(Current::Lazy(lazy @ Some(_))) = &mut *current else {
         return Ok(false);
     };
-    match start_lazy(start, std::time::Duration::ZERO)? {
+    match shared {
         Some(shared) => {
             *current = Some(Current::Started(shared));
             Ok(true)
@@ -310,17 +329,8 @@ impl OperationScope {
                 return;
             }
         }
-        let started = tokio::task::spawn_blocking(|| {
-            let mut current = lock_unpoisoned(&CURRENT);
-            let Some(Current::Lazy(Some(start))) = &*current else {
-                return Ok(());
-            };
-            if let Some(shared) = start_lazy(start, OPERATION_LOCK_WAIT)? {
-                *current = Some(Current::Started(shared));
-            }
-            Ok::<_, eyre::Report>(())
-        })
-        .await;
+        let started =
+            tokio::task::spawn_blocking(|| open_lazy(OPERATION_LOCK_WAIT).map(|_| ())).await;
         match started {
             Ok(Ok(())) => {}
             Ok(Err(err)) => warn!("history: this run's outcome is not recorded: {err:#}"),
