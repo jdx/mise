@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+mise settings set idiomatic_version_file_enable_tools ruby
+mise settings add idiomatic_version_file_disable_files ruby:.ruby-version
+
+# Direct hook-env calls need a session key to enable encrypted environment caching.
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# Link local fixtures so activation can demonstrate the Ruby PATH change without
+# downloading or building Ruby.
+for version in 3.3.6 3.4.7; do
+  mkdir -p "$HOME/ruby-$version/bin"
+  printf '#!/usr/bin/env bash\necho "%s"\n' "$version" >"$HOME/ruby-$version/bin/ruby"
+  chmod +x "$HOME/ruby-$version/bin/ruby"
+  mise link "ruby@$version" "$HOME/ruby-$version"
+done
+
+check_gemfile_watch() (
+  local reference=$1
+  export MISE_ENV_CACHE=$2
+  unset __MISE_SESSION __MISE_DIFF
+  mkdir -p "case-$2-${reference//\//-}"
+  cd "case-$2-${reference//\//-}"
+  export MISE_STATE_DIR="$PWD/state"
+  mkdir -p versions
+  printf 'ruby file: "%s"\n' "$reference" >Gemfile
+  if [[ $reference == .tool-versions ]]; then
+    printf 'ruby 3.3.6\n' >"$reference"
+  else
+    printf '3.3.6\n' >"$reference"
+  fi
+
+  eval "$(mise hook-env -s bash)"
+  assert "ruby" "3.3.6"
+  if [[ $MISE_ENV_CACHE == 1 ]]; then
+    assert_not_empty "find \"$MISE_STATE_DIR/env-cache\" -type f"
+  fi
+
+  sleep 1
+  if [[ $reference == .tool-versions ]]; then
+    printf 'ruby 3.4.7\n' >"$reference"
+  else
+    printf '3.4.7\n' >"$reference"
+  fi
+  mise hook-env -s bash >hook-env.out 2>hook-env.err
+  assert_not_contains "cat hook-env.err" "watch_file hook has neither run nor task set"
+  assert_contains "cat hook-env.out" "__MISE_SESSION"
+  eval "$(cat hook-env.out)"
+  assert "ruby" "3.4.7"
+)
+
+# The disabled .ruby-version and custom nested file rely on the Gemfile's watch,
+# rather than independently discovered version files. Exercise env caching too.
+for cache in 0 1; do
+  for reference in .ruby-version .tool-versions versions/ruby; do
+    check_gemfile_watch "$reference" "$cache"
+  done
+done
+
+# Explicit user hooks must still run and warn when their command is missing,
+# even when they watch the same file as the internal Gemfile watch.
+printf '3.3.6\n' >.ruby-version
+printf 'ruby file: ".ruby-version"\n' >Gemfile
+cat >mise.toml <<'EOF'
+[[watch_files]]
+patterns = [".ruby-version"]
+run = "echo USER_WATCH_RAN"
+
+[[watch_files]]
+patterns = [".ruby-version"]
+EOF
+eval "$(mise hook-env -s bash)"
+sleep 1
+printf '3.4.7\n' >.ruby-version
+mise hook-env -s bash >hook-env.out 2>hook-env.err
+assert_contains "cat hook-env.err" "USER_WATCH_RAN"
+assert_contains "cat hook-env.err" "watch_file hook has neither run nor task set, skipping"
+assert "grep -c 'watch_file hook has neither run nor task set' hook-env.err" "1"
+eval "$(cat hook-env.out)"
+assert "ruby" "3.4.7"

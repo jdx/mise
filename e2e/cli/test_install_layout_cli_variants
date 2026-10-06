@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# A version named on the command line carries no install options, so under the
+# identity install layout it can mean an installation a configuration made with
+# options. `mise where` uses one such installation when it is the only one, and
+# lists them instead of guessing when there are several.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+work="$PWD"
+
+mkdir env opt
+cat >env/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "2.0.0", install_env = { DUMMY_VARIANT = "musl" } }
+EOF2
+cat >opt/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "2.0.0", flavor = "full" }
+EOF2
+
+echo "=== the only installation of the version is found ==="
+assert "mise -C $work/env install"
+env_dir="$(mise -C "$work/env" where dummy)"
+assert "mise where dummy@2.0.0" "$env_dir"
+
+echo "=== several are listed, not guessed between ==="
+assert "mise -C $work/opt install"
+opt_dir="$(mise -C "$work/opt" where dummy)"
+assert_fail "mise where dummy@2.0.0" "installed with several sets of options"
+assert_fail "mise where dummy@2.0.0" "$(basename "$opt_dir")"
+assert_fail "mise where dummy@2.0.0" "$(basename "$env_dir")"
+
+echo "=== naming the options finds the variant ==="
+assert "mise where 'dummy[flavor=full]@2.0.0'" "$opt_dir"
+assert "mise -C $work/opt where dummy@2.0.0" "$opt_dir"
+
+echo "=== a lone variant stands for the bare version in every command ==="
+mkdir solo
+cat >solo/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "1.0.0", flavor = "full" }
+EOF2
+assert "mise -C $work/solo install"
+solo_dir="$(mise -C "$work/solo" where dummy)"
+assert "mise where dummy@1.0.0" "$solo_dir"
+assert "mise bin-paths dummy@1.0.0 | xargs realpath" "$(realpath "$solo_dir/bin")"
+assert "mise which dummy --tool dummy@1.0.0 | xargs realpath" "$(realpath "$solo_dir/bin/dummy")"
+assert_contains "mise x dummy@1.0.0 -- dummy" "This is Dummy 1.0.0!"
+assert_contains "mise install dummy@1.0.0 2>&1" "already installed"
+assert "test \"\$(mise installs ls dummy --json | jq '[.[] | select(.version == \"1.0.0\")] | length')\" -eq 1"
+# a forced install of the bare version makes its own installation, which it then uses
+assert "mise install --force dummy@1.0.0"
+assert "test \"\$(mise installs ls dummy --json | jq '[.[] | select(.version == \"1.0.0\")] | length')\" -eq 2"
+plain_dir="$(mise where dummy@1.0.0)"
+[[ $plain_dir != "$solo_dir" ]] || fail "the bare version still resolves to the variant"
+assert "mise -C $work/solo where dummy" "$solo_dir"
+
+echo "=== a lone variant that has to be installed again is not installed over for the bare version ==="
+mkdir solo2
+cat >solo2/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.1.0", flavor = "full" }
+EOF2
+assert "mise -C $work/solo2 install"
+solo2_dir="$(mise -C "$work/solo2" where tiny)"
+assert "mise where tiny@3.1.0" "$solo2_dir"
+# as if a refresh of the variant had been interrupted
+mkdir -p "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")"
+touch "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")/incomplete"
+assert "mise install tiny@3.1.0"
+bare_dir="$(mise where tiny@3.1.0)"
+[[ $bare_dir != "$solo2_dir" ]] || fail "the bare version was installed into the variant"
+# the variant is still the project's, once its own refresh is done
+rm "$MISE_CACHE_DIR/tiny/$(basename "$solo2_dir")/incomplete"
+assert "mise -C $work/solo2 where tiny" "$solo2_dir"
+assert "mise installs ls tiny --json | jq -r '.[] | select(.selected and .version == \"3.1.0\") | .dir' | sort | tr '\n' ' '" "$(printf '%s\n' "$bare_dir" "$solo2_dir" | sort | tr '\n' ' ')"
+
+echo "=== a postinstall hook that always runs never runs in a variant standing in ==="
+mkdir variant hooked
+cat >variant/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.0.0", flavor = "full" }
+EOF2
+assert "mise -C $work/variant install"
+variant_dir="$(mise -C "$work/variant" where tiny)"
+cat >hooked/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "3.0.0", postinstall = { run = "touch \"$MISE_TOOL_INSTALL_PATH/hooked\"", when = "always" } }
+EOF2
+assert "mise -C $work/hooked install tiny@3.0.0"
+assert "test ! -e '$variant_dir/hooked'"
+assert "test -e \"\$(mise -C '$work/hooked' where tiny@3.0.0)/hooked\""
+
+echo "=== another tool aliasing the same backend never stands in ==="
+mkdir aliased
+cat >aliased/mise.toml <<EOF2
+[tool_alias]
+tinier = "$(mise tool tiny --backend)"
+
+[tools]
+tinier = { version = "2.1.0", flavor = "full" }
+EOF2
+assert "mise -C $work/aliased install"
+tinier_dir="$(mise -C "$work/aliased" where tinier)"
+[[ $tinier_dir == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$tinier_dir is not an identity installation"
+assert_fail "mise where tiny@2.1.0"
+
+echo "=== a version a configuration gives options never takes an installation with more ==="
+mkdir env2 more
+cat >env2/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.0", install_env = { TINY_BUILD = "1" } }
+EOF2
+cat >more/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.0", install_env = { TINY_BUILD = "1" }, flavor = "full" }
+EOF2
+assert "mise -C $work/more install"
+assert_fail "mise -C $work/env2 where tiny@1.0.0"
+# while the version named alone does find it
+assert "mise where tiny@1.0.0" "$(mise -C "$work/more" where tiny)"
+# options written on the command line are the version's own too
+assert_fail "mise where 'tiny[flavor=full]@1.0.0'"
+
+echo "=== a lone variant in a shared root whose catalog is gone still stands in ==="
+mkdir sharedvar
+cat >sharedvar/mise.toml <<'EOF2'
+[tools]
+tiny = { version = "1.0.1", flavor = "full" }
+EOF2
+assert "MISE_INSTALLS_DIR='$HOME/shared-variants' mise -C $work/sharedvar install"
+mv "$HOME/shared-variants/.mise" "$HOME/shared-variants/.mise.lost"
+assert_matches "MISE_SHARED_INSTALL_DIRS='$HOME/shared-variants' mise where tiny@1.0.1" "^$HOME/shared-variants/tiny-"
+# a second copy made with the same options is the same variant: its selection says which
+export MISE_SHARED_INSTALL_DIRS="$HOME/shared-variants"
+assert "mise -C $work/sharedvar install --force"
+own_copy="$(mise -C "$work/sharedvar" where tiny)"
+[[ $own_copy == "$MISE_DATA_DIR/installs/"tiny-* ]] || fail "$own_copy is not in the user's root"
+assert "mise where tiny@1.0.1" "$own_copy"
+# with the selected copy gone, the other copy is not taken in its place
+rm -rf "$own_copy"
+assert_fail "mise where tiny@1.0.1"
+unset MISE_SHARED_INSTALL_DIRS
+
+echo "=== a version named with options a configuration sets never stands in for another variant ==="
+mkdir minimal
+cat >minimal/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "1.1.0", flavor = "minimal" }
+EOF2
+assert "mise -C $work/minimal install"
+mkdir full
+cat >full/mise.toml <<'EOF2'
+[tools]
+dummy = { version = "1.1.0", flavor = "full" }
+EOF2
+assert_fail "mise -C $work/full where dummy@1.1.0"
+assert_fail "mise -C $work/full where dummy 1.1.0"

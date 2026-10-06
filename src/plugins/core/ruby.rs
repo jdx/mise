@@ -1315,11 +1315,19 @@ mod tests {
     fn ruby_build_args(
         configure_settings: impl FnOnce(&mut SettingsPartial),
     ) -> Result<Vec<String>> {
+        ruby_build_args_and_install_path(configure_settings).map(|(args, _)| args)
+    }
+
+    /// The ruby-build arguments for 3.3.0 and the directory it is to be installed into,
+    /// which depends on the install layout.
+    fn ruby_build_args_and_install_path(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> Result<(Vec<String>, PathBuf)> {
         with_ruby_settings(configure_settings, |backend| {
             let request =
                 ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
             let tv = ToolVersion::new(request, "3.3.0".to_string());
-            backend.install_args_ruby_build(&tv)
+            Ok((backend.install_args_ruby_build(&tv)?, tv.install_path()))
         })
     }
 
@@ -1685,7 +1693,7 @@ mod tests {
 
     #[test]
     fn test_ruby_build_cli_and_configure_option_order() {
-        let args = ruby_build_args(|settings| {
+        let (args, install_path) = ruby_build_args_and_install_path(|settings| {
             settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
             settings.ruby.ruby_build_cli_opts =
                 Some("--keep --definitions='/path with spaces'".to_string());
@@ -1703,7 +1711,7 @@ mod tests {
                 "3.3.0"
             ]
         );
-        assert!(Path::new(&args[4]).ends_with("installs/ruby/3.3.0"));
+        assert_eq!(Path::new(&args[4]), install_path);
         assert_eq!(
             args[5..],
             ["--", "--enable-yjit", "--with-openssl-dir=/opt with spaces"]

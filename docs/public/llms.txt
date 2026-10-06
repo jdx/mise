@@ -34,6 +34,7 @@
 - [Packslip Verification and Policy](https://mise.jdx.dev/dev-tools/packslip-verification.html): mise uses Packslip's signed metadata to discover releases, verify publishers, and select compatible builds. This guide describes the discovery and policy rules behind the Packslip backend.
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): mise deps runs project dependency installers when tracked inputs change or outputs go missing. It compares source hashes with the last successful run, then invokes the configured package manager.
+- [Install Layout (experimental)](https://mise.jdx.dev/dev-tools/install-layout.html): By default, mise installs a tool into installs/<tool>/<version>. That path cannot say which backend produced the files, which platform build they are, or which install options were used.
 - [Backend Architecture](https://mise.jdx.dev/dev-tools/backend_architecture.html): A backend resolves a tool's versions, installs it, and supplies its executable paths and environment. The registry maps short names such as node and ripgrep to backends.
 - [Core tools](https://mise.jdx.dev/core-tools.html): Core tools have installation logic built into mise. They do not require a separately installed plugin.
 - [Bun](https://mise.jdx.dev/lang/bun.html): mise can be used to install and manage multiple versions of bun on the same system.
@@ -202,6 +203,7 @@
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
 - [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
+- [mise bootstrap dotfiles notify](https://mise.jdx.dev/cli/bootstrap/dotfiles/notify.html): Send a test desktop notification
 - [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
 - [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
@@ -317,6 +319,7 @@
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
 - [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
+- [mise dotfiles notify](https://mise.jdx.dev/cli/dotfiles/notify.html): Send a test desktop notification
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies
@@ -348,6 +351,10 @@
 - [mise implode](https://mise.jdx.dev/cli/implode.html): Remove the mise CLI and all related data
 - [mise install](https://mise.jdx.dev/cli/install.html): Install a tool version
 - [mise install-into](https://mise.jdx.dev/cli/install-into.html): Install a tool version to a specific path
+- [mise installs](https://mise.jdx.dev/cli/installs.html): [experimental] Inspect and choose installations of the identity install layout
+- [mise installs ls](https://mise.jdx.dev/cli/installs/ls.html): List the installations of the identity install layout
+- [mise installs migrate](https://mise.jdx.dev/cli/installs/migrate.html): Reinstall legacy installations into the identity install layout
+- [mise installs select](https://mise.jdx.dev/cli/installs/select.html): Choose the installation that requests without a lockfile use
 - [mise latest](https://mise.jdx.dev/cli/latest.html): Resolve the latest matching version request for a tool
 - [mise link](https://mise.jdx.dev/cli/link.html): Symlink a tool version into mise
 - [mise lock](https://mise.jdx.dev/cli/lock.html): Create or refresh lockfile versions, checksums, and download URLs

@@ -1747,6 +1747,8 @@ impl Config {
         Ok(self
             .config_files
             .values()
+            // Idiomatic watches invalidate the environment; they are not executable hooks.
+            .filter(|cf| !matches!(cf.source(), ToolSource::IdiomaticVersionFile(_)))
             .map(|cf| Ok((cf.project_root(), cf.watch_files()?)))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -2431,7 +2433,7 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
             // The `ignored_config_paths` setting is a hard block; the persisted
             // ignore list is overridden by `trusted_config_paths`, matching
             // is_trusted so a settings-trusted config is not reported as ignored.
-            if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(p) {
+            if config_file::is_config_ignored_via_setting(p) {
                 return true;
             }
             (config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(p))
@@ -2721,8 +2723,8 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
     filenames
         .iter()
         .flat_map(|f| load_config_glob(dir, f))
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
+        .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
 
@@ -2776,8 +2778,8 @@ fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathB
         let files: IndexSet<PathBuf> = filenames
             .iter()
             .flat_map(|f| glob(&dir, f).unwrap_or_default())
-            .unique_by(|p| file::desymlink_path(p))
             .filter(|p| !config_path_is_ignored(p, false))
+            .unique_by(|p| file::desymlink_path(p))
             .collect();
         if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
@@ -2827,8 +2829,8 @@ fn load_config_paths_from_dirs(
 
     config_files
         .into_iter()
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, include_ignored))
+        .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
 
@@ -3128,8 +3130,8 @@ pub async fn load_config_hierarchy_from_dir(
 
     let paths = config_files
         .into_iter()
-        .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
+        .unique_by(|p| file::desymlink_path(p))
         .collect();
 
     Ok((paths, idiomatic_files))
@@ -3240,7 +3242,7 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     }
     let ctr = config_trust_root(path);
     // The `ignored_config_paths` setting is a hard filter.
-    if config_file::is_ignored_via_setting(&ctr) || config_file::is_ignored_via_setting(path) {
+    if config_file::is_config_ignored_via_setting(path) {
         return true;
     }
     // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is

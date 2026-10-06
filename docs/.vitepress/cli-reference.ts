@@ -29,6 +29,7 @@ const guides: Record<string, [string, string]> = {
   set: ["Environment variables", "/environments/"],
   unset: ["Environment variables", "/environments/"],
   exec: ["Running tools", "/dev-tools/"],
+  installs: ["Install layout", "/dev-tools/install-layout.html"],
   backends: ["Choosing backends", "/dev-tools/backends/"],
   config: ["Configuration", "/configuration.html"],
   edit: ["Configuration", "/configuration.html"],
@@ -145,7 +146,7 @@ const guides: Record<string, [string, string]> = {
 const categories = [
   [
     "Install and inspect tools",
-    "use install install-into uninstall unuse upgrade outdated lock latest ls ls-remote tool where which bin-paths registry search backends link sync prune reshim tool-stub packslip",
+    "use install install-into installs uninstall unuse upgrade outdated lock latest ls ls-remote tool where which bin-paths registry search backends link sync prune reshim tool-stub packslip",
   ],
   [
     "Shell and environment",

@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       # The job's own token, read-only, for mise's GitHub lookups: never the
       # PAT, which this job must not hold.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
         with:
           install_args: aube node
           github_token: ${{ github.token }}
@@ -206,7 +206,7 @@ jobs:
       # at once, can finish off what the hour's other CI already spent before
       # this job installs its tools. Pass the PAT through so mise draws on its
       # own budget instead.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
         with:
           install_args: aube node
           github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}

@@ -365,7 +365,7 @@ pub(crate) fn verify_bundle_slsa_subjects(
 ) -> Result<()> {
     let payload = match &bundle.content {
         sigstore_verify::types::SignatureContent::DsseEnvelope(envelope) => {
-            envelope.decode_payload()
+            envelope.payload.as_bytes()
         }
         _ => {
             return Err(AttestationError::UnsupportedFormat(
@@ -373,5 +373,5 @@ pub(crate) fn verify_bundle_slsa_subjects(
             ));
         }
     };
-    verify_intoto_payload_subjects(&payload, artifacts, min_level)
+    verify_intoto_payload_subjects(payload, artifacts, min_level)
 }

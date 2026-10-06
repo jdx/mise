@@ -9,4 +9,4 @@ full = "npm:serverless"
 allow_builds = ["serverless"]
 
 [[backends]]
-full = "asdf:mise-plugins/mise-serverless"
+full = "asdf:jdx/mise-serverless"

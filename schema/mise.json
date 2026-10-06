@@ -1351,6 +1351,11 @@
           "type": "string",
           "deprecated": true
         },
+        "install_layout": {
+          "description": "[experimental] Name installations by what they are (`identity`) instead of `installs/<tool>/<version>` (`legacy`).",
+          "type": "string",
+          "enum": ["legacy", "identity"]
+        },
         "java": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1414,6 +1419,11 @@
         },
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
+          "type": "boolean"
+        },
+        "lockfile_auto_prune": {
+          "default": true,
+          "description": "Remove lockfile tools that are absent from the active configuration.",
           "type": "boolean"
         },
         "lockfile_mode": {

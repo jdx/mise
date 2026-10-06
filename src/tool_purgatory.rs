@@ -212,17 +212,31 @@ pub async fn auto_prune() -> Result<()> {
     for (key, entry) in due {
         let install_path = &entry.install_path;
         let display = &entry.display;
-        let Some(installs_dir) = install_path
+        // An identity-layout installation is a direct child of the install store; the
+        // directory holding its version links is its tool's own directory, known only
+        // while the tool is still listed.
+        let layout_install = crate::install_layout::resolver::is_primary_install(install_path);
+        let installs_dir: Option<PathBuf> = if layout_install {
+            prunable_by_path
+                .get(install_path)
+                .map(|(_, tv)| tv.ba().installs_path().to_path_buf())
+        } else if let Some(installs_dir) = install_path
             .parent()
             .filter(|parent| parent.starts_with(*crate::dirs::INSTALLS))
             .filter(|parent| *parent != *crate::dirs::INSTALLS)
-        else {
+        {
+            Some(installs_dir.to_path_buf())
+        } else {
             warn!(
                 "ignoring tool purgatory entry outside the user installs directory: {}",
                 display_path(install_path)
             );
             entries_to_remove.push((key, entry));
             continue;
+        };
+        let remove_missing_links = |dir: &Option<PathBuf>| match dir {
+            Some(dir) => crate::runtime_symlinks::remove_missing_symlinks_in_dir(dir),
+            None => Ok(()),
         };
         if let Some((backend, tv)) = prunable_by_path.get(install_path) {
             let pr = mpr.add(&format!("uninstall {display}"));
@@ -233,7 +247,7 @@ pub async fn auto_prune() -> Result<()> {
                 Ok(()) => {
                     pr.finish();
                     install_state_changed = true;
-                    match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
+                    match remove_missing_links(&installs_dir) {
                         Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
                         Err(err) => {
                             warn!(
@@ -249,7 +263,13 @@ pub async fn auto_prune() -> Result<()> {
             // longer find its install directory. Retry that cleanup directly
             // from the receipt before allowing reconciliation to clear it.
             install_state_changed = true;
-            match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
+            // An identity-layout installation's tool directory is not known once
+            // its tool is no longer listed; its version links are found by the
+            // installation they name instead.
+            if layout_install && installs_dir.is_none() {
+                crate::install_layout::resolver::unlink_installation(install_path);
+            }
+            match remove_missing_links(&installs_dir) {
                 Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
                 Err(err) => {
                     warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
@@ -257,8 +277,9 @@ pub async fn auto_prune() -> Result<()> {
             }
         } else if installed_paths.contains(install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
-            // version. It may become prunable again after that reference goes
-            // away, without another upgrade to create a fresh receipt.
+            // version, or a process is still running from it. It may become
+            // prunable again after that reference goes away or the process
+            // exits, without another upgrade to create a fresh receipt.
             debug!("keeping deferred {display} because it is still in use");
             entries_to_recheck.push((key, entry));
         } else {

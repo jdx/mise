@@ -1,7 +1,7 @@
 backends = [
   "aqua:etcd-io/etcd",
   "asdf:particledecay/asdf-etcd",
-  "vfox:mise-plugins/vfox-etcd",
+  "vfox:jdx/vfox-etcd",
 ]
 bins = ["etcd", "etcdctl", "etcdutl"]
 description = "Distributed reliable key-value store for the most critical data of a distributed system"

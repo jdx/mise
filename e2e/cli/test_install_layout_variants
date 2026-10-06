@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Incompatible installs of one version coexist under the identity install
+# layout (jdx/mise#13678). Tool options that change what gets installed
+# (install_env, or any other option) are part of the installation identity, so
+# each variant gets its own hashed directory, `mise ls` tells them apart, prune
+# decides per variant what a tracked config needs, and uninstalling a version
+# that has several variants does not guess which one is meant.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+
+installs="$MISE_DATA_DIR/installs"
+work="$PWD"
+
+mkdir plain env opt
+cat >plain/mise.toml <<'EOF'
+[tools]
+dummy = "1.1.0"
+EOF
+cat >env/mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.1.0", install_env = { DUMMY_VARIANT = "musl" } }
+EOF
+cat >opt/mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.1.0", flavor = "full" }
+EOF
+
+echo "=== the same version with different options installs three times ==="
+assert "mise -C $work/plain install"
+assert "mise -C $work/env install"
+assert "mise -C $work/opt install"
+plain_dir="$(mise -C "$work/plain" where dummy)"
+env_dir="$(mise -C "$work/env" where dummy)"
+opt_dir="$(mise -C "$work/opt" where dummy)"
+plain_name="$(basename "$plain_dir")"
+env_name="$(basename "$env_dir")"
+opt_name="$(basename "$opt_dir")"
+for dir in "$plain_dir" "$env_dir" "$opt_dir"; do
+  [[ $dir =~ ^$installs/dummy-[a-z2-7]{8}$ ]] || fail "$dir is not a hashed installation directory"
+  [[ -f $dir/.mise-install.toml ]] || fail "$dir has no receipt"
+  [[ -x $dir/bin/dummy ]] || fail "$dir has no dummy binary"
+done
+[[ $plain_dir != "$env_dir" && $plain_dir != "$opt_dir" && $env_dir != "$opt_dir" ]] ||
+  fail "variants share a directory: $plain_dir $env_dir $opt_dir"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 3"
+
+echo "=== each variant is what its options asked for ==="
+# the dummy plugin records the environment its install ran with
+assert_not_contains "cat '$plain_dir/env'" "DUMMY_VARIANT="
+assert_contains "cat '$env_dir/env'" "DUMMY_VARIANT=musl"
+assert_not_contains "cat '$opt_dir/env'" "DUMMY_VARIANT="
+assert_contains "cat '$env_dir/.mise-install.toml'" "install_env"
+assert_not_contains "cat '$env_dir/.mise-install.toml'" "musl"
+assert_contains "cat '$opt_dir/.mise-install.toml'" 'flavor = "full"'
+assert_not_contains "cat '$plain_dir/.mise-install.toml'" "flavor"
+
+echo "=== every project resolves to its own variant ==="
+assert "mise -C $work/plain where dummy" "$plain_dir"
+assert "mise -C $work/env where dummy" "$env_dir"
+assert "mise -C $work/opt where dummy" "$opt_dir"
+for project in plain:"$plain_dir" env:"$env_dir" opt:"$opt_dir"; do
+  name="${project%%:*}"
+  dir="${project#*:}"
+  # whatever PATH entry the project gets (the version link, or the directory),
+  # it must lead to that project's own installation
+  assert "test \"\$(realpath \"\$(mise -C \"$work/$name\" which dummy)\")\" = \"\$(realpath '$dir/bin/dummy')\""
+  assert "test \"\$(realpath \"\$(mise -C \"$work/$name\" x -- which dummy)\")\" = \"\$(realpath '$dir/bin/dummy')\""
+done
+
+echo "=== the version link points at one variant: the most recent install ==="
+assert "readlink '$installs/dummy/1.1.0'" "../$opt_name"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 3"
+
+echo "=== mise ls tells the variants apart ==="
+assert "mise ls --json dummy | jq -r 'map(.install_path) | unique | length'" "3"
+assert "mise ls --json dummy | jq -r 'map(select(.installed)) | length'" "3"
+# three installs of the same version are listed apart, each naming its directory
+assert_contains "mise ls dummy" "1.1.0 [$plain_name]"
+assert_contains "mise ls dummy" "1.1.0 [$env_name]"
+assert_contains "mise ls dummy" "1.1.0 [$opt_name]"
+
+echo "=== reinstalling a variant reuses its directory ==="
+assert_contains "mise -C $work/plain install 2>&1" "already installed"
+assert_contains "mise -C $work/env install 2>&1" "already installed"
+assert "mise -C $work/plain where dummy" "$plain_dir"
+assert "mise -C $work/env where dummy" "$env_dir"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 3"
+
+echo "=== nothing is prunable while every variant is tracked ==="
+cd "$(mktemp -d)" || exit 1
+assert_succeed "mise prune --dry-run-code --tools"
+assert_empty "mise ls dummy --prunable --installed"
+
+echo "=== prune is per variant: only the one no config needs goes ==="
+# opt stops using its variant
+cat >"$work/opt/mise.toml" <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+dry_run="$(mise prune --dry-run --tools 2>&1)"
+assert_contains_text "$dry_run" "$opt_name"
+assert_not_contains_text "$dry_run" "$plain_name"
+assert_not_contains_text "$dry_run" "$env_name"
+prunable="$(mise ls dummy --prunable --installed)"
+assert_contains_text "$prunable" "1.1.0"
+assert "test -d '$opt_dir'"
+assert "MISE_YES=1 mise prune --tools"
+assert "test ! -e '$opt_dir'"
+assert "test -d '$plain_dir' && test -f '$plain_dir/.mise-install.toml'"
+assert "test -d '$env_dir' && test -f '$env_dir/.mise-install.toml'"
+# the version link left behind by that variant does not dangle
+assert "test ! -L '$installs/dummy/1.1.0' || test -e '$installs/dummy/1.1.0'"
+assert "mise -C $work/plain where dummy" "$plain_dir"
+assert "mise -C $work/env where dummy" "$env_dir"
+assert_contains "mise -C $work/plain x -- dummy" "This is Dummy 1.1.0!"
+assert_contains "mise -C $work/env x -- dummy" "This is Dummy 1.1.0!"
+assert_succeed "mise prune --dry-run-code --tools"
+
+echo "=== changing an option makes a new variant and releases the old one ==="
+cat >"$work/env/mise.toml" <<'EOF'
+[tools]
+dummy = { version = "1.1.0", install_env = { DUMMY_VARIANT = "glibc" } }
+EOF
+assert_contains "mise -C $work/env ls dummy" "(missing)"
+assert "mise -C $work/env install"
+glibc_dir="$(mise -C "$work/env" where dummy)"
+[[ $glibc_dir != "$env_dir" && $glibc_dir != "$plain_dir" ]] || fail "the changed option reused $glibc_dir"
+assert_matches "mise -C $work/env where dummy" "^$installs/dummy-[a-z2-7]{8}\$"
+assert_contains "cat '$glibc_dir/env'" "DUMMY_VARIANT=glibc"
+assert "test -d '$env_dir'"
+dry_run="$(mise prune --dry-run --tools 2>&1)"
+assert_contains_text "$dry_run" "$env_name"
+assert_not_contains_text "$dry_run" "$plain_name"
+assert_not_contains_text "$dry_run" "$(basename "$glibc_dir")"
+assert "MISE_YES=1 mise prune --tools"
+assert "test ! -e '$env_dir'"
+assert "test -d '$plain_dir'"
+assert "test -d '$glibc_dir'"
+assert "mise -C $work/plain where dummy" "$plain_dir"
+assert "mise -C $work/env where dummy" "$glibc_dir"
+
+echo "=== uninstall does not guess between variants of one version ==="
+# The version link names only the most recent install, so it cannot say which
+# variant is meant. Naming the version is ambiguous: nothing is removed, and the
+# error says which installations match.
+cd "$work" || exit 1
+glibc_name="$(basename "$glibc_dir")"
+assert "readlink '$installs/dummy/1.1.0'" "../$glibc_name"
+assert_fail_contains "mise uninstall dummy@1.1.0 2>&1" "2 installations match, installed with different options"
+assert_fail_contains "mise uninstall dummy@1.1.0 2>&1" "$plain_name"
+assert_fail_contains "mise uninstall dummy@1.1.0 2>&1" "$glibc_name"
+assert "test -f '$plain_dir/.mise-install.toml' && test -x '$plain_dir/bin/dummy'"
+assert "test -f '$glibc_dir/.mise-install.toml' && test -x '$glibc_dir/bin/dummy'"
+assert "readlink '$installs/dummy/1.1.0'" "../$glibc_name"
+assert "test \"\$(ls -d '$installs'/dummy-* | wc -l)\" -eq 2"
+
+echo "=== --all removes every variant of the version, and its links ==="
+assert "mise uninstall --all dummy@1.1.0"
+assert "test ! -e '$plain_dir'"
+assert "test ! -e '$glibc_dir'"
+assert_fail "ls -d '$installs'/dummy-*"
+assert "test ! -L '$installs/dummy/1.1.0' && test ! -e '$installs/dummy/1.1.0'"
+assert "test ! -L '$installs/dummy/1' && test ! -L '$installs/dummy/latest'"
+assert_empty "mise ls --installed dummy"
+# each variant keeps its assigned directory for when it is installed again
+assert "mise -C $work/plain install"
+assert "mise -C $work/plain where dummy" "$plain_dir"

@@ -73,11 +73,13 @@ impl SwiftPlugin {
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
         if cfg!(macos) {
-            let tmp = {
-                tempdir_in(tv.install_path().parent().unwrap())?
-                    .path()
-                    .to_path_buf()
-            };
+            // Beside the install directory so the move into place stays a rename. The
+            // directory is hidden (the install directory's parent can be the installs root
+            // itself) and removed, with whatever is left of the package, when this returns.
+            let tmp_dir = tempdir_in(tv.install_path().parent().unwrap())?;
+            // `pkgutil --expand-full` creates its destination, so it is a path that does
+            // not exist yet inside the temporary directory.
+            let tmp = tmp_dir.path().join("package");
             CmdLineRunner::new(pkgutil_path())
                 .arg("--expand-full")
                 .arg(tarball_path)

@@ -1,7 +1,4 @@
-backends = [
-  "vfox:mise-plugins/vfox-carthage",
-  "asdf:mise-plugins/mise-carthage",
-]
+backends = ["vfox:jdx/vfox-carthage", "asdf:mise-plugins/mise-carthage"]
 description = "A simple, decentralized dependency manager for Cocoa"
 os = ["macos"]
 version_order = "source"
