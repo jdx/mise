@@ -702,6 +702,32 @@ impl Backend for AquaBackend {
         AquaOptions::new(&request_options).lockfile_options()
     }
 
+    /// Every option that is not `symlink_bins`, `libc` or an SLSA signer is an aqua var, and
+    /// the lockfile options already carry each var under its canonical `vars.<name>` key
+    /// whichever way it was spelled. Adding the raw keys on top would make `foo = "1"`,
+    /// `vars.foo = "1"` and `vars = { foo = "1" }` three different installs of one thing.
+    ///
+    /// `slsa_signer_identity` and `slsa_signer_issuer` name who is expected to have signed a
+    /// provenance file. An install verified against one signer is not what a request with
+    /// another signer requirement asked for, so they are part of the identity.
+    /// `symlink_bins` changes the install directory.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let request_options = tv.request.options();
+        let options = AquaOptions::new(&request_options);
+        let mut result = options.lockfile_options().unwrap_or_default();
+        for key in super::static_helpers::LISTING_ONLY_OPT_KEYS {
+            result.remove(&format!("vars.{key}"));
+        }
+        if options.symlink_bins() {
+            result.insert("symlink_bins".to_string(), "true".to_string());
+        }
+        if let Ok(Some((identity, issuer))) = options.slsa_signer() {
+            result.insert("slsa_signer_identity".to_string(), identity.to_string());
+            result.insert("slsa_signer_issuer".to_string(), issuer.to_string());
+        }
+        result
+    }
+
     fn fuzzy_match_filter(
         &self,
         versions: Vec<String>,
@@ -4804,6 +4830,62 @@ packages:
             }
         }
         opts
+    }
+
+    #[test]
+    fn test_identity_options_keep_signers_and_unify_var_spelling() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "osv-scanner".to_string(),
+            Some("aqua:google/osv-scanner".to_string()),
+        ));
+        let identity = |options: &str| {
+            let options: ToolVersionOptions = toml::from_str(options).unwrap();
+            let request = ToolRequest::new_with_options(
+                backend.ba().clone(),
+                "2.6.0",
+                options,
+                crate::toolset::ToolSource::Argument,
+            )
+            .unwrap();
+            backend.install_identity_options(&ToolVersion::new(request, "2.6.0".to_string()))
+        };
+        let base = identity("");
+        assert!(base.is_empty(), "{base:?}");
+
+        // A different signer requirement is a different request.
+        assert_ne!(
+            identity(
+                r#"
+slsa_signer_identity = "https://github.com/example/tool/.github/workflows/release.yml@refs/tags/v1.0.0"
+slsa_signer_issuer = "https://token.actions.githubusercontent.com"
+"#
+            ),
+            base
+        );
+
+        // One var, three spellings, one identity.
+        let flat = identity(r#"flavor = "full""#);
+        assert_eq!(flat.get("vars.flavor").map(String::as_str), Some("full"));
+        assert_eq!(identity(r#""vars.flavor" = "full""#), flat);
+        assert_eq!(
+            identity(
+                r#"
+[vars]
+flavor = "full"
+"#
+            ),
+            flat
+        );
+        assert_ne!(flat, base);
+        assert_ne!(identity(r#"flavor = "slim""#), flat);
+
+        // `prerelease` asks for prereleases when versions are listed, it is not a var.
+        assert_eq!(identity("prerelease = true"), base);
+
+        // These change the install directory or the selected asset.
+        assert_ne!(identity("symlink_bins = true"), base);
+        assert_ne!(identity(r#"libc = "musl""#), base);
+        assert_eq!(identity("symlink_bins = false"), base);
     }
 
     #[test]

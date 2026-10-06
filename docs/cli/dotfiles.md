@@ -26,6 +26,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise dotfiles exclude <GLOB>`](/cli/dotfiles/exclude.html)
 - [`mise dotfiles history [FLAGS] [SUBCOMMAND]`](/cli/dotfiles/history.html)
 - [`mise dotfiles include <GLOB>`](/cli/dotfiles/include.html)
+- [`mise dotfiles notify`](/cli/dotfiles/notify.html)
 - [`mise dotfiles origin [--remove] [SUBCOMMAND]`](/cli/dotfiles/origin.html)
 - [`mise dotfiles paths [FLAGS]`](/cli/dotfiles/paths.html)
 - [`mise dotfiles pull [FLAGS] [PATH]…`](/cli/dotfiles/pull.html)

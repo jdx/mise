@@ -889,7 +889,7 @@ impl Upgrade {
                     // the toolset resolves to the remote version, and tv_pathname()
                     // on the toolset version would give the wrong key.
                     let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
-                    let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
+                    let version_key = crate::toolset::needed_key(&old_tv);
                     if versions_needed_by_tracked.contains_key(&version_key) {
                         debug!(
                             "Keeping {}@{} because it's still needed by a tracked config or tool stub",

@@ -66,6 +66,7 @@ pub mod hooks;
 pub mod http;
 pub mod install_before;
 pub mod install_context;
+pub mod install_layout;
 pub mod jobs;
 pub mod lock_file;
 pub mod lockfile;

@@ -118,6 +118,9 @@ impl FromStr for PathEnv {
 /// and passed to [`is_mise_install_path`] so the per-PATH-entry check stays cheap.
 pub fn mise_install_dirs() -> Vec<PathBuf> {
     let mut install_dirs = vec![dirs::INSTALLS.to_path_buf()];
+    if *dirs::INSTALL_STORE != *dirs::INSTALLS {
+        install_dirs.push(dirs::INSTALL_STORE.to_path_buf());
+    }
     install_dirs.extend(crate::env::shared_install_dirs());
     install_dirs
 }
@@ -128,16 +131,51 @@ pub fn mise_install_dirs() -> Vec<PathBuf> {
 /// not outrank the version the current toolset selects. Shared by hook-env
 /// reactivation (#10162) and the `mise x`/`run`/`env` child PATH (#10345).
 pub fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathBuf]) -> bool {
-    if install_dirs.iter().any(|d| path.starts_with(d)) {
+    let store = &*dirs::INSTALL_STORE;
+    let separate_store = *store != *dirs::INSTALLS;
+    let canonical_store = || crate::file::canonicalize_cached(store);
+    // In a separate install store only the installations count: the store may be
+    // a directory that holds other things too.
+    let within = |dir: &std::path::Path, path: &std::path::Path, is_store: bool| match path
+        .strip_prefix(dir)
+    {
+        Ok(rest) if is_store => rest
+            .components()
+            .next()
+            .and_then(|c| c.as_os_str().to_str())
+            .is_some_and(is_installation_name),
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    if install_dirs
+        .iter()
+        .any(|d| within(d, path, separate_store && d == store))
+    {
         return true;
     }
     let Some(path) = crate::file::canonicalize_cached(path) else {
         return false;
     };
-    install_dirs
-        .iter()
-        .filter_map(|d| crate::file::canonicalize_cached(d))
-        .any(|d| path.starts_with(d))
+    install_dirs.iter().any(|d| {
+        crate::file::canonicalize_cached(d).is_some_and(|canonical| {
+            let is_store =
+                separate_store && (d == store || Some(&canonical) == canonical_store().as_ref());
+            within(&canonical, &path, is_store)
+        })
+    })
+}
+
+/// Whether `name` has the shape of an identity-layout installation directory,
+/// `<label>-<hash>`: 8 base32 characters, more after a name collision, and at
+/// most a whole digest (as the install layout's own check).
+fn is_installation_name(name: &str) -> bool {
+    name.rsplit_once('-').is_some_and(|(label, hash)| {
+        !label.is_empty()
+            && (8..=52).contains(&hash.len())
+            && hash
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || (b'2'..=b'7').contains(&b))
+    })
 }
 
 /// Past this many UTF-16 code units, `cmd.exe` ignores an inherited environment variable
@@ -277,5 +315,23 @@ mod dedup_tests {
             "byte length must differ, or this test proves nothing"
         );
         assert!(!cmd_would_ignore_path(path_len_utf16(OsStr::new(&s))));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_installation_name() {
+        assert!(is_installation_name("node-k7m3q2vd"));
+        assert!(is_installation_name("aqua-jqlang-jq-a2ylggky"));
+        assert!(!is_installation_name("bin"));
+        assert!(!is_installation_name("shims"));
+        assert!(!is_installation_name("node-K7M3Q2VD"));
+        assert!(!is_installation_name("node-k7m3q2v"));
+        // lengthened after a collision
+        assert!(is_installation_name("node-k7m3q2vdab"));
+        assert!(!is_installation_name("-k7m3q2vd"));
     }
 }

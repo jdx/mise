@@ -73,7 +73,13 @@ pub async fn verify_cosign_signature_with_key(
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
-        sigstore_verify::verify_with_key(artifact.as_slice(), &bundle, &public_key, &trusted_root)?;
+        sigstore_verify::verify_with_key(
+            artifact.as_slice(),
+            &bundle,
+            &public_key,
+            &sigstore_verify::PublicKeyVerificationPolicy::default(),
+            &trusted_root,
+        )?;
         return Ok(true);
     }
 
@@ -91,22 +97,19 @@ pub(crate) fn verify_public_key_bundle(
 ) -> Result<()> {
     use sigstore_verify::bundle::{ValidationOptions, validate_bundle_with_options};
     use sigstore_verify::crypto::{
-        KeyType, SigningScheme, detect_key_type, verify_signature, verify_signature_prehashed,
+        KeyAlgorithm, SigningScheme, verify_signature, verify_signature_prehashed,
     };
 
     validate_bundle_with_options(
         bundle,
-        &ValidationOptions {
-            require_inclusion_proof: true,
-            require_timestamp: false,
-        },
+        &ValidationOptions::new().with_require_inclusion_proof(true),
     )
     .map_err(|e| AttestationError::Verification(format!("bundle validation failed: {e}")))?;
 
-    let scheme = match detect_key_type(public_key) {
-        KeyType::Ed25519 => SigningScheme::Ed25519,
-        KeyType::EcdsaP256 => SigningScheme::EcdsaP256Sha256,
-        KeyType::Unknown => {
+    let scheme = match KeyAlgorithm::from_spki(public_key) {
+        Ok(KeyAlgorithm::Ed25519) => SigningScheme::Ed25519,
+        Ok(KeyAlgorithm::EcdsaP256) => SigningScheme::EcdsaP256Sha256,
+        _ => {
             return Err(AttestationError::Verification(
                 "unsupported or unrecognized public key type".to_string(),
             ));
@@ -115,7 +118,7 @@ pub(crate) fn verify_public_key_bundle(
 
     match &bundle.content {
         SignatureContent::MessageSignature(msg_sig) => {
-            let artifact_hash = Sha256Hash::try_from_slice(&Sha256::digest(artifact))?;
+            let artifact_hash = Sha256Hash::try_from(Sha256::digest(artifact).as_slice())?;
             if let Some(digest) = &msg_sig.message_digest {
                 if digest.algorithm != HashAlgorithm::Sha2256 {
                     return Err(AttestationError::Verification(format!(
@@ -145,18 +148,19 @@ pub(crate) fn verify_public_key_bundle(
             })?;
         }
         SignatureContent::DsseEnvelope(envelope) => {
-            let payload = envelope.decode_payload();
-            let pae = sigstore_verify::types::pae(&envelope.payload_type, &payload);
-            if !envelope
-                .signatures
-                .iter()
-                .any(|sig| verify_signature(public_key, &pae, &sig.sig, scheme).is_ok())
-            {
+            let payload = envelope.payload.as_bytes();
+            let pae = sigstore_verify::types::pae(&envelope.payload_type, payload);
+            if verify_signature(public_key, &pae, &envelope.signature.sig, scheme).is_err() {
                 return Err(AttestationError::Verification(
                     "DSSE signature verification failed: no valid signatures found".to_string(),
                 ));
             }
-            verify_dsse_artifact_subject(&payload, artifact)?;
+            verify_dsse_artifact_subject(payload, artifact)?;
+        }
+        _ => {
+            return Err(AttestationError::UnsupportedFormat(
+                "unsupported bundle signature content".to_string(),
+            ));
         }
     }
 
@@ -260,12 +264,12 @@ pub(crate) fn verify_raw_signature(
     signature: &[u8],
     public_key: &DerPublicKey,
 ) -> Result<()> {
-    use sigstore_verify::crypto::{KeyType, SigningScheme, detect_key_type, verify_signature};
+    use sigstore_verify::crypto::{KeyAlgorithm, SigningScheme, verify_signature};
 
-    let scheme = match detect_key_type(public_key) {
-        KeyType::Ed25519 => SigningScheme::Ed25519,
-        KeyType::EcdsaP256 => SigningScheme::EcdsaP256Sha256,
-        KeyType::Unknown => {
+    let scheme = match KeyAlgorithm::from_spki(public_key) {
+        Ok(KeyAlgorithm::Ed25519) => SigningScheme::Ed25519,
+        Ok(KeyAlgorithm::EcdsaP256) => SigningScheme::EcdsaP256Sha256,
+        _ => {
             return Err(AttestationError::Verification(
                 "unsupported or unrecognized public key type".to_string(),
             ));

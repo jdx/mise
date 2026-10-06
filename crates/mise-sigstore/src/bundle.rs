@@ -51,7 +51,7 @@ pub(crate) fn verify_bundle<'a>(
     signer_workflow: Option<&str>,
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
-    let mut policy = VerificationPolicy::default();
+    let mut policy = VerificationPolicy::any_identity();
     // sigstore-verify's default policy *requires* an inclusion proof when
     // `verify_tlog` is on. GitHub artifact attestations and TSA-only bundles
     // never carry one, so we'd reject them outright. Skip tlog only when the
@@ -59,7 +59,7 @@ pub(crate) fn verify_bundle<'a>(
     // ship a Rekor inclusion proof, still get full tlog verification (Rekor
     // checkpoint signature, SET, inclusion-proof Merkle path).
     if !bundle.has_inclusion_proof() {
-        policy = policy.skip_tlog();
+        policy = policy.skip_tlog_unsafe();
     }
     // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
     // doesn't log to public CT). `skip_sct` keeps full certificate-chain
@@ -70,7 +70,10 @@ pub(crate) fn verify_bundle<'a>(
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
 
-    verify_signer_workflow_identity(result.identity.as_deref(), signer_workflow)?;
+    verify_signer_workflow_identity(
+        result.identity().map(|identity| identity.as_str()),
+        signer_workflow,
+    )?;
 
     Ok(())
 }
@@ -185,9 +188,7 @@ pub(crate) fn verify_cert_chain(leaf_der: &[u8], trusted_root: &TrustedRoot) -> 
         .as_secs();
     let validation_time = UnixTime::since_unix_epoch(std::time::Duration::from_secs(not_after));
 
-    let all_certs = trusted_root.fulcio_certs().map_err(|e| {
-        AttestationError::Verification(format!("failed to load CA certs from trust root: {e}"))
-    })?;
+    let all_certs = trusted_root.fulcio_certs();
     if all_certs.is_empty() {
         return Err(AttestationError::Verification(
             "trust root contains no CA certificates".to_string(),

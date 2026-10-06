@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# An interrupted `mise installs migrate` is undone by the next run, even when it
+# stopped after the new installation's receipt and version link were written but
+# before its postinstall finished.
+export MISE_EXPERIMENTAL=1
+installs="$MISE_DATA_DIR/installs"
+plugin="$MISE_DATA_DIR/plugins/asdf-slow"
+mkdir -p "$plugin/bin"
+cat >"$plugin/bin/list-all" <<'SH'
+#!/usr/bin/env bash
+echo 1.0.0
+SH
+cat >"$plugin/bin/install" <<'SH'
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+printf '#!/bin/sh\necho slow\n' >"$ASDF_INSTALL_PATH/bin/slow"
+chmod +x "$ASDF_INSTALL_PATH/bin/slow"
+SH
+chmod +x "$plugin/bin/"*
+hold="$PWD/hold"
+started="$PWD/started"
+cat >mise.toml <<TOML
+[tools]
+"asdf:slow" = { version = "1.0.0", postinstall = "if [ -e '$hold' ]; then touch '$started'; while [ -e '$hold' ]; do sleep 0.1; done; fi" }
+TOML
+assert "MISE_INSTALL_LAYOUT=legacy mise install"
+echo old >"$installs/asdf-slow/1.0.0/marker"
+export MISE_INSTALL_LAYOUT=identity
+
+echo "=== a migration killed while its replacement's postinstall runs ==="
+touch "$hold"
+mise installs migrate asdf:slow@1.0.0 &
+pid=$!
+for _ in $(seq 300); do
+  [[ -e $started ]] && break
+  sleep 0.1
+done
+[[ -e $started ]] || fail "the postinstall never started"
+kill -9 "$pid"
+wait "$pid" 2>/dev/null || true
+rm "$hold"
+# the replacement already has its receipt and version link
+made="$(readlink -f "$installs/asdf-slow/1.0.0")"
+assert "test -f '$made/.mise-install.toml'"
+
+echo "=== the next run undoes it, then migrates the version again ==="
+assert_contains "mise installs migrate 2>&1" "restored"
+assert "test ! -e '$installs/asdf-slow/1.0.0/marker'"
+assert "test -f '$(mise where asdf:slow@1.0.0)/.mise-install.toml'"
+assert_empty "ls '$installs/.mise/migrations'"
+assert_empty "find '$installs/asdf-slow' -maxdepth 1 -name '.*mise-migrating'"

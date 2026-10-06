@@ -170,9 +170,9 @@ jdx-tar = "1"
 jiff = "0.2"
 junction = "2"
 log = "0.4"
-minisign-verify = "0.2"
+minisign-verify = "0.3"
 miette = { version = "7", features = ["fancy"] }
-nodejs-semver = "6"
+nodejs-semver = "7"
 notify = { version = "8", default-features = false, features = [
   "macos_fsevent",
 ] }
@@ -295,6 +295,7 @@ exec = "0.3"
 mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = [
   "dir",
+  "feature",
   "fs",
   "hostname",
   "signal",
@@ -309,6 +310,8 @@ core-foundation-sys = "0.8"
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
 windows-sys = { version = "0.61", features = [
+  "Wdk_System_Threading",
+  "Win32_Foundation",
   "Win32_Globalization",
   "Win32_Security",
   "Win32_Security_Authorization",

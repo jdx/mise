@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Lockfile adoption under the identity install layout (jdx/mise#13678).
+#
+# A project whose lockfile pins the checksum of an artifact reuses an unlocked
+# installation that was acquired from that very artifact: nothing is downloaded
+# or installed again, and the unlocked installation is not renamed or moved.
+# Because a lockfile now relies on that installation, an explicit refresh of the
+# unlocked request must not replace it in place: the shared unlocked selection
+# moves to a new installation and the locked project stays on the one it pinned.
+export MISE_EXPERIMENTAL=1
+export MISE_INSTALL_LAYOUT=identity
+detect_platform
+
+installs="$MISE_DATA_DIR/installs"
+work="$PWD"
+tool="github:jdx/mise-test-fixtures"
+
+mkdir free pinned
+cat >free/mise.toml <<'EOF'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin" }
+EOF
+cp free/mise.toml pinned/mise.toml
+
+echo "=== an unlocked install records the artifact it acquired ==="
+assert "mise -C $work/free install"
+dir_a="$(mise -C "$work/free" where "$tool")"
+assert_matches "mise -C $work/free where $tool" "^$installs/mise-test-fixtures-[a-z2-7]{8}\$"
+checksum="$(sed -n 's/^checksum = "\(.*\)"$/\1/p' "$dir_a/.mise-install.toml")"
+[[ $checksum =~ ^sha256:[0-9a-f]{64}$ ]] || fail "the receipt records no artifact checksum: '$checksum'"
+assert_contains "mise -C $work/free x -- hello-world" "hello world"
+
+echo "=== a lockfile pinning that artifact adopts the installation ==="
+assert "cd pinned && MISE_LOCKFILE=1 mise lock --platform $MISE_PLATFORM"
+assert_contains "cat pinned/mise.lock" "checksum = \"$checksum\""
+assert_contains "cd pinned && MISE_LOCKFILE=1 mise install 2>&1" "already installed"
+assert "MISE_LOCKFILE=1 mise -C $work/pinned where $tool" "$dir_a"
+assert "test \"\$(ls -d '$installs'/mise-test-fixtures-* | wc -l)\" -eq 1"
+assert_contains "MISE_LOCKFILE=1 mise -C $work/pinned x -- hello-world" "hello world"
+# the locked project's PATH names the installation itself, not a version link
+assert_contains "MISE_LOCKFILE=1 mise -C $work/pinned bin-paths $tool" "$dir_a/hello-world-1.0.0/bin"
+
+echo "=== routine use keeps the unlocked selection where it is ==="
+assert "mise -C $work/free where $tool" "$dir_a"
+assert_contains "mise -C $work/free install 2>&1" "already installed"
+assert "mise -C $work/free where $tool" "$dir_a"
+assert "test \"\$(ls -d '$installs'/mise-test-fixtures-* | wc -l)\" -eq 1"
+
+echo "=== an explicit refresh does not replace the pinned installation in place ==="
+touch "$dir_a/adopted-by-a-lockfile"
+assert "mise -C $work/free install --force"
+dir_b="$(mise -C "$work/free" where "$tool")"
+[[ $dir_b != "$dir_a" ]] || fail "the refresh replaced the pinned installation $dir_a in place"
+assert_matches "mise -C $work/free where $tool" "^$installs/mise-test-fixtures-[a-z2-7]{8}\$"
+assert "test -f '$dir_a/adopted-by-a-lockfile'"
+assert "test -f '$dir_a/.mise-install.toml'"
+assert "test -f '$dir_b/.mise-install.toml'"
+assert "test ! -e '$dir_b/adopted-by-a-lockfile'"
+assert "test \"\$(ls -d '$installs'/mise-test-fixtures-* | wc -l)\" -eq 2"
+# the locked project stays on what it pinned, the unlocked one moved on
+assert "MISE_LOCKFILE=1 mise -C $work/pinned where $tool" "$dir_a"
+assert "mise -C $work/free where $tool" "$dir_b"
+assert_contains "MISE_LOCKFILE=1 mise -C $work/pinned x -- hello-world" "hello world"
+assert_contains "mise -C $work/free x -- hello-world" "hello world"
+# and the selection is sticky again: using it does not move it back
+assert "mise -C $work/free where $tool" "$dir_b"
+assert_contains "mise -C $work/free install 2>&1" "already installed"
+assert "mise -C $work/free where $tool" "$dir_b"
+
+echo "=== neither installation is pruned while a tracked config needs it ==="
+cd "$(mktemp -d)" || exit 1
+assert_succeed "mise prune --dry-run-code --tools"
+assert "test -f '$dir_a/.mise-install.toml' && test -f '$dir_b/.mise-install.toml'"

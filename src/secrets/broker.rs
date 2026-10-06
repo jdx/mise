@@ -233,8 +233,25 @@ impl MemoValues {
                 let message: Arc<str> = Arc::from(message);
                 match what {
                     Pending::Keys(keys) => {
+                        // `invalid_keys` names the keys it rejects; the others were never
+                        // tried and stay retryable. Any other failure marks the whole batch.
+                        let rejected: BTreeSet<&str> = match &err {
+                            ResolveError::Invalid {
+                                unknown,
+                                not_injectable,
+                                ..
+                            } => unknown
+                                .iter()
+                                .chain(not_injectable)
+                                .map(String::as_str)
+                                .collect(),
+                            _ => BTreeSet::new(),
+                        };
+                        let named = keys.iter().any(|k| rejected.contains(k.as_str()));
                         for key in keys {
-                            self.failed.insert(key, message.clone());
+                            if !named || rejected.contains(key.as_str()) {
+                                self.failed.insert(key, message.clone());
+                            }
                         }
                     }
                     Pending::All => self.all = Some(Err(message)),
@@ -1011,6 +1028,7 @@ mod tests {
         calls: AtomicUsize,
         asked: StdMutex<Vec<Vec<String>>>,
         fail: BTreeSet<String>,
+        reject: StdMutex<BTreeSet<String>>,
         fingerprint: String,
     }
 
@@ -1073,6 +1091,19 @@ mod tests {
             let all = matches!(keys, KeySelection::AllInScope);
             if all && self.fail.contains("*") {
                 return Err(ResolveError::Resolution("not signed in".into()));
+            }
+            let rejected: Vec<String> = keys
+                .keys()
+                .iter()
+                .filter(|k| self.reject.lock().unwrap().contains(k.as_str()))
+                .map(|k| k.to_string())
+                .collect();
+            if !rejected.is_empty() {
+                return Err(ResolveError::Invalid {
+                    unknown: rejected,
+                    suggestions: BTreeMap::new(),
+                    not_injectable: vec![],
+                });
             }
             if keys.keys().iter().any(|k| self.fail.contains(k.as_str())) {
                 return Err(ResolveError::Resolution("not signed in".into()));
@@ -1265,6 +1296,38 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!crate::secrets::is_resolve_failure(&err));
+    }
+
+    #[tokio::test]
+    async fn invalid_keys_fail_only_the_rejected_key() {
+        let (fake, memo) = fake(&[]);
+        fake.reject.lock().unwrap().insert("B".to_string());
+        let broker = SecretBroker::default();
+        let term = terminal();
+        let both = Inputs::new("t1", &["A", "B"]);
+        let err = broker
+            .grant_values(&memo, &both.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown secret B"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        // A was never tried: it is retried, not "not retrying"
+        let a = Inputs::new("t2", &["A"]);
+        broker
+            .grant_values(&memo, &a.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+        // B stays failed
+        let b = Inputs::new("t3", &["B"]);
+        let err = broker
+            .grant_values(&memo, &b.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not retrying B"), "{err}");
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

@@ -1,5 +1,5 @@
 backends = [
-  "vfox:mise-plugins/vfox-azure-functions-core-tools",
+  "vfox:jdx/vfox-azure-functions-core-tools",
   "asdf:mise-plugins/mise-azure-functions-core-tools",
 ]
 bins = ["func"]

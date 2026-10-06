@@ -132,9 +132,10 @@ pub(super) fn apply_landlock(
             },
         )?;
         ruleset = add_read_rule(ruleset, "/dev", full_access)?;
-        let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
-        if installs_dir.exists() {
-            ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+        for installs_dir in [*crate::dirs::INSTALLS, *crate::dirs::INSTALL_STORE] {
+            if installs_dir.exists() {
+                ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+            }
         }
         ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         for path in &config.allow_read {
@@ -154,9 +155,10 @@ pub(super) fn apply_landlock(
         // /tmp and /dev need read access (not in SYSTEM_READ_PATHS, handled separately)
         ruleset = add_read_rule(ruleset, "/tmp", read_access)?;
         ruleset = add_read_rule(ruleset, "/dev", read_access)?;
-        let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
-        if installs_dir.exists() {
-            ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+        for installs_dir in [*crate::dirs::INSTALLS, *crate::dirs::INSTALL_STORE] {
+            if installs_dir.exists() {
+                ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+            }
         }
         ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         for path in &config.allow_read {

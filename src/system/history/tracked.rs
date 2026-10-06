@@ -2178,6 +2178,7 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
         *dirs::CACHE,
         *dirs::DATA,
         *dirs::INSTALLS,
+        *dirs::INSTALL_STORE,
         *dirs::DOWNLOADS,
         *dirs::PLUGINS,
     ]
