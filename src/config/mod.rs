@@ -1401,6 +1401,16 @@ impl Config {
             if !files.contains_key(cf.get_path()) {
                 files.shift_insert(0, cf.get_path().to_path_buf(), cf.clone());
             }
+            // The MISE_ENV the project was installed under is unknown here. An
+            // inactive environment file that sets vars or env could change what a
+            // template renders to, so refuse rather than prune the wrong version.
+            if let Some(path) = inactive_env_config_with_vars_or_env(&cf.config_root(), &files) {
+                bail!(
+                    "cannot tell which tool versions {} needs: {} sets vars or env for an inactive MISE_ENV; run this command with that MISE_ENV set or from the project directory",
+                    display_path(cf.get_path()),
+                    display_path(&path)
+                );
+            }
             Ok(files)
         })
         .await
@@ -2583,6 +2593,32 @@ fn glob_parent_exists(dir: &Path, pattern: &str) -> bool {
         })
         .collect::<PathBuf>();
     literal.as_os_str().is_empty() || dir.join(literal).is_dir()
+}
+
+/// First environment-specific config file above `start_dir` that is not part of
+/// `loaded` and mentions `vars` or `env`. Matching is textual and so errs toward
+/// reporting a file.
+fn inactive_env_config_with_vars_or_env(start_dir: &Path, loaded: &ConfigMap) -> Option<PathBuf> {
+    const ANY_ENV: &str = "MISEANYENV";
+    let patterns = env_config_patterns(ANY_ENV)
+        .into_iter()
+        .map(|pattern| pattern.replace(ANY_ENV, "*"))
+        .collect_vec();
+    all_dirs_from(start_dir)
+        .ok()?
+        .iter()
+        .filter(|dir| !config_dir_is_ignored(dir, false))
+        .flat_map(|dir| {
+            patterns
+                .iter()
+                .flat_map(|pattern| config_glob(dir, pattern))
+        })
+        .filter(|path| !loaded.contains_key(path))
+        .find(|path| {
+            std::fs::read_to_string(path)
+                .map(|text| text.contains("vars") || text.contains("env"))
+                .unwrap_or(false)
+        })
 }
 
 fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
