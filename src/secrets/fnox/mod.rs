@@ -354,12 +354,27 @@ fn interpret_resolve(
             Err(_) => return Err(NoJson(status.to_string())),
         };
         let e = doc.error;
-        let message = mise_util::redactions::redact_global(&e.message);
-        return Err(Error(match e.kind.as_str() {
+        // everything fnox sends reaches the terminal: strip control characters from all of it
+        let message = strip_control(&mise_util::redactions::redact_global(&e.message));
+        let kind = strip_control(&e.kind);
+        return Err(Error(match kind.as_str() {
             "invalid_keys" => ResolveError::Invalid {
-                unknown: e.unknown,
-                suggestions: e.suggestions,
-                not_injectable: e.not_injectable.into_iter().map(|n| n.key).collect(),
+                unknown: e.unknown.iter().map(|k| strip_control(k)).collect(),
+                suggestions: e
+                    .suggestions
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            strip_control(k),
+                            v.iter().map(|s| strip_control(s)).collect(),
+                        )
+                    })
+                    .collect(),
+                not_injectable: e
+                    .not_injectable
+                    .into_iter()
+                    .map(|n| strip_control(&n.key))
+                    .collect(),
             },
             "resolution" => ResolveError::Resolution(message),
             "config" => ResolveError::Other(format!(
@@ -874,6 +889,42 @@ mod tests {
             r.remove,
             BTreeSet::from(["OK_NAME".to_string(), "FNOX_AGE_KEY".to_string()])
         );
+    }
+
+    #[test]
+    fn resolve_errors_are_stripped_of_control_characters() {
+        let requested = BTreeSet::new();
+        let catalog = catalog_with_signing();
+        let err = |doc: &str| match interpret_resolve(
+            false,
+            "exit status: 1",
+            doc.as_bytes(),
+            &requested,
+            &catalog,
+            Path::new("/p"),
+        ) {
+            Err(ResolveFailure::Error(e)) => e,
+            _ => panic!("expected an error document"),
+        };
+        match err(r#"{"schema":1,"error":{"kind":"resolution","message":"no\u001b[31mpe\u0007"}}"#)
+        {
+            ResolveError::Resolution(m) => assert_eq!(m, "no[31mpe"),
+            other => panic!("{other:?}"),
+        }
+        match err(
+            r#"{"schema":1,"error":{"kind":"invalid_keys","message":"m","unknown":["A\u001b]0;x\u0007"],"suggestions":{"A\u001b":["B\u0007"]},"not_injectable":[{"key":"S\u001b","env":false}]}}"#,
+        ) {
+            ResolveError::Invalid {
+                unknown,
+                suggestions,
+                not_injectable,
+            } => {
+                assert_eq!(unknown, ["A]0;x"]);
+                assert_eq!(suggestions["A"], ["B"]);
+                assert_eq!(not_injectable, ["S"]);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
