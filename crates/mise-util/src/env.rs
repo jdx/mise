@@ -1047,10 +1047,13 @@ pub static INHERITED_SECRET_KEYS: Lazy<BTreeSet<String>> = Lazy::new(|| {
     )
 });
 
-/// `mise x -- fish` hands fish its variables through temporary `__MISE_FISH_ENV_<n>` copies that
-/// fish only reads after config.fish has run. A mise started from config.fish would otherwise
-/// see them as ordinary, unmarked variables, so they are always treated as secrets.
-const FISH_TEMP_PREFIX: &str = "__MISE_FISH_ENV_";
+/// `mise x -- fish` hands fish its variables through temporary copies that fish only reads after
+/// config.fish has run. The copies that hold a granted secret are named
+/// `__MISE_FISH_SECRET_<n>`; a mise started from config.fish would otherwise see them as
+/// ordinary, unmarked variables, so they are always treated as secrets. Copies of plain values
+/// (`__MISE_FISH_ENV_<n>`) are not.
+pub const FISH_SECRET_PREFIX: &str = "__MISE_FISH_SECRET_";
+const FISH_TEMP_PREFIX: &str = FISH_SECRET_PREFIX;
 
 fn is_fish_temp_name(name: &str, eq: fn(&str, &str) -> bool) -> bool {
     name.get(..FISH_TEMP_PREFIX.len())
@@ -1497,33 +1500,45 @@ mod launcher_args_tests {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn fish_temp_copies_are_always_inherited_secrets() {
+    fn fish_secret_copies_are_always_inherited_secrets_but_plain_copies_are_not() {
         let names = [
             "PATH",
-            "__MISE_FISH_ENV_0",
-            "__MISE_FISH_ENV_12",
+            "__MISE_FISH_SECRET_0",
+            "__MISE_FISH_SECRET_12",
+            "__MISE_FISH_ENV_1",
             "__MISE_DIFF",
         ]
         .iter()
         .map(|s| s.to_string());
-        let keys =
-            inherited_secret_keys(Some("DEPLOY_KEY,__MISE_FISH_ENV_9"), names, |a, b| a == b);
-        // the marker parser still ignores mise's own names; the live copies are added
+        let keys = inherited_secret_keys(Some("DEPLOY_KEY,__MISE_FISH_SECRET_9"), names, |a, b| {
+            a == b
+        });
+        // the marker parser still ignores mise's own names; the live secret copies are added
         assert_eq!(
             keys,
             BTreeSet::from(
-                ["DEPLOY_KEY", "__MISE_FISH_ENV_0", "__MISE_FISH_ENV_12"].map(String::from)
+                [
+                    "DEPLOY_KEY",
+                    "__MISE_FISH_SECRET_0",
+                    "__MISE_FISH_SECRET_12"
+                ]
+                .map(String::from)
             )
         );
-        // so a child mise strips them, whatever the marker says, and redaction seeding sees them
+        // so a child mise strips them, and a plain copy passes through
         let mut env = EnvMap::from([
-            ("__MISE_FISH_ENV_0".into(), "s3cr3t".into()),
+            ("__MISE_FISH_SECRET_0".into(), "s3cr3t".into()),
+            ("__MISE_FISH_ENV_1".into(), "1".into()),
             ("KEEP".into(), "1".into()),
         ]);
         let mut remove = BTreeSet::new();
         strip_secrets_for_child(&mut env, &mut remove, &keys, |a, b| a == b);
-        assert_eq!(env.keys().collect::<Vec<_>>(), ["KEEP"]);
-        assert!(remove.contains("__MISE_FISH_ENV_0"));
+        assert_eq!(
+            env.keys().collect::<Vec<_>>(),
+            ["KEEP", "__MISE_FISH_ENV_1"]
+        );
+        assert!(remove.contains("__MISE_FISH_SECRET_0"));
+        assert!(!remove.contains("__MISE_FISH_ENV_1"));
     }
 
     use super::*;
