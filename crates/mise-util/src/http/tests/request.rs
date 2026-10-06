@@ -94,6 +94,62 @@ async fn test_invalid_url_returns_error_not_panic() {
     assert!(client.get_text_request("").send().await.is_err());
 }
 
+#[tokio::test]
+async fn streaming_upload_allows_a_body_longer_than_the_read_timeout() {
+    use axum::{Router, body::Bytes, routing::post};
+
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/upload",
+                post(|body: Bytes| async move {
+                    assert_eq!(body.as_ref(), b"slow upload body");
+                    StatusCode::ACCEPTED
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+
+    let body = futures_util::stream::unfold(0, |chunk| async move {
+        let bytes = match chunk {
+            0 => b"slow ".as_slice(),
+            1 => b"upload ".as_slice(),
+            2 => b"body".as_slice(),
+            _ => return None,
+        };
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        Some((
+            Ok::<_, std::io::Error>(Bytes::copy_from_slice(bytes)),
+            chunk + 1,
+        ))
+    });
+    let client =
+        Client::new_shared_without_read_timeout(Duration::from_millis(40), ClientKind::Http);
+    let response = tokio::time::timeout(
+        Duration::from_secs(2),
+        client
+            .reqwest()
+            .unwrap()
+            .post(format!("http://{address}/upload"))
+            .header("Content-Length", "16")
+            .body(reqwest::Body::wrap_stream(body))
+            .send(),
+    )
+    .await
+    .expect("streaming upload should not be bounded by the read timeout")
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    server.abort();
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn test_request_rejects_custom_credentials_on_https_to_http_replacement() {
     // Same-host downgrade: host scoping keeps the credential header, so sending it

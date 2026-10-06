@@ -112,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
             requires_python = python_requirements.get(package, '>=3.10')
             body = json.dumps({'info': {'requires_python': requires_python}, 'releases': {'1.0.0': [{}]}}).encode()
             content_type = 'application/json'
-        elif path.startswith(('/simple/', '/pypi/simple/')):
+        elif path.startswith('/simple/'):
             package = path.strip('/').split('/')[-1].replace('-', '_')
             requires_python = python_requirements.get(package, '>=3.10').replace('<', '&lt;').replace('>', '&gt;')
             body = ''.join(

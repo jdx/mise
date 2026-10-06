@@ -506,3 +506,155 @@ fn test_rejects_credentials_on_https_to_http_replacement() {
         .is_ok()
     );
 }
+
+#[test]
+fn unscoped_credential_detection_ignores_headers_reqwest_already_strips() {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
+    headers.insert(COOKIE, HeaderValue::from_static("session=secret"));
+    headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+    assert!(!has_unscoped_credential(&headers));
+
+    headers.insert("x-api-key", HeaderValue::from_static("secret"));
+    assert!(has_unscoped_credential(&headers));
+
+    ForwardRules::default().retain_for(
+        &mut headers,
+        &Url::parse("https://origin.test/").unwrap(),
+        &Url::parse("https://elsewhere.test/").unwrap(),
+    );
+    assert!(!headers.contains_key(AUTHORIZATION));
+    assert!(!headers.contains_key("x-api-key"));
+    assert_eq!(headers["x-request-id"], "keep-me");
+}
+
+#[test]
+fn user_headers_replace_host_auth_headers_instead_of_appending() {
+    // `TextRequest::send` starts from the host's automatic token and extends it with
+    // the caller's headers; the caller's `Authorization` must be the only one sent.
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer automatic"));
+    let mut user = HeaderMap::new();
+    user.insert(AUTHORIZATION, HeaderValue::from_static("Bearer configured"));
+    headers.extend(user);
+    let values = headers.get_all(AUTHORIZATION).iter().collect::<Vec<_>>();
+    assert_eq!(values, ["Bearer configured"]);
+}
+
+#[test]
+fn header_digest_depends_on_values_without_exposing_them() {
+    let mut a = HeaderMap::new();
+    a.insert(AUTHORIZATION, HeaderValue::from_static("Bearer one"));
+    let mut b = HeaderMap::new();
+    b.insert(AUTHORIZATION, HeaderValue::from_static("Bearer two"));
+    assert_ne!(header_digest(&a), header_digest(&b));
+    assert_eq!(header_digest(&a), header_digest(&a.clone()));
+    assert!(!header_digest(&a).contains("one"));
+}
+
+#[test]
+fn forward_hosts_accept_exact_hosts_and_subdomain_wildcards_only() {
+    for ok in ["cdn.example.com", "*.example.com", "localhost"] {
+        assert!(is_valid_forward_host(ok), "{ok}");
+    }
+    for bad in [
+        "",
+        "*",
+        "*.",
+        "*.*.com",
+        "a*.com",
+        "example.com:443",
+        "https://x.com",
+        ".x.com",
+        "x.com.",
+    ] {
+        assert!(!is_valid_forward_host(bad), "{bad}");
+    }
+    let patterns = vec![
+        "cdn.example.com".to_string(),
+        "*.assets.example.com".to_string(),
+    ];
+    assert!(host_matches_any(&patterns, "cdn.example.com"));
+    assert!(host_matches_any(&patterns, "CDN.example.com"));
+    let mixed = vec!["*.Assets.EXAMPLE.com".to_string()];
+    assert!(host_matches_any(&mixed, "a.assets.example.com"));
+    assert!(host_matches_any(&mixed, "A.ASSETS.example.com"));
+    assert!(host_matches_any(&patterns, "a.assets.example.com"));
+    assert!(host_matches_any(&patterns, "a.b.assets.example.com"));
+    // A wildcard is for subdomains: neither the bare suffix nor a lookalike matches.
+    assert!(!host_matches_any(&patterns, "assets.example.com"));
+    assert!(!host_matches_any(&patterns, "evilassets.example.com"));
+    assert!(!host_matches_any(&patterns, "cdn.example.com.evil.test"));
+}
+
+#[test]
+fn forward_rules_keep_only_listed_headers_on_listed_https_hosts() {
+    let key = HeaderName::from_static("x-api-key");
+    let mut headers = HeaderMap::new();
+    headers.insert(&key, HeaderValue::from_static("secret"));
+    headers.insert("x-other-token", HeaderValue::from_static("secret"));
+    headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+    let (rule_name, rule_value) =
+        forward_rule_header(&key, &["cdn.example.com".to_string()]).unwrap();
+    headers.insert(rule_name, rule_value);
+
+    let (mut real, rules) = split_forward_rules(&headers);
+
+    // A retry sends the request again, so the rules must survive a round trip.
+    let mut resent = real.clone();
+    rules.attach_to(&mut resent);
+    let (resent_real, resent_rules) = split_forward_rules(&resent);
+    assert_eq!(resent_real, real);
+    assert_eq!(resent_rules.0, rules.0);
+    assert!(
+        real.keys()
+            .all(|name| !name.as_str().starts_with(FORWARD_RULE_PREFIX))
+    );
+    assert!(rules.applies_to(&real));
+
+    // An unlisted host loses every credential, the listed header included.
+    let from = Url::parse("https://origin.test/x").unwrap();
+    let mut elsewhere = real.clone();
+    rules.retain_for(
+        &mut elsewhere,
+        &from,
+        &Url::parse("https://other.example.com/x").unwrap(),
+    );
+    assert!(!elsewhere.contains_key(&key) && !elsewhere.contains_key("x-other-token"));
+    assert_eq!(elsewhere["x-request-id"], "keep-me");
+
+    // A listed host over plain HTTP is refused after an HTTPS hop, but a chain that was
+    // plain HTTP from the start may stay that way.
+    let mut plain = real.clone();
+    let plain_next = Url::parse("http://cdn.example.com/x").unwrap();
+    rules.retain_for(&mut plain, &from, &plain_next);
+    assert!(!plain.contains_key(&key));
+    let mut http_chain = real.clone();
+    rules.retain_for(
+        &mut http_chain,
+        &Url::parse("http://origin.test/x").unwrap(),
+        &plain_next,
+    );
+    assert_eq!(http_chain["x-api-key"], "secret");
+
+    // Only the listed header reaches a listed HTTPS host.
+    rules.retain_for(
+        &mut real,
+        &from,
+        &Url::parse("https://cdn.example.com/x").unwrap(),
+    );
+    assert_eq!(real["x-api-key"], "secret");
+    assert!(!real.contains_key("x-other-token"));
+}
+
+#[test]
+fn with_host_auth_layers_configured_headers_over_automatic_ones() {
+    let url = Url::parse("https://example.com/file").unwrap();
+    let mut user = HeaderMap::new();
+    user.insert(AUTHORIZATION, HeaderValue::from_static("Bearer configured"));
+    user.insert("x-extra", HeaderValue::from_static("1"));
+    let merged = with_host_auth(&url, &user).unwrap();
+    assert_eq!(merged.get_all(AUTHORIZATION).iter().count(), 1);
+    assert_eq!(merged[AUTHORIZATION], "Bearer configured");
+    assert_eq!(merged["x-extra"], "1");
+}

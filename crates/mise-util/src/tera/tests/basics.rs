@@ -68,3 +68,28 @@ fn test_contains_template_syntax() {
     assert!(contains_template_syntax("{#- comment -#}"));
     assert!(!contains_template_syntax("plain text"));
 }
+
+#[test]
+fn test_tera1_get_env_uses_supplied_env_only() {
+    // A variable present in the live process env but absent from the supplied
+    // (filtered) map must not be readable, as with inherited secrets.
+    let mut env = EnvMap::new();
+    env.insert("MISE_TEST_V1_VISIBLE".into(), "visible".into());
+    let mut tera = tera1::Tera::default();
+    tera.register_function("get_env", tera1_get_env(env));
+    let ctx = tera1::Context::new();
+    let path = std::env::var("PATH").is_ok();
+    assert!(path, "PATH must be set for this test");
+
+    assert_eq!(
+        tera.render_str("{{ get_env(name='MISE_TEST_V1_VISIBLE') }}", &ctx)
+            .unwrap(),
+        "visible"
+    );
+    assert_eq!(
+        tera.render_str("{{ get_env(name='PATH', default='hidden') }}", &ctx)
+            .unwrap(),
+        "hidden"
+    );
+    assert!(tera.render_str("{{ get_env(name='PATH') }}", &ctx).is_err());
+}

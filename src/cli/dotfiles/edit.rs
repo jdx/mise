@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::{Result, bail};
 
@@ -7,7 +7,6 @@ use crate::config::Config;
 use crate::file;
 use crate::path::PathExt;
 use crate::system;
-use crate::system::edits::{BlockSource, EditOp};
 use crate::system::files::FileMode;
 use crate::system::history::OperationScope;
 use crate::system::history::tracked::{self, TrackedSet};
@@ -189,17 +188,11 @@ fn source_for_target(
     match matching_edits.as_slice() {
         [] => {}
         [req] => {
-            return Ok(Some(match &req.op {
-                EditOp::Block {
-                    source: BlockSource::File(path),
-                    ..
-                } => path.clone(),
-                EditOp::Block {
-                    source: BlockSource::Inline(_),
-                    ..
-                }
-                | EditOp::Line { .. } => req.config_path.clone(),
-            }));
+            return Ok(Some(
+                req.op
+                    .source_file()
+                    .map_or_else(|| req.config_path.clone(), Path::to_path_buf),
+            ));
         }
         edits => {
             let keys = edits

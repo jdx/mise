@@ -99,9 +99,13 @@ impl TaskContextBuilder {
                 .as_bytes(),
         );
         hasher.update(format!("{env:?}").as_bytes());
-        // The template context (a map with no stable iteration order) is not hashed: its
-        // `tools` come from the toolset, whose install paths are in the base env hashed above,
-        // and the rest is a function of the hierarchy itself.
+        // The template context as a whole is not hashed (a map with no stable iteration
+        // order): its `tools` come from the toolset, whose install paths are in the base env
+        // hashed above. Its `vars` are resolved separately, so they are hashed: directives
+        // may read `{{ vars.X }}`. A differently ordered rendering only costs a cache miss.
+        if let Some(vars) = tera_ctx.get("vars") {
+            hasher.update(vars.to_string().as_bytes());
+        }
         hasher.update(format!("{entries:?}").as_bytes());
         let key = hasher.finalize().to_hex().to_string();
         let cell = self
@@ -699,6 +703,37 @@ impl Default for TaskContextBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn hierarchy_env_cache_distinguishes_vars() {
+    use crate::config::config_file::mise_toml::MiseToml;
+    let config = Config::get().await.unwrap();
+    let cf: Arc<dyn ConfigFile> =
+        Arc::new(MiseToml::init(std::path::Path::new("/tmp/hier/mise.toml")));
+    let builder = TaskContextBuilder::new();
+    let entries = || {
+        vec![(
+            EnvDirective::Val("OUT".into(), "{{ vars.v }}".into(), Default::default()),
+            PathBuf::from("/tmp/hier/mise.toml"),
+        )]
+    };
+    let ctx_with = |v: &str| {
+        let mut ctx = tera::Context::new();
+        ctx.insert("vars", &BTreeMap::from([("v".to_string(), v.to_string())]));
+        ctx
+    };
+    let env = BTreeMap::new();
+    let mut seen = vec![];
+    for v in ["one", "two"] {
+        let res = builder
+            .hierarchy_env_results(&config, &cf, &ctx_with(v), &env, entries())
+            .await
+            .unwrap();
+        seen.push(res.env.get("OUT").map(|(v, _)| v.clone()));
+    }
+    assert_eq!(seen, [Some("one".to_string()), Some("two".to_string())]);
 }
 
 #[cfg(test)]

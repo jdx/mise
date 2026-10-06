@@ -552,6 +552,9 @@ impl Upgrade {
         } else {
             outdated
                 .iter()
+                // A tool excluded from pruning keeps its old versions, whichever
+                // way the upgrade would have removed them.
+                .filter(|o| !crate::toolset::is_excluded_from_pruning(o.tool_version.ba()))
                 .filter_map(|o| {
                     o.current.as_ref().and_then(|current| {
                         // Skip if current and latest version strings are identical

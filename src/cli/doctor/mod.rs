@@ -1236,11 +1236,11 @@ impl Doctor {
             };
             // The install state records one backend per tool, so versions installed
             // on either side of a cutover cannot all match it. Only warn when none do.
-            let strip = |full: &str| full.split('[').next().unwrap_or(full).to_string();
-            if recommended
-                .iter()
-                .any(|full| strip(full) == stored_stripped)
-            {
+            // Only a change of backend kind counts; a repo or org rename within one does not.
+            if recommended.iter().any(|full| {
+                let stripped = full.split('[').next().unwrap_or(full);
+                crate::args::same_backend_kind(stripped, stored_stripped)
+            }) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {
