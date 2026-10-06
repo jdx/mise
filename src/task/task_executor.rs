@@ -2333,7 +2333,7 @@ impl TaskExecutor {
                 root_env_view.clone()
             } else {
                 root_env_view
-                    .for_task(config, &self.context_builder, task)
+                    .for_task(config, &self.context_builder, task, true)
                     .await
             };
             found.extend(crate::secrets::static_problems(

@@ -549,7 +549,7 @@ impl SecretBroker {
         let (_, mut problems) = grant_for_task(task);
         let env_view = super::EnvView::load(config)
             .await
-            .for_task(config, req.ctx_builder, task)
+            .for_task(config, req.ctx_builder, task, false)
             .await;
         problems.extend(static_problems(task, req.grant, req.denied, &env_view));
         if !problems.is_empty() {

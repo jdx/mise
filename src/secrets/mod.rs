@@ -264,7 +264,7 @@ pub async fn check_task_secrets(
     } else {
         EnvView::load(config)
             .await
-            .for_task(config, &cache.ctx, task)
+            .for_task(config, &cache.ctx, task, true)
             .await
     };
     problems.extend(static_problems(task, &grant, None, &view));

@@ -554,6 +554,9 @@ pub(crate) struct EnvView {
     base: crate::env_diff::EnvMap,
     /// keys config `[env]` assigns (plain values and defaults that applied)
     config_keys: BTreeSet<String>,
+    /// scripts were not run, so whether a task `default` applies is unknown: the static checks
+    /// leave defaults to the spawn-time check
+    defer_defaults: bool,
 }
 
 impl EnvView {
@@ -570,16 +573,23 @@ impl EnvView {
                 config_keys.insert(key.clone());
             }
         }
-        Self { base, config_keys }
+        Self {
+            base,
+            config_keys,
+            defer_defaults: false,
+        }
     }
 
     /// The view for `task`: a monorepo task's defaults are judged against its own config
     /// hierarchy's `[env]`, not the current project's. Everything else keeps `self`.
+    /// `skip_scripts` keeps a static preflight from running `_.source` scripts (keys they
+    /// touch are then unknown); the spawn-time check runs them, since the task env does too.
     pub(crate) async fn for_task(
         &self,
         config: &Arc<crate::config::Config>,
         ctx: &crate::task::task_context_builder::TaskContextBuilder,
         task: &Task,
+        skip_scripts: bool,
     ) -> Self {
         let Some(task_cf) = task.cf.as_ref().filter(|_| !task.is_remote()) else {
             return self.clone();
@@ -588,10 +598,15 @@ impl EnvView {
             let ts = ctx
                 .build_toolset_for_task(config, task, Some(task_cf), &[])
                 .await?;
-            ctx.config_env_for_source(config, task, &ts, true).await
+            ctx.config_env_for_source(config, task, &ts, skip_scripts)
+                .await
         };
         match overlay.await {
-            Ok(Some(env)) => self.with_config_env(env.values, env.unset),
+            Ok(Some(env)) => {
+                let mut view = self.with_config_env(env.values, env.unset);
+                view.defer_defaults = env.skipped_scripts;
+                view
+            }
             _ => self.clone(),
         }
     }
@@ -631,6 +646,7 @@ impl EnvView {
         Self {
             base,
             config_keys: config_keys.iter().map(|k| k.to_string()).collect(),
+            defer_defaults: false,
         }
     }
 
@@ -668,7 +684,7 @@ impl EnvView {
                     let satisfied = env
                         .iter()
                         .any(|(e, val)| env_key_eq(e, k) && !val.is_empty());
-                    if !satisfied {
+                    if !satisfied && !self.defer_defaults {
                         env.insert(k.clone(), v.clone());
                         declared.insert(k.clone());
                         texts.push((k.clone(), v.clone()));
@@ -1000,6 +1016,16 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn defaults_are_deferred_when_scripts_were_skipped() {
+        let task = default_task("{{ env.DEPLOY_KEY }}");
+        let mut view = EnvView::for_test(map(&[]), &[]);
+        assert_eq!(view.texts(&task).len(), 1);
+        view.defer_defaults = true;
+        assert!(view.texts(&task).is_empty());
+        assert!(!view.declared_keys(&task).contains("TOKEN"));
     }
 
     #[test]
