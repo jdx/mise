@@ -162,18 +162,25 @@ fn release_url_tag(url: &str) -> Option<String> {
 /// The text of a release list at `url`, or `None` when the repository keeps
 /// none. A resolution reads the list for every release it looks at, so one
 /// command would otherwise fetch the same file over and over, and wait on a
-/// 404 each time. The answer is kept for the life of the process: a withdrawal
-/// is noticed by the next command, as before.
+/// 404 each time. An answer is reused for a few seconds, which covers a
+/// command and no more: a long-running process (`mise mcp`, `mise watch`) reads
+/// the list again, so a withdrawal is still noticed.
 async fn fetch_github_list(url: &str) -> Result<Option<String>> {
     type Fetched = Arc<tokio::sync::OnceCell<Option<String>>>;
-    static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
-        std::sync::LazyLock::new(Default::default);
-    let cell: Fetched = FETCHED
-        .lock()
-        .unwrap()
-        .entry(url.to_string())
-        .or_default()
-        .clone();
+    const REUSE: std::time::Duration = std::time::Duration::from_secs(30);
+    static FETCHED: std::sync::LazyLock<
+        std::sync::Mutex<BTreeMap<String, (std::time::Instant, Fetched)>>,
+    > = std::sync::LazyLock::new(Default::default);
+    let cell: Fetched = {
+        let mut fetched = FETCHED.lock().unwrap();
+        let entry = fetched
+            .entry(url.to_string())
+            .or_insert_with(|| (std::time::Instant::now(), Fetched::default()));
+        if entry.0.elapsed() > REUSE {
+            *entry = (std::time::Instant::now(), Fetched::default());
+        }
+        entry.1.clone()
+    };
     cell.get_or_try_init(|| async {
         let headers = github::get_headers(url)?;
         match HTTP_FETCH
