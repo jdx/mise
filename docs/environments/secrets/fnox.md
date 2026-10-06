@@ -142,6 +142,10 @@ only) in the task's environment so a nested mise knows not to pass them on. Keys
 files (`as_file = true`) are written to a 0700 directory with 0600 permissions, `KEY` is set to
 the path, and the files are deleted when the task ends.
 
+Tasks run as the same operating system user as mise. Grants keep a secret out of tasks that were
+not granted it, but they are not isolation from other processes of that user: such a process can
+read a granted task's environment and its secret files while it runs.
+
 <span v-pre>`{{ env.DEPLOY_KEY }}`</span> in `run` cannot see a granted secret, because the secret is added after
 `run` is rendered. Read it from the environment instead (`"$DEPLOY_KEY"`). mise reports this
 before running anything.
