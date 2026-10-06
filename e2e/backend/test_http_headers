@@ -34,6 +34,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", f"http://localhost:{port}/artifact.tar.gz")
             self.end_headers()
             return
+        if path == "/same":
+            self.send_response(302)
+            self.send_header("Location", "/artifact.tar.gz")
+            self.end_headers()
+            return
         if path not in ("/artifact.tar.gz", "/versions.txt", "/direct.tar.gz"):
             self.send_error(404)
             return
@@ -102,3 +107,28 @@ EOT
 assert_fail "mise install" "401"
 assert_contains "cat $SEEN_LOG" "/hop auth='Bearer s3cret'"
 assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth=''"
+
+# Every other credential header is dropped on a cross-host redirect too, which
+# reqwest does not do on its own.
+: >"$SEEN_LOG"
+cat >mise.toml <<EOT
+[tools."http:headers-hop-key"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/hop"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+assert_fail "mise install" "401"
+assert_contains "cat $SEEN_LOG" "/hop auth='' key='s3cret'"
+assert_contains "cat $SEEN_LOG" "/artifact.tar.gz auth='' key=''"
+
+# The same host keeps the header across a redirect.
+cat >mise.toml <<EOT
+[tools."http:headers-same-host"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/same"
+bin_path = "bin"
+headers = { X-Api-Key = "{{ env.HEADERS_TEST_TOKEN }}" }
+EOT
+mise install
+assert_contains "mise x -- headers-tool" "headers ok"

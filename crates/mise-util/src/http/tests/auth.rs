@@ -506,3 +506,20 @@ fn test_rejects_credentials_on_https_to_http_replacement() {
         .is_ok()
     );
 }
+
+#[test]
+fn unscoped_credential_detection_ignores_headers_reqwest_already_strips() {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
+    headers.insert(COOKIE, HeaderValue::from_static("session=secret"));
+    headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+    assert!(!has_unscoped_credential(&headers));
+
+    headers.insert("x-api-key", HeaderValue::from_static("secret"));
+    assert!(has_unscoped_credential(&headers));
+
+    clear_all_credentials(&mut headers);
+    assert!(!headers.contains_key(AUTHORIZATION));
+    assert!(!headers.contains_key("x-api-key"));
+    assert_eq!(headers["x-request-id"], "keep-me");
+}

@@ -243,11 +243,10 @@ macos-arm64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format
 Header values are redacted from debug output and do not change where a tool is installed.
 A `headers` entry replaces any automatic token mise would otherwise send to the same host.
 
-::: warning
-When a request is redirected to a different host, only `Authorization`, `Cookie`, and
-`Proxy-Authorization` are dropped. Any other header, such as `X-Api-Key`, is forwarded to the
-redirect target, so only set one on a server that does not redirect to a third party.
-:::
+Headers are sent to the host in `url` only. If the server redirects to a different host, port,
+or scheme, every `headers` entry is dropped for the rest of the redirect chain, which is what
+GHCR's signed blob URLs need. Headers survive a redirect within the same origin. To send a
+header to the final host, point `url` at it directly.
 
 ### `size`
 

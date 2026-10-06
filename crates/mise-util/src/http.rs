@@ -642,6 +642,9 @@ pub fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
 #[derive(Debug)]
 pub struct Client {
     reqwest: Result<reqwest::Client, String>,
+    /// Built on first use by [`Client::send_following_redirects`], which follows
+    /// redirects itself so it can decide what each hop may carry.
+    manual_redirects: std::sync::OnceLock<Result<reqwest::Client, String>>,
     timeout: Duration,
     kind: ClientKind,
 }
@@ -668,6 +671,7 @@ impl Client {
     pub fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
             reqwest: Ok(Self::build(timeout, kind, Downgrade::Refuse)?),
+            manual_redirects: Default::default(),
             timeout,
             kind,
         })
@@ -680,6 +684,7 @@ impl Client {
     fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
         Self {
             reqwest: Self::build(timeout, kind, downgrade).map_err(|err| format!("{err:#}")),
+            manual_redirects: Default::default(),
             timeout,
             kind,
         }
@@ -707,6 +712,7 @@ impl Client {
     pub fn with_init_error(error: impl Into<String>) -> Self {
         Self {
             reqwest: Err(error.into()),
+            manual_redirects: Default::default(),
             timeout: Duration::from_secs(1),
             kind: ClientKind::Http,
         }
@@ -721,6 +727,97 @@ impl Client {
         self.reqwest
             .as_ref()
             .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
+    }
+
+    /// Send `req`, following redirects ourselves when `headers` hold a credential that
+    /// reqwest would forward to another host. reqwest only strips `Authorization`,
+    /// `Cookie` and `Proxy-Authorization` on a cross-host redirect, so a header such as
+    /// `X-Api-Key` would otherwise reach whatever host the server redirects to.
+    async fn send_scoped(
+        &self,
+        method: &Method,
+        url: &Url,
+        headers: &HeaderMap,
+        timeout: Option<Duration>,
+    ) -> std::result::Result<Response, SendError> {
+        if !has_unscoped_credential(headers) {
+            let mut req = self
+                .reqwest()
+                .map_err(|err| SendError::Refused(format!("{err:#}")))?
+                .request(method.clone(), url.clone());
+            if let Some(timeout) = timeout {
+                req = req.timeout(timeout);
+            }
+            return req
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(Into::into);
+        }
+        let client = self
+            .manual_redirects
+            .get_or_init(|| {
+                Self::_new()
+                    .read_timeout(self.timeout)
+                    .connect_timeout(self.timeout)
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .map_err(|err| format!("{err:#}"))
+            })
+            .as_ref()
+            .map_err(|err| {
+                SendError::Refused(format!("Could not initialize the HTTP client: {err}"))
+            })?;
+        let mut method = method.clone();
+        let mut url = url.clone();
+        let mut headers = headers.clone();
+        for _ in 0..MAX_MANUAL_REDIRECTS {
+            let mut req = client.request(method.clone(), url.clone());
+            if let Some(timeout) = timeout {
+                req = req.timeout(timeout);
+            }
+            let resp = req.headers(headers.clone()).send().await?;
+            if !resp.status().is_redirection() {
+                return Ok(resp);
+            }
+            let Some(location) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+            else {
+                return Ok(resp);
+            };
+            let Ok(mut next) = url.join(location) else {
+                return Ok(resp);
+            };
+            if is_https_downgrade(std::slice::from_ref(&url), &next) {
+                return Err(SendError::Refused(
+                    "refusing to redirect a request with credentials from HTTPS to HTTP"
+                        .to_string(),
+                ));
+            }
+            // Scheme and port count as a different origin, as they do for reqwest.
+            if next.host() != url.host()
+                || next.port_or_known_default() != url.port_or_known_default()
+                || next.scheme() != url.scheme()
+            {
+                clear_all_credentials(&mut headers);
+                // Userinfo carried over from the previous URL is a credential too.
+                let _ = next.set_username("");
+                let _ = next.set_password(None);
+            }
+            if matches!(
+                resp.status(),
+                StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND | StatusCode::SEE_OTHER
+            ) && method != Method::HEAD
+            {
+                method = Method::GET;
+            }
+            url = next;
+        }
+        Err(SendError::Refused(format!(
+            "too many redirects (more than {MAX_MANUAL_REDIRECTS})"
+        )))
     }
 
     fn _new() -> ClientBuilder {
@@ -1610,14 +1707,14 @@ impl Client {
         }
 
         let request_timeout = self.request_timeout();
-        let mut req = self.reqwest()?.request(method.clone(), url.clone());
-        if matches!(self.kind, ClientKind::Fetch) {
-            req = req.timeout(request_timeout);
-        }
-        req = req.headers(final_headers.clone());
-        let resp = match req.send().await {
+        let timeout = matches!(self.kind, ClientKind::Fetch).then_some(request_timeout);
+        let resp = match self
+            .send_scoped(&method, &url, &final_headers, timeout)
+            .await
+        {
             Ok(resp) => resp,
-            Err(err) => {
+            Err(SendError::Refused(message)) => return Err(eyre!(message)),
+            Err(SendError::Reqwest(err)) => {
                 let err = err.without_url();
                 if crate::network::prefer_offline(&Settings::get())
                     && is_hard_connection_failure(&err)
@@ -2040,6 +2137,42 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
 /// keeps the existing auth, since the forge token is still valid for that host.
 fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
     host_changed || !has_existing_auth
+}
+
+const MAX_MANUAL_REDIRECTS: usize = 10;
+
+enum SendError {
+    Reqwest(reqwest::Error),
+    /// A refusal that is not a transport failure, so it is neither retried nor
+    /// classified as a timeout.
+    Refused(String),
+}
+
+impl From<reqwest::Error> for SendError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Reqwest(err)
+    }
+}
+
+/// A credential header that reqwest does not remove on a cross-host redirect.
+fn has_unscoped_credential(headers: &HeaderMap) -> bool {
+    headers.iter().any(|(name, value)| {
+        is_credential_header(name, value)
+            && name != AUTHORIZATION
+            && name != COOKIE
+            && name != PROXY_AUTHORIZATION
+    })
+}
+
+fn clear_all_credentials(headers: &mut HeaderMap) {
+    let names = headers
+        .iter()
+        .filter(|(name, value)| is_credential_header(name, value))
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    for name in names {
+        headers.remove(name);
+    }
 }
 
 fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
