@@ -945,7 +945,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             }
             if value.as_table().is_some_and(|t| {
                 t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-                    && ["content", "block", "line", "template"]
+                    && ["content", "block", "line", "template", "merge"]
                         .iter()
                         .any(|key| t.contains_key(*key))
             }) {
@@ -957,7 +957,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
                 if let Some(table) = value.as_table().filter(|table| {
-                    ["block", "line", "template", "comment", "position"]
+                    ["block", "line", "template", "comment", "position", "merge"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
@@ -967,6 +967,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
                             );
                         }
+                    }
+                    if table.contains_key("merge") {
+                        crate::system::edits::validate_incoming_merge(&target, &value, path)?;
                     }
                     continue;
                 }
@@ -1312,7 +1315,7 @@ const GROUP_KEY_IN_DOTFILES: &str =
 fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<FileTomlEntry> {
     if value.as_table().is_some_and(|t| {
         t.get("encrypt").and_then(toml::Value::as_bool) == Some(true)
-            && ["content", "block", "line", "template"]
+            && ["content", "block", "line", "template", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1328,7 +1331,7 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
     // file it meant to edit.
     if value.as_table().is_some_and(|t| {
         t.get("mode").and_then(toml::Value::as_str) == Some("absent")
-            && ["block", "line", "template", "comment", "position"]
+            && ["block", "line", "template", "comment", "position", "merge"]
                 .iter()
                 .any(|key| t.contains_key(*key))
     }) {
@@ -1356,6 +1359,9 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
 fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileTomlEntry> {
     match &value {
         toml::Value::String(_) => {}
+        // a merge is an edit of a structured file, whatever else the table says;
+        // the edit parser accepts it or says why not
+        toml::Value::Table(table) if table.contains_key("merge") => return None,
         toml::Value::Table(table)
             if table.is_empty()
                 || table.contains_key("mode")
@@ -7817,6 +7823,26 @@ source = "oldrc""#,
             Arc::new(MiseToml::for_history_preflight(body, &path)?),
         );
         validate_incoming_files(&configs)
+    }
+
+    #[test]
+    fn incoming_merge_entries_are_validated_as_edits() -> Result<()> {
+        incoming(
+            "[dotfiles]\n\"~/a/settings.json/shared\" = { source = \"s.json\", merge = true }\n",
+        )?;
+        for entry in [
+            r#"{ source = "s.json", merge = true, exclude = [] }"#,
+            r#"{ source = "s.json", merge = true, mode = "copy" }"#,
+            r#"{ merge = true }"#,
+        ] {
+            let body = format!("[dotfiles]\n\"~/a/settings.json/shared\" = {entry}\n");
+            assert!(incoming(&body).is_err(), "{entry}");
+        }
+        assert!(
+            incoming("[dotfiles]\n\"~/a/notes.txt/shared\" = { source = \"s\", merge = true }\n")
+                .is_err()
+        );
+        Ok(())
     }
 
     #[test]

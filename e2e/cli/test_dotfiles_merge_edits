@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+
+# merge entries own some keys of a JSON, TOML, or YAML file that an
+# application also writes; every other key, comment, and the key order stay
+mkdir -p shared
+cat <<'EOF' >shared/codex.toml
+model = "gpt-5"
+
+[tui]
+theme = "light"
+EOF
+cat <<'EOF' >shared/claude.json
+{"model": "opus", "permissions": {"allow": ["Bash(ls)"]}}
+EOF
+cat <<'EOF' >shared/omp.yml
+theme: light
+tools:
+  bash: true
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.codex/config.toml/shared" = { source = "shared/codex.toml", merge = true }
+"~/.claude/settings.json/shared" = { source = "shared/claude.json", merge = true }
+"~/.omp/config.yml/shared" = { source = "shared/omp.yml", merge = true }
+EOF
+
+# nothing exists yet, so everything is missing
+assert_contains "mise dotfiles status" "merge:shared"
+assert_contains "mise dotfiles status" "missing"
+assert_fail "mise dotfiles status --missing"
+
+# a dry run lists the work and writes nothing
+assert_contains "mise dotfiles apply --dry-run" "merge:shared"
+assert_fail "cat ~/.codex/config.toml"
+
+# applying creates missing files from the source
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.codex/config.toml" 'model = "gpt-5"'
+assert_contains "cat ~/.claude/settings.json" '"model": "opus"'
+assert_contains "cat ~/.omp/config.yml" "theme: light"
+
+# the applications write their own keys, comments included
+mkdir -p ~/.codex ~/.claude ~/.omp
+cat <<'EOF' >~/.codex/config.toml
+# written by the desktop app
+notify = ["a"]
+model = "gpt-4"
+
+[tui]
+theme = "dark"  # app picked this
+
+[plugins.foo]
+path = "/Applications/X.app"
+EOF
+cat <<'EOF' >~/.claude/settings.json
+{
+    "zzz": 1,
+    "model": "sonnet",
+    "permissions": {"deny": ["Bash(rm)"]}
+}
+EOF
+cat <<'EOF' >~/.omp/config.yml
+# omp keeps this note
+theme: dark   # toggled in the UI
+modes:
+  fast: true
+tools:
+  bash: false
+EOF
+
+# drift is reported for owned keys only
+assert_contains "mise dotfiles status" "differs"
+assert_contains "mise dotfiles diff" '-model = "gpt-4"'
+assert_contains "mise dotfiles diff" '+model = "gpt-5"'
+assert_not_contains "mise dotfiles diff" '-notify'
+
+assert_succeed "mise dotfiles apply --yes"
+
+# owned keys are set; everything else is exactly where the app left it
+cat <<'EOF' >expected-codex.toml
+# written by the desktop app
+notify = ["a"]
+model = "gpt-5"
+
+[tui]
+theme = "light"  # app picked this
+
+[plugins.foo]
+path = "/Applications/X.app"
+EOF
+assert_succeed "cmp expected-codex.toml ~/.codex/config.toml"
+cat <<'EOF' >expected-omp.yml
+# omp keeps this note
+theme: light   # toggled in the UI
+modes:
+  fast: true
+tools:
+  bash: true
+EOF
+assert_succeed "cmp expected-omp.yml ~/.omp/config.yml"
+assert "jq -r .zzz ~/.claude/settings.json" "1"
+assert "jq -r .model ~/.claude/settings.json" "opus"
+assert "jq -c .permissions ~/.claude/settings.json" '{"deny":["Bash(rm)"],"allow":["Bash(ls)"]}'
+assert "head -2 ~/.claude/settings.json | tail -1" '    "zzz": 1,'
+
+# in sync now, and an application writing a new key does not cause drift
+assert_succeed "mise dotfiles status --missing"
+echo 'extra = true' >>~/.codex/config.toml
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.codex/config.toml" "extra = true"
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+
+# unapply leaves merged keys alone
+assert_succeed "mise dotfiles unapply --yes"
+assert_contains "cat ~/.codex/config.toml" 'model = "gpt-5"'
+
+# unusable entries are refused instead of guessed at
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes.txt/shared" = { source = "shared/codex.toml", merge = true }
+EOF
+assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .toml, .yaml, or .yml target"
+
+# a target that does not parse is reported, never overwritten
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/broken.json/shared" = { source = "shared/claude.json", merge = true }
+EOF
+echo '{// not json' >~/broken.json
+assert_fail "mise dotfiles apply --yes"
+assert "cat ~/broken.json" "{// not json"
+
+# a source that does not parse is refused before anything is written, even
+# when its target does not exist yet
+mkdir -p ~/early
+echo '{// not json' >shared/bad.json
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/early/first.toml/shared" = { source = "shared/codex.toml", merge = true }
+"~/early/second.json/shared" = { source = "shared/bad.json", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "invalid merge source"
+assert_fail "cat ~/early/first.toml"
+
+# two entries that set one key to different values are refused, not flipped
+cat <<'EOF' >shared/other.toml
+model = "gpt-4"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/conflict.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/conflict.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "set different values for model"
+assert_fail "cat ~/conflict.toml"
+
+# a trailing newline in a YAML block scalar is part of the value
+printf 'notes: |\n  line one\n  line two\n' >shared/notes.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes.yml/shared" = { source = "shared/notes.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles status --missing"
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+
+# unapply never touches a merge target, even one it could not read
+ln -sf ~/notes.yml ~/notes-link.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/notes-link.yml/shared" = { source = "shared/notes.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles unapply --yes"
+
+# the same file under another name (a hard link here, a case variant on
+# case-insensitive filesystems) still counts as one target for conflicts
+printf 'model = "x"\n' >~/hl.toml
+ln ~/hl.toml ~/hl-alias.toml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/hl.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/hl-alias.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "set different values for model"
+assert "cat ~/hl.toml" 'model = "x"'
+
+# applying one of two conflicting entries through a target filter still sees
+# the other one
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/filtered.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/filtered.toml/b" = { source = "shared/other.toml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply ~/filtered.toml/a --yes" "set different values for model"
+assert_fail "cat ~/filtered.toml"
+
+# two siblings that disagree do not block applying a third entry that this run
+# is not conflicting with
+cat <<'EOF' >shared/third.toml
+other = 1
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/trio.toml/a" = { source = "shared/codex.toml", merge = true }
+"~/trio.toml/b" = { source = "shared/other.toml", merge = true }
+"~/trio.toml/c" = { source = "shared/third.toml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply ~/trio.toml/c --yes"
+assert "cat ~/trio.toml" "other = 1"
+
+# a sibling whose target is blocked is not rendered, so its template's exec()
+# does not run
+printf 'x = 1\n' >~/real-target.toml
+ln -sf ~/real-target.toml ~/linked.toml
+cat <<'EOF' >shared/exec.toml.tera
+{{ exec(command="touch $HOME/sibling-exec-ran") }}x = 2
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/real-target.toml/a" = { source = "shared/other.toml", merge = true }
+"~/linked.toml/b" = { source = "shared/exec.toml.tera", merge = true, template = "tera" }
+EOF
+rm -f ~/sibling-exec-ran
+assert_succeed "mise dotfiles apply ~/real-target.toml/a --yes"
+assert_fail "test -e ~/sibling-exec-ran"
+
+# whole-file keys on a merge entry are refused by name and never make the
+# target a directory
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/withx.json/shared" = { source = "shared/claude.json", merge = true, exclude = [] }
+EOF
+assert_contains "mise dotfiles status 2>&1" "exclude applies to whole-file entries, not merge edits"
+mise dotfiles apply --yes >/dev/null 2>&1
+assert_fail "test -e ~/withx.json"
+
+# one file merged as two formats (a hard link under a .json and a .yml name) is
+# refused whatever the sources hold
+printf '{}\n' >~/fmt.json
+ln ~/fmt.json ~/fmt.yml
+cat <<'EOF' >shared/model.json
+{"model": "a"}
+EOF
+cat <<'EOF' >shared/model.yml
+model: b
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/fmt.json/a" = { source = "shared/model.json", merge = true }
+"~/fmt.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "as different formats"
+assert "cat ~/fmt.json" "{}"
+
+# the format conflict needs no rendering, so templates and dry runs see it too
+cat <<'EOF' >shared/model.json.tera
+{"model": "{{ 'a' }}"}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/fmt.json/a" = { source = "shared/model.json.tera", merge = true, template = "tera" }
+"~/fmt.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --dry-run" "as different formats"
+
+# a sibling whose target is a symlink cannot write anything, so it does not
+# count as a format conflict for an entry applied through a filter
+printf '{}\n' >~/sym.json
+ln -sf ~/sym.json ~/sym-alias.yml
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/sym.json/a" = { source = "shared/model.json", merge = true }
+"~/sym-alias.yml/b" = { source = "shared/model.yml", merge = true }
+EOF
+assert_succeed "mise dotfiles apply ~/sym.json/a --yes"
+assert_contains "cat ~/sym.json" '"model": "a"'
+
+# an unselected entry whose target is a named pipe is never opened by a filtered
+# apply, so it cannot hang it
+mkfifo ~/pipe.json
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/ok.json/a" = { source = "shared/model.json", merge = true }
+"~/pipe.json/b" = { source = "shared/model.json", merge = true }
+EOF
+printf '{}\n' >~/ok.json
+assert_succeed "timeout 60 mise dotfiles apply ~/ok.json/a --yes"
+assert_contains "cat ~/ok.json" '"model": "a"'
+
+# a filtered apply never renders an unselected template entry for the same
+# file, so its exec() does not run
+printf '{}\n' >~/shared-target.json
+cat <<'EOF' >shared/exec.json.tera
+{{ exec(command="touch $HOME/unselected-exec-ran") }}{"model": "x"}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/shared-target.json/a" = { source = "shared/model.json", merge = true }
+"~/shared-target.json/b" = { source = "shared/exec.json.tera", merge = true, template = "tera" }
+EOF
+rm -f ~/unselected-exec-ran
+assert_succeed "mise dotfiles apply ~/shared-target.json/a --yes"
+assert_fail "test -e ~/unselected-exec-ran"
