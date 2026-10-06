@@ -571,6 +571,12 @@ fn declared_env_keys_with(
     directives_keys(directives, shell_env)
 }
 
+/// A `default` assigns (and renders) only when the env has no non-empty value for its key.
+fn default_applies(key: &str, env: &crate::env_diff::EnvMap) -> bool {
+    !env.iter()
+        .any(|(k, v)| mise_util::env::env_key_eq(k, key) && !v.is_empty())
+}
+
 fn directives_keys(
     directives: impl Iterator<Item = crate::config::env_directive::EnvDirective>,
     shell_env: &crate::env_diff::EnvMap,
@@ -579,19 +585,17 @@ fn directives_keys(
     directives
         .filter_map(|d| match d {
             EnvDirective::Val(k, ..) => Some(k),
-            EnvDirective::Default(k, ..)
-                if !shell_env
-                    .iter()
-                    .any(|(sk, v)| mise_util::env::env_key_eq(sk, &k) && !v.is_empty()) =>
-            {
-                Some(k)
-            }
+            EnvDirective::Default(k, ..) if default_applies(&k, shell_env) => Some(k),
             _ => None,
         })
         .collect()
 }
 
 fn task_env_literals(task: &Task) -> Vec<(String, String)> {
+    task_env_literals_with(task, &crate::env::PRISTINE_ENV)
+}
+
+fn task_env_literals_with(task: &Task, env: &crate::env_diff::EnvMap) -> Vec<(String, String)> {
     use crate::config::env_directive::EnvDirective;
     task.env
         .0
@@ -599,7 +603,9 @@ fn task_env_literals(task: &Task) -> Vec<(String, String)> {
         .chain(task.inherited_env.0.iter())
         .chain(task.overlay_env.iter().map(|(d, _)| d))
         .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) | EnvDirective::Default(k, v, _) => {
+            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+            // a default the env already satisfies is never rendered
+            EnvDirective::Default(k, v, _) if default_applies(k, env) => {
                 Some((k.clone(), v.clone()))
             }
             _ => None,
@@ -833,6 +839,27 @@ mod tests {
                 .iter()
                 .any(|p| p.kind == ProblemKind::Template && !p.render().contains("s3cr3t")),
             "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn satisfied_defaults_are_not_scanned() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let task = Task {
+            env: crate::config::config_file::mise_toml::EnvList(vec![EnvDirective::Default(
+                "TOKEN".into(),
+                "{{ env.DEPLOY_KEY }}".into(),
+                EnvDirectiveOptions::default(),
+            )]),
+            ..Default::default()
+        };
+        let supplied = crate::env_diff::EnvMap::from([("TOKEN".to_string(), "ready".to_string())]);
+        assert!(task_env_literals_with(&task, &supplied).is_empty());
+        let empty = crate::env_diff::EnvMap::from([("TOKEN".to_string(), String::new())]);
+        assert_eq!(task_env_literals_with(&task, &empty).len(), 1);
+        assert_eq!(
+            task_env_literals_with(&task, &crate::env_diff::EnvMap::new()).len(),
+            1
         );
     }
 
