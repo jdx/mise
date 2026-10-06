@@ -542,10 +542,18 @@ pub(crate) fn collision_problem(label: &str, key: &str) -> Problem {
     ))
 }
 
-/// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. The spawn
-/// repeats the exact check against the real environment.
+/// Keys that task `[env]` and the config's `[env]` set by name, for the preflight. A `default`
+/// only counts when the shell supplies no non-empty value for the key, as it is evaluated.
+/// The spawn repeats the exact check against the real environment and stays authoritative.
 pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> BTreeSet<String> {
-    use crate::config::env_directive::EnvDirective;
+    declared_env_keys_with(task, config, &crate::env::PRISTINE_ENV)
+}
+
+fn declared_env_keys_with(
+    task: &Task,
+    config: &crate::config::Config,
+    shell_env: &crate::env_diff::EnvMap,
+) -> BTreeSet<String> {
     let directives = task
         .env
         .0
@@ -560,9 +568,24 @@ pub(crate) fn declared_env_keys(task: &Task, config: &crate::config::Config) -> 
                 .filter_map(|cf| cf.env_entries().ok())
                 .flatten(),
         );
+    directives_keys(directives, shell_env)
+}
+
+fn directives_keys(
+    directives: impl Iterator<Item = crate::config::env_directive::EnvDirective>,
+    shell_env: &crate::env_diff::EnvMap,
+) -> BTreeSet<String> {
+    use crate::config::env_directive::EnvDirective;
     directives
         .filter_map(|d| match d {
-            EnvDirective::Val(k, ..) | EnvDirective::Default(k, ..) => Some(k),
+            EnvDirective::Val(k, ..) => Some(k),
+            EnvDirective::Default(k, ..)
+                if !shell_env
+                    .iter()
+                    .any(|(sk, v)| mise_util::env::env_key_eq(sk, &k) && !v.is_empty()) =>
+            {
+                Some(k)
+            }
             _ => None,
         })
         .collect()
@@ -785,6 +808,31 @@ mod tests {
         assert!(
             problems.iter().any(|p| p.kind == ProblemKind::Template),
             "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn defaults_only_count_when_the_shell_has_no_value() {
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        let opts = EnvDirectiveOptions::default;
+        let directives = || {
+            vec![
+                EnvDirective::Default("DB".into(), "local".into(), opts()),
+                EnvDirective::Val("FIXED".into(), "x".into(), opts()),
+                EnvDirective::Default("EMPTY".into(), "d".into(), opts()),
+            ]
+            .into_iter()
+        };
+        let shell = crate::env_diff::EnvMap::from([
+            ("DB".to_string(), "from-shell".to_string()),
+            ("EMPTY".to_string(), String::new()),
+        ]);
+        let keys = directives_keys(directives(), &shell);
+        assert_eq!(keys, BTreeSet::from(["EMPTY", "FIXED"].map(String::from)));
+        let keys = directives_keys(directives(), &crate::env_diff::EnvMap::new());
+        assert_eq!(
+            keys,
+            BTreeSet::from(["DB", "EMPTY", "FIXED"].map(String::from))
         );
     }
 

@@ -376,10 +376,15 @@ impl SecretBroker {
         let opened = cell
             .get_or_init(|| async {
                 let owned: Toolset;
+                let mut config_env = None;
                 let ts: &Toolset = if monorepo {
                     let task_cf = task.cf.as_ref().expect("monorepo task has a config file");
                     owned = ctx
                         .build_toolset_for_task(config, task, Some(task_cf), &[])
+                        .await
+                        .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
+                    config_env = ctx
+                        .config_env_for_source(config, task, &owned)
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?;
                     &owned
@@ -389,7 +394,7 @@ impl SecretBroker {
                         .await
                         .map_err(|e| Arc::<str>::from(format!("{e:#}")))?
                 };
-                super::open_source(config, selected, ts)
+                super::open_source(config, selected, ts, config_env)
                     .await
                     .map_err(|e| Arc::<str>::from(format!("{e:#}")))
             })

@@ -175,6 +175,54 @@ impl TaskContextBuilder {
         ))
     }
 
+    /// The config-level `[env]` of a monorepo task's own hierarchy, for a secrets source that
+    /// runs from that subproject (so fnox sees its `AWS_PROFILE`, `FNOX_PROFILE`, ...). Returns
+    /// the resolved values and the keys the hierarchy unsets, or `None` when the task runs in the
+    /// current project. It never includes the task's own env, its dependencies' env or secrets.
+    pub(crate) async fn config_env_for_source(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        ts: &Toolset,
+    ) -> Result<Option<(BTreeMap<String, String>, BTreeSet<String>)>> {
+        let Some(task_cf) = task.cf.as_ref() else {
+            return Ok(None);
+        };
+        let Some(files) = self.task_config_files(config, task, task_cf).await? else {
+            return Ok(None);
+        };
+        let entries: Vec<(EnvDirective, PathBuf)> = files
+            .iter()
+            .rev()
+            .filter_map(|(source, cf)| {
+                cf.env_entries()
+                    .ok()
+                    .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+            })
+            .flatten()
+            .collect();
+        let (tera_ctx, _) = self
+            .build_tera_context(task_cf, ts, config, Some(&files))
+            .await?;
+        let (mut env, env_remove) = ts.full_env_with_removals(config).await?;
+        // as the task env replay does: a `required` directive may still read a value the
+        // root config removed
+        for key in &env_remove {
+            if let Some(value) = env::PRISTINE_ENV.get(key) {
+                env.insert(key.clone(), value.clone());
+            }
+        }
+        let results = self
+            .resolve_env_directives(config, &tera_ctx, &env, entries)
+            .await?;
+        let values = results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        Ok(Some((values, results.env_remove.clone())))
+    }
+
     /// Resolve environment variables for a task using its config file context
     /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
     /// Returns (env, task_env, resolved_vars) where resolved_vars contains vars from the
