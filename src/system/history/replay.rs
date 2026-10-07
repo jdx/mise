@@ -457,7 +457,10 @@ async fn execute(
         info!("history: nothing to do");
         return Ok(());
     }
-    if !exec.yes && !prompt::confirm("history: apply this plan?")?.is_yes() {
+    if !exec.yes
+        && !crate::config::Settings::get().yes
+        && !prompt::confirm_recoverable("history: apply this plan?")?
+    {
         info!("history: skipped");
         return Ok(());
     }
@@ -526,8 +529,15 @@ async fn apply_steps(
             {
                 bail!("the refreshed plan has conflicts; nothing was changed");
             }
-            if !exec.yes && !prompt::confirm("history: apply the refreshed plan?")?.is_yes() {
-                bail!("declined; nothing was changed");
+            if !exec.yes && !crate::config::Settings::get().yes {
+                // The plan the caller saw is not the plan that would run, so
+                // unlike the first confirmation this one is never implied.
+                if !prompt::confirm_destructive(
+                    "history: apply the refreshed plan?",
+                    &format!("mise {}", exec.command),
+                )? {
+                    bail!("declined; nothing was changed");
+                }
             }
         }
         // completeness: every path about to be written or deleted that exists
@@ -570,6 +580,15 @@ async fn apply_steps(
         );
         scope.recapture_before(&missing)?;
     }
+    // files no checkpoint holds go with a replaced directory and cannot be
+    // undone: decide before the first mutation, so an unattended replay
+    // without --yes fails with nothing changed instead of part way through
+    let approved = approve_directory_removals(
+        steps,
+        tracked,
+        exec.yes || crate::config::Settings::get().yes,
+        &format!("mise {}", exec.command),
+    )?;
     let mut touched = vec![];
     // deletions deepest first, then writes shallowest first: a directory is
     // emptied before the file that replaces it is written, and a directory
@@ -658,6 +677,7 @@ async fn apply_steps(
                     display_path(&step.path)
                 );
             }
+            inside.check_approved(&step.path, &approved)?;
             if !inside.uncovered.is_empty() {
                 // only reachable with --force (a type change): say what
                 // goes with the directory that no checkpoint holds
@@ -764,6 +784,57 @@ struct DirectoryContents {
     empty_dirs: Vec<PathBuf>,
 }
 
+impl DirectoryContents {
+    fn check_approved(&self, dir: &Path, approved: &[PathBuf]) -> Result<()> {
+        if let Some(stray) = self.uncovered.iter().find(|path| !approved.contains(path)) {
+            bail!(
+                "{} appeared in {} after the removal was confirmed; nothing more was changed",
+                display_path(stray),
+                display_path(dir)
+            );
+        }
+        Ok(())
+    }
+}
+
+fn approve_directory_removals(
+    steps: &[Step],
+    tracked: &TrackedSet,
+    yes: bool,
+    command: &str,
+) -> Result<Vec<PathBuf>> {
+    let mut uncovered = vec![];
+    // Empty-directory cleanup uses remove_dir, which leaves new files intact.
+    for step in steps
+        .iter()
+        .filter(|step| matches!(step.action, Action::Write { .. } | Action::Delete))
+    {
+        let replaces_dir = step.path.is_dir()
+            && !step.path.is_symlink()
+            && !matches!(&step.action, Action::Write { mode, .. } if mode == "040000");
+        if replaces_dir {
+            uncovered.extend(directory_contents(&step.path, steps, tracked)?.uncovered);
+        }
+    }
+    if !yes
+        && !uncovered.is_empty()
+        && !prompt::confirm_destructive(
+            format!(
+                "history: remove files history does not cover and cannot undo ({})?",
+                uncovered
+                    .iter()
+                    .map(display_path)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            command,
+        )?
+    {
+        bail!("declined; nothing was changed");
+    }
+    Ok(uncovered)
+}
+
 fn directory_contents(
     dir: &Path,
     steps: &[Step],
@@ -790,8 +861,12 @@ fn directory_contents(
         if entry.file_type().is_dir() {
             // an empty directory history would look at is recorded for undo;
             // one under an exclusion or a nested repository is not
-            if std::fs::read_dir(entry.path())?.next().is_none() && tracked.would_capture(&path)? {
-                out.empty_dirs.push(path);
+            if std::fs::read_dir(entry.path())?.next().is_none() {
+                if tracked.would_capture(&path)? {
+                    out.empty_dirs.push(path);
+                } else {
+                    out.uncovered.push(path);
+                }
             }
             continue;
         }
@@ -1953,6 +2028,61 @@ fn config_hint(touched: &[PathBuf]) {
 #[cfg(test)]
 mod reload_tests {
     use super::*;
+
+    #[test]
+    fn excluded_empty_directories_require_removal_approval() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = normalize(temp.path());
+        let excluded = dir.join("ignored");
+        let captured = dir.join("included");
+        std::fs::create_dir(&excluded)?;
+        std::fs::create_dir(&captured)?;
+        let mut entry = super::super::tracked::TrackedEntry::new(
+            dir.clone(),
+            "track",
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track),
+        );
+        entry.exclude = Some(vec!["/ignored".into()]);
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let contents = directory_contents(&dir, &[], &tracked)?;
+        assert_eq!(contents.uncovered, [excluded]);
+        assert_eq!(contents.empty_dirs, [captured]);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_yes_still_rejects_new_uncovered_files() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = temp.path().join("replaced");
+        std::fs::create_dir(&dir)?;
+        let old = dir.join("existing.key");
+        std::fs::write(&old, "existing")?;
+        let steps = [Step {
+            path: dir.clone(),
+            tree_path: String::new(),
+            action: Action::Delete,
+            from: String::new(),
+            to: String::new(),
+            bits: None,
+            dir_bits: vec![],
+        }];
+        let tracked = TrackedSet::default();
+        let approved = approve_directory_removals(&steps, &tracked, true, "mise dot rollback")?;
+        assert_eq!(approved, [old]);
+        directory_contents(&dir, &steps, &tracked)?.check_approved(&dir, &approved)?;
+
+        let late = dir.join("late.key");
+        std::fs::write(&late, "keep this")?;
+        let err = directory_contents(&dir, &steps, &tracked)?
+            .check_approved(&dir, &approved)
+            .unwrap_err();
+        assert!(err.to_string().contains("late.key"));
+        assert_eq!(std::fs::read_to_string(late)?, "keep this");
+        Ok(())
+    }
 
     #[test]
     fn reload_path_resolves_home_only() {

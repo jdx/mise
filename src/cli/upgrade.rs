@@ -1116,6 +1116,10 @@ impl Upgrade {
     }
 
     fn get_interactive_tool_set(&self, outdated: &Vec<OutdatedInfo>) -> Result<Vec<OutdatedInfo>> {
+        if !console::user_attended_stderr() || !std::io::IsTerminal::is_terminal(&std::io::stdin())
+        {
+            eyre::bail!("--interactive requires an interactive terminal");
+        }
         ui::ctrlc::show_cursor_after_ctrl_c();
         let theme = crate::ui::theme::get_theme();
         let mut ms = demand::MultiSelect::new("mise upgrade")
