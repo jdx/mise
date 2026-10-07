@@ -499,15 +499,13 @@ impl Doctor {
         ));
     }
 
-    /// Background updates (a global tool's `auto_update`) have no output of
-    /// their own, so a failing one is only visible here.
+    /// A failed `auto_update` only warns on the launch that tried it, so the
+    /// last failure is kept for here.
     fn analyze_tool_updates(&mut self) {
         for failure in crate::tool_update::failures() {
             self.warnings.push(format!(
-                "the last background update of {} failed: {}\nsee {} for its output",
-                failure.tool,
-                failure.error,
-                display_path(&failure.log),
+                "the last auto_update of {} failed: {}",
+                failure.tool, failure.error,
             ));
         }
     }

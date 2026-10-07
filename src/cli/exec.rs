@@ -164,14 +164,23 @@ impl Exec {
         } else {
             &shim_task_tools
         };
-        let mut ts = measure!("toolset", {
+        let build = async |config: &Arc<Config>| {
             ToolsetBuilder::new()
                 .with_args(tool_args)
                 .with_default_to_latest(true)
                 .with_resolve_options(resolve_options.clone())
-                .build(&config)
-                .await?
-        });
+                .build(config)
+                .await
+        };
+        let mut ts = measure!("toolset", { build(&config).await? });
+        // A due `auto_update` upgrades the command's tool before it runs, so
+        // resolve again to launch the new version.
+        if let Some(program) = self.update_target()
+            && super::tool_update::update_before_launch(&config, &ts, program).await
+        {
+            config = Config::reset().await?;
+            ts = build(&config).await?;
+        }
 
         // A native Windows shim runs `mise x -- <name>` rather than mise as `<name>`, so its
         // command wrapper is applied here instead of by `handle_shim`.
@@ -193,6 +202,16 @@ impl Exec {
             false,
         )
         .await
+    }
+
+    /// The bare command name `mise x -- <cmd>` launches, which `auto_update`
+    /// looks up to find the tool to update. Shell bodies and paths have none.
+    fn update_target(&self) -> Option<&str> {
+        if self.c.is_some() {
+            return None;
+        }
+        let program = self.command.as_ref()?.first()?;
+        (!program.contains(['/', '\\'])).then_some(program.as_str())
     }
 
     /// Execute with a toolset that the shim path has already resolved while
@@ -464,19 +483,8 @@ impl Exec {
         time!("exec");
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
-        // command must not be reinterpreted as a shell body. `exec_program`
-        // resolves a concrete executable before it schedules the update, so
-        // the update cannot win a PATH race and change this launch.
-        exec_program(
-            program,
-            args,
-            env,
-            env_remove,
-            &sandbox,
-            self.c.is_some(),
-            Some(&ts),
-        )
-        .await
+        // command must not be reinterpreted as a shell body.
+        exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
 }
 
@@ -630,7 +638,6 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     _shell_body_mode: bool,
-    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -754,9 +761,6 @@ where
             program.to_string_lossy()
         ));
     }
-    if let Some(toolset) = tool_update {
-        crate::tool_update::schedule(toolset);
-    }
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
     let args_str: Vec<String> = args
@@ -805,7 +809,6 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     shell_body_mode: bool,
-    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
@@ -908,10 +911,6 @@ where
     }
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
 
-    if let Some(toolset) = tool_update {
-        crate::tool_update::schedule(toolset);
-    }
-
     // Windows does not support exec in the same way as Unix,
     // so we emulate it instead by not handling Ctrl-C and letting
     // the child process deal with it instead.
@@ -988,16 +987,12 @@ pub(crate) async fn exec_program<T, U>(
     env_remove: std::collections::BTreeSet<String>,
     _sandbox: &SandboxConfig,
     _shell_body_mode: bool,
-    tool_update: Option<&Toolset>,
 ) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    if let Some(toolset) = tool_update {
-        crate::tool_update::schedule(toolset);
-    }
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);

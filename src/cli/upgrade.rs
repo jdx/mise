@@ -154,9 +154,10 @@ pub(crate) struct Upgrade {
     #[usage(long, overrides = "jobs")]
     raw: bool,
 
-    /// Read only global config, for the detached background updater.
+    /// Upgrading a global tool for `auto_update` as it launches: read only
+    /// global config, and keep stdout, which belongs to the launched tool, clean.
     #[usage(skip)]
-    global_only: bool,
+    for_auto_update: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -186,7 +187,7 @@ impl Upgrade {
     }
 
     fn scope(&self) -> ConfigScope {
-        if self.global_only {
+        if self.for_auto_update {
             ConfigScope::GlobalOnly
         } else if self.local {
             ConfigScope::LocalOnly
@@ -288,7 +289,7 @@ impl Upgrade {
                     .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
             });
         }
-        if !self.is_dry_run() && !self.global_only && !Settings::get().generate_lockfiles() {
+        if !self.is_dry_run() && !self.for_auto_update && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
@@ -405,14 +406,19 @@ impl Upgrade {
                 }
             }
         }
-        self.warn_if_newer_versions_hidden_by_minimum_release_age(
-            &config,
-            &ts,
-            &opts,
-            filter_tools,
-            exclude_tools,
-        )
-        .await;
+        if self.for_auto_update && outdated.is_empty() {
+            return Ok(());
+        }
+        if !self.for_auto_update {
+            self.warn_if_newer_versions_hidden_by_minimum_release_age(
+                &config,
+                &ts,
+                &opts,
+                filter_tools,
+                exclude_tools,
+            )
+            .await;
+        }
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
             if outdated.is_empty() {
@@ -930,7 +936,7 @@ impl Upgrade {
                 }
             }
 
-            if scheduled_pruning {
+            if scheduled_pruning && !self.for_auto_update {
                 let prune_after = &Settings::get().upgrade.prune_after;
                 hint!(
                     "upgrade_auto_prune",
@@ -1026,7 +1032,9 @@ impl Upgrade {
         .await;
 
         mpr.finish_progress();
-        Self::print_summary(&outdated, &successful_versions)?;
+        if !self.for_auto_update {
+            Self::print_summary(&outdated, &successful_versions)?;
+        }
 
         match (install_error, post_install_result) {
             (Err(install), Err(post)) => Err(eyre!("{install:#}\n{post:#}")),
@@ -1241,12 +1249,12 @@ impl Upgrade {
     }
 }
 
-/// Upgrade one tool within its global config request, for `mise __tool-update`.
-/// Only global config is read, so a project's config and lockfile never change.
+/// Upgrade one tool within its global config request, for `auto_update`. Only
+/// global config is read, so a project's config and lockfile never change.
 pub(crate) async fn upgrade_global_tool(tool: ToolArg) -> Result<()> {
     Upgrade {
         tool: vec![tool],
-        global_only: true,
+        for_auto_update: true,
         ..Default::default()
     }
     .run()

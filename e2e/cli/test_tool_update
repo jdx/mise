@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Background updates for tools whose global [tools] entry sets auto_update.
-# The dummy backend offers 1.0.0, 1.1.0, and 2.0.0. Each case gets its own
-# state dir, so its first check is always due.
+# auto_update on a global [tools] entry upgrades the tool, within its
+# configured version, before a shim or `mise x` launches it. The dummy backend
+# offers 1.0.0, 1.1.0, and 2.0.0. Each case gets its own state dir, so its
+# first check is always due.
 
 fresh_state() {
   export MISE_STATE_DIR="$PWD/state-$1"
@@ -17,87 +18,36 @@ reset_dummy() {
   mise install dummy@1.0.0
 }
 
-# The updater holds <key>.lock with its PID written in it; unlocking empties
-# the file but leaves it in place.
-wait_for_updater() {
-  local _
-  for _ in {1..300}; do
-    if compgen -G "$MISE_STATE_DIR/tool-update/*.lock" >/dev/null &&
-      ! grep -q '[0-9]' "$MISE_STATE_DIR"/tool-update/*.lock; then
-      return
-    fi
-    sleep 0.1
-  done
-  cat "$MISE_STATE_DIR"/tool-update/*.log >&2 || true
-  fail "the background update did not finish"
-}
-
-assert_no_update_started() {
+assert_not_checked() {
   assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 }
 
-# `mise x` runs the installed version and updates within the configured range.
+# `mise x` updates within the range first and runs the new version, with
+# nothing added to the tool's stdout.
 fresh_state exec
 global_config 'dummy = { version = "1", auto_update = true }'
 reset_dummy
-reset_dummy
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_updater
-assert_contains "mise ls --installed dummy" "1.1.0"
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_not_contains "mise ls --installed dummy" "2.0.0"
-assert_contains "mise x -- dummy" "Dummy 1.1.0"
 
-# A run within the interval starts nothing: the check marker is not touched.
-marker="$(find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*')"
-touch -d '1 minute ago' "$marker"
-checked_at="$(stat -c %Y "$marker")"
-assert_contains "mise x -- dummy" "Dummy 1.1.0"
-assert "stat -c %Y '$marker'" "$checked_at"
+# Within the interval it runs what is installed without checking again.
+mise uninstall dummy@1.1.0
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
 
-# `mise x` execs the tool, so the tool's process becomes mise's. The updater
-# must not end up as its child, left unreaped once it exits.
-fresh_state zombie
-reset_dummy
-# Python, unlike a shell, does not reap children it did not start.
-cat >children.py <<'EOF'
-import glob, os, subprocess, time
-for _ in range(300):
-    locks = glob.glob(os.environ["MISE_STATE_DIR"] + "/tool-update/*.lock")
-    if locks and not any(open(lock).read().strip() for lock in locks):
-        break
-    time.sleep(0.1)
-time.sleep(0.5)
-ps = subprocess.run(["ps", "-A", "-o", "ppid=", "-o", "stat="], capture_output=True, text=True)
-rows = [line.split() for line in ps.stdout.splitlines()]
-print(sum(1 for ppid, stat in rows if ppid == str(os.getpid()) and stat.startswith("Z")))
-EOF
-assert "mise x -- python3 children.py" "0"
-rm children.py
-
-# Shims and tasks schedule it too; a task dry run does not.
+# Shims update the same way.
 fresh_state shim
 reset_dummy
 mise reshim
-assert_contains "$MISE_DATA_DIR/shims/dummy" "Dummy 1.0.0"
-wait_for_updater
-assert_contains "mise ls --installed dummy" "1.1.0"
+assert "$MISE_DATA_DIR/shims/dummy" "This is Dummy 1.1.0!"
 
-cat >mise.toml <<'EOF'
-[tasks.current]
-run = "dummy"
-EOF
-fresh_state run-dry-run
+# Only the tool being launched is checked.
+fresh_state other-command
 reset_dummy
-assert_succeed "mise run --dry-run current"
-assert_no_update_started
-fresh_state run
-assert_contains "mise run current" "Dummy 1.0.0"
-wait_for_updater
-assert_contains "mise ls --installed dummy" "1.1.0"
-rm mise.toml
+assert_succeed "mise x -- true"
+assert_not_checked
 
 # A project config can't turn it on, and a project that sets its own version
-# of the tool doesn't trigger the global entry's updates.
+# of the tool doesn't update the global entry's tool.
 fresh_state project-option
 global_config '# no tools'
 cat >mise.toml <<'EOF'
@@ -105,8 +55,8 @@ cat >mise.toml <<'EOF'
 dummy = { version = "1", auto_update = true }
 EOF
 reset_dummy
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_no_update_started
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
 
 fresh_state project-version
 global_config 'dummy = { version = "1", auto_update = true }'
@@ -114,46 +64,46 @@ cat >mise.toml <<'EOF'
 [tools]
 dummy = "1"
 EOF
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_no_update_started
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
 rm mise.toml
 
-# Exact versions are never updated, and hook-env never schedules.
+# Exact versions are never updated; nothing is checked offline or from hook-env.
 fresh_state pin
 global_config 'dummy = { version = "1.0.0", auto_update = true }'
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_no_update_started
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
 
-fresh_state hook-env
 global_config 'dummy = { version = "1", auto_update = true }'
+fresh_state offline
+assert "MISE_OFFLINE=1 mise x -- dummy" "This is Dummy 1.0.0!"
+assert_not_checked
+fresh_state hook-env
 assert_succeed "mise hook-env -s bash >/dev/null"
-assert_no_update_started
+assert_not_checked
 
 # A per-tool interval is accepted; one under an hour is raised with a warning.
 fresh_state interval
 global_config 'dummy = { version = "1", auto_update = "1m" }'
-reset_dummy
 assert_contains "mise x -- dummy 2>&1" "below the 1h minimum"
-wait_for_updater
 assert_contains "mise ls --installed dummy" "1.1.0"
 
-# A failed update leaves the installed version in use and shows in doctor;
-# a later successful one clears it.
+# A failed update warns, runs the installed version, and shows in doctor
+# until an update succeeds.
 fresh_state failed
 global_config 'dummy = { version = "1", auto_update = true }'
 reset_dummy
 global_config 'dummy = { version = "1", auto_update = true, postinstall = "exit 1" }'
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-wait_for_updater
-assert_contains "mise x -- dummy" "Dummy 1.0.0"
-assert_contains "mise doctor 2>&1 || true" "the last background update of asdf:dummy failed"
+assert_contains "mise x -- dummy 2>&1" "could not update asdf:dummy"
+assert "mise x -- dummy" "This is Dummy 1.0.0!"
+assert_contains "mise doctor 2>&1 || true" "the last auto_update of asdf:dummy failed"
 global_config 'dummy = { version = "1", auto_update = true }'
-assert_succeed "mise __tool-update dummy"
-assert_not_contains "mise doctor 2>&1 || true" "background update of asdf:dummy failed"
+find "$MISE_STATE_DIR/tool-update" -type f ! -name '*.*' -delete
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
+assert_not_contains "mise doctor 2>&1 || true" "auto_update of asdf:dummy failed"
 
 # A global lockfile follows the update; a project lockfile is never touched.
 fresh_state lockfile
-global_config 'dummy = { version = "1", auto_update = true }'
 reset_dummy
 cat >mise.toml <<'EOF'
 [env]
@@ -164,10 +114,9 @@ cat >mise.lock <<'EOF'
 version = "1.0.0"
 backend = "asdf:dummy"
 EOF
-project_lock="$(cksum mise.lock)"
 mise lock --global dummy
+project_lock="$(cksum mise.lock)"
 assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.0.0'
-mise x -- dummy
-wait_for_updater
+assert "mise x -- dummy" "This is Dummy 1.1.0!"
 assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" '1.1.0'
 assert "cksum mise.lock" "$project_lock"

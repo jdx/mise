@@ -745,12 +745,6 @@ impl TaskExecutor {
             let exec_start = std::time::Instant::now();
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
-            // Schedule only for a task that will actually execute. In
-            // particular, previews, declined confirmations, and cache hits
-            // must not turn into installs in the background.
-            if !self.dry_run {
-                crate::tool_update::schedule(&ts);
-            }
             self.exec_file(config, &file, confirm_guard, exec_ctx)
                 .await?;
             trace!(
@@ -773,11 +767,6 @@ impl TaskExecutor {
             let exec_start = std::time::Instant::now();
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
-            // See the file-task branch above: scheduling happens after all
-            // non-execution exits and immediately before a real task launch.
-            if !self.dry_run && !rendered_run_scripts.is_empty() {
-                crate::tool_update::schedule(&ts);
-            }
             self.exec_task_run_entries(
                 rendered_run_scripts,
                 TaskRunEntriesContext {

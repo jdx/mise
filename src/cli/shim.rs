@@ -46,7 +46,14 @@ pub(crate) async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    let (mut bin, mut ts, mut wrapper) =
+        which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    // A due `auto_update` upgrades this shim's tool before it runs, so look
+    // the binary up again to launch the new version.
+    if super::tool_update::update_before_launch(&config, &ts, &env::MISE_BIN_NAME).await {
+        config = Config::reset().await?;
+        (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    }
     args[0] = bin.to_string_lossy().to_string();
     if let Some(wrapper) = &wrapper {
         args.splice(1..1, wrapper.args().iter().cloned());

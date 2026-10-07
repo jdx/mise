@@ -43,7 +43,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     // archive into it through sudo and it replaces files under the system
     // installs directory.
     ("__publish-system-install", Destructive),
-    // Detached background updater for a global `auto_update` tool: the same
+    // Run by a shim or `mise x` for a global `auto_update` tool: the same
     // upgrade `mise upgrade <tool>` performs.
     ("__tool-update", Write),
     ("activate", Read),
