@@ -1971,15 +1971,31 @@ pub fn relocate(tv: &ToolVersion, from: &Path) -> Result<PathBuf> {
     let allocated = allocate(&bare, false)?
         .filter(|a| !a.read_only)
         .ok_or_else(|| eyre::eyre!("the identity layout does not govern it"))?;
-    if std::fs::symlink_metadata(&allocated.dir).is_ok() {
-        eyre::bail!("{} already exists", allocated.dir.display());
-    }
     let _lock = lock_install(&allocated.dir, &|_| {})?;
+    // Under the lock: an install that finished there while this waited is
+    // someone else's, and is neither written to nor recorded as ours. What a
+    // failed reinstall left there is not.
+    clear_leftover(&allocated.dir)?;
     // Recorded before anything moves, so an interrupted move is put back.
     note_writing(&allocated)?;
     file::rename(from, &allocated.dir)?;
     finish(&bare, &allocated, false)?;
     Ok(allocated.dir)
+}
+
+/// Clear the way for a relocation into `dir`, which the caller holds the
+/// install lock of. Nothing is there, or only what an install that failed left
+/// (a real directory with no receipt: the lock means nobody is still writing
+/// it) and that is removed. A finished installation, or anything that is not a
+/// plain directory, is never touched and fails the relocation.
+fn clear_leftover(dir: &Path) -> Result<()> {
+    let Ok(meta) = std::fs::symlink_metadata(dir) else {
+        return Ok(());
+    };
+    if !meta.is_dir() || meta.file_type().is_symlink() || is_complete(dir) {
+        eyre::bail!("{} already exists", dir.display());
+    }
+    file::remove_all(dir)
 }
 
 /// Make sure `installs/<tool>/<version>` links to the installation `dir` (which
@@ -2110,6 +2126,31 @@ pub fn dir_name_of(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clear_leftover_removes_only_what_a_failed_install_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tool-abcdefgh");
+        assert!(super::clear_leftover(&dir).is_ok());
+        // a failed reinstall: payload, no receipt
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        std::fs::write(dir.join("bin/x"), "").unwrap();
+        assert!(super::clear_leftover(&dir).is_ok());
+        assert!(!dir.exists());
+        // a finished install is never touched
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join(super::RECEIPT_FILE), "").unwrap();
+        if super::is_complete(&dir) {
+            assert!(super::clear_leftover(&dir).is_err());
+            assert!(dir.exists());
+        }
+        #[cfg(unix)]
+        {
+            let link = tmp.path().join("dangling");
+            std::os::unix::fs::symlink(tmp.path().join("nowhere"), &link).unwrap();
+            assert!(super::clear_leftover(&link).is_err());
+        }
+    }
+
     use super::*;
 
     #[test]

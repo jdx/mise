@@ -667,7 +667,9 @@ async fn attempt(tv: &ToolVersion, relocate: bool) -> Result<Outcome> {
         reinstall(&logical_tv).await
     };
     if let Some(extra) = &extra_link {
-        drop_extra_link(extra, step.as_ref().ok());
+        let mut ours = snapshot(&journal).made;
+        ours.extend(step.as_ref().ok().cloned());
+        drop_extra_link(extra, &ours);
     }
     let installed = step.and_then(|dir| {
         // An installation that already existed (another spelling made it, or it
@@ -763,15 +765,20 @@ fn extra_link(tv: &ToolVersion, logical: &ToolVersion) -> Option<PathBuf> {
     (extra != tv.install_path()).then_some(extra)
 }
 
-/// Remove `extra`, a link this migration's install made. After an install it
-/// goes only when it names that installation; after a failed one, whatever it
-/// links to was never kept.
-fn drop_extra_link(extra: &Path, installed: Option<&PathBuf>) {
+/// Remove `extra` if this migration's install made it: a link that names one
+/// of `ours`, the installation directories the migration wrote into or made.
+/// A link to anything else (a `mise link`, another install) is not ours. It is
+/// matched by the directory name its target ends in, since after a failure the
+/// directory may be gone.
+fn drop_extra_link(extra: &Path, ours: &[PathBuf]) {
     if !file::is_symlink_or_junction(extra) {
         return;
     }
-    let names_it = |dir: &PathBuf| matches!((extra.canonicalize(), dir.canonicalize()), (Ok(a), Ok(b)) if a == b);
-    if installed.is_none_or(names_it)
+    let Ok(target) = std::fs::read_link(extra) else {
+        return;
+    };
+    let named = |dir: &PathBuf| dir.file_name().is_some() && dir.file_name() == target.file_name();
+    if ours.iter().any(named)
         && let Err(err) = file::remove_dir_link(extra)
     {
         debug!("could not remove {}: {err:#}", display_path(extra));
@@ -900,20 +907,27 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn drop_extra_link_removes_only_what_names_the_install() {
+    fn drop_extra_link_removes_only_a_link_to_what_the_migration_made() {
         let tmp = tempfile::tempdir().unwrap();
-        let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
-        std::fs::create_dir(&a).unwrap();
-        std::fs::create_dir(&b).unwrap();
+        let (ours, other) = (
+            tmp.path().join("tool-aaaaaaaa"),
+            tmp.path().join("tool-bbbbbbbb"),
+        );
+        std::fs::create_dir(&ours).unwrap();
+        std::fs::create_dir(&other).unwrap();
         let link = tmp.path().join("link");
-        std::os::unix::fs::symlink(&b, &link).unwrap();
-        drop_extra_link(&link, Some(&a));
+        // made by a `mise link` or another install since the migration began
+        std::os::unix::fs::symlink(&other, &link).unwrap();
+        drop_extra_link(&link, std::slice::from_ref(&ours));
         assert!(link.is_symlink());
-        drop_extra_link(&link, Some(&b));
-        assert!(!link.is_symlink());
-        std::os::unix::fs::symlink(&b, &link).unwrap();
-        drop_extra_link(&link, None);
-        assert!(!link.is_symlink() && b.is_dir());
+        drop_extra_link(&link, &[]);
+        assert!(link.is_symlink());
+        std::fs::remove_file(&link).unwrap();
+        // the installer's own, even when its directory is gone again
+        std::os::unix::fs::symlink(&ours, &link).unwrap();
+        std::fs::remove_dir(&ours).unwrap();
+        drop_extra_link(&link, std::slice::from_ref(&ours));
+        assert!(!link.is_symlink() && other.is_dir());
     }
 
     #[cfg(unix)]
