@@ -17,6 +17,11 @@ use crate::{dirs, env, tool_update};
 pub(crate) struct ToolUpdate {
     #[usage(value_name = "TOOL")]
     tool: ToolArg,
+
+    /// The tool id the launch claimed the check under; the result is recorded
+    /// there, so `mise doctor` finds it under the same id
+    #[usage(long, hide = true)]
+    id: Option<String>,
 }
 
 impl ToolUpdate {
@@ -25,7 +30,7 @@ impl ToolUpdate {
             debug!("tool-update: skipped, `locked` is set");
             return Ok(());
         }
-        let tool_id = self.tool.ba.full_without_opts();
+        let tool_id = self.id.unwrap_or_else(|| self.tool.ba.full_without_opts());
         let _lock = tool_update::lock_for_update()?;
         // Another update may have changed the global lockfile while this waited.
         Config::reset().await?;
@@ -57,7 +62,9 @@ pub(crate) async fn update_before_launch(config: &Arc<Config>, ts: &Toolset, bin
     // files apply. Its progress goes to stderr; stdout stays the launched tool's.
     let mut command = Command::new(&*env::MISE_BIN);
     command
-        .args(["__tool-update", &tv.ba().short])
+        // The config's spelling selects the request to upgrade; the id the
+        // check was claimed under is where the result is recorded.
+        .args(["__tool-update", &tv.ba().short, "--id", &tool_id])
         .env_clear()
         .envs(
             env::PRISTINE_ENV
