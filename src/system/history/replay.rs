@@ -853,8 +853,12 @@ fn directory_contents(
         if entry.file_type().is_dir() {
             // an empty directory history would look at is recorded for undo;
             // one under an exclusion or a nested repository is not
-            if std::fs::read_dir(entry.path())?.next().is_none() && tracked.would_capture(&path)? {
-                out.empty_dirs.push(path);
+            if std::fs::read_dir(entry.path())?.next().is_none() {
+                if tracked.would_capture(&path)? {
+                    out.empty_dirs.push(path);
+                } else {
+                    out.uncovered.push(path);
+                }
             }
             continue;
         }
@@ -1976,6 +1980,30 @@ fn config_hint(touched: &[PathBuf]) {
 #[cfg(test)]
 mod reload_tests {
     use super::*;
+
+    #[test]
+    fn excluded_empty_directories_require_removal_approval() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = normalize(temp.path());
+        let excluded = dir.join("ignored");
+        let captured = dir.join("included");
+        std::fs::create_dir(&excluded)?;
+        std::fs::create_dir(&captured)?;
+        let mut entry = super::super::tracked::TrackedEntry::new(
+            dir.clone(),
+            "track",
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track),
+        );
+        entry.exclude = Some(vec!["/ignored".into()]);
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let contents = directory_contents(&dir, &[], &tracked)?;
+        assert_eq!(contents.uncovered, [excluded]);
+        assert_eq!(contents.empty_dirs, [captured]);
+        Ok(())
+    }
 
     #[test]
     fn replay_yes_still_rejects_new_uncovered_files() -> Result<()> {
