@@ -323,7 +323,9 @@ EOF2
   # the interrupted write is accepted as it is before going on; without a
   # terminal, MISE_YES answers the confirmation
   assert_contains "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "recovery copies preserved"
-  assert_succeed "MISE_YES=1 mise dot recover --keep-current </dev/null"
+  assert_contains "MISE_YES=0 mise dot recover --keep-current </dev/null 2>&1" "Interrupted operation"
+  assert_contains "MISE_YES=1 mise dot recover --keep-current </dev/null 2>&1" "recovered operation"
+  assert_contains "mise dot recover 2>&1" "no interrupted operations"
   cat <<EOF2 >>mise.toml
 
 [bootstrap]
