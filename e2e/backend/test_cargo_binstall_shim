@@ -11,12 +11,13 @@ exit 1
 SHIM
 chmod u+x "$MISE_DATA_DIR/shims/cargo-binstall"
 
-printf '#!%s\n' "$BASH" >~/bin/cargo
+# absolute interpreter and mkdir: the install PATH has no system dirs
+printf '#!%s\nMKDIR=%s\n' "$BASH" "$(command -v mkdir)" >~/bin/cargo
 cat >>~/bin/cargo <<'EOF2'
 printf '%s\n' "$*" >>"$MISE_DATA_DIR/cargo-install.log"
 while (($#)); do
   if [[ $1 == "--root" ]]; then
-    mkdir -p "$2/bin"
+    "$MKDIR" -p "$2/bin"
     exit 0
   fi
   shift
@@ -31,3 +32,4 @@ export MISE_CARGO_BINSTALL_NATIVE=0
 
 PATH="$ISOLATED_PATH" mise install cargo:shim-test@1.0.0
 assert_contains "cat '$MISE_DATA_DIR/cargo-install.log'" "install shim-test@1.0.0"
+assert_succeed "test -d \"\$(mise where cargo:shim-test@1.0.0)/bin\""
