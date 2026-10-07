@@ -1023,6 +1023,9 @@ struct CommitMetaContext {
     resolved_home: PathBuf,
     resolved_config_dir: PathBuf,
     environments: Vec<String>,
+    /// This machine's name, which names its per-machine streams.
+    #[serde(default)]
+    machine: Option<String>,
 }
 
 impl CommitMetaContext {
@@ -1036,8 +1039,26 @@ impl CommitMetaContext {
             resolved_home: roots.home,
             resolved_config_dir: roots.config_dir,
             environments: super::select::active_environments(),
+            machine: known_machine_name(),
         }
     }
+}
+
+/// This machine's name when one is configured or already kept, without
+/// generating one: every cached record is checked against it, so it is read
+/// once per process. A name generated later in this process is seen by the
+/// next one, which then rebuilds the records once.
+fn known_machine_name() -> Option<String> {
+    static KNOWN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    KNOWN
+        .get_or_init(|| {
+            super::config::machine_name().ok().flatten().or_else(|| {
+                read_machine_name(&machine_name_path_in(&crate::dirs::STATE))
+                    .ok()
+                    .flatten()
+            })
+        })
+        .clone()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
