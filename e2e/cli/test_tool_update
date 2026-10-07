@@ -191,6 +191,29 @@ assert_fail "test -e '$MISE_STATE_DIR/tool-update'"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm mise.lock
 
+# The child must also reject a legacy lock discovered only after a version alias
+# is resolved. This covers a config edit between foreground scheduling and the
+# detached child starting.
+fresh_state lockfile-alias
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "floating"
+
+[tool_alias.dummy.versions]
+floating = "1"
+EOF
+cat >mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_contains "mise x -- dummy" "Dummy 1.0.0"
+assert_succeed "mise __tool-update dummy --current 1.0.0 --selector floating --policy major"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+rm mise.lock
+
 # A lockfile for another tool does not freeze this one, and the background
 # updater leaves that unrelated reproducibility state byte-for-byte unchanged.
 fresh_state unrelated-lockfile

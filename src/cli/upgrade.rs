@@ -408,6 +408,7 @@ impl Upgrade {
                     outdated.tool_version.request.ba().as_ref() == scheduled
                         && matches!(outdated.tool_version.request.source(), ToolSource::Argument)
                 }) && !outdated.request_pinned_to_current_version()
+                    && !outdated.tool_version.resolved_from_lockfile()
                     && matches!(
                         crate::tool_update::request_has_lockfile(
                             config.as_ref(),
