@@ -2977,12 +2977,15 @@ pub trait Backend: Debug + Send + Sync {
     ) -> bool {
         let check_path = |install_path: &Path, check_symlink: bool| {
             let is_installed = install_path.exists();
-            let is_not_incomplete = !self.incomplete_file_path(tv).exists();
+            let is_active_postinstall = is_active_postinstall_install(tv, install_path);
+            let is_not_incomplete =
+                !self.incomplete_file_path(tv).exists() || is_active_postinstall;
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
             let is_healthy = is_installed && self.is_install_path_healthy(install_path);
             // An identity-layout installation is complete once its receipt is there;
             // the receipt is written last.
-            let has_receipt = crate::install_layout::resolver::dir_name_of(install_path).is_none()
+            let has_receipt = is_active_postinstall
+                || crate::install_layout::resolver::dir_name_of(install_path).is_none()
                 || crate::install_layout::resolver::is_complete(install_path);
 
             let installed = is_healthy && is_not_incomplete && is_valid_symlink && has_receipt;
@@ -4230,9 +4233,15 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
-        install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
         let finished = match self.finish_install_changes(&ctx, &tv).await {
-            Ok(()) => self.verify_install(&ctx, &tv).await,
+            Ok(()) => {
+                // Keep the incomplete marker through the postinstall hook, so a
+                // failed hook leaves a version no later resolution selects. A
+                // verification failure is the backend's to track (packslip keeps
+                // a usable binary and marks only its skills incomplete).
+                install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
+                self.verify_install(&ctx, &tv).await
+            }
             Err(err) => Err(err),
         };
         if let Err(err) = finished {
@@ -4392,6 +4401,7 @@ pub trait Backend: Debug + Send + Sync {
             )
         })?;
 
+        let token = install_state::PostinstallToken::start(tv.ba(), &tv.state_key())?;
         let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
@@ -4403,6 +4413,8 @@ pub trait Backend: Debug + Send + Sync {
         for key in install_env_removals {
             runner = runner.env_remove(key);
         }
+        // After `install_env`, which must not be able to replace or remove it.
+        runner = runner.env(POSTINSTALL_TOKEN_ENV, &token.token);
 
         // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
         // legacy alias for the global config, so pin the actual global path for nested mise calls.
@@ -4427,6 +4439,7 @@ pub trait Backend: Debug + Send + Sync {
         // output that an `[env]` value reads, and the hooks after it are entitled
         // to see that.
         invalidate_postinstall_env();
+        drop(token);
         result?;
         Ok(())
     }
@@ -5351,6 +5364,32 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 }
+
+/// A postinstall hook may invoke mise for the exact installation it is
+/// finishing. That process is entitled to use the path supplied by its parent,
+/// even though the generic incomplete marker remains in place until the hook
+/// succeeds. Other processes never receive this environment, so they keep
+/// treating the install as incomplete. The hook's token must also still be the
+/// current one: a process the hook left running inherits the environment, but
+/// once that hook ends (or another install retries the version), the half-done
+/// version is not its to use.
+pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
+    std::env::var_os("MISE_TOOL_INSTALL_PATH")
+        .as_deref()
+        .is_some_and(|path| Path::new(path) == install_path)
+        && std::env::var("MISE_TOOL_NAME").ok().as_deref() == Some(tv.ba().short.as_str())
+        && std::env::var(env::MISE_TOOL_VERSION_ENV_VAR)
+            .ok()
+            .as_deref()
+            == Some(tv.version.as_str())
+        && std::env::var(POSTINSTALL_TOKEN_ENV).is_ok_and(|token| {
+            install_state::PostinstallToken::matches(tv.ba(), &tv.state_key(), &token)
+        })
+}
+
+/// The token a tool-level postinstall hook receives; see
+/// [`install_state::PostinstallToken`].
+const POSTINSTALL_TOKEN_ENV: &str = "MISE_TOOL_INSTALL_TOKEN";
 
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
