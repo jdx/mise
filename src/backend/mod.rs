@@ -4369,8 +4369,10 @@ pub trait Backend: Debug + Send + Sync {
             )
         })?;
 
+        let token = install_state::PostinstallToken::start(tv.ba(), &tv.state_key())?;
         let mut runner = CmdLineRunner::new(program)
             .env(&*env::PATH_KEY, path_env.join())
+            .env(POSTINSTALL_TOKEN_ENV, &token.token)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env(env::MISE_TOOL_VERSION_ENV_VAR, tv.version.clone())
@@ -4404,6 +4406,7 @@ pub trait Backend: Debug + Send + Sync {
         // output that an `[env]` value reads, and the hooks after it are entitled
         // to see that.
         invalidate_postinstall_env();
+        drop(token);
         result?;
         Ok(())
     }
@@ -5333,9 +5336,10 @@ pub trait Backend: Debug + Send + Sync {
 /// finishing. That process is entitled to use the path supplied by its parent,
 /// even though the generic incomplete marker remains in place until the hook
 /// succeeds. Other processes never receive this environment, so they keep
-/// treating the install as incomplete. The install must also still hold its
-/// lock: a process the hook left running inherits the environment, but once a
-/// failed hook ends the install, that half-done version is not its to use.
+/// treating the install as incomplete. The hook's token must also still be the
+/// current one: a process the hook left running inherits the environment, but
+/// once that hook ends (or another install retries the version), the half-done
+/// version is not its to use.
 pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Path) -> bool {
     std::env::var_os("MISE_TOOL_INSTALL_PATH")
         .as_deref()
@@ -5345,8 +5349,14 @@ pub(crate) fn is_active_postinstall_install(tv: &ToolVersion, install_path: &Pat
             .ok()
             .as_deref()
             == Some(tv.version.as_str())
-        && install_state::tool_version_locked(tv.ba(), &tv.state_key())
+        && std::env::var(POSTINSTALL_TOKEN_ENV).is_ok_and(|token| {
+            install_state::PostinstallToken::matches(tv.ba(), &tv.state_key(), &token)
+        })
 }
+
+/// The token a tool-level postinstall hook receives; see
+/// [`install_state::PostinstallToken`].
+const POSTINSTALL_TOKEN_ENV: &str = "MISE_TOOL_INSTALL_TOKEN";
 
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
