@@ -5,7 +5,7 @@ use std::time::Duration;
 use eyre::{Result, bail};
 
 use crate::args::ToolArg;
-use crate::config::Config;
+use crate::config::{Config, Settings, SettingsExt};
 use crate::tool_update::{self, Tick, Updater};
 use crate::toolset::{ConfigScope, ResolveOptions, Toolset, ToolsetBuilder};
 use crate::{dirs, env};
@@ -141,6 +141,8 @@ async fn update_due_tools() -> Result<()> {
                 Ok(tv) => tv,
                 Err(err) => {
                     warn!("tool-update: could not resolve {ba}: {err:#}");
+                    // So `mise doctor` says why this tool isn't updating.
+                    tool_update::record_result(&ba.full_without_opts(), &Err(err));
                     continue;
                 }
             };
@@ -188,7 +190,13 @@ fn update_command(args: &[&str]) -> Command {
 }
 
 fn run_update(tool: &str) -> std::io::Result<ExitStatus> {
-    update_command(&[tool]).stdout(std::io::stderr()).status()
+    let mut command = update_command(&[tool]);
+    command.stdout(std::io::stderr());
+    // `--no-hooks` on the launch applies to its update too.
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        command.env("MISE_NO_HOOKS", "1");
+    }
+    command.status()
 }
 
 /// If the tool that provides `bin` opted into `auto_update` in global config
