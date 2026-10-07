@@ -256,7 +256,7 @@ pub(crate) fn identity_of(tv: &ToolVersion) -> Option<InstallIdentity> {
 /// is downloaded (`?id=2`), is replaced by a digest of itself, so two queries
 /// still make two identities. Applied to whole values and to values that merely
 /// contain a URL.
-fn redact_credentials(value: &str) -> String {
+pub(crate) fn redact_credentials(value: &str) -> String {
     let ends_at = |s: &str, stop: &dyn Fn(char) -> bool| s.find(stop).unwrap_or(s.len());
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
@@ -2124,6 +2124,28 @@ mod tests {
             redact_credentials("https://user:tok@registry.example.com/simple/"),
             "https://registry.example.com/simple/"
         );
+        assert_eq!(
+            redact_credentials("git+https://github.com/o/r.git#main"),
+            "git+https://github.com/o/r.git#main"
+        );
+        assert_eq!(
+            redact_credentials("git+ssh://git@github.com:org/repo.git"),
+            "git+ssh://github.com:org/repo.git"
+        );
+        let percent_encoded = "git+https://user%40example.test:token%2Fvalue@host.example/o/r.git?access_token=query-token";
+        let redacted_percent_encoded = redact_credentials(percent_encoded);
+        for secret in [
+            "user%40example.test",
+            "token%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !redacted_percent_encoded.contains(secret),
+                "redacted URL leaked {secret:?}: {redacted_percent_encoded}"
+            );
+        }
+        assert!(redacted_percent_encoded.starts_with("git+https://host.example/o/r.git?"));
         let query = |q: &str| digest_of_string(q)[..16].to_string();
         assert_eq!(
             redact_credentials("https://tok@host.example/a?b=c@d"),

@@ -14,6 +14,7 @@ use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
+use crate::install_layout::resolver::redact_credentials;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -137,6 +138,9 @@ async fn git_head(remote: &str) -> eyre::Result<String> {
         Settings::get().fetch_remote_versions_timeout(),
     )
     .await
+    // `git` includes its remote in failures. Keep the raw remote for the
+    // command, but do not propagate URL userinfo or query tokens in errors.
+    .map_err(|err| eyre::eyre!(redact_credentials(&format!("{err:#}"))))
 }
 
 /// An alias to install a git source under: the repository name.
@@ -150,9 +154,23 @@ fn git_alias(name: &str) -> String {
 fn validate_git_alias(name: &str) -> Result<()> {
     let alias = git_alias(name);
     if alias.is_empty() || alias == "." || alias == ".." {
-        eyre::bail!("cannot determine a package name from git source: npm:{name}");
+        eyre::bail!(
+            "cannot determine a package name from git source: npm:{}",
+            redact_credentials(name)
+        );
     }
     Ok(())
+}
+
+fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Result<String> {
+    validate_git_alias(name)?;
+    if has_checksum {
+        eyre::bail!(
+            "the checksum option is not supported for git sources: npm:{}",
+            redact_credentials(name)
+        );
+    }
+    Ok(git_requirement(name, version))
 }
 
 #[derive(Debug)]
@@ -690,7 +708,10 @@ impl Backend for NPMBackend {
                     ..Default::default()
                 }],
                 Err(err) => {
-                    debug!("could not resolve the default branch of {name}: {err:#}");
+                    debug!(
+                        "could not resolve the default branch of {}: {err:#}",
+                        redact_credentials(&name)
+                    );
                     vec![]
                 }
             });
@@ -800,7 +821,7 @@ impl Backend for NPMBackend {
         if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
             eyre::bail!(
                 "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
-                self.tool_name(),
+                self.display_tool_name(),
                 package_manager
             );
         }
@@ -812,7 +833,7 @@ impl Backend for NPMBackend {
         {
             eyre::bail!(
                 "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
-                self.tool_name()
+                self.display_tool_name()
             );
         }
         if package_manager == NpmPackageManager::Aube
@@ -975,7 +996,7 @@ impl Backend for NPMBackend {
                 if allow_builds_requested && !supports_allow_scripts {
                     warn!(
                         "allow_builds for npm:{} requires npm >= {} for per-package script approvals. mise will keep {} for this install. {}",
-                        self.tool_name(),
+                        self.display_tool_name(),
                         NPM_ALLOW_SCRIPTS_VERSION,
                         NPM_IGNORE_SCRIPTS_ARG,
                         Self::npm_lifecycle_script_remediation()
@@ -1045,6 +1066,16 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// A credential-safe identifier for diagnostics. Keep `tool_name()` for
+    /// install and Git operations, which need the original source URL.
+    fn display_tool_name(&self) -> String {
+        redact_credentials(&self.tool_name())
+    }
+
+    fn display_backend_name(&self) -> String {
+        redact_credentials(&self.ba().full())
+    }
+
     /// Return whether automatic project-lockfile maintenance should create an
     /// aube graph for this request. Settings are invocation-wide, but automatic
     /// lockfile updates deliberately exclude tools owned by global configs.
@@ -1071,18 +1102,12 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<String> {
-        if is_git_spec(&self.tool_name()) {
-            validate_git_alias(&self.tool_name())?;
-            if options.checksum().is_some() {
-                eyre::bail!(
-                    "the checksum option is not supported for git sources: npm:{}",
-                    self.tool_name()
-                );
-            }
-            return Ok(git_requirement(&self.tool_name(), &tv.version));
+        let tool_name = self.tool_name();
+        if is_git_spec(&tool_name) {
+            return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
         let Some(checksum) = options.checksum() else {
-            return Ok(format!("{}@{}", self.tool_name(), tv.version));
+            return Ok(format!("{tool_name}@{}", tv.version));
         };
         let (algorithm, digest) = checksum
             .split_once(':')
@@ -1255,7 +1280,7 @@ impl NPMBackend {
         else {
             warn!(
                 "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/npm.html",
-                self.tool_name(),
+                self.display_tool_name(),
                 tool,
                 flag
             );
@@ -1265,7 +1290,7 @@ impl NPMBackend {
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
                 "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
-                self.tool_name(),
+                self.display_tool_name(),
                 tool,
                 version,
                 tool,
@@ -1599,7 +1624,7 @@ impl NPMBackend {
         if let Some(args) = options.aube_args() {
             warn!(
                 "aube_args ({args:?}) are ignored for npm:{}: mise installs through the embedded aube package manager and no longer shells out to the aube CLI",
-                self.tool_name()
+                self.display_tool_name()
             );
         }
 
@@ -1675,7 +1700,7 @@ impl NPMBackend {
         warn!(
             "install_env ({}) is ignored for {}: mise installs through the embedded aube package manager, which runs in-process rather than as a subprocess. Install-scoped aube settings have npm backend tool options (`allow_builds`, `allow_exotic_deps`, `allow_low_downloads`, `trust_policy_excludes`); anything else has to be set in mise's own environment.",
             keys.join(", "),
-            tv.ba().full(),
+            redact_credentials(&tv.ba().full()),
         );
     }
 
@@ -1738,7 +1763,10 @@ impl NPMBackend {
     /// remedies, since mise owns the synthetic config aube's help tells the
     /// user to edit.
     fn format_aube_install_error(&self, err: miette::Report) -> eyre::Report {
-        eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
+        eyre::eyre!(redact_credentials(&build_aube_install_error_message(
+            &err,
+            &self.display_backend_name()
+        )))
     }
 
     /// A configured `node`, when available, is handed to the embedded aube
@@ -1847,7 +1875,7 @@ impl NPMBackend {
         if requirement != Some(self.package_requirement(tv).as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
-                self.tool_name(),
+                self.display_tool_name(),
                 tv.version
             );
         }
@@ -2016,7 +2044,7 @@ impl NPMBackend {
         };
         warn!(
             "{}@{} declares npm lifecycle script(s) ({}) in {}, but mise skipped them with {}. Review the package before opting in. {}",
-            self.ba().full(),
+            self.display_backend_name(),
             tv.version,
             hooks.join(", "),
             package_json_path.display(),
@@ -2574,6 +2602,24 @@ pub(crate) fn test_backend(
 mod tests {
     use super::*;
     use crate::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    const GIT_SOURCE_WITH_CREDENTIALS: &str = "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#main";
+
+    fn assert_diagnostic_redacts_credentials(diagnostic: &str) {
+        for secret in [
+            "user%40example.test",
+            "password%2Fvalue",
+            "access_token=query-token",
+            "query-token",
+        ] {
+            assert!(
+                !diagnostic.contains(secret),
+                "diagnostic leaked {secret:?}: {diagnostic}"
+            );
+        }
+        assert!(diagnostic.contains("git+https://git.example.test/org/repo.git?"));
+    }
 
     #[test]
     fn git_specs_are_detected_and_aliased() {
@@ -2639,6 +2685,41 @@ mod tests {
             git_requirement("git+https://github.com/o/r", "v1.2.0"),
             "git+https://github.com/o/r#v1.2.0"
         );
+        assert_eq!(
+            git_requirement("git+ssh://git@github.com:org/repo.git", "v1"),
+            "git+ssh://git@github.com:org/repo.git#v1"
+        );
+    }
+
+    #[test]
+    fn git_source_diagnostics_redact_credentials_without_changing_requirements() {
+        let error = git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "v1", true)
+            .unwrap_err()
+            .to_string();
+        assert_diagnostic_redacts_credentials(&error);
+
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        assert_diagnostic_redacts_credentials(&backend.display_tool_name());
+        assert_diagnostic_redacts_credentials(&backend.display_backend_name());
+
+        assert_eq!(
+            git_package_install_spec(GIT_SOURCE_WITH_CREDENTIALS, "tag:v1", false).unwrap(),
+            "git+https://user%40example.test:password%2Fvalue@git.example.test/org/repo.git?access_token=query-token#v1"
+        );
+    }
+
+    #[test]
+    fn git_source_lock_diagnostic_redacts_credentials() {
+        let backend = create_npm_git_backend(GIT_SOURCE_WITH_CREDENTIALS);
+        let request =
+            ToolRequest::new(backend.ba().clone(), "deadbeef", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "deadbeef".to_string());
+        let error = backend
+            .validate_aube_lock(&tv, &crate::lockfile::AubeLock::default())
+            .unwrap_err()
+            .to_string();
+
+        assert_diagnostic_redacts_credentials(&error);
     }
 
     #[derive(Debug, Default)]
@@ -2649,15 +2730,25 @@ mod tests {
             self.0.lock().unwrap().push(message);
         }
     }
-    #[cfg(unix)]
-    use crate::toolset::ToolVersion;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
+    use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
             "npm".to_string(),
             Some(tool.to_string()),
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+        NPMBackend::from_arg(ba)
+    }
+
+    fn create_npm_git_backend(tool: &str) -> NPMBackend {
+        let full = format!("npm:{tool}");
+        let ba = BackendArg::new_raw(
+            full.clone(),
+            Some(full),
             tool.to_string(),
             None,
             BackendResolution::new(true),
