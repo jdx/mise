@@ -1339,6 +1339,14 @@ explicitly commits tracked changes. Git history lives under `$MISE_STATE_DIR/his
 `mise bootstrap dotfiles history` lists and compares its file versions. Bootstrap without
 tracking does not start a committed history, and dry runs never record. Set to `false` to
 turn recording off without deleting existing commits.
+
+A bootstrap that records no history (nothing tracked, no existing history) touches the history
+state only when it first rewrites a dotfile or edit, to keep a private write-recovery journal.
+If another history operation in the same `$MISE_STATE_DIR` holds the lock at that point, it warns
+and runs without the journal instead of failing. Runs that record history wait up to 30 seconds,
+then fail. A run that starts with nothing to record but declares tracking before it ends waits the
+same 30 seconds at the end; if the lock is still busy, or an earlier write already ran without the
+journal, it warns that its outcome was not recorded and keeps its result.
 """
 env = "MISE_HISTORY_ENABLED"
 type = "Bool"
